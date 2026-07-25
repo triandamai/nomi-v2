@@ -3,7 +3,7 @@
 Date: 2026-07-25
 Status: Approved (pending user review of this doc)
 Parent plan: `plans/initial.md`
-Related: `docs/superpowers/specs/2026-07-22-sub-agent-lifecycle-design.md`, `docs/superpowers/specs/2026-07-22-cross-channel-identity-design.md`
+Related: `docs/superpowers/specs/2026-07-22-sub-agent-lifecycle-design.md`, `docs/superpowers/specs/2026-07-22-cross-channel-identity-design.md`, `docs/superpowers/specs/2026-07-25-multi-tenant-rbac-design.md` (amends §1 and §2 below — role model and admin routing)
 
 ## Purpose
 
@@ -11,22 +11,26 @@ The backend orchestrator (`plans/initial.md`) holds one persistent conversation 
 
 ## 1. Audience & Roles
 
-One SvelteKit app serves two roles from the same UI:
+*Superseded by `2026-07-25-multi-tenant-rbac-design.md` §2 and §6* — kept here in summary form so this doc still reads standalone:
 
-- **User** — sees their own sessions (DM or group, across whichever channels they're linked to via `channel_identities`).
-- **Admin** — sees every session across every user/channel, for oversight and debugging.
+One SvelteKit app serves every user from the same UI, scoped by permission-string claims rather than a flat role:
 
-**Role is a backend-issued claim, not a frontend construct.** The session/JWT carries `role: user | admin`. The frontend's `/admin` route guard (a SvelteKit `load` redirect for insufficient role) is a UX nicety only — the real enforcement is that the backend rejects "list all sessions" and other admin-scoped API calls server-side regardless of what the client requests. This must hold even if someone hits the API directly, bypassing the UI entirely.
+- **Regular member** — sees their own org's sessions (DM or group, across whichever channels they're linked to via `channel_identities`), scoped to whichever org is currently active in the org switcher.
+- **Org owner/admin** — same view as a member, plus access to `/org/:id/members` for managing that org's membership and invites.
+- **Platform admin** (`nomi:admin:*`) — sees every org/session on the platform via the separate `/admin` route, for oversight and debugging.
+
+**Authorization is a backend-issued claims array, not a frontend construct.** The session token carries permission strings (`nomi:<scope>:<role>:[actions]`); the frontend's route guards (SvelteKit `load` redirects) are a UX nicety only — the real enforcement is that the backend checks these same permission strings server-side on every request, and re-validates against current DB state (not just the token) for sensitive writes. This must hold even if someone hits the API directly, bypassing the UI entirely.
 
 ## 2. Screens & Navigation
 
-Both roles share one two-pane bento shell:
-
-- **Left rail — chat list**: flat list of sessions, sorted by most recent activity (not grouped by channel — recency ordering matters more than provenance, and provenance is shown per-row via a channel badge instead). Each row: avatar, name (or group name), channel badge (Telegram/WhatsApp/Slack/web), last-message preview, timestamp, unread count, and an agent-active pill when a sub-agent currently owns that thread (or, in a group, owns any participant's turn within it).
+- **Left rail — chat list**: flat list of the *current org's* sessions, sorted by most recent activity (not grouped by channel — recency ordering matters more than provenance, and provenance is shown per-row via a channel badge instead). Each row: avatar, name (or group name), channel badge (Telegram/WhatsApp/Slack/web), last-message preview, timestamp, unread count, and an agent-active pill when a sub-agent currently owns that thread (or, in a group, owns any participant's turn within it).
 - **Right pane — conversation view**: header (participant/group name, channel, a persistent agent-state badge), scrollable message bubbles, input bar pinned to the bottom. Selecting a chat updates the URL (`/chat/[sessionId]`) so it's linkable and survives a refresh.
-- **`/admin`** — the identical two-pane shell and identical `ChatList`/`ConversationView` components, differing only in data source: the chat list query is unfiltered ("all sessions") instead of "my sessions," and each row additionally shows the owning user identity (needed once rows aren't implicitly "mine"). No structural differences beyond data scope.
+- **Org switcher**: visible whenever the user has more than one active, non-personal org membership; switching re-scopes claims and reloads the chat list for the newly-selected org only (no unified cross-org inbox in this iteration).
+- **`/org/:id/members`** — org owner/admin only; member list, role management, invite-link generation, and the "add to group" conversation-participant picker (all per the RBAC design's §4 and §6).
+- **`/admin`** — platform-superuser-only (`nomi:admin:*`); the same `ChatList`/`ConversationView` components as the main shell, but unfiltered across every org/session on the platform, each row additionally showing the owning org and user identity. Structurally distinct from `/org/:id/members` — this is the rare, ops-only surface; the org-scoped one is what most org admins actually use day to day.
+- **Onboarding** (create-or-join): shown post-registration, before first chat — previously out of scope, now in scope per the RBAC design's §4.
 
-Out of scope for this spec: the login/identity-linking flow itself (how a Telegram/WhatsApp/web identity authenticates into a browser session), and admin *intervention* actions (force-cancelling an agent, editing memory weights) — both are natural follow-up specs once this shell exists.
+Out of scope for this spec: the underlying login/identity-linking mechanism (how a Telegram/WhatsApp/web identity authenticates into a browser session in the first place), and admin *intervention* actions (force-cancelling an agent, editing memory weights) — both remain natural follow-up specs.
 
 ## 3. Components
 
@@ -38,7 +42,7 @@ Out of scope for this spec: the login/identity-linking flow itself (how a Telegr
 
 ## 4. Data Flow & Real-Time Updates
 
-1. Loading `/` or `/admin` fetches the session list via `GET /api/sessions` (scoped by role, enforced server-side) → populates a `sessions` Svelte store.
+1. Loading `/` fetches the session list via `GET /api/sessions?org=<currentOrgId>` (org-scoped, enforced server-side); `/admin` instead calls the unfiltered platform-admin endpoint. Either way the result populates a `sessions` Svelte store.
 2. Opening a conversation fetches recent history via `GET /api/sessions/:id/messages`, then opens a WebSocket (`WS /api/sessions/:id/stream`) for that session. The backend bridges its internal MQTT event bus to this per-session WebSocket — browsers don't speak MQTT directly.
 3. Three event kinds flow over the socket, mirroring the backend's audited event model:
    - `MessageAppended` — a user or assistant message; assistant messages can arrive with reasoning/tool-call lines progressively, then the final reply text, giving the timeline a natural streaming reveal instead of popping in whole.
@@ -57,7 +61,7 @@ Out of scope for this spec: the login/identity-linking flow itself (how a Telegr
 
 - Component tests: `MessageBubble` reasoning-timeline rendering states (in progress / complete / tool-call formatting), `AgentBadge` status→style mapping, `InputBar` command palette and mode chip behavior.
 - Integration test: a mocked WebSocket feed exercising the reconnect-and-reconcile path.
-- Route-guard test: confirms `/admin` redirects a non-admin role client-side, **and** a companion backend test confirms the admin-scoped API endpoint itself rejects a non-admin token — the redirect alone is not the security boundary.
+- Route-guard test: confirms `/admin` redirects anyone without `nomi:admin:*` client-side, and `/org/:id/members` redirects anyone without `owner`/`admin` in *that specific* org — **and** companion backend tests confirm both API endpoints reject the equivalent unauthorized tokens server-side, including a valid owner/admin of a *different* org. The redirect alone is not the security boundary.
 
 ## Trade-offs Accepted
 
