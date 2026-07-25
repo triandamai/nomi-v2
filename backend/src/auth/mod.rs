@@ -1,3 +1,4 @@
+pub mod authorize;
 pub mod claims;
 pub mod login;
 pub mod password;
