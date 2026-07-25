@@ -103,6 +103,17 @@ async fn join_mode_rejects_a_reused_invite_code(pool: PgPool) {
     .await;
 
     assert!(matches!(result, Err(RegistrationError::InvalidInvite)));
+
+    let orphan_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM web_credentials WHERE email = 'latecomer@example.com')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        !orphan_exists,
+        "rejected registration must not leave an orphan web_credentials row"
+    );
 }
 
 #[sqlx::test]
