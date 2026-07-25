@@ -1,3 +1,4 @@
 // Schema-only crate for now; orchestrator logic arrives in a later plan.
 
+pub mod app;
 pub mod auth;
