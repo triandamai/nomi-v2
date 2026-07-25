@@ -1,9 +1,22 @@
+use std::sync::OnceLock;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{claims::Claims, permissions::compute_permissions, password::verify_password};
+use super::{
+    claims::Claims,
+    password::{hash_password, verify_password},
+    permissions::compute_permissions,
+};
 
 pub const ACCESS_TOKEN_TTL_SECONDS: i64 = 30 * 60;
+
+static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();
+
+fn dummy_password_hash() -> &'static str {
+    DUMMY_PASSWORD_HASH
+        .get_or_init(|| hash_password("dummy-password-for-timing-safety").expect("dummy hash must succeed"))
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoginError {
@@ -27,7 +40,15 @@ pub async fn login(
             .fetch_optional(pool)
             .await?;
 
-    let (user_id, password_hash) = row.ok_or(LoginError::InvalidCredentials)?;
+    let (user_id, password_hash) = match row {
+        Some(row) => row,
+        None => {
+            // Burn equivalent argon2 time so unknown-email and wrong-password paths
+            // are indistinguishable by latency (closes an email-enumeration timing oracle).
+            let _ = verify_password(password, dummy_password_hash());
+            return Err(LoginError::InvalidCredentials);
+        }
+    };
 
     let valid = verify_password(password, &password_hash).unwrap_or(false);
     if !valid {
