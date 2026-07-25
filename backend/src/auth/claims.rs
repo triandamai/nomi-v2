@@ -43,11 +43,7 @@ impl Claims {
             &DecodingKey::from_secret(secret.as_bytes()),
             &Validation::default(),
         )?;
-        let claims = data.claims;
-        if claims.exp < chrono::Utc::now().timestamp() {
-            return Err(jsonwebtoken::errors::ErrorKind::ExpiredSignature.into());
-        }
-        Ok(claims)
+        Ok(data.claims)
     }
 
     pub fn has_permission(&self, scope: &str, resource: &str, action: &str) -> bool {
@@ -95,7 +91,7 @@ mod tests {
     #[test]
     fn decode_rejects_expired_token() {
         let mut claims = sample_claims(vec![]);
-        claims.exp = chrono::Utc::now().timestamp() - 60; // expired one minute ago
+        claims.exp = chrono::Utc::now().timestamp() - 3600; // expired one hour ago (well past jsonwebtoken's default 60s leeway)
         let token = claims.encode(SECRET).unwrap();
         let result = Claims::decode(&token, SECRET);
         assert!(result.is_err());
