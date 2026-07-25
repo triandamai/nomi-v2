@@ -359,7 +359,10 @@ mod tests {
     #[test]
     fn decode_rejects_expired_token() {
         let mut claims = sample_claims(vec![]);
-        claims.exp = chrono::Utc::now().timestamp() - 60; // expired one minute ago
+        // jsonwebtoken's Validation::default() applies a 60-second leeway on `exp`,
+        // so an offset of exactly -60 sits right at that boundary and isn't
+        // reliably rejected. -3600 (one hour ago) is safely outside the leeway.
+        claims.exp = chrono::Utc::now().timestamp() - 3600;
         let token = claims.encode(SECRET).unwrap();
         let result = Claims::decode(&token, SECRET);
         assert!(result.is_err());
@@ -1715,7 +1718,8 @@ async fn malformed_token_is_rejected(pool: PgPool) {
 #[sqlx::test]
 async fn expired_token_is_rejected(pool: PgPool) {
     let mut claims = Claims::new(Uuid::new_v4(), Uuid::new_v4(), vec![], 1800);
-    claims.exp = chrono::Utc::now().timestamp() - 60;
+    // -3600 (not -60): jsonwebtoken's default 60-second leeway makes -60 borderline/unreliable.
+    claims.exp = chrono::Utc::now().timestamp() - 3600;
     let token = claims.encode(SECRET).unwrap();
 
     let response = test_router(pool)
