@@ -35,10 +35,12 @@ fn content_block_to_part(block: &ContentBlock) -> serde_json::Value {
             json!({ "functionCall": { "name": name, "args": input } })
         }
         // Gemini's functionResponse part is keyed by the function's name, not a
-        // tool-call id (Gemini has no id concept for function calls) - see
-        // json_to_content_block's matching synthesis of `id` from `name`.
-        ContentBlock::ToolResult { content, .. } => {
-            json!({ "functionResponse": { "name": "tool_result", "response": { "content": content } } })
+        // tool-call id (Gemini has no id concept for function calls). On the
+        // inbound/parse side of this file, ToolUse.id is synthesized directly
+        // from the function's name, so tool_use_id here already holds that
+        // name - reuse it as-is for the outbound functionResponse.name.
+        ContentBlock::ToolResult { tool_use_id, content, .. } => {
+            json!({ "functionResponse": { "name": tool_use_id, "response": { "content": content } } })
         }
     }
 }

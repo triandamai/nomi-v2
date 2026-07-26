@@ -95,7 +95,7 @@ async fn tool_result_in_request_is_mapped_into_a_function_response_part() {
         .and(path_regex(r"^/v1beta/models/.*:generateContent$"))
         .and(body_partial_json(json!({
             "contents": [
-                {"role": "user", "parts": [{"functionResponse": {"name": "tool_result", "response": {"content": "sunny"}}}]}
+                {"role": "user", "parts": [{"functionResponse": {"name": "get_weather", "response": {"content": "sunny"}}}]}
             ]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
