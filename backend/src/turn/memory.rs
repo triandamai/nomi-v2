@@ -1,5 +1,5 @@
 use sqlx::pool::PoolConnection;
-use sqlx::Postgres;
+use sqlx::{Postgres, PgPool};
 use uuid::Uuid;
 
 use super::types::TurnError;
@@ -87,4 +87,38 @@ pub async fn extract_and_store_memory(
         .bind(&literal)
         .execute(&mut **conn)
         .await;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ReinforcementSignal {
+    Positive,
+    Negative,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ReinforcementError {
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+pub async fn reinforce(
+    pool: &PgPool,
+    reply_message_id: Uuid,
+    signal: ReinforcementSignal,
+) -> Result<(), ReinforcementError> {
+    let factor: f64 = match signal {
+        ReinforcementSignal::Positive => 1.2,
+        ReinforcementSignal::Negative => 0.8,
+    };
+
+    sqlx::query(
+        "UPDATE memory_items SET weight = LEAST(GREATEST(weight * $1, 0.1), 5.0) \
+         WHERE id IN (SELECT memory_id FROM message_memory_usage WHERE message_id = $2)",
+    )
+    .bind(factor)
+    .bind(reply_message_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
