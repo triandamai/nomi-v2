@@ -70,7 +70,7 @@ pub async fn handle_inbound_message(
 
     let result = match routing_outcome {
         RoutingOutcome::Continue(agent_session_id) => {
-            run_subagent_turn(&mut conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id, text).await
+            run_subagent_turn(&mut conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::FallbackToChitchat => {
             chitchat::run_chitchat_turn(&mut conn, provider, embedding_provider, session_id, user_id, text).await
@@ -84,7 +84,7 @@ pub async fn handle_inbound_message(
                     money_agent::MONEY_AGENT_TYPE,
                 )
                 .await?;
-                run_subagent_turn(&mut conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id, text).await
+                run_subagent_turn(&mut conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
             }
             routing::Intent::Chitchat => {
                 chitchat::run_chitchat_turn(&mut conn, provider, embedding_provider, session_id, user_id, text).await
@@ -119,7 +119,6 @@ async fn run_subagent_turn(
     session_id: Uuid,
     agent_session_id: Uuid,
     user_id: Uuid,
-    text: &str,
 ) -> Result<String, TurnError> {
     let messages = fetch_recent_messages(conn, session_id).await?;
 
