@@ -1,6 +1,7 @@
 pub mod types;
 pub mod anthropic;
 pub mod openai;
+pub mod gemini;
 
 pub use types::*;
 
