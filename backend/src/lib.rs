@@ -4,3 +4,4 @@ pub mod routes;
 pub mod llm;
 pub mod embedding;
 pub mod turn;
+pub mod web_identity;
