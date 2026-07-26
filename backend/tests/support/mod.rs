@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use nomi_orchestrator::embedding::{EmbeddingError, EmbeddingProvider};
 use nomi_orchestrator::llm::{LlmError, LlmProvider, LlmRequest, LlmResponse};
 
 enum FakeOutcome {
@@ -42,4 +43,37 @@ impl LlmProvider for FakeLlmProvider {
             FakeOutcome::Failure(message) => Err(LlmError::ProviderError(message.clone())),
         }
     }
+}
+
+enum FakeEmbeddingOutcome {
+    Success(Vec<f32>),
+    Failure(String),
+}
+
+pub struct FakeEmbeddingProvider {
+    outcome: FakeEmbeddingOutcome,
+}
+
+impl FakeEmbeddingProvider {
+    pub fn success(vector: Vec<f32>) -> Self {
+        Self { outcome: FakeEmbeddingOutcome::Success(vector) }
+    }
+
+    pub fn failure(message: impl Into<String>) -> Self {
+        Self { outcome: FakeEmbeddingOutcome::Failure(message.into()) }
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for FakeEmbeddingProvider {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        match &self.outcome {
+            FakeEmbeddingOutcome::Success(vector) => Ok(vector.clone()),
+            FakeEmbeddingOutcome::Failure(message) => Err(EmbeddingError::ProviderError(message.clone())),
+        }
+    }
+}
+
+pub fn dummy_embedding() -> Vec<f32> {
+    vec![0.0; 1536]
 }
