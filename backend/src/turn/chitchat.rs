@@ -102,8 +102,11 @@ pub async fn run_chitchat_turn(
 
     tx.commit().await?;
 
-    // Best-effort: extracting and storing a new memory from this exchange never affects the
-    // turn's outcome — the user already has their reply by this point.
+    // Best-effort: this never changes the turn's outcome (Ok(reply_text) below is unaffected
+    // by anything that happens here) — but it does run synchronously before this function
+    // returns, adding one extraction LLM call plus one embedding call of latency to every
+    // turn. No channel adapter calls this yet, so that cost isn't user-visible today; revisit
+    // (e.g. spawn this as a detached task) before wiring a real channel to handle_inbound_message.
     memory::extract_and_store_memory(conn, provider, embedding_provider, user_id, text, &reply_text).await;
 
     Ok(reply_text)
