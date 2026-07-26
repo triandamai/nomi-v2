@@ -9,18 +9,20 @@ pub use types::{TurnError, TurnOutcome};
 
 use sqlx::PgPool;
 
+use crate::embedding::EmbeddingProvider;
 use crate::llm::LlmProvider;
 
 pub async fn handle_inbound_message(
     pool: &PgPool,
     provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
     channel: &str,
     chat_type: &str,
     chat_id: &str,
     sender_channel_user_id: &str,
     text: &str,
 ) -> Result<TurnOutcome, TurnError> {
-    let bootstrap::BootstrapResult { sender_channel_identity_id, session_id, .. } =
+    let bootstrap::BootstrapResult { user_id, sender_channel_identity_id, session_id, .. } =
         bootstrap::bootstrap_identity_and_session(pool, channel, chat_type, chat_id, sender_channel_user_id)
             .await?;
 
@@ -34,7 +36,7 @@ pub async fn handle_inbound_message(
     let _active_agent_session_id =
         routing::find_active_agent_session(&mut conn, session_id, sender_channel_identity_id).await?;
 
-    let result = chitchat::run_chitchat_turn(&mut conn, provider, session_id).await;
+    let result = chitchat::run_chitchat_turn(&mut conn, provider, embedding_provider, session_id, user_id, text).await;
 
     match result {
         Ok(reply) => {

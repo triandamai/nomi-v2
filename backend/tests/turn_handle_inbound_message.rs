@@ -8,7 +8,7 @@ use uuid::Uuid;
 use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason};
 use nomi_orchestrator::turn::handle_inbound_message;
 
-use support::FakeLlmProvider;
+use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 fn canned_response(text: &str) -> LlmResponse {
     LlmResponse {
@@ -22,8 +22,9 @@ fn canned_response(text: &str) -> LlmResponse {
 #[sqlx::test]
 async fn new_sender_gets_bootstrapped_and_receives_a_chitchat_reply(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("Hi! How can I help?"));
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    let outcome = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "hello")
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello")
         .await
         .unwrap();
 
@@ -45,11 +46,12 @@ async fn new_sender_gets_bootstrapped_and_receives_a_chitchat_reply(pool: PgPool
 #[sqlx::test]
 async fn existing_sender_reuses_identity_and_session_across_two_calls(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("ok"));
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    let first = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "first")
+    let first = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "first")
         .await
         .unwrap();
-    let second = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "second")
+    let second = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "second")
         .await
         .unwrap();
 
@@ -69,8 +71,9 @@ async fn existing_sender_reuses_identity_and_session_across_two_calls(pool: PgPo
 #[sqlx::test]
 async fn inbound_message_is_durable_even_when_the_provider_call_fails(pool: PgPool) {
     let provider = FakeLlmProvider::failure("provider unavailable");
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    let result = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "hello")
+    let result = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello")
         .await;
     assert!(result.is_err());
 
@@ -94,8 +97,9 @@ async fn inbound_message_is_durable_even_when_the_provider_call_fails(pool: PgPo
 #[sqlx::test]
 async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_slice(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("still chatting"));
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    let first = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "hi")
+    let first = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hi")
         .await
         .unwrap();
 
@@ -114,7 +118,7 @@ async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_sl
     .await
     .unwrap();
 
-    let second = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "still there?")
+    let second = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "still there?")
         .await
         .unwrap();
 
@@ -124,14 +128,15 @@ async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_sl
 #[sqlx::test]
 async fn concurrent_messages_for_the_same_session_are_serialized(pool: PgPool) {
     let bootstrap_provider = FakeLlmProvider::success(canned_response("bootstrapped"));
-    handle_inbound_message(&pool, &bootstrap_provider, "telegram", "dm", "chat-1", "tg-1", "bootstrap")
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    handle_inbound_message(&pool, &bootstrap_provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "bootstrap")
         .await
         .unwrap();
 
     let provider = FakeLlmProvider::success(canned_response("ok")).with_delay(Duration::from_millis(200));
 
-    let call1 = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "first");
-    let call2 = handle_inbound_message(&pool, &provider, "telegram", "dm", "chat-1", "tg-1", "second");
+    let call1 = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "first");
+    let call2 = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "second");
     let (result1, result2) = tokio::join!(call1, call2);
     result1.unwrap();
     result2.unwrap();

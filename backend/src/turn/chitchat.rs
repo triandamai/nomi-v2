@@ -2,19 +2,25 @@ use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, Postgres};
 use uuid::Uuid;
 
+use crate::embedding::EmbeddingProvider;
 use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
+use super::memory::{self, RetrievedMemory};
 use super::types::TurnError;
 
 const CHITCHAT_SYSTEM_PROMPT: &str =
     "You are a helpful, friendly assistant chatting with the user. Keep replies concise.";
 const CHITCHAT_HISTORY_LIMIT: i64 = 20;
 const CHITCHAT_MAX_TOKENS: u32 = 1024;
+const MEMORY_RETRIEVAL_LIMIT: i64 = 5;
 
 pub async fn run_chitchat_turn(
     conn: &mut PoolConnection<Postgres>,
     provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
     session_id: Uuid,
+    user_id: Uuid,
+    text: &str,
 ) -> Result<String, TurnError> {
     let rows: Vec<(Option<Uuid>, String)> = sqlx::query_as(
         "SELECT sender_channel_identity_id, content FROM ( \
@@ -35,8 +41,20 @@ pub async fn run_chitchat_turn(
         })
         .collect();
 
+    let memories = try_retrieve_memories(conn, embedding_provider, user_id, text).await;
+
+    let system_prompt = if memories.is_empty() {
+        CHITCHAT_SYSTEM_PROMPT.to_string()
+    } else {
+        let mut prompt = format!("{CHITCHAT_SYSTEM_PROMPT}\n\nRelevant things you know about this user:\n");
+        for m in &memories {
+            prompt.push_str(&format!("- {}\n", m.content));
+        }
+        prompt
+    };
+
     let request = LlmRequest {
-        system: Some(CHITCHAT_SYSTEM_PROMPT.to_string()),
+        system: Some(system_prompt),
         messages,
         tools: vec![],
         max_tokens: CHITCHAT_MAX_TOKENS,
@@ -57,11 +75,13 @@ pub async fn run_chitchat_turn(
 
     let mut tx = conn.begin().await?;
 
-    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
-        .bind(session_id)
-        .bind(&reply_text)
-        .execute(&mut *tx)
-        .await?;
+    let reply_message_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(&reply_text)
+    .fetch_one(&mut *tx)
+    .await?;
 
     sqlx::query("INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'ChitchatReply', $2)")
         .bind(session_id)
@@ -72,7 +92,34 @@ pub async fn run_chitchat_turn(
         .execute(&mut *tx)
         .await?;
 
+    for m in &memories {
+        sqlx::query("INSERT INTO message_memory_usage (message_id, memory_id) VALUES ($1, $2)")
+            .bind(reply_message_id)
+            .bind(m.id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
     tx.commit().await?;
 
+    // Best-effort: extracting and storing a new memory from this exchange never affects the
+    // turn's outcome — the user already has their reply by this point.
+    memory::extract_and_store_memory(conn, provider, embedding_provider, user_id, text, &reply_text).await;
+
     Ok(reply_text)
+}
+
+async fn try_retrieve_memories(
+    conn: &mut PoolConnection<Postgres>,
+    embedding_provider: &dyn EmbeddingProvider,
+    user_id: Uuid,
+    text: &str,
+) -> Vec<RetrievedMemory> {
+    let embedding = match embedding_provider.embed(text).await {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    memory::retrieve_relevant_memories(conn, user_id, &embedding, MEMORY_RETRIEVAL_LIMIT)
+        .await
+        .unwrap_or_default()
 }
