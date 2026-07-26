@@ -1,11 +1,31 @@
+mod support;
+
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
 use nomi_orchestrator::app::{build_router, AppState};
+use nomi_orchestrator::llm::{LlmResponse, StopReason};
 use serde_json::{json, Value};
 use sqlx::PgPool;
+use std::sync::Arc;
 use tower::ServiceExt;
 
+use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
+
 const SECRET: &str = "test-secret-do-not-use-in-prod";
+
+fn test_state(pool: PgPool) -> AppState {
+    AppState {
+        pool,
+        jwt_secret: SECRET.to_string(),
+        provider: Arc::new(FakeLlmProvider::success(LlmResponse {
+            content: vec![],
+            stop_reason: StopReason::EndTurn,
+            input_tokens: 0,
+            output_tokens: 0,
+        })),
+        embedding_provider: Arc::new(FakeEmbeddingProvider::success(dummy_embedding())),
+    }
+}
 
 async fn json_request(
     router: axum::Router,
@@ -41,8 +61,7 @@ async fn json_request(
 
 #[sqlx::test]
 async fn register_returns_a_usable_token_pair(pool: PgPool) {
-    let state = AppState { pool, jwt_secret: SECRET.to_string() };
-    let router = build_router(state);
+    let router = build_router(test_state(pool));
 
     let (status, register_body) = json_request(
         router.clone(),
@@ -63,8 +82,7 @@ async fn register_returns_a_usable_token_pair(pool: PgPool) {
 
 #[sqlx::test]
 async fn login_after_registration_also_succeeds(pool: PgPool) {
-    let state = AppState { pool, jwt_secret: SECRET.to_string() };
-    let router = build_router(state);
+    let router = build_router(test_state(pool));
 
     json_request(
         router.clone(),
@@ -93,8 +111,7 @@ async fn login_after_registration_also_succeeds(pool: PgPool) {
 
 #[sqlx::test]
 async fn remove_member_rejects_a_caller_scoped_to_a_different_org(pool: PgPool) {
-    let state = AppState { pool: pool.clone(), jwt_secret: SECRET.to_string() };
-    let router = build_router(state);
+    let router = build_router(test_state(pool.clone()));
 
     let (_, _) = json_request(
         router.clone(),
@@ -143,8 +160,7 @@ async fn remove_member_rejects_a_caller_scoped_to_a_different_org(pool: PgPool) 
 
 #[sqlx::test]
 async fn remove_member_succeeds_for_the_owning_org_owner(pool: PgPool) {
-    let state = AppState { pool: pool.clone(), jwt_secret: SECRET.to_string() };
-    let router = build_router(state);
+    let router = build_router(test_state(pool.clone()));
 
     let (_, _) = json_request(
         router.clone(),
@@ -198,8 +214,7 @@ async fn remove_member_succeeds_for_the_owning_org_owner(pool: PgPool) {
 
 #[sqlx::test]
 async fn refresh_and_logout_flow(pool: PgPool) {
-    let state = AppState { pool, jwt_secret: SECRET.to_string() };
-    let router = build_router(state);
+    let router = build_router(test_state(pool));
 
     json_request(
         router.clone(),

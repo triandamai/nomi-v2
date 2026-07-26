@@ -1,14 +1,31 @@
+mod support;
+
 use axum::{body::Body, http::{Request, StatusCode}, routing::get, Router};
 use http_body_util::BodyExt;
-use nomi_orchestrator::{app::AppState, auth::{claims::Claims, extractor::AuthClaims}};
+use nomi_orchestrator::app::AppState;
+use nomi_orchestrator::auth::{claims::Claims, extractor::AuthClaims};
+use nomi_orchestrator::llm::{LlmResponse, StopReason};
 use sqlx::PgPool;
+use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
 fn test_router(pool: PgPool) -> Router {
-    let state = AppState { pool, jwt_secret: SECRET.to_string() };
+    let state = AppState {
+        pool,
+        jwt_secret: SECRET.to_string(),
+        provider: Arc::new(FakeLlmProvider::success(LlmResponse {
+            content: vec![],
+            stop_reason: StopReason::EndTurn,
+            input_tokens: 0,
+            output_tokens: 0,
+        })),
+        embedding_provider: Arc::new(FakeEmbeddingProvider::success(dummy_embedding())),
+    };
     Router::new()
         .route("/whoami", get(|AuthClaims(claims): AuthClaims| async move {
             axum::Json(claims)

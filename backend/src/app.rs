@@ -1,16 +1,19 @@
-use axum::{
-    routing::{delete, get, post},
-    Router,
-};
+use std::sync::Arc;
+
+use axum::{routing::{delete, get, post}, Router};
 use sqlx::PgPool;
 
 use crate::auth::extractor::AuthClaims;
+use crate::embedding::EmbeddingProvider;
+use crate::llm::LlmProvider;
 use crate::routes::auth as auth_routes;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
+    pub provider: Arc<dyn LlmProvider>,
+    pub embedding_provider: Arc<dyn EmbeddingProvider>,
 }
 
 pub fn build_router(state: AppState) -> Router {
