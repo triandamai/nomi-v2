@@ -3,6 +3,8 @@ pub mod chitchat;
 pub mod lock;
 pub mod memory;
 pub mod routing;
+pub mod subagent;
+pub mod tools;
 pub mod types;
 
 pub use types::{TurnError, TurnOutcome};

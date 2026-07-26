@@ -14,4 +14,6 @@ pub enum TurnError {
     Db(#[from] sqlx::Error),
     #[error("llm call failed: {0}")]
     LlmCallFailed(#[from] LlmError),
+    #[error("tool-calling loop exceeded its turn limit without completing")]
+    ToolLoopExceeded,
 }
