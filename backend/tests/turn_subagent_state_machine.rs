@@ -64,7 +64,7 @@ async fn money_intent_with_no_active_agent_spawns_and_runs_the_money_agent(pool:
         text_response("Here's your spending"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?")
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
 
@@ -115,7 +115,7 @@ async fn an_active_agent_is_continued_without_reclassifying_intent(pool: PgPool)
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let provider = FakeLlmProvider::sequence(vec![text_response("Sure, here's more info")]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "and rent?")
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "and rent?", None)
         .await
         .unwrap();
 
@@ -157,7 +157,7 @@ async fn complete_task_marks_the_agent_session_completed(pool: PgPool) {
         serde_json::json!({"status": "completed", "summary": "All set!"}),
     )]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "thanks, that's all")
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "thanks, that's all", None)
         .await
         .unwrap();
 
@@ -201,7 +201,7 @@ async fn complete_task_with_cancelled_status_marks_the_agent_session_cancelled(p
         serde_json::json!({"status": "cancelled", "summary": "Nevermind, no problem!"}),
     )]);
 
-    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "actually nevermind")
+    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "actually nevermind", None)
         .await
         .unwrap();
 
@@ -244,7 +244,7 @@ async fn a_stale_active_agent_is_expired_and_the_message_falls_through_to_chitch
         text_response("NONE"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello again")
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello again", None)
         .await
         .unwrap();
 
@@ -288,7 +288,7 @@ async fn after_completion_a_new_money_intent_message_spawns_a_fresh_second_agent
         text_response("Here's your spending again"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "what about now?")
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "what about now?", None)
         .await
         .unwrap();
 

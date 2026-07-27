@@ -17,6 +17,7 @@ pub async fn bootstrap_identity_and_session(
     chat_type: &str,
     chat_id: &str,
     sender_channel_user_id: &str,
+    org_id_hint: Option<Uuid>,
 ) -> Result<BootstrapResult, TurnError> {
     let existing: Option<(Uuid, Uuid)> = sqlx::query_as(
         "SELECT id, user_id FROM channel_identities WHERE channel = $1 AND channel_user_id = $2",
@@ -28,14 +29,19 @@ pub async fn bootstrap_identity_and_session(
 
     let (sender_channel_identity_id, user_id, org_id) = match existing {
         Some((identity_id, user_id)) => {
-            let org_id: Uuid = sqlx::query_scalar(
-                "SELECT o.id FROM organizations o \
-                 JOIN memberships m ON m.org_id = o.id \
-                 WHERE m.user_id = $1 AND o.is_personal = true",
-            )
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
+            let org_id = match org_id_hint {
+                Some(id) => id,
+                None => {
+                    sqlx::query_scalar(
+                        "SELECT o.id FROM organizations o \
+                         JOIN memberships m ON m.org_id = o.id \
+                         WHERE m.user_id = $1 AND o.is_personal = true",
+                    )
+                    .bind(user_id)
+                    .fetch_one(pool)
+                    .await?
+                }
+            };
             (identity_id, user_id, org_id)
         }
         None => {

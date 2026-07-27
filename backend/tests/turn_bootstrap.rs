@@ -5,7 +5,7 @@ use nomi_orchestrator::turn::bootstrap::bootstrap_identity_and_session;
 
 #[sqlx::test]
 async fn new_sender_creates_user_org_membership_identity_and_session(pool: PgPool) {
-    let result = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1")
+    let result = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
         .unwrap();
 
@@ -60,10 +60,10 @@ async fn new_sender_creates_user_org_membership_identity_and_session(pool: PgPoo
 
 #[sqlx::test]
 async fn existing_sender_reuses_identity_org_and_session(pool: PgPool) {
-    let first = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1")
+    let first = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
         .unwrap();
-    let second = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1")
+    let second = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
         .unwrap();
 
@@ -77,10 +77,10 @@ async fn existing_sender_reuses_identity_org_and_session(pool: PgPool) {
 
 #[sqlx::test]
 async fn existing_sender_new_chat_creates_a_new_session_under_the_same_personal_org(pool: PgPool) {
-    let first = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1")
+    let first = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
         .unwrap();
-    let second = bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1")
+    let second = bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1", None)
         .await
         .unwrap();
 
@@ -95,7 +95,7 @@ async fn existing_sender_new_chat_creates_a_new_session_under_the_same_personal_
 
 #[sqlx::test]
 async fn resolves_the_personal_org_even_when_the_user_also_belongs_to_a_named_org(pool: PgPool) {
-    let bootstrapped = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1")
+    let bootstrapped = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
         .unwrap();
 
@@ -112,7 +112,7 @@ async fn resolves_the_personal_org_even_when_the_user_also_belongs_to_a_named_or
         .await
         .unwrap();
 
-    let second = bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1")
+    let second = bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1", None)
         .await
         .unwrap();
 
@@ -123,8 +123,8 @@ async fn resolves_the_personal_org_even_when_the_user_also_belongs_to_a_named_or
 #[sqlx::test]
 async fn concurrent_first_contact_from_the_same_new_sender_does_not_duplicate_rows(pool: PgPool) {
     let (first, second) = tokio::join!(
-        bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1"),
-        bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1"),
+        bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None),
+        bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None),
     );
 
     let first = first.unwrap();
@@ -145,13 +145,13 @@ async fn concurrent_first_contact_from_the_same_new_sender_does_not_duplicate_ro
 
 #[sqlx::test]
 async fn concurrent_new_session_for_an_existing_sender_does_not_duplicate_rows(pool: PgPool) {
-    bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1")
+    bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
         .unwrap();
 
     let (first, second) = tokio::join!(
-        bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1"),
-        bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1"),
+        bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1", None),
+        bootstrap_identity_and_session(&pool, "telegram", "group", "chat-2", "tg-user-1", None),
     );
 
     let first = first.unwrap();

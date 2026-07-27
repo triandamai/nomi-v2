@@ -35,9 +35,10 @@ pub async fn handle_inbound_message(
     chat_id: &str,
     sender_channel_user_id: &str,
     text: &str,
+    org_id_hint: Option<Uuid>,
 ) -> Result<TurnOutcome, TurnError> {
     let bootstrap::BootstrapResult { user_id, sender_channel_identity_id, session_id, .. } =
-        bootstrap::bootstrap_identity_and_session(pool, channel, chat_type, chat_id, sender_channel_user_id)
+        bootstrap::bootstrap_identity_and_session(pool, channel, chat_type, chat_id, sender_channel_user_id, org_id_hint)
             .await?;
 
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;

@@ -7,6 +7,7 @@ use crate::auth::extractor::AuthClaims;
 use crate::embedding::EmbeddingProvider;
 use crate::llm::LlmProvider;
 use crate::routes::auth as auth_routes;
+use crate::routes::sessions as sessions_routes;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -27,5 +28,9 @@ pub fn build_router(state: AppState) -> Router {
             get(|AuthClaims(claims): AuthClaims| async move { axum::Json(claims) }),
         )
         .route("/api/orgs/:org_id/members/:user_id", delete(auth_routes::remove_member))
+        .route(
+            "/api/sessions",
+            post(sessions_routes::create_session).get(sessions_routes::list_sessions),
+        )
         .with_state(state)
 }
