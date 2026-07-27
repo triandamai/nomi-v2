@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(__dirname, '../backend');
 
 export default defineConfig({
