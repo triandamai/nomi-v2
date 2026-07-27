@@ -52,17 +52,9 @@ test('visiting a nonexistent session redirects to the empty state', async ({ pag
 test('a backend 502 on send shows an inline "no reply yet" note without losing the sent text', async ({ page }) => {
 	await registerAndStartChat(page);
 
-	await page.route('**/api/sessions/*/messages', async (route) => {
-		if (route.request().method() === 'POST') {
-			await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'turn failed' }) });
-		} else {
-			await route.continue();
-		}
-	});
-
-	await page.getByPlaceholder('Ask me anything...').fill('this will fail');
+	await page.getByPlaceholder('Ask me anything...').fill('__SIMULATE_TURN_FAILURE__');
 	await page.getByRole('button', { name: 'Send' }).click();
 
-	await expect(page.getByText('this will fail')).toBeVisible();
+	await expect(page.getByRole('main').getByText('__SIMULATE_TURN_FAILURE__')).toBeVisible();
 	await expect(page.getByText(/no reply yet/i)).toBeVisible();
 });
