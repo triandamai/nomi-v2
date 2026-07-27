@@ -1,4 +1,4 @@
-use nomi_orchestrator::embedding::{build_embedding_provider, EmbeddingConfig};
+use nomi_orchestrator::embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProviderKind};
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -17,6 +17,7 @@ async fn build_embedding_provider_calls_the_openai_embeddings_endpoint() {
         .await;
 
     let config = EmbeddingConfig {
+        provider: EmbeddingProviderKind::OpenAi,
         model_id: "text-embedding-3-small".to_string(),
         api_key: "test-key".to_string(),
         base_url: Some(server.uri()),
@@ -30,6 +31,7 @@ async fn build_embedding_provider_calls_the_openai_embeddings_endpoint() {
 #[tokio::test]
 async fn base_url_none_falls_through_to_the_real_default_without_panicking() {
     let config = EmbeddingConfig {
+        provider: EmbeddingProviderKind::OpenAi,
         model_id: "text-embedding-3-small".to_string(),
         api_key: "test-key".to_string(),
         base_url: None,

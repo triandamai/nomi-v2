@@ -1,4 +1,5 @@
 use super::anthropic::AnthropicProvider;
+use super::fake::FakeLlmProvider;
 use super::gemini::GeminiProvider;
 use super::openai::OpenAiProvider;
 use super::LlmProvider;
@@ -8,6 +9,7 @@ pub enum ProviderKind {
     Anthropic,
     OpenAi,
     Gemini,
+    Fake,
 }
 
 #[derive(Debug, Clone)]
@@ -32,5 +34,6 @@ pub fn build_provider(config: ModelConfig, http_client: reqwest::Client) -> Box<
             let base_url = config.base_url.unwrap_or_else(GeminiProvider::default_base_url);
             Box::new(GeminiProvider::new(http_client, config.api_key, config.model_id, base_url))
         }
+        ProviderKind::Fake => Box::new(FakeLlmProvider),
     }
 }

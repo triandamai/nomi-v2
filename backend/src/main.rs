@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use nomi_orchestrator::embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvider};
+use nomi_orchestrator::embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvider, EmbeddingProviderKind};
 use nomi_orchestrator::llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
 
 #[tokio::main]
@@ -22,19 +22,40 @@ async fn main() {
         "anthropic" => ProviderKind::Anthropic,
         "openai" => ProviderKind::OpenAi,
         "gemini" => ProviderKind::Gemini,
-        other => panic!("unknown LLM_PROVIDER: {other} (expected anthropic, openai, or gemini)"),
+        "fake" => ProviderKind::Fake,
+        other => panic!("unknown LLM_PROVIDER: {other} (expected anthropic, openai, gemini, or fake)"),
+    };
+    let (llm_model_id, llm_api_key) = match llm_provider_kind {
+        ProviderKind::Fake => (String::new(), String::new()),
+        _ => (
+            std::env::var("LLM_MODEL_ID").expect("LLM_MODEL_ID must be set"),
+            std::env::var("LLM_API_KEY").expect("LLM_API_KEY must be set"),
+        ),
     };
     let model_config = ModelConfig {
         provider: llm_provider_kind,
-        model_id: std::env::var("LLM_MODEL_ID").expect("LLM_MODEL_ID must be set"),
-        api_key: std::env::var("LLM_API_KEY").expect("LLM_API_KEY must be set"),
+        model_id: llm_model_id,
+        api_key: llm_api_key,
         base_url: std::env::var("LLM_BASE_URL").ok(),
     };
     let provider: Arc<dyn LlmProvider> = Arc::from(build_provider(model_config, http_client.clone()));
 
+    let embedding_provider_kind = match std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "openai".to_string()).as_str() {
+        "openai" => EmbeddingProviderKind::OpenAi,
+        "fake" => EmbeddingProviderKind::Fake,
+        other => panic!("unknown EMBEDDING_PROVIDER: {other} (expected openai or fake)"),
+    };
+    let (embedding_model_id, embedding_api_key) = match embedding_provider_kind {
+        EmbeddingProviderKind::Fake => (String::new(), String::new()),
+        EmbeddingProviderKind::OpenAi => (
+            std::env::var("EMBEDDING_MODEL_ID").expect("EMBEDDING_MODEL_ID must be set"),
+            std::env::var("EMBEDDING_API_KEY").expect("EMBEDDING_API_KEY must be set"),
+        ),
+    };
     let embedding_config = EmbeddingConfig {
-        model_id: std::env::var("EMBEDDING_MODEL_ID").expect("EMBEDDING_MODEL_ID must be set"),
-        api_key: std::env::var("EMBEDDING_API_KEY").expect("EMBEDDING_API_KEY must be set"),
+        provider: embedding_provider_kind,
+        model_id: embedding_model_id,
+        api_key: embedding_api_key,
         base_url: std::env::var("EMBEDDING_BASE_URL").ok(),
     };
     let embedding_provider: Arc<dyn EmbeddingProvider> =

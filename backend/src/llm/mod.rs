@@ -3,6 +3,7 @@ pub mod anthropic;
 pub mod openai;
 pub mod gemini;
 pub mod config;
+pub mod fake;
 
 pub use types::*;
 pub use config::{build_provider, ModelConfig, ProviderKind};
