@@ -14,7 +14,7 @@ test('register with a new account lands on the authenticated shell', async ({ pa
 	await page.getByRole('button', { name: 'Register' }).click();
 
 	await expect(page).toHaveURL('/');
-	await expect(page.getByText(email)).toBeVisible();
+	await expect(page.getByRole('heading', { name: `Hi, ${email}!` })).toBeVisible();
 });
 
 test('registering with an already-used email shows an inline error', async ({ page }) => {

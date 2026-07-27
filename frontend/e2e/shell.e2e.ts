@@ -16,7 +16,7 @@ test('after logging in, the sidebar and logout are visible; logout returns to lo
 
 	await expect(page).toHaveURL('/');
 	await expect(page.getByRole('button', { name: '+ New Chat' })).toBeVisible();
-	await expect(page.getByText(email)).toBeVisible();
+	await expect(page.getByRole('heading', { name: `Hi, ${email}!` })).toBeVisible();
 
 	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL('/login');
