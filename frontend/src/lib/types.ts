@@ -7,3 +7,10 @@ export interface SessionSummary {
 	agent_active: boolean;
 	updated_at: string;
 }
+
+export interface MessageItem {
+	id: string;
+	sender: 'user' | 'assistant';
+	content: string;
+	created_at: string;
+}
