@@ -18,7 +18,7 @@ Two new pieces, plus wiring into the existing router:
 - **`backend/src/web_identity.rs`** — `ensure_web_channel_identity(pool, user_id) -> Result<Uuid, sqlx::Error>`, an idempotent, race-safe resolve-or-create for a `channel_identities` row (`channel = 'web'`, `channel_user_id = user_id.to_string()`) explicitly tied to the given `user_id` — never creates a new user.
 - **`backend/src/routes/sessions.rs`** — four new endpoints (below), wired into `app.rs` alongside the existing auth routes.
 
-No changes to `handle_inbound_message`, `bootstrap_identity_and_session`, or any other turn-loop/auth code from prior plans.
+No changes to any other turn-loop/auth code from prior plans. One narrow exception discovered during implementation: `bootstrap_identity_and_session` (and `handle_inbound_message`, which calls it internally) assumed every identity belongs to a personal org — true for Telegram/WhatsApp bot-first-contact users, false for web-registered users, who only ever get named/team orgs. Both functions gained a trailing `org_id_hint: Option<Uuid>` parameter, consulted only in the existing-identity branch; the first-contact branch and every pre-existing (Telegram-context) call site are unchanged, passing `None`. The web path passes `Some(claims.active_org_id)`.
 
 ## 2. Endpoints
 
