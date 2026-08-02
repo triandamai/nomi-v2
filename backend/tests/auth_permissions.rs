@@ -41,6 +41,33 @@ async fn platform_admin_gets_the_admin_permission_string(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn platform_admins_get_the_system_config_permission(pool: PgPool) {
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET is_platform_admin = true WHERE id = $1")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let permissions = compute_permissions(&pool, user_id).await.unwrap();
+    assert!(permissions.contains(&"nomi:admin:system_config:[view,manage]".to_string()));
+}
+
+#[sqlx::test]
+async fn non_platform_admins_do_not_get_the_system_config_permission(pool: PgPool) {
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let permissions = compute_permissions(&pool, user_id).await.unwrap();
+    assert!(!permissions.iter().any(|p| p.contains("system_config")));
+}
+
+#[sqlx::test]
 async fn owner_gets_manage_permissions_on_member_and_conversation(pool: PgPool) {
     let user_id = make_user(&pool).await;
     let org_id = make_org(&pool, "Acme").await;

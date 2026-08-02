@@ -13,6 +13,7 @@ pub async fn compute_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<Str
             .await?;
     if is_platform_admin {
         permissions.push(permission_string("admin", "user", &["view", "manage"]));
+        permissions.push(permission_string("admin", "system_config", &["view", "manage"]));
     }
 
     let memberships: Vec<(Uuid, String)> = sqlx::query_as(
