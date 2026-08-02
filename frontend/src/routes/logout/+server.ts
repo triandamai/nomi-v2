@@ -16,6 +16,9 @@ export const POST: RequestHandler = async ({ cookies, fetch, url }) => {
 	cookies.delete('user_email', { path: '/' });
 
 	const requested = url.searchParams.get('redirect_to');
-	const redirectTo = requested && requested.startsWith('/') && !requested.startsWith('//') ? requested : '/login';
+	const redirectTo =
+		requested && requested.startsWith('/') && !requested.startsWith('//') && !requested.includes('\\')
+			? requested
+			: '/login';
 	throw redirect(303, redirectTo);
 };
