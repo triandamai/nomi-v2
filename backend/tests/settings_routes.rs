@@ -174,6 +174,41 @@ async fn put_without_api_key_keeps_the_existing_key(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn non_admin_is_forbidden_from_reading_embedding_settings(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    register_via_api(router.clone(), "regular-embed@example.com").await;
+    let token = login_via_api(router.clone(), "regular-embed@example.com").await;
+
+    let (status, _) =
+        json_request(router, "GET", "/api/admin/settings/embedding", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn admin_can_save_and_then_read_back_masked_embedding_settings(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-embed@example.com").await;
+
+    let (status, put_body) = json_request(
+        router.clone(),
+        "PUT",
+        "/api/admin/settings/embedding",
+        json!({ "provider": "openai", "model_id": "text-embedding-3-small", "api_key": "sk-embed-test1234", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(put_body["api_key_masked"], "...1234");
+
+    let (status, get_body) =
+        json_request(router, "GET", "/api/admin/settings/embedding", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(get_body["provider"], "openai");
+    assert_eq!(get_body["model_id"], "text-embedding-3-small");
+    assert_eq!(get_body["api_key_masked"], "...1234");
+}
+
+#[sqlx::test]
 async fn saving_the_fake_llm_provider_takes_effect_immediately_without_restart(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin5@example.com").await;
