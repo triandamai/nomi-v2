@@ -27,8 +27,12 @@ fn test_state(pool: PgPool, provider: FakeLlmProvider) -> AppState {
     AppState {
         pool,
         jwt_secret: SECRET.to_string(),
-        provider: Arc::new(provider),
-        embedding_provider: Arc::new(FakeEmbeddingProvider::success(dummy_embedding())),
+        provider: Arc::new(tokio::sync::RwLock::new(Arc::new(provider) as Arc<dyn nomi_orchestrator::llm::LlmProvider>)),
+        embedding_provider: Arc::new(tokio::sync::RwLock::new(
+            Arc::new(FakeEmbeddingProvider::success(dummy_embedding())) as Arc<dyn nomi_orchestrator::embedding::EmbeddingProvider>,
+        )),
+        http_client: reqwest::Client::new(),
+        settings_key: support::TEST_SETTINGS_KEY,
     }
 }
 

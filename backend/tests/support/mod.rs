@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use nomi_orchestrator::embedding::{EmbeddingError, EmbeddingProvider};
 use nomi_orchestrator::llm::{LlmError, LlmProvider, LlmRequest, LlmResponse};
 
+pub const TEST_SETTINGS_KEY: [u8; 32] = [7u8; 32];
+
 enum FakeOutcome {
     Success(LlmResponse),
     Failure(String),

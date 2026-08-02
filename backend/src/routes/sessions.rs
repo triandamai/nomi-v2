@@ -214,10 +214,13 @@ pub async fn send_message(
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "session not found"))?;
 
+    let provider = state.provider.read().await.clone();
+    let embedding_provider = state.embedding_provider.read().await.clone();
+
     crate::turn::handle_inbound_message(
         &state.pool,
-        state.provider.as_ref(),
-        state.embedding_provider.as_ref(),
+        provider.as_ref(),
+        embedding_provider.as_ref(),
         &channel,
         &chat_type,
         &chat_id,
