@@ -20,6 +20,9 @@ aes-gcm = "0.10"
 axum = "0.7"
 async-trait = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tower-http = { version = "0.7.0", features = ["trace"] }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }

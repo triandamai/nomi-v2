@@ -33,18 +33,23 @@ fn require_system_config_permission(claims: &Claims) -> Result<(), (StatusCode, 
     }
 }
 
+#[tracing::instrument(skip(state))]
 async fn load_settings_response(
     state: &AppState,
     setting_type: &str,
 ) -> Result<Json<ProviderSettingsResponse>, (StatusCode, &'static str)> {
     let row = settings::get_settings(&state.pool, setting_type)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load settings"))?
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to load settings");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to load settings")
+        })?
         .ok_or((StatusCode::NOT_FOUND, "settings not configured"))?;
 
     let api_key = settings::crypto::decrypt(&state.settings_key, &row.api_key_encrypted)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?;
 
+    tracing::debug!(provider = %row.provider, model_id = %row.model_id, "loaded provider settings");
     Ok(Json(ProviderSettingsResponse {
         provider: row.provider,
         model_id: row.model_id,
@@ -53,6 +58,7 @@ async fn load_settings_response(
     }))
 }
 
+#[tracing::instrument(skip(state, claims))]
 pub async fn get_llm_settings(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -61,6 +67,7 @@ pub async fn get_llm_settings(
     load_settings_response(&state, "llm").await
 }
 
+#[tracing::instrument(skip(state, claims))]
 pub async fn get_embedding_settings(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -91,12 +98,20 @@ async fn resolve_api_key(
     }
 }
 
+#[tracing::instrument(skip(state, claims, req))]
 pub async fn put_llm_settings(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Json(req): Json<UpdateProviderSettingsRequest>,
 ) -> Result<Json<ProviderSettingsResponse>, (StatusCode, &'static str)> {
     require_system_config_permission(&claims)?;
+    tracing::info!(
+        provider = %req.provider,
+        model_id = %req.model_id,
+        has_api_key = req.api_key.is_some(),
+        updated_by = %claims.sub,
+        "updating llm provider settings"
+    );
 
     if !["anthropic", "openai", "gemini", "fake"].contains(&req.provider.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)"));
@@ -141,6 +156,7 @@ pub async fn put_llm_settings(
         state.http_client.clone(),
     ));
     *state.provider.write().await = new_provider;
+    tracing::info!(provider = %req.provider, "live llm provider swapped");
 
     Ok(Json(ProviderSettingsResponse {
         provider: req.provider,
@@ -150,12 +166,20 @@ pub async fn put_llm_settings(
     }))
 }
 
+#[tracing::instrument(skip(state, claims, req))]
 pub async fn put_embedding_settings(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Json(req): Json<UpdateProviderSettingsRequest>,
 ) -> Result<Json<ProviderSettingsResponse>, (StatusCode, &'static str)> {
     require_system_config_permission(&claims)?;
+    tracing::info!(
+        provider = %req.provider,
+        model_id = %req.model_id,
+        has_api_key = req.api_key.is_some(),
+        updated_by = %claims.sub,
+        "updating embedding provider settings"
+    );
 
     if !["openai", "fake"].contains(&req.provider.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "unknown provider (expected openai or fake)"));
@@ -195,6 +219,7 @@ pub async fn put_embedding_settings(
         state.http_client.clone(),
     ));
     *state.embedding_provider.write().await = new_provider;
+    tracing::info!(provider = %req.provider, "live embedding provider swapped");
 
     Ok(Json(ProviderSettingsResponse {
         provider: req.provider,

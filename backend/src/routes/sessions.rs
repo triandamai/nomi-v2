@@ -195,6 +195,7 @@ pub struct SendMessageResponse {
     pub assistant_message: MessageItem,
 }
 
+#[tracing::instrument(skip(state, claims, req), fields(session_id = %session_id, user_id = %claims.sub, text_len = req.text.len()))]
 pub async fn send_message(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -212,11 +213,15 @@ pub async fn send_message(
             .bind(session_id)
             .fetch_one(&state.pool)
             .await
-            .map_err(|_| (StatusCode::NOT_FOUND, "session not found"))?;
+            .map_err(|e| {
+                tracing::warn!(error = %e, "session lookup failed");
+                (StatusCode::NOT_FOUND, "session not found")
+            })?;
 
     let provider = state.provider.read().await.clone();
     let embedding_provider = state.embedding_provider.read().await.clone();
 
+    tracing::debug!(channel = %channel, chat_type = %chat_type, "handing off to turn loop");
     crate::turn::handle_inbound_message(
         &state.pool,
         provider.as_ref(),
@@ -229,7 +234,11 @@ pub async fn send_message(
         Some(claims.active_org_id),
     )
     .await
-    .map_err(|_| (StatusCode::BAD_GATEWAY, "failed to process message"))?;
+    .map_err(|e| {
+        tracing::error!(error = %e, "turn handling failed");
+        (StatusCode::BAD_GATEWAY, "failed to process message")
+    })?;
+    tracing::info!("turn handled successfully");
 
     let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>)> = sqlx::query_as(
         "SELECT id, sender_channel_identity_id, content, created_at FROM messages \
@@ -238,7 +247,10 @@ pub async fn send_message(
     .bind(session_id)
     .fetch_all(&state.pool)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch persisted messages"))?;
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to fetch persisted messages");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch persisted messages")
+    })?;
 
     if rows.len() != 2 {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, "expected exactly two new messages after a successful turn"));

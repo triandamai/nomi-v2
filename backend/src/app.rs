@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::{routing::{delete, get, post}, Router};
 use sqlx::PgPool;
 use tokio::sync::RwLock;
+use tower_http::trace::TraceLayer;
 
 use crate::auth::extractor::AuthClaims;
 use crate::embedding::EmbeddingProvider;
@@ -48,5 +49,6 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/settings/embedding",
             get(settings_routes::get_embedding_settings).put(settings_routes::put_embedding_settings),
         )
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
