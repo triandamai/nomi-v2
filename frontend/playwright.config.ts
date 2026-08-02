@@ -18,6 +18,7 @@ export default defineConfig({
 				JWT_SECRET: 'e2e-test-secret-do-not-use-in-prod',
 				LLM_PROVIDER: 'fake',
 				EMBEDDING_PROVIDER: 'fake',
+				SETTINGS_ENCRYPTION_KEY: '0'.repeat(64),
 			},
 		},
 		{
