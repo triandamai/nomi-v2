@@ -14,3 +14,10 @@ export interface MessageItem {
 	content: string;
 	created_at: string;
 }
+
+export interface ProviderSettings {
+	provider: string;
+	model_id: string;
+	base_url: string | null;
+	api_key_masked: string;
+}

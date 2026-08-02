@@ -48,3 +48,21 @@ test('a platform admin can log in and reach the admin dashboard', async ({ page 
 	await expect(page).toHaveURL('/admin');
 	await expect(page.getByRole('heading', { name: 'Admin dashboard' })).toBeVisible();
 });
+
+test('a platform admin can configure the fake LLM provider', async ({ page }) => {
+	const email = uniqueEmail('admin-settings');
+	await registerViaUi(page, email, 'Acme');
+	await promoteToPlatformAdmin(email);
+	await page.context().clearCookies();
+
+	await loginViaAdminUi(page, email);
+	await expect(page).toHaveURL('/admin');
+
+	await page.goto('/admin/settings/llm');
+	await page.getByLabel('Provider').selectOption('fake');
+	await page.getByRole('button', { name: 'Save' }).click();
+
+	await expect(page.getByText('Settings saved.')).toBeVisible();
+	await page.reload();
+	await expect(page.getByLabel('Provider')).toHaveValue('fake');
+});
