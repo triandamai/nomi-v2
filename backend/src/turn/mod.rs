@@ -3,6 +3,7 @@ pub mod chitchat;
 pub mod lock;
 pub mod memory;
 pub mod money_agent;
+pub mod queue;
 pub mod routing;
 pub mod subagent;
 pub mod tools;
