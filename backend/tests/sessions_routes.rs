@@ -129,7 +129,7 @@ async fn create_session_requires_authentication(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn send_message_returns_user_and_assistant_messages(pool: PgPool) {
+async fn send_message_returns_202_with_only_the_user_message(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "erin@example.com").await;
 

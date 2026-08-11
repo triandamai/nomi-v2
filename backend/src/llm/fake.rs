@@ -3,10 +3,12 @@ use async_trait::async_trait;
 use super::{response_to_stream, ContentBlock, LlmError, LlmEventStream, LlmProvider, LlmRequest, LlmResponse, StopReason};
 
 /// Sending a message whose text contains this exact string makes FakeLlmProvider return an
-/// error instead of its canned success reply — used by the frontend's e2e suite to exercise a
-/// real backend turn failure (a 502 from POST /api/sessions/:id/messages) without needing
-/// browser-level network mocking, which can't intercept this app's server-side backend calls.
-/// Shared contract with frontend/e2e/conversation.e2e.ts — keep both in sync if this changes.
+/// error instead of its canned success reply. Used to exercise turn-failure handling directly
+/// in `turn::process_turn` / `handle_inbound_message` (see
+/// `process_turn_records_a_turn_failed_event_on_llm_failure` in `turn_process.rs`). Note that
+/// `POST /api/sessions/:id/messages` is ingest-only and always returns `202` regardless of this
+/// sentinel — a turn failure now happens asynchronously in the worker, well after the HTTP
+/// response has already gone out, so this no longer produces an observable HTTP-level failure.
 const SIMULATE_FAILURE_SENTINEL: &str = "__SIMULATE_TURN_FAILURE__";
 
 pub struct FakeLlmProvider;

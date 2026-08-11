@@ -35,7 +35,8 @@ async fn main() {
     tracing::info!("migrations up to date");
 
     let http_client = reqwest::Client::new();
-    let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, "nomi-worker");
+    let mqtt_client_id = format!("nomi-worker-{}", uuid::Uuid::new_v4());
+    let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
     let mut listener = sqlx::postgres::PgListener::connect(&database_url).await.expect("failed to connect listener");
     listener.listen(NOTIFY_CHANNEL).await.expect("failed to LISTEN on turn_jobs_channel");
