@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::embedding::EmbeddingProvider;
 use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
+use crate::realtime::{MqttPublisher, StreamEnvelope};
 
 const SUBAGENT_HISTORY_LIMIT: i64 = 20;
 const SUBAGENT_MAX_TOKENS: u32 = 1024;
@@ -47,53 +48,7 @@ pub async fn handle_inbound_message(
 
     lock::insert_inbound_message(&mut conn, session_id, sender_channel_identity_id, text).await?;
 
-    let active = routing::find_active_agent_session(&mut conn, session_id, sender_channel_identity_id).await?;
-
-    let routing_outcome = match active {
-        Some(agent_session_id) => {
-            let details = routing::load_active_agent_session_details(&mut conn, agent_session_id).await?;
-            if routing::is_stale(details.last_activity_at) {
-                routing::mark_expired(&mut conn, agent_session_id, session_id, &details.agent_type).await?;
-                RoutingOutcome::NeedsClassification
-            } else if details.agent_type == money_agent::MONEY_AGENT_TYPE {
-                RoutingOutcome::Continue(agent_session_id)
-            } else {
-                // An active session of a type this code doesn't recognize: fall through to
-                // chitchat gracefully rather than erroring, matching this project's fail-open
-                // philosophy elsewhere (intent classification, RAG retrieval/extraction). The row
-                // itself is left untouched — not expired, not completed — so this is a per-turn
-                // fallback, not a state transition; the next message for this session hits this
-                // same branch again. Spawning a new session here would also violate the
-                // one-active-session-per-speaker constraint while this row remains active.
-                RoutingOutcome::FallbackToChitchat
-            }
-        }
-        None => RoutingOutcome::NeedsClassification,
-    };
-
-    let result = match routing_outcome {
-        RoutingOutcome::Continue(agent_session_id) => {
-            run_subagent_turn(&mut conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
-        }
-        RoutingOutcome::FallbackToChitchat => {
-            chitchat::run_chitchat_turn(&mut conn, provider, embedding_provider, session_id, user_id, text).await
-        }
-        RoutingOutcome::NeedsClassification => match routing::classify_intent(provider, text).await {
-            routing::Intent::Money => {
-                let agent_session_id = routing::spawn_agent_session(
-                    &mut conn,
-                    session_id,
-                    sender_channel_identity_id,
-                    money_agent::MONEY_AGENT_TYPE,
-                )
-                .await?;
-                run_subagent_turn(&mut conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
-            }
-            routing::Intent::Chitchat => {
-                chitchat::run_chitchat_turn(&mut conn, provider, embedding_provider, session_id, user_id, text).await
-            }
-        },
-    };
+    let result = run_locked_turn(&mut conn, None, provider, embedding_provider, session_id, sender_channel_identity_id, user_id, text).await;
 
     match result {
         Ok(reply) => {
@@ -112,6 +67,115 @@ pub async fn handle_inbound_message(
             release_lock_ignoring_errors(&mut conn, session_id).await;
             Err(err)
         }
+    }
+}
+
+/// The worker's entry point (see backend/src/bin/worker.rs): processes an already-ingested
+/// message (see turn::ingest::ingest_inbound_message) — bootstrap and the inbound message
+/// insert have already happened, so this only acquires the session lock and runs routing/
+/// dispatch, threading `mqtt`/`turn_job_id` through to chitchat for live delta publishing.
+pub async fn process_turn(
+    pool: &PgPool,
+    mqtt: &MqttPublisher,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    turn_job_id: Uuid,
+    session_id: Uuid,
+    sender_channel_identity_id: Uuid,
+    user_id: Uuid,
+    text: &str,
+) -> Result<TurnOutcome, TurnError> {
+    let mut conn = lock::acquire_session_lock(pool, session_id).await?;
+
+    let result = run_locked_turn(
+        &mut conn,
+        Some((mqtt, turn_job_id)),
+        provider,
+        embedding_provider,
+        session_id,
+        sender_channel_identity_id,
+        user_id,
+        text,
+    )
+    .await;
+
+    match result {
+        Ok(reply) => {
+            release_lock_ignoring_errors(&mut conn, session_id).await;
+            Ok(TurnOutcome { session_id, reply })
+        }
+        Err(err) => {
+            let _ = sqlx::query(
+                "INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)",
+            )
+            .bind(session_id)
+            .bind(serde_json::json!({"error": err.to_string()}))
+            .execute(&mut *conn)
+            .await;
+
+            // Best-effort: an MQTT publish failure never changes the turn's outcome.
+            let _ = mqtt
+                .publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id, error: err.to_string() })
+                .await;
+
+            release_lock_ignoring_errors(&mut conn, session_id).await;
+            Err(err)
+        }
+    }
+}
+
+/// Shared by handle_inbound_message and process_turn: routing/classification and
+/// chitchat/subagent dispatch, assuming the session lock is already held by the caller and
+/// the inbound message has already been persisted (by the caller, before this runs).
+async fn run_locked_turn(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    session_id: Uuid,
+    sender_channel_identity_id: Uuid,
+    user_id: Uuid,
+    text: &str,
+) -> Result<String, TurnError> {
+    let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
+
+    let routing_outcome = match active {
+        Some(agent_session_id) => {
+            let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
+            if routing::is_stale(details.last_activity_at) {
+                routing::mark_expired(conn, agent_session_id, session_id, &details.agent_type).await?;
+                RoutingOutcome::NeedsClassification
+            } else if details.agent_type == money_agent::MONEY_AGENT_TYPE {
+                RoutingOutcome::Continue(agent_session_id)
+            } else {
+                RoutingOutcome::FallbackToChitchat
+            }
+        }
+        None => RoutingOutcome::NeedsClassification,
+    };
+
+    match routing_outcome {
+        RoutingOutcome::Continue(agent_session_id) => {
+            run_subagent_turn(conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
+        }
+        RoutingOutcome::FallbackToChitchat => {
+            chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
+        }
+        RoutingOutcome::NeedsClassification => match routing::classify_intent(provider, text).await {
+            routing::Intent::Money => {
+                let agent_session_id = routing::spawn_agent_session(
+                    conn,
+                    session_id,
+                    sender_channel_identity_id,
+                    money_agent::MONEY_AGENT_TYPE,
+                )
+                .await?;
+                run_subagent_turn(conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
+            }
+            routing::Intent::Chitchat => {
+                chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
+            }
+        },
     }
 }
 

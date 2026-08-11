@@ -53,7 +53,7 @@ async fn persists_reply_and_chitchat_reply_event_on_success(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("Hello there!"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    let reply = run_chitchat_turn(&mut conn, &provider, &embedder, session_id, user_id, "hi")
+    let reply = run_chitchat_turn(&mut conn, None, &provider, &embedder, session_id, user_id, "hi")
         .await
         .unwrap();
     assert_eq!(reply, "Hello there!");
@@ -85,7 +85,7 @@ async fn persists_nothing_when_the_provider_call_fails(pool: PgPool) {
     let provider = FakeLlmProvider::failure("provider unavailable");
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    let result = run_chitchat_turn(&mut conn, &provider, &embedder, session_id, user_id, "hi").await;
+    let result = run_chitchat_turn(&mut conn, None, &provider, &embedder, session_id, user_id, "hi").await;
     assert!(result.is_err());
 
     let message_count: i64 = sqlx::query_scalar("SELECT count(*) FROM messages WHERE session_id = $1")
@@ -132,7 +132,7 @@ async fn keeps_only_the_last_20_messages_ordered_oldest_first(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("ok"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    run_chitchat_turn(&mut conn, &provider, &embedder, session_id, user_id, "latest").await.unwrap();
+    run_chitchat_turn(&mut conn, None, &provider, &embedder, session_id, user_id, "latest").await.unwrap();
 
     let requests = provider.received_requests.lock().unwrap();
     let sent = &requests[0];
@@ -180,7 +180,7 @@ async fn maps_sender_presence_to_role_correctly(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("ok"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
 
-    run_chitchat_turn(&mut conn, &provider, &embedder, session_id, user_id, "latest").await.unwrap();
+    run_chitchat_turn(&mut conn, None, &provider, &embedder, session_id, user_id, "latest").await.unwrap();
 
     let requests = provider.received_requests.lock().unwrap();
     let sent = &requests[0];
@@ -205,7 +205,7 @@ async fn retrieved_memories_are_folded_into_the_system_prompt_and_linked_to_the_
     let provider = FakeLlmProvider::success(canned_response("Got it, no meat!"));
     let embedder = FakeEmbeddingProvider::success(make_embedding(1.0));
 
-    run_chitchat_turn(&mut conn, &provider, &embedder, session_id, user_id, "what should I eat?")
+    run_chitchat_turn(&mut conn, None, &provider, &embedder, session_id, user_id, "what should I eat?")
         .await
         .unwrap();
 
@@ -233,7 +233,7 @@ async fn a_failing_embedding_provider_does_not_prevent_a_normal_reply(pool: PgPo
     let provider = FakeLlmProvider::success(canned_response("Still here!"));
     let embedder = FakeEmbeddingProvider::failure("embeddings unavailable");
 
-    let reply = run_chitchat_turn(&mut conn, &provider, &embedder, session_id, user_id, "hi")
+    let reply = run_chitchat_turn(&mut conn, None, &provider, &embedder, session_id, user_id, "hi")
         .await
         .unwrap();
     assert_eq!(reply, "Still here!");

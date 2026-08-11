@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::embedding::EmbeddingProvider;
 use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
+use crate::realtime::{MqttPublisher, StreamEnvelope};
 
 use super::memory::{self, RetrievedMemory};
 use super::types::TurnError;
@@ -16,6 +17,7 @@ const MEMORY_RETRIEVAL_LIMIT: i64 = 5;
 
 pub async fn run_chitchat_turn(
     conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     session_id: Uuid,
@@ -62,7 +64,30 @@ pub async fn run_chitchat_turn(
 
     // The LLM call happens outside any DB transaction: holding a transaction open across a
     // slow network round trip would needlessly extend how long this connection's locks are held.
-    let response = crate::llm::complete(provider, request).await.map_err(TurnError::LlmCallFailed)?;
+    let stream = provider.complete_stream(request).await.map_err(TurnError::LlmCallFailed)?;
+    let response = match mqtt {
+        Some((publisher, turn_job_id)) => {
+            use futures_util::StreamExt;
+            // LlmEventStream requires 'static (it's boxed as `dyn Stream + Send` with no
+            // lifetime), so this clones the publisher handle (cheap — it wraps rumqttc's
+            // AsyncClient, itself a cheap handle clone) rather than capturing the `&MqttPublisher`
+            // borrow, which would tie the `Then` adapter's concrete type to `mqtt`'s lifetime.
+            let publisher = publisher.clone();
+            let published = stream.then(move |event_result| {
+                let publisher = publisher.clone();
+                async move {
+                    if let Ok(event) = &event_result {
+                        let envelope = StreamEnvelope::Delta { turn_job_id, event: event.clone() };
+                        // Best-effort: an MQTT publish failure never fails the turn (Global Constraints).
+                        let _ = publisher.publish(session_id, &envelope).await;
+                    }
+                    event_result
+                }
+            });
+            crate::llm::collect_stream(Box::pin(published)).await.map_err(TurnError::LlmCallFailed)?
+        }
+        None => crate::llm::collect_stream(stream).await.map_err(TurnError::LlmCallFailed)?,
+    };
 
     let reply_text = response
         .content
