@@ -17,9 +17,8 @@ pub trait LlmProvider: Send + Sync {
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError>;
 }
 
-/// Wraps a complete (non-streaming) LlmResponse as a single-shot LlmEventStream — the trait's
-/// default complete_stream body, and reused directly by fake providers that have no real
-/// network round trip to chunk.
+/// Wraps a complete (non-streaming) LlmResponse as a single-shot LlmEventStream.
+/// Used directly by fake providers to produce single-shot streams without a real network round trip.
 pub fn response_to_stream(response: LlmResponse) -> LlmEventStream {
     let mut events: Vec<Result<StreamEvent, LlmError>> = Vec::new();
     for (index, block) in response.content.into_iter().enumerate() {

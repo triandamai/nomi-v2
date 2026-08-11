@@ -1,5 +1,5 @@
 use nomi_orchestrator::llm::gemini::GeminiProvider;
-use nomi_orchestrator::llm::{collect_stream, ContentBlock, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmRole, PartialBlock, StopReason, StreamEvent, ToolDefinition};
+use nomi_orchestrator::llm::{collect_stream, ContentBlock, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmRole, StopReason, ToolDefinition};
 use serde_json::json;
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
