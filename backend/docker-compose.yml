@@ -10,5 +10,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  emqx:
+    image: emqx/emqx:5.8.9
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    volumes:
+      - emqxdata:/opt/emqx/data
+
 volumes:
   pgdata:
+  emqxdata:
