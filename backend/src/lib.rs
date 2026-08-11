@@ -6,3 +6,4 @@ pub mod embedding;
 pub mod turn;
 pub mod web_identity;
 pub mod settings;
+pub mod realtime;

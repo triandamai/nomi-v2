@@ -36,7 +36,7 @@ pub struct LlmRequest {
     pub max_tokens: u32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StopReason {
     EndTurn,
     ToolUse,
@@ -62,13 +62,13 @@ pub enum LlmError {
     ParseError(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PartialBlock {
     Text,
     ToolUse { id: String, name: String },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StreamEvent {
     ContentBlockStart { index: usize, block: PartialBlock },
     TextDelta { index: usize, text: String },
