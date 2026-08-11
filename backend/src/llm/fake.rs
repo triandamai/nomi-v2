@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use super::{ContentBlock, LlmError, LlmProvider, LlmRequest, LlmResponse, StopReason};
+use super::{response_to_stream, ContentBlock, LlmError, LlmEventStream, LlmProvider, LlmRequest, LlmResponse, StopReason};
 
 /// Sending a message whose text contains this exact string makes FakeLlmProvider return an
 /// error instead of its canned success reply — used by the frontend's e2e suite to exercise a
@@ -13,7 +13,7 @@ pub struct FakeLlmProvider;
 
 #[async_trait]
 impl LlmProvider for FakeLlmProvider {
-    async fn complete(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
+    async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
         let should_fail = request.messages.iter().any(|m| {
             m.content.iter().any(|block| match block {
                 ContentBlock::Text { text } => text.contains(SIMULATE_FAILURE_SENTINEL),
@@ -25,13 +25,13 @@ impl LlmProvider for FakeLlmProvider {
             return Err(LlmError::ProviderError("simulated failure for e2e testing".to_string()));
         }
 
-        Ok(LlmResponse {
+        Ok(response_to_stream(LlmResponse {
             content: vec![ContentBlock::Text {
                 text: "This is a fake response for local development and testing.".to_string(),
             }],
             stop_reason: StopReason::EndTurn,
             input_tokens: 0,
             output_tokens: 0,
-        })
+        }))
     }
 }

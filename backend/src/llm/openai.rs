@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-use super::types::{ContentBlock, LlmError, LlmEventStream, LlmRequest, LlmResponse, LlmRole, PartialBlock, StopReason, StreamEvent};
+use super::types::{ContentBlock, LlmError, LlmEventStream, LlmRequest, LlmRole, PartialBlock, StopReason, StreamEvent};
 use super::LlmProvider;
 
 pub struct OpenAiProvider {
@@ -104,70 +104,6 @@ fn role_to_str(role: &LlmRole) -> &'static str {
 
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
-    async fn complete(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
-        let body = self.build_body(&request, false);
-
-        let response = self
-            .client
-            .post(format!("{}/v1/chat/completions", self.base_url))
-            .bearer_auth(&self.api_key)
-            .json(&body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(LlmError::ProviderError(format!("openai returned {status}: {text}")));
-        }
-
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| LlmError::ParseError(e.to_string()))?;
-
-        let choice = body
-            .get("choices")
-            .and_then(|c| c.as_array())
-            .and_then(|c| c.first())
-            .ok_or_else(|| LlmError::ParseError("missing choices[0]".to_string()))?;
-
-        let message = choice
-            .get("message")
-            .ok_or_else(|| LlmError::ParseError("missing message".to_string()))?;
-
-        let mut content = Vec::new();
-        if let Some(text) = message.get("content").and_then(|c| c.as_str()) {
-            content.push(ContentBlock::Text { text: text.to_string() });
-        }
-        if let Some(tool_calls) = message.get("tool_calls").and_then(|t| t.as_array()) {
-            for tc in tool_calls {
-                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                let function = tc
-                    .get("function")
-                    .ok_or_else(|| LlmError::ParseError("missing function".to_string()))?;
-                let name = function.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                let arguments_str = function.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
-                let input: serde_json::Value = serde_json::from_str(arguments_str)
-                    .map_err(|e| LlmError::ParseError(format!("invalid tool_calls arguments JSON: {e}")))?;
-                content.push(ContentBlock::ToolUse { id, name, input });
-            }
-        }
-
-        let stop_reason = match choice.get("finish_reason").and_then(|s| s.as_str()) {
-            Some("stop") => StopReason::EndTurn,
-            Some("tool_calls") => StopReason::ToolUse,
-            Some("length") => StopReason::MaxTokens,
-            Some(other) => StopReason::Other(other.to_string()),
-            None => StopReason::Other("unknown".to_string()),
-        };
-
-        let input_tokens = body.get("usage").and_then(|u| u.get("prompt_tokens")).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let output_tokens = body.get("usage").and_then(|u| u.get("completion_tokens")).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-
-        Ok(LlmResponse { content, stop_reason, input_tokens, output_tokens })
-    }
-
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
         let body = self.build_body(&request, true);
 

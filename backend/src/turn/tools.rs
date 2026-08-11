@@ -52,7 +52,7 @@ pub async fn run_tool_calling_loop(
             max_tokens,
         };
 
-        let response = provider.complete(request).await.map_err(TurnError::LlmCallFailed)?;
+        let response = crate::llm::complete(provider, request).await.map_err(TurnError::LlmCallFailed)?;
 
         messages.push(LlmMessage { role: LlmRole::Assistant, content: response.content.clone() });
 

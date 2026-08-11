@@ -4,7 +4,7 @@ use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use serde_json::json;
 
-use super::types::{ContentBlock, LlmError, LlmEventStream, LlmRequest, LlmResponse, LlmRole, PartialBlock, StopReason, StreamEvent};
+use super::types::{ContentBlock, LlmError, LlmEventStream, LlmRequest, LlmRole, PartialBlock, StopReason, StreamEvent};
 use super::LlmProvider;
 
 pub struct AnthropicProvider {
@@ -76,76 +76,8 @@ fn content_block_to_json(block: &ContentBlock) -> serde_json::Value {
     }
 }
 
-fn json_to_content_block(value: &serde_json::Value) -> Option<ContentBlock> {
-    match value.get("type").and_then(|t| t.as_str())? {
-        "text" => Some(ContentBlock::Text {
-            text: value.get("text")?.as_str()?.to_string(),
-        }),
-        "tool_use" => Some(ContentBlock::ToolUse {
-            id: value.get("id")?.as_str()?.to_string(),
-            name: value.get("name")?.as_str()?.to_string(),
-            input: value.get("input")?.clone(),
-        }),
-        _ => None,
-    }
-}
-
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
-    async fn complete(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
-        let body = self.build_body(&request, false);
-
-        let response = self
-            .client
-            .post(format!("{}/v1/messages", self.base_url))
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(LlmError::ProviderError(format!("anthropic returned {status}: {text}")));
-        }
-
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| LlmError::ParseError(e.to_string()))?;
-
-        let content: Vec<ContentBlock> = body
-            .get("content")
-            .and_then(|c| c.as_array())
-            .ok_or_else(|| LlmError::ParseError("missing content array".to_string()))?
-            .iter()
-            .filter_map(json_to_content_block)
-            .collect();
-
-        let stop_reason = match body.get("stop_reason").and_then(|s| s.as_str()) {
-            Some("end_turn") => StopReason::EndTurn,
-            Some("tool_use") => StopReason::ToolUse,
-            Some("max_tokens") => StopReason::MaxTokens,
-            Some(other) => StopReason::Other(other.to_string()),
-            None => StopReason::Other("unknown".to_string()),
-        };
-
-        let input_tokens = body
-            .get("usage")
-            .and_then(|u| u.get("input_tokens"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let output_tokens = body
-            .get("usage")
-            .and_then(|u| u.get("output_tokens"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-
-        Ok(LlmResponse { content, stop_reason, input_tokens, output_tokens })
-    }
-
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
         let body = self.build_body(&request, true);
 

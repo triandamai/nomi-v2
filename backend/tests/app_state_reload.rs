@@ -26,15 +26,17 @@ async fn swapping_the_provider_lock_is_visible_to_the_next_reader(pool: PgPool) 
     *lock.write().await = new_provider;
 
     let current = lock.read().await.clone();
-    let response = current
-        .complete(nomi_orchestrator::llm::LlmRequest {
+    let response = nomi_orchestrator::llm::complete(
+        current.as_ref(),
+        nomi_orchestrator::llm::LlmRequest {
             system: None,
             messages: vec![],
             tools: vec![],
             max_tokens: 10,
-        })
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(response.content, vec![ContentBlock::Text { text: "second".to_string() }]);
 
     // pool is unused directly but #[sqlx::test] requires the parameter to provision a test DB

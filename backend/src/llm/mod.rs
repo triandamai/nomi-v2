@@ -14,12 +14,7 @@ use std::collections::BTreeMap;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
-    async fn complete(&self, request: LlmRequest) -> Result<LlmResponse, LlmError>;
-
-    async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
-        let response = self.complete(request).await?;
-        Ok(response_to_stream(response))
-    }
+    async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError>;
 }
 
 /// Wraps a complete (non-streaming) LlmResponse as a single-shot LlmEventStream — the trait's

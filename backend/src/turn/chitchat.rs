@@ -62,7 +62,7 @@ pub async fn run_chitchat_turn(
 
     // The LLM call happens outside any DB transaction: holding a transaction open across a
     // slow network round trip would needlessly extend how long this connection's locks are held.
-    let response = provider.complete(request).await.map_err(TurnError::LlmCallFailed)?;
+    let response = crate::llm::complete(provider, request).await.map_err(TurnError::LlmCallFailed)?;
 
     let reply_text = response
         .content

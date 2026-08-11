@@ -24,7 +24,7 @@ pub async fn classify_intent(provider: &dyn LlmProvider, text: &str) -> Intent {
         max_tokens: INTENT_CLASSIFICATION_MAX_TOKENS,
     };
 
-    let response = match provider.complete(request).await {
+    let response = match crate::llm::complete(provider, request).await {
         Ok(r) => r,
         Err(_) => return Intent::Chitchat,
     };

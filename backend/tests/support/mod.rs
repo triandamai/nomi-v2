@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use nomi_orchestrator::embedding::{EmbeddingError, EmbeddingProvider};
-use nomi_orchestrator::llm::{LlmError, LlmProvider, LlmRequest, LlmResponse};
+use nomi_orchestrator::llm::{LlmError, LlmEventStream, LlmProvider, LlmRequest, LlmResponse};
 
 pub const TEST_SETTINGS_KEY: [u8; 32] = [7u8; 32];
 
@@ -45,12 +45,12 @@ impl FakeLlmProvider {
 
 #[async_trait]
 impl LlmProvider for FakeLlmProvider {
-    async fn complete(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
+    async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
         self.received_requests.lock().unwrap().push(request);
         if let Some(delay) = self.delay {
             tokio::time::sleep(delay).await;
         }
-        match &self.outcome {
+        let response = match &self.outcome {
             FakeOutcome::Success(response) => Ok(response.clone()),
             FakeOutcome::Failure(message) => Err(LlmError::ProviderError(message.clone())),
             FakeOutcome::Sequence(queue) => queue
@@ -58,7 +58,8 @@ impl LlmProvider for FakeLlmProvider {
                 .unwrap()
                 .pop_front()
                 .ok_or_else(|| LlmError::ProviderError("sequence exhausted".to_string())),
-        }
+        }?;
+        Ok(nomi_orchestrator::llm::response_to_stream(response))
     }
 }
 

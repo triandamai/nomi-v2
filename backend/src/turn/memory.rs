@@ -60,7 +60,7 @@ pub async fn extract_and_store_memory(
         max_tokens: EXTRACTION_MAX_TOKENS,
     };
 
-    let response = match provider.complete(request).await {
+    let response = match crate::llm::complete(provider, request).await {
         Ok(r) => r,
         Err(_) => return,
     };
