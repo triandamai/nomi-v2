@@ -1,4 +1,6 @@
 use serde_json::Value;
+use std::pin::Pin;
+use futures_core::Stream;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LlmRole {
@@ -59,6 +61,23 @@ pub enum LlmError {
     #[error("failed to parse provider response: {0}")]
     ParseError(String),
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PartialBlock {
+    Text,
+    ToolUse { id: String, name: String },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum StreamEvent {
+    ContentBlockStart { index: usize, block: PartialBlock },
+    TextDelta { index: usize, text: String },
+    ToolInputDelta { index: usize, partial_json: String },
+    ContentBlockDone { index: usize },
+    Done { stop_reason: StopReason, input_tokens: u32, output_tokens: u32 },
+}
+
+pub type LlmEventStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, LlmError>> + Send>>;
 
 #[cfg(test)]
 mod tests {
