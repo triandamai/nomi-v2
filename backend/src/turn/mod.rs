@@ -1,5 +1,6 @@
 pub mod bootstrap;
 pub mod chitchat;
+pub mod ingest;
 pub mod lock;
 pub mod memory;
 pub mod money_agent;
