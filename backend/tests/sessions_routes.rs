@@ -3,34 +3,17 @@ mod support;
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
 use nomi_orchestrator::app::{build_router, AppState};
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason};
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
-
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
-fn inert_provider() -> FakeLlmProvider {
-    FakeLlmProvider::success(LlmResponse {
-        content: vec![],
-        stop_reason: StopReason::EndTurn,
-        input_tokens: 0,
-        output_tokens: 0,
-    })
-}
-
-fn test_state(pool: PgPool, provider: FakeLlmProvider) -> AppState {
+fn test_state(pool: PgPool) -> AppState {
     AppState {
         pool,
         jwt_secret: SECRET.to_string(),
-        provider: Arc::new(tokio::sync::RwLock::new(Arc::new(provider) as Arc<dyn nomi_orchestrator::llm::LlmProvider>)),
-        embedding_provider: Arc::new(tokio::sync::RwLock::new(
-            Arc::new(FakeEmbeddingProvider::success(dummy_embedding())) as Arc<dyn nomi_orchestrator::embedding::EmbeddingProvider>,
-        )),
         http_client: reqwest::Client::new(),
         settings_key: support::TEST_SETTINGS_KEY,
     }
@@ -86,7 +69,7 @@ async fn register_and_login(router: axum::Router, email: &str) -> String {
 
 #[sqlx::test]
 async fn create_session_then_appears_in_list(pool: PgPool) {
-    let router = build_router(test_state(pool, inert_provider()));
+    let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "alice@example.com").await;
 
     let (status, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
@@ -105,7 +88,7 @@ async fn create_session_then_appears_in_list(pool: PgPool) {
 
 #[sqlx::test]
 async fn creating_two_sessions_reuses_the_same_web_identity(pool: PgPool) {
-    let router = build_router(test_state(pool.clone(), inert_provider()));
+    let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "bob@example.com").await;
 
     let (_, first) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
@@ -124,7 +107,7 @@ async fn creating_two_sessions_reuses_the_same_web_identity(pool: PgPool) {
 
 #[sqlx::test]
 async fn list_sessions_only_returns_the_callers_active_org(pool: PgPool) {
-    let router = build_router(test_state(pool, inert_provider()));
+    let router = build_router(test_state(pool));
     let token_a = register_and_login(router.clone(), "carol@example.com").await;
     let token_b = register_and_login(router.clone(), "dave@example.com").await;
 
@@ -140,20 +123,14 @@ async fn list_sessions_only_returns_the_callers_active_org(pool: PgPool) {
 
 #[sqlx::test]
 async fn create_session_requires_authentication(pool: PgPool) {
-    let router = build_router(test_state(pool, inert_provider()));
+    let router = build_router(test_state(pool));
     let (status, _) = json_request(router, "POST", "/api/sessions", Value::Null, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[sqlx::test]
 async fn send_message_returns_user_and_assistant_messages(pool: PgPool) {
-    let provider = FakeLlmProvider::success(LlmResponse {
-        content: vec![ContentBlock::Text { text: "Hello there!".to_string() }],
-        stop_reason: StopReason::EndTurn,
-        input_tokens: 5,
-        output_tokens: 3,
-    });
-    let router = build_router(test_state(pool, provider));
+    let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "erin@example.com").await;
 
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
@@ -176,13 +153,7 @@ async fn send_message_returns_user_and_assistant_messages(pool: PgPool) {
 
 #[sqlx::test]
 async fn list_messages_returns_history_oldest_first(pool: PgPool) {
-    let provider = FakeLlmProvider::success(LlmResponse {
-        content: vec![ContentBlock::Text { text: "ok".to_string() }],
-        stop_reason: StopReason::EndTurn,
-        input_tokens: 1,
-        output_tokens: 1,
-    });
-    let router = build_router(test_state(pool, provider));
+    let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "frank@example.com").await;
 
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
@@ -201,7 +172,7 @@ async fn list_messages_returns_history_oldest_first(pool: PgPool) {
 
 #[sqlx::test]
 async fn send_message_to_a_nonexistent_session_returns_not_found(pool: PgPool) {
-    let router = build_router(test_state(pool, inert_provider()));
+    let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "grace2@example.com").await;
 
     let fake_id = Uuid::new_v4();
@@ -218,7 +189,7 @@ async fn send_message_to_a_nonexistent_session_returns_not_found(pool: PgPool) {
 
 #[sqlx::test]
 async fn send_message_to_another_orgs_session_returns_not_found(pool: PgPool) {
-    let router = build_router(test_state(pool, inert_provider()));
+    let router = build_router(test_state(pool));
     let token_a = register_and_login(router.clone(), "henry@example.com").await;
     let token_b = register_and_login(router.clone(), "irene@example.com").await;
 
@@ -238,8 +209,7 @@ async fn send_message_to_another_orgs_session_returns_not_found(pool: PgPool) {
 
 #[sqlx::test]
 async fn ingest_returns_accepted_even_with_failure_sentinel(pool: PgPool) {
-    let provider = FakeLlmProvider::failure("provider down");
-    let router = build_router(test_state(pool.clone(), provider));
+    let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "jack@example.com").await;
 
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
@@ -267,7 +237,7 @@ async fn ingest_returns_accepted_even_with_failure_sentinel(pool: PgPool) {
 
 #[sqlx::test]
 async fn send_message_rejects_empty_text(pool: PgPool) {
-    let router = build_router(test_state(pool, inert_provider()));
+    let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "karen@example.com").await;
 
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
@@ -286,13 +256,7 @@ async fn send_message_rejects_empty_text(pool: PgPool) {
 
 #[sqlx::test]
 async fn list_messages_respects_limit_and_before_cursor(pool: PgPool) {
-    let provider = FakeLlmProvider::success(LlmResponse {
-        content: vec![ContentBlock::Text { text: "ok".to_string() }],
-        stop_reason: StopReason::EndTurn,
-        input_tokens: 1,
-        output_tokens: 1,
-    });
-    let router = build_router(test_state(pool, provider));
+    let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "leo@example.com").await;
 
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;

@@ -1,12 +1,9 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::app::AppState;
 use crate::auth::claims::Claims;
 use crate::auth::extractor::AuthClaims;
-use crate::embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvider, EmbeddingProviderKind};
-use crate::llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
 use crate::settings;
 
 #[derive(Serialize)]
@@ -140,24 +137,6 @@ pub async fn put_llm_settings(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save settings"))?;
 
-    let provider_kind = match req.provider.as_str() {
-        "anthropic" => ProviderKind::Anthropic,
-        "openai" => ProviderKind::OpenAi,
-        "gemini" => ProviderKind::Gemini,
-        _ => ProviderKind::Fake,
-    };
-    let new_provider: Arc<dyn LlmProvider> = Arc::from(build_provider(
-        ModelConfig {
-            provider: provider_kind,
-            model_id: req.model_id.clone(),
-            api_key: api_key.clone(),
-            base_url: req.base_url.clone(),
-        },
-        state.http_client.clone(),
-    ));
-    *state.provider.write().await = new_provider;
-    tracing::info!(provider = %req.provider, "live llm provider swapped");
-
     Ok(Json(ProviderSettingsResponse {
         provider: req.provider,
         model_id: req.model_id,
@@ -207,19 +186,6 @@ pub async fn put_embedding_settings(
     )
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save settings"))?;
-
-    let provider_kind = if is_fake { EmbeddingProviderKind::Fake } else { EmbeddingProviderKind::OpenAi };
-    let new_provider: Arc<dyn EmbeddingProvider> = Arc::from(build_embedding_provider(
-        EmbeddingConfig {
-            provider: provider_kind,
-            model_id: req.model_id.clone(),
-            api_key: api_key.clone(),
-            base_url: req.base_url.clone(),
-        },
-        state.http_client.clone(),
-    ));
-    *state.embedding_provider.write().await = new_provider;
-    tracing::info!(provider = %req.provider, "live embedding provider swapped");
 
     Ok(Json(ProviderSettingsResponse {
         provider: req.provider,

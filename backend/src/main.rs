@@ -1,7 +1,5 @@
 use std::env::var;
-use std::sync::Arc;
 
-use nomi_orchestrator::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_from_settings_or_env};
 use nomi_orchestrator::settings;
 
 #[tokio::main]
@@ -27,16 +25,9 @@ async fn main() {
 
     let http_client = reqwest::Client::new();
 
-    let provider = build_llm_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
-    let embedding_provider =
-        build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
-    tracing::info!("llm and embedding providers ready");
-
     let state = nomi_orchestrator::app::AppState {
         pool,
         jwt_secret,
-        provider: Arc::new(tokio::sync::RwLock::new(provider)),
-        embedding_provider: Arc::new(tokio::sync::RwLock::new(embedding_provider)),
         http_client,
         settings_key,
     };

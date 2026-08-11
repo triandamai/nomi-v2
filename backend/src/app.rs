@@ -1,13 +1,8 @@
-use std::sync::Arc;
-
 use axum::{routing::{delete, get, post}, Router};
 use sqlx::PgPool;
-use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 
 use crate::auth::extractor::AuthClaims;
-use crate::embedding::EmbeddingProvider;
-use crate::llm::LlmProvider;
 use crate::routes::auth as auth_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
@@ -16,8 +11,6 @@ use crate::routes::settings as settings_routes;
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
-    pub provider: Arc<RwLock<Arc<dyn LlmProvider>>>,
-    pub embedding_provider: Arc<RwLock<Arc<dyn EmbeddingProvider>>>,
     pub http_client: reqwest::Client,
     pub settings_key: [u8; 32],
 }

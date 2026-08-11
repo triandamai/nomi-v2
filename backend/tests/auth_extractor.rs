@@ -4,13 +4,9 @@ use axum::{body::Body, http::{Request, StatusCode}, routing::get, Router};
 use http_body_util::BodyExt;
 use nomi_orchestrator::app::AppState;
 use nomi_orchestrator::auth::{claims::Claims, extractor::AuthClaims};
-use nomi_orchestrator::llm::{LlmResponse, StopReason};
 use sqlx::PgPool;
-use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
-
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
@@ -18,15 +14,6 @@ fn test_router(pool: PgPool) -> Router {
     let state = AppState {
         pool,
         jwt_secret: SECRET.to_string(),
-        provider: Arc::new(tokio::sync::RwLock::new(Arc::new(FakeLlmProvider::success(LlmResponse {
-            content: vec![],
-            stop_reason: StopReason::EndTurn,
-            input_tokens: 0,
-            output_tokens: 0,
-        })) as Arc<dyn nomi_orchestrator::llm::LlmProvider>)),
-        embedding_provider: Arc::new(tokio::sync::RwLock::new(
-            Arc::new(FakeEmbeddingProvider::success(dummy_embedding())) as Arc<dyn nomi_orchestrator::embedding::EmbeddingProvider>,
-        )),
         http_client: reqwest::Client::new(),
         settings_key: support::TEST_SETTINGS_KEY,
     };

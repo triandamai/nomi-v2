@@ -3,13 +3,11 @@ mod support;
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
 use nomi_orchestrator::app::{build_router, AppState};
-use nomi_orchestrator::llm::{LlmResponse, StopReason};
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use std::sync::Arc;
 use tower::ServiceExt;
 
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider, TEST_SETTINGS_KEY};
+use support::TEST_SETTINGS_KEY;
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
@@ -17,15 +15,6 @@ fn test_state(pool: PgPool) -> AppState {
     AppState {
         pool,
         jwt_secret: SECRET.to_string(),
-        provider: Arc::new(tokio::sync::RwLock::new(Arc::new(FakeLlmProvider::success(LlmResponse {
-            content: vec![],
-            stop_reason: StopReason::EndTurn,
-            input_tokens: 0,
-            output_tokens: 0,
-        })) as Arc<dyn nomi_orchestrator::llm::LlmProvider>)),
-        embedding_provider: Arc::new(tokio::sync::RwLock::new(
-            Arc::new(FakeEmbeddingProvider::success(dummy_embedding())) as Arc<dyn nomi_orchestrator::embedding::EmbeddingProvider>,
-        )),
         http_client: reqwest::Client::new(),
         settings_key: TEST_SETTINGS_KEY,
     }
@@ -206,35 +195,4 @@ async fn admin_can_save_and_then_read_back_masked_embedding_settings(pool: PgPoo
     assert_eq!(get_body["provider"], "openai");
     assert_eq!(get_body["model_id"], "text-embedding-3-small");
     assert_eq!(get_body["api_key_masked"], "...1234");
-}
-
-#[sqlx::test]
-async fn saving_the_fake_llm_provider_takes_effect_immediately_without_restart(pool: PgPool) {
-    let router = build_router(test_state(pool.clone()));
-    let token = register_admin_and_login(router.clone(), &pool, "admin5@example.com").await;
-
-    let (status, _) = json_request(
-        router.clone(),
-        "PUT",
-        "/api/admin/settings/llm",
-        json!({ "provider": "fake", "model_id": "", "api_key": null, "base_url": null }),
-        Some(&token),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-
-    let (_, session_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
-    let session_id = session_body["session_id"].as_str().unwrap();
-
-    let (status, message_body) = json_request(
-        router,
-        "POST",
-        &format!("/api/sessions/{session_id}/messages"),
-        json!({ "text": "hello" }),
-        Some(&token),
-    )
-    .await;
-    assert_eq!(status, StatusCode::ACCEPTED);
-    assert!(message_body.get("user_message").is_some());
-    assert!(message_body.get("assistant_message").is_none());
 }
