@@ -190,9 +190,8 @@ pub struct SendMessageRequest {
 }
 
 #[derive(Serialize)]
-pub struct SendMessageResponse {
+pub struct IngestMessageResponse {
     pub user_message: MessageItem,
-    pub assistant_message: MessageItem,
 }
 
 #[tracing::instrument(skip(state, claims, req), fields(session_id = %session_id, user_id = %claims.sub, text_len = req.text.len()))]
@@ -201,7 +200,7 @@ pub async fn send_message(
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
     Json(req): Json<SendMessageRequest>,
-) -> Result<Json<SendMessageResponse>, (StatusCode, &'static str)> {
+) -> Result<(StatusCode, Json<IngestMessageResponse>), (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
 
     if req.text.trim().is_empty() {
@@ -218,14 +217,9 @@ pub async fn send_message(
                 (StatusCode::NOT_FOUND, "session not found")
             })?;
 
-    let provider = state.provider.read().await.clone();
-    let embedding_provider = state.embedding_provider.read().await.clone();
-
-    tracing::debug!(channel = %channel, chat_type = %chat_type, "handing off to turn loop");
-    crate::turn::handle_inbound_message(
+    tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
+    let ingested = crate::turn::ingest::ingest_inbound_message(
         &state.pool,
-        provider.as_ref(),
-        embedding_provider.as_ref(),
         &channel,
         &chat_type,
         &chat_id,
@@ -235,29 +229,26 @@ pub async fn send_message(
     )
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "turn handling failed");
-        (StatusCode::BAD_GATEWAY, "failed to process message")
+        tracing::error!(error = %e, "ingest failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to ingest message")
     })?;
-    tracing::info!("turn handled successfully");
+    tracing::info!(turn_job_id = %ingested.turn_job_id, "message ingested and queued");
 
-    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT id, sender_channel_identity_id, content, created_at FROM messages \
-         WHERE session_id = $1 ORDER BY created_at DESC LIMIT 2",
-    )
-    .bind(session_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "failed to fetch persisted messages");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch persisted messages")
-    })?;
+    let (created_at,): (DateTime<Utc>,) = sqlx::query_as("SELECT created_at FROM messages WHERE id = $1")
+        .bind(ingested.user_message_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to fetch persisted user message");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch persisted user message")
+        })?;
 
-    if rows.len() != 2 {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, "expected exactly two new messages after a successful turn"));
-    }
+    let user_message = MessageItem {
+        id: ingested.user_message_id,
+        sender: "user".to_string(),
+        content: req.text,
+        created_at,
+    };
 
-    let assistant_message = to_message_item(rows[0].clone());
-    let user_message = to_message_item(rows[1].clone());
-
-    Ok(Json(SendMessageResponse { user_message, assistant_message }))
+    Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message })))
 }

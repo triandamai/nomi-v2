@@ -234,9 +234,7 @@ async fn saving_the_fake_llm_provider_takes_effect_immediately_without_restart(p
         Some(&token),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        message_body["assistant_message"]["content"],
-        "This is a fake response for local development and testing."
-    );
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(message_body.get("user_message").is_some());
+    assert!(message_body.get("assistant_message").is_none());
 }

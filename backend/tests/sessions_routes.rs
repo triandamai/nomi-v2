@@ -167,13 +167,11 @@ async fn send_message_returns_user_and_assistant_messages(pool: PgPool) {
         Some(&token),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(send_body["user_message"]["content"], "hi");
     assert_eq!(send_body["user_message"]["sender"], "user");
-    assert_eq!(send_body["assistant_message"]["content"], "Hello there!");
-    assert_eq!(send_body["assistant_message"]["sender"], "assistant");
     assert!(send_body["user_message"]["id"].is_string());
-    assert!(send_body["assistant_message"]["id"].is_string());
+    assert!(send_body.get("assistant_message").is_none());
 }
 
 #[sqlx::test]
@@ -196,9 +194,9 @@ async fn list_messages_returns_history_oldest_first(pool: PgPool) {
     let (status, list_body) = json_request(router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     let messages = list_body["messages"].as_array().unwrap();
-    assert_eq!(messages.len(), 4);
+    assert_eq!(messages.len(), 2);
     assert_eq!(messages[0]["content"], "first");
-    assert_eq!(messages[2]["content"], "second");
+    assert_eq!(messages[1]["content"], "second");
 }
 
 #[sqlx::test]
@@ -239,7 +237,7 @@ async fn send_message_to_another_orgs_session_returns_not_found(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn a_turn_failure_returns_bad_gateway_but_keeps_the_inbound_message_durable(pool: PgPool) {
+async fn ingest_returns_accepted_even_with_failure_sentinel(pool: PgPool) {
     let provider = FakeLlmProvider::failure("provider down");
     let router = build_router(test_state(pool.clone(), provider));
     let token = register_and_login(router.clone(), "jack@example.com").await;
@@ -247,7 +245,7 @@ async fn a_turn_failure_returns_bad_gateway_but_keeps_the_inbound_message_durabl
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
     let session_id = create_body["session_id"].as_str().unwrap().to_string();
 
-    let (status, _) = json_request(
+    let (status, send_body) = json_request(
         router,
         "POST",
         &format!("/api/sessions/{session_id}/messages"),
@@ -255,7 +253,8 @@ async fn a_turn_failure_returns_bad_gateway_but_keeps_the_inbound_message_durabl
         Some(&token),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(send_body.get("user_message").is_some());
 
     let session_uuid = Uuid::parse_str(&session_id).unwrap();
     let content: String = sqlx::query_scalar("SELECT content FROM messages WHERE session_id = $1")
@@ -333,7 +332,7 @@ async fn list_messages_respects_limit_and_before_cursor(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
     let page2_messages = page2["messages"].as_array().unwrap();
-    assert_eq!(page2_messages.len(), 4);
+    assert_eq!(page2_messages.len(), 1);
 
     let page1_ids: Vec<&str> = page1_messages.iter().map(|m| m["id"].as_str().unwrap()).collect();
     for m in page2_messages {
