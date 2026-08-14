@@ -36,6 +36,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages",
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
         )
+        .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route(
             "/api/admin/settings/llm",
             get(settings_routes::get_llm_settings).put(settings_routes::put_llm_settings),

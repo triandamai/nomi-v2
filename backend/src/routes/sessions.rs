@@ -1,8 +1,12 @@
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{DateTime, Utc};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::app::AppState;
@@ -251,4 +255,45 @@ pub async fn send_message(
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message })))
+}
+
+pub async fn session_stream(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    ws: WebSocketUpgrade,
+) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    let broker_host = state.mqtt_broker_host.clone();
+    let broker_port = state.mqtt_broker_port;
+    Ok(ws.on_upgrade(move |socket| relay_session_stream(socket, session_id, broker_host, broker_port)))
+}
+
+async fn relay_session_stream(mut socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {
+    let mut options = MqttOptions::new(format!("ws-bridge-{}", Uuid::new_v4()), broker_host, broker_port);
+    options.set_keep_alive(Duration::from_secs(30));
+    let (client, mut eventloop) = AsyncClient::new(options, 16);
+    let topic = format!("chat/{session_id}/stream");
+    if client.subscribe(&topic, QoS::AtMostOnce).await.is_err() {
+        return; // socket closes on drop
+    }
+
+    loop {
+        tokio::select! {
+            event = eventloop.poll() => {
+                match event {
+                    Ok(Event::Incoming(Packet::Publish(publish))) => {
+                        if socket.send(Message::Text(String::from_utf8_lossy(&publish.payload).into_owned())).await.is_err() {
+                            break; // client disconnected
+                        }
+                    }
+                    Ok(_) => continue,
+                    Err(_) => break, // broker connection lost; let the client reconnect
+                }
+            }
+            incoming = socket.recv() => {
+                if incoming.is_none() { break; } // client closed the socket
+            }
+        }
+    }
 }
