@@ -16,6 +16,8 @@ fn test_router(pool: PgPool) -> Router {
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
         settings_key: support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
     };
     Router::new()
         .route("/whoami", get(|AuthClaims(claims): AuthClaims| async move {

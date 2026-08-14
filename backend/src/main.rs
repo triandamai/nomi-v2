@@ -17,6 +17,11 @@ async fn main() {
         &var("SETTINGS_ENCRYPTION_KEY").expect("SETTINGS_ENCRYPTION_KEY must be set"),
     )
     .expect("SETTINGS_ENCRYPTION_KEY must be 64 hex characters (32 bytes)");
+    let mqtt_broker_host = var("MQTT_BROKER_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let mqtt_broker_port: u16 = var("MQTT_BROKER_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(1883);
 
     let pool = sqlx::PgPool::connect(&database_url).await.expect("failed to connect to database");
     tracing::info!("connected to database");
@@ -30,6 +35,8 @@ async fn main() {
         jwt_secret,
         http_client,
         settings_key,
+        mqtt_broker_host,
+        mqtt_broker_port,
     };
     let app = nomi_orchestrator::app::build_router(state);
 

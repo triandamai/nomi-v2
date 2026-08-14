@@ -13,6 +13,8 @@ pub struct AppState {
     pub jwt_secret: String,
     pub http_client: reqwest::Client,
     pub settings_key: [u8; 32],
+    pub mqtt_broker_host: String,
+    pub mqtt_broker_port: u16,
 }
 
 pub fn build_router(state: AppState) -> Router {

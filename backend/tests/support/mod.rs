@@ -7,6 +7,8 @@ use nomi_orchestrator::embedding::{EmbeddingError, EmbeddingProvider};
 use nomi_orchestrator::llm::{LlmError, LlmEventStream, LlmProvider, LlmRequest, LlmResponse};
 
 pub const TEST_SETTINGS_KEY: [u8; 32] = [7u8; 32];
+pub const TEST_MQTT_BROKER_HOST: &str = "localhost";
+pub const TEST_MQTT_BROKER_PORT: u16 = 1883;
 
 enum FakeOutcome {
     Success(LlmResponse),

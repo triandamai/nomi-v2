@@ -17,7 +17,7 @@ rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
 aes-gcm = "0.10"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 async-trait = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tracing = "0.1.44"
@@ -33,3 +33,4 @@ rumqttc = "0.25.1"
 tower = { version = "0.4", features = ["util"] }
 http-body-util = "0.1"
 wiremock = "0.6"
+tokio-tungstenite = "0.24"
