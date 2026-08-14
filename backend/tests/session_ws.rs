@@ -126,3 +126,158 @@ async fn ws_upgrade_with_a_valid_token_for_the_callers_own_session_succeeds(pool
     assert_eq!(response.status().as_u16(), 101);
     drop(ws);
 }
+
+use std::time::Duration as StdDuration;
+
+use nomi_orchestrator::llm::{ContentBlock, LlmResponse, PartialBlock, StopReason, StreamEvent};
+use nomi_orchestrator::realtime::{MqttPublisher, StreamEnvelope};
+use nomi_orchestrator::turn::{process_turn, queue};
+
+use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
+
+fn canned_response(text: &str) -> LlmResponse {
+    LlmResponse {
+        content: vec![ContentBlock::Text { text: text.to_string() }],
+        stop_reason: StopReason::EndTurn,
+        input_tokens: 10,
+        output_tokens: 5,
+    }
+}
+
+/// Claims the next pending turn job, resolves its user_id the same way
+/// backend/src/bin/worker.rs does, runs it through process_turn with a fake provider, and
+/// publishes TurnCompleted afterwards — mirroring the worker's own success path
+/// (backend/src/bin/worker.rs:91-104), since process_turn itself only publishes on failure.
+async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
+    let claimed = queue::claim_next(pool).await.unwrap().unwrap();
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
+        .bind(claimed.sender_channel_identity_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+    let provider = FakeLlmProvider::success(canned_response(reply_text));
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let mqtt = MqttPublisher::connect(
+        support::TEST_MQTT_BROKER_HOST,
+        support::TEST_MQTT_BROKER_PORT,
+        &format!("test-ws-relay-{}", Uuid::new_v4()),
+    );
+
+    process_turn(
+        pool,
+        &mqtt,
+        &provider,
+        &embedder,
+        claimed.id,
+        claimed.session_id,
+        claimed.sender_channel_identity_id,
+        user_id,
+        &claimed.text,
+    )
+    .await
+    .unwrap();
+
+    mqtt.publish(
+        claimed.session_id,
+        &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: Uuid::nil() },
+    )
+    .await
+    .unwrap();
+
+    claimed.id
+}
+
+fn expected_frames_for(turn_job_id: Uuid, reply_text: &str) -> Vec<StreamEnvelope> {
+    vec![
+        StreamEnvelope::Delta {
+            turn_job_id,
+            event: StreamEvent::ContentBlockStart { index: 0, block: PartialBlock::Text },
+        },
+        StreamEnvelope::Delta {
+            turn_job_id,
+            event: StreamEvent::TextDelta { index: 0, text: reply_text.to_string() },
+        },
+        StreamEnvelope::Delta { turn_job_id, event: StreamEvent::ContentBlockDone { index: 0 } },
+        StreamEnvelope::Delta {
+            turn_job_id,
+            event: StreamEvent::Done { stop_reason: StopReason::EndTurn, input_tokens: 10, output_tokens: 5 },
+        },
+        StreamEnvelope::TurnCompleted { turn_job_id, message_id: Uuid::nil() },
+    ]
+}
+
+async fn recv_n_frames(
+    ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    n: usize,
+) -> Vec<StreamEnvelope> {
+    let mut received = Vec::new();
+    for _ in 0..n {
+        let msg = tokio::time::timeout(StdDuration::from_secs(5), ws.next())
+            .await
+            .expect("timed out waiting for a frame")
+            .expect("stream ended")
+            .unwrap();
+        if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+            received.push(serde_json::from_str::<StreamEnvelope>(&text).unwrap());
+        }
+    }
+    received
+}
+
+#[sqlx::test]
+async fn relays_delta_and_turn_completed_events_for_a_single_turn(pool: PgPool) {
+    let (http_base, ws_base) = spawn_app(pool.clone()).await;
+    let client = reqwest::Client::new();
+    let token = register_and_login(&client, &http_base, "d@example.com").await;
+    let session_id = create_session(&client, &http_base, &token).await;
+
+    let (mut ws, _) = try_connect_ws(&ws_base, session_id, Some(&token)).await.unwrap();
+
+    client
+        .post(format!("{http_base}/api/sessions/{session_id}/messages"))
+        .bearer_auth(&token)
+        .json(&json!({ "text": "hello" }))
+        .send()
+        .await
+        .unwrap();
+
+    let turn_job_id = run_one_claimed_turn(&pool, "hi there").await;
+
+    let received = recv_n_frames(&mut ws, 5).await;
+    assert_eq!(received, expected_frames_for(turn_job_id, "hi there"));
+}
+
+#[sqlx::test]
+async fn relays_events_across_two_turns_without_reconnecting(pool: PgPool) {
+    let (http_base, ws_base) = spawn_app(pool.clone()).await;
+    let client = reqwest::Client::new();
+    let token = register_and_login(&client, &http_base, "e@example.com").await;
+    let session_id = create_session(&client, &http_base, &token).await;
+
+    let (mut ws, _) = try_connect_ws(&ws_base, session_id, Some(&token)).await.unwrap();
+
+    client
+        .post(format!("{http_base}/api/sessions/{session_id}/messages"))
+        .bearer_auth(&token)
+        .json(&json!({ "text": "first" }))
+        .send()
+        .await
+        .unwrap();
+    let first_turn_job_id = run_one_claimed_turn(&pool, "first reply").await;
+    let first_received = recv_n_frames(&mut ws, 5).await;
+    assert_eq!(first_received, expected_frames_for(first_turn_job_id, "first reply"));
+
+    client
+        .post(format!("{http_base}/api/sessions/{session_id}/messages"))
+        .bearer_auth(&token)
+        .json(&json!({ "text": "second" }))
+        .send()
+        .await
+        .unwrap();
+    let second_turn_job_id = run_one_claimed_turn(&pool, "second reply").await;
+    let second_received = recv_n_frames(&mut ws, 5).await;
+    assert_eq!(second_received, expected_frames_for(second_turn_job_id, "second reply"));
+
+    assert_ne!(first_turn_job_id, second_turn_job_id);
+}
