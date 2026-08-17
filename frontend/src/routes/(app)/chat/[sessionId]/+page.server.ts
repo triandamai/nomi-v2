@@ -31,9 +31,6 @@ export const actions: Actions = {
 			body: JSON.stringify({ text }),
 		});
 
-		if (response.status === 502) {
-			return fail(502, { turnFailed: true, sentText: text });
-		}
 		if (response.status === 404) {
 			throw redirect(303, '/');
 		}
@@ -41,11 +38,8 @@ export const actions: Actions = {
 			return fail(response.status, { error: 'Failed to send message.' });
 		}
 
-		const { user_message, assistant_message } = (await response.json()) as {
-			user_message: MessageItem;
-			assistant_message: MessageItem;
-		};
+		const { user_message } = (await response.json()) as { user_message: MessageItem };
 
-		return { user_message, assistant_message };
+		return { user_message };
 	},
 };
