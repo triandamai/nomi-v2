@@ -8,7 +8,7 @@ const backendDir = path.resolve(__dirname, '../backend');
 export default defineConfig({
 	webServer: [
 		{
-			command: 'cargo run',
+			command: 'cargo run --bin nomi-orchestrator',
 			cwd: backendDir,
 			port: 8080,
 			timeout: 120_000,
