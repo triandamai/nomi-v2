@@ -127,6 +127,7 @@ describe('session-stream-proxy', () => {
 		expect(firstReply.toString()).toBe('first:one');
 
 		const firstPort = first.port;
+		first.wss.clients.forEach((ws) => ws.terminate());
 		await new Promise((resolve) => first.server.close(resolve));
 
 		const second = await startFakeUpstream({ port: firstPort });
@@ -159,6 +160,7 @@ describe('session-stream-proxy', () => {
 		cleanups.push(() => browser.close());
 		await waitFor(browser, 'open');
 
+		first.wss.clients.forEach((ws) => ws.terminate());
 		await new Promise((resolve) => first.server.close(resolve));
 		// Nothing is listening on first.port again from here on.
 
