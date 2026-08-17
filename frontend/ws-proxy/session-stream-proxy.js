@@ -168,8 +168,8 @@ function relay(browserWs, initialUpstream, sessionId, accessToken, options) {
 
 	/** @param {WebSocket} ws */
 	function wireUpstream(ws) {
-		ws.on('message', (data) => {
-			if (browserWs.readyState === WebSocket.OPEN) browserWs.send(data);
+		ws.on('message', (data, isBinary) => {
+			if (browserWs.readyState === WebSocket.OPEN) browserWs.send(data, { binary: isBinary });
 		});
 		ws.on('error', () => {}); // 'close' always follows; that's what drives retry/give-up below
 		ws.once('close', onUpstreamLost);
@@ -221,8 +221,8 @@ function relay(browserWs, initialUpstream, sessionId, accessToken, options) {
 		next.once('close', () => settleOnce(onUpstreamLost));
 	}
 
-	browserWs.on('message', (data) => {
-		if (upstream.readyState === WebSocket.OPEN) upstream.send(data);
+	browserWs.on('message', (data, isBinary) => {
+		if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
 	});
 	browserWs.on('error', () => {}); // prevent unhandled-error crash; actual disconnect handling happens via 'close'
 	browserWs.once('close', () => finish(undefined));
