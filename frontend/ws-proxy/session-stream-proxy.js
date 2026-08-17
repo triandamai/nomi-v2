@@ -1,5 +1,26 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { parseCookie } from 'cookie';
+
+// Not the 'cookie' npm package: a bare 'cookie' dependency here collides with
+// @sveltejs/kit's own nested cookie@0.6.0 once Kit's SSR bundle externalizes its own
+// `import ... from "cookie"` (Node's resolution from .svelte-kit/output/server/index.js
+// can't see Kit's nested node_modules/@sveltejs/kit/node_modules/cookie once a
+// conflicting top-level 'cookie' package exists). We only need one named cookie value
+// out of a raw Cookie header, so a few lines beats fighting npm's hoisting.
+function readCookie(cookieHeader, name) {
+	if (!cookieHeader) return undefined;
+	for (const pair of cookieHeader.split(';')) {
+		const eq = pair.indexOf('=');
+		if (eq === -1) continue;
+		if (pair.slice(0, eq).trim() !== name) continue;
+		const value = pair.slice(eq + 1).trim();
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return value;
+		}
+	}
+	return undefined;
+}
 
 const SESSION_WS_PATH =
 	/^\/chat\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/ws$/;
@@ -37,7 +58,7 @@ export function attachSessionStreamProxy(server, options = {}) {
 		if (!match) return; // not ours; let it fall through untouched
 
 		const sessionId = match[1];
-		const accessToken = parseCookie(request.headers.cookie ?? '').access_token;
+		const accessToken = readCookie(request.headers.cookie, 'access_token');
 		const upstream = connectUpstream(sessionId, accessToken, options);
 
 		const cleanup = () => {

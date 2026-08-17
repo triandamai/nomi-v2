@@ -16,7 +16,6 @@
 		"test:unit": "vitest run"
 	},
 	"dependencies": {
-		"cookie": "^2.0.1",
 		"ws": "^8.21.3"
 	},
 	"devDependencies": {
