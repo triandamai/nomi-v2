@@ -2,10 +2,12 @@ import tailwindcss from '@tailwindcss/vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { devWsProxy } from './vite-plugins/dev-ws-proxy';
 
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
+		devWsProxy(),
 		sveltekit({
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
