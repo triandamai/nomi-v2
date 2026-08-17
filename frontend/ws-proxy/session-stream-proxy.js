@@ -69,6 +69,7 @@ export function attachSessionStreamProxy(server, options = {}) {
 
 function acceptThenClose(request, socket, head, wss, code) {
 	wss.handleUpgrade(request, socket, head, (browserWs) => {
+		browserWs.on('error', () => {}); // prevent unhandled-error crash; actual disconnect handling happens via 'close'
 		browserWs.close(code);
 	});
 }
@@ -150,6 +151,7 @@ function relay(browserWs, initialUpstream, sessionId, accessToken, options) {
 	browserWs.on('message', (data) => {
 		if (upstream.readyState === WebSocket.OPEN) upstream.send(data);
 	});
+	browserWs.on('error', () => {}); // prevent unhandled-error crash; actual disconnect handling happens via 'close'
 	browserWs.once('close', () => finish(undefined));
 
 	wireUpstream(upstream);
