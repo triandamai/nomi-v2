@@ -11,7 +11,13 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test:e2e": "playwright install && playwright test",
-		"test": "npm run test:e2e"
+		"test": "npm run test:e2e",
+		"start": "node server.js",
+		"test:unit": "vitest run"
+	},
+	"dependencies": {
+		"cookie": "^2.0.1",
+		"ws": "^8.21.3"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.60.0",
@@ -20,11 +26,13 @@
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.0",
+		"@types/ws": "^8.18.1",
 		"postgres": "^3.4.9",
 		"svelte": "^5.56.1",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.0",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.16"
+		"vite": "^8.0.16",
+		"vitest": "^4.1.10"
 	}
 }
