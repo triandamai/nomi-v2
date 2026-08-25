@@ -58,11 +58,18 @@ test('a platform admin can configure the fake LLM provider', async ({ page }) =>
 	await loginViaAdminUi(page, email);
 	await expect(page).toHaveURL('/admin');
 
+	// The LLM settings page was rewritten (user-selectable LLM models plan, Task 7) from a single
+	// global provider form into a list of named models with an "Add model" create flow — update
+	// this test to match rather than the old single-form UI it originally exercised. The catalog
+	// is global (no org scoping), so use a unique label to stay correct across repeated local runs.
+	const modelLabel = `Fake model ${Date.now()}-${Math.random().toString(36).slice(2)}`;
 	await page.goto('/admin/settings/llm');
+	await page.getByRole('button', { name: '+ Add model' }).click();
+	await page.getByLabel('Label').fill(modelLabel);
 	await page.getByLabel('Provider').selectOption('fake');
-	await page.getByRole('button', { name: 'Save' }).click();
+	await page.getByRole('button', { name: 'Add model' }).click();
 
-	await expect(page.getByText('Settings saved.')).toBeVisible();
+	await expect(page.getByText(modelLabel, { exact: true })).toBeVisible();
 	await page.reload();
-	await expect(page.getByLabel('Provider')).toHaveValue('fake');
+	await expect(page.getByText(modelLabel, { exact: true })).toBeVisible();
 });
