@@ -21,3 +21,19 @@ export interface ProviderSettings {
 	base_url: string | null;
 	api_key_masked: string;
 }
+
+export interface LlmAdminModelOption {
+	id: string;
+	label: string;
+	provider: string;
+	model_id: string;
+}
+
+export type LlmUserSelection =
+	| { kind: 'admin'; admin_model_id: string }
+	| { kind: 'custom'; label: string; provider: string; model_id: string; api_key_masked: string; base_url: string | null };
+
+export interface LlmModelsResponse {
+	admin_models: LlmAdminModelOption[];
+	selection: LlmUserSelection | null;
+}
