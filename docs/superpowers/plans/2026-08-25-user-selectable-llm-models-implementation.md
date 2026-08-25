@@ -2607,6 +2607,11 @@ test('a user can bring their own key using the fake provider and see it become a
 	await page.getByRole('button', { name: 'Default model' }).click();
 	await page.getByRole('button', { name: '+ Use your own API key' }).click();
 	await page.getByPlaceholder('Label').fill('My fake key');
+	// The <select>'s first option is "anthropic", not "fake" — must select it explicitly, or
+	// the save is rejected with "api_key is required for a non-fake provider" since the API
+	// key field below is intentionally left blank (fake needs neither model_id nor a key).
+	const providerSelects = page.locator('form[action="?/selectCustomModel"] select[name="provider"]');
+	await providerSelects.selectOption('fake');
 	await page.getByPlaceholder('Model ID').fill('');
 	await page.getByRole('button', { name: 'Save & validate' }).click();
 
