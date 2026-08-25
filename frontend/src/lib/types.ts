@@ -37,3 +37,13 @@ export interface LlmModelsResponse {
 	admin_models: LlmAdminModelOption[];
 	selection: LlmUserSelection | null;
 }
+
+export interface AdminLlmModel {
+	id: string;
+	label: string;
+	provider: string;
+	model_id: string;
+	base_url: string | null;
+	is_default: boolean;
+	api_key_masked: string;
+}
