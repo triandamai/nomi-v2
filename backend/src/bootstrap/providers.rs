@@ -35,14 +35,25 @@ pub async fn build_llm_provider_for_user(
     Arc::from(build_provider(model_config, http_client))
 }
 
-fn model_config_from_admin_model(settings_key: &[u8; 32], model: crate::settings::llm_models::AdminLlmModel) -> ModelConfig {
-    let api_key = settings::crypto::decrypt(settings_key, &model.api_key_encrypted)
-        .expect("failed to decrypt stored admin llm model api key");
-    ModelConfig {
-        provider: llm_provider_kind_from_str(&model.provider),
-        model_id: model.model_id,
-        api_key,
-        base_url: model.base_url,
+fn model_config_from_admin_model(
+    settings_key: &[u8; 32],
+    model: crate::settings::llm_models::AdminLlmModel,
+) -> Option<ModelConfig> {
+    match settings::crypto::decrypt(settings_key, &model.api_key_encrypted) {
+        Ok(api_key) => Some(ModelConfig {
+            provider: llm_provider_kind_from_str(&model.provider),
+            model_id: model.model_id,
+            api_key,
+            base_url: model.base_url,
+        }),
+        Err(e) => {
+            tracing::error!(
+                model_id = %model.id,
+                error = %e,
+                "failed to decrypt admin llm model api key; falling back"
+            );
+            None
+        }
     }
 }
 
@@ -57,21 +68,36 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
                 .await
                 .expect("failed to query admin_llm_models")
             {
-                return model_config_from_admin_model(settings_key, admin_model);
+                if let Some(config) = model_config_from_admin_model(settings_key, admin_model) {
+                    return config;
+                }
+                // Decryption failed (e.g. a rotated/mismatched SETTINGS_ENCRYPTION_KEY) —
+                // fall through to the admin default below.
             }
             // Referenced admin model no longer exists — fall through to the default below.
         } else if let Some(provider) = row.custom_provider {
-            let api_key = settings::crypto::decrypt(
+            let decrypted = settings::crypto::decrypt(
                 settings_key,
                 row.custom_api_key_encrypted.as_ref().expect("custom selection always carries a key"),
-            )
-            .expect("failed to decrypt stored custom api key");
-            return ModelConfig {
-                provider: llm_provider_kind_from_str(&provider),
-                model_id: row.custom_model_id.expect("custom selection always carries a model_id"),
-                api_key,
-                base_url: row.custom_base_url,
-            };
+            );
+            match decrypted {
+                Ok(api_key) => {
+                    return ModelConfig {
+                        provider: llm_provider_kind_from_str(&provider),
+                        model_id: row.custom_model_id.expect("custom selection always carries a model_id"),
+                        api_key,
+                        base_url: row.custom_base_url,
+                    };
+                }
+                Err(e) => {
+                    tracing::error!(
+                        user_id = %user_id,
+                        error = %e,
+                        "failed to decrypt custom llm api key; falling back to admin default"
+                    );
+                    // Fall through to the admin default below.
+                }
+            }
         }
     }
 
@@ -79,11 +105,14 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
         .await
         .expect("failed to query admin_llm_models")
     {
-        return model_config_from_admin_model(settings_key, default_model);
+        if let Some(config) = model_config_from_admin_model(settings_key, default_model) {
+            return config;
+        }
+        // Decryption failed — fall through to the env-var fallback below.
     }
 
-    // No admin models configured at all yet (fresh install) — same env-var fallback the
-    // function this replaced always used when nothing was configured.
+    // No admin models configured at all yet (fresh install), or the default model's key
+    // couldn't be decrypted — same env-var fallback the function this replaced always used.
     let provider = llm_provider_kind_from_str(&var("LLM_PROVIDER").expect("LLM_PROVIDER must be set"));
     let (model_id, api_key) = match provider {
         ProviderKind::Fake => (String::new(), String::new()),
