@@ -176,3 +176,150 @@ pub async fn set_default_admin_model(
     })?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[derive(Serialize)]
+pub struct UserModelOption {
+    pub id: Uuid,
+    pub label: String,
+    pub provider: String,
+    pub model_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UserSelectionResponse {
+    Admin { admin_model_id: Uuid },
+    Custom { label: String, provider: String, model_id: String, api_key_masked: String, base_url: Option<String> },
+}
+
+#[derive(Serialize)]
+pub struct UserModelsResponse {
+    pub admin_models: Vec<UserModelOption>,
+    pub selection: Option<UserSelectionResponse>,
+}
+
+pub async fn get_user_models(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+) -> Result<Json<UserModelsResponse>, (StatusCode, &'static str)> {
+    let admin_models = llm_models::list_admin_llm_models(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?
+        .into_iter()
+        .map(|m| UserModelOption { id: m.id, label: m.label, provider: m.provider, model_id: m.model_id })
+        .collect();
+
+    let selection_row = llm_models::get_user_llm_selection(&state.pool, claims.sub)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load selection"))?;
+
+    let selection = match selection_row {
+        Some(row) => {
+            if let Some(admin_model_id) = row.admin_model_id {
+                Some(UserSelectionResponse::Admin { admin_model_id })
+            } else if let Some(provider) = row.custom_provider {
+                let api_key = settings::crypto::decrypt(
+                    &state.settings_key,
+                    row.custom_api_key_encrypted.as_deref().unwrap_or_default(),
+                )
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?;
+                Some(UserSelectionResponse::Custom {
+                    label: row.custom_label.unwrap_or_default(),
+                    provider,
+                    model_id: row.custom_model_id.unwrap_or_default(),
+                    api_key_masked: settings::mask_api_key(&api_key),
+                    base_url: row.custom_base_url,
+                })
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
+
+    Ok(Json(UserModelsResponse { admin_models, selection }))
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SelectionRequest {
+    Admin { admin_model_id: Uuid },
+    Custom { label: String, provider: String, model_id: String, api_key: String, base_url: Option<String> },
+}
+
+fn provider_kind_from_str(s: &str) -> Option<crate::llm::ProviderKind> {
+    match s {
+        "anthropic" => Some(crate::llm::ProviderKind::Anthropic),
+        "openai" => Some(crate::llm::ProviderKind::OpenAi),
+        "gemini" => Some(crate::llm::ProviderKind::Gemini),
+        "fake" => Some(crate::llm::ProviderKind::Fake),
+        _ => None,
+    }
+}
+
+/// Unlike every other handler in this file, errors here carry a dynamic `String` rather than
+/// `&'static str` — the BYOK validation failure needs to surface the provider's actual error
+/// text (spec requirement: "the provider's actual error message... surfaced inline on the
+/// form"), which structurally cannot be a `&'static str`.
+pub async fn put_user_selection(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<SelectionRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    match req {
+        SelectionRequest::Admin { admin_model_id } => {
+            let exists = llm_models::get_admin_llm_model(&state.pool, admin_model_id)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up model".to_string()))?
+                .is_some();
+            if !exists {
+                return Err((StatusCode::NOT_FOUND, "model not found".to_string()));
+            }
+            llm_models::set_user_llm_selection_admin(&state.pool, claims.sub, admin_model_id)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save selection".to_string()))?;
+        }
+        SelectionRequest::Custom { label, provider, model_id, api_key, base_url } => {
+            if !ALLOWED_PROVIDERS.contains(&provider.as_str()) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "unknown provider (expected anthropic, openai, gemini, or fake)".to_string(),
+                ));
+            }
+            let is_fake = provider == "fake";
+            if !is_fake && model_id.trim().is_empty() {
+                return Err((StatusCode::BAD_REQUEST, "model_id is required for a non-fake provider".to_string()));
+            }
+            if !is_fake && api_key.trim().is_empty() {
+                return Err((StatusCode::BAD_REQUEST, "api_key is required for a non-fake provider".to_string()));
+            }
+
+            let provider_kind = provider_kind_from_str(&provider)
+                .ok_or((StatusCode::BAD_REQUEST, "unknown provider".to_string()))?;
+            let model_config = crate::llm::ModelConfig {
+                provider: provider_kind,
+                model_id: model_id.clone(),
+                api_key: api_key.clone(),
+                base_url: base_url.clone(),
+            };
+            crate::llm::validate_model_config(model_config, state.http_client.clone())
+                .await
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+            llm_models::set_user_llm_selection_custom(
+                &state.pool,
+                claims.sub,
+                llm_models::CustomLlmSelection {
+                    label: &label,
+                    provider: &provider,
+                    model_id: &model_id,
+                    api_key_encrypted: settings::crypto::encrypt(&state.settings_key, &api_key),
+                    base_url: base_url.as_deref(),
+                },
+            )
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save selection".to_string()))?;
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
+}

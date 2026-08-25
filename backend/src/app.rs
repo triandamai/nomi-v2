@@ -50,6 +50,8 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/settings/llm/models/:id/default",
             put(llm_models_routes::set_default_admin_model),
         )
+        .route("/api/llm/models", get(llm_models_routes::get_user_models))
+        .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
         .route(
             "/api/admin/settings/embedding",
             get(settings_routes::get_embedding_settings).put(settings_routes::put_embedding_settings),
