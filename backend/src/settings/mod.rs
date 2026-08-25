@@ -1,4 +1,5 @@
 pub mod crypto;
+pub mod llm_models;
 
 use sqlx::PgPool;
 use uuid::Uuid;
