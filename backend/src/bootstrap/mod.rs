@@ -1,3 +1,3 @@
 pub mod providers;
 
-pub use providers::{build_embedding_provider_from_settings_or_env, build_llm_provider_from_settings_or_env};
+pub use providers::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user, resolve_llm_model_config};

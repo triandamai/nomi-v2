@@ -3,7 +3,7 @@ use std::time::Duration;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_from_settings_or_env};
+use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
 use crate::realtime::{MqttPublisher, StreamEnvelope};
 use crate::turn::queue;
 
@@ -45,10 +45,6 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
                 }
             };
 
-            let provider = build_llm_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
-            let embedding_provider =
-                build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
-
             let user_id: Result<Uuid, sqlx::Error> =
                 sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
                     .bind(claimed.sender_channel_identity_id)
@@ -62,6 +58,10 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
                     continue;
                 }
             };
+
+            let provider = build_llm_provider_for_user(&pool, user_id, &settings_key, http_client.clone()).await;
+            let embedding_provider =
+                build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
 
             let result = crate::turn::process_turn(
                 &pool,
