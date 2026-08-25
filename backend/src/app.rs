@@ -1,9 +1,10 @@
-use axum::{routing::{delete, get, post}, Router};
+use axum::{routing::{delete, get, post, put}, Router};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::auth::extractor::AuthClaims;
 use crate::routes::auth as auth_routes;
+use crate::routes::llm_models as llm_models_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
 
@@ -38,8 +39,16 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route(
-            "/api/admin/settings/llm",
-            get(settings_routes::get_llm_settings).put(settings_routes::put_llm_settings),
+            "/api/admin/settings/llm/models",
+            get(llm_models_routes::list_admin_models).post(llm_models_routes::create_admin_model),
+        )
+        .route(
+            "/api/admin/settings/llm/models/:id",
+            put(llm_models_routes::update_admin_model).delete(llm_models_routes::delete_admin_model),
+        )
+        .route(
+            "/api/admin/settings/llm/models/:id/default",
+            put(llm_models_routes::set_default_admin_model),
         )
         .route(
             "/api/admin/settings/embedding",
