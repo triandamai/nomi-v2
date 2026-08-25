@@ -14,18 +14,32 @@
 	}
 </script>
 
-<a
-	href={`/chat/${session.id}`}
-	class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-neutral-100"
->
+<a href={`/chat/${session.id}`} class="m3-session-item">
 	<span class="relative flex h-2 w-2 shrink-0">
 		{#if session.agent_active}
-			<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
-			<span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+			<span
+				class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+				style="background: var(--md-sys-color-tertiary)"
+			></span>
+			<span class="relative inline-flex h-2 w-2 rounded-full" style="background: var(--md-sys-color-tertiary)"></span>
 		{/if}
 	</span>
-	<span class="flex-1 truncate text-neutral-700">
+	<span class="md-body-medium flex-1 truncate" style="color: var(--md-sys-color-on-surface)">
 		{session.last_message?.content ?? 'New chat'}
 	</span>
-	<span class="shrink-0 text-xs text-neutral-400">{timeAgo(session.updated_at)}</span>
+	<span class="md-body-small shrink-0" style="color: var(--md-sys-color-outline)">{timeAgo(session.updated_at)}</span>
 </a>
+
+<style>
+	.m3-session-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		border-radius: var(--md-sys-shape-corner-small);
+		padding: 8px 12px;
+		text-decoration: none;
+	}
+	.m3-session-item:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+</style>

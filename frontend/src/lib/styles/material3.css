@@ -1,0 +1,268 @@
+/* Material Design 3 design tokens — baseline violet seed (#6750A4), per
+   https://m3.material.io. Web has no official component library worth adopting
+   (maintenance mode, SSR-hostile), so this app expresses M3 purely as CSS custom
+   properties consumed by native elements and the components in $lib/components/m3.
+   Roboto Flex itself is loaded via the Google Fonts stylesheet link in app.html —
+   not @font-face here, so we don't hand-roll a hosted-font URL. */
+
+:root {
+	/* ---- Color: light scheme (default) ---- */
+	--md-sys-color-primary: #6750a4;
+	--md-sys-color-on-primary: #ffffff;
+	--md-sys-color-primary-container: #eaddff;
+	--md-sys-color-on-primary-container: #21005d;
+	--md-sys-color-secondary: #625b71;
+	--md-sys-color-on-secondary: #ffffff;
+	--md-sys-color-secondary-container: #e8def8;
+	--md-sys-color-on-secondary-container: #1d192b;
+	--md-sys-color-tertiary: #7d5260;
+	--md-sys-color-on-tertiary: #ffffff;
+	--md-sys-color-tertiary-container: #ffd8e4;
+	--md-sys-color-on-tertiary-container: #31111d;
+	--md-sys-color-error: #b3261e;
+	--md-sys-color-on-error: #ffffff;
+	--md-sys-color-error-container: #f9dedc;
+	--md-sys-color-on-error-container: #410e0b;
+	--md-sys-color-surface: #fef7ff;
+	--md-sys-color-on-surface: #1d1b20;
+	--md-sys-color-on-surface-variant: #49454f;
+	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-low: #f7f2fa;
+	--md-sys-color-surface-container: #f3edf7;
+	--md-sys-color-surface-container-high: #ece6f0;
+	--md-sys-color-surface-container-highest: #e6e0e9;
+	--md-sys-color-surface-dim: #ded8e1;
+	--md-sys-color-surface-bright: #fef7ff;
+	--md-sys-color-outline: #79747e;
+	--md-sys-color-outline-variant: #cac4d0;
+	--md-sys-color-inverse-surface: #322f35;
+	--md-sys-color-inverse-on-surface: #f5eff7;
+	--md-sys-color-inverse-primary: #d0bcff;
+
+	/* ---- Typography ---- */
+	--md-ref-typeface-brand: 'Roboto Flex', system-ui, sans-serif;
+	--md-ref-typeface-plain: 'Roboto Flex', system-ui, sans-serif;
+
+	--md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
+	--md-sys-typescale-display-large-weight: 400;
+	--md-sys-typescale-display-large-size: 3.5625rem;
+	--md-sys-typescale-display-large-line-height: 4rem;
+	--md-sys-typescale-display-large-tracking: -0.015625rem;
+
+	--md-sys-typescale-display-medium-font: var(--md-ref-typeface-brand);
+	--md-sys-typescale-display-medium-weight: 400;
+	--md-sys-typescale-display-medium-size: 2.8125rem;
+	--md-sys-typescale-display-medium-line-height: 3.25rem;
+	--md-sys-typescale-display-medium-tracking: 0;
+
+	--md-sys-typescale-display-small-font: var(--md-ref-typeface-brand);
+	--md-sys-typescale-display-small-weight: 400;
+	--md-sys-typescale-display-small-size: 2.25rem;
+	--md-sys-typescale-display-small-line-height: 2.75rem;
+	--md-sys-typescale-display-small-tracking: 0;
+
+	--md-sys-typescale-headline-large-font: var(--md-ref-typeface-brand);
+	--md-sys-typescale-headline-large-weight: 400;
+	--md-sys-typescale-headline-large-size: 2rem;
+	--md-sys-typescale-headline-large-line-height: 2.5rem;
+	--md-sys-typescale-headline-large-tracking: 0;
+
+	--md-sys-typescale-headline-medium-font: var(--md-ref-typeface-brand);
+	--md-sys-typescale-headline-medium-weight: 400;
+	--md-sys-typescale-headline-medium-size: 1.75rem;
+	--md-sys-typescale-headline-medium-line-height: 2.25rem;
+	--md-sys-typescale-headline-medium-tracking: 0;
+
+	--md-sys-typescale-headline-small-font: var(--md-ref-typeface-brand);
+	--md-sys-typescale-headline-small-weight: 400;
+	--md-sys-typescale-headline-small-size: 1.5rem;
+	--md-sys-typescale-headline-small-line-height: 2rem;
+	--md-sys-typescale-headline-small-tracking: 0;
+
+	--md-sys-typescale-title-large-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-title-large-weight: 400;
+	--md-sys-typescale-title-large-size: 1.375rem;
+	--md-sys-typescale-title-large-line-height: 1.75rem;
+	--md-sys-typescale-title-large-tracking: 0;
+
+	--md-sys-typescale-title-medium-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-title-medium-weight: 500;
+	--md-sys-typescale-title-medium-size: 1rem;
+	--md-sys-typescale-title-medium-line-height: 1.5rem;
+	--md-sys-typescale-title-medium-tracking: 0.009375rem;
+
+	--md-sys-typescale-title-small-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-title-small-weight: 500;
+	--md-sys-typescale-title-small-size: 0.875rem;
+	--md-sys-typescale-title-small-line-height: 1.25rem;
+	--md-sys-typescale-title-small-tracking: 0.00625rem;
+
+	--md-sys-typescale-body-large-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-body-large-weight: 400;
+	--md-sys-typescale-body-large-size: 1rem;
+	--md-sys-typescale-body-large-line-height: 1.5rem;
+	--md-sys-typescale-body-large-tracking: 0.03125rem;
+
+	--md-sys-typescale-body-medium-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-body-medium-weight: 400;
+	--md-sys-typescale-body-medium-size: 0.875rem;
+	--md-sys-typescale-body-medium-line-height: 1.25rem;
+	--md-sys-typescale-body-medium-tracking: 0.015625rem;
+
+	--md-sys-typescale-body-small-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-body-small-weight: 400;
+	--md-sys-typescale-body-small-size: 0.75rem;
+	--md-sys-typescale-body-small-line-height: 1rem;
+	--md-sys-typescale-body-small-tracking: 0.025rem;
+
+	--md-sys-typescale-label-large-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-label-large-weight: 500;
+	--md-sys-typescale-label-large-size: 0.875rem;
+	--md-sys-typescale-label-large-line-height: 1.25rem;
+	--md-sys-typescale-label-large-tracking: 0.00625rem;
+
+	--md-sys-typescale-label-medium-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-label-medium-weight: 500;
+	--md-sys-typescale-label-medium-size: 0.75rem;
+	--md-sys-typescale-label-medium-line-height: 1rem;
+	--md-sys-typescale-label-medium-tracking: 0.03125rem;
+
+	--md-sys-typescale-label-small-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-label-small-weight: 500;
+	--md-sys-typescale-label-small-size: 0.6875rem;
+	--md-sys-typescale-label-small-line-height: 1rem;
+	--md-sys-typescale-label-small-tracking: 0.03125rem;
+
+	/* ---- Shape ---- */
+	--md-sys-shape-corner-none: 0px;
+	--md-sys-shape-corner-extra-small: 4px;
+	--md-sys-shape-corner-small: 8px;
+	--md-sys-shape-corner-medium: 12px;
+	--md-sys-shape-corner-large: 16px;
+	--md-sys-shape-corner-extra-large: 28px;
+	--md-sys-shape-corner-full: 9999px;
+
+	/* ---- Elevation (tonal color per level; shadows reserved for floating-over-busy-content) ---- */
+	--md-sys-elevation-level0: var(--md-sys-color-surface);
+	--md-sys-elevation-level1: var(--md-sys-color-surface-container-low);
+	--md-sys-elevation-level2: var(--md-sys-color-surface-container);
+	--md-sys-elevation-level3: var(--md-sys-color-surface-container-high);
+	--md-sys-elevation-shadow-level2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
+	--md-sys-elevation-shadow-level3: 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3);
+
+	/* ---- Motion ---- */
+	--md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+	--md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+	--md-sys-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+	--md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+	--md-sys-motion-duration-short4: 200ms;
+	--md-sys-motion-duration-medium2: 300ms;
+	--md-sys-motion-duration-medium4: 400ms;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--md-sys-color-primary: #d0bcff;
+		--md-sys-color-on-primary: #381e72;
+		--md-sys-color-primary-container: #4f378b;
+		--md-sys-color-on-primary-container: #eaddff;
+		--md-sys-color-secondary: #ccc2dc;
+		--md-sys-color-on-secondary: #332d41;
+		--md-sys-color-secondary-container: #4a4458;
+		--md-sys-color-on-secondary-container: #e8def8;
+		--md-sys-color-tertiary: #efb8c8;
+		--md-sys-color-on-tertiary: #492532;
+		--md-sys-color-tertiary-container: #633b48;
+		--md-sys-color-on-tertiary-container: #ffd8e4;
+		--md-sys-color-error: #f2b8b5;
+		--md-sys-color-on-error: #601410;
+		--md-sys-color-error-container: #8c1d18;
+		--md-sys-color-on-error-container: #f9dedc;
+		--md-sys-color-surface: #141218;
+		--md-sys-color-on-surface: #e6e0e9;
+		--md-sys-color-on-surface-variant: #cac4d0;
+		--md-sys-color-surface-container-lowest: #0f0d13;
+		--md-sys-color-surface-container-low: #1d1b20;
+		--md-sys-color-surface-container: #211f26;
+		--md-sys-color-surface-container-high: #2b2930;
+		--md-sys-color-surface-container-highest: #36343b;
+		--md-sys-color-surface-dim: #141218;
+		--md-sys-color-surface-bright: #3b383e;
+		--md-sys-color-outline: #938f99;
+		--md-sys-color-outline-variant: #49454f;
+		--md-sys-color-inverse-surface: #e6e0e9;
+		--md-sys-color-inverse-on-surface: #322f35;
+		--md-sys-color-inverse-primary: #6750a4;
+	}
+}
+
+/* ---- Type-scale utility classes, for markup that isn't going through an m3 component ---- */
+.md-headline-small {
+	font-family: var(--md-sys-typescale-headline-small-font);
+	font-weight: var(--md-sys-typescale-headline-small-weight);
+	font-size: var(--md-sys-typescale-headline-small-size);
+	line-height: var(--md-sys-typescale-headline-small-line-height);
+	letter-spacing: var(--md-sys-typescale-headline-small-tracking);
+}
+
+.md-title-large {
+	font-family: var(--md-sys-typescale-title-large-font);
+	font-weight: var(--md-sys-typescale-title-large-weight);
+	font-size: var(--md-sys-typescale-title-large-size);
+	line-height: var(--md-sys-typescale-title-large-line-height);
+	letter-spacing: var(--md-sys-typescale-title-large-tracking);
+}
+
+.md-title-medium {
+	font-family: var(--md-sys-typescale-title-medium-font);
+	font-weight: var(--md-sys-typescale-title-medium-weight);
+	font-size: var(--md-sys-typescale-title-medium-size);
+	line-height: var(--md-sys-typescale-title-medium-line-height);
+	letter-spacing: var(--md-sys-typescale-title-medium-tracking);
+}
+
+.md-body-large {
+	font-family: var(--md-sys-typescale-body-large-font);
+	font-weight: var(--md-sys-typescale-body-large-weight);
+	font-size: var(--md-sys-typescale-body-large-size);
+	line-height: var(--md-sys-typescale-body-large-line-height);
+	letter-spacing: var(--md-sys-typescale-body-large-tracking);
+}
+
+.md-body-medium {
+	font-family: var(--md-sys-typescale-body-medium-font);
+	font-weight: var(--md-sys-typescale-body-medium-weight);
+	font-size: var(--md-sys-typescale-body-medium-size);
+	line-height: var(--md-sys-typescale-body-medium-line-height);
+	letter-spacing: var(--md-sys-typescale-body-medium-tracking);
+}
+
+.md-body-small {
+	font-family: var(--md-sys-typescale-body-small-font);
+	font-weight: var(--md-sys-typescale-body-small-weight);
+	font-size: var(--md-sys-typescale-body-small-size);
+	line-height: var(--md-sys-typescale-body-small-line-height);
+	letter-spacing: var(--md-sys-typescale-body-small-tracking);
+}
+
+.md-label-large {
+	font-family: var(--md-sys-typescale-label-large-font);
+	font-weight: var(--md-sys-typescale-label-large-weight);
+	font-size: var(--md-sys-typescale-label-large-size);
+	line-height: var(--md-sys-typescale-label-large-line-height);
+	letter-spacing: var(--md-sys-typescale-label-large-tracking);
+}
+
+.md-label-medium {
+	font-family: var(--md-sys-typescale-label-medium-font);
+	font-weight: var(--md-sys-typescale-label-medium-weight);
+	font-size: var(--md-sys-typescale-label-medium-size);
+	line-height: var(--md-sys-typescale-label-medium-line-height);
+	letter-spacing: var(--md-sys-typescale-label-medium-tracking);
+}
+
+body {
+	background: var(--md-sys-color-surface);
+	color: var(--md-sys-color-on-surface);
+	font-family: var(--md-ref-typeface-plain);
+}

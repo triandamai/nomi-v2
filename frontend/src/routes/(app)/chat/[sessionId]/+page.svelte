@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
+	import Button from '$lib/components/m3/Button.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -90,43 +91,54 @@
 	});
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
 	<div class="flex-1 space-y-4 overflow-y-auto px-6 py-6">
 		{#each data.messages as message (message.id)}
 			<MessageBubble {message} />
 		{/each}
 		{#if pendingReply}
 			<div class="flex justify-start">
-				<div class="max-w-md rounded-2xl bg-neutral-100 px-4 py-2 text-neutral-400">Typing…</div>
+				<div
+					class="md-body-large max-w-md px-4 py-2"
+					style="background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small)"
+				>
+					Typing…
+				</div>
 			</div>
 		{/if}
 		{#if turnError}
-			<p class="text-center text-sm text-red-600">Something went wrong — try sending again.</p>
+			<p class="md-body-medium text-center" style="color: var(--md-sys-color-error)">
+				Something went wrong — try sending again.
+			</p>
 		{/if}
 		{#if form?.error}
-			<p class="text-center text-sm text-red-600">{form.error}</p>
+			<p class="md-body-medium text-center" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
 		{#if connectionLost}
-			<p class="text-center text-sm text-red-600">Couldn't connect to this chat — try reloading the page.</p>
+			<p class="md-body-medium text-center" style="color: var(--md-sys-color-error)">
+				Couldn't connect to this chat — try reloading the page.
+			</p>
 		{/if}
 	</div>
 
-	<div class="border-t border-neutral-200 bg-white px-6 py-4">
+	<div
+		class="px-6 py-4"
+		style="background: var(--md-sys-color-surface-container-low); border-top: 1px solid var(--md-sys-color-outline-variant)"
+	>
 		<div class="mb-2 flex justify-end">
 			<div class="relative">
-				<button
-					type="button"
-					onclick={() => (modelPickerOpen = !modelPickerOpen)}
-					class="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
-				>
+				<Button type="button" variant="outlined" onclick={() => (modelPickerOpen = !modelPickerOpen)}>
 					{activeModelLabel}
-				</button>
+				</Button>
 				{#if modelPickerOpen}
-					<div class="absolute bottom-full right-0 mb-2 w-72 rounded-xl border border-neutral-200 bg-white p-3 shadow-lg">
+					<div
+						class="absolute right-0 bottom-full mb-2 w-72 p-3"
+						style="background: var(--md-sys-color-surface-container-high); border-radius: var(--md-sys-shape-corner-extra-large); box-shadow: var(--md-sys-elevation-shadow-level3)"
+					>
 						{#if form?.modelError}
-							<p class="mb-2 text-xs text-red-600">{form.modelError}</p>
+							<p class="md-body-small mb-2" style="color: var(--md-sys-color-error)">{form.modelError}</p>
 						{/if}
-						<p class="mb-1 text-xs font-medium text-neutral-500">Available models</p>
+						<p class="md-label-medium mb-1" style="color: var(--md-sys-color-on-surface-variant)">Available models</p>
 						{#each data.models.admin_models as model (model.id)}
 							<form
 								method="POST"
@@ -141,19 +153,18 @@
 								<input type="hidden" name="admin_model_id" value={model.id} />
 								<button
 									type="submit"
-									class="block w-full rounded-lg px-2 py-1 text-left text-sm hover:bg-neutral-100 {data.models
-										.selection?.kind === 'admin' && data.models.selection.admin_model_id === model.id
-										? 'font-semibold'
-										: ''}"
+									class="m3-picker-item"
+									class:m3-picker-item--selected={data.models.selection?.kind === 'admin' &&
+										data.models.selection.admin_model_id === model.id}
 								>
 									{model.label}
 								</button>
 							</form>
 						{/each}
 
-						<p class="mt-3 mb-1 text-xs font-medium text-neutral-500">Your own key</p>
+						<p class="md-label-medium mt-3 mb-1" style="color: var(--md-sys-color-on-surface-variant)">Your own key</p>
 						{#if data.models.selection?.kind === 'custom'}
-							<p class="px-2 py-1 text-sm font-semibold">
+							<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
 								{data.models.selection.label} ({data.models.selection.api_key_masked})
 							</p>
 						{/if}
@@ -170,24 +181,20 @@
 								}}
 								class="mt-1 space-y-1"
 							>
-								<input name="label" type="text" placeholder="Label" required class="w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
-								<select name="provider" required class="w-full rounded border border-neutral-300 px-2 py-1 text-sm">
+								<input name="label" type="text" placeholder="Label" required class="m3-picker-input" />
+								<select name="provider" required class="m3-picker-input">
 									<option value="anthropic">Anthropic</option>
 									<option value="openai">OpenAI</option>
 									<option value="gemini">Gemini</option>
 									<option value="fake">Fake (testing)</option>
 								</select>
-								<input name="model_id" type="text" placeholder="Model ID" class="w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
-								<input name="api_key" type="password" placeholder="API key" class="w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
-								<input name="base_url" type="text" placeholder="Base URL (optional)" class="w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
-								<button type="submit" class="w-full rounded bg-neutral-900 px-2 py-1 text-sm text-white">Save & validate</button>
+								<input name="model_id" type="text" placeholder="Model ID" class="m3-picker-input" />
+								<input name="api_key" type="password" placeholder="API key" class="m3-picker-input" />
+								<input name="base_url" type="text" placeholder="Base URL (optional)" class="m3-picker-input" />
+								<Button type="submit" variant="filled" class="w-full">Save & validate</Button>
 							</form>
 						{:else}
-							<button
-								type="button"
-								onclick={() => (showCustomForm = true)}
-								class="mt-1 block w-full rounded-lg px-2 py-1 text-left text-sm text-neutral-600 hover:bg-neutral-100"
-							>
+							<button type="button" onclick={() => (showCustomForm = true)} class="m3-picker-item mt-1">
 								+ Use your own API key
 							</button>
 						{/if}
@@ -195,26 +202,70 @@
 				{/if}
 			</div>
 		</div>
-		<form method="POST" action="?/sendMessage" use:enhance={() => {
-			return async ({ update }) => {
-				await update({ reset: true });
-			};
-		}}>
-			<div class="flex items-center gap-2 rounded-full border border-neutral-300 px-4 py-2">
+		<form
+			method="POST"
+			action="?/sendMessage"
+			use:enhance={() => {
+				return async ({ update }) => {
+					await update({ reset: true });
+				};
+			}}
+		>
+			<div
+				class="flex items-center gap-2 px-4 py-2"
+				style="background: var(--md-sys-color-surface); border-radius: var(--md-sys-shape-corner-full); border: 1px solid var(--md-sys-color-outline)"
+			>
 				<input
 					name="text"
 					type="text"
 					placeholder="Ask me anything..."
 					required
-					class="flex-1 border-none bg-transparent outline-none"
+					class="md-body-large flex-1 border-none bg-transparent outline-none"
+					style="color: var(--md-sys-color-on-surface)"
 				/>
-				<button
-					type="submit"
-					class="rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
-				>
-					Send
-				</button>
+				<Button type="submit" variant="filled">Send</Button>
 			</div>
 		</form>
 	</div>
 </div>
+
+<style>
+	.m3-picker-item {
+		display: block;
+		width: 100%;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+		padding: 8px;
+		border-radius: var(--md-sys-shape-corner-small);
+		font-family: var(--md-sys-typescale-body-medium-font);
+		font-size: var(--md-sys-typescale-body-medium-size);
+		color: var(--md-sys-color-on-surface);
+	}
+	.m3-picker-item:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+	.m3-picker-item--selected {
+		font-weight: 600;
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+
+	.m3-picker-input {
+		width: 100%;
+		box-sizing: border-box;
+		border-radius: var(--md-sys-shape-corner-small);
+		border: 1px solid var(--md-sys-color-outline);
+		background: var(--md-sys-color-surface);
+		color: var(--md-sys-color-on-surface);
+		padding: 6px 8px;
+		font-family: var(--md-sys-typescale-body-medium-font);
+		font-size: var(--md-sys-typescale-body-medium-size);
+	}
+	.m3-picker-input:focus {
+		outline: none;
+		border: 2px solid var(--md-sys-color-primary);
+		padding: 5px 7px;
+	}
+</style>
