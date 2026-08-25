@@ -195,7 +195,7 @@
 				{/if}
 			</div>
 		</div>
-		<form method="POST" use:enhance={() => {
+		<form method="POST" action="?/sendMessage" use:enhance={() => {
 			return async ({ update }) => {
 				await update({ reset: true });
 			};

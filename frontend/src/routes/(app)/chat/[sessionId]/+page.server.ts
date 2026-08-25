@@ -24,7 +24,11 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, params, cookies, fetch }) => {
+	// Named (not `default`) because this actions object also has selectAdminModel and
+	// selectCustomModel — SvelteKit forbids mixing a `default` action with named actions in the
+	// same file (throws "When using named actions, the default action cannot be used" at request
+	// time), so the message-send form below must target this action explicitly.
+	sendMessage: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();
 		const text = data.get('text');
 
