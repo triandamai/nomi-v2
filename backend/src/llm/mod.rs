@@ -52,6 +52,20 @@ pub async fn complete(provider: &dyn LlmProvider, request: LlmRequest) -> Result
     collect_stream(stream).await
 }
 
+/// Runs a minimal real call through the given config to prove it actually works, without
+/// persisting anything — used to validate a bring-your-own-key submission before saving it.
+pub async fn validate_model_config(config: ModelConfig, http_client: reqwest::Client) -> Result<(), LlmError> {
+    let provider = build_provider(config, http_client);
+    let request = LlmRequest {
+        system: None,
+        messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: "Hi".to_string() }] }],
+        tools: vec![],
+        max_tokens: 8,
+    };
+    complete(provider.as_ref(), request).await?;
+    Ok(())
+}
+
 enum PendingBlock {
     Text(String),
     ToolUse { id: String, name: String, input_json: String },
@@ -107,4 +121,21 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
     }
 
     Err(LlmError::ParseError("stream ended without a Done event".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn validate_model_config_succeeds_against_the_fake_provider() {
+        let config = ModelConfig {
+            provider: ProviderKind::Fake,
+            model_id: String::new(),
+            api_key: String::new(),
+            base_url: None,
+        };
+        let result = validate_model_config(config, reqwest::Client::new()).await;
+        assert!(result.is_ok());
+    }
 }
