@@ -1,14 +1,15 @@
-mod support;
-
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason};
-use nomi_orchestrator::realtime::MqttPublisher;
-use nomi_orchestrator::turn::ingest::ingest_inbound_message;
-use nomi_orchestrator::turn::process_turn;
+use nomi_agent_chitchat::ChitchatAgent;
+use nomi_agent_core::AgentRegistry;
+use nomi_agent_money::MoneyAgent;
+use nomi_llm::{ContentBlock, LlmResponse, StopReason};
+use nomi_realtime::MqttPublisher;
+use nomi_turn::ingest::ingest_inbound_message;
+use nomi_turn::process_turn;
 
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
+use nomi_test_support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 fn canned_response(text: &str) -> LlmResponse {
     LlmResponse {
@@ -19,12 +20,13 @@ fn canned_response(text: &str) -> LlmResponse {
     }
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn process_turn_produces_a_reply_for_an_already_ingested_message(pool: PgPool) {
     let ingested = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "hello", None).await.unwrap();
 
     let provider = FakeLlmProvider::success(canned_response("hi there"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-process-{}", Uuid::new_v4()));
 
     let user_id: Uuid = sqlx::query_scalar(
@@ -40,6 +42,7 @@ async fn process_turn_produces_a_reply_for_an_already_ingested_message(pool: PgP
         &mqtt,
         &provider,
         &embedder,
+        &registry,
         ingested.turn_job_id,
         ingested.session_id,
         ingested.sender_channel_identity_id,
@@ -59,12 +62,13 @@ async fn process_turn_produces_a_reply_for_an_already_ingested_message(pool: PgP
     assert_eq!(message_count, 2); // ingest's inbound insert + process_turn's reply insert
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn process_turn_records_a_turn_failed_event_on_llm_failure(pool: PgPool) {
     let ingested = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "hello", None).await.unwrap();
 
     let provider = FakeLlmProvider::failure("provider unavailable");
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-process-{}", Uuid::new_v4()));
 
     let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
@@ -78,6 +82,7 @@ async fn process_turn_records_a_turn_failed_event_on_llm_failure(pool: PgPool) {
         &mqtt,
         &provider,
         &embedder,
+        &registry,
         ingested.turn_job_id,
         ingested.session_id,
         ingested.sender_channel_identity_id,

@@ -129,6 +129,9 @@ async fn ws_upgrade_with_a_valid_token_for_the_callers_own_session_succeeds(pool
 
 use std::time::Duration as StdDuration;
 
+use nomi_agent_chitchat::ChitchatAgent;
+use nomi_agent_core::AgentRegistry;
+use nomi_agent_money::MoneyAgent;
 use nomi_orchestrator::llm::{ContentBlock, LlmResponse, PartialBlock, StopReason, StreamEvent};
 use nomi_orchestrator::realtime::{MqttPublisher, StreamEnvelope};
 use nomi_orchestrator::turn::{process_turn, queue};
@@ -158,6 +161,7 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
 
     let provider = FakeLlmProvider::success(canned_response(reply_text));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let mqtt = MqttPublisher::connect(
         support::TEST_MQTT_BROKER_HOST,
         support::TEST_MQTT_BROKER_PORT,
@@ -169,6 +173,7 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
         &mqtt,
         &provider,
         &embedder,
+        &registry,
         claimed.id,
         claimed.session_id,
         claimed.sender_channel_identity_id,

@@ -1,14 +1,16 @@
-mod support;
 
 use std::time::Duration;
 
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, LlmRole, StopReason};
-use nomi_orchestrator::turn::handle_inbound_message;
+use nomi_llm::{ContentBlock, LlmResponse, LlmRole, StopReason};
+use nomi_turn::handle_inbound_message;
 
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
+use nomi_agent_chitchat::ChitchatAgent;
+use nomi_agent_core::AgentRegistry;
+use nomi_agent_money::MoneyAgent;
+use nomi_test_support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 fn canned_response(text: &str) -> LlmResponse {
     LlmResponse {
@@ -19,12 +21,13 @@ fn canned_response(text: &str) -> LlmResponse {
     }
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn new_sender_gets_bootstrapped_and_receives_a_chitchat_reply(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("Hi! How can I help?"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello", None)
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
         .await
         .unwrap();
 
@@ -43,15 +46,16 @@ async fn new_sender_gets_bootstrapped_and_receives_a_chitchat_reply(pool: PgPool
     assert_eq!(org_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn existing_sender_reuses_identity_and_session_across_two_calls(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("ok"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "first", None)
+    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "first", None)
         .await
         .unwrap();
-    let second = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "second", None)
+    let second = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "second", None)
         .await
         .unwrap();
 
@@ -68,12 +72,13 @@ async fn existing_sender_reuses_identity_and_session_across_two_calls(pool: PgPo
     assert_eq!(user_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn inbound_message_is_durable_even_when_the_provider_call_fails(pool: PgPool) {
     let provider = FakeLlmProvider::failure("provider unavailable");
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let result = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello", None)
+    let result = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
         .await;
     assert!(result.is_err());
 
@@ -94,12 +99,13 @@ async fn inbound_message_is_durable_even_when_the_provider_call_fails(pool: PgPo
     assert_eq!(event_type, "TurnFailed");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_slice(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("still chatting"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hi", None)
+    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hi", None)
         .await
         .unwrap();
 
@@ -118,25 +124,26 @@ async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_sl
     .await
     .unwrap();
 
-    let second = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "still there?", None)
+    let second = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "still there?", None)
         .await
         .unwrap();
 
     assert_eq!(second.reply, "still chatting");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn concurrent_messages_for_the_same_session_are_serialized(pool: PgPool) {
     let bootstrap_provider = FakeLlmProvider::success(canned_response("bootstrapped"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
-    handle_inbound_message(&pool, &bootstrap_provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
         .await
         .unwrap();
 
     let provider = FakeLlmProvider::success(canned_response("ok")).with_delay(Duration::from_millis(200));
 
-    let call1 = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "first", None);
-    let call2 = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "second", None);
+    let call1 = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "first", None);
+    let call2 = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "second", None);
     let (result1, result2) = tokio::join!(call1, call2);
     result1.unwrap();
     result2.unwrap();
@@ -172,12 +179,13 @@ async fn concurrent_messages_for_the_same_session_are_serialized(pool: PgPool) {
 // entrypoint, which is what these two tests (ported from the old `turn_chitchat.rs`'s
 // `keeps_only_the_last_20_messages_ordered_oldest_first` and
 // `maps_sender_presence_to_role_correctly`) do.
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool: PgPool) {
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
     let bootstrap_provider = FakeLlmProvider::success(canned_response("bootstrapped"));
-    let bootstrap = handle_inbound_message(&pool, &bootstrap_provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
+    let bootstrap = handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
         .await
         .unwrap();
 
@@ -203,7 +211,7 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
     }
 
     let provider = FakeLlmProvider::success(canned_response("ok"));
-    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "latest", None)
+    handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
         .await
         .unwrap();
 
@@ -229,17 +237,18 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
     }
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn chitchat_turn_maps_sender_presence_to_role_correctly(pool: PgPool) {
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
     let bootstrap_provider = FakeLlmProvider::success(canned_response("hello back"));
-    handle_inbound_message(&pool, &bootstrap_provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hi", None)
+    handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hi", None)
         .await
         .unwrap();
 
     let provider = FakeLlmProvider::success(canned_response("ok"));
-    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "latest", None)
+    handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
         .await
         .unwrap();
 

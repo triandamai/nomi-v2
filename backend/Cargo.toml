@@ -36,6 +36,7 @@ nomi-settings = { path = "crates/nomi-settings" }
 nomi-agent-core = { path = "crates/nomi-agent-core" }
 nomi-agent-money = { path = "crates/nomi-agent-money" }
 nomi-agent-chitchat = { path = "crates/nomi-agent-chitchat" }
+nomi-turn = { path = "crates/nomi-turn" }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }

@@ -30,6 +30,11 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
     }
     tracing::info!("worker: listening for new turn jobs");
 
+    let registry = nomi_agent_core::AgentRegistry::new(vec![
+        Box::new(nomi_agent_money::MoneyAgent),
+        Box::new(nomi_agent_chitchat::ChitchatAgent),
+    ]);
+
     loop {
         // Wake on NOTIFY, or on the fallback interval if a NOTIFY is ever missed — either way,
         // fall through to draining every currently-pending job before waiting again.
@@ -68,6 +73,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
                 &mqtt,
                 provider.as_ref(),
                 embedding_provider.as_ref(),
+                &registry,
                 claimed.id,
                 claimed.session_id,
                 claimed.sender_channel_identity_id,

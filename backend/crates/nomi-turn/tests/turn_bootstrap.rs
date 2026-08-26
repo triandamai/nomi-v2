@@ -1,9 +1,9 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::turn::bootstrap::bootstrap_identity_and_session;
+use nomi_turn::bootstrap::bootstrap_identity_and_session;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn new_sender_creates_user_org_membership_identity_and_session(pool: PgPool) {
     let result = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
@@ -58,7 +58,7 @@ async fn new_sender_creates_user_org_membership_identity_and_session(pool: PgPoo
     assert_eq!(chat_id, "chat-1");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn existing_sender_reuses_identity_org_and_session(pool: PgPool) {
     let first = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
@@ -75,7 +75,7 @@ async fn existing_sender_reuses_identity_org_and_session(pool: PgPool) {
     assert_eq!(session_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn existing_sender_new_chat_creates_a_new_session_under_the_same_personal_org(pool: PgPool) {
     let first = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
@@ -93,7 +93,7 @@ async fn existing_sender_new_chat_creates_a_new_session_under_the_same_personal_
     assert_eq!(session_count, 2);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn resolves_the_personal_org_even_when_the_user_also_belongs_to_a_named_org(pool: PgPool) {
     let bootstrapped = bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await
@@ -120,7 +120,7 @@ async fn resolves_the_personal_org_even_when_the_user_also_belongs_to_a_named_or
     assert_ne!(second.org_id, acme_org_id);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn concurrent_first_contact_from_the_same_new_sender_does_not_duplicate_rows(pool: PgPool) {
     let (first, second) = tokio::join!(
         bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None),
@@ -143,7 +143,7 @@ async fn concurrent_first_contact_from_the_same_new_sender_does_not_duplicate_ro
     assert_eq!(session_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn concurrent_new_session_for_an_existing_sender_does_not_duplicate_rows(pool: PgPool) {
     bootstrap_identity_and_session(&pool, "telegram", "dm", "chat-1", "tg-user-1", None)
         .await

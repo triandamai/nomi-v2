@@ -1,8 +1,8 @@
 use sqlx::PgPool;
 
-use nomi_orchestrator::turn::ingest::ingest_inbound_message;
+use nomi_turn::ingest::ingest_inbound_message;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn ingest_bootstraps_persists_the_message_and_enqueues_a_job(pool: PgPool) {
     let result = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "hello", None)
         .await
@@ -28,7 +28,7 @@ async fn ingest_bootstraps_persists_the_message_and_enqueues_a_job(pool: PgPool)
     assert_eq!(status, "pending");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn ingest_reuses_the_same_session_and_identity_across_two_calls(pool: PgPool) {
     let first = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "first", None).await.unwrap();
     let second = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "second", None).await.unwrap();

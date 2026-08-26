@@ -3,34 +3,32 @@ pub mod ingest;
 pub mod lock;
 pub mod queue;
 pub mod routing;
-pub mod types;
 
-pub use types::TurnOutcome;
-pub use crate::agent_core::TurnError;
+pub use nomi_agent_core::TurnError;
 
 use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, PgPool, Postgres};
 use uuid::Uuid;
 
-use crate::agent_core::{self, SubAgent};
-use crate::embedding::EmbeddingProvider;
-use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
-use crate::realtime::{MqttPublisher, StreamEnvelope};
+use nomi_agent_core::AgentRegistry;
+use nomi_embedding::EmbeddingProvider;
+use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
+use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 const SUBAGENT_HISTORY_LIMIT: i64 = 20;
 const SUBAGENT_MAX_TOKENS: u32 = 1024;
-const CHITCHAT_MAX_TOKENS: u32 = 1024;
 
-enum RoutingOutcome {
-    Continue(Uuid),
-    NeedsClassification,
-    FallbackToChitchat,
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurnOutcome {
+    pub session_id: Uuid,
+    pub reply: String,
 }
 
 pub async fn handle_inbound_message(
     pool: &PgPool,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
     channel: &str,
     chat_type: &str,
     chat_id: &str,
@@ -46,7 +44,7 @@ pub async fn handle_inbound_message(
 
     lock::insert_inbound_message(&mut conn, session_id, sender_channel_identity_id, text).await?;
 
-    let result = run_locked_turn(&mut conn, None, provider, embedding_provider, session_id, sender_channel_identity_id, user_id, text).await;
+    let result = run_locked_turn(&mut conn, None, provider, embedding_provider, registry, session_id, sender_channel_identity_id, user_id, text).await;
 
     match result {
         Ok(reply) => {
@@ -69,14 +67,16 @@ pub async fn handle_inbound_message(
 }
 
 /// The worker's entry point (see backend/src/bin/worker.rs): processes an already-ingested
-/// message (see turn::ingest::ingest_inbound_message) — bootstrap and the inbound message
-/// insert have already happened, so this only acquires the session lock and runs routing/
-/// dispatch, threading `mqtt`/`turn_job_id` through to chitchat for live delta publishing.
+/// message (see nomi_turn::ingest::ingest_inbound_message) — bootstrap and the inbound
+/// message insert have already happened, so this only acquires the session lock and runs
+/// routing/dispatch, threading `mqtt`/`turn_job_id` through for live delta publishing.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_turn(
     pool: &PgPool,
     mqtt: &MqttPublisher,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
     turn_job_id: Uuid,
     session_id: Uuid,
     sender_channel_identity_id: Uuid,
@@ -90,6 +90,7 @@ pub async fn process_turn(
         Some((mqtt, turn_job_id)),
         provider,
         embedding_provider,
+        registry,
         session_id,
         sender_channel_identity_id,
         user_id,
@@ -122,14 +123,16 @@ pub async fn process_turn(
     }
 }
 
-/// Shared by handle_inbound_message and process_turn: routing/classification and
-/// chitchat/subagent dispatch, assuming the session lock is already held by the caller and
+/// Shared by handle_inbound_message and process_turn: routing/classification and agent
+/// dispatch through `registry`, assuming the session lock is already held by the caller and
 /// the inbound message has already been persisted (by the caller, before this runs).
+#[allow(clippy::too_many_arguments)]
 async fn run_locked_turn(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
     session_id: Uuid,
     sender_channel_identity_id: Uuid,
     user_id: Uuid,
@@ -137,63 +140,68 @@ async fn run_locked_turn(
 ) -> Result<String, TurnError> {
     let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
 
+    enum RoutingOutcome<'a> {
+        Continue { agent: &'a dyn nomi_agent_core::SubAgent, agent_session_id: Uuid },
+        NeedsClassification,
+    }
+
     let routing_outcome = match active {
         Some(agent_session_id) => {
             let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
             if routing::is_stale(details.last_activity_at) {
                 routing::mark_expired(conn, agent_session_id, session_id, &details.agent_type).await?;
                 RoutingOutcome::NeedsClassification
-            } else if details.agent_type == nomi_agent_money::MONEY_AGENT_TYPE {
-                RoutingOutcome::Continue(agent_session_id)
             } else {
-                RoutingOutcome::FallbackToChitchat
+                match registry.find(&details.agent_type) {
+                    Some(agent) => RoutingOutcome::Continue { agent, agent_session_id },
+                    // The active session's agent_type isn't registered anymore (e.g. an
+                    // agent crate was removed) — fall back to classifying fresh, same as
+                    // an unrecognized/stale session.
+                    None => RoutingOutcome::NeedsClassification,
+                }
             }
         }
         None => RoutingOutcome::NeedsClassification,
     };
 
     match routing_outcome {
-        RoutingOutcome::Continue(agent_session_id) => {
-            run_subagent_turn(conn, provider, embedding_provider, &nomi_agent_money::MoneyAgent, session_id, agent_session_id, user_id).await
+        RoutingOutcome::Continue { agent, agent_session_id } => {
+            run_subagent_turn(conn, mqtt, provider, embedding_provider, agent, session_id, agent_session_id, user_id).await
         }
-        RoutingOutcome::FallbackToChitchat => {
-            run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id).await
+        RoutingOutcome::NeedsClassification => {
+            let agent = routing::classify_intent(provider, registry, text).await;
+
+            if agent.agent_type() == registry.default_agent().agent_type() {
+                // The default agent (chitchat) never gets a persistent agent_sessions row —
+                // matching today's behavior, where chitchat has no agent_session_id at all.
+                // agent_session_id == session_id here purely as a stand-in for logging
+                // (see nomi-agent-chitchat's own comment on this at its call site's origin).
+                run_subagent_turn(conn, mqtt, provider, embedding_provider, agent, session_id, session_id, user_id).await
+            } else {
+                let agent_session_id =
+                    routing::spawn_agent_session(conn, session_id, sender_channel_identity_id, agent.agent_type()).await?;
+                run_subagent_turn(conn, mqtt, provider, embedding_provider, agent, session_id, agent_session_id, user_id).await
+            }
         }
-        RoutingOutcome::NeedsClassification => match routing::classify_intent(provider, text).await {
-            routing::Intent::Money => {
-                let agent_session_id = routing::spawn_agent_session(
-                    conn,
-                    session_id,
-                    sender_channel_identity_id,
-                    nomi_agent_money::MONEY_AGENT_TYPE,
-                )
-                .await?;
-                run_subagent_turn(conn, provider, embedding_provider, &nomi_agent_money::MoneyAgent, session_id, agent_session_id, user_id).await
-            }
-            routing::Intent::Chitchat => {
-                run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id).await
-            }
-        },
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_subagent_turn(
     conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
-    agent: &dyn SubAgent,
+    agent: &dyn nomi_agent_core::SubAgent,
     session_id: Uuid,
     agent_session_id: Uuid,
     user_id: Uuid,
 ) -> Result<String, TurnError> {
     let messages = fetch_recent_messages(conn, session_id).await?;
 
-    let outcome = agent_core::run_agent_turn(
+    let outcome = nomi_agent_core::run_agent_turn(
         conn,
-        None, // mqtt: money_agent-style turns don't stream yet at this point in the migration —
-              // Task 9 threads `mqtt` through from `process_turn` once run_locked_turn itself
-              // is rewritten. Passing None here preserves today's exact behavior (no streaming
-              // for subagent turns) until that task deliberately changes it.
+        mqtt,
         provider,
         embedding_provider,
         agent,
@@ -206,7 +214,7 @@ async fn run_subagent_turn(
     .await?;
 
     match outcome {
-        agent_core::LoopOutcome::Reply(reply_text) => {
+        nomi_agent_core::LoopOutcome::Reply(reply_text) => {
             let mut tx = conn.begin().await?;
             sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
                 .bind(session_id)
@@ -220,7 +228,7 @@ async fn run_subagent_turn(
             tx.commit().await?;
             Ok(reply_text)
         }
-        agent_core::LoopOutcome::Completed { status, summary } => {
+        nomi_agent_core::LoopOutcome::Completed { status, summary } => {
             let mut tx = conn.begin().await?;
             sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
                 .bind(session_id)
@@ -234,53 +242,6 @@ async fn run_subagent_turn(
             Ok(summary)
         }
     }
-}
-
-/// Temporary bridge (Task 8): chitchat is now `nomi_agent_core::run_agent_turn` driven by
-/// `nomi_agent_chitchat::ChitchatAgent` instead of its own bespoke history-fetch/memory/
-/// streaming code. It has no `agent_session_id` of its own (it isn't a stateful multi-turn
-/// agent session like money_agent) — `session_id` is passed for both `session_id` and
-/// `agent_session_id`; `agent_events` rows keyed to a "session" rather than an "agent session"
-/// for chitchat's tool-call logging is harmless since chitchat has no tools, so
-/// `log_tool_call` is never actually invoked for it. This whole function is rough on purpose:
-/// Task 9 replaces all of `run_locked_turn` (including this exact call site) with the real
-/// registry-driven version.
-async fn run_chitchat_turn(
-    conn: &mut PoolConnection<Postgres>,
-    mqtt: Option<(&MqttPublisher, Uuid)>,
-    provider: &dyn LlmProvider,
-    embedding_provider: &dyn EmbeddingProvider,
-    session_id: Uuid,
-    user_id: Uuid,
-) -> Result<String, TurnError> {
-    let messages = fetch_recent_messages(conn, session_id).await?;
-
-    let outcome = agent_core::run_agent_turn(
-        conn,
-        mqtt,
-        provider,
-        embedding_provider,
-        &nomi_agent_chitchat::ChitchatAgent,
-        session_id,
-        session_id,
-        user_id,
-        messages,
-        CHITCHAT_MAX_TOKENS,
-    )
-    .await?;
-
-    let reply_text = match outcome {
-        agent_core::LoopOutcome::Reply(text) => text,
-        agent_core::LoopOutcome::Completed { summary, .. } => summary, // chitchat never completes; unreachable in practice
-    };
-
-    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
-        .bind(session_id)
-        .bind(&reply_text)
-        .execute(&mut **conn)
-        .await?;
-
-    Ok(reply_text)
 }
 
 async fn fetch_recent_messages(

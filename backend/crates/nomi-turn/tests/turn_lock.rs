@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::turn::lock::{acquire_session_lock, insert_inbound_message, release_session_lock};
+use nomi_turn::lock::{acquire_session_lock, insert_inbound_message, release_session_lock};
 
 async fn seed_session(pool: &PgPool) -> (Uuid, Uuid) {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -31,14 +31,14 @@ async fn seed_session(pool: &PgPool) -> (Uuid, Uuid) {
     (session_id, identity_id)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn acquire_and_release_round_trip(pool: PgPool) {
     let (session_id, _) = seed_session(&pool).await;
     let mut conn = acquire_session_lock(&pool, session_id).await.unwrap();
     release_session_lock(&mut conn, session_id).await.unwrap();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn insert_inbound_message_persists_a_durable_row(pool: PgPool) {
     let (session_id, identity_id) = seed_session(&pool).await;
     let mut conn = acquire_session_lock(&pool, session_id).await.unwrap();
@@ -57,7 +57,7 @@ async fn insert_inbound_message_persists_a_durable_row(pool: PgPool) {
     assert_eq!(content, "hello");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn advisory_lock_serializes_two_concurrent_acquires_for_the_same_session(pool: PgPool) {
     let (session_id, _) = seed_session(&pool).await;
 
@@ -79,7 +79,7 @@ async fn advisory_lock_serializes_two_concurrent_acquires_for_the_same_session(p
     assert!(waited >= Duration::from_millis(150), "second acquire should have blocked on the first, waited {waited:?}");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn locks_for_different_sessions_do_not_contend(pool: PgPool) {
     let (session_a, _) = seed_session(&pool).await;
     let session_b = Uuid::new_v4();

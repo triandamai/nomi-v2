@@ -1,7 +1,7 @@
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::agent_core::TurnError;
+use nomi_agent_core::TurnError;
 
 pub struct ClaimedJob {
     pub id: Uuid,

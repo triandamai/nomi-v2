@@ -3,30 +3,27 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use crate::agent_core::TurnError;
-use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
+use nomi_agent_core::{AgentRegistry, SubAgent, TurnError};
+use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
-const INTENT_CLASSIFICATION_SYSTEM_PROMPT: &str =
-    "Classify the user's message as exactly one of: chitchat, money. Reply with only that single word, nothing else.";
 const INTENT_CLASSIFICATION_MAX_TOKENS: u32 = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Intent {
-    Chitchat,
-    Money,
-}
-
-pub async fn classify_intent(provider: &dyn LlmProvider, text: &str) -> Intent {
+/// Classifies `text` against whatever's registered in `registry`, returning the matching
+/// agent (or the registry's default agent on no match, a parse failure, or an LLM error).
+/// Replaces the old closed `Intent` enum — there is nothing here to edit when a new agent
+/// is registered; the classifier prompt and the matching logic are both built from
+/// `registry` at call time.
+pub async fn classify_intent<'a>(provider: &dyn LlmProvider, registry: &'a AgentRegistry, text: &str) -> &'a dyn SubAgent {
     let request = LlmRequest {
-        system: Some(INTENT_CLASSIFICATION_SYSTEM_PROMPT.to_string()),
+        system: Some(registry.classification_prompt()),
         messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: text.to_string() }] }],
         tools: vec![],
         max_tokens: INTENT_CLASSIFICATION_MAX_TOKENS,
     };
 
-    let response = match crate::llm::complete(provider, request).await {
+    let response = match nomi_llm::complete(provider, request).await {
         Ok(r) => r,
-        Err(_) => return Intent::Chitchat,
+        Err(_) => return registry.default_agent(),
     };
 
     let text = response
@@ -38,10 +35,7 @@ pub async fn classify_intent(provider: &dyn LlmProvider, text: &str) -> Intent {
         })
         .unwrap_or_default();
 
-    match text.trim().to_lowercase().as_str() {
-        "money" => Intent::Money,
-        _ => Intent::Chitchat,
-    }
+    registry.find_by_intent_label(&text).unwrap_or_else(|| registry.default_agent())
 }
 
 pub async fn find_active_agent_session(

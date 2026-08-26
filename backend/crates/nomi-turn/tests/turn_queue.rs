@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::turn::queue;
+use nomi_turn::queue;
 
 async fn seed_session(pool: &PgPool) -> Uuid {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ('t', true) RETURNING id")
@@ -15,7 +15,7 @@ async fn seed_session(pool: &PgPool) -> Uuid {
         .unwrap()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn enqueue_then_claim_returns_the_job(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let sender_id = Uuid::new_v4();
@@ -38,13 +38,13 @@ async fn enqueue_then_claim_returns_the_job(pool: PgPool) {
     assert_eq!(status, "processing");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn claim_next_returns_none_when_no_pending_jobs(pool: PgPool) {
     let claimed = queue::claim_next(&pool).await.unwrap();
     assert!(claimed.is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn two_concurrent_claims_never_return_the_same_job(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let sender_id = Uuid::new_v4();
@@ -62,7 +62,7 @@ async fn two_concurrent_claims_never_return_the_same_job(pool: PgPool) {
     assert_eq!(winners[0].id, job_id);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn mark_completed_and_mark_failed_update_status(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let sender_id = Uuid::new_v4();

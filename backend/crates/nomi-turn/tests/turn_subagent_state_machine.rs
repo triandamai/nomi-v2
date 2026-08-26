@@ -1,12 +1,14 @@
-mod support;
 
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason};
-use nomi_orchestrator::turn::handle_inbound_message;
+use nomi_llm::{ContentBlock, LlmResponse, StopReason};
+use nomi_turn::handle_inbound_message;
 
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
+use nomi_agent_chitchat::ChitchatAgent;
+use nomi_agent_core::AgentRegistry;
+use nomi_agent_money::MoneyAgent;
+use nomi_test_support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 fn text_response(text: &str) -> LlmResponse {
     LlmResponse {
@@ -55,16 +57,17 @@ async fn seed_speaker(pool: &PgPool, channel_user_id: &str) -> (Uuid, Uuid) {
     (user_id, identity_id)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn money_intent_with_no_active_agent_spawns_and_runs_the_money_agent(pool: PgPool) {
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![
         text_response("money"),
         tool_use_response("t1", "list_transactions", serde_json::json!({"limit": 10})),
         text_response("Here's your spending"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
 
@@ -98,7 +101,7 @@ async fn money_intent_with_no_active_agent_spawns_and_runs_the_money_agent(pool:
     assert_eq!(tool_called_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn an_active_agent_is_continued_without_reclassifying_intent(pool: PgPool) {
     let (_user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -113,9 +116,10 @@ async fn an_active_agent_is_continued_without_reclassifying_intent(pool: PgPool)
     .bind(session_id).bind(identity_id).execute(&pool).await.unwrap();
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![text_response("Sure, here's more info")]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "and rent?", None)
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "and rent?", None)
         .await
         .unwrap();
 
@@ -136,7 +140,7 @@ async fn an_active_agent_is_continued_without_reclassifying_intent(pool: PgPool)
     assert!(requests[0].system.as_ref().unwrap().contains("financial assistant"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn complete_task_marks_the_agent_session_completed(pool: PgPool) {
     let (_user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -151,13 +155,14 @@ async fn complete_task_marks_the_agent_session_completed(pool: PgPool) {
     .bind(session_id).bind(identity_id).fetch_one(&pool).await.unwrap();
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![tool_use_response(
         "complete_task",
         "complete_task",
         serde_json::json!({"status": "completed", "summary": "All set!"}),
     )]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "thanks, that's all", None)
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "thanks, that's all", None)
         .await
         .unwrap();
 
@@ -180,7 +185,7 @@ async fn complete_task_marks_the_agent_session_completed(pool: PgPool) {
     assert_eq!(payload, serde_json::json!({"summary": "All set!"}));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn complete_task_with_cancelled_status_marks_the_agent_session_cancelled(pool: PgPool) {
     let (_user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -195,13 +200,14 @@ async fn complete_task_with_cancelled_status_marks_the_agent_session_cancelled(p
     .bind(session_id).bind(identity_id).fetch_one(&pool).await.unwrap();
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![tool_use_response(
         "complete_task",
         "complete_task",
         serde_json::json!({"status": "cancelled", "summary": "Nevermind, no problem!"}),
     )]);
 
-    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "actually nevermind", None)
+    handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "actually nevermind", None)
         .await
         .unwrap();
 
@@ -222,7 +228,7 @@ async fn complete_task_with_cancelled_status_marks_the_agent_session_cancelled(p
     assert_eq!(event_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_stale_active_agent_is_expired_and_the_message_falls_through_to_chitchat(pool: PgPool) {
     let (_user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -238,13 +244,14 @@ async fn a_stale_active_agent_is_expired_and_the_message_falls_through_to_chitch
     .bind(session_id).bind(identity_id).bind(stale_time).fetch_one(&pool).await.unwrap();
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![
         text_response("chitchat"),
         text_response("Hi there!"),
         text_response("NONE"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hello again", None)
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello again", None)
         .await
         .unwrap();
 
@@ -267,7 +274,7 @@ async fn a_stale_active_agent_is_expired_and_the_message_falls_through_to_chitch
     assert_eq!(expired_count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn after_completion_a_new_money_intent_message_spawns_a_fresh_second_agent_session(pool: PgPool) {
     let (_user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -282,13 +289,14 @@ async fn after_completion_a_new_money_intent_message_spawns_a_fresh_second_agent
     .bind(session_id).bind(identity_id).fetch_one(&pool).await.unwrap();
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![
         text_response("money"),
         tool_use_response("t1", "list_transactions", serde_json::json!({"limit": 10})),
         text_response("Here's your spending again"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "what about now?", None)
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "what about now?", None)
         .await
         .unwrap();
 
