@@ -1,24 +1,21 @@
-mod support;
-
 use axum::{body::Body, http::{Request, StatusCode}, routing::get, Router};
 use http_body_util::BodyExt;
-use nomi_orchestrator::app::AppState;
-use nomi_orchestrator::auth::{claims::Claims, extractor::AuthClaims};
+use nomi_auth::{claims::Claims, extractor::{AuthClaims, HasJwtSecret}};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
-fn test_router(pool: PgPool) -> Router {
-    let state = AppState {
-        pool,
-        jwt_secret: SECRET.to_string(),
-        http_client: reqwest::Client::new(),
-        settings_key: support::TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
-    };
+#[derive(Clone)]
+struct TestState { jwt_secret: String }
+
+impl HasJwtSecret for TestState {
+    fn jwt_secret(&self) -> &str { &self.jwt_secret }
+}
+
+fn test_router() -> Router {
+    let state = TestState { jwt_secret: SECRET.to_string() };
     Router::new()
         .route("/whoami", get(|AuthClaims(claims): AuthClaims| async move {
             axum::Json(claims)
@@ -27,11 +24,11 @@ fn test_router(pool: PgPool) -> Router {
 }
 
 #[sqlx::test]
-async fn valid_token_reaches_the_handler(pool: PgPool) {
+async fn valid_token_reaches_the_handler(_pool: PgPool) {
     let claims = Claims::new(Uuid::new_v4(), Uuid::new_v4(), vec![], 1800);
     let token = claims.encode(SECRET).unwrap();
 
-    let response = test_router(pool)
+    let response = test_router()
         .oneshot(
             Request::builder()
                 .uri("/whoami")
@@ -49,8 +46,8 @@ async fn valid_token_reaches_the_handler(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn missing_token_is_rejected(pool: PgPool) {
-    let response = test_router(pool)
+async fn missing_token_is_rejected(_pool: PgPool) {
+    let response = test_router()
         .oneshot(Request::builder().uri("/whoami").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -58,8 +55,8 @@ async fn missing_token_is_rejected(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn malformed_token_is_rejected(pool: PgPool) {
-    let response = test_router(pool)
+async fn malformed_token_is_rejected(_pool: PgPool) {
+    let response = test_router()
         .oneshot(
             Request::builder()
                 .uri("/whoami")
@@ -73,13 +70,13 @@ async fn malformed_token_is_rejected(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn expired_token_is_rejected(pool: PgPool) {
+async fn expired_token_is_rejected(_pool: PgPool) {
     let mut claims = Claims::new(Uuid::new_v4(), Uuid::new_v4(), vec![], 1800);
     // -3600 (not -60): jsonwebtoken's default 60-second leeway makes -60 borderline/unreliable.
     claims.exp = chrono::Utc::now().timestamp() - 3600;
     let token = claims.encode(SECRET).unwrap();
 
-    let response = test_router(pool)
+    let response = test_router()
         .oneshot(
             Request::builder()
                 .uri("/whoami")

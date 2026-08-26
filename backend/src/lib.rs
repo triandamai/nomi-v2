@@ -1,5 +1,5 @@
 pub mod app;
-pub mod auth;
+pub use nomi_auth as auth;
 pub mod bootstrap;
 pub mod routes;
 pub use nomi_llm as llm;

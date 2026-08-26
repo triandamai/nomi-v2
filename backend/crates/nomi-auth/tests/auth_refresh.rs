@@ -1,4 +1,4 @@
-use nomi_orchestrator::auth::{
+use nomi_auth::{
     refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token, RefreshError},
     claims::Claims,
     registration::{register_user, OrgMode},
@@ -7,7 +7,7 @@ use sqlx::PgPool;
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn issue_and_refresh_roundtrip(pool: PgPool) {
     let user_id = register_user(
         &pool,
@@ -25,7 +25,7 @@ async fn issue_and_refresh_roundtrip(pool: PgPool) {
     assert_eq!(claims.sub, user_id);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn refresh_rejects_after_revocation(pool: PgPool) {
     let user_id = register_user(
         &pool,
@@ -43,7 +43,7 @@ async fn refresh_rejects_after_revocation(pool: PgPool) {
     assert!(matches!(result, Err(RefreshError::Invalid)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn refresh_rejects_after_expiry(pool: PgPool) {
     let user_id = register_user(
         &pool,
@@ -55,7 +55,7 @@ async fn refresh_rejects_after_expiry(pool: PgPool) {
     .unwrap();
 
     let raw_refresh = "manually-inserted-expired-token";
-    let token_hash = nomi_orchestrator::auth::refresh_token::hash_token(raw_refresh);
+    let token_hash = nomi_auth::refresh_token::hash_token(raw_refresh);
     sqlx::query(
         "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() - interval '1 day')",
     )
@@ -69,7 +69,7 @@ async fn refresh_rejects_after_expiry(pool: PgPool) {
     assert!(matches!(result, Err(RefreshError::Invalid)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn refresh_recomputes_permissions_after_membership_change(pool: PgPool) {
     let user_id = register_user(
         &pool,

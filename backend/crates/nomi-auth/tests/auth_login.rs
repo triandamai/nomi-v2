@@ -1,9 +1,9 @@
-use nomi_orchestrator::auth::{claims::Claims, login::{login, LoginError}, registration::{register_user, OrgMode}};
+use nomi_auth::{claims::Claims, login::{login, LoginError}, registration::{register_user, OrgMode}};
 use sqlx::PgPool;
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn login_succeeds_with_correct_credentials(pool: PgPool) {
     let user_id = register_user(
         &pool,
@@ -27,7 +27,7 @@ async fn login_succeeds_with_correct_credentials(pool: PgPool) {
         .any(|p| p.contains("member") && p.contains("manage")));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn login_rejects_wrong_password(pool: PgPool) {
     register_user(
         &pool,
@@ -42,7 +42,7 @@ async fn login_rejects_wrong_password(pool: PgPool) {
     assert!(matches!(result, Err(LoginError::InvalidCredentials)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn login_rejects_unknown_email(pool: PgPool) {
     let result = login(&pool, "nobody@example.com", "whatever", SECRET).await;
     assert!(matches!(result, Err(LoginError::InvalidCredentials)));

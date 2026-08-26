@@ -1,8 +1,8 @@
-use nomi_orchestrator::auth::registration::{register_user, OrgMode, RegistrationError};
+use nomi_auth::registration::{register_user, OrgMode, RegistrationError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn create_mode_creates_org_and_owner_membership(pool: PgPool) {
     let user_id = register_user(
         &pool,
@@ -29,7 +29,7 @@ async fn create_mode_creates_org_and_owner_membership(pool: PgPool) {
     assert_eq!(org_name, "Acme");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn join_mode_uses_invite_role_and_marks_invite_used(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -74,7 +74,7 @@ async fn join_mode_uses_invite_role_and_marks_invite_used(pool: PgPool) {
     assert!(used_at.is_some());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn join_mode_rejects_a_reused_invite_code(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -116,7 +116,7 @@ async fn join_mode_rejects_a_reused_invite_code(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn rejects_duplicate_email(pool: PgPool) {
     register_user(
         &pool,

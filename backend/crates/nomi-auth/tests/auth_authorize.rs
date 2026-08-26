@@ -1,4 +1,4 @@
-use nomi_orchestrator::auth::authorize::{authorize_org_action, AuthorizeError};
+use nomi_auth::authorize::{authorize_org_action, AuthorizeError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -21,21 +21,21 @@ async fn make_membership(pool: &PgPool, role: &str) -> (Uuid, Uuid) {
     (org_id, user_id)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn allows_a_matching_role(pool: PgPool) {
     let (org_id, user_id) = make_membership(&pool, "owner").await;
     let result = authorize_org_action(&pool, user_id, org_id, &["owner", "admin"]).await;
     assert!(result.is_ok());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn rejects_a_role_not_in_the_allow_list(pool: PgPool) {
     let (org_id, user_id) = make_membership(&pool, "member").await;
     let result = authorize_org_action(&pool, user_id, org_id, &["owner", "admin"]).await;
     assert!(matches!(result, Err(AuthorizeError::Forbidden)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn rejects_a_different_org(pool: PgPool) {
     let (_org_a, user_id) = make_membership(&pool, "owner").await;
     let org_b: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Other Org') RETURNING id")
@@ -47,7 +47,7 @@ async fn rejects_a_different_org(pool: PgPool) {
     assert!(matches!(result, Err(AuthorizeError::Forbidden)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn rejects_a_membership_removed_after_it_was_granted(pool: PgPool) {
     let (org_id, user_id) = make_membership(&pool, "owner").await;
 

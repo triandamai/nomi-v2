@@ -1323,6 +1323,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-auth"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "chrono",
+ "hex",
+ "http-body-util",
+ "jsonwebtoken",
+ "nomi-test-support",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower 0.4.13",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-embedding"
 version = "0.1.0"
 dependencies = [
@@ -1369,6 +1391,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
+ "nomi-auth",
  "nomi-embedding",
  "nomi-llm",
  "nomi-realtime",

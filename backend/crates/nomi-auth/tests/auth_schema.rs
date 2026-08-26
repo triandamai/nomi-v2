@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn users_gains_is_platform_admin_defaulting_false(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
@@ -16,7 +16,7 @@ async fn users_gains_is_platform_admin_defaulting_false(pool: PgPool) {
     assert!(!is_platform_admin);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn web_credentials_email_is_unique(pool: PgPool) {
     let user_a: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
@@ -48,7 +48,7 @@ async fn web_credentials_email_is_unique(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn refresh_tokens_token_hash_is_unique(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
@@ -77,7 +77,7 @@ async fn refresh_tokens_token_hash_is_unique(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn membership_role_check_rejects_invalid_value(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -102,7 +102,7 @@ async fn membership_role_check_rejects_invalid_value(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn membership_status_check_rejects_invalid_value(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -129,7 +129,7 @@ async fn membership_status_check_rejects_invalid_value(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn org_invites_role_check_rejects_invalid_value(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -156,7 +156,7 @@ async fn org_invites_role_check_rejects_invalid_value(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn agent_sessions_status_check_rejects_invalid_value(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")

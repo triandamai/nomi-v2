@@ -18,6 +18,12 @@ pub struct AppState {
     pub mqtt_broker_port: u16,
 }
 
+impl crate::auth::extractor::HasJwtSecret for AppState {
+    fn jwt_secret(&self) -> &str {
+        &self.jwt_secret
+    }
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/auth/register", post(auth_routes::register))
