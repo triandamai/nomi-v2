@@ -1,7 +1,7 @@
-use nomi_orchestrator::bootstrap::resolve_llm_model_config;
-use nomi_orchestrator::llm::ProviderKind;
-use nomi_orchestrator::settings::crypto;
-use nomi_orchestrator::settings::llm_models::{
+use nomi_server::bootstrap::resolve_llm_model_config;
+use nomi_llm::ProviderKind;
+use nomi_settings::crypto;
+use nomi_settings::llm_models::{
     create_admin_llm_model, delete_admin_llm_model, set_user_llm_selection_admin, set_user_llm_selection_custom,
     CustomLlmSelection, NewAdminLlmModel,
 };
@@ -22,7 +22,7 @@ async fn insert_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn resolves_to_the_users_admin_selection_when_set(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(
@@ -46,7 +46,7 @@ async fn resolves_to_the_users_admin_selection_when_set(pool: PgPool) {
     assert_eq!(config.api_key, "sk-picked");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn resolves_to_the_users_custom_selection_when_set(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     set_user_llm_selection_custom(
@@ -70,7 +70,7 @@ async fn resolves_to_the_users_custom_selection_when_set(pool: PgPool) {
     assert_eq!(config.base_url, Some("https://api.openai.com/v1".to_string()));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn falls_back_to_the_admin_default_when_the_user_has_no_selection(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(
@@ -92,7 +92,7 @@ async fn falls_back_to_the_admin_default_when_the_user_has_no_selection(pool: Pg
     assert_eq!(config.api_key, "sk-default");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn falls_back_to_the_admin_default_when_the_referenced_model_was_deleted(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(
@@ -129,7 +129,7 @@ async fn falls_back_to_the_admin_default_when_the_referenced_model_was_deleted(p
     assert_eq!(config.api_key, "sk-default");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn falls_back_to_the_env_var_config_when_no_admin_models_exist_at_all(pool: PgPool) {
     let _guard = ENV_VAR_LOCK.lock().await;
     let user_id = insert_user(&pool).await;
@@ -141,7 +141,7 @@ async fn falls_back_to_the_env_var_config_when_no_admin_models_exist_at_all(pool
     std::env::remove_var("LLM_PROVIDER");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn falls_back_to_the_admin_default_when_the_users_admin_selection_key_cannot_be_decrypted(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(
@@ -177,7 +177,7 @@ async fn falls_back_to_the_admin_default_when_the_users_admin_selection_key_cann
     assert_eq!(config.api_key, "sk-default");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn falls_back_to_the_admin_default_when_the_users_custom_key_cannot_be_decrypted(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(
@@ -212,7 +212,7 @@ async fn falls_back_to_the_admin_default_when_the_users_custom_key_cannot_be_dec
     assert_eq!(config.api_key, "sk-default");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn falls_back_to_the_env_config_when_the_default_admin_models_key_cannot_be_decrypted(pool: PgPool) {
     let _guard = ENV_VAR_LOCK.lock().await;
     let user_id = insert_user(&pool).await;

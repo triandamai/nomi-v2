@@ -1,13 +1,13 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::web_identity::ensure_web_channel_identity;
+use nomi_server::web_identity::ensure_web_channel_identity;
 
 async fn seed_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn creates_a_new_identity_for_a_first_time_user(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let identity_id = ensure_web_channel_identity(&pool, user_id).await.unwrap();
@@ -24,7 +24,7 @@ async fn creates_a_new_identity_for_a_first_time_user(pool: PgPool) {
     assert_eq!(row_user_id, user_id);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn is_idempotent_across_repeated_calls(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let first = ensure_web_channel_identity(&pool, user_id).await.unwrap();
@@ -39,7 +39,7 @@ async fn is_idempotent_across_repeated_calls(pool: PgPool) {
     assert_eq!(count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn different_users_get_different_identities(pool: PgPool) {
     let user_a = seed_user(&pool).await;
     let user_b = seed_user(&pool).await;
@@ -48,7 +48,7 @@ async fn different_users_get_different_identities(pool: PgPool) {
     assert_ne!(identity_a, identity_b);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn concurrent_calls_for_the_same_user_do_not_duplicate_and_resolve_to_the_same_identity(pool: PgPool) {
     let user_id = seed_user(&pool).await;
 

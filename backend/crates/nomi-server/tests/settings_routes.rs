@@ -1,13 +1,12 @@
-mod support;
 
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
-use nomi_orchestrator::app::{build_router, AppState};
+use nomi_server::app::{build_router, AppState};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
 
-use support::TEST_SETTINGS_KEY;
+use nomi_test_support::TEST_SETTINGS_KEY;
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
@@ -17,8 +16,8 @@ fn test_state(pool: PgPool) -> AppState {
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
         settings_key: TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
     }
 }
 
@@ -79,7 +78,7 @@ async fn register_admin_and_login(router: axum::Router, pool: &PgPool, email: &s
     login_via_api(router, email).await
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn non_admin_is_forbidden_from_reading_embedding_settings(pool: PgPool) {
     let router = build_router(test_state(pool));
     register_via_api(router.clone(), "regular-embed@example.com").await;
@@ -90,7 +89,7 @@ async fn non_admin_is_forbidden_from_reading_embedding_settings(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn admin_can_save_and_then_read_back_masked_embedding_settings(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin-embed@example.com").await;

@@ -1,0 +1,39 @@
+[package]
+name = "nomi-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nomi-orchestrator"
+path = "src/main.rs"
+
+[dependencies]
+nomi-llm = { path = "../nomi-llm" }
+nomi-embedding = { path = "../nomi-embedding" }
+nomi-realtime = { path = "../nomi-realtime" }
+nomi-auth = { path = "../nomi-auth" }
+nomi-settings = { path = "../nomi-settings" }
+nomi-agent-core = { path = "../nomi-agent-core" }
+nomi-agent-money = { path = "../nomi-agent-money" }
+nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
+nomi-turn = { path = "../nomi-turn" }
+axum = { version = "0.7", features = ["ws"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tower-http = { version = "0.7.0", features = ["trace"] }
+rumqttc = "0.25.1"
+
+[dev-dependencies]
+nomi-test-support = { path = "../nomi-test-support" }
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+wiremock = "0.6"
+tokio-tungstenite = "0.24"
+futures-util = "0.3.33"

@@ -4,8 +4,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
-use crate::realtime::{MqttPublisher, StreamEnvelope};
-use crate::turn::queue;
+use nomi_realtime::{MqttPublisher, StreamEnvelope};
+use nomi_turn::queue;
 
 const NOTIFY_CHANNEL: &str = "turn_jobs_channel";
 const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
@@ -30,10 +30,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
     }
     tracing::info!("worker: listening for new turn jobs");
 
-    let registry = nomi_agent_core::AgentRegistry::new(vec![
-        Box::new(nomi_agent_money::MoneyAgent),
-        Box::new(nomi_agent_chitchat::ChitchatAgent),
-    ]);
+    let registry = crate::build_agent_registry();
 
     loop {
         // Wake on NOTIFY, or on the fallback interval if a NOTIFY is ever missed — either way,
@@ -68,7 +65,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
             let embedding_provider =
                 build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
 
-            let result = crate::turn::process_turn(
+            let result = nomi_turn::process_turn(
                 &pool,
                 &mqtt,
                 provider.as_ref(),

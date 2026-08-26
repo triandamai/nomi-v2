@@ -24,7 +24,7 @@ async fn make_user_with_channel_identity(pool: &PgPool, channel_user_id: &str) -
     (user_id, identity_id)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn session_requires_an_org(pool: PgPool) {
     let err = sqlx::query(
         "INSERT INTO sessions (org_id, channel, chat_id) VALUES (gen_random_uuid(), 'telegram', 'chat-1')",
@@ -37,7 +37,7 @@ async fn session_requires_an_org(pool: PgPool) {
     assert!(err.as_database_error().unwrap().message().contains("violates foreign key constraint"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn session_is_unique_per_channel_and_chat_id(pool: PgPool) {
     let org_id = make_org(&pool).await;
     sqlx::query("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'chat-1')")
@@ -58,7 +58,7 @@ async fn session_is_unique_per_channel_and_chat_id(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn message_sender_is_nullable_for_assistant_replies(pool: PgPool) {
     let org_id = make_org(&pool).await;
     let session_id: Uuid = sqlx::query_scalar(
@@ -93,7 +93,7 @@ async fn message_sender_is_nullable_for_assistant_replies(pool: PgPool) {
     assert_eq!(count, 2);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn session_participant_cannot_be_added_twice(pool: PgPool) {
     let org_id = make_org(&pool).await;
     let session_id: Uuid = sqlx::query_scalar(

@@ -2,7 +2,7 @@ use axum::{routing::{delete, get, post, put}, Router};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::auth::extractor::AuthClaims;
+use nomi_auth::extractor::AuthClaims;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::sessions as sessions_routes;
@@ -18,7 +18,7 @@ pub struct AppState {
     pub mqtt_broker_port: u16,
 }
 
-impl crate::auth::extractor::HasJwtSecret for AppState {
+impl nomi_auth::extractor::HasJwtSecret for AppState {
     fn jwt_secret(&self) -> &str {
         &self.jwt_secret
     }

@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn required_extensions_are_enabled(pool: PgPool) {
     let exts: Vec<String> = sqlx::query_scalar(
         "SELECT extname FROM pg_extension WHERE extname IN ('pgcrypto', 'vector') ORDER BY extname",

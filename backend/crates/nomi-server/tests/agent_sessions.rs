@@ -29,7 +29,7 @@ async fn make_session_and_speaker(pool: &PgPool) -> (Uuid, Uuid) {
     (session_id, identity_id)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn only_one_active_agent_session_per_speaker(pool: PgPool) {
     let (session_id, identity_id) = make_session_and_speaker(&pool).await;
 
@@ -57,7 +57,7 @@ async fn only_one_active_agent_session_per_speaker(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_completed_and_a_new_active_agent_session_can_coexist(pool: PgPool) {
     let (session_id, identity_id) = make_session_and_speaker(&pool).await;
 
@@ -88,7 +88,7 @@ async fn a_completed_and_a_new_active_agent_session_can_coexist(pool: PgPool) {
     assert_eq!(count, 2);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn agent_session_state_defaults_to_empty_json_object(pool: PgPool) {
     let (session_id, identity_id) = make_session_and_speaker(&pool).await;
 

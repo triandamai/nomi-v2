@@ -2,9 +2,9 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::claims::Claims;
-use crate::auth::extractor::AuthClaims;
-use crate::settings;
+use nomi_auth::claims::Claims;
+use nomi_auth::extractor::AuthClaims;
+use nomi_settings as settings;
 
 #[derive(Serialize)]
 pub struct ProviderSettingsResponse {

@@ -1,14 +1,14 @@
 use std::env::var;
 
-use nomi_orchestrator::realtime::MqttPublisher;
-use nomi_orchestrator::settings;
+use nomi_realtime::MqttPublisher;
+use nomi_settings as settings;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "nomi_orchestrator=debug,tower_http=debug,info".into()),
+                .unwrap_or_else(|_| "nomi_orchestrator=debug,nomi_server=debug,tower_http=debug,info".into()),
         )
         .init();
 
@@ -26,7 +26,7 @@ async fn main() {
 
     let pool = sqlx::PgPool::connect(&database_url).await.expect("failed to connect to database");
     tracing::info!("connected to database");
-    sqlx::migrate!().run(&pool).await.expect("failed to run migrations");
+    sqlx::migrate!("../../migrations").run(&pool).await.expect("failed to run migrations");
     tracing::info!("migrations up to date");
 
     let http_client = reqwest::Client::new();
@@ -46,14 +46,14 @@ async fn main() {
         let worker_http_client = http_client.clone();
         let worker_database_url = database_url.clone();
         tokio::spawn(async move {
-            nomi_orchestrator::worker::run(worker_pool, worker_mqtt, settings_key, worker_http_client, worker_database_url).await;
+            nomi_server::worker::run(worker_pool, worker_mqtt, settings_key, worker_http_client, worker_database_url).await;
         });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {
         tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");
     }
 
-    let state = nomi_orchestrator::app::AppState {
+    let state = nomi_server::app::AppState {
         pool,
         jwt_secret,
         http_client,
@@ -61,7 +61,7 @@ async fn main() {
         mqtt_broker_host,
         mqtt_broker_port,
     };
-    let app = nomi_orchestrator::app::build_router(state);
+    let app = nomi_server::app::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.expect("failed to bind to port 8080");
     tracing::info!("listening on 0.0.0.0:8080");

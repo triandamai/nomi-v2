@@ -1,8 +1,7 @@
-mod support;
 
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
-use nomi_orchestrator::app::{build_router, AppState};
+use nomi_server::app::{build_router, AppState};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -14,9 +13,9 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
-        settings_key: support::TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
+        settings_key: nomi_test_support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
     }
 }
 
@@ -52,7 +51,7 @@ async fn json_request(
     (status, json_body)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn register_returns_a_usable_token_pair(pool: PgPool) {
     let router = build_router(test_state(pool));
 
@@ -73,7 +72,7 @@ async fn register_returns_a_usable_token_pair(pool: PgPool) {
     assert!(whoami_body["sub"].is_string());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn login_after_registration_also_succeeds(pool: PgPool) {
     let router = build_router(test_state(pool));
 
@@ -102,7 +101,7 @@ async fn login_after_registration_also_succeeds(pool: PgPool) {
     assert!(whoami_body["sub"].is_string());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn remove_member_rejects_a_caller_scoped_to_a_different_org(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
 
@@ -151,7 +150,7 @@ async fn remove_member_rejects_a_caller_scoped_to_a_different_org(pool: PgPool) 
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn remove_member_succeeds_for_the_owning_org_owner(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
 
@@ -172,7 +171,7 @@ async fn remove_member_succeeds_for_the_owning_org_owner(pool: PgPool) {
     )
     .await;
     let owner_token = login_body["access_token"].as_str().unwrap().to_string();
-    let owner_claims = nomi_orchestrator::auth::claims::Claims::decode(&owner_token, SECRET).unwrap();
+    let owner_claims = nomi_auth::claims::Claims::decode(&owner_token, SECRET).unwrap();
     let org_id = owner_claims.active_org_id;
 
     let member_user_id: uuid::Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
@@ -205,7 +204,7 @@ async fn remove_member_succeeds_for_the_owning_org_owner(pool: PgPool) {
     assert_eq!(member_status, "removed");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn refresh_and_logout_flow(pool: PgPool) {
     let router = build_router(test_state(pool));
 

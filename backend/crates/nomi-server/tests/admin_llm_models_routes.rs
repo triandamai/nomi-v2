@@ -1,8 +1,7 @@
-mod support;
 
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
-use nomi_orchestrator::app::{build_router, AppState};
+use nomi_server::app::{build_router, AppState};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -14,9 +13,9 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
-        settings_key: support::TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
+        settings_key: nomi_test_support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
     }
 }
 
@@ -75,7 +74,7 @@ async fn register_admin_and_login(router: axum::Router, pool: &PgPool, email: &s
     login_via_api(router, email).await
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn non_admin_is_forbidden_from_listing_models(pool: PgPool) {
     let router = build_router(test_state(pool));
     register_via_api(router.clone(), "regular@example.com").await;
@@ -85,7 +84,7 @@ async fn non_admin_is_forbidden_from_listing_models(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn admin_can_create_then_list_a_model(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin1@example.com").await;
@@ -108,7 +107,7 @@ async fn admin_can_create_then_list_a_model(pool: PgPool) {
     assert_eq!(list_body.as_array().unwrap().len(), 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn create_rejects_an_unknown_provider(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin2@example.com").await;
@@ -124,7 +123,7 @@ async fn create_rejects_an_unknown_provider(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn update_keeps_the_existing_key_when_none_given(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin3@example.com").await;
@@ -152,7 +151,7 @@ async fn update_keeps_the_existing_key_when_none_given(pool: PgPool) {
     assert_eq!(update_body["api_key_masked"], "...key9");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn delete_rejects_the_last_remaining_model(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin4@example.com").await;
@@ -171,7 +170,7 @@ async fn delete_rejects_the_last_remaining_model(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn set_default_then_delete_the_old_default_succeeds(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin5@example.com").await;

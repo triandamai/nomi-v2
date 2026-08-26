@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn channel_identity_is_unique_per_channel_and_channel_user_id(pool: PgPool) {
     let user_a: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
@@ -34,7 +34,7 @@ async fn channel_identity_is_unique_per_channel_and_channel_user_id(pool: PgPool
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn link_code_is_single_use_via_used_at(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)

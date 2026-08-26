@@ -10,8 +10,8 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::auth::extractor::AuthClaims;
-use crate::turn::bootstrap::bootstrap_identity_and_session;
+use nomi_auth::extractor::AuthClaims;
+use nomi_turn::bootstrap::bootstrap_identity_and_session;
 use crate::web_identity::ensure_web_channel_identity;
 
 #[derive(Serialize)]
@@ -113,7 +113,7 @@ async fn authorize_session_access(
 
     let org_id = org_id.ok_or((StatusCode::NOT_FOUND, "session not found"))?;
 
-    crate::auth::authorize::authorize_org_action(pool, user_id, org_id, &["owner", "admin", "member"])
+    nomi_auth::authorize::authorize_org_action(pool, user_id, org_id, &["owner", "admin", "member"])
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "session not found"))?;
 
@@ -222,7 +222,7 @@ pub async fn send_message(
             })?;
 
     tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
-    let ingested = crate::turn::ingest::ingest_inbound_message(
+    let ingested = nomi_turn::ingest::ingest_inbound_message(
         &state.pool,
         &channel,
         &chat_type,

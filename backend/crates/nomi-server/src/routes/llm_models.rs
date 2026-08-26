@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::auth::extractor::AuthClaims;
+use nomi_auth::extractor::AuthClaims;
 use crate::routes::settings::require_system_config_permission;
-use crate::settings::{self, llm_models};
+use nomi_settings::{self as settings, llm_models};
 
 pub(crate) const ALLOWED_PROVIDERS: [&str; 4] = ["anthropic", "openai", "gemini", "fake"];
 
@@ -247,12 +247,12 @@ pub enum SelectionRequest {
     Custom { label: String, provider: String, model_id: String, api_key: String, base_url: Option<String> },
 }
 
-fn provider_kind_from_str(s: &str) -> Option<crate::llm::ProviderKind> {
+fn provider_kind_from_str(s: &str) -> Option<nomi_llm::ProviderKind> {
     match s {
-        "anthropic" => Some(crate::llm::ProviderKind::Anthropic),
-        "openai" => Some(crate::llm::ProviderKind::OpenAi),
-        "gemini" => Some(crate::llm::ProviderKind::Gemini),
-        "fake" => Some(crate::llm::ProviderKind::Fake),
+        "anthropic" => Some(nomi_llm::ProviderKind::Anthropic),
+        "openai" => Some(nomi_llm::ProviderKind::OpenAi),
+        "gemini" => Some(nomi_llm::ProviderKind::Gemini),
+        "fake" => Some(nomi_llm::ProviderKind::Fake),
         _ => None,
     }
 }
@@ -296,13 +296,13 @@ pub async fn put_user_selection(
 
             let provider_kind = provider_kind_from_str(&provider)
                 .ok_or((StatusCode::BAD_REQUEST, "unknown provider".to_string()))?;
-            let model_config = crate::llm::ModelConfig {
+            let model_config = nomi_llm::ModelConfig {
                 provider: provider_kind,
                 model_id: model_id.clone(),
                 api_key: api_key.clone(),
                 base_url: base_url.clone(),
             };
-            crate::llm::validate_model_config(model_config, state.http_client.clone())
+            nomi_llm::validate_model_config(model_config, state.http_client.clone())
                 .await
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 

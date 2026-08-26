@@ -1,4 +1,3 @@
-mod support;
 
 use futures_util::StreamExt;
 use serde_json::{json, Value};
@@ -6,7 +5,7 @@ use sqlx::PgPool;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use uuid::Uuid;
 
-use nomi_orchestrator::app::{build_router, AppState};
+use nomi_server::app::{build_router, AppState};
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
@@ -15,9 +14,9 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
-        settings_key: support::TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
+        settings_key: nomi_test_support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
     }
 }
 
@@ -96,14 +95,14 @@ fn assert_rejected_with(err: tokio_tungstenite::tungstenite::Error, expected_sta
     }
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn ws_upgrade_without_a_token_is_rejected(pool: PgPool) {
     let (_, ws_base) = spawn_app(pool).await;
     let err = try_connect_ws(&ws_base, Uuid::new_v4(), None).await.unwrap_err();
     assert_rejected_with(err, 401);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn ws_upgrade_for_another_orgs_session_is_rejected(pool: PgPool) {
     let (http_base, ws_base) = spawn_app(pool).await;
     let client = reqwest::Client::new();
@@ -115,7 +114,7 @@ async fn ws_upgrade_for_another_orgs_session_is_rejected(pool: PgPool) {
     assert_rejected_with(err, 404);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn ws_upgrade_with_a_valid_token_for_the_callers_own_session_succeeds(pool: PgPool) {
     let (http_base, ws_base) = spawn_app(pool).await;
     let client = reqwest::Client::new();
@@ -132,11 +131,11 @@ use std::time::Duration as StdDuration;
 use nomi_agent_chitchat::ChitchatAgent;
 use nomi_agent_core::AgentRegistry;
 use nomi_agent_money::MoneyAgent;
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, PartialBlock, StopReason, StreamEvent};
-use nomi_orchestrator::realtime::{MqttPublisher, StreamEnvelope};
-use nomi_orchestrator::turn::{process_turn, queue};
+use nomi_llm::{ContentBlock, LlmResponse, PartialBlock, StopReason, StreamEvent};
+use nomi_realtime::{MqttPublisher, StreamEnvelope};
+use nomi_turn::{process_turn, queue};
 
-use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
+use nomi_test_support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
 fn canned_response(text: &str) -> LlmResponse {
     LlmResponse {
@@ -163,8 +162,8 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let mqtt = MqttPublisher::connect(
-        support::TEST_MQTT_BROKER_HOST,
-        support::TEST_MQTT_BROKER_PORT,
+        nomi_test_support::TEST_MQTT_BROKER_HOST,
+        nomi_test_support::TEST_MQTT_BROKER_PORT,
         &format!("test-ws-relay-{}", Uuid::new_v4()),
     );
 
@@ -230,7 +229,7 @@ async fn recv_n_frames(
     received
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn relays_delta_and_turn_completed_events_for_a_single_turn(pool: PgPool) {
     let (http_base, ws_base) = spawn_app(pool.clone()).await;
     let client = reqwest::Client::new();
@@ -253,7 +252,7 @@ async fn relays_delta_and_turn_completed_events_for_a_single_turn(pool: PgPool) 
     assert_eq!(received, expected_frames_for(turn_job_id, "hi there"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn relays_events_across_two_turns_without_reconnecting(pool: PgPool) {
     let (http_base, ws_base) = spawn_app(pool.clone()).await;
     let client = reqwest::Client::new();

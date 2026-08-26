@@ -1,14 +1,14 @@
 use std::env::var;
 
-use nomi_orchestrator::realtime::MqttPublisher;
-use nomi_orchestrator::settings;
+use nomi_realtime::MqttPublisher;
+use nomi_settings as settings;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "nomi_orchestrator=debug,info".into()),
+                .unwrap_or_else(|_| "worker=debug,nomi_server=debug,info".into()),
         )
         .init();
 
@@ -25,12 +25,12 @@ async fn main() {
 
     let pool = sqlx::PgPool::connect(&database_url).await.expect("failed to connect to database");
     tracing::info!("connected to database");
-    sqlx::migrate!().run(&pool).await.expect("failed to run migrations");
+    sqlx::migrate!("../../migrations").run(&pool).await.expect("failed to run migrations");
     tracing::info!("migrations up to date");
 
     let http_client = reqwest::Client::new();
     let mqtt_client_id = format!("nomi-worker-{}", uuid::Uuid::new_v4());
     let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
-    nomi_orchestrator::worker::run(pool, mqtt, settings_key, http_client, database_url).await;
+    nomi_server::worker::run(pool, mqtt, settings_key, http_client, database_url).await;
 }

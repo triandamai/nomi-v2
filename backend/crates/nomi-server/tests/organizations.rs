@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn membership_is_unique_per_org_and_user(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
@@ -33,7 +33,7 @@ async fn membership_is_unique_per_org_and_user(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn personal_org_defaults_to_false_unless_set(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Real Team') RETURNING id")
@@ -63,7 +63,7 @@ async fn personal_org_defaults_to_false_unless_set(pool: PgPool) {
     assert!(is_personal);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn org_invite_code_is_unique_and_single_use(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")

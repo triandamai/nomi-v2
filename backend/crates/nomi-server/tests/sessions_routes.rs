@@ -1,8 +1,7 @@
-mod support;
 
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
-use nomi_orchestrator::app::{build_router, AppState};
+use nomi_server::app::{build_router, AppState};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -15,9 +14,9 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
-        settings_key: support::TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
+        settings_key: nomi_test_support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
     }
 }
 
@@ -69,7 +68,7 @@ async fn register_and_login(router: axum::Router, email: &str) -> String {
     login_body["access_token"].as_str().unwrap().to_string()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn create_session_then_appears_in_list(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "alice@example.com").await;
@@ -88,7 +87,7 @@ async fn create_session_then_appears_in_list(pool: PgPool) {
     assert_eq!(sessions[0]["agent_active"], false);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn creating_two_sessions_reuses_the_same_web_identity(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "bob@example.com").await;
@@ -107,7 +106,7 @@ async fn creating_two_sessions_reuses_the_same_web_identity(pool: PgPool) {
     assert_eq!(list_body["sessions"].as_array().unwrap().len(), 2);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_sessions_only_returns_the_callers_active_org(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token_a = register_and_login(router.clone(), "carol@example.com").await;
@@ -123,14 +122,14 @@ async fn list_sessions_only_returns_the_callers_active_org(pool: PgPool) {
     assert_eq!(list_b["sessions"].as_array().unwrap().len(), 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn create_session_requires_authentication(pool: PgPool) {
     let router = build_router(test_state(pool));
     let (status, _) = json_request(router, "POST", "/api/sessions", Value::Null, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn send_message_returns_202_with_only_the_user_message(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "erin@example.com").await;
@@ -153,7 +152,7 @@ async fn send_message_returns_202_with_only_the_user_message(pool: PgPool) {
     assert!(send_body.get("assistant_message").is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_messages_returns_history_oldest_first(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "frank@example.com").await;
@@ -172,7 +171,7 @@ async fn list_messages_returns_history_oldest_first(pool: PgPool) {
     assert_eq!(messages[1]["content"], "second");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn send_message_to_a_nonexistent_session_returns_not_found(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "grace2@example.com").await;
@@ -189,7 +188,7 @@ async fn send_message_to_a_nonexistent_session_returns_not_found(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn send_message_to_another_orgs_session_returns_not_found(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token_a = register_and_login(router.clone(), "henry@example.com").await;
@@ -209,7 +208,7 @@ async fn send_message_to_another_orgs_session_returns_not_found(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn ingest_returns_accepted_even_with_failure_sentinel(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "jack@example.com").await;
@@ -237,7 +236,7 @@ async fn ingest_returns_accepted_even_with_failure_sentinel(pool: PgPool) {
     assert_eq!(content, "hello");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn send_message_rejects_empty_text(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "karen@example.com").await;
@@ -256,7 +255,7 @@ async fn send_message_rejects_empty_text(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_messages_respects_limit_and_before_cursor(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "leo@example.com").await;

@@ -1,8 +1,7 @@
-mod support;
 
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
-use nomi_orchestrator::app::{build_router, AppState};
+use nomi_server::app::{build_router, AppState};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -14,9 +13,9 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         jwt_secret: SECRET.to_string(),
         http_client: reqwest::Client::new(),
-        settings_key: support::TEST_SETTINGS_KEY,
-        mqtt_broker_host: support::TEST_MQTT_BROKER_HOST.to_string(),
-        mqtt_broker_port: support::TEST_MQTT_BROKER_PORT,
+        settings_key: nomi_test_support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
     }
 }
 
@@ -90,7 +89,7 @@ async fn register_admin_and_login(router: axum::Router, pool: &PgPool, email: &s
     login_body["access_token"].as_str().unwrap().to_string()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn get_models_returns_the_admin_list_and_no_selection_initially(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "user1@example.com").await;
@@ -101,7 +100,7 @@ async fn get_models_returns_the_admin_list_and_no_selection_initially(pool: PgPo
     assert!(body["selection"].is_null());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_user_can_select_an_admin_model(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
@@ -132,7 +131,7 @@ async fn a_user_can_select_an_admin_model(pool: PgPool) {
     assert_eq!(models_body["selection"]["admin_model_id"], model_id);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn selecting_an_unknown_admin_model_returns_404(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "user3@example.com").await;
@@ -148,7 +147,7 @@ async fn selecting_an_unknown_admin_model_returns_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_user_can_save_a_valid_custom_fake_selection(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "user4@example.com").await;
@@ -168,7 +167,7 @@ async fn a_user_can_save_a_valid_custom_fake_selection(pool: PgPool) {
     assert_eq!(models_body["selection"]["label"], "My key");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn custom_selection_rejects_an_unknown_provider(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "user5@example.com").await;

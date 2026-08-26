@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
-use crate::embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvider, EmbeddingProviderKind};
-use crate::llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
-use crate::settings;
+use nomi_embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvider, EmbeddingProviderKind};
+use nomi_llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
+use nomi_settings as settings;
 
 fn llm_provider_kind_from_str(s: &str) -> ProviderKind {
     match s {
@@ -37,7 +37,7 @@ pub async fn build_llm_provider_for_user(
 
 fn model_config_from_admin_model(
     settings_key: &[u8; 32],
-    model: crate::settings::llm_models::AdminLlmModel,
+    model: settings::llm_models::AdminLlmModel,
 ) -> Option<ModelConfig> {
     match settings::crypto::decrypt(settings_key, &model.api_key_encrypted) {
         Ok(api_key) => Some(ModelConfig {
@@ -58,13 +58,13 @@ fn model_config_from_admin_model(
 }
 
 pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> ModelConfig {
-    let selection = crate::settings::llm_models::get_user_llm_selection(pool, user_id)
+    let selection = settings::llm_models::get_user_llm_selection(pool, user_id)
         .await
         .expect("failed to query user_llm_selections");
 
     if let Some(row) = selection {
         if let Some(admin_model_id) = row.admin_model_id {
-            if let Some(admin_model) = crate::settings::llm_models::get_admin_llm_model(pool, admin_model_id)
+            if let Some(admin_model) = settings::llm_models::get_admin_llm_model(pool, admin_model_id)
                 .await
                 .expect("failed to query admin_llm_models")
             {
@@ -101,7 +101,7 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
         }
     }
 
-    if let Some(default_model) = crate::settings::llm_models::get_default_admin_llm_model(pool)
+    if let Some(default_model) = settings::llm_models::get_default_admin_llm_model(pool)
         .await
         .expect("failed to query admin_llm_models")
     {

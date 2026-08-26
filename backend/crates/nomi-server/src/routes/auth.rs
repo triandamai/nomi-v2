@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::auth::{
+use nomi_auth::{
     authorize::authorize_org_action,
     extractor::AuthClaims,
     login::login,
@@ -51,10 +51,10 @@ pub async fn register(
     register_user(&state.pool, &req.email, &req.password, req.org.into())
         .await
         .map_err(|e| match e {
-            crate::auth::registration::RegistrationError::EmailTaken => {
+            nomi_auth::registration::RegistrationError::EmailTaken => {
                 (StatusCode::CONFLICT, "email already registered")
             }
-            crate::auth::registration::RegistrationError::InvalidInvite => {
+            nomi_auth::registration::RegistrationError::InvalidInvite => {
                 (StatusCode::BAD_REQUEST, "invite code not found, expired, or already used")
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "registration failed"),
@@ -87,7 +87,7 @@ pub async fn login_handler(
     let (access_token, user_id) = login(&state.pool, &req.email, &req.password, &state.jwt_secret)
         .await
         .map_err(|e| match e {
-            crate::auth::login::LoginError::InvalidCredentials => {
+            nomi_auth::login::LoginError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "invalid credentials")
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "login failed"),
@@ -117,7 +117,7 @@ pub async fn refresh_handler(
     let access_token = refresh_access_token(&state.pool, &req.refresh_token, &state.jwt_secret)
         .await
         .map_err(|e| match e {
-            crate::auth::refresh_token::RefreshError::Invalid => {
+            nomi_auth::refresh_token::RefreshError::Invalid => {
                 (StatusCode::UNAUTHORIZED, "refresh token invalid, revoked, or expired")
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "refresh failed"),

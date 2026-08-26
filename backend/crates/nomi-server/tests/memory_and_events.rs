@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn memory_item_accepts_a_1536_dimension_embedding_and_default_weight(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
@@ -26,7 +26,7 @@ async fn memory_item_accepts_a_1536_dimension_embedding_and_default_weight(pool:
     assert_eq!(weight, 1.0);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn memory_item_rejects_wrong_dimension_embedding(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
@@ -50,7 +50,7 @@ async fn memory_item_rejects_wrong_dimension_embedding(pool: PgPool) {
         .contains("expected 1536 dimensions"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn agent_event_stores_jsonb_payload_and_links_to_agent_session(pool: PgPool) {
     let org_id: Uuid =
         sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
