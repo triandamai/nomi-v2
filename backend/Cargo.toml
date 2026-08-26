@@ -29,6 +29,7 @@ eventsource-stream = "0.2.3"
 async-stream = "0.3.6"
 rumqttc = "0.25.1"
 nomi-llm = { path = "crates/nomi-llm" }
+nomi-embedding = { path = "crates/nomi-embedding" }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }

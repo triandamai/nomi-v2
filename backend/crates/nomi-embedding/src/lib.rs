@@ -1,12 +1,12 @@
-use async_trait::async_trait;
+pub mod config;
+pub mod openai;
+pub mod types;
+pub mod fake;
 
-#[derive(Debug, thiserror::Error)]
-pub enum EmbeddingError {
-    #[error("provider returned an error response: {0}")]
-    ProviderError(String),
-    #[error("failed to parse provider response: {0}")]
-    ParseError(String),
-}
+pub use config::{build_embedding_provider, EmbeddingConfig, EmbeddingProviderKind};
+pub use types::EmbeddingError;
+
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {

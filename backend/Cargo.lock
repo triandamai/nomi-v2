@@ -1327,7 +1327,11 @@ name = "nomi-embedding"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "reqwest",
+ "serde_json",
  "thiserror 1.0.69",
+ "tokio",
+ "wiremock",
 ]
 
 [[package]]
@@ -1365,6 +1369,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
+ "nomi-embedding",
  "nomi-llm",
  "rand 0.8.7",
  "reqwest",

@@ -1,4 +1,4 @@
-use nomi_orchestrator::embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProviderKind};
+use nomi_embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProviderKind};
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

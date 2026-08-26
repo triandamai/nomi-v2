@@ -3,7 +3,7 @@ pub mod auth;
 pub mod bootstrap;
 pub mod routes;
 pub use nomi_llm as llm;
-pub mod embedding;
+pub use nomi_embedding as embedding;
 pub mod turn;
 pub mod web_identity;
 pub mod settings;
