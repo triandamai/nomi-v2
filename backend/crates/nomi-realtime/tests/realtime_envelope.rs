@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{PartialBlock, StopReason, StreamEvent};
-use nomi_orchestrator::realtime::StreamEnvelope;
+use nomi_llm::{PartialBlock, StopReason, StreamEvent};
+use nomi_realtime::StreamEnvelope;
 
 #[test]
 fn a_delta_envelope_round_trips_through_json() {

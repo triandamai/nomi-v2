@@ -3,7 +3,7 @@ use std::time::Duration;
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use uuid::Uuid;
 
-use nomi_orchestrator::realtime::MqttPublisher;
+use nomi_realtime::MqttPublisher;
 
 // Assumes the EMQX service from backend/docker-compose.yml is running on localhost:1883,
 // matching how sqlx::test assumes a running local Postgres.

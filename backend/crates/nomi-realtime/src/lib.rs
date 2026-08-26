@@ -5,7 +5,7 @@ pub use mqtt::{MqttError, MqttPublisher};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::llm::StreamEvent;
+use nomi_llm::StreamEvent;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]

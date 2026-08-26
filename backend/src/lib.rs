@@ -7,5 +7,5 @@ pub use nomi_embedding as embedding;
 pub mod turn;
 pub mod web_identity;
 pub mod settings;
-pub mod realtime;
+pub use nomi_realtime as realtime;
 pub mod worker;
