@@ -5,7 +5,7 @@ use std::time::Duration;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason};
+use nomi_orchestrator::llm::{ContentBlock, LlmResponse, LlmRole, StopReason};
 use nomi_orchestrator::turn::handle_inbound_message;
 
 use support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
@@ -161,4 +161,95 @@ async fn concurrent_messages_for_the_same_session_are_serialized(pool: PgPool) {
     assert_ne!(first_inbound.1, second_inbound.1);
     assert!(second_inbound.0.is_some());
     assert!(second_reply.0.is_none());
+}
+
+// The chitchat path's history fetch (`fetch_recent_messages` in `backend/src/turn/mod.rs`) is
+// shared with the money-agent path and is no longer chitchat's own code (it used to be
+// duplicated inline in the now-deleted `turn/chitchat.rs`, ported to `nomi-agent-chitchat` in
+// Task 8). Since `nomi_agent_core::run_agent_turn` takes an already-built message list rather
+// than fetching it itself, this behavior can no longer be exercised by calling into
+// `ChitchatAgent` directly — it only shows up by driving the real `handle_inbound_message`
+// entrypoint, which is what these two tests (ported from the old `turn_chitchat.rs`'s
+// `keeps_only_the_last_20_messages_ordered_oldest_first` and
+// `maps_sender_presence_to_role_correctly`) do.
+#[sqlx::test]
+async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool: PgPool) {
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+
+    let bootstrap_provider = FakeLlmProvider::success(canned_response("bootstrapped"));
+    let bootstrap = handle_inbound_message(&pool, &bootstrap_provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
+        .await
+        .unwrap();
+
+    let identity_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM channel_identities WHERE channel = 'telegram' AND channel_user_id = 'tg-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let base = chrono::Utc::now();
+    for i in 0..25 {
+        sqlx::query(
+            "INSERT INTO messages (session_id, sender_channel_identity_id, content, created_at) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(bootstrap.session_id)
+        .bind(identity_id)
+        .bind(format!("seq-{i}"))
+        .bind(base + chrono::Duration::milliseconds(i))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let provider = FakeLlmProvider::success(canned_response("ok"));
+    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "latest", None)
+        .await
+        .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    // requests[0] is the intent classifier's own single-message request (every inbound message
+    // is reclassified since chitchat never spawns an agent_session to "continue"); requests[1]
+    // is the actual chitchat turn, built from `fetch_recent_messages`.
+    let sent = &requests[1];
+    assert_eq!(sent.messages.len(), 20);
+    // The 25 seeded messages (seq-0..seq-24) plus this call's own "latest" inbound message (which
+    // is persisted before this LLM call happens) make the most-recent-20 window seq-6..seq-24
+    // followed by "latest".
+    for (offset, message) in sent.messages.iter().take(19).enumerate() {
+        let expected_seq = 6 + offset;
+        match &message.content[0] {
+            ContentBlock::Text { text } => assert_eq!(text, &format!("seq-{expected_seq}")),
+            _ => panic!("expected a text block"),
+        }
+    }
+    match &sent.messages[19].content[0] {
+        ContentBlock::Text { text } => assert_eq!(text, "latest"),
+        _ => panic!("expected a text block"),
+    }
+}
+
+#[sqlx::test]
+async fn chitchat_turn_maps_sender_presence_to_role_correctly(pool: PgPool) {
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+
+    let bootstrap_provider = FakeLlmProvider::success(canned_response("hello back"));
+    handle_inbound_message(&pool, &bootstrap_provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "hi", None)
+        .await
+        .unwrap();
+
+    let provider = FakeLlmProvider::success(canned_response("ok"));
+    handle_inbound_message(&pool, &provider, &embedder, "telegram", "dm", "chat-1", "tg-1", "latest", None)
+        .await
+        .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    // requests[0] is the intent classifier's own single-message request; requests[1] is the
+    // actual chitchat turn, built from `fetch_recent_messages`.
+    let sent = &requests[1];
+    // sender present (the user's own messages) maps to User; sender absent (the assistant's own
+    // replies, sender_channel_identity_id = NULL) maps to Assistant.
+    assert_eq!(sent.messages[0].role, LlmRole::User); // "hi"
+    assert_eq!(sent.messages[1].role, LlmRole::Assistant); // "hello back"
+    assert_eq!(sent.messages[2].role, LlmRole::User); // "latest"
 }

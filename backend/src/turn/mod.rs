@@ -1,5 +1,4 @@
 pub mod bootstrap;
-pub mod chitchat;
 pub mod ingest;
 pub mod lock;
 pub mod queue;
@@ -20,6 +19,7 @@ use crate::realtime::{MqttPublisher, StreamEnvelope};
 
 const SUBAGENT_HISTORY_LIMIT: i64 = 20;
 const SUBAGENT_MAX_TOKENS: u32 = 1024;
+const CHITCHAT_MAX_TOKENS: u32 = 1024;
 
 enum RoutingOutcome {
     Continue(Uuid),
@@ -157,7 +157,7 @@ async fn run_locked_turn(
             run_subagent_turn(conn, provider, embedding_provider, &nomi_agent_money::MoneyAgent, session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::FallbackToChitchat => {
-            chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
+            run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id).await
         }
         RoutingOutcome::NeedsClassification => match routing::classify_intent(provider, text).await {
             routing::Intent::Money => {
@@ -171,7 +171,7 @@ async fn run_locked_turn(
                 run_subagent_turn(conn, provider, embedding_provider, &nomi_agent_money::MoneyAgent, session_id, agent_session_id, user_id).await
             }
             routing::Intent::Chitchat => {
-                chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
+                run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id).await
             }
         },
     }
@@ -234,6 +234,53 @@ async fn run_subagent_turn(
             Ok(summary)
         }
     }
+}
+
+/// Temporary bridge (Task 8): chitchat is now `nomi_agent_core::run_agent_turn` driven by
+/// `nomi_agent_chitchat::ChitchatAgent` instead of its own bespoke history-fetch/memory/
+/// streaming code. It has no `agent_session_id` of its own (it isn't a stateful multi-turn
+/// agent session like money_agent) — `session_id` is passed for both `session_id` and
+/// `agent_session_id`; `agent_events` rows keyed to a "session" rather than an "agent session"
+/// for chitchat's tool-call logging is harmless since chitchat has no tools, so
+/// `log_tool_call` is never actually invoked for it. This whole function is rough on purpose:
+/// Task 9 replaces all of `run_locked_turn` (including this exact call site) with the real
+/// registry-driven version.
+async fn run_chitchat_turn(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    session_id: Uuid,
+    user_id: Uuid,
+) -> Result<String, TurnError> {
+    let messages = fetch_recent_messages(conn, session_id).await?;
+
+    let outcome = agent_core::run_agent_turn(
+        conn,
+        mqtt,
+        provider,
+        embedding_provider,
+        &nomi_agent_chitchat::ChitchatAgent,
+        session_id,
+        session_id,
+        user_id,
+        messages,
+        CHITCHAT_MAX_TOKENS,
+    )
+    .await?;
+
+    let reply_text = match outcome {
+        agent_core::LoopOutcome::Reply(text) => text,
+        agent_core::LoopOutcome::Completed { summary, .. } => summary, // chitchat never completes; unreachable in practice
+    };
+
+    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+        .bind(session_id)
+        .bind(&reply_text)
+        .execute(&mut **conn)
+        .await?;
+
+    Ok(reply_text)
 }
 
 async fn fetch_recent_messages(
