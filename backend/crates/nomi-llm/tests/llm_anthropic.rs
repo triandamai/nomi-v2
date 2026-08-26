@@ -1,5 +1,5 @@
-use nomi_orchestrator::llm::anthropic::AnthropicProvider;
-use nomi_orchestrator::llm::{collect_stream, ContentBlock, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmRole, StopReason, ToolDefinition};
+use nomi_llm::anthropic::AnthropicProvider;
+use nomi_llm::{collect_stream, ContentBlock, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmRole, StopReason, ToolDefinition};
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

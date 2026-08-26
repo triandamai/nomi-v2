@@ -1323,6 +1323,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-llm"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "eventsource-stream",
+ "futures-core",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "nomi-orchestrator"
 version = "0.1.0"
 dependencies = [
@@ -1338,6 +1356,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
+ "nomi-llm",
  "rand 0.8.7",
  "reqwest",
  "rumqttc",

@@ -1,4 +1,4 @@
-use nomi_orchestrator::llm::{build_provider, complete, ContentBlock, LlmMessage, LlmRequest, LlmRole, ModelConfig, ProviderKind};
+use nomi_llm::{build_provider, complete, ContentBlock, LlmMessage, LlmRequest, LlmRole, ModelConfig, ProviderKind};
 use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

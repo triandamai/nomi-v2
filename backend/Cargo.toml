@@ -28,9 +28,14 @@ futures-util = "0.3.33"
 eventsource-stream = "0.2.3"
 async-stream = "0.3.6"
 rumqttc = "0.25.1"
+nomi-llm = { path = "crates/nomi-llm" }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }
 http-body-util = "0.1"
 wiremock = "0.6"
 tokio-tungstenite = "0.24"
+
+[workspace]
+resolver = "2"
+members = ["crates/*"]

@@ -2,7 +2,7 @@ pub mod app;
 pub mod auth;
 pub mod bootstrap;
 pub mod routes;
-pub mod llm;
+pub use nomi_llm as llm;
 pub mod embedding;
 pub mod turn;
 pub mod web_identity;
