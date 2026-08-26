@@ -1323,6 +1323,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-embedding"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "nomi-llm"
 version = "0.1.0"
 dependencies = [
@@ -1331,6 +1339,7 @@ dependencies = [
  "eventsource-stream",
  "futures-core",
  "futures-util",
+ "nomi-test-support",
  "reqwest",
  "serde",
  "serde_json",
@@ -1373,6 +1382,16 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "wiremock",
+]
+
+[[package]]
+name = "nomi-test-support"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-embedding",
+ "nomi-llm",
+ "tokio",
 ]
 
 [[package]]

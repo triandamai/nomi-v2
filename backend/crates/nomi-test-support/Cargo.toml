@@ -1,0 +1,10 @@
+[package]
+name = "nomi-test-support"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nomi-llm = { path = "../nomi-llm" }
+nomi-embedding = { path = "../nomi-embedding" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }

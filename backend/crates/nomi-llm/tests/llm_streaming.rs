@@ -1,11 +1,9 @@
-mod support;
-
 use futures_util::stream;
 use nomi_llm::{
     collect_stream, complete, ContentBlock, LlmError, LlmEventStream, LlmMessage, LlmRequest, LlmRole,
     LlmResponse, PartialBlock, StopReason, StreamEvent,
 };
-use support::FakeLlmProvider;
+use nomi_test_support::FakeLlmProvider;
 
 fn stream_of(events: Vec<Result<StreamEvent, LlmError>>) -> LlmEventStream {
     Box::pin(stream::iter(events))

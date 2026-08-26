@@ -18,3 +18,4 @@ tracing = "0.1.44"
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 wiremock = "0.6"
+nomi-test-support = { path = "../nomi-test-support" }
