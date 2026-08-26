@@ -6,8 +6,8 @@ use crate::embedding::EmbeddingProvider;
 use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 use crate::realtime::{MqttPublisher, StreamEnvelope};
 
-use super::memory::{self, RetrievedMemory};
-use super::types::TurnError;
+use crate::agent_core::memory::{self, RetrievedMemory};
+use crate::agent_core::TurnError;
 
 const CHITCHAT_SYSTEM_PROMPT: &str =
     "You are a helpful, friendly assistant chatting with the user. Keep replies concise.";

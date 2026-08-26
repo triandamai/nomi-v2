@@ -2,20 +2,19 @@ pub mod bootstrap;
 pub mod chitchat;
 pub mod ingest;
 pub mod lock;
-pub mod memory;
 pub mod money_agent;
 pub mod queue;
 pub mod routing;
-pub mod subagent;
-pub mod tools;
 pub mod types;
 
-pub use types::{TurnError, TurnOutcome};
+pub use types::TurnOutcome;
+pub use crate::agent_core::TurnError;
 
 use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, PgPool, Postgres};
 use uuid::Uuid;
 
+use crate::agent_core::{self, SubAgent};
 use crate::embedding::EmbeddingProvider;
 use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
 use crate::realtime::{MqttPublisher, StreamEnvelope};
@@ -156,7 +155,7 @@ async fn run_locked_turn(
 
     match routing_outcome {
         RoutingOutcome::Continue(agent_session_id) => {
-            run_subagent_turn(conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
+            run_subagent_turn(conn, provider, embedding_provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::FallbackToChitchat => {
             chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
@@ -170,7 +169,7 @@ async fn run_locked_turn(
                     money_agent::MONEY_AGENT_TYPE,
                 )
                 .await?;
-                run_subagent_turn(conn, provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
+                run_subagent_turn(conn, provider, embedding_provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
             }
             routing::Intent::Chitchat => {
                 chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
@@ -182,16 +181,22 @@ async fn run_locked_turn(
 async fn run_subagent_turn(
     conn: &mut PoolConnection<Postgres>,
     provider: &dyn LlmProvider,
-    agent: &dyn subagent::SubAgent,
+    embedding_provider: &dyn EmbeddingProvider,
+    agent: &dyn SubAgent,
     session_id: Uuid,
     agent_session_id: Uuid,
     user_id: Uuid,
 ) -> Result<String, TurnError> {
     let messages = fetch_recent_messages(conn, session_id).await?;
 
-    let outcome = tools::run_tool_calling_loop(
+    let outcome = agent_core::run_agent_turn(
         conn,
+        None, // mqtt: money_agent-style turns don't stream yet at this point in the migration —
+              // Task 9 threads `mqtt` through from `process_turn` once run_locked_turn itself
+              // is rewritten. Passing None here preserves today's exact behavior (no streaming
+              // for subagent turns) until that task deliberately changes it.
         provider,
+        embedding_provider,
         agent,
         session_id,
         agent_session_id,
@@ -202,7 +207,7 @@ async fn run_subagent_turn(
     .await?;
 
     match outcome {
-        tools::LoopOutcome::Reply(reply_text) => {
+        agent_core::LoopOutcome::Reply(reply_text) => {
             let mut tx = conn.begin().await?;
             sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
                 .bind(session_id)
@@ -216,7 +221,7 @@ async fn run_subagent_turn(
             tx.commit().await?;
             Ok(reply_text)
         }
-        tools::LoopOutcome::Completed { status, summary } => {
+        agent_core::LoopOutcome::Completed { status, summary } => {
             let mut tx = conn.begin().await?;
             sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
                 .bind(session_id)

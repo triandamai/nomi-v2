@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::turn::memory::retrieve_relevant_memories;
+use nomi_agent_core::memory::retrieve_relevant_memories;
 
 fn make_embedding(first: f32, second: f32) -> Vec<f32> {
     let mut v = vec![0.0f32; 1536];
@@ -29,7 +29,7 @@ async fn seed_memory(pool: &PgPool, user_id: Uuid, content: &str, embedding: &[f
         .unwrap();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn retrieves_memories_ordered_by_weighted_similarity(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     seed_memory(&pool, user_id, "close match", &make_embedding(1.0, 0.0), 1.0).await;
@@ -45,7 +45,7 @@ async fn retrieves_memories_ordered_by_weighted_similarity(pool: PgPool) {
     assert_eq!(results[1].content, "far match");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_high_weight_can_outrank_a_higher_raw_similarity(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     seed_memory(&pool, user_id, "closer but low weight", &make_embedding(1.0, 0.0), 0.5).await;
@@ -59,7 +59,7 @@ async fn a_high_weight_can_outrank_a_higher_raw_similarity(pool: PgPool) {
     assert_eq!(results[0].content, "farther but high weight");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn respects_the_limit_parameter(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     for i in 0..3 {
@@ -74,7 +74,7 @@ async fn respects_the_limit_parameter(pool: PgPool) {
     assert_eq!(results.len(), 2);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn only_returns_memories_for_the_queried_user(pool: PgPool) {
     let user_a = seed_user(&pool).await;
     let user_b = seed_user(&pool).await;
@@ -90,7 +90,7 @@ async fn only_returns_memories_for_the_queried_user(pool: PgPool) {
     assert_eq!(results[0].content, "user a's memory");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn returns_empty_when_the_user_has_no_memories(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();

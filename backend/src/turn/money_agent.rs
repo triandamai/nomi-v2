@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::llm::ToolDefinition;
 
-use super::subagent::SubAgent;
+use crate::agent_core::SubAgent;
 
 pub const MONEY_AGENT_TYPE: &str = "money";
 
@@ -69,6 +69,14 @@ impl SubAgent for MoneyAgent {
             "summarize_budget" => summarize_budget(conn, user_id, input).await,
             other => Err(format!("unknown tool: {other}")),
         }
+    }
+
+    fn intent_label(&self) -> &'static str {
+        "money"
+    }
+
+    fn intent_description(&self) -> &'static str {
+        "the user wants to look at their transactions, spending, or budget"
     }
 }
 

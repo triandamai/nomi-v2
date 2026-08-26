@@ -2,9 +2,9 @@ use sqlx::pool::PoolConnection;
 use sqlx::{Postgres, PgPool};
 use uuid::Uuid;
 
-use super::types::TurnError;
-use crate::embedding::EmbeddingProvider;
-use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
+use crate::error::TurnError;
+use nomi_embedding::EmbeddingProvider;
+use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetrievedMemory {
@@ -38,6 +38,22 @@ pub async fn retrieve_relevant_memories(
     Ok(rows.into_iter().map(|(id, content)| RetrievedMemory { id, content }).collect())
 }
 
+pub async fn try_retrieve_memories(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+    embedding_provider: &dyn nomi_embedding::EmbeddingProvider,
+    user_id: uuid::Uuid,
+    text: &str,
+) -> Vec<RetrievedMemory> {
+    const MEMORY_RETRIEVAL_LIMIT: i64 = 5;
+    let embedding = match embedding_provider.embed(text).await {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    retrieve_relevant_memories(conn, user_id, &embedding, MEMORY_RETRIEVAL_LIMIT)
+        .await
+        .unwrap_or_default()
+}
+
 const EXTRACTION_SYSTEM_PROMPT: &str =
     "Extract at most one durable fact worth remembering long-term from this exchange, or say NONE if nothing is worth storing.";
 const EXTRACTION_MAX_TOKENS: u32 = 128;
@@ -60,7 +76,7 @@ pub async fn extract_and_store_memory(
         max_tokens: EXTRACTION_MAX_TOKENS,
     };
 
-    let response = match crate::llm::complete(provider, request).await {
+    let response = match nomi_llm::complete(provider, request).await {
         Ok(r) => r,
         Err(_) => return,
     };

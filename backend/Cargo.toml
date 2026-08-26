@@ -33,6 +33,7 @@ nomi-embedding = { path = "crates/nomi-embedding" }
 nomi-realtime = { path = "crates/nomi-realtime" }
 nomi-auth = { path = "crates/nomi-auth" }
 nomi-settings = { path = "crates/nomi-settings" }
+nomi-agent-core = { path = "crates/nomi-agent-core" }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }

@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::turn::memory::{reinforce, ReinforcementSignal};
+use nomi_agent_core::memory::{reinforce, ReinforcementSignal};
 
 fn zero_embedding_literal() -> String {
     format!("[{}]", vec!["0.0"; 1536].join(","))
@@ -34,7 +34,7 @@ async fn seed_memory_linked_to_a_message(pool: &PgPool, weight: f64) -> (Uuid, U
     (message_id, memory_id)
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn positive_signal_increases_weight(pool: PgPool) {
     let (message_id, memory_id) = seed_memory_linked_to_a_message(&pool, 1.0).await;
 
@@ -48,7 +48,7 @@ async fn positive_signal_increases_weight(pool: PgPool) {
     assert!((weight - 1.2).abs() < 1e-9);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn negative_signal_decreases_weight(pool: PgPool) {
     let (message_id, memory_id) = seed_memory_linked_to_a_message(&pool, 1.0).await;
 
@@ -62,7 +62,7 @@ async fn negative_signal_decreases_weight(pool: PgPool) {
     assert!((weight - 0.8).abs() < 1e-9);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn weight_is_clamped_to_the_upper_bound_under_repeated_positive_reinforcement(pool: PgPool) {
     let (message_id, memory_id) = seed_memory_linked_to_a_message(&pool, 4.9).await;
 
@@ -78,7 +78,7 @@ async fn weight_is_clamped_to_the_upper_bound_under_repeated_positive_reinforcem
     assert!((weight - 5.0).abs() < 1e-9);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn weight_is_clamped_to_the_lower_bound_under_repeated_negative_reinforcement(pool: PgPool) {
     let (message_id, memory_id) = seed_memory_linked_to_a_message(&pool, 0.15).await;
 
@@ -94,7 +94,7 @@ async fn weight_is_clamped_to_the_lower_bound_under_repeated_negative_reinforcem
     assert!((weight - 0.1).abs() < 1e-9);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_message_with_no_linked_memories_is_a_no_op(pool: PgPool) {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
         .fetch_one(&pool).await.unwrap();

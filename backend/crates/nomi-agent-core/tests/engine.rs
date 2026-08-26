@@ -1,15 +1,12 @@
-mod support;
-
 use sqlx::pool::PoolConnection;
 use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
-use nomi_orchestrator::turn::subagent::SubAgent;
-use nomi_orchestrator::turn::tools::{run_tool_calling_loop, LoopOutcome, COMPLETE_TASK_TOOL_NAME};
-use nomi_orchestrator::turn::TurnError;
+use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
+use nomi_agent_core::{run_agent_turn, LoopOutcome, SubAgent, COMPLETE_TASK_TOOL_NAME};
+use nomi_agent_core::TurnError;
 
-use support::FakeLlmProvider;
+use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
 
 struct TestAgent;
 
@@ -39,6 +36,12 @@ impl SubAgent for TestAgent {
             "echo" => Ok(format!("echoed: {input}")),
             other => Err(format!("unknown tool: {other}")),
         }
+    }
+    fn intent_label(&self) -> &'static str {
+        "test"
+    }
+    fn intent_description(&self) -> &'static str {
+        "test agent"
     }
 }
 
@@ -95,22 +98,34 @@ fn tool_use_response(id: &str, name: &str, input: serde_json::Value) -> LlmRespo
     }
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn end_turn_without_any_tool_use_returns_a_plain_reply(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
 
     let provider = FakeLlmProvider::sequence(vec![text_response("Hello!", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
 
-    let outcome = run_tool_calling_loop(&mut conn, &provider, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
-        .await
-        .unwrap();
+    let outcome = run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(outcome, LoopOutcome::Reply("Hello!".to_string()));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_tool_use_is_executed_and_its_result_fed_back(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
@@ -120,15 +135,27 @@ async fn a_tool_use_is_executed_and_its_result_fed_back(pool: PgPool) {
         tool_use_response("t1", "echo", serde_json::json!({"x": 1})),
         text_response("Done!", StopReason::EndTurn),
     ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
 
-    let outcome = run_tool_calling_loop(&mut conn, &provider, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
-        .await
-        .unwrap();
+    let outcome = run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(outcome, LoopOutcome::Reply("Done!".to_string()));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn complete_task_terminates_the_loop_with_a_completed_outcome(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
@@ -139,10 +166,22 @@ async fn complete_task_terminates_the_loop_with_a_completed_outcome(pool: PgPool
         COMPLETE_TASK_TOOL_NAME,
         serde_json::json!({"status": "completed", "summary": "All done"}),
     )]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
 
-    let outcome = run_tool_calling_loop(&mut conn, &provider, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
-        .await
-        .unwrap();
+    let outcome = run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         outcome,
@@ -150,7 +189,7 @@ async fn complete_task_terminates_the_loop_with_a_completed_outcome(pool: PgPool
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn exceeding_the_turn_cap_returns_tool_loop_exceeded(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
@@ -159,13 +198,26 @@ async fn exceeding_the_turn_cap_returns_tool_loop_exceeded(pool: PgPool) {
     let responses: Vec<LlmResponse> =
         (0..11).map(|i| tool_use_response(&format!("t{i}"), "echo", serde_json::json!({}))).collect();
     let provider = FakeLlmProvider::sequence(responses);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
 
-    let result = run_tool_calling_loop(&mut conn, &provider, &TestAgent, session_id, agent_session_id, user_id, vec![], 100).await;
+    let result = run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await;
 
     assert!(matches!(result, Err(TurnError::ToolLoopExceeded)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
@@ -179,10 +231,22 @@ async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
             serde_json::json!({"status": "completed", "summary": "done"}),
         ),
     ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
 
-    run_tool_calling_loop(&mut conn, &provider, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
-        .await
-        .unwrap();
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
 
     let event_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM agent_events WHERE session_id = $1 AND agent_session_id = $2 AND event_type = 'ToolCalled'",

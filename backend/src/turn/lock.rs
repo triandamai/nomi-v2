@@ -2,7 +2,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, PgPool, Postgres};
 use uuid::Uuid;
 
-use super::types::TurnError;
+use crate::agent_core::TurnError;
 
 pub async fn acquire_session_lock(
     pool: &PgPool,

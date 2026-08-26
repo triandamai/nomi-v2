@@ -3,7 +3,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use super::types::TurnError;
+use crate::agent_core::TurnError;
 use crate::llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
 const INTENT_CLASSIFICATION_SYSTEM_PROMPT: &str =

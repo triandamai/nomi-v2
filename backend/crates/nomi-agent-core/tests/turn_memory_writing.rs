@@ -1,12 +1,10 @@
-mod support;
-
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::llm::{ContentBlock, LlmResponse, StopReason};
-use nomi_orchestrator::turn::memory::extract_and_store_memory;
+use nomi_llm::{ContentBlock, LlmResponse, StopReason};
+use nomi_agent_core::memory::extract_and_store_memory;
 
-use support::{FakeEmbeddingProvider, FakeLlmProvider};
+use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
 
 fn extraction_response(text: &str) -> LlmResponse {
     LlmResponse {
@@ -21,7 +19,7 @@ async fn seed_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn none_extraction_stores_nothing(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -38,7 +36,7 @@ async fn none_extraction_stores_nothing(pool: PgPool) {
     assert_eq!(count, 0);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_real_extracted_fact_is_embedded_and_stored(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -55,7 +53,7 @@ async fn a_real_extracted_fact_is_embedded_and_stored(pool: PgPool) {
     assert_eq!(content, "User is vegetarian");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn extraction_llm_failure_stores_nothing(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -72,7 +70,7 @@ async fn extraction_llm_failure_stores_nothing(pool: PgPool) {
     assert_eq!(count, 0);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn embedding_failure_after_a_good_extraction_stores_nothing(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();

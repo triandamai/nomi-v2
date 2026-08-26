@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use nomi_orchestrator::turn::money_agent::MoneyAgent;
-use nomi_orchestrator::turn::subagent::SubAgent;
+use nomi_orchestrator::agent_core::SubAgent;
 
 async fn seed_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap()

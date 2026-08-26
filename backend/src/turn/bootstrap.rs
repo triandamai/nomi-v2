@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::types::TurnError;
+use crate::agent_core::TurnError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BootstrapResult {
