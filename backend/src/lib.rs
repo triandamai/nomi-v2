@@ -6,6 +6,6 @@ pub use nomi_llm as llm;
 pub use nomi_embedding as embedding;
 pub mod turn;
 pub mod web_identity;
-pub mod settings;
+pub use nomi_settings as settings;
 pub use nomi_realtime as realtime;
 pub mod worker;

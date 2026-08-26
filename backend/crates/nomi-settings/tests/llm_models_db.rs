@@ -1,4 +1,4 @@
-use nomi_orchestrator::settings::llm_models::{
+use nomi_settings::llm_models::{
     create_admin_llm_model, delete_admin_llm_model, get_admin_llm_model, get_default_admin_llm_model,
     get_user_llm_selection, list_admin_llm_models, set_default_admin_llm_model, set_user_llm_selection_admin,
     set_user_llm_selection_custom, update_admin_llm_model, CustomLlmSelection, DeleteAdminLlmModelError,
@@ -22,14 +22,14 @@ fn new_model_input(label: &str, updated_by: Uuid) -> NewAdminLlmModel<'_> {
     }
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn the_first_model_created_becomes_the_default(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
     assert!(model.is_default);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_second_model_created_is_not_the_default(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -37,7 +37,7 @@ async fn a_second_model_created_is_not_the_default(pool: PgPool) {
     assert!(!second.is_default);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_returns_all_models_in_creation_order(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -49,12 +49,12 @@ async fn list_returns_all_models_in_creation_order(pool: PgPool) {
     assert_eq!(models[1].label, "Second");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn get_default_admin_llm_model_returns_none_when_no_models_exist(pool: PgPool) {
     assert!(get_default_admin_llm_model(&pool).await.unwrap().is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn update_changes_fields_and_keeps_existing_key_when_none_given(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -81,7 +81,7 @@ async fn update_changes_fields_and_keeps_existing_key_when_none_given(pool: PgPo
     assert_eq!(updated.api_key_encrypted, vec![1, 2, 3]);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn update_replaces_the_key_when_one_is_given(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -105,7 +105,7 @@ async fn update_replaces_the_key_when_one_is_given(pool: PgPool) {
     assert_eq!(updated.api_key_encrypted, vec![9, 9, 9]);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn update_of_a_nonexistent_model_returns_none(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let result = update_admin_llm_model(
@@ -125,7 +125,7 @@ async fn update_of_a_nonexistent_model_returns_none(pool: PgPool) {
     assert!(result.is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn delete_rejects_the_only_model_since_it_is_always_the_default(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("Only", user_id)).await.unwrap();
@@ -134,7 +134,7 @@ async fn delete_rejects_the_only_model_since_it_is_always_the_default(pool: PgPo
     assert!(matches!(result, Err(DeleteAdminLlmModelError::IsDefault)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn delete_rejects_the_current_default_even_with_others_present(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let first = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -144,7 +144,7 @@ async fn delete_rejects_the_current_default_even_with_others_present(pool: PgPoo
     assert!(matches!(result, Err(DeleteAdminLlmModelError::IsDefault)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn delete_succeeds_for_a_non_default_model_when_others_remain(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -154,7 +154,7 @@ async fn delete_succeeds_for_a_non_default_model_when_others_remain(pool: PgPool
     assert!(get_admin_llm_model(&pool, second.id).await.unwrap().is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn set_default_swaps_the_default_flag_to_exactly_the_new_model(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let first = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -168,19 +168,19 @@ async fn set_default_swaps_the_default_flag_to_exactly_the_new_model(pool: PgPoo
     assert!(second.is_default);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn set_default_of_a_nonexistent_model_returns_not_found(pool: PgPool) {
     let result = set_default_admin_llm_model(&pool, Uuid::new_v4()).await;
     assert!(matches!(result, Err(SetDefaultAdminLlmModelError::NotFound)));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_user_with_no_selection_row_resolves_to_none(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     assert!(get_user_llm_selection(&pool, user_id).await.unwrap().is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn setting_an_admin_selection_then_a_custom_one_clears_the_admin_reference(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -209,7 +209,7 @@ async fn setting_an_admin_selection_then_a_custom_one_clears_the_admin_reference
     assert_eq!(row.custom_model_id, Some("gpt-4o".to_string()));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn setting_a_custom_selection_then_an_admin_one_clears_the_custom_fields(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
@@ -236,7 +236,7 @@ async fn setting_a_custom_selection_then_an_admin_one_clears_the_custom_fields(p
     assert_eq!(row.custom_model_id, None);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn deleting_a_referenced_admin_model_clears_the_users_reference(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     create_admin_llm_model(&pool, new_model_input("Default", user_id)).await.unwrap();

@@ -1,4 +1,4 @@
-use nomi_orchestrator::settings::{get_settings, mask_api_key, upsert_settings, UpsertInput};
+use nomi_settings::{get_settings, mask_api_key, upsert_settings, UpsertInput};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -9,13 +9,13 @@ async fn insert_user(pool: &PgPool) -> Uuid {
         .unwrap()
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn get_settings_returns_none_when_no_row_exists(pool: PgPool) {
     let row = get_settings(&pool, "llm").await.unwrap();
     assert!(row.is_none());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn upsert_then_get_roundtrips_the_row(pool: PgPool) {
     let user_id = insert_user(&pool).await;
 
@@ -40,7 +40,7 @@ async fn upsert_then_get_roundtrips_the_row(pool: PgPool) {
     assert_eq!(row.base_url, None);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn upsert_twice_updates_the_same_row_instead_of_inserting_a_second_one(pool: PgPool) {
     let user_id = insert_user(&pool).await;
 
@@ -70,7 +70,7 @@ async fn upsert_twice_updates_the_same_row_instead_of_inserting_a_second_one(poo
     assert_eq!(row.model_id, "claude-sonnet-5");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn llm_and_embedding_rows_are_independent(pool: PgPool) {
     let user_id = insert_user(&pool).await;
 

@@ -1395,6 +1395,7 @@ dependencies = [
  "nomi-embedding",
  "nomi-llm",
  "nomi-realtime",
+ "nomi-settings",
  "rand 0.8.7",
  "reqwest",
  "rumqttc",
@@ -1424,6 +1425,20 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-settings"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "chrono",
+ "hex",
+ "rand 0.8.7",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
  "uuid",
 ]
 
