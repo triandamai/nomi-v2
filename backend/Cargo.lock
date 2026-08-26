@@ -1371,6 +1371,7 @@ dependencies = [
  "jsonwebtoken",
  "nomi-embedding",
  "nomi-llm",
+ "nomi-realtime",
  "rand 0.8.7",
  "reqwest",
  "rumqttc",
@@ -1387,6 +1388,20 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "wiremock",
+]
+
+[[package]]
+name = "nomi-realtime"
+version = "0.1.0"
+dependencies = [
+ "nomi-llm",
+ "rumqttc",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
