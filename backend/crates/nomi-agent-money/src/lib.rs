@@ -5,9 +5,8 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use crate::llm::ToolDefinition;
-
-use crate::agent_core::SubAgent;
+use nomi_llm::ToolDefinition;
+use nomi_agent_core::SubAgent;
 
 pub const MONEY_AGENT_TYPE: &str = "money";
 

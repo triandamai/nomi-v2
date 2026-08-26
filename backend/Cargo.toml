@@ -34,6 +34,7 @@ nomi-realtime = { path = "crates/nomi-realtime" }
 nomi-auth = { path = "crates/nomi-auth" }
 nomi-settings = { path = "crates/nomi-settings" }
 nomi-agent-core = { path = "crates/nomi-agent-core" }
+nomi-agent-money = { path = "crates/nomi-agent-money" }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }

@@ -1,8 +1,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_orchestrator::turn::money_agent::MoneyAgent;
-use nomi_orchestrator::agent_core::SubAgent;
+use nomi_agent_money::MoneyAgent;
+use nomi_agent_core::SubAgent;
 
 async fn seed_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap()
@@ -29,7 +29,7 @@ async fn seed_transaction(
     .unwrap();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_transactions_returns_recent_transactions_for_the_user(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let other_user_id = seed_user(&pool).await;
@@ -47,7 +47,7 @@ async fn list_transactions_returns_recent_transactions_for_the_user(pool: PgPool
     assert!(!result.contains("someone else's lunch"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_transactions_filters_by_category(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let now = chrono::Utc::now();
@@ -64,7 +64,7 @@ async fn list_transactions_filters_by_category(pool: PgPool) {
     assert!(!result.contains("monthly rent"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_transactions_with_no_matches_says_so(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -75,7 +75,7 @@ async fn list_transactions_with_no_matches_says_so(pool: PgPool) {
     assert_eq!(result, "No transactions found.");
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn summarize_budget_groups_totals_by_category(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let now = chrono::Utc::now();
@@ -93,7 +93,7 @@ async fn summarize_budget_groups_totals_by_category(pool: PgPool) {
     assert!(result.contains("rent: 50.00"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn summarize_budget_respects_since_filter(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let old = chrono::Utc::now() - chrono::Duration::days(60);
@@ -112,7 +112,7 @@ async fn summarize_budget_respects_since_filter(pool: PgPool) {
     assert!(!result.contains("food: 30.00"));
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn summarize_budget_with_an_invalid_since_date_returns_an_error(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -122,7 +122,7 @@ async fn summarize_budget_with_an_invalid_since_date_returns_an_error(pool: PgPo
     assert!(result.is_err());
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn unknown_tool_name_returns_an_error(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();

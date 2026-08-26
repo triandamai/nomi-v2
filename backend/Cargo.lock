@@ -1340,6 +1340,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-money"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-auth"
 version = "0.1.0"
 dependencies = [
@@ -1409,6 +1424,7 @@ dependencies = [
  "http-body-util",
  "jsonwebtoken",
  "nomi-agent-core",
+ "nomi-agent-money",
  "nomi-auth",
  "nomi-embedding",
  "nomi-llm",

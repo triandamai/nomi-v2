@@ -2,7 +2,6 @@ pub mod bootstrap;
 pub mod chitchat;
 pub mod ingest;
 pub mod lock;
-pub mod money_agent;
 pub mod queue;
 pub mod routing;
 pub mod types;
@@ -144,7 +143,7 @@ async fn run_locked_turn(
             if routing::is_stale(details.last_activity_at) {
                 routing::mark_expired(conn, agent_session_id, session_id, &details.agent_type).await?;
                 RoutingOutcome::NeedsClassification
-            } else if details.agent_type == money_agent::MONEY_AGENT_TYPE {
+            } else if details.agent_type == nomi_agent_money::MONEY_AGENT_TYPE {
                 RoutingOutcome::Continue(agent_session_id)
             } else {
                 RoutingOutcome::FallbackToChitchat
@@ -155,7 +154,7 @@ async fn run_locked_turn(
 
     match routing_outcome {
         RoutingOutcome::Continue(agent_session_id) => {
-            run_subagent_turn(conn, provider, embedding_provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
+            run_subagent_turn(conn, provider, embedding_provider, &nomi_agent_money::MoneyAgent, session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::FallbackToChitchat => {
             chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
@@ -166,10 +165,10 @@ async fn run_locked_turn(
                     conn,
                     session_id,
                     sender_channel_identity_id,
-                    money_agent::MONEY_AGENT_TYPE,
+                    nomi_agent_money::MONEY_AGENT_TYPE,
                 )
                 .await?;
-                run_subagent_turn(conn, provider, embedding_provider, &money_agent::MoneyAgent, session_id, agent_session_id, user_id).await
+                run_subagent_turn(conn, provider, embedding_provider, &nomi_agent_money::MoneyAgent, session_id, agent_session_id, user_id).await
             }
             routing::Intent::Chitchat => {
                 chitchat::run_chitchat_turn(conn, mqtt, provider, embedding_provider, session_id, user_id, text).await
