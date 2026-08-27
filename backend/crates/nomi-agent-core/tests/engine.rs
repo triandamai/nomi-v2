@@ -122,7 +122,10 @@ async fn end_turn_without_any_tool_use_returns_a_plain_reply(pool: PgPool) {
     .await
     .unwrap();
 
-    assert_eq!(outcome, LoopOutcome::Reply("Hello!".to_string()));
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: "Hello!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -152,7 +155,10 @@ async fn a_tool_use_is_executed_and_its_result_fed_back(pool: PgPool) {
     .await
     .unwrap();
 
-    assert_eq!(outcome, LoopOutcome::Reply("Done!".to_string()));
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: "Done!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]

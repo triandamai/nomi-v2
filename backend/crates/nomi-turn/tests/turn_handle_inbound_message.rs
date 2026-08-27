@@ -270,3 +270,74 @@ async fn chitchat_turn_maps_sender_presence_to_role_correctly(pool: PgPool) {
     assert_eq!(sent.messages[1].role, LlmRole::Assistant); // "hello back"
     assert_eq!(sent.messages[2].role, LlmRole::User); // "latest"
 }
+
+// End-to-end proof that a chitchat reply's used memories get linked via message_memory_usage,
+// and that the reply itself is recorded as an AgentReplied event with token counts — the
+// bookkeeping the old bespoke turn/chitchat.rs used to do inline, restored here as the caller's
+// responsibility now that nomi_agent_core::run_agent_turn reports which memories it used via
+// LoopOutcome::Reply::memory_ids_used instead of writing the link itself.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replied_event(pool: PgPool) {
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+
+    // Bootstrap the user/identity first so a memory can be seeded for the real user_id. Each
+    // handle_inbound_message call makes 3 provider calls in order (intent classification, the
+    // chitchat reply itself, then memory extraction since ChitchatAgent::uses_memory() is
+    // true) — queue an explicit "NONE" for extraction so a FakeLlmProvider::success() reusing
+    // the reply text doesn't get treated as an extracted fact and plant a second, competing
+    // memory with the same embedding as the one this test seeds below.
+    let bootstrap_provider =
+        FakeLlmProvider::sequence(vec![canned_response("chitchat"), canned_response("hi there"), canned_response("NONE")]);
+    handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
+        .await
+        .unwrap();
+    let user_id: Uuid = sqlx::query_scalar(
+        "SELECT user_id FROM channel_identities WHERE channel = 'telegram' AND channel_user_id = 'tg-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let literal = format!("[{}]", vec!["0"; 1536].join(","));
+    let memory_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, $2, $3::vector) RETURNING id",
+    )
+    .bind(user_id)
+    .bind("User is vegetarian")
+    .bind(&literal)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        canned_response("chitchat"),
+        canned_response("Noted, no meat!"),
+        canned_response("NONE"),
+    ]);
+    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "what should I eat?", None)
+        .await
+        .unwrap();
+
+    let linked_memory_id: Uuid = sqlx::query_scalar(
+        "SELECT memory_id FROM message_memory_usage mmu \
+         JOIN messages m ON m.id = mmu.message_id \
+         WHERE m.session_id = $1 AND m.content = 'Noted, no meat!'",
+    )
+    .bind(outcome.session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(linked_memory_id, memory_id);
+
+    let (event_type, payload): (String, serde_json::Value) = sqlx::query_as(
+        "SELECT event_type, payload FROM agent_events WHERE session_id = $1 AND event_type = 'AgentReplied'",
+    )
+    .bind(outcome.session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(event_type, "AgentReplied");
+    assert_eq!(payload["input_tokens"], 10);
+    assert_eq!(payload["output_tokens"], 5);
+}

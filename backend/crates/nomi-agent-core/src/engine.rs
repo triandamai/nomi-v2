@@ -30,7 +30,7 @@ fn complete_task_tool_definition() -> ToolDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
-    Reply(String),
+    Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
 }
 
@@ -118,6 +118,8 @@ pub async fn run_agent_turn(
         messages.push(LlmMessage { role: LlmRole::Assistant, content: response.content.clone() });
 
         if response.stop_reason != StopReason::ToolUse {
+            let input_tokens = response.input_tokens;
+            let output_tokens = response.output_tokens;
             let reply_text = response
                 .content
                 .into_iter()
@@ -142,7 +144,12 @@ pub async fn run_agent_turn(
                 memory::extract_and_store_memory(conn, provider, embedding_provider, user_id, &last_user_text, &reply_text).await;
             }
 
-            return Ok(LoopOutcome::Reply(reply_text));
+            return Ok(LoopOutcome::Reply {
+                text: reply_text,
+                memory_ids_used: memories.iter().map(|m| m.id).collect(),
+                input_tokens,
+                output_tokens,
+            });
         }
 
         let mut tool_results = Vec::new();

@@ -70,7 +70,11 @@ async fn end_turn_returns_the_reply_and_triggers_memory_extraction_afterward(poo
     .await
     .unwrap();
 
-    assert_eq!(outcome, LoopOutcome::Reply("Hello there!".to_string()));
+    // No memories exist for this user yet, so uses_memory()=true retrieves none.
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: "Hello there!".to_string(), memory_ids_used: vec![], input_tokens: 10, output_tokens: 5 }
+    );
 
     let stored: String = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1")
         .bind(user_id)
@@ -117,28 +121,30 @@ async fn provider_failure_returns_an_error_and_extracts_no_memory(pool: PgPool) 
 }
 
 // Ported from `retrieved_memories_are_folded_into_the_system_prompt_and_linked_to_the_reply`.
-// The "linked to the reply" half (a message_memory_usage row tying the retrieved memory to the
-// reply message) is dropped: that bookkeeping lived in chitchat's own now-deleted transaction
-// and was never carried into `nomi_agent_core::run_agent_turn` by Task 6 — `LoopOutcome`
-// doesn't expose which memories were used, so there is nothing for a caller to link even in
-// principle. What *is* still chitchat/engine behavior — the system prompt actually gaining the
-// retrieved memory content — is asserted here.
+// The "linked to the reply" half now asserts against `LoopOutcome::Reply::memory_ids_used`
+// instead of a `message_memory_usage` row directly: `run_agent_turn` doesn't write that table
+// itself (persisting the reply message, and therefore the link, is still the caller's job —
+// same division of responsibility as everything else in `messages`/`agent_events`), but it now
+// reports which memories were actually used so a caller (`nomi-turn::run_subagent_turn`) can
+// write that row. See `nomi-turn`'s own tests for the end-to-end persistence of that row.
 #[sqlx::test(migrations = "../../migrations")]
-async fn retrieved_memories_are_folded_into_the_system_prompt(pool: PgPool) {
+async fn retrieved_memories_are_folded_into_the_system_prompt_and_reported_as_used(pool: PgPool) {
     let user_id = seed_user(&pool).await;
-    sqlx::query("INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, $2, $3::vector)")
-        .bind(user_id)
-        .bind("User is vegetarian")
-        .bind(to_vector_literal(&make_embedding(1.0)))
-        .execute(&pool)
-        .await
-        .unwrap();
+    let memory_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, $2, $3::vector) RETURNING id",
+    )
+    .bind(user_id)
+    .bind("User is vegetarian")
+    .bind(to_vector_literal(&make_embedding(1.0)))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
     let mut conn = pool.acquire().await.unwrap();
     let provider = FakeLlmProvider::sequence(vec![text_response("Got it, no meat!"), text_response("NONE")]);
     let embedder = FakeEmbeddingProvider::success(make_embedding(1.0));
 
-    run_agent_turn(
+    let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
@@ -152,6 +158,11 @@ async fn retrieved_memories_are_folded_into_the_system_prompt(pool: PgPool) {
     )
     .await
     .unwrap();
+
+    match outcome {
+        LoopOutcome::Reply { memory_ids_used, .. } => assert_eq!(memory_ids_used, vec![memory_id]),
+        LoopOutcome::Completed { .. } => panic!("expected a Reply outcome"),
+    }
 
     let requests = provider.received_requests.lock().unwrap();
     let system = requests[0].system.as_ref().unwrap();
@@ -184,7 +195,11 @@ async fn a_failing_embedding_provider_does_not_prevent_a_normal_reply(pool: PgPo
     .await
     .unwrap();
 
-    assert_eq!(outcome, LoopOutcome::Reply("Still here!".to_string()));
+    // The embedding failure makes memory retrieval fail open (empty), not the whole turn.
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: "Still here!".to_string(), memory_ids_used: vec![], input_tokens: 10, output_tokens: 5 }
+    );
 
     let requests = provider.received_requests.lock().unwrap();
     assert_eq!(

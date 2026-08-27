@@ -214,13 +214,37 @@ async fn run_subagent_turn(
     .await?;
 
     match outcome {
-        nomi_agent_core::LoopOutcome::Reply(reply_text) => {
+        nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens } => {
             let mut tx = conn.begin().await?;
-            sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
-                .bind(session_id)
-                .bind(&reply_text)
-                .execute(&mut *tx)
-                .await?;
+            let reply_message_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id",
+            )
+            .bind(session_id)
+            .bind(&reply_text)
+            .fetch_one(&mut *tx)
+            .await?;
+            for memory_id in &memory_ids_used {
+                sqlx::query("INSERT INTO message_memory_usage (message_id, memory_id) VALUES ($1, $2)")
+                    .bind(reply_message_id)
+                    .bind(memory_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            // The default agent (chitchat) has no real agent_sessions row — run_locked_turn
+            // reuses session_id as agent_session_id for it as a sentinel (see its call site).
+            // agent_events.agent_session_id has a foreign key into agent_sessions, so binding
+            // that sentinel directly would fail every default-agent reply; NULL it out instead.
+            let agent_session_id_for_event =
+                if agent_session_id == session_id { None } else { Some(agent_session_id) };
+            sqlx::query(
+                "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, $2, $3, 'AgentReplied', $4)",
+            )
+            .bind(session_id)
+            .bind(agent_session_id_for_event)
+            .bind(agent.agent_type())
+            .bind(serde_json::json!({"input_tokens": input_tokens, "output_tokens": output_tokens}))
+            .execute(&mut *tx)
+            .await?;
             sqlx::query("UPDATE agent_sessions SET last_activity_at = now() WHERE id = $1")
                 .bind(agent_session_id)
                 .execute(&mut *tx)
