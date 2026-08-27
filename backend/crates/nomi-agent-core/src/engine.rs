@@ -79,6 +79,15 @@ pub async fn run_agent_turn(
         prompt
     };
 
+    let system_prompt = if agent.uses_personality() {
+        match crate::personality::get_current_personality(conn, user_id).await {
+            Some(p) => format!("{system_prompt}\n\nAdopt this personality in your replies: {p}"),
+            None => system_prompt,
+        }
+    } else {
+        system_prompt
+    };
+
     for _ in 0..MAX_TOOL_TURNS {
         let request = LlmRequest {
             system: Some(system_prompt.clone()),

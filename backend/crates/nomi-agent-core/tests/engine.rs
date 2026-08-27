@@ -47,6 +47,41 @@ impl SubAgent for TestAgent {
     }
 }
 
+struct PersonalityAwareTestAgent;
+
+#[async_trait::async_trait]
+impl SubAgent for PersonalityAwareTestAgent {
+    fn agent_type(&self) -> &'static str {
+        "personality-aware-test"
+    }
+    fn system_prompt(&self) -> &'static str {
+        "test prompt"
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<String, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> &'static str {
+        "personality-aware-test"
+    }
+    fn intent_description(&self) -> &'static str {
+        "test agent"
+    }
+    fn uses_personality(&self) -> bool {
+        true
+    }
+}
+
 async fn seed_session(pool: &PgPool) -> Uuid {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
         .fetch_one(pool)
@@ -265,4 +300,73 @@ async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(event_count, 2);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_stored_personality_is_folded_into_the_system_prompt_when_uses_personality_is_true(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("INSERT INTO user_personality (user_id, description) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind("Be sarcastic and blunt.")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Fine.", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &PersonalityAwareTestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    let system = requests[0].system.as_ref().unwrap();
+    assert!(system.contains("Adopt this personality in your replies: Be sarcastic and blunt."));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_stored_personality_is_not_folded_in_for_an_agent_that_does_not_opt_in(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("INSERT INTO user_personality (user_id, description) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind("Be sarcastic and blunt.")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Fine.", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    assert_eq!(requests[0].system.as_ref().unwrap(), "test prompt");
 }
