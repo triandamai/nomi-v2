@@ -1,9 +1,28 @@
 # `reinforce()` is unwired for chitchat — memory-reinforcement silently no-ops
 
-**Status:** Open
+**Status:** Fixed (`7734c47`, 2026-08-28)
 **Filed:** 2026-08-27
 **Introduced by:** `docs/superpowers/plans/2026-08-26-backend-cargo-workspace-implementation.md`, Task 8 (`nomi-agent-chitchat`)
 **Severity:** Low today (zero production blast radius, confirmed), but a real correctness gap in a capability that looks fully functional.
+
+## Resolution
+
+Fixed in `7734c47`. `LoopOutcome::Reply` now carries `memory_ids_used: Vec<Uuid>` plus
+`input_tokens`/`output_tokens`; `nomi-turn`'s `run_subagent_turn` writes `message_memory_usage`
+rows and an `AgentReplied` `agent_events` row from them, inside the same transaction that
+persists the reply. `reinforce()` now has real data to act on. Verified end-to-end with
+`nomi-turn/tests/turn_handle_inbound_message.rs::a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replied_event`,
+which drives a real chitchat turn through `handle_inbound_message` and asserts the actual
+`message_memory_usage` row and `agent_events` row it produces — not just that `LoopOutcome`
+compiles with the new fields.
+
+Step 4 from the plan below (wiring an actual thumbs-up/down feature to call `reinforce()`) is
+still open and out of scope for this fix — this only restores the plumbing `reinforce()` needs
+to have any effect once that feature exists.
+
+---
+
+## Original report (kept for context)
 
 ## Summary
 
