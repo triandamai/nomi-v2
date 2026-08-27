@@ -207,3 +207,37 @@ async fn a_failing_embedding_provider_does_not_prevent_a_normal_reply(pool: PgPo
         "You are a helpful, friendly assistant chatting with the user. Keep replies concise."
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_stored_personality_is_folded_into_chitchats_system_prompt(pool: PgPool) {
+    let user_id = seed_user(&pool).await;
+    sqlx::query("INSERT INTO user_personality (user_id, description) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind("Be sarcastic and blunt.")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Fine, whatever."), text_response("NONE")]);
+    let embedder = FakeEmbeddingProvider::success(make_embedding(0.5));
+
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedder,
+        &ChitchatAgent,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        user_id,
+        vec![user_message("hi")],
+        CHITCHAT_MAX_TOKENS,
+    )
+    .await
+    .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    let system = requests[0].system.as_ref().unwrap();
+    assert!(system.contains("Adopt this personality in your replies: Be sarcastic and blunt."));
+}

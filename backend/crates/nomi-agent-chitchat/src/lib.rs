@@ -58,4 +58,8 @@ impl SubAgent for ChitchatAgent {
     fn uses_memory(&self) -> bool {
         true
     }
+
+    fn uses_personality(&self) -> bool {
+        true
+    }
 }
