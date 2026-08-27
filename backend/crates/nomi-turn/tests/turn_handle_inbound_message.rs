@@ -210,6 +210,14 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
         .unwrap();
     }
 
+    // The 25 rows above were seeded with explicit, synthetic created_at values up to 24ms after
+    // `base`. "latest" below is inserted through the real handle_inbound_message path and gets a
+    // genuine `now()` timestamp from Postgres — on a fast local DB, all 25 inserts can finish in
+    // under 24ms of wall-clock time, letting "latest"'s real timestamp land *before* some of the
+    // tail-end synthetic ones. Sleeping past the synthetic span guarantees real "now" has moved
+    // beyond it before "latest" is inserted, regardless of how fast the loop above ran.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
     let provider = FakeLlmProvider::success(canned_response("ok"));
     handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
         .await

@@ -248,11 +248,11 @@ async fn fetch_recent_messages(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
 ) -> Result<Vec<LlmMessage>, TurnError> {
-    let rows: Vec<(Option<Uuid>, String)> = sqlx::query_as(
-        "SELECT sender_channel_identity_id, content FROM ( \
-             SELECT sender_channel_identity_id, content, created_at FROM messages \
-             WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2 \
-         ) recent ORDER BY created_at ASC",
+    let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(
+        "SELECT sender_channel_identity_id, content, id FROM ( \
+             SELECT id, sender_channel_identity_id, content, created_at FROM messages \
+             WHERE session_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 \
+         ) recent ORDER BY created_at ASC, id ASC",
     )
     .bind(session_id)
     .bind(SUBAGENT_HISTORY_LIMIT)
@@ -261,7 +261,7 @@ async fn fetch_recent_messages(
 
     Ok(rows
         .into_iter()
-        .map(|(sender, content)| LlmMessage {
+        .map(|(sender, content, _id)| LlmMessage {
             role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
             content: vec![ContentBlock::Text { text: content }],
         })
