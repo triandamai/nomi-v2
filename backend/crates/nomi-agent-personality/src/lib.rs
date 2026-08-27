@@ -89,9 +89,15 @@ async fn set_personality(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "description is required and must not be empty".to_string())?;
 
-    nomi_agent_core::personality::set_personality(conn, session_id, agent_session_id, user_id, description)
-        .await
-        .map_err(|e| e.to_string())?;
+    nomi_agent_core::personality::set_personality(
+        conn,
+        Some(session_id),
+        Some(agent_session_id),
+        user_id,
+        description,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(format!("Personality updated to: {description}"))
 }
