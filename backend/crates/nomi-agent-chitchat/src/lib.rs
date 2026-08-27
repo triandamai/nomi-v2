@@ -31,6 +31,8 @@ impl SubAgent for ChitchatAgent {
     async fn execute_tool(
         &self,
         _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
         _user_id: Uuid,
         _name: &str,
         _input: Value,

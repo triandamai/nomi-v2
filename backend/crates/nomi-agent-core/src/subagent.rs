@@ -14,6 +14,8 @@ pub trait SubAgent: Send + Sync {
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
+        session_id: Uuid,
+        agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
         input: Value,
@@ -35,6 +37,12 @@ pub trait SubAgent: Send + Sync {
     /// outcome (never after `Completed` — a completed task summary isn't a conversational
     /// reply worth remembering facts from).
     fn uses_memory(&self) -> bool {
+        false
+    }
+
+    /// When `true`, `run_agent_turn` folds the user's currently stored personality (if any)
+    /// into the system prompt for this turn. See `nomi_agent_core::personality`.
+    fn uses_personality(&self) -> bool {
         false
     }
 }

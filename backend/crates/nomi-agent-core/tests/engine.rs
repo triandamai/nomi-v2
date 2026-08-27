@@ -28,6 +28,8 @@ impl SubAgent for TestAgent {
     async fn execute_tool(
         &self,
         _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
         _user_id: Uuid,
         name: &str,
         input: serde_json::Value,

@@ -158,7 +158,7 @@ pub async fn run_agent_turn(
                 let (result_text, is_error) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                     (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false)
                 } else {
-                    match agent.execute_tool(conn, user_id, name, input.clone()).await {
+                    match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(text) => (text, false),
                         Err(err) => (err, true),
                     }

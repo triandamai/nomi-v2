@@ -59,6 +59,8 @@ impl SubAgent for MoneyAgent {
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
         input: Value,

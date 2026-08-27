@@ -24,7 +24,15 @@ impl SubAgent for StubAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(
+        &self,
+        _: &mut PoolConnection<Postgres>,
+        _: Uuid,
+        _: Uuid,
+        _: Uuid,
+        _: &str,
+        _: Value,
+    ) -> Result<String, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {
