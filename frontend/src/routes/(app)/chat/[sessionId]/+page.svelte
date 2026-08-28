@@ -13,6 +13,7 @@
 	let turnError = $state(false);
 	let connectionLost = $state(false);
 	let modelPickerOpen = $state(false);
+	let personalityPanelOpen = $state(false);
 	let showCustomForm = $state(false);
 
 	const TERMINAL_CLOSE_CODES = new Set([4401, 4404]);
@@ -125,7 +126,54 @@
 		class="px-6 py-4"
 		style="background: var(--md-sys-color-surface-container-low); border-top: 1px solid var(--md-sys-color-outline-variant)"
 	>
-		<div class="mb-2 flex justify-end">
+		<div class="mb-2 flex justify-end gap-2">
+			<div class="relative">
+				<Button type="button" variant="outlined" onclick={() => (personalityPanelOpen = !personalityPanelOpen)}>
+					Personality
+				</Button>
+				{#if personalityPanelOpen}
+					<div
+						class="absolute right-0 bottom-full mb-2 w-80 p-3"
+						style="background: var(--md-sys-color-surface-container-high); border-radius: var(--md-sys-shape-corner-extra-large); box-shadow: var(--md-sys-elevation-shadow-level3)"
+					>
+						{#if form?.personalityError}
+							<p class="md-body-small mb-2" style="color: var(--md-sys-color-error)">{form.personalityError}</p>
+						{/if}
+						<p class="md-label-medium mb-1" style="color: var(--md-sys-color-on-surface-variant)">Personality history</p>
+						{#if data.personality.versions.length === 0}
+							<p class="md-body-medium px-2 py-1" style="color: var(--md-sys-color-on-surface-variant)">
+								You haven't set a personality yet — just ask nomi to change it.
+							</p>
+						{:else}
+							{#each data.personality.versions as version (version.version)}
+								<div class="m3-personality-item" class:m3-personality-item--current={version.is_current}>
+									<div class="min-w-0 flex-1">
+										<p class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface)">{version.description}</p>
+										<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">
+											v{version.version} · {new Date(version.created_at).toLocaleString()}
+										</p>
+									</div>
+									{#if !version.is_current}
+										<form
+											method="POST"
+											action="?/restorePersonality"
+											use:enhance={() => {
+												return async ({ update }) => {
+													await update();
+													personalityPanelOpen = false;
+												};
+											}}
+										>
+											<input type="hidden" name="version" value={version.version} />
+											<Button type="submit" variant="text">Restore</Button>
+										</form>
+									{/if}
+								</div>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+			</div>
 			<div class="relative">
 				<Button type="button" variant="outlined" onclick={() => (modelPickerOpen = !modelPickerOpen)}>
 					{activeModelLabel}
@@ -267,5 +315,17 @@
 		outline: none;
 		border: 2px solid var(--md-sys-color-primary);
 		padding: 5px 7px;
+	}
+
+	.m3-personality-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 8px;
+		border-radius: var(--md-sys-shape-corner-small);
+	}
+	.m3-personality-item--current {
+		background: var(--md-sys-color-secondary-container);
 	}
 </style>

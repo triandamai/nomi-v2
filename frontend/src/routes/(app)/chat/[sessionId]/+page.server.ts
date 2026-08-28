@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { LlmModelsResponse, MessageItem } from '$lib/types';
+import type { LlmModelsResponse, MessageItem, PersonalityHistoryResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
@@ -20,7 +20,12 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		? ((await modelsResponse.json()) as LlmModelsResponse)
 		: { admin_models: [], selection: null };
 
-	return { messages, models };
+	const personalityResponse = await apiFetch(fetch, cookies, '/api/personality/history');
+	const personality: PersonalityHistoryResponse = personalityResponse.ok
+		? ((await personalityResponse.json()) as PersonalityHistoryResponse)
+		: { versions: [] };
+
+	return { messages, models, personality };
 };
 
 export const actions: Actions = {
@@ -111,5 +116,26 @@ export const actions: Actions = {
 		}
 
 		return { modelSelected: true };
+	},
+
+	restorePersonality: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const version = data.get('version');
+
+		if (typeof version !== 'string' || !version.trim()) {
+			return fail(400, { personalityError: 'Invalid version.' });
+		}
+
+		const response = await apiFetch(fetch, cookies, '/api/personality/rollback', {
+			method: 'POST',
+			body: JSON.stringify({ version: Number(version) }),
+		});
+
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { personalityError: message || 'Failed to roll back personality.' });
+		}
+
+		return { personalityRestored: true };
 	},
 };

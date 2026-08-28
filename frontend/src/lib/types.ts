@@ -40,3 +40,14 @@ export interface AdminLlmModel {
 	is_default: boolean;
 	api_key_masked: string;
 }
+
+export interface PersonalityVersion {
+	version: number;
+	description: string;
+	created_at: string;
+	is_current: boolean;
+}
+
+export interface PersonalityHistoryResponse {
+	versions: PersonalityVersion[];
+}
