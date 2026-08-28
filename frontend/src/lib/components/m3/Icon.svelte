@@ -6,7 +6,8 @@
 		| 'plus'
 		| 'chat-bubble'
 		| 'chevron-left'
-		| 'chevron-right';
+		| 'chevron-right'
+		| 'agents';
 
 	let { name, size = 20 }: { name: IconName; size?: number } = $props();
 </script>
@@ -44,5 +45,11 @@
 		<polyline points="15 18 9 12 15 6" />
 	{:else if name === 'chevron-right'}
 		<polyline points="9 18 15 12 9 6" />
+	{:else if name === 'agents'}
+		<rect x="5" y="8" width="14" height="10" rx="2" />
+		<line x1="12" y1="8" x2="12" y2="4" />
+		<circle cx="12" cy="3" r="1" />
+		<circle cx="9" cy="13" r="1" />
+		<circle cx="15" cy="13" r="1" />
 	{/if}
 </svg>

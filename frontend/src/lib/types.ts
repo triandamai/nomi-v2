@@ -58,3 +58,21 @@ export interface DashboardStats {
 	tokens_all_time: number;
 	running_agents: number;
 }
+
+export interface RunningAgentItem {
+	agent_session_id: string;
+	agent_type: string;
+	channel: string;
+	started_at: string;
+	last_activity_at: string;
+}
+
+export interface UserAgentGroup {
+	user_id: string;
+	label: string;
+	agents: RunningAgentItem[];
+}
+
+export interface AgentsResponse {
+	users: UserAgentGroup[];
+}

@@ -50,9 +50,13 @@
 				<a href="/admin/settings/llm" class="m3-icon-button" aria-label="LLM Settings">
 					<Icon name="settings" />
 				</a>
+				<a href="/admin/agents" class="m3-icon-button" aria-label="Agents">
+					<Icon name="agents" />
+				</a>
 			{:else}
 				<a href="/admin" class="m3-nav-link">Dashboard</a>
 				<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
+				<a href="/admin/agents" class="m3-nav-link">Agents</a>
 			{/if}
 		</nav>
 
