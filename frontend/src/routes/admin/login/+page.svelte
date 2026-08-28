@@ -18,7 +18,7 @@
 		class="w-full max-w-sm space-y-4 p-8"
 		style="background: var(--md-sys-color-surface-container-low); border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-shadow-level2)"
 	>
-		<h1 class="md-headline-small">Admin sign in</h1>
+		<h1 class="md-headline-small-emphasized">Admin sign in</h1>
 		{#if form?.error}
 			<p class="md-body-medium" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{:else if $page.url.searchParams.get('error') === 'forbidden'}

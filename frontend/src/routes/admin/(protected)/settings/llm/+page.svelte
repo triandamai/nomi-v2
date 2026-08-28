@@ -10,7 +10,7 @@
 	let editingId = $state<string | null>(null);
 </script>
 
-<h1 class="md-headline-small" style="color: var(--md-sys-color-on-surface)">LLM models</h1>
+<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">LLM models</h1>
 
 {#if form?.error}
 	<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
