@@ -481,3 +481,64 @@ async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_co
             .unwrap();
     assert_ne!(dm_session_id, group_outcome.session_id);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgPool) {
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry =
+        AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(PersonalityAgent)]);
+
+    // Turn 1: set an initial personality (v1).
+    let set_v1_provider = FakeLlmProvider::sequence(vec![
+        canned_response("personality"),
+        tool_use_response("t1", "set_personality", serde_json::json!({"description": "Be sarcastic and blunt."})),
+        tool_use_response("t2", "complete_task", serde_json::json!({"status": "completed", "summary": "Done, sarcastic now."})),
+    ]);
+    handle_inbound_message(&pool, &set_v1_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "be sarcastic", None)
+        .await
+        .unwrap();
+
+    // Turn 2: change it again (v2), so there's something to roll back from.
+    let set_v2_provider = FakeLlmProvider::sequence(vec![
+        canned_response("personality"),
+        tool_use_response("t3", "set_personality", serde_json::json!({"description": "Be warm and encouraging."})),
+        tool_use_response("t4", "complete_task", serde_json::json!({"status": "completed", "summary": "Done, warm now."})),
+    ]);
+    handle_inbound_message(&pool, &set_v2_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "actually be warm", None)
+        .await
+        .unwrap();
+
+    // Turn 3: roll back to v1 via chat — the agent lists versions first, then rolls back.
+    let rollback_provider = FakeLlmProvider::sequence(vec![
+        canned_response("personality"),
+        tool_use_response("t5", "list_personality_versions", serde_json::json!({})),
+        tool_use_response("t6", "rollback_personality", serde_json::json!({"version": 1})),
+        tool_use_response("t7", "complete_task", serde_json::json!({"status": "completed", "summary": "Rolled back to sarcastic."})),
+    ]);
+    let outcome = handle_inbound_message(
+        &pool,
+        &rollback_provider,
+        &embedder,
+        &registry,
+        "telegram",
+        "dm",
+        "chat-1",
+        "tg-1",
+        "go back to how you were before",
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.reply, "Rolled back to sarcastic.");
+
+    // Turn 4: a plain chitchat message should now carry v1's personality again.
+    let chitchat_provider =
+        FakeLlmProvider::sequence(vec![canned_response("chitchat"), canned_response("Yeah, whatever."), canned_response("NONE")]);
+    handle_inbound_message(&pool, &chitchat_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hey", None)
+        .await
+        .unwrap();
+
+    let requests = chitchat_provider.received_requests.lock().unwrap();
+    let system = requests[1].system.as_ref().unwrap();
+    assert!(system.contains("Adopt this personality in your replies: Be sarcastic and blunt."));
+}
