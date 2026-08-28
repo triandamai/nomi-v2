@@ -17,6 +17,7 @@ pub struct DashboardResponse {
     pub running_agents: i64,
 }
 
+#[tracing::instrument(skip(state, claims))]
 pub async fn get_dashboard(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -26,12 +27,18 @@ pub async fn get_dashboard(
     let total_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to count users"))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to count users");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to count users")
+        })?;
 
     let running_agents: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_sessions WHERE status = 'active'")
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to count running agents"))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to count running agents");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to count running agents")
+        })?;
 
     let (tokens_all_time, tokens_today): (i64, i64) = sqlx::query_as(
         "SELECT \
@@ -42,7 +49,10 @@ pub async fn get_dashboard(
     )
     .fetch_one(&state.pool)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to sum token usage"))?;
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to sum token usage");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to sum token usage")
+    })?;
 
     Ok(Json(DashboardResponse { total_users, tokens_today, tokens_all_time, running_agents }))
 }
@@ -68,6 +78,7 @@ pub struct AgentsResponse {
     pub users: Vec<UserAgentGroup>,
 }
 
+#[tracing::instrument(skip(state, claims))]
 pub async fn get_agents(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -87,7 +98,10 @@ pub async fn get_agents(
     )
     .fetch_all(&state.pool)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load running agents"))?;
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to load running agents");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load running agents")
+    })?;
 
     // Rows are ORDER BY u.id, so every row for the same user is contiguous — grouping by
     // checking the last-pushed group's user_id needs no HashMap or second pass.
