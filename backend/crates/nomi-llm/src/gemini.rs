@@ -62,8 +62,12 @@ fn role_to_str(role: &LlmRole) -> &'static str {
 fn content_block_to_part(block: &ContentBlock) -> serde_json::Value {
     match block {
         ContentBlock::Text { text } => json!({ "text": text }),
-        ContentBlock::ToolUse { name, input, .. } => {
-            json!({ "functionCall": { "name": name, "args": input } })
+        ContentBlock::ToolUse { name, input, thought_signature, .. } => {
+            let mut part = json!({ "functionCall": { "name": name, "args": input } });
+            if let Some(signature) = thought_signature {
+                part["thoughtSignature"] = json!(signature);
+            }
+            part
         }
         ContentBlock::ToolResult { tool_use_id, content, .. } => {
             json!({ "functionResponse": { "name": tool_use_id, "response": { "content": content } } })
@@ -139,13 +143,18 @@ impl LlmProvider for GeminiProvider {
                             saw_function_call = true;
                             let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
                             let args = fc.get("args").cloned().unwrap_or(serde_json::Value::Null);
+                            // thoughtSignature is a sibling of functionCall on the part itself,
+                            // not nested inside it — required by Gemini's "thinking" models so a
+                            // later turn can replay this exact function call without a 400.
+                            let thought_signature =
+                                part.get("thoughtSignature").and_then(|v| v.as_str()).map(|s| s.to_string());
                             let index = next_index;
                             next_index += 1;
                             // Gemini has no tool-call id; synthesize one from the function name,
                             // matching complete()'s convention.
                             yield StreamEvent::ContentBlockStart {
                                 index,
-                                block: PartialBlock::ToolUse { id: name.clone(), name },
+                                block: PartialBlock::ToolUse { id: name.clone(), name, thought_signature },
                             };
                             yield StreamEvent::ToolInputDelta { index, partial_json: args.to_string() };
                             yield StreamEvent::ContentBlockDone { index };

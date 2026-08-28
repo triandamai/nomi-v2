@@ -67,7 +67,7 @@ fn role_to_str(role: &LlmRole) -> &'static str {
 fn content_block_to_json(block: &ContentBlock) -> serde_json::Value {
     match block {
         ContentBlock::Text { text } => json!({ "type": "text", "text": text }),
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse { id, name, input, .. } => {
             json!({ "type": "tool_use", "id": id, "name": name, "input": input })
         }
         ContentBlock::ToolResult { tool_use_id, content, is_error } => {
@@ -131,6 +131,7 @@ impl LlmProvider for AnthropicProvider {
                             Some("tool_use") => PartialBlock::ToolUse {
                                 id: block.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
                                 name: block.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                                thought_signature: None,
                             },
                             other => Err(LlmError::ParseError(format!("unknown content_block type: {other:?}")))?,
                         };

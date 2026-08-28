@@ -28,8 +28,11 @@ pub fn response_to_stream(response: LlmResponse) -> LlmEventStream {
                 events.push(Ok(StreamEvent::TextDelta { index, text }));
                 events.push(Ok(StreamEvent::ContentBlockDone { index }));
             }
-            ContentBlock::ToolUse { id, name, input } => {
-                events.push(Ok(StreamEvent::ContentBlockStart { index, block: PartialBlock::ToolUse { id, name } }));
+            ContentBlock::ToolUse { id, name, input, thought_signature } => {
+                events.push(Ok(StreamEvent::ContentBlockStart {
+                    index,
+                    block: PartialBlock::ToolUse { id, name, thought_signature },
+                }));
                 events.push(Ok(StreamEvent::ToolInputDelta { index, partial_json: input.to_string() }));
                 events.push(Ok(StreamEvent::ContentBlockDone { index }));
             }
@@ -68,7 +71,7 @@ pub async fn validate_model_config(config: ModelConfig, http_client: reqwest::Cl
 
 enum PendingBlock {
     Text(String),
-    ToolUse { id: String, name: String, input_json: String },
+    ToolUse { id: String, name: String, input_json: String, thought_signature: Option<String> },
 }
 
 pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, LlmError> {
@@ -80,8 +83,8 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
             StreamEvent::ContentBlockStart { index, block } => {
                 let pending_block = match block {
                     PartialBlock::Text => PendingBlock::Text(String::new()),
-                    PartialBlock::ToolUse { id, name } => {
-                        PendingBlock::ToolUse { id, name, input_json: String::new() }
+                    PartialBlock::ToolUse { id, name, thought_signature } => {
+                        PendingBlock::ToolUse { id, name, input_json: String::new(), thought_signature }
                     }
                 };
                 pending.insert(index, pending_block);
@@ -100,14 +103,14 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
                 if let Some(block) = pending.remove(&index) {
                     let content_block = match block {
                         PendingBlock::Text(text) => ContentBlock::Text { text },
-                        PendingBlock::ToolUse { id, name, input_json } => {
+                        PendingBlock::ToolUse { id, name, input_json, thought_signature } => {
                             let input = if input_json.is_empty() {
                                 serde_json::json!({})
                             } else {
                                 serde_json::from_str(&input_json)
                                     .map_err(|e| LlmError::ParseError(format!("invalid tool input json: {e}")))?
                             };
-                            ContentBlock::ToolUse { id, name, input }
+                            ContentBlock::ToolUse { id, name, input, thought_signature }
                         }
                     };
                     finished.insert(index, content_block);

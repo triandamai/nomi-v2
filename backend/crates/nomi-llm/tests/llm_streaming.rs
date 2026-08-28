@@ -35,7 +35,11 @@ async fn collect_stream_assembles_interleaved_text_and_tool_use_blocks_in_index_
         Ok(StreamEvent::ContentBlockDone { index: 0 }),
         Ok(StreamEvent::ContentBlockStart {
             index: 1,
-            block: PartialBlock::ToolUse { id: "toolu_1".to_string(), name: "get_weather".to_string() },
+            block: PartialBlock::ToolUse {
+                id: "toolu_1".to_string(),
+                name: "get_weather".to_string(),
+                thought_signature: None,
+            },
         }),
         Ok(StreamEvent::ToolInputDelta { index: 1, partial_json: "{\"city\":".to_string() }),
         Ok(StreamEvent::ToolInputDelta { index: 1, partial_json: "\"Paris\"}".to_string() }),
@@ -53,6 +57,7 @@ async fn collect_stream_assembles_interleaved_text_and_tool_use_blocks_in_index_
                 id: "toolu_1".to_string(),
                 name: "get_weather".to_string(),
                 input: serde_json::json!({"city": "Paris"}),
+                thought_signature: None,
             },
         ]
     );
@@ -64,7 +69,7 @@ async fn collect_stream_rejects_invalid_tool_input_json() {
     let events = stream_of(vec![
         Ok(StreamEvent::ContentBlockStart {
             index: 0,
-            block: PartialBlock::ToolUse { id: "t1".to_string(), name: "x".to_string() },
+            block: PartialBlock::ToolUse { id: "t1".to_string(), name: "x".to_string(), thought_signature: None },
         }),
         Ok(StreamEvent::ToolInputDelta { index: 0, partial_json: "not json".to_string() }),
         Ok(StreamEvent::ContentBlockDone { index: 0 }),

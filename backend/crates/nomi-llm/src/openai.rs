@@ -38,7 +38,7 @@ impl OpenAiProvider {
             for block in &m.content {
                 match block {
                     ContentBlock::Text { text } => text_parts.push(text.clone()),
-                    ContentBlock::ToolUse { id, name, input } => {
+                    ContentBlock::ToolUse { id, name, input, .. } => {
                         tool_calls.push(json!({
                             "id": id,
                             "type": "function",
@@ -189,7 +189,10 @@ impl LlmProvider for OpenAiProvider {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or_default()
                                 .to_string();
-                            yield StreamEvent::ContentBlockStart { index, block: PartialBlock::ToolUse { id, name } };
+                            yield StreamEvent::ContentBlockStart {
+                                index,
+                                block: PartialBlock::ToolUse { id, name, thought_signature: None },
+                            };
                             open_indices.push(index);
                         }
                         if let Some(args) = tc.get("function").and_then(|f| f.get("arguments")).and_then(|v| v.as_str()) {

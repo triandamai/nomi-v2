@@ -109,6 +109,7 @@ async fn streamed_tool_use_reply_reassembles_the_fragmented_input_json() {
             id: "toolu_1".to_string(),
             name: "get_weather".to_string(),
             input: json!({"city": "Paris"}),
+            thought_signature: None,
         }]
     );
     assert_eq!(response.stop_reason, StopReason::ToolUse);

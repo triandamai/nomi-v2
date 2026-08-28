@@ -128,7 +128,7 @@ fn text_response(text: &str, stop_reason: StopReason) -> LlmResponse {
 
 fn tool_use_response(id: &str, name: &str, input: serde_json::Value) -> LlmResponse {
     LlmResponse {
-        content: vec![ContentBlock::ToolUse { id: id.to_string(), name: name.to_string(), input }],
+        content: vec![ContentBlock::ToolUse { id: id.to_string(), name: name.to_string(), input, thought_signature: None }],
         stop_reason: StopReason::ToolUse,
         input_tokens: 1,
         output_tokens: 1,

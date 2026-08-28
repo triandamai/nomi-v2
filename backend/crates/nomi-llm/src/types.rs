@@ -11,7 +11,11 @@ pub enum LlmRole {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContentBlock {
     Text { text: String },
-    ToolUse { id: String, name: String, input: Value },
+    /// `thought_signature` is Gemini-specific: its "thinking" models attach an opaque signature
+    /// to a functionCall part, which must be echoed back verbatim when that tool call is
+    /// replayed into a later turn, or Gemini rejects the request. Always `None` for other
+    /// providers.
+    ToolUse { id: String, name: String, input: Value, thought_signature: Option<String> },
     ToolResult { tool_use_id: String, content: String, is_error: bool },
 }
 
@@ -65,7 +69,7 @@ pub enum LlmError {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PartialBlock {
     Text,
-    ToolUse { id: String, name: String },
+    ToolUse { id: String, name: String, thought_signature: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -120,9 +124,10 @@ mod tests {
             id: "toolu_1".to_string(),
             name: "get_weather".to_string(),
             input: serde_json::json!({"city": "Paris"}),
+            thought_signature: None,
         };
         match tool_use {
-            ContentBlock::ToolUse { id, name, input } => {
+            ContentBlock::ToolUse { id, name, input, .. } => {
                 assert_eq!(id, "toolu_1");
                 assert_eq!(name, "get_weather");
                 assert_eq!(input, serde_json::json!({"city": "Paris"}));

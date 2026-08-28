@@ -163,7 +163,7 @@ pub async fn run_agent_turn(
 
         let mut tool_results = Vec::new();
         for block in &response.content {
-            if let ContentBlock::ToolUse { id, name, input } = block {
+            if let ContentBlock::ToolUse { id, name, input, .. } = block {
                 let (result_text, is_error) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                     (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false)
                 } else {
