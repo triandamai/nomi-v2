@@ -1,4 +1,4 @@
-/* Material Design 3 Expressive design tokens — vibrant violet seed (#6750A4),
+/* Material Design 3 Expressive design tokens — vibrant green seed (#00C853),
    generated with the SchemeVibrant variant from @material/material-color-utilities
    (max chroma for the seed's hue, vs. the low-chroma default scheme), per
    https://m3.material.io and the M3 Expressive update (May 2025). Web has no
@@ -6,47 +6,54 @@
    and M3 Expressive isn't implemented on Web at all — see
    https://m3.material.io/develop/web), so this app expresses M3 purely as CSS
    custom properties consumed by native elements and the components in
-   $lib/components/m3. Roboto Flex itself is loaded via the Google Fonts
-   stylesheet link in app.html (full 100–1000 weight axis) — not @font-face
-   here, so we don't hand-roll a hosted-font URL. */
+   $lib/components/m3. Bebas Neue / Montserrat / Karla are loaded via the
+   Google Fonts stylesheet link in app.html — not @font-face here, so we
+   don't hand-roll a hosted-font URL. */
 
 :root {
 	/* ---- Color: light scheme (default), SchemeVibrant, standard contrast ---- */
-	--md-sys-color-primary: #6f19ff;
+	--md-sys-color-primary: #006e2a;
 	--md-sys-color-on-primary: #ffffff;
-	--md-sys-color-primary-container: #e9ddff;
-	--md-sys-color-on-primary-container: #5400cc;
-	--md-sys-color-secondary: #6b5778;
+	--md-sys-color-primary-container: #69ff87;
+	--md-sys-color-on-primary-container: #00531e;
+	--md-sys-color-secondary: #406652;
 	--md-sys-color-on-secondary: #ffffff;
-	--md-sys-color-secondary-container: #f3daff;
-	--md-sys-color-on-secondary-container: #523f5f;
-	--md-sys-color-tertiary: #79507a;
+	--md-sys-color-secondary-container: #c2ecd3;
+	--md-sys-color-on-secondary-container: #284e3c;
+	--md-sys-color-tertiary: #22695b;
 	--md-sys-color-on-tertiary: #ffffff;
-	--md-sys-color-tertiary-container: #ffd6fc;
-	--md-sys-color-on-tertiary-container: #5f3961;
+	--md-sys-color-tertiary-container: #abf0de;
+	--md-sys-color-on-tertiary-container: #005144;
 	--md-sys-color-error: #ba1a1a;
 	--md-sys-color-on-error: #ffffff;
 	--md-sys-color-error-container: #ffdad6;
 	--md-sys-color-on-error-container: #93000a;
-	--md-sys-color-surface: #fdf7ff;
-	--md-sys-color-on-surface: #1d1a24;
-	--md-sys-color-on-surface-variant: #494453;
+	--md-sys-color-surface: #f2fced;
+	--md-sys-color-on-surface: #151e15;
+	--md-sys-color-on-surface-variant: #3e4a3d;
 	--md-sys-color-surface-container-lowest: #ffffff;
-	--md-sys-color-surface-container-low: #f8f1ff;
-	--md-sys-color-surface-container: #f2ebfa;
-	--md-sys-color-surface-container-high: #ede5f4;
-	--md-sys-color-surface-container-highest: #e7e0ef;
-	--md-sys-color-surface-dim: #ded7e6;
-	--md-sys-color-surface-bright: #fdf7ff;
-	--md-sys-color-outline: #7a7484;
-	--md-sys-color-outline-variant: #cbc3d5;
-	--md-sys-color-inverse-surface: #322f3a;
-	--md-sys-color-inverse-on-surface: #f5eefd;
-	--md-sys-color-inverse-primary: #cfbcff;
+	--md-sys-color-surface-container-low: #ecf7e8;
+	--md-sys-color-surface-container: #e7f1e2;
+	--md-sys-color-surface-container-high: #e1ebdd;
+	--md-sys-color-surface-container-highest: #dbe5d7;
+	--md-sys-color-surface-dim: #d3ddcf;
+	--md-sys-color-surface-bright: #f2fced;
+	--md-sys-color-outline: #6e7a6c;
+	--md-sys-color-outline-variant: #bdcab9;
+	--md-sys-color-inverse-surface: #2a3329;
+	--md-sys-color-inverse-on-surface: #eaf4e5;
+	--md-sys-color-inverse-primary: #00e560;
 
-	/* ---- Typography ---- */
-	--md-ref-typeface-brand: 'Roboto Flex', system-ui, sans-serif;
-	--md-ref-typeface-plain: 'Roboto Flex', system-ui, sans-serif;
+	/* ---- Typography ----
+	   Three brand faces instead of MD3's usual two: Bebas Neue (brand) drives
+	   Display/Headline — a tall, condensed, single-weight (400 only, no bold on
+	   Google Fonts) display face, which is why its emphasized variants below stay
+	   at weight 400 rather than bumping to 700 like the other roles. Montserrat
+	   (a third, app-specific "title" ref — MD3 only names brand/plain, nothing
+	   stops an app adding a third) drives Title. Karla (plain) drives Body/Label. */
+	--md-ref-typeface-brand: 'Bebas Neue', system-ui, sans-serif;
+	--md-ref-typeface-title: 'Montserrat', system-ui, sans-serif;
+	--md-ref-typeface-plain: 'Karla', system-ui, sans-serif;
 
 	--md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-display-large-weight: 400;
@@ -84,19 +91,19 @@
 	--md-sys-typescale-headline-small-line-height: 2rem;
 	--md-sys-typescale-headline-small-tracking: 0;
 
-	--md-sys-typescale-title-large-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-title-large-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-title-large-weight: 400;
 	--md-sys-typescale-title-large-size: 1.375rem;
 	--md-sys-typescale-title-large-line-height: 1.75rem;
 	--md-sys-typescale-title-large-tracking: 0;
 
-	--md-sys-typescale-title-medium-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-title-medium-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-title-medium-weight: 500;
 	--md-sys-typescale-title-medium-size: 1rem;
 	--md-sys-typescale-title-medium-line-height: 1.5rem;
 	--md-sys-typescale-title-medium-tracking: 0.009375rem;
 
-	--md-sys-typescale-title-small-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-title-small-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-title-small-weight: 500;
 	--md-sys-typescale-title-small-size: 0.875rem;
 	--md-sys-typescale-title-small-line-height: 1.25rem;
@@ -139,61 +146,64 @@
 	--md-sys-typescale-label-small-tracking: 0.03125rem;
 
 	/* ---- Typography: emphasized variants (Expressive update) ----
-	   Same size/line-height/tracking as baseline, weight bumped to 700. The
-	   skill's spec doesn't publish exact per-style emphasized deltas (only
-	   "higher weight, minor adjustments"), so this uses one consistent,
-	   defensible rule — bold (700) — rather than inventing precise numbers
-	   we can't verify. Use for selected/active states, primary actions,
-	   headlines needing emphasis, and unread/important content. */
+	   Same size/line-height/tracking as baseline, weight bumped to 700 for the
+	   Montserrat (title) and Karla (body/label) roles — the skill's spec doesn't
+	   publish exact per-style emphasized deltas (only "higher weight, minor
+	   adjustments"), so this uses one consistent, defensible rule (bold) rather
+	   than inventing precise numbers we can't verify. Display/Headline
+	   (Bebas Neue) stay at weight 400: Google Fonts only serves Bebas Neue at
+	   400, so a 700 there would just trigger the browser's synthetic/faux bold
+	   instead of a real bold face. Use for selected/active states, primary
+	   actions, headlines needing emphasis, and unread/important content. */
 	--md-sys-typescale-emphasized-display-large-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-display-large-weight: 700;
+	--md-sys-typescale-emphasized-display-large-weight: 400;
 	--md-sys-typescale-emphasized-display-large-size: var(--md-sys-typescale-display-large-size);
 	--md-sys-typescale-emphasized-display-large-line-height: var(--md-sys-typescale-display-large-line-height);
 	--md-sys-typescale-emphasized-display-large-tracking: var(--md-sys-typescale-display-large-tracking);
 
 	--md-sys-typescale-emphasized-display-medium-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-display-medium-weight: 700;
+	--md-sys-typescale-emphasized-display-medium-weight: 400;
 	--md-sys-typescale-emphasized-display-medium-size: var(--md-sys-typescale-display-medium-size);
 	--md-sys-typescale-emphasized-display-medium-line-height: var(--md-sys-typescale-display-medium-line-height);
 	--md-sys-typescale-emphasized-display-medium-tracking: var(--md-sys-typescale-display-medium-tracking);
 
 	--md-sys-typescale-emphasized-display-small-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-display-small-weight: 700;
+	--md-sys-typescale-emphasized-display-small-weight: 400;
 	--md-sys-typescale-emphasized-display-small-size: var(--md-sys-typescale-display-small-size);
 	--md-sys-typescale-emphasized-display-small-line-height: var(--md-sys-typescale-display-small-line-height);
 	--md-sys-typescale-emphasized-display-small-tracking: var(--md-sys-typescale-display-small-tracking);
 
 	--md-sys-typescale-emphasized-headline-large-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-headline-large-weight: 700;
+	--md-sys-typescale-emphasized-headline-large-weight: 400;
 	--md-sys-typescale-emphasized-headline-large-size: var(--md-sys-typescale-headline-large-size);
 	--md-sys-typescale-emphasized-headline-large-line-height: var(--md-sys-typescale-headline-large-line-height);
 	--md-sys-typescale-emphasized-headline-large-tracking: var(--md-sys-typescale-headline-large-tracking);
 
 	--md-sys-typescale-emphasized-headline-medium-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-headline-medium-weight: 700;
+	--md-sys-typescale-emphasized-headline-medium-weight: 400;
 	--md-sys-typescale-emphasized-headline-medium-size: var(--md-sys-typescale-headline-medium-size);
 	--md-sys-typescale-emphasized-headline-medium-line-height: var(--md-sys-typescale-headline-medium-line-height);
 	--md-sys-typescale-emphasized-headline-medium-tracking: var(--md-sys-typescale-headline-medium-tracking);
 
 	--md-sys-typescale-emphasized-headline-small-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-headline-small-weight: 700;
+	--md-sys-typescale-emphasized-headline-small-weight: 400;
 	--md-sys-typescale-emphasized-headline-small-size: var(--md-sys-typescale-headline-small-size);
 	--md-sys-typescale-emphasized-headline-small-line-height: var(--md-sys-typescale-headline-small-line-height);
 	--md-sys-typescale-emphasized-headline-small-tracking: var(--md-sys-typescale-headline-small-tracking);
 
-	--md-sys-typescale-emphasized-title-large-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-emphasized-title-large-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-emphasized-title-large-weight: 700;
 	--md-sys-typescale-emphasized-title-large-size: var(--md-sys-typescale-title-large-size);
 	--md-sys-typescale-emphasized-title-large-line-height: var(--md-sys-typescale-title-large-line-height);
 	--md-sys-typescale-emphasized-title-large-tracking: var(--md-sys-typescale-title-large-tracking);
 
-	--md-sys-typescale-emphasized-title-medium-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-emphasized-title-medium-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-emphasized-title-medium-weight: 700;
 	--md-sys-typescale-emphasized-title-medium-size: var(--md-sys-typescale-title-medium-size);
 	--md-sys-typescale-emphasized-title-medium-line-height: var(--md-sys-typescale-title-medium-line-height);
 	--md-sys-typescale-emphasized-title-medium-tracking: var(--md-sys-typescale-title-medium-tracking);
 
-	--md-sys-typescale-emphasized-title-small-font: var(--md-ref-typeface-plain);
+	--md-sys-typescale-emphasized-title-small-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-emphasized-title-small-weight: 700;
 	--md-sys-typescale-emphasized-title-small-size: var(--md-sys-typescale-title-small-size);
 	--md-sys-typescale-emphasized-title-small-line-height: var(--md-sys-typescale-title-small-line-height);
@@ -283,37 +293,37 @@
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--md-sys-color-primary: #cfbcff;
-		--md-sys-color-on-primary: #3a0092;
-		--md-sys-color-primary-container: #5400cc;
-		--md-sys-color-on-primary-container: #e9ddff;
-		--md-sys-color-secondary: #d7bee4;
-		--md-sys-color-on-secondary: #3b2948;
-		--md-sys-color-secondary-container: #523f5f;
-		--md-sys-color-on-secondary-container: #f3daff;
-		--md-sys-color-tertiary: #e8b7e7;
-		--md-sys-color-on-tertiary: #462349;
-		--md-sys-color-tertiary-container: #5f3961;
-		--md-sys-color-on-tertiary-container: #ffd6fc;
+		--md-sys-color-primary: #00e560;
+		--md-sys-color-on-primary: #003912;
+		--md-sys-color-primary-container: #00531e;
+		--md-sys-color-on-primary-container: #69ff87;
+		--md-sys-color-secondary: #a6d0b8;
+		--md-sys-color-on-secondary: #103726;
+		--md-sys-color-secondary-container: #284e3c;
+		--md-sys-color-on-secondary-container: #c2ecd3;
+		--md-sys-color-tertiary: #8fd4c2;
+		--md-sys-color-on-tertiary: #00382e;
+		--md-sys-color-tertiary-container: #005144;
+		--md-sys-color-on-tertiary-container: #abf0de;
 		--md-sys-color-error: #ffb4ab;
 		--md-sys-color-on-error: #690005;
 		--md-sys-color-error-container: #93000a;
 		--md-sys-color-on-error-container: #ffdad6;
-		--md-sys-color-surface: #15121c;
-		--md-sys-color-on-surface: #e7e0ef;
-		--md-sys-color-on-surface-variant: #cbc3d5;
-		--md-sys-color-surface-container-lowest: #0f0d16;
-		--md-sys-color-surface-container-low: #1d1a24;
-		--md-sys-color-surface-container: #211e28;
-		--md-sys-color-surface-container-high: #2c2833;
-		--md-sys-color-surface-container-highest: #37333e;
-		--md-sys-color-surface-dim: #15121c;
-		--md-sys-color-surface-bright: #3b3743;
-		--md-sys-color-outline: #948e9f;
-		--md-sys-color-outline-variant: #494453;
-		--md-sys-color-inverse-surface: #e7e0ef;
-		--md-sys-color-inverse-on-surface: #322f3a;
-		--md-sys-color-inverse-primary: #6f19ff;
+		--md-sys-color-surface: #0d150d;
+		--md-sys-color-on-surface: #dbe5d7;
+		--md-sys-color-on-surface-variant: #bdcab9;
+		--md-sys-color-surface-container-lowest: #081008;
+		--md-sys-color-surface-container-low: #151e15;
+		--md-sys-color-surface-container: #192219;
+		--md-sys-color-surface-container-high: #232c23;
+		--md-sys-color-surface-container-highest: #2e372d;
+		--md-sys-color-surface-dim: #0d150d;
+		--md-sys-color-surface-bright: #323c32;
+		--md-sys-color-outline: #879485;
+		--md-sys-color-outline-variant: #3e4a3d;
+		--md-sys-color-inverse-surface: #dbe5d7;
+		--md-sys-color-inverse-on-surface: #2a3329;
+		--md-sys-color-inverse-primary: #006e2a;
 	}
 }
 
