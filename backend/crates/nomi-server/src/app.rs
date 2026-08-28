@@ -5,6 +5,7 @@ use tower_http::trace::TraceLayer;
 use nomi_auth::extractor::AuthClaims;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
+use crate::routes::personality as personality_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
 
@@ -58,6 +59,11 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/llm/models", get(llm_models_routes::get_user_models))
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
+        .route(
+            "/api/personality/history",
+            get(personality_routes::get_personality_history),
+        )
+        .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route(
             "/api/admin/settings/embedding",
             get(settings_routes::get_embedding_settings).put(settings_routes::put_embedding_settings),
