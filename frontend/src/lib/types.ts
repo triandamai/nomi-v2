@@ -51,3 +51,10 @@ export interface PersonalityVersion {
 export interface PersonalityHistoryResponse {
 	versions: PersonalityVersion[];
 }
+
+export interface DashboardStats {
+	total_users: number;
+	tokens_today: number;
+	tokens_all_time: number;
+	running_agents: number;
+}
