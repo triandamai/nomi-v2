@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { LlmModelsResponse, MessageItem, PersonalityHistoryResponse } from '$lib/types';
+import { renderMarkdown } from '$lib/server/markdown';
+import type { LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
@@ -13,7 +14,10 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		throw error(response.status, 'Could not load this chat.');
 	}
 
-	const { messages } = (await response.json()) as { messages: MessageItem[] };
+	const { messages: rawMessages } = (await response.json()) as { messages: MessageItem[] };
+	const messages: RenderedMessage[] = await Promise.all(
+		rawMessages.map(async (message) => ({ ...message, content_html: await renderMarkdown(message.content) })),
+	);
 
 	const modelsResponse = await apiFetch(fetch, cookies, '/api/llm/models');
 	const models: LlmModelsResponse = modelsResponse.ok

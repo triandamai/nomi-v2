@@ -7,7 +7,8 @@
 		| 'chat-bubble'
 		| 'chevron-left'
 		| 'chevron-right'
-		| 'agents';
+		| 'agents'
+		| 'more';
 
 	let { name, size = 20 }: { name: IconName; size?: number } = $props();
 </script>
@@ -51,5 +52,9 @@
 		<circle cx="12" cy="3" r="1" />
 		<circle cx="9" cy="13" r="1" />
 		<circle cx="15" cy="13" r="1" />
+	{:else if name === 'more'}
+		<circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
+		<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+		<circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
 	{/if}
 </svg>

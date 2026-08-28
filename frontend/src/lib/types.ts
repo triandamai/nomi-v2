@@ -15,6 +15,10 @@ export interface MessageItem {
 	created_at: string;
 }
 
+export interface RenderedMessage extends MessageItem {
+	content_html: string;
+}
+
 export interface LlmAdminModelOption {
 	id: string;
 	label: string;

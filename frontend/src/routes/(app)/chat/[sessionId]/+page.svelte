@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import Icon from '$lib/components/m3/Icon.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -12,9 +13,11 @@
 	let pendingReply = $state(false);
 	let turnError = $state(false);
 	let connectionLost = $state(false);
-	let modelPickerOpen = $state(false);
-	let personalityPanelOpen = $state(false);
+	let menuOpen = $state(false);
+	let menuView = $state<'root' | 'model' | 'personality'>('root');
 	let showCustomForm = $state(false);
+	let messagesContainer: HTMLDivElement | undefined = $state();
+	let messageInput: HTMLInputElement | undefined = $state();
 
 	const TERMINAL_CLOSE_CODES = new Set([4401, 4404]);
 	const INITIAL_RETRY_DELAY_MS = 1000;
@@ -30,7 +33,31 @@
 		return selection.label;
 	});
 
+	const currentPersonalityLabel = $derived.by(() => {
+		const current = data.personality.versions.find((v) => v.is_current);
+		return current?.description ?? 'Not set';
+	});
+
+	function openMenu() {
+		menuOpen = true;
+		menuView = 'root';
+	}
+
+	function closeMenu() {
+		menuOpen = false;
+	}
+
+	// Always keep the latest message (and the "Typing…" indicator) in view — re-runs whenever
+	// the message list changes or a reply starts streaming.
+	$effect(() => {
+		data.messages.length;
+		pendingReply;
+		messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+	});
+
 	onMount(() => {
+		messageInput?.focus();
+
 		let socket: WebSocket | undefined;
 		let retryDelay = INITIAL_RETRY_DELAY_MS;
 		let retryTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -93,7 +120,7 @@
 </script>
 
 <div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
-	<div class="flex-1 space-y-4 overflow-y-auto px-6 py-6">
+	<div bind:this={messagesContainer} class="flex-1 space-y-4 overflow-y-auto px-6 py-6">
 		{#each data.messages as message (message.id)}
 			<MessageBubble {message} />
 		{/each}
@@ -126,125 +153,143 @@
 		class="px-6 py-4"
 		style="background: var(--md-sys-color-surface-container-low); border-top: 1px solid var(--md-sys-color-outline-variant)"
 	>
-		<div class="mb-2 flex justify-end gap-2">
+		<div class="mb-2 flex justify-end">
 			<div class="relative">
-				<Button type="button" variant="outlined" onclick={() => (personalityPanelOpen = !personalityPanelOpen)}>
-					Personality
+				<Button type="button" variant="outlined" onclick={() => (menuOpen ? closeMenu() : openMenu())} aria-label="Chat settings">
+					<Icon name="more" />
 				</Button>
-				{#if personalityPanelOpen}
+				{#if menuOpen}
 					<div
 						class="absolute right-0 bottom-full mb-2 w-80 p-3"
 						style="background: var(--md-sys-color-surface-container-high); border-radius: var(--md-sys-shape-corner-extra-large); box-shadow: var(--md-sys-elevation-shadow-level3)"
 					>
-						{#if form?.personalityError}
-							<p class="md-body-small mb-2" style="color: var(--md-sys-color-error)">{form.personalityError}</p>
-						{/if}
-						<p class="md-label-medium mb-1" style="color: var(--md-sys-color-on-surface-variant)">Personality history</p>
-						{#if data.personality.versions.length === 0}
-							<p class="md-body-medium px-2 py-1" style="color: var(--md-sys-color-on-surface-variant)">
-								You haven't set a personality yet — just ask nomi to change it.
-							</p>
-						{:else}
-							{#each data.personality.versions as version (version.version)}
-								<div class="m3-personality-item" class:m3-personality-item--current={version.is_current}>
-									<div class="min-w-0 flex-1">
-										<p class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface)">{version.description}</p>
-										<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">
-											v{version.version} · {new Date(version.created_at).toLocaleString()}
-										</p>
-									</div>
-									{#if !version.is_current}
-										<form
-											method="POST"
-											action="?/restorePersonality"
-											use:enhance={() => {
-												return async ({ update }) => {
-													await update();
-													personalityPanelOpen = false;
-												};
-											}}
-										>
-											<input type="hidden" name="version" value={version.version} />
-											<Button type="submit" variant="text">Restore</Button>
-										</form>
-									{/if}
+						{#if menuView === 'root'}
+							<button type="button" class="m3-menu-row" onclick={() => (menuView = 'model')}>
+								<div class="min-w-0 flex-1 text-left">
+									<p class="md-body-large" style="color: var(--md-sys-color-on-surface)">Model</p>
+									<p class="md-body-small truncate" style="color: var(--md-sys-color-on-surface-variant)">
+										{activeModelLabel}
+									</p>
 								</div>
-							{/each}
-						{/if}
-					</div>
-				{/if}
-			</div>
-			<div class="relative">
-				<Button type="button" variant="outlined" onclick={() => (modelPickerOpen = !modelPickerOpen)}>
-					{activeModelLabel}
-				</Button>
-				{#if modelPickerOpen}
-					<div
-						class="absolute right-0 bottom-full mb-2 w-72 p-3"
-						style="background: var(--md-sys-color-surface-container-high); border-radius: var(--md-sys-shape-corner-extra-large); box-shadow: var(--md-sys-elevation-shadow-level3)"
-					>
-						{#if form?.modelError}
-							<p class="md-body-small mb-2" style="color: var(--md-sys-color-error)">{form.modelError}</p>
-						{/if}
-						<p class="md-label-medium mb-1" style="color: var(--md-sys-color-on-surface-variant)">Available models</p>
-						{#each data.models.admin_models as model (model.id)}
-							<form
-								method="POST"
-								action="?/selectAdminModel"
-								use:enhance={() => {
-									return async ({ update }) => {
-										await update();
-										modelPickerOpen = false;
-									};
-								}}
-							>
-								<input type="hidden" name="admin_model_id" value={model.id} />
-								<button
-									type="submit"
-									class="m3-picker-item"
-									class:m3-picker-item--selected={data.models.selection?.kind === 'admin' &&
-										data.models.selection.admin_model_id === model.id}
-								>
-									{model.label}
-								</button>
-							</form>
-						{/each}
-
-						<p class="md-label-medium mt-3 mb-1" style="color: var(--md-sys-color-on-surface-variant)">Your own key</p>
-						{#if data.models.selection?.kind === 'custom'}
-							<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
-								{data.models.selection.label} ({data.models.selection.api_key_masked})
-							</p>
-						{/if}
-						{#if showCustomForm}
-							<form
-								method="POST"
-								action="?/selectCustomModel"
-								use:enhance={() => {
-									return async ({ update }) => {
-										await update();
-										modelPickerOpen = true;
-										showCustomForm = false;
-									};
-								}}
-								class="mt-1 space-y-1"
-							>
-								<input name="label" type="text" placeholder="Label" required class="m3-picker-input" />
-								<select name="provider" required class="m3-picker-input">
-									<option value="anthropic">Anthropic</option>
-									<option value="openai">OpenAI</option>
-									<option value="gemini">Gemini</option>
-									<option value="fake">Fake (testing)</option>
-								</select>
-								<input name="model_id" type="text" placeholder="Model ID" class="m3-picker-input" />
-								<input name="api_key" type="password" placeholder="API key" class="m3-picker-input" />
-								<input name="base_url" type="text" placeholder="Base URL (optional)" class="m3-picker-input" />
-								<Button type="submit" variant="filled" class="w-full">Save & validate</Button>
-							</form>
-						{:else}
-							<button type="button" onclick={() => (showCustomForm = true)} class="m3-picker-item mt-1">
-								+ Use your own API key
+								<Icon name="chevron-right" />
 							</button>
+							<button type="button" class="m3-menu-row" onclick={() => (menuView = 'personality')}>
+								<div class="min-w-0 flex-1 text-left">
+									<p class="md-body-large" style="color: var(--md-sys-color-on-surface)">Personality</p>
+									<p class="md-body-small truncate" style="color: var(--md-sys-color-on-surface-variant)">
+										{currentPersonalityLabel}
+									</p>
+								</div>
+								<Icon name="chevron-right" />
+							</button>
+						{:else}
+							<div class="mb-2 flex items-center gap-1">
+								<button type="button" class="m3-icon-back" onclick={() => (menuView = 'root')} aria-label="Back">
+									<Icon name="chevron-left" size={18} />
+								</button>
+								<p class="md-label-medium" style="color: var(--md-sys-color-on-surface-variant)">
+									{menuView === 'model' ? 'Available models' : 'Personality history'}
+								</p>
+							</div>
+
+							{#if menuView === 'model'}
+								{#if form?.modelError}
+									<p class="md-body-small mb-2" style="color: var(--md-sys-color-error)">{form.modelError}</p>
+								{/if}
+								{#each data.models.admin_models as model (model.id)}
+									<form
+										method="POST"
+										action="?/selectAdminModel"
+										use:enhance={() => {
+											return async ({ update }) => {
+												await update();
+												closeMenu();
+											};
+										}}
+									>
+										<input type="hidden" name="admin_model_id" value={model.id} />
+										<button
+											type="submit"
+											class="m3-picker-item"
+											class:m3-picker-item--selected={data.models.selection?.kind === 'admin' &&
+												data.models.selection.admin_model_id === model.id}
+										>
+											{model.label}
+										</button>
+									</form>
+								{/each}
+
+								<p class="md-label-medium mt-3 mb-1" style="color: var(--md-sys-color-on-surface-variant)">Your own key</p>
+								{#if data.models.selection?.kind === 'custom'}
+									<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
+										{data.models.selection.label} ({data.models.selection.api_key_masked})
+									</p>
+								{/if}
+								{#if showCustomForm}
+									<form
+										method="POST"
+										action="?/selectCustomModel"
+										use:enhance={() => {
+											return async ({ update }) => {
+												await update({ reset: true });
+												showCustomForm = false;
+											};
+										}}
+										class="mt-1 space-y-1"
+									>
+										<input name="label" type="text" placeholder="Label" required class="m3-picker-input" />
+										<select name="provider" required class="m3-picker-input">
+											<option value="anthropic">Anthropic</option>
+											<option value="openai">OpenAI</option>
+											<option value="gemini">Gemini</option>
+											<option value="fake">Fake (testing)</option>
+										</select>
+										<input name="model_id" type="text" placeholder="Model ID" class="m3-picker-input" />
+										<input name="api_key" type="password" placeholder="API key" class="m3-picker-input" />
+										<input name="base_url" type="text" placeholder="Base URL (optional)" class="m3-picker-input" />
+										<Button type="submit" variant="filled" class="w-full">Save & validate</Button>
+									</form>
+								{:else}
+									<button type="button" onclick={() => (showCustomForm = true)} class="m3-picker-item mt-1">
+										+ Use your own API key
+									</button>
+								{/if}
+							{:else}
+								{#if form?.personalityError}
+									<p class="md-body-small mb-2" style="color: var(--md-sys-color-error)">{form.personalityError}</p>
+								{/if}
+								{#if data.personality.versions.length === 0}
+									<p class="md-body-medium px-2 py-1" style="color: var(--md-sys-color-on-surface-variant)">
+										You haven't set a personality yet — just ask nomi to change it.
+									</p>
+								{:else}
+									{#each data.personality.versions as version (version.version)}
+										<div class="m3-personality-item" class:m3-personality-item--current={version.is_current}>
+											<div class="min-w-0 flex-1">
+												<p class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface)">{version.description}</p>
+												<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">
+													v{version.version} · {new Date(version.created_at).toLocaleString()}
+												</p>
+											</div>
+											{#if !version.is_current}
+												<form
+													method="POST"
+													action="?/restorePersonality"
+													use:enhance={() => {
+														return async ({ update }) => {
+															await update();
+															closeMenu();
+														};
+													}}
+												>
+													<input type="hidden" name="version" value={version.version} />
+													<Button type="submit" variant="text">Restore</Button>
+												</form>
+											{/if}
+										</div>
+									{/each}
+								{/if}
+							{/if}
 						{/if}
 					</div>
 				{/if}
@@ -256,6 +301,7 @@
 			use:enhance={() => {
 				return async ({ update }) => {
 					await update({ reset: true });
+					messageInput?.focus();
 				};
 			}}
 		>
@@ -264,6 +310,7 @@
 				style="background: var(--md-sys-color-surface); border-radius: var(--md-sys-shape-corner-full); border: 1px solid var(--md-sys-color-outline)"
 			>
 				<input
+					bind:this={messageInput}
 					name="text"
 					type="text"
 					placeholder="Ask me anything..."
@@ -327,5 +374,38 @@
 	}
 	.m3-personality-item--current {
 		background: var(--md-sys-color-secondary-container);
+	}
+
+	.m3-menu-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		padding: 8px;
+		border-radius: var(--md-sys-shape-corner-small);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-menu-row:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+
+	.m3-icon-back {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		border-radius: var(--md-sys-shape-corner-full);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-icon-back:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 </style>
