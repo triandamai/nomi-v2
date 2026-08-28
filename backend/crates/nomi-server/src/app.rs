@@ -3,6 +3,7 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use nomi_auth::extractor::AuthClaims;
+use crate::routes::admin_dashboard as admin_dashboard_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::personality as personality_routes;
@@ -64,6 +65,8 @@ pub fn build_router(state: AppState) -> Router {
             get(personality_routes::get_personality_history),
         )
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
+        .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
+        .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
         .route(
             "/api/admin/settings/embedding",
             get(settings_routes::get_embedding_settings).put(settings_routes::put_embedding_settings),
