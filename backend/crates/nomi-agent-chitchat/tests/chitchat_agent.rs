@@ -131,7 +131,8 @@ async fn provider_failure_returns_an_error_and_extracts_no_memory(pool: PgPool) 
 async fn retrieved_memories_are_folded_into_the_system_prompt_and_reported_as_used(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let memory_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, $2, $3::vector) RETURNING id",
+        "INSERT INTO memory_items (user_id, content, embedding, embedding_provider, embedding_model) \
+         VALUES ($1, $2, $3::vector, 'fake', 'fake-model') RETURNING id",
     )
     .bind(user_id)
     .bind("User is vegetarian")

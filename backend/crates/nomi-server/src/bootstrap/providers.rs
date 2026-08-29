@@ -160,10 +160,14 @@ pub async fn build_embedding_provider_from_settings_or_env(
             .expect("EMBEDDING_PROVIDER env var must be a known provider");
             let (model_id, api_key) = match provider {
                 EmbeddingProviderKind::Fake => (String::new(), String::new()),
-                _ => (
-                    std::env::var("EMBEDDING_MODEL_ID").expect("EMBEDDING_MODEL_ID must be set"),
-                    std::env::var("EMBEDDING_API_KEY").expect("EMBEDDING_API_KEY must be set"),
-                ),
+                _ => {
+                    let model_id = std::env::var("EMBEDDING_MODEL_ID").expect("EMBEDDING_MODEL_ID must be set");
+                    if model_id.trim().is_empty() {
+                        panic!("EMBEDDING_MODEL_ID must not be empty");
+                    }
+                    let api_key = std::env::var("EMBEDDING_API_KEY").expect("EMBEDDING_API_KEY must be set");
+                    (model_id, api_key)
+                }
             };
             EmbeddingConfig { provider, model_id, api_key, base_url: std::env::var("EMBEDDING_BASE_URL").ok() }
         }
