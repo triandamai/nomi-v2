@@ -92,6 +92,14 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
             FakeEmbeddingOutcome::Failure(message) => Err(EmbeddingError::ProviderError(message.clone())),
         }
     }
+
+    fn provider_name(&self) -> &'static str {
+        "fake"
+    }
+
+    fn model_id(&self) -> &str {
+        "fake-model"
+    }
 }
 
 pub fn dummy_embedding() -> Vec<f32> {

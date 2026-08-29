@@ -65,4 +65,12 @@ impl EmbeddingProvider for OpenAiEmbeddingProvider {
             })
             .collect()
     }
+
+    fn provider_name(&self) -> &'static str {
+        "openai"
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model
+    }
 }

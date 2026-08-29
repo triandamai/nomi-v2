@@ -71,3 +71,39 @@ async fn malformed_response_becomes_a_parse_error() {
     let result = provider.embed("hello").await;
     assert!(matches!(result, Err(EmbeddingError::ParseError(_))));
 }
+
+#[tokio::test]
+async fn provider_name_and_model_id_are_exposed() {
+    let provider = OpenAiEmbeddingProvider::new(
+        reqwest::Client::new(),
+        "test-key".to_string(),
+        "text-embedding-3-small".to_string(),
+        "http://example.invalid".to_string(),
+    );
+    assert_eq!(provider.provider_name(), "openai");
+    assert_eq!(provider.model_id(), "text-embedding-3-small");
+}
+
+#[tokio::test]
+async fn embed_for_query_defaults_to_calling_embed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/embeddings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{"embedding": [0.5, 0.6], "index": 0}],
+            "model": "text-embedding-3-small",
+            "usage": {"prompt_tokens": 1, "total_tokens": 1}
+        })))
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiEmbeddingProvider::new(
+        reqwest::Client::new(),
+        "test-key".to_string(),
+        "text-embedding-3-small".to_string(),
+        server.uri(),
+    );
+
+    let embedding = provider.embed_for_query("hello").await.unwrap();
+    assert_eq!(embedding, vec![0.5f32, 0.6]);
+}
