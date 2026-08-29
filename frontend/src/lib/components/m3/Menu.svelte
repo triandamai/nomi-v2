@@ -20,15 +20,46 @@
 		open = !open;
 	}
 
+	const VIEWPORT_MARGIN = 8;
+
+	// Popover elements are `display: none` (and so have a zero-size rect) until shown, so the
+	// panel must be shown first — synchronously, before paint — for its real content-driven
+	// width/height to be measurable at all. Position is then computed against that real size,
+	// checking every edge, before the user ever sees it at the wrong spot.
+	function positionPanel() {
+		if (!panelEl || !anchorEl) return;
+		const anchorRect = anchorEl.getBoundingClientRect();
+		const panelRect = panelEl.getBoundingClientRect();
+		const viewportWidth = window.innerWidth;
+		const viewportHeight = window.innerHeight;
+
+		// Vertical: prefer opening below the anchor; flip above it if that would overflow the
+		// bottom edge and there's room above; otherwise clamp fully inside the viewport.
+		let top = anchorRect.bottom + 4;
+		if (top + panelRect.height > viewportHeight - VIEWPORT_MARGIN) {
+			const above = anchorRect.top - 4 - panelRect.height;
+			top = above >= VIEWPORT_MARGIN ? above : Math.max(VIEWPORT_MARGIN, viewportHeight - panelRect.height - VIEWPORT_MARGIN);
+		}
+
+		// Horizontal: prefer right-aligned to the anchor's right edge; slide left if that would
+		// overflow the left edge, right if it would overflow the right edge.
+		let right = viewportWidth - anchorRect.right;
+		if (viewportWidth - right - panelRect.width < VIEWPORT_MARGIN) {
+			right = viewportWidth - panelRect.width - VIEWPORT_MARGIN;
+		}
+		if (right < VIEWPORT_MARGIN) {
+			right = VIEWPORT_MARGIN;
+		}
+
+		panelEl.style.top = `${top}px`;
+		panelEl.style.right = `${right}px`;
+	}
+
 	$effect(() => {
 		if (!panelEl) return;
 		if (open) {
-			if (anchorEl) {
-				const rect = anchorEl.getBoundingClientRect();
-				panelEl.style.top = `${rect.bottom + 4}px`;
-				panelEl.style.right = `${window.innerWidth - rect.right}px`;
-			}
 			if (!panelEl.matches(':popover-open')) panelEl.showPopover();
+			positionPanel();
 			const first = panelEl.querySelector<HTMLElement>('[role="menuitem"]');
 			first?.focus();
 		} else if (panelEl.matches(':popover-open')) {
