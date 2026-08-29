@@ -45,4 +45,16 @@ pub trait SubAgent: Send + Sync {
     fn uses_personality(&self) -> bool {
         false
     }
+
+    /// When true, run_agent_turn gives this agent an extra `delegate_to_agent` tool that hands
+    /// a task to another registered specialist to run in the background.
+    fn can_delegate(&self) -> bool {
+        false
+    }
+
+    /// When false, this agent is never offered as a delegation target — used by the supervisor
+    /// agent, which delivers/reports on delegated work rather than being delegated to itself.
+    fn is_delegation_target(&self) -> bool {
+        true
+    }
 }

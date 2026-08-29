@@ -62,4 +62,8 @@ impl SubAgent for ChitchatAgent {
     fn uses_personality(&self) -> bool {
         true
     }
+
+    fn can_delegate(&self) -> bool {
+        true
+    }
 }

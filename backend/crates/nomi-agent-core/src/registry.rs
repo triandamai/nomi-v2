@@ -70,4 +70,14 @@ impl AgentRegistry {
             options.join("\n"),
         )
     }
+
+    /// agent_type() of every non-default, delegation-eligible agent other than `excluding` —
+    /// the valid target list for a delegate_to_agent tool call from that agent.
+    pub fn delegatable_agent_types(&self, excluding: &str) -> Vec<&'static str> {
+        self.agents
+            .iter()
+            .filter(|a| !a.is_default() && a.is_delegation_target() && a.agent_type() != excluding)
+            .map(|a| a.agent_type())
+            .collect()
+    }
 }
