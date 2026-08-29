@@ -11,7 +11,8 @@
 		| 'more'
 		| 'chevron-down'
 		| 'chevron-up'
-		| 'close';
+		| 'close'
+		| 'search';
 
 	let { name, size = 20 }: { name: IconName; size?: number } = $props();
 </script>
@@ -66,5 +67,8 @@
 	{:else if name === 'close'}
 		<line x1="6" y1="6" x2="18" y2="18" />
 		<line x1="18" y1="6" x2="6" y2="18" />
+	{:else if name === 'search'}
+		<circle cx="10.5" cy="10.5" r="6.5" />
+		<line x1="20" y1="20" x2="15.3" y2="15.3" />
 	{/if}
 </svg>
