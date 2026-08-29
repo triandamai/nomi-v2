@@ -46,6 +46,7 @@ pub fn build_router(state: AppState) -> Router {
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
         )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
+        .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
         .route(
             "/api/admin/settings/llm/models",
             get(llm_models_routes::list_admin_models).post(llm_models_routes::create_admin_model),

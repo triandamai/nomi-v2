@@ -269,6 +269,48 @@ pub async fn session_stream(
     Ok(ws.on_upgrade(move |socket| relay_session_stream(socket, session_id, broker_host, broker_port)))
 }
 
+#[derive(Serialize)]
+pub struct AgentActivityItem {
+    pub id: Uuid,
+    pub target_agent_type: String,
+    pub task: String,
+    pub status: String,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+pub async fn list_agent_activity(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<Vec<AgentActivityItem>>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>)> =
+        sqlx::query_as(
+            "SELECT id, target_agent_type, task, status, result, error, created_at, completed_at \
+             FROM agent_delegations WHERE session_id = $1 ORDER BY created_at DESC LIMIT 20",
+        )
+        .bind(session_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to list agent activity");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agent activity")
+        })?;
+
+    let items = rows
+        .into_iter()
+        .map(|(id, target_agent_type, task, status, result, error, created_at, completed_at)| AgentActivityItem {
+            id, target_agent_type, task, status, result, error, created_at, completed_at,
+        })
+        .collect();
+
+    Ok(Json(items))
+}
+
 async fn relay_session_stream(mut socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {
     let mut options = MqttOptions::new(format!("ws-bridge-{}", Uuid::new_v4()), broker_host, broker_port);
     options.set_keep_alive(Duration::from_secs(30));
