@@ -45,6 +45,8 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
+		const target = event.target as HTMLElement;
+		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 		const items = Array.from(panelEl?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
 		if (items.length === 0) return;
 		const currentIndex = items.indexOf(document.activeElement as HTMLElement);

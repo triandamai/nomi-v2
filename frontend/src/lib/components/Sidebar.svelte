@@ -4,6 +4,7 @@
 	import SessionListItem from './SessionListItem.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Icon from '$lib/components/m3/Icon.svelte';
+	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import type { SessionSummary } from '$lib/types';
 
@@ -40,14 +41,9 @@
 		{:else}
 			<span style="color: var(--md-sys-color-primary)"><Icon name="chat-bubble" /></span>
 		{/if}
-		<button
-			type="button"
-			class="m3-icon-button"
-			onclick={toggleCollapsed}
-			aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-		>
+		<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
 			<Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
-		</button>
+		</IconButton>
 	</div>
 
 	<form method="POST" action="/?/newChat" use:enhance class={collapsed ? 'pt-3' : 'px-3 pt-3'}>
@@ -88,30 +84,14 @@
 				Log out
 			</button>
 		{:else}
-			<button type="submit" class="m3-icon-button" style="color: var(--md-sys-color-outline)" aria-label="Log out">
+			<IconButton type="submit" style="color: var(--md-sys-color-outline)" aria-label="Log out">
 				<Icon name="logout" />
-			</button>
+			</IconButton>
 		{/if}
 	</form>
 </aside>
 
 <style>
-	.m3-icon-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border-radius: var(--md-sys-shape-corner-full);
-		border: none;
-		background: transparent;
-		color: var(--md-sys-color-on-surface-variant);
-		cursor: pointer;
-	}
-	.m3-icon-button:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-	}
-
 	.m3-fab {
 		display: flex;
 		align-items: center;
