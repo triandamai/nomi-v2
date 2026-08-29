@@ -311,7 +311,8 @@ async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replie
 
     let literal = format!("[{}]", vec!["0"; 1536].join(","));
     let memory_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, $2, $3::vector) RETURNING id",
+        "INSERT INTO memory_items (user_id, content, embedding, embedding_provider, embedding_model) \
+         VALUES ($1, $2, $3::vector, 'fake', 'fake-model') RETURNING id",
     )
     .bind(user_id)
     .bind("User is vegetarian")

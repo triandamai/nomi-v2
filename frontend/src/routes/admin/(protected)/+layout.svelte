@@ -46,12 +46,16 @@
 				<IconButton href="/admin/settings/llm" aria-label="LLM Settings">
 					<Icon name="settings" />
 				</IconButton>
+				<IconButton href="/admin/settings/embedding" aria-label="Embedding Settings">
+					<Icon name="settings" />
+				</IconButton>
 				<IconButton href="/admin/agents" aria-label="Agents">
 					<Icon name="agents" />
 				</IconButton>
 			{:else}
 				<a href="/admin" class="m3-nav-link">Dashboard</a>
 				<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
+				<a href="/admin/settings/embedding" class="m3-nav-link">Embedding Settings</a>
 				<a href="/admin/agents" class="m3-nav-link">Agents</a>
 			{/if}
 		</nav>

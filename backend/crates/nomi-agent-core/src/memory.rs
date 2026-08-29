@@ -20,16 +20,20 @@ pub async fn retrieve_relevant_memories(
     conn: &mut PoolConnection<Postgres>,
     user_id: Uuid,
     query_embedding: &[f32],
+    current_provider: &str,
+    current_model: &str,
     limit: i64,
 ) -> Result<Vec<RetrievedMemory>, TurnError> {
     let literal = to_vector_literal(query_embedding);
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT id, content FROM memory_items \
-         WHERE user_id = $1 \
-         ORDER BY weight * (1 - (embedding <=> $2::vector)) DESC \
-         LIMIT $3",
+         WHERE user_id = $1 AND embedding_provider = $2 AND embedding_model = $3 \
+         ORDER BY weight * (1 - (embedding <=> $4::vector)) DESC \
+         LIMIT $5",
     )
     .bind(user_id)
+    .bind(current_provider)
+    .bind(current_model)
     .bind(&literal)
     .bind(limit)
     .fetch_all(&mut **conn)
@@ -45,13 +49,20 @@ pub async fn try_retrieve_memories(
     text: &str,
 ) -> Vec<RetrievedMemory> {
     const MEMORY_RETRIEVAL_LIMIT: i64 = 5;
-    let embedding = match embedding_provider.embed(text).await {
+    let embedding = match embedding_provider.embed_for_query(text).await {
         Ok(e) => e,
         Err(_) => return Vec::new(),
     };
-    retrieve_relevant_memories(conn, user_id, &embedding, MEMORY_RETRIEVAL_LIMIT)
-        .await
-        .unwrap_or_default()
+    retrieve_relevant_memories(
+        conn,
+        user_id,
+        &embedding,
+        embedding_provider.provider_name(),
+        embedding_provider.model_id(),
+        MEMORY_RETRIEVAL_LIMIT,
+    )
+    .await
+    .unwrap_or_default()
 }
 
 const EXTRACTION_SYSTEM_PROMPT: &str =
@@ -97,12 +108,17 @@ pub async fn extract_and_store_memory(
     };
 
     let literal = to_vector_literal(&embedding);
-    let _ = sqlx::query("INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, $2, $3::vector)")
-        .bind(user_id)
-        .bind(&fact)
-        .bind(&literal)
-        .execute(&mut **conn)
-        .await;
+    let _ = sqlx::query(
+        "INSERT INTO memory_items (user_id, content, embedding, embedding_provider, embedding_model) \
+         VALUES ($1, $2, $3::vector, $4, $5)",
+    )
+    .bind(user_id)
+    .bind(&fact)
+    .bind(&literal)
+    .bind(embedding_provider.provider_name())
+    .bind(embedding_provider.model_id())
+    .execute(&mut **conn)
+    .await;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
