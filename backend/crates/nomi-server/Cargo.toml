@@ -17,6 +17,7 @@ nomi-agent-core = { path = "../nomi-agent-core" }
 nomi-agent-money = { path = "../nomi-agent-money" }
 nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
+nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
 nomi-turn = { path = "../nomi-turn" }
 axum = { version = "0.7", features = ["ws"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }

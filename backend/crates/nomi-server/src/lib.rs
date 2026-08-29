@@ -12,5 +12,6 @@ pub fn build_agent_registry() -> nomi_agent_core::AgentRegistry {
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),
         Box::new(nomi_agent_personality::PersonalityAgent),
+        Box::new(nomi_agent_supervisor::SupervisorAgent),
     ])
 }
