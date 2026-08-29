@@ -196,6 +196,13 @@ pub async fn run_agent_turn(
             if let ContentBlock::ToolUse { id, name, input, .. } = block {
                 let (result_text, is_error) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                     (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false)
+                } else if name.as_str() == DELEGATE_TOOL_NAME {
+                    let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
+                    let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
+                    match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
+                        Ok(ack) => (ack, false),
+                        Err(err) => (err, true),
+                    }
                 } else {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(text) => (text, false),
