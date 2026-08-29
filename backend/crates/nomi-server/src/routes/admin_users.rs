@@ -8,6 +8,7 @@ use crate::app::AppState;
 use nomi_auth::claims::Claims;
 use nomi_auth::extractor::AuthClaims;
 use nomi_auth::grants::{grant_permission, list_grants_for_user, revoke_permission, GrantError, NewGrant};
+use nomi_auth::permissions::compute_permissions;
 
 fn require_user_permission(claims: &Claims, action: &str) -> Result<(), (StatusCode, &'static str)> {
     if claims.has_permission("admin", "user", action) {
@@ -26,6 +27,43 @@ fn grant_error_to_response(e: GrantError) -> (StatusCode, String) {
             tracing::error!(error = %err, "grant operation failed");
             (StatusCode::INTERNAL_SERVER_ERROR, "failed to save permission grant".to_string())
         }
+    }
+}
+
+async fn require_grant_within_ceiling(
+    pool: &sqlx::PgPool,
+    granter_id: Uuid,
+    scope: &str,
+    resource: &str,
+    actions: &[String],
+) -> Result<(), (StatusCode, String)> {
+    // Platform admins are unrestricted by design (they're already full platform admins, not
+    // subject to the "manage the roster without being a full admin" ceiling this check exists
+    // for) and compute_permissions() only hardcodes their admin:user:*/admin:system_config:*
+    // grants, not a wildcard over arbitrary admin-scope resources — so without this bypass a
+    // platform admin granting e.g. `admin:billing:[view]` would incorrectly be blocked.
+    let is_platform_admin: bool = sqlx::query_scalar("SELECT is_platform_admin FROM users WHERE id = $1")
+        .bind(granter_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to check platform admin status for ceiling check");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to verify granting permissions".to_string())
+        })?;
+    if is_platform_admin {
+        return Ok(());
+    }
+
+    let granter_permissions = compute_permissions(pool, granter_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to compute granter permissions for ceiling check");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to verify granting permissions".to_string())
+    })?;
+    let granter_claims = Claims::new(granter_id, Uuid::nil(), granter_permissions, 0);
+    let within_ceiling = actions.iter().all(|action| granter_claims.has_permission(scope, resource, action));
+    if within_ceiling {
+        Ok(())
+    } else {
+        Err((StatusCode::FORBIDDEN, "cannot grant a permission you do not already hold yourself".to_string()))
     }
 }
 
@@ -188,6 +226,13 @@ pub async fn grant_user_permission(
     if req.scope_type != "admin" && req.scope_type != "org" {
         return Err((StatusCode::BAD_REQUEST, "scope_type must be 'admin' or 'org'".to_string()));
     }
+    let scope = if req.scope_type == "admin" {
+        "admin".to_string()
+    } else {
+        req.org_id.ok_or((StatusCode::BAD_REQUEST, "org_id is required when scope_type is org".to_string()))?.to_string()
+    };
+
+    require_grant_within_ceiling(&state.pool, claims.sub, &scope, &req.resource, &req.actions).await?;
 
     let grants = grant_permission(
         &state.pool,

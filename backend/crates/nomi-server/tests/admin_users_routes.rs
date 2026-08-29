@@ -277,3 +277,120 @@ async fn list_orgs_excludes_personal_orgs(pool: PgPool) {
     assert!(names.contains(&"Real Org"));
     assert!(!names.contains(&"Someones Personal Org"));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn view_only_staff_is_forbidden_from_every_mutating_endpoint(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "staff@example.com").await;
+    let staff_id = user_id_by_email(&pool, "staff@example.com").await;
+
+    json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{staff_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "user", "actions": ["view"] }),
+        Some(&admin_token),
+    )
+    .await;
+    let staff_token = login_via_api(router.clone(), "staff@example.com").await;
+
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Target Org') RETURNING id").fetch_one(&pool).await.unwrap();
+
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{target_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "billing", "actions": ["view"] }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = json_request(
+        router.clone(),
+        "DELETE",
+        &format!("/api/admin/users/{target_id}/permissions/{}", Uuid::new_v4()),
+        Value::Null,
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{target_id}/memberships"),
+        json!({ "org_id": org_id, "role": "member" }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = json_request(
+        router,
+        "DELETE",
+        &format!("/api/admin/users/{target_id}/memberships/{org_id}"),
+        Value::Null,
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn manage_scoped_staff_cannot_grant_a_permission_they_do_not_hold_themselves(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "staff@example.com").await;
+    let staff_id = user_id_by_email(&pool, "staff@example.com").await;
+
+    // Promote to user:[view,manage] only — no system_config.
+    json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{staff_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "user", "actions": ["view", "manage"] }),
+        Some(&admin_token),
+    )
+    .await;
+    let staff_token = login_via_api(router.clone(), "staff@example.com").await;
+
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    // Cannot self-escalate: staff doesn't hold system_config themselves.
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{staff_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "system_config", "actions": ["manage"] }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Cannot grant it to someone else either.
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{target_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "system_config", "actions": ["manage"] }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // But granting a resource+action they DO hold (user:view) to someone else succeeds.
+    let (status, _) = json_request(
+        router,
+        "POST",
+        &format!("/api/admin/users/{target_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "user", "actions": ["view"] }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}

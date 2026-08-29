@@ -2,6 +2,14 @@ import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { LayoutServerLoad } from './$types';
 
+function hasAction(permissions: string[], resourcePrefix: string, action: string): boolean {
+	return permissions.some((p) => {
+		if (!p.startsWith(resourcePrefix)) return false;
+		const match = p.match(/\[(.*)\]$/);
+		return match ? match[1].split(',').includes(action) : false;
+	});
+}
+
 export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	if (!locals.accessToken) {
 		throw redirect(303, '/login?redirect_to=/admin');
@@ -18,8 +26,9 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 		throw redirect(303, '/?error=forbidden');
 	}
 
-	const canManageSystemConfig = claims.permissions.some((p) => p.startsWith('nomi:admin:system_config:'));
-	const canViewUsers = claims.permissions.some((p) => p.startsWith('nomi:admin:user:'));
+	const canManageSystemConfig = hasAction(claims.permissions, 'nomi:admin:system_config:', 'manage');
+	const canViewUsers = hasAction(claims.permissions, 'nomi:admin:user:', 'view');
+	const canManageUsers = hasAction(claims.permissions, 'nomi:admin:user:', 'manage');
 
-	return { canManageSystemConfig, canViewUsers };
+	return { canManageSystemConfig, canViewUsers, canManageUsers };
 };

@@ -52,39 +52,47 @@
 						supportingText={grant.actions.join(', ')}
 					>
 						{#snippet trailing()}
-							<form method="POST" action="?/revokePermission" use:enhance>
-								<input type="hidden" name="permissionId" value={grant.id} />
-								<IconButton type="submit" aria-label="Revoke {grant.resource}">
-									<Icon name="close" size={16} />
-								</IconButton>
-							</form>
+							{#if data.canManageUsers}
+								<form method="POST" action="?/revokePermission" use:enhance>
+									<input type="hidden" name="permissionId" value={grant.id} />
+									<IconButton type="submit" aria-label="Revoke {grant.resource}">
+										<Icon name="close" size={16} />
+									</IconButton>
+								</form>
+							{/if}
 						{/snippet}
 					</ListItem>
 				{/each}
 			</List>
 		{/if}
 
-		<form method="POST" action="?/grantPermission" use:enhance class="mt-4 flex flex-col gap-3">
-			<Select label="Scope" name="scopeType" bind:value={scopeType} options={scopeOptions} />
-			{#if scopeType === 'org'}
-				<Select
-					label="Organization"
-					name="orgId"
-					bind:value={grantOrgId}
-					options={data.orgs.map((o) => ({ value: o.id, label: o.name }))}
-				/>
-			{/if}
-			<TextField id="resource" name="resource" label="Resource" required />
-			<div class="flex gap-4">
-				<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-					<input type="checkbox" name="actions" value="view" /> View
-				</label>
-				<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-					<input type="checkbox" name="actions" value="manage" /> Manage
-				</label>
-			</div>
-			<Button type="submit" variant="filled" class="w-fit">Grant</Button>
-		</form>
+		{#if data.canManageUsers}
+			<form method="POST" action="?/grantPermission" use:enhance class="mt-4 flex flex-col gap-3">
+				<Select label="Scope" name="scopeType" bind:value={scopeType} options={scopeOptions} />
+				{#if scopeType === 'org'}
+					<Select
+						label="Organization"
+						name="orgId"
+						bind:value={grantOrgId}
+						options={data.orgs.map((o) => ({ value: o.id, label: o.name }))}
+					/>
+				{/if}
+				<TextField id="resource" name="resource" label="Resource" required />
+				<div class="flex gap-4">
+					<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
+						<input type="checkbox" name="actions" value="view" /> View
+					</label>
+					<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
+						<input type="checkbox" name="actions" value="manage" /> Manage
+					</label>
+				</div>
+				<Button type="submit" variant="filled" class="w-fit">Grant</Button>
+			</form>
+		{:else}
+			<p class="md-body-small mt-4" style="color: var(--md-sys-color-on-surface-variant)">
+				You need manage access to grant permissions.
+			</p>
+		{/if}
 	</section>
 
 	<section class="mt-6">
@@ -96,19 +104,21 @@
 				{#each data.user.memberships as membership (membership.org_id)}
 					<ListItem headline={membership.org_name} supportingText={membership.role}>
 						{#snippet trailing()}
-							<form method="POST" action="?/removeOrg" use:enhance>
-								<input type="hidden" name="orgId" value={membership.org_id} />
-								<IconButton type="submit" aria-label="Remove from {membership.org_name}">
-									<Icon name="close" size={16} />
-								</IconButton>
-							</form>
+							{#if data.canManageUsers}
+								<form method="POST" action="?/removeOrg" use:enhance>
+									<input type="hidden" name="orgId" value={membership.org_id} />
+									<IconButton type="submit" aria-label="Remove from {membership.org_name}">
+										<Icon name="close" size={16} />
+									</IconButton>
+								</form>
+							{/if}
 						{/snippet}
 					</ListItem>
 				{/each}
 			</List>
 		{/if}
 
-		{#if data.orgs.length > 0}
+		{#if data.orgs.length > 0 && data.canManageUsers}
 			<form method="POST" action="?/assignOrg" use:enhance class="mt-4 flex flex-col gap-3">
 				<Select
 					label="Organization"
@@ -119,6 +129,10 @@
 				<Select label="Role" name="role" bind:value={assignRole} options={roleOptions} />
 				<Button type="submit" variant="filled" class="w-fit">Assign</Button>
 			</form>
+		{:else if data.orgs.length > 0}
+			<p class="md-body-small mt-4" style="color: var(--md-sys-color-on-surface-variant)">
+				You need manage access to assign organizations.
+			</p>
 		{/if}
 	</section>
 </BottomSheet>
