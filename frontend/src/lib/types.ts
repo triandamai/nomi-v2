@@ -80,3 +80,45 @@ export interface UserAgentGroup {
 export interface AgentsResponse {
 	users: UserAgentGroup[];
 }
+
+export interface AdminUserSummary {
+	id: string;
+	email: string;
+	is_platform_admin: boolean;
+	is_staff: boolean;
+	org_count: number;
+}
+
+export interface AdminUserListResponse {
+	users: AdminUserSummary[];
+	total: number;
+}
+
+export interface PermissionGrant {
+	id: string;
+	scope_type: 'admin' | 'org';
+	org_id: string | null;
+	org_name: string | null;
+	resource: string;
+	actions: string[];
+	created_at: string;
+}
+
+export interface MembershipRow {
+	org_id: string;
+	org_name: string;
+	role: string;
+}
+
+export interface AdminUserDetail {
+	id: string;
+	email: string;
+	is_platform_admin: boolean;
+	permissions: PermissionGrant[];
+	memberships: MembershipRow[];
+}
+
+export interface OrgOption {
+	id: string;
+	name: string;
+}
