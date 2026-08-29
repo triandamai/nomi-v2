@@ -2,12 +2,20 @@
 	import { enhance } from '$app/forms';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Card from '$lib/components/m3/Card.svelte';
+	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let showCreateForm = $state(false);
 	let editingId = $state<string | null>(null);
+
+	const PROVIDER_OPTIONS = [
+		{ value: 'anthropic', label: 'Anthropic' },
+		{ value: 'openai', label: 'OpenAI' },
+		{ value: 'gemini', label: 'Gemini' },
+		{ value: 'fake', label: 'Fake (testing)' },
+	];
 </script>
 
 <h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">LLM models</h1>
@@ -33,15 +41,7 @@
 				>
 					<input type="hidden" name="id" value={model.id} />
 					<TextField id="label" name="label" label="Label" value={model.label} required />
-					<label class="m3-select-field">
-						<span class="m3-select-field__label">Provider</span>
-						<select id="provider" name="provider" class="m3-select-field__select">
-							<option value="anthropic" selected={model.provider === 'anthropic'}>Anthropic</option>
-							<option value="openai" selected={model.provider === 'openai'}>OpenAI</option>
-							<option value="gemini" selected={model.provider === 'gemini'}>Gemini</option>
-							<option value="fake" selected={model.provider === 'fake'}>Fake (testing)</option>
-						</select>
-					</label>
+					<Select label="Provider" name="provider" options={PROVIDER_OPTIONS} value={model.provider} />
 					<TextField id="model_id" name="model_id" label="Model ID" value={model.model_id} />
 					<TextField id="base_url" name="base_url" label="Base URL (optional)" value={model.base_url ?? ''} />
 					<TextField
@@ -108,15 +108,7 @@
 			style="background: var(--md-sys-color-surface-container-low); border-radius: var(--md-sys-shape-corner-large)"
 		>
 			<TextField id="label" name="label" label="Label" required />
-			<label class="m3-select-field">
-				<span class="m3-select-field__label">Provider</span>
-				<select id="provider" name="provider" class="m3-select-field__select">
-					<option value="anthropic">Anthropic</option>
-					<option value="openai">OpenAI</option>
-					<option value="gemini">Gemini</option>
-					<option value="fake">Fake (testing)</option>
-				</select>
-			</label>
+			<Select label="Provider" name="provider" options={PROVIDER_OPTIONS} />
 			<TextField id="model_id" name="model_id" label="Model ID" />
 			<TextField id="base_url" name="base_url" label="Base URL (optional)" />
 			<TextField id="api_key" name="api_key" type="password" label="API key" />
@@ -126,34 +118,3 @@
 		<Button type="button" variant="outlined" onclick={() => (showCreateForm = true)}>+ Add model</Button>
 	{/if}
 </div>
-
-<style>
-	.m3-select-field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-	.m3-select-field__label {
-		font-family: var(--md-sys-typescale-body-small-font);
-		font-size: var(--md-sys-typescale-body-small-size);
-		letter-spacing: var(--md-sys-typescale-body-small-tracking);
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.m3-select-field__select {
-		width: 100%;
-		box-sizing: border-box;
-		height: 44px;
-		padding: 0 16px;
-		border-radius: var(--md-sys-shape-corner-small);
-		border: 1px solid var(--md-sys-color-outline);
-		background: var(--md-sys-color-surface);
-		color: var(--md-sys-color-on-surface);
-		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: var(--md-sys-typescale-body-large-size);
-	}
-	.m3-select-field__select:focus {
-		outline: none;
-		border: 2px solid var(--md-sys-color-primary);
-		padding: 0 15px;
-	}
-</style>

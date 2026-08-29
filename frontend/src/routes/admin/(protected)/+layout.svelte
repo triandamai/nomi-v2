@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/m3/Icon.svelte';
+	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import type { LayoutData } from './$types';
 
@@ -32,27 +33,22 @@
 			{#if !collapsed}
 				<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface)">Admin</h2>
 			{/if}
-			<button
-				type="button"
-				class="m3-icon-button"
-				onclick={toggleCollapsed}
-				aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-			>
+			<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
 				<Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
-			</button>
+			</IconButton>
 		</div>
 
 		<nav class="flex flex-col gap-1" class:items-center={collapsed}>
 			{#if collapsed}
-				<a href="/admin" class="m3-icon-button" aria-label="Dashboard">
+				<IconButton href="/admin" aria-label="Dashboard">
 					<Icon name="dashboard" />
-				</a>
-				<a href="/admin/settings/llm" class="m3-icon-button" aria-label="LLM Settings">
+				</IconButton>
+				<IconButton href="/admin/settings/llm" aria-label="LLM Settings">
 					<Icon name="settings" />
-				</a>
-				<a href="/admin/agents" class="m3-icon-button" aria-label="Agents">
+				</IconButton>
+				<IconButton href="/admin/agents" aria-label="Agents">
 					<Icon name="agents" />
-				</a>
+				</IconButton>
 			{:else}
 				<a href="/admin" class="m3-nav-link">Dashboard</a>
 				<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
@@ -62,9 +58,9 @@
 
 		<form method="POST" action="/logout?redirect_to=/admin/login" class="mt-auto">
 			{#if collapsed}
-				<button type="submit" class="m3-icon-button" style="color: var(--md-sys-color-outline)" aria-label="Log out">
+				<IconButton type="submit" style="color: var(--md-sys-color-outline)" aria-label="Log out">
 					<Icon name="logout" />
-				</button>
+				</IconButton>
 			{:else}
 				<button type="submit" class="m3-nav-link m3-nav-link--muted w-full text-left">Log out</button>
 			{/if}
@@ -95,22 +91,5 @@
 	}
 	.m3-nav-link--muted {
 		color: var(--md-sys-color-outline);
-	}
-
-	.m3-icon-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border-radius: var(--md-sys-shape-corner-full);
-		border: none;
-		background: transparent;
-		color: var(--md-sys-color-on-surface-variant);
-		cursor: pointer;
-		text-decoration: none;
-	}
-	.m3-icon-button:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 </style>
