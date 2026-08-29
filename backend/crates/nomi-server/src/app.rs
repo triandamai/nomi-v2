@@ -4,6 +4,7 @@ use tower_http::trace::TraceLayer;
 
 use nomi_auth::extractor::AuthClaims;
 use crate::routes::admin_dashboard as admin_dashboard_routes;
+use crate::routes::admin_users as admin_users_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::personality as personality_routes;
@@ -68,6 +69,31 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
+        .route(
+            "/api/admin/users",
+            get(admin_users_routes::list_users),
+        )
+        .route(
+            "/api/admin/users/:id",
+            get(admin_users_routes::get_user_detail),
+        )
+        .route(
+            "/api/admin/users/:id/permissions",
+            post(admin_users_routes::grant_user_permission),
+        )
+        .route(
+            "/api/admin/users/:id/permissions/:permission_id",
+            delete(admin_users_routes::revoke_user_permission),
+        )
+        .route(
+            "/api/admin/users/:id/memberships",
+            post(admin_users_routes::assign_user_to_org),
+        )
+        .route(
+            "/api/admin/users/:id/memberships/:org_id",
+            delete(admin_users_routes::remove_user_from_org),
+        )
+        .route("/api/admin/orgs", get(admin_users_routes::list_orgs))
         .route(
             "/api/admin/settings/embedding",
             get(settings_routes::get_embedding_settings).put(settings_routes::put_embedding_settings),
