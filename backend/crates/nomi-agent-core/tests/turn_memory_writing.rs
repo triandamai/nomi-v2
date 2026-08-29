@@ -45,12 +45,16 @@ async fn a_real_extracted_fact_is_embedded_and_stored(pool: PgPool) {
 
     extract_and_store_memory(&mut conn, &llm, &embedder, user_id, "I don't eat meat", "Noted!").await;
 
-    let content: String = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let (content, provider, model): (String, String, String) = sqlx::query_as(
+        "SELECT content, embedding_provider, embedding_model FROM memory_items WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(content, "User is vegetarian");
+    assert_eq!(provider, "fake");
+    assert_eq!(model, "fake-model");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
