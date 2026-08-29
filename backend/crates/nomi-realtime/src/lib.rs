@@ -13,4 +13,5 @@ pub enum StreamEnvelope {
     Delta { turn_job_id: Uuid, event: StreamEvent },
     TurnCompleted { turn_job_id: Uuid, message_id: Uuid },
     TurnFailed { turn_job_id: Uuid, error: String },
+    AgentDelegationUpdated { delegation_id: Uuid },
 }
