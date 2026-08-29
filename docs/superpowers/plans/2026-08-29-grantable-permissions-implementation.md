@@ -1038,11 +1038,11 @@ async fn promoting_a_user_makes_them_staff_and_gets_them_into_the_admin_panel(po
 
     // Confirm it lands in the staff member's own token after a fresh login (claims-freshness
     // rule from the auth-claims design: only guaranteed on refresh/re-login, not instantly).
-    let staff_token = login_via_api(router, "staff@example.com").await;
-    let claims_bytes = staff_token.split('.').nth(1).unwrap();
-    // (Decoding the JWT payload here would need base64 + serde wiring just for this one
-    // assertion; simpler and just as conclusive to hit /api/whoami with the fresh token.)
-    let _ = claims_bytes;
+    let staff_token = login_via_api(router.clone(), "staff@example.com").await;
+    let (status, whoami_body) = json_request(router, "GET", "/api/whoami", Value::Null, Some(&staff_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let permissions = whoami_body["permissions"].as_array().unwrap();
+    assert!(permissions.iter().any(|p| p == "nomi:admin:user:[view]"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
