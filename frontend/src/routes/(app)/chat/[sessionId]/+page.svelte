@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Icon from '$lib/components/m3/Icon.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
@@ -22,6 +23,7 @@
 	let menuOpen = $state(false);
 	let menuView = $state<'root' | 'model' | 'personality'>('root');
 	let showCustomForm = $state(false);
+	let activitySheetOpen = $state(false);
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let messageInput: HTMLInputElement | undefined = $state();
 
@@ -50,6 +52,10 @@
 		const current = data.personality.versions.find((v) => v.is_current);
 		return current?.description ?? 'Not set';
 	});
+
+	const activeDelegationCount = $derived(
+		data.agentActivity.filter((d: { status: string }) => d.status === 'pending' || d.status === 'processing').length,
+	);
 
 	function closeMenu() {
 		menuOpen = false;
@@ -102,6 +108,8 @@
 				} else if (envelope.kind === 'TurnFailed') {
 					pendingReply = false;
 					turnError = true;
+				} else if (envelope.kind === 'AgentDelegationUpdated') {
+					invalidateAll();
 				}
 			});
 
@@ -161,7 +169,19 @@
 		class="px-6 py-4"
 		style="background: var(--md-sys-color-surface-container-low); border-top: 1px solid var(--md-sys-color-outline-variant)"
 	>
-		<div class="mb-2 flex justify-end">
+		<div class="mb-2 flex items-center justify-between">
+			{#if activeDelegationCount > 0}
+				<button
+					type="button"
+					class="md-label-medium"
+					style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 4px 8px;"
+					onclick={() => (activitySheetOpen = true)}
+				>
+					{activeDelegationCount === 1 ? '1 agent working…' : `${activeDelegationCount} agents working…`}
+				</button>
+			{:else}
+				<span></span>
+			{/if}
 			<Menu bind:open={menuOpen}>
 				{#snippet trigger({ toggle })}
 					<Button
@@ -332,6 +352,30 @@
 		</form>
 	</div>
 </div>
+
+<BottomSheet bind:open={activitySheetOpen}>
+	{#snippet children()}
+		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 12px;">Agent activity</h2>
+		{#if data.agentActivity.length === 0}
+			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No background activity yet.</p>
+		{:else}
+			{#each data.agentActivity as item (item.id)}
+				<div style="padding: 8px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);">
+					<p class="md-body-large" style="color: var(--md-sys-color-on-surface)">
+						{item.target_agent_type} — {item.status}
+					</p>
+					<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{item.task}</p>
+					{#if item.result}
+						<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{item.result}</p>
+					{/if}
+					{#if item.error}
+						<p class="md-body-small" style="color: var(--md-sys-color-error)">{item.error}</p>
+					{/if}
+				</div>
+			{/each}
+		{/if}
+	{/snippet}
+</BottomSheet>
 
 <style>
 	.m3-picker-input {

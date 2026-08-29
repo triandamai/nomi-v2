@@ -29,7 +29,10 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		? ((await personalityResponse.json()) as PersonalityHistoryResponse)
 		: { versions: [] };
 
-	return { messages, models, personality };
+	const agentActivityResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-activity`);
+	const agentActivity = agentActivityResponse.ok ? await agentActivityResponse.json() : [];
+
+	return { messages, models, personality, agentActivity };
 };
 
 export const actions: Actions = {
