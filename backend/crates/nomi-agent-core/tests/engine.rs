@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
 use nomi_agent_core::{run_agent_turn, LoopOutcome, SubAgent, COMPLETE_TASK_TOOL_NAME};
+use nomi_agent_core::AgentRegistry;
 use nomi_agent_core::TurnError;
 
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
@@ -45,6 +46,9 @@ impl SubAgent for TestAgent {
     fn intent_description(&self) -> &'static str {
         "test agent"
     }
+    fn is_default(&self) -> bool {
+        true
+    }
 }
 
 struct PersonalityAwareTestAgent;
@@ -78,6 +82,9 @@ impl SubAgent for PersonalityAwareTestAgent {
         "test agent"
     }
     fn uses_personality(&self) -> bool {
+        true
+    }
+    fn is_default(&self) -> bool {
         true
     }
 }
@@ -143,12 +150,14 @@ async fn end_turn_without_any_tool_use_returns_a_plain_reply(pool: PgPool) {
 
     let provider = FakeLlmProvider::sequence(vec![text_response("Hello!", StopReason::EndTurn)]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &TestAgent,
         session_id,
         agent_session_id,
@@ -176,12 +185,14 @@ async fn a_tool_use_is_executed_and_its_result_fed_back(pool: PgPool) {
         text_response("Done!", StopReason::EndTurn),
     ]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &TestAgent,
         session_id,
         agent_session_id,
@@ -210,12 +221,14 @@ async fn complete_task_terminates_the_loop_with_a_completed_outcome(pool: PgPool
         serde_json::json!({"status": "completed", "summary": "All done"}),
     )]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &TestAgent,
         session_id,
         agent_session_id,
@@ -242,12 +255,14 @@ async fn exceeding_the_turn_cap_returns_tool_loop_exceeded(pool: PgPool) {
         (0..11).map(|i| tool_use_response(&format!("t{i}"), "echo", serde_json::json!({}))).collect();
     let provider = FakeLlmProvider::sequence(responses);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     let result = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &TestAgent,
         session_id,
         agent_session_id,
@@ -275,12 +290,14 @@ async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
         ),
     ]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &TestAgent,
         session_id,
         agent_session_id,
@@ -316,12 +333,14 @@ async fn a_stored_personality_is_folded_into_the_system_prompt_when_uses_persona
 
     let provider = FakeLlmProvider::sequence(vec![text_response("Fine.", StopReason::EndTurn)]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(PersonalityAwareTestAgent)]);
 
     run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &PersonalityAwareTestAgent,
         session_id,
         agent_session_id,
@@ -351,12 +370,14 @@ async fn a_stored_personality_is_not_folded_in_for_an_agent_that_does_not_opt_in
 
     let provider = FakeLlmProvider::sequence(vec![text_response("Fine.", StopReason::EndTurn)]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedding_provider,
+        &registry,
         &TestAgent,
         session_id,
         agent_session_id,

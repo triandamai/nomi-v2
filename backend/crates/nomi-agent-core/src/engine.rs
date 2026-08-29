@@ -8,10 +8,12 @@ use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 use crate::error::TurnError;
 use crate::memory;
+use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
 const MAX_TOOL_TURNS: u32 = 10;
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
+pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 
 fn complete_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
@@ -24,6 +26,27 @@ fn complete_task_tool_definition() -> ToolDefinition {
                 "summary": {"type": "string"}
             },
             "required": ["status", "summary"]
+        }),
+    }
+}
+
+fn delegate_tool_definition(targets: &[&str]) -> ToolDefinition {
+    ToolDefinition {
+        name: DELEGATE_TOOL_NAME.to_string(),
+        description: format!(
+            "Hand off a task to a specialist agent to work on in the background, and immediately \
+             tell the user you'll follow up — do NOT wait for the result before replying. Use this \
+             only when the request genuinely needs a specialist; answer anything else yourself. \
+             Available specialists: {}.",
+            targets.join(", "),
+        ),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "target_agent": {"type": "string", "enum": targets, "description": "Which specialist to delegate to"},
+                "task": {"type": "string", "description": "What to ask the specialist to do, in your own words"}
+            },
+            "required": ["target_agent", "task"]
         }),
     }
 }
@@ -44,6 +67,7 @@ pub async fn run_agent_turn(
     mqtt: Option<(&MqttPublisher, Uuid)>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
     agent: &dyn SubAgent,
     session_id: Uuid,
     agent_session_id: Uuid,
@@ -53,6 +77,12 @@ pub async fn run_agent_turn(
 ) -> Result<LoopOutcome, TurnError> {
     let mut tools = agent.tools();
     tools.push(complete_task_tool_definition());
+    if agent.can_delegate() {
+        let targets = registry.delegatable_agent_types(agent.agent_type());
+        if !targets.is_empty() {
+            tools.push(delegate_tool_definition(&targets));
+        }
+    }
 
     let memories = if agent.uses_memory() {
         let last_user_text = messages

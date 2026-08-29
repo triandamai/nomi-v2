@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use nomi_llm::{ContentBlock, LlmMessage, LlmResponse, LlmRole, StopReason};
 use nomi_agent_core::{run_agent_turn, LoopOutcome};
+use nomi_agent_core::AgentRegistry;
 use nomi_agent_chitchat::ChitchatAgent;
 
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
@@ -54,12 +55,14 @@ async fn end_turn_returns_the_reply_and_triggers_memory_extraction_afterward(poo
     // returns `true`.
     let provider = FakeLlmProvider::sequence(vec![text_response("Hello there!"), text_response("User said hi")]);
     let embedder = FakeEmbeddingProvider::success(make_embedding(0.5));
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent)]);
 
     let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedder,
+        &registry,
         &ChitchatAgent,
         Uuid::new_v4(),
         Uuid::new_v4(),
@@ -95,12 +98,14 @@ async fn provider_failure_returns_an_error_and_extracts_no_memory(pool: PgPool) 
     let mut conn = pool.acquire().await.unwrap();
     let provider = FakeLlmProvider::failure("provider unavailable");
     let embedder = FakeEmbeddingProvider::success(make_embedding(0.5));
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent)]);
 
     let result = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedder,
+        &registry,
         &ChitchatAgent,
         Uuid::new_v4(),
         Uuid::new_v4(),
@@ -144,12 +149,14 @@ async fn retrieved_memories_are_folded_into_the_system_prompt_and_reported_as_us
     let mut conn = pool.acquire().await.unwrap();
     let provider = FakeLlmProvider::sequence(vec![text_response("Got it, no meat!"), text_response("NONE")]);
     let embedder = FakeEmbeddingProvider::success(make_embedding(1.0));
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent)]);
 
     let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedder,
+        &registry,
         &ChitchatAgent,
         Uuid::new_v4(),
         Uuid::new_v4(),
@@ -180,12 +187,14 @@ async fn a_failing_embedding_provider_does_not_prevent_a_normal_reply(pool: PgPo
     let mut conn = pool.acquire().await.unwrap();
     let provider = FakeLlmProvider::sequence(vec![text_response("Still here!"), text_response("NONE")]);
     let embedder = FakeEmbeddingProvider::failure("embeddings unavailable");
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent)]);
 
     let outcome = run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedder,
+        &registry,
         &ChitchatAgent,
         Uuid::new_v4(),
         Uuid::new_v4(),
@@ -222,12 +231,14 @@ async fn a_stored_personality_is_folded_into_chitchats_system_prompt(pool: PgPoo
 
     let provider = FakeLlmProvider::sequence(vec![text_response("Fine, whatever."), text_response("NONE")]);
     let embedder = FakeEmbeddingProvider::success(make_embedding(0.5));
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent)]);
 
     run_agent_turn(
         &mut conn,
         None,
         &provider,
         &embedder,
+        &registry,
         &ChitchatAgent,
         Uuid::new_v4(),
         Uuid::new_v4(),

@@ -166,7 +166,7 @@ async fn run_locked_turn(
 
     match routing_outcome {
         RoutingOutcome::Continue { agent, agent_session_id } => {
-            run_subagent_turn(conn, mqtt, provider, embedding_provider, agent, session_id, agent_session_id, user_id).await
+            run_subagent_turn(conn, mqtt, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::NeedsClassification => {
             let agent = routing::classify_intent(provider, registry, text).await;
@@ -176,11 +176,11 @@ async fn run_locked_turn(
                 // matching today's behavior, where chitchat has no agent_session_id at all.
                 // agent_session_id == session_id here purely as a stand-in for logging
                 // (see nomi-agent-chitchat's own comment on this at its call site's origin).
-                run_subagent_turn(conn, mqtt, provider, embedding_provider, agent, session_id, session_id, user_id).await
+                run_subagent_turn(conn, mqtt, provider, embedding_provider, registry, agent, session_id, session_id, user_id).await
             } else {
                 let agent_session_id =
                     routing::spawn_agent_session(conn, session_id, sender_channel_identity_id, agent.agent_type()).await?;
-                run_subagent_turn(conn, mqtt, provider, embedding_provider, agent, session_id, agent_session_id, user_id).await
+                run_subagent_turn(conn, mqtt, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
             }
         }
     }
@@ -192,6 +192,7 @@ async fn run_subagent_turn(
     mqtt: Option<(&MqttPublisher, Uuid)>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
     agent: &dyn nomi_agent_core::SubAgent,
     session_id: Uuid,
     agent_session_id: Uuid,
@@ -204,6 +205,7 @@ async fn run_subagent_turn(
         mqtt,
         provider,
         embedding_provider,
+        registry,
         agent,
         session_id,
         agent_session_id,
