@@ -1,58 +1,33 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import Button from '$lib/components/m3/Button.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-neutral-50">
+<div
+	class="flex min-h-screen items-center justify-center"
+	style="background: var(--md-sys-color-surface-container-lowest)"
+>
 	<form
 		method="POST"
 		use:enhance
-		class="w-full max-w-sm space-y-4 rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm"
+		class="w-full max-w-sm space-y-4 p-8"
+		style="background: var(--md-sys-color-surface-container-low); border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-shadow-level2)"
 	>
-		<h1 class="text-2xl font-semibold">Create your account</h1>
+		<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Create your account</h1>
 		{#if form?.error}
-			<p class="text-sm text-red-600">{form.error}</p>
+			<p class="md-body-medium" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
-		<div>
-			<label for="email" class="block text-sm font-medium text-neutral-700">Email</label>
-			<input
-				id="email"
-				name="email"
-				type="email"
-				required
-				class="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2"
-			/>
-		</div>
-		<div>
-			<label for="password" class="block text-sm font-medium text-neutral-700">Password</label>
-			<input
-				id="password"
-				name="password"
-				type="password"
-				required
-				class="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2"
-			/>
-		</div>
-		<div>
-			<label for="orgName" class="block text-sm font-medium text-neutral-700">Organization name</label>
-			<input
-				id="orgName"
-				name="orgName"
-				type="text"
-				required
-				class="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2"
-			/>
-		</div>
-		<button
-			type="submit"
-			class="w-full rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white hover:bg-neutral-800"
-		>
-			Register
-		</button>
-		<p class="text-center text-sm text-neutral-500">
-			Already have an account? <a href="/login" class="underline">Log in</a>
+		<TextField id="email" name="email" type="email" label="Email" required />
+		<TextField id="password" name="password" type="password" label="Password" required />
+		<TextField id="orgName" name="orgName" type="text" label="Organization name" required />
+		<Button type="submit" variant="filled" class="w-full">Register</Button>
+		<p class="md-body-medium text-center" style="color: var(--md-sys-color-on-surface-variant)">
+			Already have an account?
+			<a href="/login" style="color: var(--md-sys-color-primary); text-decoration: underline">Log in</a>
 		</p>
 	</form>
 </div>
