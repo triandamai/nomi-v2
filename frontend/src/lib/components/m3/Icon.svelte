@@ -10,7 +10,8 @@
 		| 'agents'
 		| 'more'
 		| 'chevron-down'
-		| 'chevron-up';
+		| 'chevron-up'
+		| 'close';
 
 	let { name, size = 20 }: { name: IconName; size?: number } = $props();
 </script>
@@ -62,5 +63,8 @@
 		<polyline points="6 9 12 15 18 9" />
 	{:else if name === 'chevron-up'}
 		<polyline points="6 15 12 9 18 15" />
+	{:else if name === 'close'}
+		<line x1="6" y1="6" x2="18" y2="18" />
+		<line x1="18" y1="6" x2="6" y2="18" />
 	{/if}
 </svg>

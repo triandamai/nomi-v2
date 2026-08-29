@@ -43,6 +43,7 @@
 	--md-sys-color-inverse-surface: #2a3329;
 	--md-sys-color-inverse-on-surface: #eaf4e5;
 	--md-sys-color-inverse-primary: #00e560;
+	--md-sys-color-scrim: #000000;
 
 	/* ---- Typography ----
 	   Three brand faces instead of MD3's usual two: Bebas Neue (brand) drives
@@ -324,6 +325,7 @@
 		--md-sys-color-inverse-surface: #dbe5d7;
 		--md-sys-color-inverse-on-surface: #2a3329;
 		--md-sys-color-inverse-primary: #006e2a;
+		--md-sys-color-scrim: #000000;
 	}
 }
 
