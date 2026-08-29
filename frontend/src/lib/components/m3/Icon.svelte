@@ -8,7 +8,9 @@
 		| 'chevron-left'
 		| 'chevron-right'
 		| 'agents'
-		| 'more';
+		| 'more'
+		| 'chevron-down'
+		| 'chevron-up';
 
 	let { name, size = 20 }: { name: IconName; size?: number } = $props();
 </script>
@@ -56,5 +58,9 @@
 		<circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
 		<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
 		<circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
+	{:else if name === 'chevron-down'}
+		<polyline points="6 9 12 15 18 9" />
+	{:else if name === 'chevron-up'}
+		<polyline points="6 15 12 9 18 15" />
 	{/if}
 </svg>

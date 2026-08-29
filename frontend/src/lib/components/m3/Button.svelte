@@ -3,15 +3,18 @@
 	import type { HTMLButtonAttributes, HTMLAnchorAttributes } from 'svelte/elements';
 
 	type Variant = 'filled' | 'tonal' | 'outlined' | 'text' | 'elevated';
+	type Size = 'xs' | 's' | 'm' | 'l' | 'xl';
 
 	let {
 		variant = 'filled',
+		size = 's',
 		href,
 		children,
 		class: extraClass = '',
 		...rest
 	}: {
 		variant?: Variant;
+		size?: Size;
 		href?: string;
 		children: Snippet;
 		class?: string;
@@ -20,11 +23,11 @@
 </script>
 
 {#if href}
-	<a {href} class="m3-button m3-button--{variant} {extraClass}" {...rest}>
+	<a {href} class="m3-button m3-button--{variant} m3-button--size-{size} {extraClass}" {...rest}>
 		{@render children()}
 	</a>
 {:else}
-	<button class="m3-button m3-button--{variant} {extraClass}" {...rest}>
+	<button class="m3-button m3-button--{variant} m3-button--size-{size} {extraClass}" {...rest}>
 		{@render children()}
 	</button>
 {/if}
@@ -35,8 +38,6 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		height: 40px;
-		padding: 0 24px;
 		border-radius: var(--md-sys-shape-corner-full);
 		border: none;
 		cursor: pointer;
@@ -50,6 +51,30 @@
 		transition:
 			background-color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
 			box-shadow var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+	}
+
+	/* Declared before the variant rules below so .m3-button--text's own padding override
+	   (same specificity, later in source order) correctly wins for text buttons at every
+	   size — text buttons keep tighter horizontal padding regardless of size, matching MD3. */
+	.m3-button--size-xs {
+		height: 32px;
+		padding: 0 16px;
+	}
+	.m3-button--size-s {
+		height: 40px;
+		padding: 0 24px;
+	}
+	.m3-button--size-m {
+		height: 48px;
+		padding: 0 24px;
+	}
+	.m3-button--size-l {
+		height: 56px;
+		padding: 0 32px;
+	}
+	.m3-button--size-xl {
+		height: 64px;
+		padding: 0 36px;
 	}
 
 	.m3-button:disabled {
