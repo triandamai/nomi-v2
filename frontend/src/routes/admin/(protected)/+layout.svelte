@@ -60,7 +60,7 @@
 			{/if}
 		</nav>
 
-		<form method="POST" action="/logout?redirect_to=/admin/login" class="mt-auto">
+		<form method="POST" action="/logout?redirect_to=/login" class="mt-auto">
 			{#if collapsed}
 				<IconButton type="submit" style="color: var(--md-sys-color-outline)" aria-label="Log out">
 					<Icon name="logout" />

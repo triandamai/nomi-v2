@@ -3,7 +3,7 @@ import { apiUrl } from '$lib/server/api';
 import type { Actions } from './$types';
 
 export const actions: Actions = {
-	default: async ({ request, cookies, fetch }) => {
+	default: async ({ request, cookies, fetch, url }) => {
 		const data = await request.formData();
 		const email = data.get('email');
 		const password = data.get('password');
@@ -34,6 +34,7 @@ export const actions: Actions = {
 		cookies.set('refresh_token', refresh_token, { httpOnly: true, path: '/', sameSite: 'lax' });
 		cookies.set('user_email', email, { httpOnly: false, path: '/', sameSite: 'lax' });
 
-		throw redirect(303, '/');
+		const redirectTo = url.searchParams.get('redirect_to');
+		throw redirect(303, redirectTo && redirectTo.startsWith('/') ? redirectTo : '/');
 	},
 };
