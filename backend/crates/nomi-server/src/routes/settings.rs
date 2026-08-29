@@ -101,8 +101,8 @@ pub async fn put_embedding_settings(
         "updating embedding provider settings"
     );
 
-    if !["openai", "fake"].contains(&req.provider.as_str()) {
-        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected openai or fake)"));
+    if !["openai", "gemini", "cohere", "fake"].contains(&req.provider.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected openai, gemini, cohere, or fake)"));
     }
     let is_fake = req.provider == "fake";
     if !is_fake && req.model_id.trim().is_empty() {

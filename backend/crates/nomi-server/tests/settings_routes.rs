@@ -112,3 +112,36 @@ async fn admin_can_save_and_then_read_back_masked_embedding_settings(pool: PgPoo
     assert_eq!(get_body["model_id"], "text-embedding-3-small");
     assert_eq!(get_body["api_key_masked"], "...1234");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_can_configure_a_non_openai_embedding_provider(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-embed-gemini@example.com").await;
+
+    let (status, put_body) = json_request(
+        router,
+        "PUT",
+        "/api/admin/settings/embedding",
+        json!({ "provider": "gemini", "model_id": "gemini-embedding-001", "api_key": "test-gemini-key1", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(put_body["provider"], "gemini");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn unknown_provider_is_rejected(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-embed-bad@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        "/api/admin/settings/embedding",
+        json!({ "provider": "not-a-real-provider", "model_id": "x", "api_key": "test-key12345678", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

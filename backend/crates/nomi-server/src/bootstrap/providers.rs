@@ -17,11 +17,13 @@ fn llm_provider_kind_from_str(s: &str) -> ProviderKind {
     }
 }
 
-fn embedding_provider_kind_from_str(s: &str) -> EmbeddingProviderKind {
+fn embedding_provider_kind_from_str(s: &str) -> Result<EmbeddingProviderKind, String> {
     match s {
-        "openai" => EmbeddingProviderKind::OpenAi,
-        "fake" => EmbeddingProviderKind::Fake,
-        other => panic!("unknown embedding provider: {other} (expected openai or fake)"),
+        "openai" => Ok(EmbeddingProviderKind::OpenAi),
+        "gemini" => Ok(EmbeddingProviderKind::Gemini),
+        "cohere" => Ok(EmbeddingProviderKind::Cohere),
+        "fake" => Ok(EmbeddingProviderKind::Fake),
+        other => Err(format!("unknown embedding provider: {other} (expected openai, gemini, cohere, or fake)")),
     }
 }
 
@@ -131,24 +133,34 @@ pub async fn build_embedding_provider_from_settings_or_env(
 ) -> Arc<dyn EmbeddingProvider> {
     let row = settings::get_settings(pool, "embedding").await.expect("failed to query provider_settings");
 
-    let embedding_config = match row {
-        Some(row) => {
-            let api_key = settings::crypto::decrypt(settings_key, &row.api_key_encrypted)
-                .expect("failed to decrypt stored embedding api key");
-            EmbeddingConfig {
-                provider: embedding_provider_kind_from_str(&row.provider),
-                model_id: row.model_id,
-                api_key,
-                base_url: row.base_url,
+    let from_row = row.and_then(|row| {
+        let api_key = match settings::crypto::decrypt(settings_key, &row.api_key_encrypted) {
+            Ok(key) => key,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to decrypt stored embedding api key; falling back to env vars");
+                return None;
             }
-        }
+        };
+        let provider = match embedding_provider_kind_from_str(&row.provider) {
+            Ok(provider) => provider,
+            Err(e) => {
+                tracing::error!(error = %e, "stored embedding provider settings are invalid; falling back to env vars");
+                return None;
+            }
+        };
+        Some(EmbeddingConfig { provider, model_id: row.model_id, api_key, base_url: row.base_url })
+    });
+
+    let embedding_config = match from_row {
+        Some(config) => config,
         None => {
             let provider = embedding_provider_kind_from_str(
                 &std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "openai".to_string()),
-            );
+            )
+            .expect("EMBEDDING_PROVIDER env var must be a known provider");
             let (model_id, api_key) = match provider {
                 EmbeddingProviderKind::Fake => (String::new(), String::new()),
-                EmbeddingProviderKind::OpenAi => (
+                _ => (
                     std::env::var("EMBEDDING_MODEL_ID").expect("EMBEDDING_MODEL_ID must be set"),
                     std::env::var("EMBEDDING_API_KEY").expect("EMBEDDING_API_KEY must be set"),
                 ),
@@ -158,4 +170,22 @@ pub async fn build_embedding_provider_from_settings_or_env(
     };
 
     Arc::from(build_embedding_provider(embedding_config, http_client))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedding_provider_kind_from_str_accepts_all_known_providers() {
+        assert_eq!(embedding_provider_kind_from_str("openai"), Ok(EmbeddingProviderKind::OpenAi));
+        assert_eq!(embedding_provider_kind_from_str("gemini"), Ok(EmbeddingProviderKind::Gemini));
+        assert_eq!(embedding_provider_kind_from_str("cohere"), Ok(EmbeddingProviderKind::Cohere));
+        assert_eq!(embedding_provider_kind_from_str("fake"), Ok(EmbeddingProviderKind::Fake));
+    }
+
+    #[test]
+    fn embedding_provider_kind_from_str_rejects_unknown_providers() {
+        assert!(embedding_provider_kind_from_str("not-a-real-provider").is_err());
+    }
 }
