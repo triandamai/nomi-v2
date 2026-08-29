@@ -67,6 +67,17 @@
 		}
 	});
 
+	// The panel's own content can change size while it's open (a list growing, an inline form
+	// expanding) — re-derive position whenever that happens, not just once at open-time.
+	$effect(() => {
+		if (!panelEl) return;
+		const observer = new ResizeObserver(() => {
+			if (open) positionPanel();
+		});
+		observer.observe(panelEl);
+		return () => observer.disconnect();
+	});
+
 	function handleToggle(event: Event) {
 		// Fires on every popover state change, including native light-dismiss (outside
 		// click, Escape) — this is what keeps `open` in sync when the browser closes the

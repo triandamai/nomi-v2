@@ -210,7 +210,7 @@
 						<Icon name="agents" size={18} />
 					</IconButton>
 				{/snippet}
-				<div class="w-80">
+				<div class="w-full">
 					<p class="md-label-medium px-2 pt-1 pb-2" style="color: var(--md-sys-color-on-surface-variant)">
 						Model — {activeModelLabel}
 					</p>
@@ -277,7 +277,7 @@
 						<Icon name="person" size={18} />
 					</IconButton>
 				{/snippet}
-				<div class="w-80">
+				<div class="w-full">
 					<p class="md-label-medium px-2 pt-1 pb-2" style="color: var(--md-sys-color-on-surface-variant)">
 						Personality — {currentPersonalityLabel}
 					</p>
