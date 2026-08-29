@@ -1,5 +1,6 @@
 pub mod config;
 pub mod openai;
+pub mod cohere;
 pub mod gemini;
 pub mod types;
 pub mod fake;
