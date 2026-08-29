@@ -13,12 +13,13 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	}
 
 	const claims = (await response.json()) as { permissions: string[] };
-	const isSystemAdmin = claims.permissions.some((permission) =>
-		permission.startsWith('nomi:admin:system_config:'),
-	);
-	if (!isSystemAdmin) {
+	const isStaff = claims.permissions.some((permission) => permission.startsWith('nomi:admin:'));
+	if (!isStaff) {
 		throw redirect(303, '/?error=forbidden');
 	}
 
-	return {};
+	const canManageSystemConfig = claims.permissions.some((p) => p.startsWith('nomi:admin:system_config:'));
+	const canViewUsers = claims.permissions.some((p) => p.startsWith('nomi:admin:user:'));
+
+	return { canManageSystemConfig, canViewUsers };
 };

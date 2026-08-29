@@ -6,7 +6,7 @@
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import type { LayoutData } from './$types';
 
-	let { children }: { data: LayoutData; children: Snippet } = $props();
+	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	const STORAGE_KEY = 'nomi:admin-sidebar-collapsed';
 	let collapsed = $state(false);
@@ -40,23 +40,35 @@
 
 		<nav class="flex flex-col gap-1" class:items-center={collapsed}>
 			{#if collapsed}
-				<IconButton href="/admin" aria-label="Dashboard">
-					<Icon name="dashboard" />
-				</IconButton>
-				<IconButton href="/admin/settings/llm" aria-label="LLM Settings">
-					<Icon name="settings" />
-				</IconButton>
-				<IconButton href="/admin/settings/embedding" aria-label="Embedding Settings">
-					<Icon name="settings" />
-				</IconButton>
-				<IconButton href="/admin/agents" aria-label="Agents">
-					<Icon name="agents" />
-				</IconButton>
+				{#if data.canManageSystemConfig}
+					<IconButton href="/admin" aria-label="Dashboard">
+						<Icon name="dashboard" />
+					</IconButton>
+					<IconButton href="/admin/settings/llm" aria-label="LLM Settings">
+						<Icon name="settings" />
+					</IconButton>
+					<IconButton href="/admin/settings/embedding" aria-label="Embedding Settings">
+						<Icon name="settings" />
+					</IconButton>
+					<IconButton href="/admin/agents" aria-label="Agents">
+						<Icon name="agents" />
+					</IconButton>
+				{/if}
+				{#if data.canViewUsers}
+					<IconButton href="/admin/users" aria-label="Users">
+						<Icon name="person" />
+					</IconButton>
+				{/if}
 			{:else}
-				<a href="/admin" class="m3-nav-link">Dashboard</a>
-				<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
-				<a href="/admin/settings/embedding" class="m3-nav-link">Embedding Settings</a>
-				<a href="/admin/agents" class="m3-nav-link">Agents</a>
+				{#if data.canManageSystemConfig}
+					<a href="/admin" class="m3-nav-link">Dashboard</a>
+					<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
+					<a href="/admin/settings/embedding" class="m3-nav-link">Embedding Settings</a>
+					<a href="/admin/agents" class="m3-nav-link">Agents</a>
+				{/if}
+				{#if data.canViewUsers}
+					<a href="/admin/users" class="m3-nav-link">Users</a>
+				{/if}
 			{/if}
 		</nav>
 
