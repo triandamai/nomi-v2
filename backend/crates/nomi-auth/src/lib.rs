@@ -1,6 +1,7 @@
 pub mod authorize;
 pub mod claims;
 pub mod extractor;
+pub mod grants;
 pub mod login;
 pub mod password;
 pub mod permissions;
