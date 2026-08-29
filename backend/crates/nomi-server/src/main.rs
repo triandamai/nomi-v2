@@ -48,6 +48,15 @@ async fn main() {
         tokio::spawn(async move {
             nomi_server::worker::run(worker_pool, worker_mqtt, settings_key, worker_http_client, worker_database_url).await;
         });
+
+        let delegation_mqtt_client_id = format!("nomi-orchestrator-delegation-worker-{}", uuid::Uuid::new_v4());
+        let delegation_mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &delegation_mqtt_client_id);
+        let delegation_pool = pool.clone();
+        let delegation_http_client = http_client.clone();
+        let delegation_database_url = database_url.clone();
+        tokio::spawn(async move {
+            nomi_server::delegation_worker::run(delegation_pool, delegation_mqtt, settings_key, delegation_http_client, delegation_database_url).await;
+        });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {
         tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");

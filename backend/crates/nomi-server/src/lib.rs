@@ -1,5 +1,6 @@
 pub mod app;
 pub mod bootstrap;
+pub mod delegation_worker;
 pub mod routes;
 pub mod web_identity;
 pub mod worker;
