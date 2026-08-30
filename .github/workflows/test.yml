@@ -1,0 +1,80 @@
+name: Test
+
+# Runs directly on every push/PR (fast feedback), and is also called by
+# release.yml so a tagged build can never publish an image without a green
+# run of this exact same job first.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  backend:
+    name: Backend (cargo test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nomi
+          POSTGRES_PASSWORD: nomi
+          POSTGRES_DB: nomi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nomi"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://nomi:nomi@localhost:5432/nomi
+      # Test-only placeholders — never used outside this ephemeral CI database.
+      JWT_SECRET: ci-test-secret-do-not-use-in-prod
+      SETTINGS_ENCRYPTION_KEY: ca56652b62a97555ffc35331260ee457cb2ffafacdefdf2e9e5e5388e7f81ea5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: cargo test --workspace
+        working-directory: backend
+        run: cargo test --workspace
+
+  frontend:
+    name: Frontend (check + unit tests + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npm run check
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm run test:unit
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
