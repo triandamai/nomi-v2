@@ -31,6 +31,13 @@ async fn main() {
 
     let http_client = reqwest::Client::new();
 
+    let s3 = nomi_server::s3::build_from_env().await;
+    if s3.is_some() {
+        tracing::info!("S3 avatar storage configured");
+    } else {
+        tracing::info!("S3_BUCKET not set — avatar upload disabled");
+    }
+
     // Embedded by default so a single `cargo run` (or single production instance) is enough to
     // process turns — no separate `cargo run --bin worker` process required. Set
     // RUN_WORKER_INLINE=false to disable this and run the worker as its own process(es) instead,
@@ -69,6 +76,7 @@ async fn main() {
         settings_key,
         mqtt_broker_host,
         mqtt_broker_port,
+        s3,
     };
     let app = nomi_server::app::build_router(state);
 

@@ -8,8 +8,10 @@ use crate::routes::admin_users as admin_users_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::personality as personality_routes;
+use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
+use crate::s3::S3Config;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -19,6 +21,7 @@ pub struct AppState {
     pub settings_key: [u8; 32],
     pub mqtt_broker_host: String,
     pub mqtt_broker_port: u16,
+    pub s3: Option<S3Config>,
 }
 
 impl nomi_auth::extractor::HasJwtSecret for AppState {
@@ -109,6 +112,15 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/admin/settings/embedding/fetch-models",
             post(settings_routes::fetch_embedding_provider_models),
+        )
+        .route(
+            "/api/profile",
+            get(profile_routes::get_profile).put(profile_routes::put_profile),
+        )
+        .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
+        .route(
+            "/api/preferences",
+            get(profile_routes::get_preferences).put(profile_routes::put_preferences),
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)

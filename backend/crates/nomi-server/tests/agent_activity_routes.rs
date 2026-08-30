@@ -18,6 +18,7 @@ fn test_state(pool: PgPool) -> AppState {
         settings_key: TEST_SETTINGS_KEY,
         mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
         mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
+        s3: None,
     }
 }
 
