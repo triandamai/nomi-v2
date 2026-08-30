@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import type { Preferences } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
 function hasAction(permissions: string[], resourcePrefix: string, action: string): boolean {
@@ -30,5 +31,10 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	const canViewUsers = hasAction(claims.permissions, 'nomi:admin:user:', 'view');
 	const canManageUsers = hasAction(claims.permissions, 'nomi:admin:user:', 'manage');
 
-	return { canManageSystemConfig, canViewUsers, canManageUsers };
+	const preferencesResponse = await apiFetch(fetch, cookies, '/api/preferences');
+	const preferences: Preferences = preferencesResponse.ok
+		? ((await preferencesResponse.json()) as Preferences)
+		: { theme: 'system' };
+
+	return { canManageSystemConfig, canViewUsers, canManageUsers, preferences };
 };

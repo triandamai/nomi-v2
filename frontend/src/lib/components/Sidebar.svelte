@@ -1,17 +1,22 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import SessionListItem from './SessionListItem.svelte';
+	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Icon from '$lib/components/m3/Icon.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import Menu from '$lib/components/m3/Menu.svelte';
+	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
-	import type { SessionSummary } from '$lib/types';
+	import type { Profile, SessionSummary } from '$lib/types';
 
-	let { sessions, userEmail }: { sessions: SessionSummary[]; userEmail: string } = $props();
+	let { sessions, userEmail, profile }: { sessions: SessionSummary[]; userEmail: string; profile: Profile } = $props();
 
 	const STORAGE_KEY = 'nomi:user-sidebar-collapsed';
 	let collapsed = $state(false);
+	let accountMenuOpen = $state(false);
 
 	onMount(() => {
 		collapsed = readInitialCollapsed(STORAGE_KEY);
@@ -20,6 +25,13 @@
 	function toggleCollapsed() {
 		collapsed = !collapsed;
 		persistCollapsed(STORAGE_KEY, collapsed);
+	}
+
+	const accountLabel = $derived(profile.display_name || userEmail);
+
+	function goToAccountPage(path: string) {
+		accountMenuOpen = false;
+		goto(path);
 	}
 </script>
 
@@ -66,29 +78,34 @@
 		<div class="flex-1"></div>
 	{/if}
 
-	<form
-		method="POST"
-		action="/logout"
-		class="flex w-full items-center px-4 py-3"
-		class:justify-center={collapsed}
-		class:justify-between={!collapsed}
-		style="border-top: 1px solid var(--md-sys-color-outline-variant)"
-	>
-		{#if !collapsed}
-			<span class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface-variant)">{userEmail}</span>
-			<button
-				type="submit"
-				class="md-label-large"
-				style="color: var(--md-sys-color-outline); background: none; border: none; cursor: pointer"
-			>
-				Log out
-			</button>
-		{:else}
-			<IconButton type="submit" style="color: var(--md-sys-color-outline)" aria-label="Log out">
-				<Icon name="logout" />
-			</IconButton>
-		{/if}
-	</form>
+	<div class="w-full px-2 py-2" style="border-top: 1px solid var(--md-sys-color-outline-variant)">
+		<Menu bind:open={accountMenuOpen} class="w-full">
+			{#snippet trigger({ toggle })}
+				<button
+					type="button"
+					onclick={toggle}
+					class="m3-account-trigger w-full"
+					class:justify-center={collapsed}
+					aria-label="Account menu"
+				>
+					<Avatar name={accountLabel} avatarUrl={profile.avatar_url} size={32} />
+					{#if !collapsed}
+						<span class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface-variant)">
+							{accountLabel}
+						</span>
+					{/if}
+				</button>
+			{/snippet}
+			<div class="w-full">
+				<MenuItem onclick={() => goToAccountPage('/preferences')}>Preferences</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/profile')}>Profile</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/account')}>Account settings</MenuItem>
+				<form method="POST" action="/logout" use:enhance>
+					<MenuItem type="submit">Log out</MenuItem>
+				</form>
+			</div>
+		</Menu>
+	</div>
 </aside>
 
 <style>
@@ -106,5 +123,20 @@
 	}
 	.m3-fab:hover {
 		box-shadow: var(--md-sys-elevation-shadow-level2);
+	}
+
+	.m3-account-trigger {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		border: none;
+		background: transparent;
+		border-radius: var(--md-sys-shape-corner-full);
+		padding: 6px 8px;
+		cursor: pointer;
+		text-align: left;
+	}
+	.m3-account-trigger:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 </style>

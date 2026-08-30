@@ -19,6 +19,10 @@
 		collapsed = !collapsed;
 		persistCollapsed(STORAGE_KEY, collapsed);
 	}
+
+	$effect(() => {
+		document.documentElement.dataset.theme = data.preferences.theme;
+	});
 </script>
 
 <div class="flex h-screen" style="background: var(--md-sys-color-surface)">

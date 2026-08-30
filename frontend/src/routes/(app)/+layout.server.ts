@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { SessionSummary } from '$lib/types';
+import type { Preferences, Profile, SessionSummary } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
@@ -8,13 +8,23 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 		throw redirect(303, '/login');
 	}
 
-	const response = await apiFetch(fetch, cookies, '/api/sessions');
-	if (!response.ok) {
+	const sessionsResponse = await apiFetch(fetch, cookies, '/api/sessions');
+	if (!sessionsResponse.ok) {
 		throw redirect(303, '/login');
 	}
-
-	const { sessions } = (await response.json()) as { sessions: SessionSummary[] };
+	const { sessions } = (await sessionsResponse.json()) as { sessions: SessionSummary[] };
 	const userEmail = cookies.get('user_email') ?? '';
 
-	return { sessions, userEmail };
+	const [profileResponse, preferencesResponse] = await Promise.all([
+		apiFetch(fetch, cookies, '/api/profile'),
+		apiFetch(fetch, cookies, '/api/preferences'),
+	]);
+	const profile: Profile = profileResponse.ok
+		? ((await profileResponse.json()) as Profile)
+		: { display_name: null, username: null, email: userEmail, avatar_url: null };
+	const preferences: Preferences = preferencesResponse.ok
+		? ((await preferencesResponse.json()) as Preferences)
+		: { theme: 'system' };
+
+	return { sessions, userEmail, profile, preferences };
 };

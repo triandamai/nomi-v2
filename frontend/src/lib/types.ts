@@ -123,3 +123,16 @@ export interface OrgOption {
 	id: string;
 	name: string;
 }
+
+export interface Profile {
+	display_name: string | null;
+	username: string | null;
+	email: string;
+	avatar_url: string | null;
+}
+
+export type Theme = 'light' | 'dark' | 'system';
+
+export interface Preferences {
+	theme: Theme;
+}
