@@ -30,6 +30,13 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # nomi-realtime's integration test connects to a real broker on localhost:1883,
+      # matching backend/docker-compose.yml's local dev setup — no env override exists,
+      # so this service must be reachable at that exact host:port.
+      emqx:
+        image: emqx/emqx:5.8.9
+        ports:
+          - 1883:1883
     env:
       DATABASE_URL: postgres://nomi:nomi@localhost:5432/nomi
       # Test-only placeholders — never used outside this ephemeral CI database.
@@ -45,6 +52,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+
+      - name: Wait for EMQX
+        run: |
+          for i in $(seq 1 30); do
+            (echo > /dev/tcp/localhost/1883) >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "EMQX did not become ready on localhost:1883" && exit 1
 
       - name: cargo test --workspace
         working-directory: backend
