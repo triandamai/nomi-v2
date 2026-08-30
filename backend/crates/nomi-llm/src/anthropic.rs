@@ -64,6 +64,33 @@ fn role_to_str(role: &LlmRole) -> &'static str {
     }
 }
 
+pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
+    let response = client
+        .get(format!("{base_url}/v1/models"))
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(LlmError::ProviderError(format!("anthropic returned {status}: {text}")));
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| LlmError::ParseError(e.to_string()))?;
+    let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| LlmError::ParseError("missing data".to_string()))?;
+
+    Ok(data
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())?.to_string();
+            let label = m.get("display_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+            Some(crate::ModelSummary { id, label })
+        })
+        .collect())
+}
+
 fn content_block_to_json(block: &ContentBlock) -> serde_json::Value {
     match block {
         ContentBlock::Text { text } => json!({ "type": "text", "text": text }),

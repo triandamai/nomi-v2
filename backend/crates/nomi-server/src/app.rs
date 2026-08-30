@@ -60,6 +60,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/settings/llm/models/:id/default",
             put(llm_models_routes::set_default_admin_model),
         )
+        .route(
+            "/api/admin/settings/llm/models/fetch-models",
+            post(llm_models_routes::fetch_provider_models),
+        )
         .route("/api/llm/models", get(llm_models_routes::get_user_models))
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
         .route(
@@ -97,6 +101,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/admin/settings/embedding",
             get(settings_routes::get_embedding_settings).put(settings_routes::put_embedding_settings),
+        )
+        .route(
+            "/api/admin/settings/embedding/fetch-models",
+            post(settings_routes::fetch_embedding_provider_models),
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)

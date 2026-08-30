@@ -69,6 +69,26 @@ impl CohereEmbeddingProvider {
     }
 }
 
+pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::EmbeddingModelSummary>, EmbeddingError> {
+    // endpoint=embed filters server-side to only models compatible with the embed endpoint.
+    let response = client.get(format!("{base_url}/v1/models?endpoint=embed")).bearer_auth(api_key).send().await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(EmbeddingError::ProviderError(format!("cohere returned {status}: {text}")));
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
+    let models = body.get("models").and_then(|m| m.as_array()).ok_or_else(|| EmbeddingError::ParseError("missing models".to_string()))?;
+
+    Ok(models
+        .iter()
+        .filter_map(|m| m.get("name").and_then(|v| v.as_str()))
+        .map(|name| crate::EmbeddingModelSummary { id: name.to_string(), label: None })
+        .collect())
+}
+
 #[async_trait]
 impl EmbeddingProvider for CohereEmbeddingProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {

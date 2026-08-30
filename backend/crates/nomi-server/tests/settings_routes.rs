@@ -145,3 +145,65 @@ async fn unknown_provider_is_rejected(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn non_admin_is_forbidden_from_fetching_embedding_provider_models(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    register_via_api(router.clone(), "regular-embed-fetch@example.com").await;
+    let token = login_via_api(router.clone(), "regular-embed-fetch@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/embedding/fetch-models",
+        json!({ "provider": "fake", "api_key": "any", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_can_fetch_embedding_models_for_the_fake_provider(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-embed-fetch@example.com").await;
+
+    let (status, body) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/embedding/fetch-models",
+        json!({ "provider": "fake", "api_key": "any", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let models = body["models"].as_array().unwrap();
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0]["id"], "fake-embedding-model");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn fetching_embedding_models_with_a_blank_key_reuses_the_stored_key(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-embed-fetch-reuse@example.com").await;
+
+    json_request(
+        router.clone(),
+        "PUT",
+        "/api/admin/settings/embedding",
+        json!({ "provider": "fake", "model_id": "fake-embedding-model", "api_key": "irrelevant-for-fake", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+
+    let (status, body) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/embedding/fetch-models",
+        json!({ "provider": "fake", "api_key": null, "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["models"].as_array().unwrap().len(), 1);
+}

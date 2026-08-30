@@ -102,6 +102,25 @@ fn role_to_str(role: &LlmRole) -> &'static str {
     }
 }
 
+pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
+    let response = client.get(format!("{base_url}/v1/models")).bearer_auth(api_key).send().await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(LlmError::ProviderError(format!("openai returned {status}: {text}")));
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| LlmError::ParseError(e.to_string()))?;
+    let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| LlmError::ParseError("missing data".to_string()))?;
+
+    Ok(data
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()))
+        .map(|id| crate::ModelSummary { id: id.to_string(), label: None })
+        .collect())
+}
+
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {

@@ -177,6 +177,64 @@ pub async fn set_default_admin_model(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+pub struct FetchProviderModelsRequest {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    /// When `api_key` is left blank (editing an existing model without changing its key),
+    /// reuse the stored, decrypted key for this admin model row instead of requiring the
+    /// caller to re-paste it just to browse the model list.
+    pub existing_model_id: Option<Uuid>,
+}
+
+#[derive(Serialize)]
+pub struct FetchedModel {
+    pub id: String,
+    pub label: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FetchProviderModelsResponse {
+    pub models: Vec<FetchedModel>,
+}
+
+#[tracing::instrument(skip(state, claims, req))]
+pub async fn fetch_provider_models(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<FetchProviderModelsRequest>,
+) -> Result<Json<FetchProviderModelsResponse>, (StatusCode, String)> {
+    require_system_config_permission(&claims).map_err(|(status, msg)| (status, msg.to_string()))?;
+
+    let provider_kind = provider_kind_from_str(&req.provider)
+        .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)".to_string()))?;
+
+    let api_key = match req.api_key.as_deref() {
+        Some(key) if !key.is_empty() => key.to_string(),
+        _ => {
+            let existing_id = req
+                .existing_model_id
+                .ok_or((StatusCode::BAD_REQUEST, "api_key is required to fetch models for a new entry".to_string()))?;
+            let model = llm_models::get_admin_llm_model(&state.pool, existing_id)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load existing model".to_string()))?
+                .ok_or((StatusCode::NOT_FOUND, "model not found".to_string()))?;
+            settings::crypto::decrypt(&state.settings_key, &model.api_key_encrypted)
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key".to_string()))?
+        }
+    };
+
+    let config = nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key, base_url: req.base_url.clone() };
+    let models = nomi_llm::list_provider_models(config, state.http_client.clone())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+
+    Ok(Json(FetchProviderModelsResponse {
+        models: models.into_iter().map(|m| FetchedModel { id: m.id, label: m.label }).collect(),
+    }))
+}
+
 #[derive(Serialize)]
 pub struct UserModelOption {
     pub id: Uuid,

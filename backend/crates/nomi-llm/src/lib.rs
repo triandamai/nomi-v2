@@ -69,6 +69,32 @@ pub async fn validate_model_config(config: ModelConfig, http_client: reqwest::Cl
     Ok(())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModelSummary {
+    pub id: String,
+    pub label: Option<String>,
+}
+
+/// Calls the provider's real model-listing API using the given key, without persisting
+/// anything — used by the admin UI to populate a model picker instead of a free-text field.
+pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Client) -> Result<Vec<ModelSummary>, LlmError> {
+    let base_url = config.base_url.clone().unwrap_or_else(|| match config.provider {
+        ProviderKind::Anthropic => anthropic::AnthropicProvider::default_base_url(),
+        ProviderKind::OpenAi => openai::OpenAiProvider::default_base_url(),
+        ProviderKind::Gemini => gemini::GeminiProvider::default_base_url(),
+        ProviderKind::Fake => String::new(),
+    });
+    match config.provider {
+        ProviderKind::Anthropic => anthropic::list_models(&http_client, &config.api_key, &base_url).await,
+        ProviderKind::OpenAi => openai::list_models(&http_client, &config.api_key, &base_url).await,
+        ProviderKind::Gemini => gemini::list_models(&http_client, &config.api_key, &base_url).await,
+        ProviderKind::Fake => Ok(vec![ModelSummary {
+            id: "fake-model".to_string(),
+            label: Some("Fake Model (dev/testing)".to_string()),
+        }]),
+    }
+}
+
 enum PendingBlock {
     Text(String),
     ToolUse { id: String, name: String, input_json: String, thought_signature: Option<String> },

@@ -23,6 +23,37 @@ impl GeminiEmbeddingProvider {
     }
 }
 
+pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::EmbeddingModelSummary>, EmbeddingError> {
+    let response = client.get(format!("{base_url}/v1beta/models?key={api_key}")).send().await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(EmbeddingError::ProviderError(format!("gemini returned {status}: {text}")));
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
+    let models = body.get("models").and_then(|m| m.as_array()).ok_or_else(|| EmbeddingError::ParseError("missing models".to_string()))?;
+
+    // Only keep models whose supportedGenerationMethods includes embedContent — the list
+    // endpoint returns every Gemini model (chat and embedding) mixed together.
+    Ok(models
+        .iter()
+        .filter(|m| {
+            m.get("supportedGenerationMethods")
+                .and_then(|methods| methods.as_array())
+                .map(|methods| methods.iter().any(|method| method.as_str() == Some("embedContent")))
+                .unwrap_or(false)
+        })
+        .filter_map(|m| {
+            let name = m.get("name").and_then(|v| v.as_str())?;
+            let id = name.strip_prefix("models/").unwrap_or(name).to_string();
+            let label = m.get("displayName").and_then(|v| v.as_str()).map(|s| s.to_string());
+            Some(crate::EmbeddingModelSummary { id, label })
+        })
+        .collect())
+}
+
 #[async_trait]
 impl EmbeddingProvider for GeminiEmbeddingProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {

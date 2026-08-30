@@ -30,3 +30,33 @@ pub trait EmbeddingProvider: Send + Sync {
     /// The specific model this instance is configured with.
     fn model_id(&self) -> &str;
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EmbeddingModelSummary {
+    pub id: String,
+    pub label: Option<String>,
+}
+
+/// Calls the provider's real model-listing API using the given key, filtered to
+/// embedding-capable models where the provider's API supports that, without persisting
+/// anything — used by the admin UI to populate a model picker instead of a free-text field.
+pub async fn list_embedding_provider_models(
+    config: EmbeddingConfig,
+    http_client: reqwest::Client,
+) -> Result<Vec<EmbeddingModelSummary>, EmbeddingError> {
+    let base_url = config.base_url.clone().unwrap_or_else(|| match config.provider {
+        EmbeddingProviderKind::OpenAi => openai::OpenAiEmbeddingProvider::default_base_url(),
+        EmbeddingProviderKind::Gemini => gemini::GeminiEmbeddingProvider::default_base_url(),
+        EmbeddingProviderKind::Cohere => cohere::CohereEmbeddingProvider::default_base_url(),
+        EmbeddingProviderKind::Fake => String::new(),
+    });
+    match config.provider {
+        EmbeddingProviderKind::OpenAi => openai::list_models(&http_client, &config.api_key, &base_url).await,
+        EmbeddingProviderKind::Gemini => gemini::list_models(&http_client, &config.api_key, &base_url).await,
+        EmbeddingProviderKind::Cohere => cohere::list_models(&http_client, &config.api_key, &base_url).await,
+        EmbeddingProviderKind::Fake => Ok(vec![EmbeddingModelSummary {
+            id: "fake-embedding-model".to_string(),
+            label: Some("Fake Embedding Model (dev/testing)".to_string()),
+        }]),
+    }
+}

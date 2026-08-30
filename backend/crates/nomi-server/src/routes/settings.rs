@@ -55,6 +55,57 @@ async fn load_settings_response(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct FetchEmbeddingModelsRequest {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FetchedEmbeddingModel {
+    pub id: String,
+    pub label: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FetchEmbeddingModelsResponse {
+    pub models: Vec<FetchedEmbeddingModel>,
+}
+
+#[tracing::instrument(skip(state, claims, req))]
+pub async fn fetch_embedding_provider_models(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<FetchEmbeddingModelsRequest>,
+) -> Result<Json<FetchEmbeddingModelsResponse>, (StatusCode, String)> {
+    require_system_config_permission(&claims).map_err(|(status, msg)| (status, msg.to_string()))?;
+
+    if !["openai", "gemini", "cohere", "fake"].contains(&req.provider.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected openai, gemini, cohere, or fake)".to_string()));
+    }
+    let is_fake = req.provider == "fake";
+
+    let api_key = resolve_api_key(&state, "embedding", req.api_key.as_deref(), is_fake)
+        .await
+        .map_err(|(status, msg)| (status, msg.to_string()))?;
+
+    let provider_kind = match req.provider.as_str() {
+        "openai" => nomi_embedding::EmbeddingProviderKind::OpenAi,
+        "gemini" => nomi_embedding::EmbeddingProviderKind::Gemini,
+        "cohere" => nomi_embedding::EmbeddingProviderKind::Cohere,
+        _ => nomi_embedding::EmbeddingProviderKind::Fake,
+    };
+    let config = nomi_embedding::EmbeddingConfig { provider: provider_kind, model_id: String::new(), api_key, base_url: req.base_url.clone() };
+    let models = nomi_embedding::list_embedding_provider_models(config, state.http_client.clone())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+
+    Ok(Json(FetchEmbeddingModelsResponse {
+        models: models.into_iter().map(|m| FetchedEmbeddingModel { id: m.id, label: m.label }).collect(),
+    }))
+}
+
 #[tracing::instrument(skip(state, claims))]
 pub async fn get_embedding_settings(
     State(state): State<AppState>,

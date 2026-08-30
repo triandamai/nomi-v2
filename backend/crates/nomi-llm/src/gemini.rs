@@ -59,6 +59,29 @@ fn role_to_str(role: &LlmRole) -> &'static str {
     }
 }
 
+pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
+    let response = client.get(format!("{base_url}/v1beta/models?key={api_key}")).send().await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(LlmError::ProviderError(format!("gemini returned {status}: {text}")));
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| LlmError::ParseError(e.to_string()))?;
+    let models = body.get("models").and_then(|m| m.as_array()).ok_or_else(|| LlmError::ParseError("missing models".to_string()))?;
+
+    Ok(models
+        .iter()
+        .filter_map(|m| {
+            let name = m.get("name").and_then(|v| v.as_str())?;
+            let id = name.strip_prefix("models/").unwrap_or(name).to_string();
+            let label = m.get("displayName").and_then(|v| v.as_str()).map(|s| s.to_string());
+            Some(crate::ModelSummary { id, label })
+        })
+        .collect())
+}
+
 fn content_block_to_part(block: &ContentBlock) -> serde_json::Value {
     match block {
         ContentBlock::Text { text } => json!({ "text": text }),

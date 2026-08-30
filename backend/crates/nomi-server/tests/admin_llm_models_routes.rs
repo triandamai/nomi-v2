@@ -208,3 +208,82 @@ async fn set_default_then_delete_the_old_default_succeeds(pool: PgPool) {
     let (status, _) = json_request(router, "DELETE", &format!("/api/admin/settings/llm/models/{first_id}"), Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn non_admin_is_forbidden_from_fetching_provider_models(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    register_via_api(router.clone(), "regular-fetch@example.com").await;
+    let token = login_via_api(router.clone(), "regular-fetch@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/llm/models/fetch-models",
+        json!({ "provider": "fake", "api_key": "any", "base_url": null, "existing_model_id": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_can_fetch_models_for_the_fake_provider(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-fetch@example.com").await;
+
+    let (status, body) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/llm/models/fetch-models",
+        json!({ "provider": "fake", "api_key": "any", "base_url": null, "existing_model_id": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let models = body["models"].as_array().unwrap();
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0]["id"], "fake-model");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn fetching_models_with_a_blank_key_reuses_the_stored_key_for_an_existing_model(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-fetch-reuse@example.com").await;
+
+    let (_, create_body) = json_request(
+        router.clone(),
+        "POST",
+        "/api/admin/settings/llm/models",
+        json!({ "label": "Fake", "provider": "fake", "model_id": "fake-model", "api_key": "irrelevant-for-fake", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    let id = create_body["id"].as_str().unwrap();
+
+    let (status, body) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/llm/models/fetch-models",
+        json!({ "provider": "fake", "api_key": null, "base_url": null, "existing_model_id": id }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["models"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn fetching_models_without_a_key_or_existing_model_id_is_rejected(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-fetch-noargs@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/llm/models/fetch-models",
+        json!({ "provider": "fake", "api_key": null, "base_url": null, "existing_model_id": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
