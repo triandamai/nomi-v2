@@ -132,6 +132,7 @@ pub struct MessageItem {
     pub sender: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
+    pub my_feedback: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -139,12 +140,15 @@ pub struct ListMessagesResponse {
     pub messages: Vec<MessageItem>,
 }
 
-fn to_message_item((id, sender, content, created_at): (Uuid, Option<Uuid>, String, DateTime<Utc>)) -> MessageItem {
+fn to_message_item(
+    (id, sender, content, created_at, my_feedback): (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<String>),
+) -> MessageItem {
     MessageItem {
         id,
         sender: if sender.is_some() { "user".to_string() } else { "assistant".to_string() },
         content,
         created_at,
+        my_feedback,
     }
 }
 
@@ -158,25 +162,31 @@ pub async fn list_messages(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
-    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>)> = match query.before {
+    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>, Option<String>)> = match query.before {
         Some(before_id) => sqlx::query_as(
-            "SELECT id, sender_channel_identity_id, content, created_at FROM messages \
-             WHERE session_id = $1 AND created_at < (SELECT created_at FROM messages WHERE id = $2) \
-             ORDER BY created_at DESC LIMIT $3",
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, mf.rating \
+             FROM messages m \
+             LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $4 \
+             WHERE m.session_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2) \
+             ORDER BY m.created_at DESC LIMIT $3",
         )
         .bind(session_id)
         .bind(before_id)
         .bind(limit)
+        .bind(claims.sub)
         .fetch_all(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
         None => sqlx::query_as(
-            "SELECT id, sender_channel_identity_id, content, created_at FROM messages \
-             WHERE session_id = $1 \
-             ORDER BY created_at DESC LIMIT $2",
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, mf.rating \
+             FROM messages m \
+             LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
+             WHERE m.session_id = $1 \
+             ORDER BY m.created_at DESC LIMIT $2",
         )
         .bind(session_id)
         .bind(limit)
+        .bind(claims.sub)
         .fetch_all(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
@@ -252,9 +262,86 @@ pub async fn send_message(
         sender: "user".to_string(),
         content: req.text,
         created_at,
+        my_feedback: None,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message })))
+}
+
+#[derive(Deserialize)]
+pub struct FeedbackRequest {
+    pub rating: String,
+}
+
+const ALLOWED_RATINGS: [&str; 2] = ["up", "down"];
+
+async fn authorize_message_in_session(
+    pool: &sqlx::PgPool,
+    session_id: Uuid,
+    message_id: Uuid,
+) -> Result<(), (StatusCode, &'static str)> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1 AND session_id = $2)")
+        .bind(message_id)
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up message"))?;
+    if exists {
+        Ok(())
+    } else {
+        Err((StatusCode::NOT_FOUND, "message not found"))
+    }
+}
+
+pub async fn put_message_feedback(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, message_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<FeedbackRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    authorize_message_in_session(&state.pool, session_id, message_id).await?;
+
+    if !ALLOWED_RATINGS.contains(&req.rating.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "rating must be 'up' or 'down'"));
+    }
+
+    sqlx::query(
+        "INSERT INTO message_feedback (message_id, user_id, rating) VALUES ($1, $2, $3) \
+         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating",
+    )
+    .bind(message_id)
+    .bind(claims.sub)
+    .bind(&req.rating)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to save message feedback");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to save feedback")
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn delete_message_feedback(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    authorize_message_in_session(&state.pool, session_id, message_id).await?;
+
+    sqlx::query("DELETE FROM message_feedback WHERE message_id = $1 AND user_id = $2")
+        .bind(message_id)
+        .bind(claims.sub)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to delete message feedback");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete feedback")
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn session_stream(

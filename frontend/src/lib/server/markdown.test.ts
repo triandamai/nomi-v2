@@ -47,4 +47,25 @@ describe('renderMarkdown', () => {
 		// must allow that through for span/pre, or highlighting silently breaks.
 		expect(html).toMatch(/<span style="/);
 	});
+
+	it('tags a highlighted code block with its language for the client-side header to read', async () => {
+		const html = await renderMarkdown('```rust\nfn main() {}\n```');
+		expect(html).toContain('data-lang="rust"');
+	});
+
+	it('tags a fallback code block with its (unrecognized) language too', async () => {
+		const html = await renderMarkdown('```not-a-real-language\nhello\n```');
+		expect(html).toContain('data-lang="not-a-real-language"');
+	});
+
+	it('tags a fenceless/no-language code block with a "text" fallback label', async () => {
+		const html = await renderMarkdown('```\nhello\n```');
+		expect(html).toContain('data-lang="text"');
+	});
+
+	it('escapes an attempted attribute breakout in an unrecognized language tag', async () => {
+		const html = await renderMarkdown('```"><img src=x onerror=alert(1)\nhello\n```');
+		expect(html).not.toContain('onerror');
+		expect(html).not.toContain('<img');
+	});
 });

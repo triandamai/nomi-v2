@@ -13,6 +13,7 @@ export interface MessageItem {
 	sender: 'user' | 'assistant';
 	content: string;
 	created_at: string;
+	my_feedback: 'up' | 'down' | null;
 }
 
 export interface RenderedMessage extends MessageItem {

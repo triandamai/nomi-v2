@@ -45,7 +45,14 @@ function getHighlighter(): Promise<Highlighter> {
 }
 
 function escapeHtml(text: string): string {
-	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Shiki's own output always starts with `<pre class="shiki` — inserting a data-lang attribute
+// right after `<pre ` lets the client (MessageBubble.svelte) read the language back out of the
+// rendered DOM to build the code block's header, without needing a second data channel.
+function withLangAttribute(html: string, lang: string): string {
+	return html.replace('<pre ', `<pre data-lang="${escapeHtml(lang)}" `);
 }
 
 // Allowlist covers everything marked's GFM output plus shiki's <pre>/<span style="..."> token
@@ -83,7 +90,7 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
 	allowedAttributes: {
 		a: ['href', 'title'],
 		span: ['style', 'class'],
-		pre: ['style', 'class'],
+		pre: ['style', 'class', 'data-lang'],
 		code: ['class'],
 	},
 	allowedSchemes: ['http', 'https', 'mailto'],
@@ -108,13 +115,17 @@ export async function renderMarkdown(source: string): Promise<string> {
 					const normalizedLang = lang?.trim().split(/\s+/)[0];
 					if (normalizedLang && loadedLangs.has(normalizedLang)) {
 						try {
-							return hl.codeToHtml(text, { lang: normalizedLang, themes: SHIKI_THEMES });
+							return withLangAttribute(hl.codeToHtml(text, { lang: normalizedLang, themes: SHIKI_THEMES }), normalizedLang);
 						} catch {
 							// Fall through to the plain-text path below — a grammar edge case shouldn't
 							// break rendering the message.
 						}
 					}
-					return `<pre class="shiki-fallback"><code>${escapeHtml(text)}</code></pre>`;
+					const displayLang = normalizedLang || 'text';
+					return withLangAttribute(
+						`<pre class="shiki-fallback"><code>${escapeHtml(text)}</code></pre>`,
+						displayLang,
+					);
 				},
 			},
 		});

@@ -304,3 +304,172 @@ async fn list_messages_respects_limit_and_before_cursor(pool: PgPool) {
         assert!(!page1_ids.contains(&m["id"].as_str().unwrap()));
     }
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_message_has_no_feedback_by_default(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "kate@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hi"}), Some(&token)).await;
+
+    let (_, list_body) = json_request(router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, Some(&token)).await;
+    assert!(list_body["messages"][0]["my_feedback"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn setting_feedback_then_listing_messages_reflects_it(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "liam@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let (_, send_body) =
+        json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hi"}), Some(&token)).await;
+    let message_id = send_body["user_message"]["id"].as_str().unwrap().to_string();
+
+    let (status, _) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        json!({"rating": "up"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, list_body) = json_request(router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, Some(&token)).await;
+    assert_eq!(list_body["messages"][0]["my_feedback"], "up");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn setting_feedback_twice_updates_rather_than_duplicates(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "mona@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let (_, send_body) =
+        json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hi"}), Some(&token)).await;
+    let message_id = send_body["user_message"]["id"].as_str().unwrap().to_string();
+
+    json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        json!({"rating": "up"}),
+        Some(&token),
+    )
+    .await;
+    let (status, _) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        json!({"rating": "down"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, list_body) = json_request(router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, Some(&token)).await;
+    assert_eq!(list_body["messages"][0]["my_feedback"], "down");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn deleting_feedback_clears_it(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "noah@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let (_, send_body) =
+        json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hi"}), Some(&token)).await;
+    let message_id = send_body["user_message"]["id"].as_str().unwrap().to_string();
+
+    json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        json!({"rating": "up"}),
+        Some(&token),
+    )
+    .await;
+    let (status, _) = json_request(
+        router.clone(),
+        "DELETE",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        Value::Null,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, list_body) = json_request(router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, Some(&token)).await;
+    assert!(list_body["messages"][0]["my_feedback"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_invalid_rating_is_rejected(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "olive@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let (_, send_body) =
+        json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hi"}), Some(&token)).await;
+    let message_id = send_body["user_message"]["id"].as_str().unwrap().to_string();
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        json!({"rating": "sideways"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn feedback_on_another_orgs_message_is_forbidden(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token_a = register_and_login(router.clone(), "peter@example.com").await;
+    let token_b = register_and_login(router.clone(), "quinn@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token_a)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let (_, send_body) =
+        json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hi"}), Some(&token_a)).await;
+    let message_id = send_body["user_message"]["id"].as_str().unwrap().to_string();
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{message_id}/feedback"),
+        json!({"rating": "up"}),
+        Some(&token_b),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn feedback_on_a_nonexistent_message_returns_not_found(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "ray@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let fake_message_id = Uuid::new_v4();
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/sessions/{session_id}/messages/{fake_message_id}/feedback"),
+        json!({"rating": "up"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

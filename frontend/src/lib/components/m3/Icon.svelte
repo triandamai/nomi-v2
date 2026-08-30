@@ -13,7 +13,12 @@
 		| 'chevron-up'
 		| 'close'
 		| 'search'
-		| 'person';
+		| 'person'
+		| 'copy'
+		| 'check'
+		| 'share'
+		| 'thumb-up'
+		| 'thumb-down';
 
 	let { name, size = 20 }: { name: IconName; size?: number } = $props();
 </script>
@@ -74,5 +79,20 @@
 	{:else if name === 'person'}
 		<circle cx="12" cy="8" r="4" />
 		<path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+	{:else if name === 'copy'}
+		<rect x="9" y="9" width="11" height="11" rx="1.5" />
+		<path d="M5 15V6a2 2 0 0 1 2-2h9" />
+	{:else if name === 'check'}
+		<polyline points="5 12.5 10 17.5 19 6.5" />
+	{:else if name === 'share'}
+		<circle cx="18" cy="5" r="2.5" />
+		<circle cx="6" cy="12" r="2.5" />
+		<circle cx="18" cy="19" r="2.5" />
+		<line x1="8.3" y1="10.7" x2="15.7" y2="6.3" />
+		<line x1="8.3" y1="13.3" x2="15.7" y2="17.7" />
+	{:else if name === 'thumb-up'}
+		<path d="M7 11v9H4v-9h3zm0 0 4-8a2 2 0 0 1 2 2v4h4.5a2 2 0 0 1 1.94 2.5l-1.6 6A2 2 0 0 1 15.9 20H7" />
+	{:else if name === 'thumb-down'}
+		<path d="M17 13V4h3v9h-3zm0 0-4 8a2 2 0 0 1-2-2v-4H6.5a2 2 0 0 1-1.94-2.5l1.6-6A2 2 0 0 1 8.1 4H17" />
 	{/if}
 </svg>

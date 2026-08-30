@@ -125,6 +125,27 @@ export const actions: Actions = {
 		return { modelSelected: true };
 	},
 
+	feedback: async ({ request, params, cookies, fetch }) => {
+		const data = await request.formData();
+		const messageId = data.get('messageId');
+		const rating = data.get('rating');
+
+		if (typeof messageId !== 'string' || !messageId) {
+			return fail(400, { error: 'Invalid message.' });
+		}
+
+		const path = `/api/sessions/${params.sessionId}/messages/${messageId}/feedback`;
+		const response =
+			rating === 'up' || rating === 'down'
+				? await apiFetch(fetch, cookies, path, { method: 'PUT', body: JSON.stringify({ rating }) })
+				: await apiFetch(fetch, cookies, path, { method: 'DELETE' });
+
+		if (!response.ok) {
+			return fail(response.status, { error: 'Failed to save feedback.' });
+		}
+		return { success: true };
+	},
+
 	restorePersonality: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const version = data.get('version');
