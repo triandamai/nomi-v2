@@ -273,7 +273,7 @@ async fn fetching_models_with_a_blank_key_reuses_the_stored_key_for_an_existing_
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn fetching_models_without_a_key_or_existing_model_id_is_rejected(pool: PgPool) {
+async fn fetching_models_without_a_key_or_existing_model_id_is_rejected_for_a_real_provider(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_admin_and_login(router.clone(), &pool, "admin-fetch-noargs@example.com").await;
 
@@ -281,9 +281,26 @@ async fn fetching_models_without_a_key_or_existing_model_id_is_rejected(pool: Pg
         router,
         "POST",
         "/api/admin/settings/llm/models/fetch-models",
-        json!({ "provider": "fake", "api_key": null, "base_url": null, "existing_model_id": null }),
+        json!({ "provider": "anthropic", "api_key": null, "base_url": null, "existing_model_id": null }),
         Some(&token),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn fetching_models_for_the_fake_provider_never_requires_a_key(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-fetch-fake-nokey@example.com").await;
+
+    let (status, body) = json_request(
+        router,
+        "POST",
+        "/api/admin/settings/llm/models/fetch-models",
+        json!({ "provider": "fake", "api_key": null, "base_url": null, "existing_model_id": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["models"].as_array().unwrap().len(), 1);
 }

@@ -89,4 +89,30 @@ export const actions: Actions = {
 		}
 		return { success: true };
 	},
+
+	fetchModels: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const provider = data.get('provider');
+		const apiKey = data.get('api_key');
+		const baseUrl = data.get('base_url');
+		const existingModelId = data.get('existing_model_id');
+		if (typeof provider !== 'string' || !provider) {
+			return fail(400, { error: 'Provider is required.' });
+		}
+		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models/fetch-models', {
+			method: 'POST',
+			body: JSON.stringify({
+				provider,
+				api_key: typeof apiKey === 'string' && apiKey.length > 0 ? apiKey : null,
+				base_url: typeof baseUrl === 'string' && baseUrl.length > 0 ? baseUrl : null,
+				existing_model_id: typeof existingModelId === 'string' && existingModelId.length > 0 ? existingModelId : null,
+			}),
+		});
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || 'Could not fetch models — enter the model ID manually.' });
+		}
+		const result = (await response.json()) as { models: { id: string; label: string | null }[] };
+		return { models: result.models };
+	},
 };

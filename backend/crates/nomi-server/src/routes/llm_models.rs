@@ -209,9 +209,11 @@ pub async fn fetch_provider_models(
 
     let provider_kind = provider_kind_from_str(&req.provider)
         .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)".to_string()))?;
+    let is_fake = req.provider == "fake";
 
     let api_key = match req.api_key.as_deref() {
         Some(key) if !key.is_empty() => key.to_string(),
+        _ if is_fake => String::new(),
         _ => {
             let existing_id = req
                 .existing_model_id
