@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
-import type { AdminUserDetail, AdminUserListResponse, OrgOption } from '$lib/types';
+import type { AdminUserDetail, AdminUserListResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 const PAGE_SIZE = 20;
@@ -13,16 +13,12 @@ export const load: PageServerLoad = async ({ url, cookies, fetch }) => {
 	const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
 	if (query) params.set('query', query);
 
-	const [usersResponse, orgsResponse] = await Promise.all([
-		apiFetch(fetch, cookies, `/api/admin/users?${params}`),
-		apiFetch(fetch, cookies, '/api/admin/orgs'),
-	]);
+	const usersResponse = await apiFetch(fetch, cookies, `/api/admin/users?${params}`);
 	const result: AdminUserListResponse = usersResponse.ok
 		? ((await usersResponse.json()) as AdminUserListResponse)
 		: { users: [], total: 0 };
-	const orgs: OrgOption[] = orgsResponse.ok ? await orgsResponse.json() : [];
 
-	return { users: result.users, total: result.total, page, pageSize: PAGE_SIZE, query, orgs };
+	return { users: result.users, total: result.total, page, pageSize: PAGE_SIZE, query };
 };
 
 function requireUserId(data: FormData): string | null {
@@ -134,43 +130,5 @@ export const actions: Actions = {
 		}
 		const permissions = await response.json();
 		return { success: true, permissions };
-	},
-
-	assignOrg: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const userId = requireUserId(data);
-		const orgId = data.get('orgId');
-		const role = data.get('role');
-		if (!userId || typeof orgId !== 'string' || !orgId || typeof role !== 'string' || !role) {
-			return fail(400, { error: 'Organization and role are required.' });
-		}
-		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/memberships`, {
-			method: 'POST',
-			body: JSON.stringify({ org_id: orgId, role }),
-		});
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to assign organization.' });
-		}
-		const memberships = await response.json();
-		return { success: true, memberships };
-	},
-
-	removeOrg: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const userId = requireUserId(data);
-		const orgId = data.get('orgId');
-		if (!userId || typeof orgId !== 'string') {
-			return fail(400, { error: 'Invalid organization.' });
-		}
-		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/memberships/${orgId}`, {
-			method: 'DELETE',
-		});
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to remove organization.' });
-		}
-		const memberships = await response.json();
-		return { success: true, memberships };
 	},
 };

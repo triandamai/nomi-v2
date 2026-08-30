@@ -13,7 +13,6 @@
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import Radio from '$lib/components/m3/Radio.svelte';
-	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import { ADMIN_PERMISSION_RESOURCES, CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
 	import type { AdminUserDetail } from '$lib/types';
@@ -48,18 +47,10 @@
 	let displayName = $state('');
 	let username = $state('');
 
-	let assignOrgId = $state(data.orgs[0]?.id ?? '');
-	let assignRole = $state('member');
 	let selectedResource = $state(ADMIN_PERMISSION_RESOURCES[0]?.resource ?? CUSTOM_PERMISSION_RESOURCE);
 	let customResource = $state('');
 	let actionView = $state(false);
 	let actionManage = $state(false);
-
-	const roleOptions = [
-		{ value: 'owner', label: 'Owner' },
-		{ value: 'admin', label: 'Admin' },
-		{ value: 'member', label: 'Member' },
-	];
 
 	async function openSheet(userId: string, kind: 'user' | 'role') {
 		activeUserId = userId;
@@ -79,8 +70,6 @@
 			userDetail = result.data.user as AdminUserDetail;
 			displayName = userDetail.display_name ?? '';
 			username = userDetail.username ?? '';
-			assignOrgId = data.orgs[0]?.id ?? '';
-			assignRole = 'member';
 			selectedResource = ADMIN_PERMISSION_RESOURCES[0]?.resource ?? CUSTOM_PERMISSION_RESOURCE;
 			customResource = '';
 			actionView = false;
@@ -102,7 +91,7 @@
 
 <h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Users</h1>
 <p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
-	Manage user access: promote to staff, grant permissions, assign organizations.
+	Manage user access: promote to staff and grant permissions.
 </p>
 
 <div class="mt-6">
@@ -271,72 +260,6 @@
 			{:else}
 				<p class="md-body-small mt-4" style="color: var(--md-sys-color-on-surface-variant)">
 					You need manage access to grant permissions.
-				</p>
-			{/if}
-		</section>
-
-		<section class="mt-6">
-			<h3 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Organizations</h3>
-			{#if userDetail.memberships.length === 0}
-				<p class="md-body-small mt-2" style="color: var(--md-sys-color-on-surface-variant)">Not a member of any organization.</p>
-			{:else}
-				<List class="mt-2">
-					{#each userDetail.memberships as membership (membership.org_id)}
-						<ListItem headline={membership.org_name} supportingText={membership.role}>
-							{#snippet trailing()}
-								{#if data.canManageUsers}
-									<form
-										method="POST"
-										action="?/removeOrg"
-										use:enhance={() => {
-											return async ({ result, update }) => {
-												await update({ reset: false });
-												if (result.type === 'success' && result.data?.memberships && userDetail) {
-													userDetail = { ...userDetail, memberships: result.data.memberships as AdminUserDetail['memberships'] };
-												}
-											};
-										}}
-									>
-										<input type="hidden" name="userId" value={activeUserId} />
-										<input type="hidden" name="orgId" value={membership.org_id} />
-										<IconButton type="submit" aria-label="Remove from {membership.org_name}">
-											<IconClose size={16} />
-										</IconButton>
-									</form>
-								{/if}
-							{/snippet}
-						</ListItem>
-					{/each}
-				</List>
-			{/if}
-
-			{#if data.orgs.length > 0 && data.canManageUsers}
-				<form
-					method="POST"
-					action="?/assignOrg"
-					use:enhance={() => {
-						return async ({ result, update }) => {
-							await update({ reset: false });
-							if (result.type === 'success' && result.data?.memberships && userDetail) {
-								userDetail = { ...userDetail, memberships: result.data.memberships as AdminUserDetail['memberships'] };
-							}
-						};
-					}}
-					class="mt-4 flex flex-col gap-3"
-				>
-					<input type="hidden" name="userId" value={activeUserId} />
-					<Select
-						label="Organization"
-						name="orgId"
-						bind:value={assignOrgId}
-						options={data.orgs.map((o) => ({ value: o.id, label: o.name }))}
-					/>
-					<Select label="Role" name="role" bind:value={assignRole} options={roleOptions} />
-					<Button type="submit" variant="filled" class="w-fit">Assign</Button>
-				</form>
-			{:else if data.orgs.length > 0}
-				<p class="md-body-small mt-4" style="color: var(--md-sys-color-on-surface-variant)">
-					You need manage access to assign organizations.
 				</p>
 			{/if}
 		</section>
