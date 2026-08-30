@@ -5,8 +5,11 @@
 	import SessionListItem from './SessionListItem.svelte';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import Icon from '$lib/components/m3/Icon.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
+	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
+	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
+	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
@@ -51,17 +54,21 @@
 		{#if !collapsed}
 			<span class="md-title-large" style="color: var(--md-sys-color-primary)">Nomi</span>
 		{:else}
-			<span style="color: var(--md-sys-color-primary)"><Icon name="chat-bubble" /></span>
+			<span style="color: var(--md-sys-color-primary)"><IconChatBubble /></span>
 		{/if}
 		<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-			<Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
+			{#if collapsed}
+				<IconChevronRight />
+			{:else}
+				<IconChevronLeft />
+			{/if}
 		</IconButton>
 	</div>
 
 	<form method="POST" action="/?/newChat" use:enhance class={collapsed ? 'pt-3' : 'px-3 pt-3'}>
 		{#if collapsed}
 			<button type="submit" class="m3-fab" aria-label="New Chat">
-				<Icon name="plus" />
+				<IconPlus />
 			</button>
 		{:else}
 			<Button type="submit" variant="filled" class="w-full">+ New Chat</Button>

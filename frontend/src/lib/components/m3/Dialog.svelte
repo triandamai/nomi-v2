@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import Icon, { type IconName } from './Icon.svelte';
 
 	let {
 		open = $bindable(false),
@@ -12,7 +11,7 @@
 	}: {
 		open?: boolean;
 		headline?: string;
-		icon?: IconName;
+		icon?: Snippet;
 		children: Snippet;
 		actions?: Snippet;
 		class?: string;
@@ -46,7 +45,7 @@
 <dialog bind:this={dialogEl} class="m3-dialog {extraClass}" onclose={handleClose} onclick={handleDialogClick}>
 	<div class="m3-dialog__content">
 		{#if icon}
-			<div class="m3-dialog__icon"><Icon name={icon} size={24} /></div>
+			<div class="m3-dialog__icon">{@render icon()}</div>
 		{/if}
 		{#if headline}
 			<h2 class="md-headline-small m3-dialog__headline">{headline}</h2>

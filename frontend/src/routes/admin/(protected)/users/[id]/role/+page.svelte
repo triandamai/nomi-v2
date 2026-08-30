@@ -3,12 +3,15 @@
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import Checkbox from '$lib/components/m3/Checkbox.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
-	import Icon from '$lib/components/m3/Icon.svelte';
+	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import List from '$lib/components/m3/List.svelte';
 	import ListItem from '$lib/components/m3/ListItem.svelte';
+	import Radio from '$lib/components/m3/Radio.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import { ADMIN_PERMISSION_RESOURCES, CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -26,6 +29,11 @@
 	let assignOrgId = $state(data.orgs[0]?.id ?? '');
 	let assignRole = $state('member');
 
+	let selectedResource = $state(ADMIN_PERMISSION_RESOURCES[0]?.resource ?? CUSTOM_PERMISSION_RESOURCE);
+	let customResource = $state('');
+	let actionView = $state(false);
+	let actionManage = $state(false);
+
 	const scopeOptions = [
 		{ value: 'admin', label: 'Admin' },
 		{ value: 'org', label: 'Organization' },
@@ -38,7 +46,8 @@
 </script>
 
 <BottomSheet bind:open>
-	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{data.user.email}</h2>
+	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Update role</h2>
+	<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">{data.user.email}</p>
 
 	<section class="mt-6">
 		<h3 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Permissions</h3>
@@ -56,7 +65,7 @@
 								<form method="POST" action="?/revokePermission" use:enhance>
 									<input type="hidden" name="permissionId" value={grant.id} />
 									<IconButton type="submit" aria-label="Revoke {grant.resource}">
-										<Icon name="close" size={16} />
+										<IconClose size={16} />
 									</IconButton>
 								</form>
 							{/if}
@@ -67,7 +76,7 @@
 		{/if}
 
 		{#if data.canManageUsers}
-			<form method="POST" action="?/grantPermission" use:enhance class="mt-4 flex flex-col gap-3">
+			<form method="POST" action="?/grantPermission" use:enhance class="mt-4 flex flex-col gap-4">
 				<Select label="Scope" name="scopeType" bind:value={scopeType} options={scopeOptions} />
 				{#if scopeType === 'org'}
 					<Select
@@ -77,15 +86,41 @@
 						options={data.orgs.map((o) => ({ value: o.id, label: o.name }))}
 					/>
 				{/if}
-				<TextField id="resource" name="resource" label="Resource" required />
-				<div class="flex gap-4">
-					<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-						<input type="checkbox" name="actions" value="view" /> View
-					</label>
-					<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-						<input type="checkbox" name="actions" value="manage" /> Manage
-					</label>
+
+				<div>
+					<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">Resource</span>
+					<div class="mt-2 flex flex-col gap-2">
+						{#each ADMIN_PERMISSION_RESOURCES as resourceDef (resourceDef.resource)}
+							<div class="m3-resource-row">
+								<Radio name="resource" value={resourceDef.resource} bind:group={selectedResource} label={resourceDef.label} />
+								<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">
+									{resourceDef.description}
+								</span>
+							</div>
+						{/each}
+						<div class="m3-resource-row">
+							<Radio name="resource" value={CUSTOM_PERMISSION_RESOURCE} bind:group={selectedResource} label="Other" />
+						</div>
+						{#if selectedResource === CUSTOM_PERMISSION_RESOURCE}
+							<TextField
+								id="customResource"
+								name="customResource"
+								label="Custom resource"
+								bind:value={customResource}
+								supportingText="Lowercase letters, digits, and underscores only."
+							/>
+						{/if}
+					</div>
 				</div>
+
+				<div>
+					<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">Actions</span>
+					<div class="mt-2 flex gap-4">
+						<Checkbox name="actions" value="view" bind:checked={actionView} label="View" />
+						<Checkbox name="actions" value="manage" bind:checked={actionManage} label="Manage" />
+					</div>
+				</div>
+
 				<Button type="submit" variant="filled" class="w-fit">Grant</Button>
 			</form>
 		{:else}
@@ -108,7 +143,7 @@
 								<form method="POST" action="?/removeOrg" use:enhance>
 									<input type="hidden" name="orgId" value={membership.org_id} />
 									<IconButton type="submit" aria-label="Remove from {membership.org_name}">
-										<Icon name="close" size={16} />
+										<IconClose size={16} />
 									</IconButton>
 								</form>
 							{/if}
@@ -136,3 +171,12 @@
 		{/if}
 	</section>
 </BottomSheet>
+
+<style>
+	.m3-resource-row {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 8px 0;
+	}
+</style>

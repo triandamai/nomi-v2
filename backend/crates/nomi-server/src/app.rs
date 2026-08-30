@@ -89,6 +89,10 @@ pub fn build_router(state: AppState) -> Router {
             get(admin_users_routes::get_user_detail),
         )
         .route(
+            "/api/admin/users/:id/profile",
+            put(admin_users_routes::update_user_profile),
+        )
+        .route(
             "/api/admin/users/:id/permissions",
             post(admin_users_routes::grant_user_permission),
         )

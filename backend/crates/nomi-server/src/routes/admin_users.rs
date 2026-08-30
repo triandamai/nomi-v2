@@ -159,6 +159,8 @@ pub struct UserDetailResponse {
     pub id: Uuid,
     pub email: String,
     pub is_platform_admin: bool,
+    pub display_name: Option<String>,
+    pub username: Option<String>,
     pub permissions: Vec<nomi_auth::grants::PermissionGrant>,
     pub memberships: Vec<MembershipRow>,
 }
@@ -183,16 +185,21 @@ pub async fn get_user_detail(
 ) -> Result<Json<UserDetailResponse>, (StatusCode, &'static str)> {
     require_user_permission(&claims, "view")?;
 
-    let row: Option<(String, bool)> =
-        sqlx::query_as("SELECT wc.email, u.is_platform_admin FROM users u JOIN web_credentials wc ON wc.user_id = u.id WHERE u.id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "failed to load user");
-                (StatusCode::INTERNAL_SERVER_ERROR, "failed to load user")
-            })?;
-    let (email, is_platform_admin) = row.ok_or((StatusCode::NOT_FOUND, "user not found"))?;
+    let row: Option<(String, bool, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT wc.email, u.is_platform_admin, up.display_name, up.username \
+         FROM users u \
+         JOIN web_credentials wc ON wc.user_id = u.id \
+         LEFT JOIN user_profiles up ON up.user_id = u.id \
+         WHERE u.id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to load user");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load user")
+    })?;
+    let (email, is_platform_admin, display_name, username) = row.ok_or((StatusCode::NOT_FOUND, "user not found"))?;
 
     let permissions = list_grants_for_user(&state.pool, user_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load permissions");
@@ -203,7 +210,82 @@ pub async fn get_user_detail(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load memberships")
     })?;
 
-    Ok(Json(UserDetailResponse { id: user_id, email, is_platform_admin, permissions, memberships }))
+    Ok(Json(UserDetailResponse { id: user_id, email, is_platform_admin, display_name, username, permissions, memberships }))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateUserProfileRequest {
+    pub display_name: Option<String>,
+    pub username: Option<String>,
+}
+
+#[tracing::instrument(skip(state, claims, req))]
+pub async fn update_user_profile(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(user_id): Path<Uuid>,
+    Json(req): Json<UpdateUserProfileRequest>,
+) -> Result<Json<UserDetailResponse>, (StatusCode, String)> {
+    require_user_permission(&claims, "manage").map_err(|(status, msg)| (status, msg.to_string()))?;
+
+    if let Some(username) = &req.username {
+        if !username.is_empty() && !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "username may only contain letters, numbers, underscores, and periods".to_string(),
+            ));
+        }
+    }
+
+    sqlx::query(
+        "INSERT INTO user_profiles (user_id, display_name, username) VALUES ($1, $2, $3) \
+         ON CONFLICT (user_id) DO UPDATE SET \
+             display_name = COALESCE($2, user_profiles.display_name), \
+             username = COALESCE($3, user_profiles.username), \
+             updated_at = now()",
+    )
+    .bind(user_id)
+    .bind(req.display_name.as_deref().filter(|s| !s.is_empty()))
+    .bind(req.username.as_deref().filter(|s| !s.is_empty()))
+    .execute(&state.pool)
+    .await
+    .map_err(|e| {
+        if let Some(db_err) = e.as_database_error() {
+            if db_err.is_unique_violation() {
+                return (StatusCode::CONFLICT, "that username is already taken".to_string());
+            }
+        }
+        tracing::error!(error = %e, "failed to save user profile");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to save user profile".to_string())
+    })?;
+
+    let row: Option<(String, bool, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT wc.email, u.is_platform_admin, up.display_name, up.username \
+         FROM users u \
+         JOIN web_credentials wc ON wc.user_id = u.id \
+         LEFT JOIN user_profiles up ON up.user_id = u.id \
+         WHERE u.id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to reload user");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to reload user".to_string())
+    })?;
+    let (email, is_platform_admin, display_name, username) =
+        row.ok_or((StatusCode::NOT_FOUND, "user not found".to_string()))?;
+
+    let permissions = list_grants_for_user(&state.pool, user_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to load permissions");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load permissions".to_string())
+    })?;
+    let memberships = load_memberships(&state.pool, user_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to load memberships");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load memberships".to_string())
+    })?;
+
+    Ok(Json(UserDetailResponse { id: user_id, email, is_platform_admin, display_name, username, permissions, memberships }))
 }
 
 #[derive(Deserialize)]

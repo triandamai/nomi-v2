@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import Icon from './Icon.svelte';
 	import IconButton from './IconButton.svelte';
+	import IconChevronDown from '../icons/IconChevronDown.svelte';
+	import IconChevronLeft from '../icons/IconChevronLeft.svelte';
+	import IconChevronRight from '../icons/IconChevronRight.svelte';
+	import IconChevronUp from '../icons/IconChevronUp.svelte';
+	import IconSearch from '../icons/IconSearch.svelte';
 
 	let {
 		columns,
@@ -73,7 +77,7 @@
 <div class="m3-data-table-wrap {extraClass}">
 	{#if onSearch}
 		<div class="m3-data-table__search">
-			<Icon name="search" size={18} />
+			<IconSearch size={18} />
 			<input
 				type="text"
 				value={searchQuery}
@@ -96,7 +100,11 @@
 							<button type="button" class="m3-data-table__sort" onclick={() => handleSort(column)}>
 								{column.label}
 								{#if sortKey === column.key}
-									<Icon name={sortDirection === 'asc' ? 'chevron-up' : 'chevron-down'} size={14} />
+									{#if sortDirection === 'asc'}
+										<IconChevronUp size={14} />
+									{:else}
+										<IconChevronDown size={14} />
+									{/if}
 								{/if}
 							</button>
 						{:else}
@@ -115,10 +123,10 @@
 			<span class="m3-data-table__pagination-label">Page {page} of {totalPages}</span>
 			<div class="m3-data-table__pagination-controls">
 				<IconButton onclick={() => goToPage(page - 1)} disabled={page <= 1} aria-label="Previous page">
-					<Icon name="chevron-left" size={18} />
+					<IconChevronLeft size={18} />
 				</IconButton>
 				<IconButton onclick={() => goToPage(page + 1)} disabled={page >= totalPages} aria-label="Next page">
-					<Icon name="chevron-right" size={18} />
+					<IconChevronRight size={18} />
 				</IconButton>
 			</div>
 		</div>

@@ -179,6 +179,122 @@ async fn get_user_detail_returns_permissions_and_memberships(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn get_user_detail_has_null_profile_fields_when_none_set(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    let (status, body) = json_request(router, "GET", &format!("/api/admin/users/{target_id}"), Value::Null, Some(&admin_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["display_name"], Value::Null);
+    assert_eq!(body["username"], Value::Null);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_can_update_another_users_profile(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    let (status, body) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/admin/users/{target_id}/profile"),
+        json!({ "display_name": "Target User", "username": "target_user" }),
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["display_name"], "Target User");
+    assert_eq!(body["username"], "target_user");
+
+    let (status, body) = json_request(router, "GET", &format!("/api/admin/users/{target_id}"), Value::Null, Some(&admin_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["display_name"], "Target User");
+    assert_eq!(body["username"], "target_user");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn updating_profile_with_invalid_username_characters_returns_400(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/admin/users/{target_id}/profile"),
+        json!({ "display_name": null, "username": "not valid!" }),
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn updating_profile_to_a_taken_username_returns_409(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "alice@example.com").await;
+    register_via_api(router.clone(), "bob@example.com").await;
+    let alice_id = user_id_by_email(&pool, "alice@example.com").await;
+    let bob_id = user_id_by_email(&pool, "bob@example.com").await;
+
+    json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/admin/users/{alice_id}/profile"),
+        json!({ "display_name": null, "username": "taken_name" }),
+        Some(&admin_token),
+    )
+    .await;
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/admin/users/{bob_id}/profile"),
+        json!({ "display_name": null, "username": "taken_name" }),
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn view_only_staff_is_forbidden_from_updating_a_profile(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "staff@example.com").await;
+    let staff_id = user_id_by_email(&pool, "staff@example.com").await;
+
+    json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/admin/users/{staff_id}/permissions"),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "user", "actions": ["view"] }),
+        Some(&admin_token),
+    )
+    .await;
+    let staff_token = login_via_api(router.clone(), "staff@example.com").await;
+
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/admin/users/{target_id}/profile"),
+        json!({ "display_name": "Nope", "username": null }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn assigning_to_org_twice_updates_the_role_instead_of_erroring(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;

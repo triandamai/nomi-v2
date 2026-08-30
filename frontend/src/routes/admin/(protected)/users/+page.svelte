@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
-	import Button from '$lib/components/m3/Button.svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
+	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import IconMore from '$lib/components/icons/IconMore.svelte';
+	import Menu from '$lib/components/m3/Menu.svelte';
+	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -43,16 +46,25 @@
 	>
 		{#each data.users as user (user.id)}
 			<tr>
-				<td><a href="/admin/users/{user.id}" style="color: var(--md-sys-color-primary)">{user.email}</a></td>
+				<td>{user.email}</td>
 				<td>{user.is_staff ? 'Yes' : 'No'}</td>
 				<td>{user.org_count}</td>
 				<td>
-					{#if !user.is_staff}
-						<form method="POST" action="?/promote" use:enhance>
-							<input type="hidden" name="userId" value={user.id} />
-							<Button type="submit" variant="text">Promote to staff</Button>
-						</form>
-					{/if}
+					<Menu>
+						{#snippet trigger({ toggle })}
+							<IconButton onclick={toggle} aria-label="Actions for {user.email}">
+								<IconMore size={18} />
+							</IconButton>
+						{/snippet}
+						<MenuItem onclick={() => goto(`/admin/users/${user.id}/profile`)}>Update user</MenuItem>
+						<MenuItem onclick={() => goto(`/admin/users/${user.id}/role`)}>Update role</MenuItem>
+						{#if !user.is_staff}
+							<form method="POST" action="?/promote" use:enhance>
+								<input type="hidden" name="userId" value={user.id} />
+								<MenuItem type="submit">Promote to staff</MenuItem>
+							</form>
+						{/if}
+					</Menu>
 				</td>
 			</tr>
 		{/each}

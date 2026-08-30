@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Menu from './Menu.svelte';
 	import MenuItem from './MenuItem.svelte';
-	import Icon from './Icon.svelte';
+	import IconChevronDown from '../icons/IconChevronDown.svelte';
+	import IconChevronUp from '../icons/IconChevronUp.svelte';
 
 	let {
 		label,
@@ -32,7 +33,11 @@
 		{#snippet trigger({ toggle })}
 			<button type="button" class="m3-select__trigger" onclick={toggle} aria-haspopup="listbox" aria-expanded={open}>
 				<span>{selectedLabel}</span>
-				<Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} />
+				{#if open}
+					<IconChevronUp size={18} />
+				{:else}
+					<IconChevronDown size={18} />
+				{/if}
 			</button>
 		{/snippet}
 		{#each options as option (option.value)}

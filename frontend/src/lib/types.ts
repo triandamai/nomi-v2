@@ -115,6 +115,8 @@ export interface AdminUserDetail {
 	id: string;
 	email: string;
 	is_platform_admin: boolean;
+	display_name: string | null;
+	username: string | null;
 	permissions: PermissionGrant[];
 	memberships: MembershipRow[];
 }

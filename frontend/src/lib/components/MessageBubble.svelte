@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { deserialize } from '$app/forms';
-	import Icon from './m3/Icon.svelte';
+	import IconCheck from './icons/IconCheck.svelte';
+	import IconCopy from './icons/IconCopy.svelte';
+	import IconShare from './icons/IconShare.svelte';
+	import IconThumbDown from './icons/IconThumbDown.svelte';
+	import IconThumbUp from './icons/IconThumbUp.svelte';
 	import type { RenderedMessage } from '$lib/types';
 
 	let { message }: { message: RenderedMessage } = $props();
@@ -16,9 +20,10 @@
 		timeStyle: 'short',
 	});
 
-	// Hardcoded (not $lib/components/m3/Icon.svelte) because these get assigned via innerHTML to
-	// plain DOM buttons built in enhanceCodeBlocks below — that code runs against {@html}-injected
-	// markup, outside Svelte's own rendering, so it can't render a Svelte component into it.
+	// Hardcoded (not the $lib/components/icons/* components) because these get assigned via
+	// innerHTML to plain DOM buttons built in enhanceCodeBlocks below — that code runs against
+	// {@html}-injected markup, outside Svelte's own rendering, so it can't render a Svelte
+	// component into it.
 	const COPY_SVG =
 		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
 	const CHECK_SVG =
@@ -163,7 +168,11 @@
 			aria-label={messageCopied ? 'Copied' : 'Copy message'}
 			onclick={copyMessage}
 		>
-			<Icon name={messageCopied ? 'check' : 'copy'} size={16} />
+			{#if messageCopied}
+				<IconCheck size={16} />
+			{:else}
+				<IconCopy size={16} />
+			{/if}
 		</button>
 		<button
 			type="button"
@@ -171,7 +180,11 @@
 			aria-label={shareCopied ? 'Copied' : 'Share message'}
 			onclick={shareMessage}
 		>
-			<Icon name={shareCopied ? 'check' : 'share'} size={16} />
+			{#if shareCopied}
+				<IconCheck size={16} />
+			{:else}
+				<IconShare size={16} />
+			{/if}
 		</button>
 		{#if message.sender === 'assistant'}
 			<button
@@ -182,7 +195,7 @@
 				aria-pressed={feedback === 'up'}
 				onclick={() => setFeedback('up')}
 			>
-				<Icon name="thumb-up" size={16} />
+				<IconThumbUp size={16} />
 			</button>
 			<button
 				type="button"
@@ -192,7 +205,7 @@
 				aria-pressed={feedback === 'down'}
 				onclick={() => setFeedback('down')}
 			>
-				<Icon name="thumb-down" size={16} />
+				<IconThumbDown size={16} />
 			</button>
 		{/if}
 	</div>

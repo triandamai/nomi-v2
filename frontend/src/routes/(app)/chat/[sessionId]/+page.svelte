@@ -6,8 +6,9 @@
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import Icon from '$lib/components/m3/Icon.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import IconAgents from '$lib/components/icons/IconAgents.svelte';
+	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import List from '$lib/components/m3/List.svelte';
 	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
@@ -207,7 +208,7 @@
 			<Menu bind:open={modelMenuOpen}>
 				{#snippet trigger({ toggle })}
 					<IconButton onclick={toggle} aria-label="Model: {activeModelLabel}">
-						<Icon name="agents" size={18} />
+						<IconAgents size={18} />
 					</IconButton>
 				{/snippet}
 				<div class="w-full">
@@ -274,7 +275,7 @@
 			<Menu bind:open={personalityMenuOpen}>
 				{#snippet trigger({ toggle })}
 					<IconButton onclick={toggle} aria-label="Personality: {currentPersonalityLabel}">
-						<Icon name="person" size={18} />
+						<IconPerson size={18} />
 					</IconButton>
 				{/snippet}
 				<div class="w-full">

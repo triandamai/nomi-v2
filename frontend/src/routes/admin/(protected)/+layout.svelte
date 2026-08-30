@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import Icon from '$lib/components/m3/Icon.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import IconAgents from '$lib/components/icons/IconAgents.svelte';
+	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
+	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
+	import IconDashboard from '$lib/components/icons/IconDashboard.svelte';
+	import IconLogout from '$lib/components/icons/IconLogout.svelte';
+	import IconPerson from '$lib/components/icons/IconPerson.svelte';
+	import IconSettings from '$lib/components/icons/IconSettings.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import type { LayoutData } from './$types';
 
@@ -38,7 +44,11 @@
 				<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface)">Admin</h2>
 			{/if}
 			<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-				<Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
+				{#if collapsed}
+					<IconChevronRight />
+				{:else}
+					<IconChevronLeft />
+				{/if}
 			</IconButton>
 		</div>
 
@@ -46,21 +56,21 @@
 			{#if collapsed}
 				{#if data.canManageSystemConfig}
 					<IconButton href="/admin" aria-label="Dashboard">
-						<Icon name="dashboard" />
+						<IconDashboard />
 					</IconButton>
 					<IconButton href="/admin/settings/llm" aria-label="LLM Settings">
-						<Icon name="settings" />
+						<IconSettings />
 					</IconButton>
 					<IconButton href="/admin/settings/embedding" aria-label="Embedding Settings">
-						<Icon name="settings" />
+						<IconSettings />
 					</IconButton>
 					<IconButton href="/admin/agents" aria-label="Agents">
-						<Icon name="agents" />
+						<IconAgents />
 					</IconButton>
 				{/if}
 				{#if data.canViewUsers}
 					<IconButton href="/admin/users" aria-label="Users">
-						<Icon name="person" />
+						<IconPerson />
 					</IconButton>
 				{/if}
 			{:else}
@@ -79,7 +89,7 @@
 		<form method="POST" action="/logout?redirect_to=/login" class="mt-auto">
 			{#if collapsed}
 				<IconButton type="submit" style="color: var(--md-sys-color-outline)" aria-label="Log out">
-					<Icon name="logout" />
+					<IconLogout />
 				</IconButton>
 			{:else}
 				<button type="submit" class="m3-nav-link m3-nav-link--muted w-full text-left">Log out</button>

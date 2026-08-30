@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
 import type { AdminUserDetail, OrgOption } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -24,10 +25,16 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const scopeType = data.get('scopeType');
 		const orgId = data.get('orgId');
-		const resource = data.get('resource');
+		const resourceField = data.get('resource');
+		const customResource = data.get('customResource');
 		const actions = data.getAll('actions').filter((a): a is string => typeof a === 'string');
 
-		if (typeof scopeType !== 'string' || typeof resource !== 'string' || !resource) {
+		if (typeof scopeType !== 'string' || typeof resourceField !== 'string' || !resourceField) {
+			return fail(400, { error: 'Resource is required.' });
+		}
+		const resource =
+			resourceField === CUSTOM_PERMISSION_RESOURCE ? (typeof customResource === 'string' ? customResource : '') : resourceField;
+		if (!resource) {
 			return fail(400, { error: 'Resource is required.' });
 		}
 		if (actions.length === 0) {
