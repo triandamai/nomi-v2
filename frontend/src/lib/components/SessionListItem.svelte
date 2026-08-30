@@ -12,6 +12,19 @@
 		if (hours < 24) return `${hours}h`;
 		return `${Math.floor(hours / 24)}d`;
 	}
+
+	// A message that's entirely one fenced code block (the common "show me some code" reply)
+	// makes a useless, unreadable list preview — show what kind of content it is instead of
+	// dumping raw source. Anything that isn't wholly a single fence falls through unchanged.
+	function previewText(content: string | undefined | null): string {
+		if (!content) return 'New chat';
+		const fenceMatch = content.trim().match(/^```(\S*)\r?\n[\s\S]*?```$/);
+		if (fenceMatch) {
+			const lang = fenceMatch[1]?.trim();
+			return lang ? `${lang} code` : 'code';
+		}
+		return content;
+	}
 </script>
 
 <a href={`/chat/${session.id}`} class="m3-session-item">
@@ -25,7 +38,7 @@
 		{/if}
 	</span>
 	<span class="md-body-medium flex-1 truncate" style="color: var(--md-sys-color-on-surface)">
-		{session.last_message?.content ?? 'New chat'}
+		{previewText(session.last_message?.content)}
 	</span>
 	<span class="md-body-small shrink-0" style="color: var(--md-sys-color-outline)">{timeAgo(session.updated_at)}</span>
 </a>

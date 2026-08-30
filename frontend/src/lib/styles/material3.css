@@ -407,3 +407,34 @@ body {
 	color: var(--md-sys-color-on-surface);
 	font-family: var(--md-ref-typeface-plain);
 }
+
+/* ---- Scrollbars (M3 Expressive) ----
+   Applied globally via `*` so every scrollable container in the app (sidebar session list,
+   chat message list, code blocks, Menu/BottomSheet panels, DataTable) gets the same thin,
+   pill-shaped, token-colored thumb with no per-component styling needed. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background-color: var(--md-sys-color-outline-variant);
+	border-radius: var(--md-sys-shape-corner-full);
+	/* Transparent border + padding-box clip insets the visible thumb from the track edges,
+	   so it reads as a floating rounded pill rather than an edge-to-edge bar. */
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background-color: var(--md-sys-color-outline);
+}
