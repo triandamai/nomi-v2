@@ -110,7 +110,14 @@
 	}
 
 	.m3-bottom-sheet::backdrop {
-		background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+		background: color-mix(in srgb, var(--md-sys-color-scrim) 48%, transparent);
+		transition: background-color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+	}
+
+	@starting-style {
+		.m3-bottom-sheet::backdrop {
+			background-color: transparent;
+		}
 	}
 
 	.m3-bottom-sheet__panel {
