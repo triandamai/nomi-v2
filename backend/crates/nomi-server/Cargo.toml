@@ -19,6 +19,7 @@ nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
 nomi-turn = { path = "../nomi-turn" }
+nomi-storage = { path = "../nomi-storage" }
 axum = { version = "0.7", features = ["ws"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 tokio = { version = "1", features = ["full"] }
@@ -31,8 +32,6 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tower-http = { version = "0.7.0", features = ["trace"] }
 rumqttc = "0.25.1"
-aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1"
 thiserror = "1"
 
 [dev-dependencies]

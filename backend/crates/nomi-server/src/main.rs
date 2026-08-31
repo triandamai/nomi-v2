@@ -31,7 +31,7 @@ async fn main() {
 
     let http_client = reqwest::Client::new();
 
-    let s3 = nomi_server::s3::build_from_env().await;
+    let s3 = nomi_storage::build_from_env().await;
     if s3.is_some() {
         tracing::info!("S3 avatar storage configured");
     } else {

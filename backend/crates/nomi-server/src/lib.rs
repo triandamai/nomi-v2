@@ -2,7 +2,6 @@ pub mod app;
 pub mod bootstrap;
 pub mod delegation_worker;
 pub mod routes;
-pub mod s3;
 pub mod web_identity;
 pub mod worker;
 

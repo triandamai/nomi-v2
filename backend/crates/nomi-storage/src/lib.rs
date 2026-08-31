@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials, Region};
 use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 
 const PRESIGNED_UPLOAD_TTL: Duration = Duration::from_secs(300);
@@ -13,11 +14,11 @@ pub struct S3Config {
     public_url_base: String,
 }
 
-/// Avatar upload is optional infrastructure — a fresh install with no S3 credentials configured
-/// should boot and run everything else normally, not panic at startup. Returns `None` (not an
-/// error) whenever `S3_BUCKET` is unset; every other required var missing while `S3_BUCKET` IS
-/// set is treated as a real misconfiguration and does panic, since that means someone intended
-/// to enable this and got it wrong.
+/// Optional infrastructure — a fresh install with no S3 credentials configured should boot and
+/// run everything else normally, not panic at startup. Returns `None` (not an error) whenever
+/// `S3_BUCKET` is unset; every other required var missing while `S3_BUCKET` IS set is treated as
+/// a real misconfiguration and does panic, since that means someone intended to enable this and
+/// got it wrong.
 pub async fn build_from_env() -> Option<S3Config> {
     let bucket = std::env::var("S3_BUCKET").ok()?;
     let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
@@ -54,6 +55,20 @@ pub enum PresignError {
     Config(#[from] aws_sdk_s3::presigning::PresigningConfigError),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum S3Error {
+    #[error("failed to put object: {0}")]
+    Put(#[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError, aws_sdk_s3::config::http::HttpResponse>),
+    #[error("failed to get object: {0}")]
+    Get(#[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError, aws_sdk_s3::config::http::HttpResponse>),
+    #[error("failed to delete object: {0}")]
+    Delete(#[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError, aws_sdk_s3::config::http::HttpResponse>),
+    #[error("failed to read object body: {0}")]
+    Body(#[from] aws_sdk_s3::primitives::ByteStreamError),
+    #[error("object content was not valid utf-8: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
+}
+
 pub struct PresignedUpload {
     pub upload_url: String,
     pub public_url: String,
@@ -76,5 +91,44 @@ impl S3Config {
             upload_url: presigned.uri().to_string(),
             public_url: format!("{}/{key}", self.public_url_base.trim_end_matches('/')),
         })
+    }
+
+    /// Writes `content` directly from the server — for writers that already hold the bytes
+    /// in-process (an agent tool call, a browser-submitted body proxied through our own API),
+    /// as opposed to `presign_put`'s browser-uploads-directly-to-S3 shape.
+    pub async fn put_object(&self, key: &str, content: &str, content_type: &str) -> Result<(), S3Error> {
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .content_type(content_type)
+            .body(ByteStream::from(content.as_bytes().to_vec()))
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    /// `Ok(None)` when the object doesn't exist (S3's `NoSuchKey`) — callers that want "not
+    /// found" to be a normal, expected outcome rather than an error path get that for free.
+    pub async fn get_object(&self, key: &str) -> Result<Option<String>, S3Error> {
+        let result = self.client.get_object().bucket(&self.bucket).key(key).send().await;
+        let output = match result {
+            Ok(output) => output,
+            Err(err) => {
+                if let aws_sdk_s3::error::SdkError::ServiceError(service_err) = &err {
+                    if service_err.err().is_no_such_key() {
+                        return Ok(None);
+                    }
+                }
+                return Err(S3Error::Get(err));
+            }
+        };
+        let bytes = output.body.collect().await?.into_bytes();
+        Ok(Some(String::from_utf8(bytes.to_vec())?))
+    }
+
+    pub async fn delete_object(&self, key: &str) -> Result<(), S3Error> {
+        self.client.delete_object().bucket(&self.bucket).key(key).send().await?;
+        Ok(())
     }
 }

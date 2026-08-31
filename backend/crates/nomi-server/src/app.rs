@@ -11,7 +11,7 @@ use crate::routes::personality as personality_routes;
 use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
-use crate::s3::S3Config;
+use nomi_storage::S3Config;
 
 #[derive(Clone)]
 pub struct AppState {
