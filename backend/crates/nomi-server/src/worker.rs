@@ -16,7 +16,7 @@ const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
 /// `RUN_WORKER_INLINE` isn't set to `false`, a background task spawned by the main server
 /// binary (`src/main.rs`) — see that file for why embedding it there is opt-out rather than a
 /// separate always-required process for local/single-instance use.
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, s3: Option<nomi_storage::S3Config>) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -30,7 +30,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
     }
     tracing::info!("worker: listening for new turn jobs");
 
-    let registry = crate::build_agent_registry();
+    let registry = crate::build_agent_registry(s3);
 
     loop {
         // Wake on NOTIFY, or on the fallback interval if a NOTIFY is ever missed — either way,

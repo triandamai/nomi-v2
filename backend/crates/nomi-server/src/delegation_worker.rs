@@ -55,12 +55,21 @@ async fn fail_and_notify(pool: &PgPool, mqtt: &MqttPublisher, delegation_id: Uui
     let _ = mqtt.publish(session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id }).await;
 }
 
+/// Planning's delegation task is always formatted "Project <uuid>: ..." (see
+/// nomi-agent-planning's system prompt) — this is the only place that convention needs parsing,
+/// since it's just used to know which project to mark ready, a UI/status nicety. A malformed or
+/// missing UUID here is silently ignored, not an error: the project simply stays "building" and
+/// nothing about the delegation itself fails over a status cosmetic.
+fn extract_project_id(task: &str) -> Option<Uuid> {
+    task.strip_prefix("Project ")?.split_once(':').map(|(id, _)| id.trim()).and_then(|id| id.parse().ok())
+}
+
 /// Runs the delegation-processing worker loop forever: claims pending `agent_delegations` (via
 /// LISTEN/NOTIFY with a polling fallback, mirroring worker.rs's turn_jobs loop exactly), runs
 /// each through nomi_agent_core::run_agent_turn directly, phrases the result via the supervisor
 /// agent, and delivers it. Deliberately does NOT take the conversational session's advisory
 /// lock (see the design spec) — this must never block a user's live conversation.
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, s3: Option<nomi_storage::S3Config>) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -74,7 +83,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
     }
     tracing::info!("delegation worker: listening for new agent delegations");
 
-    let registry = crate::build_agent_registry();
+    let registry = crate::build_agent_registry(s3);
 
     loop {
         let _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, listener.recv()).await;
@@ -150,6 +159,15 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
                     .bind(&text)
                     .execute(&pool)
                     .await;
+
+                    if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE {
+                        if let Some(project_id) = extract_project_id(&claimed.task) {
+                            let _ = sqlx::query("UPDATE projects SET status = 'ready' WHERE id = $1 AND status = 'building'")
+                                .bind(project_id)
+                                .execute(&pool)
+                                .await;
+                        }
+                    }
 
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
