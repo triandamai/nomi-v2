@@ -8,6 +8,7 @@ use crate::routes::admin_users as admin_users_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::personality as personality_routes;
+use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
@@ -126,6 +127,14 @@ pub fn build_router(state: AppState) -> Router {
             "/api/preferences",
             get(profile_routes::get_preferences).put(profile_routes::put_preferences),
         )
+        .route("/api/projects", get(projects_routes::list_projects))
+        .route("/api/projects/:id", get(projects_routes::get_project))
+        .route(
+            "/api/projects/:id/files/*path",
+            get(projects_routes::get_project_file).put(projects_routes::put_project_file).delete(projects_routes::delete_project_file),
+        )
+        .route("/api/projects/:id/preview", get(projects_routes::preview_project_index))
+        .route("/api/projects/:id/preview/*path", get(projects_routes::preview_project_file))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
