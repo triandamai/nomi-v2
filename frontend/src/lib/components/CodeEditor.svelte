@@ -40,16 +40,6 @@
 		return () => view?.destroy();
 	});
 
-	// Re-create the document when the user switches files — CodeMirror owns the live text while
-	// editing one file, so this only fires on a genuine path change, not on every keystroke.
-	let currentPath = $state(path);
-	$effect(() => {
-		if (path !== currentPath) {
-			currentPath = path;
-			createEditor(path, value);
-		}
-	});
-
 	export function getContent(): string {
 		return view?.state.doc.toString() ?? value;
 	}

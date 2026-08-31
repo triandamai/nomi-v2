@@ -6,7 +6,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use nomi_agent_coding::{guess_content_type, s3_key};
+use nomi_agent_coding::{guess_content_type, s3_key, validate_path};
 use nomi_auth::extractor::AuthClaims;
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -102,6 +102,8 @@ pub async fn get_project_file(
     AuthClaims(claims): AuthClaims,
     Path((project_id, path)): Path<(Uuid, String)>,
 ) -> Result<Response, (StatusCode, String)> {
+    validate_path(&path).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
     if load_owned_project(&state.pool, project_id, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project".to_string())
@@ -134,6 +136,8 @@ pub async fn put_project_file(
     Path((project_id, path)): Path<(Uuid, String)>,
     Json(req): Json<PutFileRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    validate_path(&path).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
     if load_owned_project(&state.pool, project_id, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project".to_string())
@@ -175,6 +179,8 @@ pub async fn delete_project_file(
     AuthClaims(claims): AuthClaims,
     Path((project_id, path)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    validate_path(&path).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
     if load_owned_project(&state.pool, project_id, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project".to_string())

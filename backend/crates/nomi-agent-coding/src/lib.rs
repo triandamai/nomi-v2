@@ -25,6 +25,16 @@ pub fn s3_key(project_id: Uuid, path: &str) -> String {
     format!("projects/{project_id}/{path}")
 }
 
+/// Rejects paths that look like a filesystem traversal attempt or an absolute path. S3 object
+/// keys are opaque flat strings, so a `..` segment doesn't actually escape a project's prefix
+/// today — this is defense in depth, not a fix for an exploitable bug.
+pub fn validate_path(path: &str) -> Result<(), String> {
+    if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
+        return Err("invalid path".to_string());
+    }
+    Ok(())
+}
+
 /// Coarse content-type guess from a file extension — good enough for both the S3 object's
 /// Content-Type and the static preview route; not a full MIME database.
 pub fn guess_content_type(path: &str) -> &'static str {
@@ -168,6 +178,7 @@ impl CodingAgent {
         }
         let s3 = self.s3()?;
         let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+        validate_path(path)?;
         let content = input.get("content").and_then(|v| v.as_str()).ok_or("content is required")?;
         let content_type = guess_content_type(path);
 
@@ -201,6 +212,7 @@ impl CodingAgent {
         }
         let s3 = self.s3()?;
         let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+        validate_path(path)?;
 
         match s3.get_object(&s3_key(project_id, path)).await.map_err(|e| e.to_string())? {
             Some(content) => Ok(content),
@@ -215,6 +227,7 @@ impl CodingAgent {
         }
         let s3 = self.s3()?;
         let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+        validate_path(path)?;
 
         s3.delete_object(&s3_key(project_id, path)).await.map_err(|e| e.to_string())?;
         sqlx::query("DELETE FROM project_files WHERE project_id = $1 AND path = $2")
@@ -244,4 +257,28 @@ async fn list_files(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: V
         return Ok("no files yet".to_string());
     }
     Ok(paths.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_path_rejects_leading_slash() {
+        assert!(validate_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_path_rejects_dot_dot_segment() {
+        assert!(validate_path("../secret").is_err());
+        assert!(validate_path("a/../b").is_err());
+        assert!(validate_path("..").is_err());
+    }
+
+    #[test]
+    fn validate_path_accepts_normal_relative_paths() {
+        assert!(validate_path("src/index.html").is_ok());
+        assert!(validate_path("index.html").is_ok());
+        assert!(validate_path("a/b/c.js").is_ok());
+    }
 }

@@ -3,9 +3,9 @@
 	import CodeEditor from '$lib/components/CodeEditor.svelte';
 	import List from '$lib/components/m3/List.svelte';
 	import ListItem from '$lib/components/m3/ListItem.svelte';
-	import type { ActionData, PageData } from './$types';
+	import type { PageData } from './$types';
 
-	let { data, form }: { data: PageData; form: ActionData } = $props();
+	let { data }: { data: PageData } = $props();
 
 	let activePath = $state<string | null>(data.project.files[0]?.path ?? null);
 	let activeContent = $state('');
@@ -13,17 +13,13 @@
 	let view = $state<'code' | 'plan' | 'preview'>(data.project.plan ? 'plan' : 'code');
 
 	async function openFile(path: string) {
-		activePath = path;
 		view = 'code';
 		const body = new FormData();
 		body.set('path', path);
 		const response = await fetch('?/loadFile', { method: 'POST', body });
 		const result = deserialize(await response.text());
-		if (result.type === 'success' && typeof result.data?.content === 'string') {
-			activeContent = result.data.content;
-		} else {
-			activeContent = '';
-		}
+		activeContent = result.type === 'success' && typeof result.data?.content === 'string' ? result.data.content : '';
+		activePath = path;
 	}
 
 	async function saveFile(content: string) {
