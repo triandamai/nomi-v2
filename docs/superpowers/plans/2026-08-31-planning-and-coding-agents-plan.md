@@ -514,10 +514,14 @@ use uuid::Uuid;
 use nomi_agent_core::SubAgent;
 use nomi_agent_planning::PlanningAgent;
 
+// sessions has no user_id column (migration 0004_sessions.sql: org_id, channel, chat_id) — seed
+// an org first, matching nomi-agent-supervisor's tests/supervisor_agent.rs::seed_session.
 async fn seed_user_and_session(pool: &PgPool) -> (Uuid, Uuid) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
-    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (user_id) VALUES ($1) RETURNING id")
-        .bind(user_id)
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(org_id)
+        .bind(Uuid::new_v4().to_string())
         .fetch_one(pool)
         .await
         .unwrap();
@@ -939,8 +943,14 @@ use nomi_agent_core::SubAgent;
 
 async fn seed_project(pool: &PgPool) -> (Uuid, Uuid) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
-    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (user_id) VALUES ($1) RETURNING id")
-        .bind(user_id)
+    // sessions has no user_id column (migration 0004_sessions.sql: org_id, channel, chat_id) —
+    // seed an org first, matching nomi-agent-supervisor's tests/supervisor_agent.rs::seed_session.
+    // chat_id is randomized since (channel, chat_id) is unique and this helper may be called more
+    // than once per test.
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(org_id)
+        .bind(Uuid::new_v4().to_string())
         .fetch_one(pool)
         .await
         .unwrap();
@@ -1554,8 +1564,17 @@ async fn register_and_login(router: axum::Router, email: &str) -> String {
     body["access_token"].as_str().unwrap().to_string()
 }
 
+// sessions has no user_id column (migration 0004_sessions.sql: org_id, channel, chat_id) — seed
+// a fresh org per call so this works regardless of whether user_id came from registration (which
+// creates its own org) or a raw `INSERT INTO users DEFAULT VALUES`.
 async fn seed_project(pool: &PgPool, user_id: Uuid) -> Uuid {
-    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (user_id) VALUES ($1) RETURNING id").bind(user_id).fetch_one(pool).await.unwrap();
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(org_id)
+        .bind(Uuid::new_v4().to_string())
+        .fetch_one(pool)
+        .await
+        .unwrap();
     sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name, description, plan) VALUES ($1, $2, 'Todo app', 'a simple list', '1. index.html') RETURNING id")
         .bind(user_id)
         .bind(session_id)
@@ -1576,7 +1595,13 @@ async fn listing_projects_only_returns_the_caller_owns(pool: PgPool) {
     seed_project(&pool, user_id).await;
 
     let other_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
-    let other_session: Uuid = sqlx::query_scalar("INSERT INTO sessions (user_id) VALUES ($1) RETURNING id").bind(other_id).fetch_one(&pool).await.unwrap();
+    let other_org: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Other Org') RETURNING id").fetch_one(&pool).await.unwrap();
+    let other_session: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(other_org)
+        .bind(Uuid::new_v4().to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO projects (user_id, session_id, name) VALUES ($1, $2, 'Someone elses app')").bind(other_id).bind(other_session).execute(&pool).await.unwrap();
 
     let (status, body) = json_request(router, "GET", "/api/projects", Value::Null, Some(&token)).await;
