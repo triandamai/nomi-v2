@@ -1439,19 +1439,17 @@ pub async fn delete_project_file(
     Ok(StatusCode::OK)
 }
 
-#[tracing::instrument(skip(state, claims))]
-pub async fn preview_project_file(
-    State(state): State<AppState>,
-    AuthClaims(claims): AuthClaims,
-    Path((project_id, path)): Path<(Uuid, Option<String>)>,
-) -> Result<Response, (StatusCode, String)> {
-    if load_owned_project(&state.pool, project_id, claims.sub).await.map_err(|e| {
+/// Shared by both preview routes (Step 2) — one with just `:id` (defaults to `index.html`), one
+/// with `:id/*path`. axum's `Path` tuple extractor requires the capture count to match the route
+/// pattern exactly, so a single handler can't use `Path<(Uuid, Option<String>)>` to cover a route
+/// that has no second capture at all; two thin wrappers around this shared function is the fix.
+async fn render_preview(state: &AppState, user_id: Uuid, project_id: Uuid, path: String) -> Result<Response, (StatusCode, String)> {
+    if load_owned_project(&state.pool, project_id, user_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project".to_string())
     })?.is_none() {
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
-    let path = path.unwrap_or_else(|| "index.html".to_string());
 
     let Some(s3) = &state.s3 else {
         return Err((StatusCode::SERVICE_UNAVAILABLE, "code storage is not configured".to_string()));
@@ -1464,6 +1462,24 @@ pub async fn preview_project_file(
     let content = content.ok_or((StatusCode::NOT_FOUND, "file not found".to_string()))?;
 
     Ok(([(header::CONTENT_TYPE, guess_content_type(&path))], content).into_response())
+}
+
+#[tracing::instrument(skip(state, claims))]
+pub async fn preview_project_index(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+) -> Result<Response, (StatusCode, String)> {
+    render_preview(&state, claims.sub, project_id, "index.html".to_string()).await
+}
+
+#[tracing::instrument(skip(state, claims))]
+pub async fn preview_project_file(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((project_id, path)): Path<(Uuid, String)>,
+) -> Result<Response, (StatusCode, String)> {
+    render_preview(&state, claims.sub, project_id, path).await
 }
 ```
 
@@ -1487,11 +1503,11 @@ and these routes, placed after the `/api/preferences` route (the last one before
     "/api/projects/:id/files/*path",
     get(projects_routes::get_project_file).put(projects_routes::put_project_file).delete(projects_routes::delete_project_file),
 )
-.route("/api/projects/:id/preview", get(projects_routes::preview_project_file))
+.route("/api/projects/:id/preview", get(projects_routes::preview_project_index))
 .route("/api/projects/:id/preview/*path", get(projects_routes::preview_project_file))
 ```
 
-Note the two preview routes: axum's `:id/files/*path` wildcard requires a non-empty tail, so a bare `/preview` (no path — defaulting to `index.html`) needs its own route registered separately, both pointing at the same handler. `preview_project_file`'s `Path` extractor is `(Uuid, Option<String>)` to accept either.
+Note the two preview routes, and two handlers: axum's `*path` wildcard requires a non-empty tail, so a bare `/preview` (no path — defaulting to `index.html`) is a separate route with one fewer capture group, which needs its own `Path<Uuid>`-only extractor (`preview_project_index`) rather than trying to share one `Path<(Uuid, Option<String>)>` signature across routes with different capture counts.
 
 - [ ] **Step 3: Write the tests**
 
