@@ -2147,6 +2147,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-planning"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-storage",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-supervisor"
 version = "0.1.0"
 dependencies = [
