@@ -49,7 +49,7 @@ pub const CODING_AGENT_TYPE: &str = "coding";
 
 Registered in `build_agent_registry()` (`nomi-server/src/lib.rs`) alongside the existing four.
 
-**One real plumbing change, not just two lines:** `SubAgent::execute_tool` has no `S3Config` parameter today, and adding one to the trait would touch every existing agent (money, personality, chitchat, supervisor) for a capability only these two new agents need. Instead, `PlanningAgent`/`CodingAgent` hold their own `Option<S3Config>` at construction (`S3Config` is already `Clone`) — `build_agent_registry()` becomes `build_agent_registry(s3: Option<S3Config>) -> AgentRegistry`, and its two existing call sites, `worker::run` and `delegation_worker::run` (both already take explicit params like `pool`/`mqtt`/`settings_key` rather than a full `AppState` — see `nomi-server/src/worker.rs:19`, `delegation_worker.rs:63` — so this is one more parameter of the same shape, not a new plumbing pattern), gain an `s3: Option<S3Config>` parameter threaded from `main.rs`, which already builds this value for `AppState`.
+**One real plumbing change, not just two lines:** `SubAgent::execute_tool` has no `S3Config` parameter today, and adding one to the trait would touch every existing agent (money, personality, chitchat, supervisor) for a capability only these two new agents need. Instead, `PlanningAgent`/`CodingAgent` hold their own `Option<nomi_storage::S3Config>` at construction (`S3Config` is already `Clone`) — `build_agent_registry()` becomes `build_agent_registry(s3: Option<S3Config>) -> AgentRegistry`, and its two existing call sites, `worker::run` and `delegation_worker::run` (both already take explicit params like `pool`/`mqtt`/`settings_key` rather than a full `AppState` — see `nomi-server/src/worker.rs:19`, `delegation_worker.rs:63` — so this is one more parameter of the same shape, not a new plumbing pattern), gain an `s3: Option<S3Config>` parameter threaded from `main.rs`, which already builds this value for `AppState`. The standalone `bin/worker.rs` (a separate `main()` for running the turn worker as its own process) builds its own `S3Config` the same way `main.rs` does, for the same reason it already builds its own `pool`/`mqtt`/etc. independently.
 
 ### 2. Data model — file content lives in S3, Postgres holds metadata only
 
@@ -90,9 +90,11 @@ CREATE INDEX projects_session_id_idx ON projects (session_id);
 
 One plan per project, overwritten on each `write_plan` call — no revision history in v1 (YAGNI; add a `project_plan_revisions` table later if "show me what changed" is ever asked for).
 
-**This feature requires S3 to be configured** — unlike avatars, there's no meaningful degraded mode for "the coding agent can't store any files." §3 covers the exact failure path: `create_project` checks `state.s3.is_some()` up front and fails clearly (to the agent, which relays it to the user) rather than letting the feature partially work and break later on the first `write_file`.
+**This feature requires S3 to be configured** — unlike avatars, there's no meaningful degraded mode for "the coding agent can't store any files." §3 covers the exact failure path: `create_project` checks S3 availability up front and fails clearly (to the agent, which relays it to the user) rather than letting the feature partially work and break later on the first `write_file`.
 
-**`S3Config` gains three direct (non-presigned) methods** in `nomi-server/src/s3.rs`, alongside the existing `presign_put`:
+**`S3Config` moves out of `nomi-server` into a new leaf crate, `nomi-storage`.** It lives in `nomi-server/src/s3.rs` today because until now only `nomi-server`'s own route handlers used it. `nomi-agent-planning`/`nomi-agent-coding` now need it too, and agent crates sit *below* `nomi-server` in the dependency graph (`nomi-server` depends on every `nomi-agent-*` crate, never the reverse) — so `S3Config` has to live somewhere both sides can depend on without a cycle, the same way `nomi-llm`/`nomi-auth`/`nomi-settings`/`nomi-embedding` already do. `nomi-storage` has zero dependency on `nomi-server` or any agent crate; `nomi-server` depends on it (replacing its own `s3` module) and so do the two new agent crates. Existing call sites (`app.rs`, `main.rs`, `profile.rs`) change their import path only — behavior is unchanged.
+
+**`S3Config` gains three direct (non-presigned) methods**, alongside the existing `presign_put`:
 
 ```rust
 pub async fn put_object(&self, key: &str, content: &str, content_type: &str) -> Result<(), S3Error>;
