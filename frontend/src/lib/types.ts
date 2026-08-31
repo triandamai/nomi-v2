@@ -138,3 +138,27 @@ export type Theme = 'light' | 'dark' | 'system';
 export interface Preferences {
 	theme: Theme;
 }
+
+export interface ProjectSummary {
+	id: string;
+	name: string;
+	description: string | null;
+	status: 'planning' | 'building' | 'ready';
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ProjectFileSummary {
+	path: string;
+	content_type: string;
+	size_bytes: number;
+}
+
+export interface ProjectDetail {
+	id: string;
+	name: string;
+	description: string | null;
+	plan: string | null;
+	status: 'planning' | 'building' | 'ready';
+	files: ProjectFileSummary[];
+}

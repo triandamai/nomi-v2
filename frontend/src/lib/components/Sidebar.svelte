@@ -10,6 +10,7 @@
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
+	import IconAgents from '$lib/components/icons/IconAgents.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
@@ -74,6 +75,19 @@
 			<Button type="submit" variant="filled" class="w-full">+ New Chat</Button>
 		{/if}
 	</form>
+
+	<a
+		href="/projects"
+		class="mx-3 mt-2 flex items-center gap-2 rounded-full px-3 py-2"
+		class:justify-center={collapsed}
+		style="color: var(--md-sys-color-on-surface-variant); text-decoration: none;"
+	>
+		{#if collapsed}
+			<IconAgents size={20} />
+		{:else}
+			<span class="md-body-medium">Projects</span>
+		{/if}
+	</a>
 
 	{#if !collapsed}
 		<nav class="flex-1 space-y-1 overflow-y-auto px-3 py-3">

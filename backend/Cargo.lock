@@ -2100,6 +2100,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-coding"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-storage",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-core"
 version = "0.1.0"
 dependencies = [
@@ -2139,6 +2154,21 @@ dependencies = [
  "async-trait",
  "nomi-agent-core",
  "nomi-llm",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-agent-planning"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-storage",
  "nomi-test-support",
  "serde_json",
  "sqlx",
@@ -2232,22 +2262,23 @@ dependencies = [
 name = "nomi-server"
 version = "0.1.0"
 dependencies = [
- "aws-config",
- "aws-sdk-s3",
  "axum",
  "chrono",
  "futures-util",
  "http-body-util",
  "nomi-agent-chitchat",
+ "nomi-agent-coding",
  "nomi-agent-core",
  "nomi-agent-money",
  "nomi-agent-personality",
+ "nomi-agent-planning",
  "nomi-agent-supervisor",
  "nomi-auth",
  "nomi-embedding",
  "nomi-llm",
  "nomi-realtime",
  "nomi-settings",
+ "nomi-storage",
  "nomi-test-support",
  "nomi-turn",
  "reqwest",
@@ -2255,7 +2286,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",
  "tower 0.4.13",
@@ -2278,6 +2308,16 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "nomi-storage"
+version = "0.1.0"
+dependencies = [
+ "aws-config",
+ "aws-sdk-s3",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

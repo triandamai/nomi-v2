@@ -1,0 +1,12 @@
+[package]
+name = "nomi-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
