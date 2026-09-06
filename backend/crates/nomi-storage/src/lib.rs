@@ -132,3 +132,121 @@ impl S3Config {
         Ok(())
     }
 }
+
+/// Project file storage backed by the server's local disk — always available (no credentials, no
+/// bucket, nothing to misconfigure), unlike S3Config above which stays reserved for avatar
+/// uploads. Rooted at `PROJECT_FILES_DIR` (default `./data/projects`), created on first write.
+#[derive(Clone)]
+pub struct LocalFsStore {
+    root: std::path::PathBuf,
+}
+
+pub fn build_local_fs_store() -> LocalFsStore {
+    let root = std::env::var("PROJECT_FILES_DIR").unwrap_or_else(|_| "./data/projects".to_string());
+    LocalFsStore::at(root)
+}
+
+impl LocalFsStore {
+    /// Explicit-root constructor — used by build_local_fs_store above and by other crates' tests
+    /// that need an isolated temp directory rather than the env-var-driven default.
+    pub fn at(root: impl Into<std::path::PathBuf>) -> Self {
+        LocalFsStore { root: root.into() }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LocalFsError {
+    #[error("filesystem error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("file content was not valid utf-8: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
+}
+
+impl LocalFsStore {
+    /// `key` is a relative path (e.g. `{project_id}/src/index.html`) — the caller owns building
+    /// it and validating it, same division of responsibility as S3Config above.
+    pub async fn put_object(&self, key: &str, content: &str, _content_type: &str) -> Result<(), LocalFsError> {
+        let path = self.root.join(key);
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&path, content.as_bytes()).await?;
+        Ok(())
+    }
+
+    /// `Ok(None)` when the file doesn't exist — mirrors S3Config::get_object's NoSuchKey handling
+    /// so callers written against either backend don't need to care which one is active.
+    pub async fn get_object(&self, key: &str) -> Result<Option<String>, LocalFsError> {
+        let path = self.root.join(key);
+        match tokio::fs::read(&path).await {
+            Ok(bytes) => Ok(Some(String::from_utf8(bytes)?)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub async fn delete_object(&self, key: &str) -> Result<(), LocalFsError> {
+        let path = self.root.join(key);
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Deletes an entire directory under root (e.g. a whole project's files at once, keyed by
+    /// project id) — the bulk counterpart to delete_object, for callers deleting the owning
+    /// record rather than one file within it.
+    pub async fn delete_prefix(&self, prefix: &str) -> Result<(), LocalFsError> {
+        let path = self.root.join(prefix);
+        match tokio::fs::remove_dir_all(&path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod local_fs_tests {
+    use super::*;
+
+    fn store_in(dir: &std::path::Path) -> LocalFsStore {
+        LocalFsStore::at(dir)
+    }
+
+    #[tokio::test]
+    async fn round_trips_a_file() {
+        let dir = tempfile_dir();
+        let store = store_in(&dir);
+        store.put_object("proj/index.html", "<h1>hi</h1>", "text/html").await.unwrap();
+        assert_eq!(store.get_object("proj/index.html").await.unwrap(), Some("<h1>hi</h1>".to_string()));
+    }
+
+    #[tokio::test]
+    async fn missing_file_is_none_not_error() {
+        let dir = tempfile_dir();
+        let store = store_in(&dir);
+        assert_eq!(store.get_object("proj/nope.html").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn delete_is_idempotent() {
+        let dir = tempfile_dir();
+        let store = store_in(&dir);
+        store.put_object("proj/a.txt", "x", "text/plain").await.unwrap();
+        store.delete_object("proj/a.txt").await.unwrap();
+        store.delete_object("proj/a.txt").await.unwrap();
+        assert_eq!(store.get_object("proj/a.txt").await.unwrap(), None);
+    }
+
+    fn tempfile_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("nomi-storage-test-{}", uuid_like()));
+        dir
+    }
+
+    fn uuid_like() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        format!("{}-{:?}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(), std::thread::current().id())
+    }
+}

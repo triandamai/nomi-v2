@@ -28,6 +28,7 @@
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
+		document.documentElement.dataset.color = data.preferences.accent_color;
 	});
 </script>
 

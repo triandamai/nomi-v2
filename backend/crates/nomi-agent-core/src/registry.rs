@@ -36,10 +36,23 @@ impl AgentRegistry {
     }
 
     /// Finds the agent whose `intent_label()` matches, ignoring case/whitespace (matching
-    /// how the classifier's raw LLM text response is normalized before lookup).
+    /// how the classifier's raw LLM text response is normalized before lookup). Despite the
+    /// classifier prompt asking for exactly one word, some models don't reliably comply —
+    /// a trailing period, a quoted label, or a whole sentence ("This is about planning.")
+    /// would otherwise fail an exact-string match and silently misroute to the default agent
+    /// with no visible error. Falling back to a whole-word search inside the response is far
+    /// cheaper than that failure mode: exact match is tried first (the common, well-behaved
+    /// case), then each whitespace/punctuation-separated token is checked for an exact match
+    /// against a registered label.
     pub fn find_by_intent_label(&self, label: &str) -> Option<&dyn SubAgent> {
         let normalized = label.trim().to_lowercase();
-        self.agents.iter().find(|a| a.intent_label() == normalized).map(|a| a.as_ref())
+        if let Some(agent) = self.agents.iter().find(|a| a.intent_label() == normalized) {
+            return Some(agent.as_ref());
+        }
+        self.agents
+            .iter()
+            .find(|a| normalized.split(|c: char| !c.is_alphanumeric()).any(|word| word == a.intent_label()))
+            .map(|a| a.as_ref())
     }
 
     /// Builds the classifier's prompt from every non-default registered agent's
@@ -62,13 +75,10 @@ impl AgentRegistry {
             .map(|a| a.intent_label())
             .collect();
 
-        format!(
-            "Classify the user's message as exactly one of: {}, or \"{}\" if none of the specific \
-             categories apply. Reply with only that single word, nothing else.\n\nCategories:\n{}",
-            labels.join(", "),
-            self.default_agent().intent_label(),
-            options.join("\n"),
-        )
+        crate::prompts::INTENT_CLASSIFICATION_PROMPT_TEMPLATE
+            .replace("{labels}", &labels.join(", "))
+            .replace("{default_label}", self.default_agent().intent_label())
+            .replace("{options}", &options.join("\n"))
     }
 
     /// agent_type() of every non-default, delegation-eligible agent other than `excluding` —

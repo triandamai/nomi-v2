@@ -3,6 +3,7 @@ pub mod engine;
 pub mod error;
 pub mod memory;
 pub mod personality;
+pub mod prompts;
 pub mod registry;
 pub mod subagent;
 

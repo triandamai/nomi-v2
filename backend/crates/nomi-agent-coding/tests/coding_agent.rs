@@ -3,6 +3,13 @@ use uuid::Uuid;
 
 use nomi_agent_coding::{guess_content_type, CodingAgent};
 use nomi_agent_core::SubAgent;
+use nomi_storage::LocalFsStore;
+
+/// A fresh, isolated temp directory per test so concurrently-running tests never share files.
+fn test_storage() -> LocalFsStore {
+    let dir = std::env::temp_dir().join(format!("nomi-agent-coding-test-{}", Uuid::new_v4()));
+    LocalFsStore::at(dir)
+}
 
 async fn seed_project(pool: &PgPool) -> (Uuid, Uuid) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
@@ -38,12 +45,12 @@ fn guess_content_type_covers_common_extensions() {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn write_file_without_s3_configured_returns_an_error(pool: PgPool) {
+async fn write_file_then_read_file_round_trips(pool: PgPool) {
     let (user_id, project_id) = seed_project(&pool).await;
-    let agent = CodingAgent::new(None);
+    let agent = CodingAgent::new(test_storage());
     let mut conn = pool.acquire().await.unwrap();
 
-    let result = agent
+    let write_result = agent
         .execute_tool(
             &mut conn,
             Uuid::new_v4(),
@@ -53,14 +60,27 @@ async fn write_file_without_s3_configured_returns_an_error(pool: PgPool) {
             serde_json::json!({"project_id": project_id.to_string(), "path": "index.html", "content": "<h1>hi</h1>"}),
         )
         .await;
-    assert!(result.is_err());
+    assert!(write_result.is_ok());
+
+    let read_result = agent
+        .execute_tool(
+            &mut conn,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            user_id,
+            "read_file",
+            serde_json::json!({"project_id": project_id.to_string(), "path": "index.html"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read_result, "<h1>hi</h1>");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn write_file_for_a_project_you_do_not_own_is_rejected(pool: PgPool) {
     let (_owner_id, project_id) = seed_project(&pool).await;
     let other_user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
-    let agent = CodingAgent::new(None);
+    let agent = CodingAgent::new(test_storage());
     let mut conn = pool.acquire().await.unwrap();
 
     let result = agent
@@ -80,7 +100,7 @@ async fn write_file_for_a_project_you_do_not_own_is_rejected(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn list_files_on_an_empty_project_says_so(pool: PgPool) {
     let (user_id, project_id) = seed_project(&pool).await;
-    let agent = CodingAgent::new(None);
+    let agent = CodingAgent::new(test_storage());
     let mut conn = pool.acquire().await.unwrap();
 
     let result = agent
@@ -93,7 +113,7 @@ async fn list_files_on_an_empty_project_says_so(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn unknown_tool_name_returns_an_error(pool: PgPool) {
     let (user_id, project_id) = seed_project(&pool).await;
-    let agent = CodingAgent::new(None);
+    let agent = CodingAgent::new(test_storage());
     let mut conn = pool.acquire().await.unwrap();
     let result = agent
         .execute_tool(&mut conn, Uuid::new_v4(), Uuid::new_v4(), user_id, "run_shell", serde_json::json!({"project_id": project_id.to_string()}))

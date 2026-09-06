@@ -32,7 +32,7 @@ async fn main() {
     let mqtt_client_id = format!("nomi-worker-{}", uuid::Uuid::new_v4());
     let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
-    let s3 = nomi_storage::build_from_env().await;
+    let project_storage = nomi_storage::build_local_fs_store();
 
-    nomi_server::worker::run(pool, mqtt, settings_key, http_client, database_url, s3).await;
+    nomi_server::worker::run(pool, mqtt, settings_key, http_client, database_url, project_storage).await;
 }

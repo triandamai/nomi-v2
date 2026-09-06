@@ -18,6 +18,7 @@ fn test_state(pool: PgPool) -> AppState {
         mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
         mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
         s3: None,
+        project_storage: nomi_test_support::test_project_storage(),
     }
 }
 
@@ -473,4 +474,84 @@ async fn feedback_on_a_nonexistent_message_returns_not_found(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn delete_session_removes_it_and_its_messages(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "erin@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "hello"}), Some(&token)).await;
+
+    let (status, _) = json_request(router.clone(), "DELETE", &format!("/api/sessions/{session_id}"), Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, list_body) = json_request(router, "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    assert_eq!(list_body["sessions"].as_array().unwrap().len(), 0);
+
+    let remaining_messages: i64 = sqlx::query_scalar("SELECT count(*) FROM messages WHERE session_id = $1")
+        .bind(Uuid::parse_str(&session_id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining_messages, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn deleting_another_orgs_session_is_not_found(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token_a = register_and_login(router.clone(), "frank@example.com").await;
+    let token_b = register_and_login(router.clone(), "grace@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token_a)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+
+    let (status, _) = json_request(router, "DELETE", &format!("/api/sessions/{session_id}"), Value::Null, Some(&token_b)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn delete_session_cascades_its_project_and_disk_files(pool: PgPool) {
+    let storage = nomi_test_support::test_project_storage();
+    let router = build_router(AppState {
+        pool: pool.clone(),
+        jwt_secret: SECRET.to_string(),
+        http_client: reqwest::Client::new(),
+        settings_key: nomi_test_support::TEST_SETTINGS_KEY,
+        mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
+        mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
+        s3: None,
+        project_storage: storage.clone(),
+    });
+    let token = register_and_login(router.clone(), "heidi@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'heidi@example.com'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let project_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO projects (user_id, session_id, name) VALUES ($1, $2, 'Test app') RETURNING id",
+    )
+    .bind(user_id)
+    .bind(Uuid::parse_str(&session_id).unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    storage.put_object(&format!("{project_id}/index.html"), "<h1>hi</h1>", "text/html").await.unwrap();
+
+    let (status, _) = json_request(router, "DELETE", &format!("/api/sessions/{session_id}"), Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let remaining_projects: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining_projects, 0);
+    assert_eq!(storage.get_object(&format!("{project_id}/index.html")).await.unwrap(), None);
 }

@@ -3,9 +3,11 @@ export interface SessionSummary {
 	channel: string;
 	chat_type: string;
 	chat_id: string;
+	title: string | null;
 	last_message: { content: string; created_at: string } | null;
 	agent_active: boolean;
 	updated_at: string;
+	project_id: string | null;
 }
 
 export interface MessageItem {
@@ -134,13 +136,16 @@ export interface Profile {
 }
 
 export type Theme = 'light' | 'dark' | 'system';
+export type AccentColor = 'green' | 'blue' | 'purple' | 'pink' | 'orange' | 'teal';
 
 export interface Preferences {
 	theme: Theme;
+	accent_color: AccentColor;
 }
 
 export interface ProjectSummary {
 	id: string;
+	session_id: string;
 	name: string;
 	description: string | null;
 	status: 'planning' | 'building' | 'ready';

@@ -6,5 +6,7 @@ edition = "2021"
 [dependencies]
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
+nomi-storage = { path = "../nomi-storage" }
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }

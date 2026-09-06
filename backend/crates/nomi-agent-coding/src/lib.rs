@@ -4,30 +4,34 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
+use nomi_agent_core::prompts::CODING_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
-use nomi_storage::S3Config;
+use nomi_storage::LocalFsStore;
 
 pub const CODING_AGENT_TYPE: &str = "coding";
 
-const CODING_SYSTEM_PROMPT: &str =
-    "You write real files for a project the user asked to have built, following the plan you \
-     were given. The task you were delegated includes a line like 'Project <uuid>: ...' — use \
-     that UUID as project_id in every tool call. Use write_file to create or overwrite files, \
-     read_file to check existing content before editing it, list_files to see what's there \
-     already, and delete_file to remove something you no longer need. Use relative paths with no \
-     leading slash (e.g. 'index.html', 'src/app.js'). When you've finished building everything \
-     the plan calls for, call complete_task with a short summary of what you built.";
-
-/// The S3 key every file for a project lives at — shared with nomi-server's HTTP routes so both
-/// sides agree on where content is, without either duplicating the format string.
-pub fn s3_key(project_id: Uuid, path: &str) -> String {
-    format!("projects/{project_id}/{path}")
+/// The local-disk key every file for a project lives at — shared with nomi-server's HTTP routes
+/// so both sides agree on where content is, without either duplicating the format string.
+pub fn project_file_key(project_id: Uuid, path: &str) -> String {
+    format!("{project_id}/{path}")
 }
 
-/// Rejects paths that look like a filesystem traversal attempt or an absolute path. S3 object
-/// keys are opaque flat strings, so a `..` segment doesn't actually escape a project's prefix
-/// today — this is defense in depth, not a fix for an exploitable bug.
+/// Checks whether `task` starts with the "Project <uuid>: ..." prefix CODING_SYSTEM_PROMPT
+/// requires — used by validate_delegation_task to reject a delegation before it's created,
+/// rather than let this agent hallucinate a project_id when the planning agent skipped
+/// create_project/write_plan and delegated without ever making a project (a real failure mode:
+/// the model doesn't always follow the create-then-delegate sequence its own prompt asks for).
+fn has_project_prefix(task: &str) -> bool {
+    task.strip_prefix("Project ")
+        .and_then(|rest| rest.split_once(':'))
+        .map(|(id, _)| id.trim().parse::<Uuid>().is_ok())
+        .unwrap_or(false)
+}
+
+/// Rejects paths that look like a filesystem traversal attempt or an absolute path — this one
+/// actually matters now that keys resolve to real filesystem paths under LocalFsStore's root,
+/// unlike the old S3 keys, which were opaque flat strings a `..` segment couldn't escape.
 pub fn validate_path(path: &str) -> Result<(), String> {
     if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
         return Err("invalid path".to_string());
@@ -50,16 +54,12 @@ pub fn guess_content_type(path: &str) -> &'static str {
 }
 
 pub struct CodingAgent {
-    s3: Option<S3Config>,
+    storage: LocalFsStore,
 }
 
 impl CodingAgent {
-    pub fn new(s3: Option<S3Config>) -> Self {
-        Self { s3 }
-    }
-
-    fn s3(&self) -> Result<&S3Config, String> {
-        self.s3.as_ref().ok_or_else(|| "code storage isn't configured".to_string())
+    pub fn new(storage: LocalFsStore) -> Self {
+        Self { storage }
     }
 }
 
@@ -149,6 +149,23 @@ impl SubAgent for CodingAgent {
     fn intent_description(&self) -> &'static str {
         "writing or editing code for a project — not reachable directly, only via delegation from planning"
     }
+
+    fn surfaces_activity(&self) -> bool {
+        true
+    }
+
+    fn validate_delegation_task(&self, task: &str) -> Result<(), String> {
+        if has_project_prefix(task) {
+            Ok(())
+        } else {
+            Err(
+                "This task has no 'Project <uuid>: ...' prefix, so there's no project to write \
+                 files into. Call create_project (and write_plan) first, then delegate again \
+                 with a task formatted exactly as 'Project <the real project id>: <summary>'."
+                    .to_string(),
+            )
+        }
+    }
 }
 
 fn parse_project_id(input: &Value) -> Result<Uuid, String> {
@@ -176,13 +193,12 @@ impl CodingAgent {
         if !owns_project(conn, project_id, user_id).await? {
             return Err("project not found".to_string());
         }
-        let s3 = self.s3()?;
         let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
         validate_path(path)?;
         let content = input.get("content").and_then(|v| v.as_str()).ok_or("content is required")?;
         let content_type = guess_content_type(path);
 
-        s3.put_object(&s3_key(project_id, path), content, content_type).await.map_err(|e| e.to_string())?;
+        self.storage.put_object(&project_file_key(project_id, path), content, content_type).await.map_err(|e| e.to_string())?;
 
         sqlx::query(
             "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
@@ -210,11 +226,10 @@ impl CodingAgent {
         if !owns_project(conn, project_id, user_id).await? {
             return Err("project not found".to_string());
         }
-        let s3 = self.s3()?;
         let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
         validate_path(path)?;
 
-        match s3.get_object(&s3_key(project_id, path)).await.map_err(|e| e.to_string())? {
+        match self.storage.get_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())? {
             Some(content) => Ok(content),
             None => Ok("file not found".to_string()),
         }
@@ -225,11 +240,10 @@ impl CodingAgent {
         if !owns_project(conn, project_id, user_id).await? {
             return Err("project not found".to_string());
         }
-        let s3 = self.s3()?;
         let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
         validate_path(path)?;
 
-        s3.delete_object(&s3_key(project_id, path)).await.map_err(|e| e.to_string())?;
+        self.storage.delete_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())?;
         sqlx::query("DELETE FROM project_files WHERE project_id = $1 AND path = $2")
             .bind(project_id)
             .bind(path)
@@ -280,5 +294,25 @@ mod tests {
         assert!(validate_path("src/index.html").is_ok());
         assert!(validate_path("index.html").is_ok());
         assert!(validate_path("a/b/c.js").is_ok());
+    }
+
+    #[test]
+    fn rejects_a_delegation_task_with_no_project_prefix() {
+        let agent = CodingAgent::new(nomi_storage::LocalFsStore::at(std::env::temp_dir()));
+        let result = agent.validate_delegation_task("Build an advanced calculator app with trig functions.");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_a_delegation_task_with_a_malformed_project_id() {
+        let agent = CodingAgent::new(nomi_storage::LocalFsStore::at(std::env::temp_dir()));
+        assert!(agent.validate_delegation_task("Project not-a-real-uuid: build it").is_err());
+    }
+
+    #[test]
+    fn accepts_a_delegation_task_with_a_real_project_prefix() {
+        let agent = CodingAgent::new(nomi_storage::LocalFsStore::at(std::env::temp_dir()));
+        let task = format!("Project {}: build a calculator", Uuid::new_v4());
+        assert!(agent.validate_delegation_task(&task).is_ok());
     }
 }

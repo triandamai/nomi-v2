@@ -69,7 +69,7 @@ fn extract_project_id(task: &str) -> Option<Uuid> {
 /// each through nomi_agent_core::run_agent_turn directly, phrases the result via the supervisor
 /// agent, and delivers it. Deliberately does NOT take the conversational session's advisory
 /// lock (see the design spec) — this must never block a user's live conversation.
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, s3: Option<nomi_storage::S3Config>) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -83,7 +83,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
     }
     tracing::info!("delegation worker: listening for new agent delegations");
 
-    let registry = crate::build_agent_registry(s3);
+    let registry = crate::build_agent_registry(project_storage);
 
     loop {
         let _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, listener.recv()).await;
@@ -116,11 +116,29 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
                 }
             };
 
+            let started_message = nomi_agent_supervisor::phrase_delegation_started(
+                provider.as_ref(),
+                &mut conn,
+                claimed.user_id,
+                &claimed.target_agent_type,
+                &claimed.task,
+            )
+            .await
+            .unwrap_or_else(|_| format!("Working on it with the {} agent — I'll update you here.", claimed.target_agent_type));
+
+            let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+                .bind(claimed.session_id)
+                .bind(&started_message)
+                .execute(&mut *conn)
+                .await;
+
+            let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
+
             let messages = vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: claimed.task.clone() }] }];
 
             let outcome = nomi_agent_core::run_agent_turn(
                 &mut conn,
-                None,
+                Some((&mqtt, claimed.id)),
                 provider.as_ref(),
                 embedding_provider.as_ref(),
                 &registry,

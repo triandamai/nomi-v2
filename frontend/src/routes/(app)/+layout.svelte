@@ -7,11 +7,12 @@
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
+		document.documentElement.dataset.color = data.preferences.accent_color;
 	});
 </script>
 
 <div class="flex h-screen" style="background: var(--md-sys-color-surface)">
-	<Sidebar sessions={data.sessions} userEmail={data.userEmail} profile={data.profile} />
+	<Sidebar userEmail={data.userEmail} profile={data.profile} />
 	<main class="flex-1 overflow-hidden">
 		{@render children()}
 	</main>

@@ -6,12 +6,15 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use nomi_agent_coding::{guess_content_type, s3_key, validate_path};
+use crate::web_identity::ensure_web_channel_identity;
+use nomi_agent_coding::{guess_content_type, project_file_key, validate_path};
 use nomi_auth::extractor::AuthClaims;
+use nomi_turn::bootstrap::bootstrap_identity_and_session;
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct ProjectSummary {
     pub id: Uuid,
+    pub session_id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub status: String,
@@ -25,7 +28,7 @@ pub async fn list_projects(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<Vec<ProjectSummary>>, (StatusCode, &'static str)> {
     let projects: Vec<ProjectSummary> = sqlx::query_as(
-        "SELECT id, name, description, status, created_at, updated_at FROM projects \
+        "SELECT id, session_id, name, description, status, created_at, updated_at FROM projects \
          WHERE user_id = $1 ORDER BY created_at DESC",
     )
     .bind(claims.sub)
@@ -37,6 +40,62 @@ pub async fn list_projects(
     })?;
 
     Ok(Json(projects))
+}
+
+#[derive(Serialize)]
+pub struct CreateProjectSessionResponse {
+    pub session_id: Uuid,
+    pub project_id: Uuid,
+}
+
+/// The "+ Add new project" entry point: creates the project row *before* any conversation
+/// happens, in the same request that creates the chat session, rather than waiting on the
+/// planning agent to remember to call its own create_project tool mid-conversation. That
+/// dependency was unreliable in practice (see the delegation-guardrail fix) — a session could
+/// end up looking like a plain chat, with no project, even after the user explicitly asked to
+/// start one from this button. Placeholder-named "New project"; the planning agent's
+/// create_project renames this same row once it knows what's actually being built, rather than
+/// inserting a second one (see create_project in nomi-agent-planning).
+#[tracing::instrument(skip(state, claims))]
+pub async fn create_project_session(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+) -> Result<(StatusCode, Json<CreateProjectSessionResponse>), (StatusCode, &'static str)> {
+    ensure_web_channel_identity(&state.pool, claims.sub).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to resolve web identity");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create project")
+    })?;
+
+    let chat_id = Uuid::new_v4().to_string();
+    let bootstrap_result = bootstrap_identity_and_session(
+        &state.pool,
+        "web",
+        "dm",
+        &chat_id,
+        &claims.sub.to_string(),
+        Some(claims.active_org_id),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to create session");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create project")
+    })?;
+
+    let project_id: Uuid =
+        sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name) VALUES ($1, $2, 'New project') RETURNING id")
+            .bind(claims.sub)
+            .bind(bootstrap_result.session_id)
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "failed to create project row");
+                (StatusCode::INTERNAL_SERVER_ERROR, "failed to create project")
+            })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateProjectSessionResponse { session_id: bootstrap_result.session_id, project_id }),
+    ))
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -96,6 +155,53 @@ pub async fn get_project(
     Ok(Json(ProjectDetailResponse { id: project_id, name, description, plan, status, files }))
 }
 
+async fn load_owned_project_by_session(
+    pool: &sqlx::PgPool,
+    session_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<(Uuid, String, Option<String>, Option<String>, String)>, sqlx::Error> {
+    // A session can accumulate more than one project if the user asks to build multiple things
+    // in the same chat over time — most recent wins, so the workspace page always matches what
+    // the conversation most recently started building.
+    sqlx::query_as(
+        "SELECT id, name, description, plan, status FROM projects \
+         WHERE session_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// The project workspace page is keyed by session_id (a chat session may or may not have a
+/// project attached yet) — this is how it finds out. A 404 here is a normal, expected state
+/// (the user hasn't described anything to build yet), not an error.
+#[tracing::instrument(skip(state, claims))]
+pub async fn get_project_by_session(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<ProjectDetailResponse>, (StatusCode, &'static str)> {
+    let row = load_owned_project_by_session(&state.pool, session_id, claims.sub).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to load project by session");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
+    })?;
+    let (project_id, name, description, plan, status) = row.ok_or((StatusCode::NOT_FOUND, "no project for this session"))?;
+
+    let files: Vec<ProjectFileSummary> = sqlx::query_as(
+        "SELECT path, content_type, size_bytes FROM project_files WHERE project_id = $1 ORDER BY path",
+    )
+    .bind(project_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to list project files");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
+    })?;
+
+    Ok(Json(ProjectDetailResponse { id: project_id, name, description, plan, status, files }))
+}
+
 #[tracing::instrument(skip(state, claims))]
 pub async fn get_project_file(
     State(state): State<AppState>,
@@ -111,11 +217,7 @@ pub async fn get_project_file(
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let Some(s3) = &state.s3 else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "code storage is not configured".to_string()));
-    };
-
-    let content = s3.get_object(&s3_key(project_id, &path)).await.map_err(|e| {
+    let content = state.project_storage.get_object(&project_file_key(project_id, &path)).await.map_err(|e| {
         tracing::error!(error = %e, "failed to read project file");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to read file".to_string())
     })?;
@@ -145,12 +247,8 @@ pub async fn put_project_file(
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let Some(s3) = &state.s3 else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "code storage is not configured".to_string()));
-    };
-
     let content_type = guess_content_type(&path);
-    s3.put_object(&s3_key(project_id, &path), &req.content, content_type).await.map_err(|e| {
+    state.project_storage.put_object(&project_file_key(project_id, &path), &req.content, content_type).await.map_err(|e| {
         tracing::error!(error = %e, "failed to write project file");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save file".to_string())
     })?;
@@ -188,11 +286,7 @@ pub async fn delete_project_file(
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let Some(s3) = &state.s3 else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "code storage is not configured".to_string()));
-    };
-
-    s3.delete_object(&s3_key(project_id, &path)).await.map_err(|e| {
+    state.project_storage.delete_object(&project_file_key(project_id, &path)).await.map_err(|e| {
         tracing::error!(error = %e, "failed to delete project file");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete file".to_string())
     })?;
@@ -221,11 +315,7 @@ async fn render_preview(state: &AppState, user_id: Uuid, project_id: Uuid, path:
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let Some(s3) = &state.s3 else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "code storage is not configured".to_string()));
-    };
-
-    let content = s3.get_object(&s3_key(project_id, &path)).await.map_err(|e| {
+    let content = state.project_storage.get_object(&project_file_key(project_id, &path)).await.map_err(|e| {
         tracing::error!(error = %e, "failed to read project file for preview");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preview".to_string())
     })?;

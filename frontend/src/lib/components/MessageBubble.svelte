@@ -7,7 +7,11 @@
 	import IconThumbUp from './icons/IconThumbUp.svelte';
 	import type { RenderedMessage } from '$lib/types';
 
-	let { message }: { message: RenderedMessage } = $props();
+	let {
+		message,
+		chained = false,
+		first = false,
+	}: { message: RenderedMessage; chained?: boolean; first?: boolean } = $props();
 
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	let feedback = $state(message.my_feedback);
@@ -145,10 +149,15 @@
 	}
 </script>
 
-<div class="flex flex-col {message.sender === 'user' ? 'items-end' : 'items-start'} gap-1">
-	<div class="flex items-center gap-2 px-1">
-		<span class="md-label-medium" style="color: var(--md-sys-color-on-surface)">{senderLabel}</span>
-	</div>
+<div
+	class="flex flex-col {message.sender === 'user' ? 'items-end' : 'items-start'} gap-1"
+	style="margin-top: {first ? '0' : chained ? '4px' : '16px'}"
+>
+	{#if !chained}
+		<div class="flex items-center gap-2 px-1">
+			<span class="md-label-medium" style="color: var(--md-sys-color-on-surface)">{senderLabel}</span>
+		</div>
+	{/if}
 
 	<div
 		bind:this={bubbleEl}

@@ -57,4 +57,25 @@ pub trait SubAgent: Send + Sync {
     fn is_delegation_target(&self) -> bool {
         true
     }
+
+    /// When true, run_agent_turn posts a chat message for every tool call this agent makes
+    /// (and for any text it writes alongside one, treated as its "thinking out loud") — so the
+    /// user watching a long-running build sees each step as it happens, not just a final
+    /// summary. Off by default: most agents' tool calls are internal bookkeeping the user
+    /// never needs to see.
+    fn surfaces_activity(&self) -> bool {
+        false
+    }
+
+    /// Called on the delegation *target* before `delegate_to_agent` creates anything, with the
+    /// exact task string the delegating agent wrote. Return `Err(reason)` to reject the
+    /// delegation outright — no delegation row is created, and `reason` is fed straight back to
+    /// the delegating agent as a tool error, giving it a chance to self-correct in the same turn
+    /// (e.g. actually create a project before delegating to the coding agent) instead of a
+    /// malformed delegation reaching a target agent that has no way to act on it. Default
+    /// accepts anything: only targets with a real structural precondition on the task string
+    /// need to override this.
+    fn validate_delegation_task(&self, _task: &str) -> Result<(), String> {
+        Ok(())
+    }
 }

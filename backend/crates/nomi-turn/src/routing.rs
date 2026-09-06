@@ -6,7 +6,10 @@ use uuid::Uuid;
 use nomi_agent_core::{AgentRegistry, SubAgent, TurnError};
 use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
-const INTENT_CLASSIFICATION_MAX_TOKENS: u32 = 10;
+// Generous for a single-word reply: some models don't reliably follow "reply with only one
+// word" and add a short sentence around the label instead — find_by_intent_label's whole-word
+// fallback handles that, but only if the label isn't truncated out of the response first.
+const INTENT_CLASSIFICATION_MAX_TOKENS: u32 = 20;
 
 /// Classifies `text` against whatever's registered in `registry`, returning the matching
 /// agent (or the registry's default agent on no match, a parse failure, or an LLM error).

@@ -65,8 +65,6 @@ pub async fn try_retrieve_memories(
     .unwrap_or_default()
 }
 
-const EXTRACTION_SYSTEM_PROMPT: &str =
-    "Extract at most one durable fact worth remembering long-term from this exchange, or say NONE if nothing is worth storing.";
 const EXTRACTION_MAX_TOKENS: u32 = 128;
 
 pub async fn extract_and_store_memory(
@@ -78,7 +76,7 @@ pub async fn extract_and_store_memory(
     assistant_text: &str,
 ) {
     let request = LlmRequest {
-        system: Some(EXTRACTION_SYSTEM_PROMPT.to_string()),
+        system: Some(crate::prompts::MEMORY_EXTRACTION_SYSTEM_PROMPT.to_string()),
         messages: vec![
             LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: user_text.to_string() }] },
             LlmMessage { role: LlmRole::Assistant, content: vec![ContentBlock::Text { text: assistant_text.to_string() }] },

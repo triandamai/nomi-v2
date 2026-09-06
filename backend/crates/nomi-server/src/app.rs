@@ -12,7 +12,7 @@ use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
-use nomi_storage::S3Config;
+use nomi_storage::{LocalFsStore, S3Config};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,7 +22,9 @@ pub struct AppState {
     pub settings_key: [u8; 32],
     pub mqtt_broker_host: String,
     pub mqtt_broker_port: u16,
+    /// Avatar uploads only — project files live in `project_storage` (local disk), never here.
     pub s3: Option<S3Config>,
+    pub project_storage: LocalFsStore,
 }
 
 impl nomi_auth::extractor::HasJwtSecret for AppState {
@@ -46,6 +48,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions",
             post(sessions_routes::create_session).get(sessions_routes::list_sessions),
         )
+        .route("/api/sessions/:id", delete(sessions_routes::delete_session))
         .route(
             "/api/sessions/:id/messages",
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
@@ -127,7 +130,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/preferences",
             get(profile_routes::get_preferences).put(profile_routes::put_preferences),
         )
-        .route("/api/projects", get(projects_routes::list_projects))
+        .route(
+            "/api/projects",
+            get(projects_routes::list_projects).post(projects_routes::create_project_session),
+        )
+        .route("/api/projects/by-session/:sessionId", get(projects_routes::get_project_by_session))
         .route("/api/projects/:id", get(projects_routes::get_project))
         .route(
             "/api/projects/:id/files/*path",

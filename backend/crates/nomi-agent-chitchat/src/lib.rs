@@ -4,13 +4,11 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
+use nomi_agent_core::prompts::CHITCHAT_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
 pub const CHITCHAT_AGENT_TYPE: &str = "chitchat";
-
-const CHITCHAT_SYSTEM_PROMPT: &str =
-    "You are a helpful, friendly assistant chatting with the user. Keep replies concise.";
 
 pub struct ChitchatAgent;
 

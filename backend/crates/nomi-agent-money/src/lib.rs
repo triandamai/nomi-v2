@@ -6,16 +6,13 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_llm::ToolDefinition;
+use nomi_agent_core::prompts::MONEY_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 
 pub const MONEY_AGENT_TYPE: &str = "money";
 
-const MONEY_SYSTEM_PROMPT: &str =
-    "You are a financial assistant. You can list the user's recent transactions and summarize \
-     their spending by category. You are strictly read-only and advisory: you cannot move money, \
-     make payments, or modify any transaction. If asked to do anything beyond listing or \
-     summarizing, explain that you can only advise, not act. When you have fully answered the \
-     user's question (or they want to stop), call complete_task.";
+/// `list_transactions`'s default when the caller omits `limit`.
+const DEFAULT_TRANSACTION_LIMIT: i64 = 10;
 
 pub struct MoneyAgent;
 
@@ -82,7 +79,7 @@ impl SubAgent for MoneyAgent {
 }
 
 async fn list_transactions(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
-    let limit = input.get("limit").and_then(|v| v.as_i64()).unwrap_or(10);
+    let limit = input.get("limit").and_then(|v| v.as_i64()).unwrap_or(DEFAULT_TRANSACTION_LIMIT);
     let category = input.get("category").and_then(|v| v.as_str());
 
     let rows: Vec<(DateTime<Utc>, i64, String, String)> = if let Some(category) = category {

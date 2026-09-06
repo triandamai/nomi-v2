@@ -4,21 +4,14 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
+use nomi_agent_core::prompts::PERSONALITY_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
 pub const PERSONALITY_AGENT_TYPE: &str = "personality";
 
-const PERSONALITY_SYSTEM_PROMPT: &str =
-    "You help the user customize nomi's personality — the tone, style, and manner nomi should \
-     adopt in future replies. When the user describes how they want nomi to talk or behave, call \
-     set_personality with a concise (one or two sentence) description of that personality, written \
-     in the second person as an instruction (e.g. 'Be sarcastic and blunt, never overly polite.'). \
-     Confirm the change back to the user in a friendly way, in the new personality if one was just \
-     set. If the user wants to see their past personalities or go back to an earlier one, call \
-     list_personality_versions to show them the options, then rollback_personality with the \
-     version they choose. Never guess a version number without listing first unless the user \
-     gives one explicitly. When you're done, call complete_task.";
+/// How many past personality versions `list_personality_versions` shows.
+const PERSONALITY_HISTORY_LIMIT: i64 = 10;
 
 pub struct PersonalityAgent;
 
@@ -123,7 +116,7 @@ async fn set_personality(
 }
 
 async fn list_personality_versions(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> Result<String, String> {
-    let versions = nomi_agent_core::personality::list_versions(conn, user_id, 10)
+    let versions = nomi_agent_core::personality::list_versions(conn, user_id, PERSONALITY_HISTORY_LIMIT)
         .await
         .map_err(|e| e.to_string())?;
 

@@ -17,6 +17,7 @@ fn test_state(pool: PgPool) -> AppState {
         mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
         mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
         s3: None,
+        project_storage: nomi_test_support::test_project_storage(),
     }
 }
 
@@ -117,14 +118,46 @@ async fn get_project_for_another_users_project_is_not_found(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn getting_a_file_without_s3_configured_is_service_unavailable(pool: PgPool) {
+async fn getting_a_file_that_was_never_written_is_not_found(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "owner@example.com").await;
     let user_id = user_id_by_email(&pool, "owner@example.com").await;
     let project_id = seed_project(&pool, user_id).await;
 
+    // project_files metadata row exists (seeded in get_project_includes_plan_and_files-style
+    // tests), but nothing was ever written to disk for it here — local storage is always
+    // available now, so this is a plain 404, not a 503 "storage not configured".
     let (status, _) = json_request(router, "GET", &format!("/api/projects/{project_id}/files/index.html"), Value::Null, Some(&token)).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writing_then_reading_a_file_round_trips_through_the_http_routes(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "owner@example.com").await;
+    let user_id = user_id_by_email(&pool, "owner@example.com").await;
+    let project_id = seed_project(&pool, user_id).await;
+
+    let (put_status, _) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/projects/{project_id}/files/index.html"),
+        json!({"content": "<h1>hi</h1>"}),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(put_status, StatusCode::OK);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/projects/{project_id}/files/index.html"))
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(bytes.as_ref(), b"<h1>hi</h1>");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

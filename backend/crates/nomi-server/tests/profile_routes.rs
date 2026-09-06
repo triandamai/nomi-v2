@@ -17,6 +17,7 @@ fn test_state(pool: PgPool) -> AppState {
         mqtt_broker_host: nomi_test_support::TEST_MQTT_BROKER_HOST.to_string(),
         mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
         s3: None,
+        project_storage: nomi_test_support::test_project_storage(),
     }
 }
 
@@ -144,6 +145,38 @@ async fn preferences_default_to_system_theme(pool: PgPool) {
     let (status, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["theme"], "system");
+    assert_eq!(body["accent_color"], "green");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn setting_accent_color_does_not_clobber_theme_and_vice_versa(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "mira@example.com").await;
+
+    let (status, put_body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(put_body["theme"], "dark");
+    assert_eq!(put_body["accent_color"], "green");
+
+    let (status, put_body) =
+        json_request(router.clone(), "PUT", "/api/preferences", json!({ "accent_color": "purple" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(put_body["theme"], "dark");
+    assert_eq!(put_body["accent_color"], "purple");
+
+    let (_, get_body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(get_body["theme"], "dark");
+    assert_eq!(get_body["accent_color"], "purple");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn setting_an_invalid_accent_color_is_rejected(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "nell@example.com").await;
+
+    let (status, _) =
+        json_request(router, "PUT", "/api/preferences", json!({ "accent_color": "chartreuse" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

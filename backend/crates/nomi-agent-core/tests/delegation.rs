@@ -63,6 +63,37 @@ impl SubAgent for TargetAgent {
     }
 }
 
+struct StrictTargetAgent;
+
+#[async_trait]
+impl SubAgent for StrictTargetAgent {
+    fn agent_type(&self) -> &'static str {
+        "strict-target"
+    }
+    fn system_prompt(&self) -> &'static str {
+        "test"
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+        Err("no tools".to_string())
+    }
+    fn intent_label(&self) -> &'static str {
+        "strict-target"
+    }
+    fn intent_description(&self) -> &'static str {
+        "test"
+    }
+    fn validate_delegation_task(&self, task: &str) -> Result<(), String> {
+        if task.starts_with("VALID:") {
+            Ok(())
+        } else {
+            Err("missing VALID: prefix".to_string())
+        }
+    }
+}
+
 async fn seed_session(pool: &PgPool) -> Uuid {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
         .fetch_one(pool)
@@ -169,4 +200,69 @@ async fn calling_delegate_to_agent_creates_a_pending_delegation_row(pool: PgPool
         })
         .expect("expected a tool result in the second request");
     assert!(tool_result_text.contains("Delegated to target"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn delegate_to_agent_is_rejected_when_the_target_rejects_the_task(pool: PgPool) {
+    // Reproduces a real bug: the planning agent sometimes calls delegate_to_agent without
+    // having created a project first, leaving the coding agent to hallucinate a project_id.
+    // The target's validate_delegation_task must be able to reject the delegation outright —
+    // no row created, an is_error tool result fed straight back — rather than let it through.
+    let session_id = seed_session(&pool).await;
+    let user_id = seed_user(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let registry = AgentRegistry::new(vec![Box::new(DelegatingAgent), Box::new(StrictTargetAgent)]);
+    let provider = FakeLlmProvider::sequence(vec![
+        LlmResponse {
+            content: vec![ContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "delegate_to_agent".to_string(),
+                input: serde_json::json!({"target_agent": "strict-target", "task": "do it"}),
+                thought_signature: None,
+            }],
+            stop_reason: StopReason::ToolUse,
+            input_tokens: 1,
+            output_tokens: 1,
+        },
+        text_response("Oops, let me fix that."),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &registry,
+        &DelegatingAgent,
+        session_id,
+        session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_delegations WHERE session_id = $1")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "a rejected delegation must never create a row");
+
+    let requests = provider.received_requests.lock().unwrap();
+    let second_request = &requests[1];
+    let (tool_result_text, is_error) = second_request
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .find_map(|b| match b {
+            ContentBlock::ToolResult { content, is_error, .. } => Some((content.clone(), *is_error)),
+            _ => None,
+        })
+        .expect("expected a tool result in the second request");
+    assert!(is_error);
+    assert!(tool_result_text.contains("VALID:"));
 }

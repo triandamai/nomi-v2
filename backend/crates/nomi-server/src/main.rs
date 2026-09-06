@@ -38,6 +38,8 @@ async fn main() {
         tracing::info!("S3_BUCKET not set — avatar upload disabled");
     }
 
+    let project_storage = nomi_storage::build_local_fs_store();
+
     // Embedded by default so a single `cargo run` (or single production instance) is enough to
     // process turns — no separate `cargo run --bin worker` process required. Set
     // RUN_WORKER_INLINE=false to disable this and run the worker as its own process(es) instead,
@@ -52,9 +54,9 @@ async fn main() {
         let worker_pool = pool.clone();
         let worker_http_client = http_client.clone();
         let worker_database_url = database_url.clone();
-        let worker_s3 = s3.clone();
+        let worker_project_storage = project_storage.clone();
         tokio::spawn(async move {
-            nomi_server::worker::run(worker_pool, worker_mqtt, settings_key, worker_http_client, worker_database_url, worker_s3).await;
+            nomi_server::worker::run(worker_pool, worker_mqtt, settings_key, worker_http_client, worker_database_url, worker_project_storage).await;
         });
 
         let delegation_mqtt_client_id = format!("nomi-orchestrator-delegation-worker-{}", uuid::Uuid::new_v4());
@@ -62,9 +64,9 @@ async fn main() {
         let delegation_pool = pool.clone();
         let delegation_http_client = http_client.clone();
         let delegation_database_url = database_url.clone();
-        let delegation_s3 = s3.clone();
+        let delegation_project_storage = project_storage.clone();
         tokio::spawn(async move {
-            nomi_server::delegation_worker::run(delegation_pool, delegation_mqtt, settings_key, delegation_http_client, delegation_database_url, delegation_s3).await;
+            nomi_server::delegation_worker::run(delegation_pool, delegation_mqtt, settings_key, delegation_http_client, delegation_database_url, delegation_project_storage).await;
         });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {
@@ -79,6 +81,7 @@ async fn main() {
         mqtt_broker_host,
         mqtt_broker_port,
         s3,
+        project_storage,
     };
     let app = nomi_server::app::build_router(state);
 

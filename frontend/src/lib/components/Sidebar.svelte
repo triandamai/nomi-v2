@@ -2,21 +2,21 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
-	import SessionListItem from './SessionListItem.svelte';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
+	import IconFolder from '$lib/components/icons/IconFolder.svelte';
+	import IconHistory from '$lib/components/icons/IconHistory.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
-	import IconAgents from '$lib/components/icons/IconAgents.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
-	import type { Profile, SessionSummary } from '$lib/types';
+	import type { Profile } from '$lib/types';
 
-	let { sessions, userEmail, profile }: { sessions: SessionSummary[]; userEmail: string; profile: Profile } = $props();
+	let { userEmail, profile }: { userEmail: string; profile: Profile } = $props();
 
 	const STORAGE_KEY = 'nomi:user-sidebar-collapsed';
 	let collapsed = $state(false);
@@ -76,28 +76,28 @@
 		{/if}
 	</form>
 
-	<a
-		href="/projects"
-		class="mx-3 mt-2 flex items-center gap-2 rounded-full px-3 py-2"
-		class:justify-center={collapsed}
-		style="color: var(--md-sys-color-on-surface-variant); text-decoration: none;"
-	>
-		{#if collapsed}
-			<IconAgents size={20} />
-		{:else}
-			<span class="md-body-medium">Projects</span>
-		{/if}
-	</a>
+	<nav class={collapsed ? 'flex flex-col items-center gap-1 py-3' : 'space-y-1 px-3 py-3'}>
+		<a
+			href="/chats"
+			class="flex items-center gap-2 rounded-full px-3 py-2"
+			class:justify-center={collapsed}
+			style="color: var(--md-sys-color-on-surface-variant); text-decoration: none;"
+		>
+			<IconHistory size={20} />
+			{#if !collapsed}<span class="md-body-medium">Chats</span>{/if}
+		</a>
+		<a
+			href="/projects"
+			class="flex items-center gap-2 rounded-full px-3 py-2"
+			class:justify-center={collapsed}
+			style="color: var(--md-sys-color-on-surface-variant); text-decoration: none;"
+		>
+			<IconFolder size={20} />
+			{#if !collapsed}<span class="md-body-medium">Projects</span>{/if}
+		</a>
+	</nav>
 
-	{#if !collapsed}
-		<nav class="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-			{#each sessions as session (session.id)}
-				<SessionListItem {session} />
-			{/each}
-		</nav>
-	{:else}
-		<div class="flex-1"></div>
-	{/if}
+	<div class="flex-1"></div>
 
 	<div class="w-full px-2 py-2" style="border-top: 1px solid var(--md-sys-color-outline-variant)">
 		<Menu bind:open={accountMenuOpen} class="w-full">

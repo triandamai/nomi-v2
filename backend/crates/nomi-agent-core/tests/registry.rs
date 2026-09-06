@@ -174,6 +174,23 @@ fn finds_an_agent_by_intent_label_case_insensitively() {
 }
 
 #[test]
+fn finds_an_agent_by_intent_label_even_when_the_model_wraps_it_in_a_sentence() {
+    // Reproduces a real misrouting bug: a model that doesn't follow "reply with only one
+    // word" and instead answers in a full sentence must still route correctly, rather than
+    // silently falling back to the default agent.
+    let registry = AgentRegistry::new(vec![stub("planning", "planning", false), stub("chitchat", "chitchat", true)]);
+    assert_eq!(registry.find_by_intent_label("planning.").unwrap().agent_type(), "planning");
+    assert_eq!(registry.find_by_intent_label("\"planning\"").unwrap().agent_type(), "planning");
+    assert_eq!(registry.find_by_intent_label("This is about planning.").unwrap().agent_type(), "planning");
+}
+
+#[test]
+fn does_not_match_a_label_that_is_only_a_substring_of_a_word() {
+    let registry = AgentRegistry::new(vec![stub("planning", "planning", false), stub("chitchat", "chitchat", true)]);
+    assert!(registry.find_by_intent_label("planningish nonsense").is_none());
+}
+
+#[test]
 fn classification_prompt_excludes_the_default_agent_as_a_target_but_names_it_as_the_fallback() {
     let registry = AgentRegistry::new(vec![stub("money", "money", false), stub("chitchat", "chitchat", true)]);
     let prompt = registry.classification_prompt();

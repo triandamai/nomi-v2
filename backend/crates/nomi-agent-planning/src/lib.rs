@@ -4,31 +4,17 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
+use nomi_agent_core::prompts::PLANNING_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
-use nomi_storage::S3Config;
 
 pub const PLANNING_AGENT_TYPE: &str = "planning";
 
-const PLANNING_SYSTEM_PROMPT: &str =
-    "You help the user plan an app or script they want built. When they describe what they want, \
-     call create_project with a short name and one-sentence description, then call write_plan \
-     with the project_id it returns and a concise markdown plan: the files you intend to create \
-     and the approach. The user will see this plan before anything gets built. After write_plan \
-     succeeds, call delegate_to_agent with target_agent 'coding' and a task string that includes \
-     the project ID verbatim, formatted exactly as 'Project <project_id>: <short summary of the \
-     plan>' — the coding agent has no other way to know which project to write files into. Then \
-     tell the user you'll let them know once it's built, and call complete_task. If project \
-     creation fails because storage isn't configured, tell the user plainly that building apps \
-     isn't available right now — don't retry.";
-
-pub struct PlanningAgent {
-    s3: Option<S3Config>,
-}
+pub struct PlanningAgent;
 
 impl PlanningAgent {
-    pub fn new(s3: Option<S3Config>) -> Self {
-        Self { s3 }
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -81,7 +67,7 @@ impl SubAgent for PlanningAgent {
         input: Value,
     ) -> Result<String, String> {
         match name {
-            "create_project" => create_project(conn, self.s3.is_some(), session_id, user_id, input).await,
+            "create_project" => create_project(conn, session_id, user_id, input).await,
             "write_plan" => write_plan(conn, user_id, input).await,
             other => Err(format!("unknown tool: {other}")),
         }
@@ -102,32 +88,58 @@ impl SubAgent for PlanningAgent {
     fn can_delegate(&self) -> bool {
         true
     }
+
+    fn surfaces_activity(&self) -> bool {
+        true
+    }
 }
 
+/// A project row may already exist for this session — the "+ Add new project" entry point
+/// creates one upfront (placeholder-named "New project"), before this tool is ever called, so
+/// the workspace page recognizes the session as a project immediately rather than depending on
+/// the model reliably calling this tool mid-conversation. Rename that existing row instead of
+/// inserting a second one; only insert fresh when a session organically becomes a project with
+/// no pre-existing row (e.g. "build me X" typed into a plain chat).
 async fn create_project(
     conn: &mut PoolConnection<Postgres>,
-    s3_configured: bool,
     session_id: Uuid,
     user_id: Uuid,
     input: Value,
 ) -> Result<String, String> {
-    if !s3_configured {
-        return Err("project creation is not available right now — code storage isn't configured".to_string());
-    }
-
     let name = input.get("name").and_then(|v| v.as_str()).ok_or("name is required")?;
     let description = input.get("description").and_then(|v| v.as_str());
 
-    let project_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO projects (user_id, session_id, name, description) VALUES ($1, $2, $3, $4) RETURNING id",
+    let existing_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM projects WHERE session_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
     )
-    .bind(user_id)
     .bind(session_id)
-    .bind(name)
-    .bind(description)
-    .fetch_one(&mut **conn)
+    .bind(user_id)
+    .fetch_optional(&mut **conn)
     .await
     .map_err(|e| e.to_string())?;
+
+    let project_id = match existing_id {
+        Some(id) => {
+            sqlx::query("UPDATE projects SET name = $1, description = $2, updated_at = now() WHERE id = $3")
+                .bind(name)
+                .bind(description)
+                .bind(id)
+                .execute(&mut **conn)
+                .await
+                .map_err(|e| e.to_string())?;
+            id
+        }
+        None => sqlx::query_scalar(
+            "INSERT INTO projects (user_id, session_id, name, description) VALUES ($1, $2, $3, $4) RETURNING id",
+        )
+        .bind(user_id)
+        .bind(session_id)
+        .bind(name)
+        .bind(description)
+        .fetch_one(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?,
+    };
 
     Ok(project_id.to_string())
 }

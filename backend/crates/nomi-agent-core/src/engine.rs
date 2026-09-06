@@ -191,6 +191,15 @@ pub async fn run_agent_turn(
             });
         }
 
+        if agent.surfaces_activity() {
+            if let Some(thought) = response.content.iter().find_map(|b| match b {
+                ContentBlock::Text { text } if !text.trim().is_empty() => Some(text.clone()),
+                _ => None,
+            }) {
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("💭 {}", thought.trim())).await;
+            }
+        }
+
         let mut tool_results = Vec::new();
         for block in &response.content {
             if let ContentBlock::ToolUse { id, name, input, .. } = block {
@@ -199,9 +208,13 @@ pub async fn run_agent_turn(
                 } else if name.as_str() == DELEGATE_TOOL_NAME {
                     let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
                     let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
-                    match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
-                        Ok(ack) => (ack, false),
-                        Err(err) => (err, true),
+                    let rejection = registry.find(target_agent).and_then(|t| t.validate_delegation_task(task).err());
+                    match rejection {
+                        Some(reason) => (reason, true),
+                        None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
+                            Ok(ack) => (ack, false),
+                            Err(err) => (err, true),
+                        },
                     }
                 } else {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
@@ -211,6 +224,11 @@ pub async fn run_agent_turn(
                 };
 
                 log_tool_call(conn, session_id, agent_session_id, agent.agent_type(), name, input, &result_text, is_error).await;
+
+                if agent.surfaces_activity() && name.as_str() != COMPLETE_TASK_TOOL_NAME && name.as_str() != DELEGATE_TOOL_NAME {
+                    let description = describe_tool_activity(name, input, &result_text, is_error);
+                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &description).await;
+                }
 
                 if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                     let status = input.get("status").and_then(|v| v.as_str()).unwrap_or("completed").to_string();
@@ -251,4 +269,54 @@ async fn log_tool_call(
     .bind(serde_json::json!({"tool_name": tool_name, "input": input, "result": result, "is_error": is_error}))
     .execute(&mut **conn)
     .await;
+}
+
+/// Inserts an activity message (an agent's "thought", or a description of a tool call it just
+/// made) so a user watching a long-running build sees it appear like any other chat message —
+/// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
+async fn post_activity_message(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<&MqttPublisher>,
+    session_id: Uuid,
+    content: &str,
+) {
+    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+        .bind(session_id)
+        .bind(content)
+        .execute(&mut **conn)
+        .await;
+    if let Some(publisher) = mqtt {
+        let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+    }
+}
+
+/// Templated, non-LLM descriptions of the coding/planning agents' own tools — deliberately not
+/// phrased through the LLM (unlike phrase_delegation_result/phrase_delegation_started): a build
+/// can make many tool calls in a row, and a live activity log needs to keep up with them, not
+/// wait on a completion round-trip per step.
+fn describe_tool_activity(tool_name: &str, input: &serde_json::Value, result: &str, is_error: bool) -> String {
+    let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("the file");
+    if is_error {
+        return match tool_name {
+            "write_file" => format!("⚠️ Couldn't write `{path}` — {result}"),
+            "read_file" => format!("⚠️ Couldn't read `{path}` — {result}"),
+            "delete_file" => format!("⚠️ Couldn't delete `{path}` — {result}"),
+            "list_files" => format!("⚠️ Couldn't list project files — {result}"),
+            "create_project" => format!("⚠️ Couldn't create the project — {result}"),
+            "write_plan" => format!("⚠️ Couldn't save the plan — {result}"),
+            other => format!("⚠️ `{other}` failed — {result}"),
+        };
+    }
+    match tool_name {
+        "write_file" => format!("📝 Wrote `{path}`"),
+        "read_file" => format!("🔍 Read `{path}`"),
+        "delete_file" => format!("🗑️ Deleted `{path}`"),
+        "list_files" => "📂 Listed project files".to_string(),
+        "create_project" => {
+            let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("the project");
+            format!("✨ Created project \"{name}\"")
+        }
+        "write_plan" => "📋 Saved the build plan".to_string(),
+        other => format!("Ran `{other}`"),
+    }
 }

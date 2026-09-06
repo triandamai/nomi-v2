@@ -10,6 +10,13 @@ pub const TEST_SETTINGS_KEY: [u8; 32] = [7u8; 32];
 pub const TEST_MQTT_BROKER_HOST: &str = "localhost";
 pub const TEST_MQTT_BROKER_PORT: u16 = 1883;
 
+/// A fresh, isolated temp directory per call — every test's AppState gets its own, so
+/// concurrently-running tests never share (or race on) project files.
+pub fn test_project_storage() -> nomi_storage::LocalFsStore {
+    let dir = std::env::temp_dir().join(format!("nomi-test-project-storage-{}", uuid::Uuid::new_v4()));
+    nomi_storage::LocalFsStore::at(dir)
+}
+
 enum FakeOutcome {
     Success(LlmResponse),
     Failure(String),
