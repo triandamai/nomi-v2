@@ -8,6 +8,7 @@
 	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
+	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconFolder from '$lib/components/icons/IconFolder.svelte';
 	import IconHistory from '$lib/components/icons/IconHistory.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
@@ -16,7 +17,11 @@
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import type { Profile } from '$lib/types';
 
-	let { userEmail, profile }: { userEmail: string; profile: Profile } = $props();
+	let {
+		userEmail,
+		profile,
+		mobileOpen = $bindable(false),
+	}: { userEmail: string; profile: Profile; mobileOpen?: boolean } = $props();
 
 	const STORAGE_KEY = 'nomi:user-sidebar-collapsed';
 	let collapsed = $state(false);
@@ -33,67 +38,100 @@
 
 	const accountLabel = $derived(profile.display_name || userEmail);
 
+	// The desktop "collapse to icon rail" preference shouldn't also shrink the mobile drawer —
+	// a temporary overlay with no labels is a worse tap target, so the drawer always renders
+	// fully expanded regardless of what's persisted for the desktop rail.
+	const effectiveCollapsed = $derived(collapsed && !mobileOpen);
+
 	function goToAccountPage(path: string) {
 		accountMenuOpen = false;
+		mobileOpen = false;
 		goto(path);
 	}
 </script>
 
+{#if mobileOpen}
+	<button
+		type="button"
+		class="fixed inset-0 z-40 md:hidden"
+		style="background: color-mix(in srgb, black 40%, transparent); border: none; padding: 0; cursor: default"
+		aria-label="Close menu"
+		onclick={() => (mobileOpen = false)}
+	></button>
+{/if}
+
 <aside
-	class="flex flex-col transition-[width] duration-200"
-	class:w-72={!collapsed}
-	class:w-20={collapsed}
-	class:items-center={collapsed}
+	class="fixed inset-y-0 left-0 z-50 flex w-72 flex-col transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-[width] {mobileOpen
+		? 'translate-x-0'
+		: '-translate-x-full'} {collapsed ? 'md:w-20 md:items-center' : 'md:w-72'}"
 	style="background: var(--md-sys-color-surface-container); border-right: 1px solid var(--md-sys-color-outline-variant)"
 >
 	<div
 		class="flex w-full items-center gap-2 px-4 py-4"
-		class:justify-center={collapsed}
-		class:justify-between={!collapsed}
+		class:justify-center={effectiveCollapsed}
+		class:justify-between={!effectiveCollapsed}
 		style="border-bottom: 1px solid var(--md-sys-color-outline-variant)"
 	>
-		{#if !collapsed}
+		{#if !effectiveCollapsed}
 			<span class="md-title-large" style="color: var(--md-sys-color-primary)">Nomi</span>
 		{:else}
-			<span style="color: var(--md-sys-color-primary)"><IconChatBubble /></span>
+			<span class="hidden md:inline" style="color: var(--md-sys-color-primary)"><IconChatBubble /></span>
 		{/if}
-		<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-			{#if collapsed}
-				<IconChevronRight />
-			{:else}
-				<IconChevronLeft />
-			{/if}
-		</IconButton>
+		<!-- Wrapped in a plain div rather than passing `hidden`/`md:*` directly to IconButton:
+		     IconButton's own scoped `.m3-icon-btn` style sets `display` with higher CSS
+		     specificity than a single Tailwind utility class (Svelte appends its own hash class
+		     to every scoped selector), so the utility class can't win no matter the breakpoint. -->
+		<div class="hidden md:block">
+			<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+				{#if collapsed}
+					<IconChevronRight />
+				{:else}
+					<IconChevronLeft />
+				{/if}
+			</IconButton>
+		</div>
+		<div class="md:hidden">
+			<IconButton onclick={() => (mobileOpen = false)} aria-label="Close menu">
+				<IconClose />
+			</IconButton>
+		</div>
 	</div>
 
-	<form method="POST" action="/?/newChat" use:enhance class={collapsed ? 'pt-3' : 'px-3 pt-3'}>
-		{#if collapsed}
-			<button type="submit" class="m3-fab" aria-label="New Chat">
-				<IconPlus />
-			</button>
+	<form method="POST" action="/?/newChat" use:enhance class={effectiveCollapsed ? 'pt-3' : 'px-3 pt-3'} onsubmit={() => (mobileOpen = false)}>
+		{#if effectiveCollapsed}
+			<div class="hidden md:flex">
+				<button type="submit" class="m3-fab" aria-label="New Chat">
+					<IconPlus />
+				</button>
+			</div>
+			<div class="md:hidden">
+				<Button type="submit" variant="filled" class="w-full">+ New Chat</Button>
+			</div>
 		{:else}
 			<Button type="submit" variant="filled" class="w-full">+ New Chat</Button>
 		{/if}
 	</form>
 
-	<nav class={collapsed ? 'flex flex-col items-center gap-1 py-3' : 'space-y-1 px-3 py-3'}>
+	<nav class={effectiveCollapsed ? 'flex flex-col items-center gap-1 py-3 md:items-center' : 'space-y-1 px-3 py-3'}>
 		<a
 			href="/chats"
 			class="flex items-center gap-2 rounded-full px-3 py-2"
-			class:justify-center={collapsed}
+			class:justify-center={effectiveCollapsed}
 			style="color: var(--md-sys-color-on-surface-variant); text-decoration: none;"
+			onclick={() => (mobileOpen = false)}
 		>
 			<IconHistory size={20} />
-			{#if !collapsed}<span class="md-body-medium">Chats</span>{/if}
+			{#if !effectiveCollapsed}<span class="md-body-medium">Chats</span>{/if}
 		</a>
 		<a
 			href="/projects"
 			class="flex items-center gap-2 rounded-full px-3 py-2"
-			class:justify-center={collapsed}
+			class:justify-center={effectiveCollapsed}
 			style="color: var(--md-sys-color-on-surface-variant); text-decoration: none;"
+			onclick={() => (mobileOpen = false)}
 		>
 			<IconFolder size={20} />
-			{#if !collapsed}<span class="md-body-medium">Projects</span>{/if}
+			{#if !effectiveCollapsed}<span class="md-body-medium">Projects</span>{/if}
 		</a>
 	</nav>
 
@@ -106,11 +144,11 @@
 					type="button"
 					onclick={toggle}
 					class="m3-account-trigger w-full"
-					class:justify-center={collapsed}
+					class:justify-center={effectiveCollapsed}
 					aria-label="Account menu"
 				>
 					<Avatar name={accountLabel} avatarUrl={profile.avatar_url} size={32} />
-					{#if !collapsed}
+					{#if !effectiveCollapsed}
 						<span class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface-variant)">
 							{accountLabel}
 						</span>
@@ -121,6 +159,8 @@
 				<MenuItem onclick={() => goToAccountPage('/preferences')}>Preferences</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/profile')}>Profile</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/account')}>Account settings</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/models')}>Model</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/memory')}>Memory</MenuItem>
 				<form method="POST" action="/logout">
 					<MenuItem type="submit">Log out</MenuItem>
 				</form>

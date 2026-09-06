@@ -7,6 +7,7 @@ use crate::routes::admin_dashboard as admin_dashboard_routes;
 use crate::routes::admin_users as admin_users_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::llm_models as llm_models_routes;
+use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
 use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
@@ -77,6 +78,8 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/llm/models", get(llm_models_routes::get_user_models))
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
+        .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
+        .route("/api/memory", get(memory_routes::list_my_memories))
         .route(
             "/api/personality/history",
             get(personality_routes::get_personality_history),

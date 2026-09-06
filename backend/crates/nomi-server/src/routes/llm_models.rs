@@ -237,6 +237,42 @@ pub async fn fetch_provider_models(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct FetchUserModelsRequest {
+    pub provider: String,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+/// User-scoped counterpart to `fetch_provider_models` — any authenticated user may browse a
+/// provider's model list using their own key, unlike the admin version which is gated behind
+/// `require_system_config_permission`. Always requires `api_key` in the request (no
+/// reuse-stored-key convenience like the admin endpoint's `existing_model_id`): a personal BYOK
+/// entry is edited rarely enough that re-pasting the key each time is an acceptable simplification.
+#[tracing::instrument(skip(state, _claims, req))]
+pub async fn fetch_user_models(
+    State(state): State<AppState>,
+    AuthClaims(_claims): AuthClaims,
+    Json(req): Json<FetchUserModelsRequest>,
+) -> Result<Json<FetchProviderModelsResponse>, (StatusCode, String)> {
+    let provider_kind = provider_kind_from_str(&req.provider)
+        .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)".to_string()))?;
+    let is_fake = req.provider == "fake";
+    if !is_fake && req.api_key.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "api_key is required for a non-fake provider".to_string()));
+    }
+
+    let config =
+        nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key: req.api_key.clone(), base_url: req.base_url.clone() };
+    let models = nomi_llm::list_provider_models(config, state.http_client.clone())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+
+    Ok(Json(FetchProviderModelsResponse {
+        models: models.into_iter().map(|m| FetchedModel { id: m.id, label: m.label }).collect(),
+    }))
+}
+
 #[derive(Serialize)]
 pub struct UserModelOption {
     pub id: Uuid,

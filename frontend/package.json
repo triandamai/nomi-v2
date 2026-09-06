@@ -23,6 +23,7 @@
 		"marked": "^18.0.11",
 		"sanitize-html": "^2.17.7",
 		"shiki": "^4.4.3",
+		"three": "^0.185.1",
 		"ws": "^8.21.3"
 	},
 	"devDependencies": {
@@ -33,6 +34,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.0",
 		"@types/sanitize-html": "^2.16.1",
+		"@types/three": "^0.185.4",
 		"@types/ws": "^8.18.1",
 		"postgres": "^3.4.9",
 		"svelte": "^5.56.1",

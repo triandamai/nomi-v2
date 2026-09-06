@@ -59,6 +59,19 @@ export interface PersonalityHistoryResponse {
 	versions: PersonalityVersion[];
 }
 
+export interface MemoryItem {
+	id: string;
+	content: string;
+	weight: number;
+	created_at: string;
+	updated_at: string;
+	embedding: number[];
+}
+
+export interface MemoryListResponse {
+	memories: MemoryItem[];
+}
+
 export interface DashboardStats {
 	total_users: number;
 	tokens_today: number;

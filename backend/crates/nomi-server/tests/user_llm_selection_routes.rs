@@ -184,3 +184,53 @@ async fn custom_selection_rejects_an_unknown_provider(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_regular_user_can_fetch_models_with_their_own_key(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "user6@example.com").await;
+
+    let (status, body) = json_request(
+        router,
+        "POST",
+        "/api/llm/fetch-models",
+        json!({ "provider": "fake", "api_key": "", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["models"].as_array().unwrap().len(), 1);
+    assert_eq!(body["models"][0]["id"], "fake-model");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn fetch_models_requires_an_api_key_for_a_real_provider(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "user7@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "POST",
+        "/api/llm/fetch-models",
+        json!({ "provider": "anthropic", "api_key": "", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn fetch_models_rejects_an_unknown_provider(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "user8@example.com").await;
+
+    let (status, _) = json_request(
+        router,
+        "POST",
+        "/api/llm/fetch-models",
+        json!({ "provider": "not-real", "api_key": "key", "base_url": null }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

@@ -10,21 +10,14 @@
 	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
-	import Select from '$lib/components/m3/Select.svelte';
+	import ModelKeySheet from '$lib/components/ModelKeySheet.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let modelMenuOpen = $state(false);
 	let personalityMenuOpen = $state(false);
-	let showCustomForm = $state(false);
-
-	const CUSTOM_PROVIDER_OPTIONS = [
-		{ value: 'anthropic', label: 'Anthropic' },
-		{ value: 'openai', label: 'OpenAI' },
-		{ value: 'gemini', label: 'Gemini' },
-		{ value: 'fake', label: 'Fake (testing)' },
-	];
+	let modelSheetOpen = $state(false);
 
 	const activeModelLabel = $derived.by(() => {
 		const selection = data.models.selection;
@@ -87,30 +80,18 @@
 						{data.models.selection.label} ({data.models.selection.api_key_masked})
 					</p>
 				{/if}
-				{#if showCustomForm}
-					<form
-						method="POST"
-						action="?/selectCustomModel"
-						use:enhance={() => {
-							return async ({ update }) => {
-								await update({ reset: true });
-								showCustomForm = false;
-							};
-						}}
-						class="mt-1 space-y-1 px-2"
-					>
-						<input name="label" type="text" placeholder="Label" required class="m3-picker-input" />
-						<Select label="Provider" name="provider" options={CUSTOM_PROVIDER_OPTIONS} />
-						<input name="model_id" type="text" placeholder="Model ID" class="m3-picker-input" />
-						<input name="api_key" type="password" placeholder="API key" class="m3-picker-input" />
-						<input name="base_url" type="text" placeholder="Base URL (optional)" class="m3-picker-input" />
-						<Button type="submit" variant="filled" class="w-full">Save & validate</Button>
-					</form>
-				{:else}
-					<MenuItem type="button" onclick={() => (showCustomForm = true)}>+ Use your own API key</MenuItem>
-				{/if}
+				<MenuItem
+					type="button"
+					onclick={() => {
+						modelMenuOpen = false;
+						modelSheetOpen = true;
+					}}
+				>
+					{data.models.selection?.kind === 'custom' ? 'Change your key' : '+ Use your own API key'}
+				</MenuItem>
 			</div>
 		</Menu>
+		<ModelKeySheet bind:open={modelSheetOpen} error={form?.modelError ?? null} />
 		<Menu bind:open={personalityMenuOpen}>
 			{#snippet trigger({ toggle })}
 				<IconButton onclick={toggle} aria-label="Personality: {currentPersonalityLabel}">
@@ -161,22 +142,3 @@
 		</Menu>
 	{/snippet}
 </ChatThread>
-
-<style>
-	.m3-picker-input {
-		width: 100%;
-		box-sizing: border-box;
-		border-radius: var(--md-sys-shape-corner-small);
-		border: 1px solid var(--md-sys-color-outline);
-		background: var(--md-sys-color-surface);
-		color: var(--md-sys-color-on-surface);
-		padding: 6px 8px;
-		font-family: var(--md-sys-typescale-body-medium-font);
-		font-size: var(--md-sys-typescale-body-medium-size);
-	}
-	.m3-picker-input:focus {
-		outline: none;
-		border: 2px solid var(--md-sys-color-primary);
-		padding: 5px 7px;
-	}
-</style>
