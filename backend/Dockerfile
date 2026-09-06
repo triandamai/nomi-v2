@@ -4,6 +4,7 @@ FROM rust:1-bookworm AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY migrations ./migrations
 RUN cargo build --release --bin nomi-orchestrator
 
 FROM debian:bookworm-slim AS runtime
