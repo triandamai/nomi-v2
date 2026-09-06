@@ -1,22 +1,2 @@
 [env]
 DATABASE_URL = "postgres://nomi:nomi@localhost:5432/nomi"
-JWT_SECRET = "this-is-secret-and-important"
-SETTINGS_ENCRYPTION_KEY = "ca56652b62a97555ffc35331260ee457cb2ffafacdefdf2e9e5e5388e7f81ea5"
-
-# Defaults to the fake providers (no API key needed, canned replies) for local `cargo run`.
-# To use a real LLM for a session, export overrides in your shell before running — a
-# shell-exported var wins over these defaults (cargo only forces its own value if `force = true`
-# is set on an entry, which none of these have):
-#   LLM_PROVIDER=anthropic LLM_MODEL_ID=claude-sonnet-5 LLM_API_KEY=sk-... cargo run
-# Embeddings can stay on "fake" even when the LLM is real, or switch both together:
-#   EMBEDDING_PROVIDER=openai EMBEDDING_MODEL_ID=text-embedding-3-small EMBEDDING_API_KEY=sk-... cargo run
-#
-# These env-var fallbacks now only apply on first boot, before any admin has saved provider
-# settings via /admin/settings/llm — once a provider_settings DB row exists, it takes over.
-LLM_PROVIDER = "fake"
-EMBEDDING_PROVIDER = "fake"
-S3_BUCKET="shipyard"
-S3_REGION="idn"
-AWS_ACCESS_KEY_ID="009e961fada753bd4153"
-AWS_SECRET_ACCESS_KEY="KeCLqFyDP3a9VCHseQinvabuoyqa7uBPOud90HVO"
-S3_ENDPOINT_URL="https://nos.wjv-1.neo.id"
