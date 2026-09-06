@@ -121,7 +121,7 @@
 				<MenuItem onclick={() => goToAccountPage('/preferences')}>Preferences</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/profile')}>Profile</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/account')}>Account settings</MenuItem>
-				<form method="POST" action="/logout" use:enhance>
+				<form method="POST" action="/logout">
 					<MenuItem type="submit">Log out</MenuItem>
 				</form>
 			</div>
