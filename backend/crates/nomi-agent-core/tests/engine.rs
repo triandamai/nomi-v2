@@ -49,6 +49,9 @@ impl SubAgent for TestAgent {
     fn is_default(&self) -> bool {
         true
     }
+    fn supports_todos(&self) -> bool {
+        true
+    }
 }
 
 struct PersonalityAwareTestAgent;
@@ -466,4 +469,89 @@ async fn a_stored_personality_is_not_folded_in_for_an_agent_that_does_not_opt_in
 
     let requests = provider.received_requests.lock().unwrap();
     assert_eq!(requests[0].system.as_ref().unwrap(), "test prompt");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn show_table_is_available_to_every_agent_and_posts_a_table_block(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response(
+            "t1",
+            "show_table",
+            serde_json::json!({
+                "variant": "data",
+                "columns": [{"key": "name", "label": "Name"}],
+                "rows": [{"name": "Alice"}]
+            }),
+        ),
+        text_response("Done!", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let content_blocks: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT content_blocks FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let blocks = content_blocks.unwrap();
+    assert_eq!(blocks[0]["kind"], "table");
+    assert_eq!(blocks[0]["rows"][0]["name"], "Alice");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn update_todos_upserts_the_same_message_instead_of_creating_a_new_one_each_time(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let todo_input = |status: &str| {
+        serde_json::json!({"items": [{"id": "1", "text": "Write index.html", "status": status}]})
+    };
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "update_todos", todo_input("pending")),
+        text_response("ok", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let provider2 = FakeLlmProvider::sequence(vec![
+        tool_use_response("t2", "update_todos", todo_input("done")),
+        text_response("ok again", StopReason::EndTurn),
+    ]);
+    run_agent_turn(&mut conn, None, &provider2, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let todo_message_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM messages WHERE session_id = $1 AND content_blocks IS NOT NULL AND content_blocks @> '[{\"kind\": \"todo_list\"}]'",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(todo_message_count, 1, "the second update_todos call should update the same message, not create a second one");
+
+    let status: String = sqlx::query_scalar(
+        "SELECT content_blocks->0->'items'->0->>'status' FROM messages WHERE session_id = $1 AND content_blocks @> '[{\"kind\": \"todo_list\"}]'",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "done");
 }

@@ -92,6 +92,10 @@ impl SubAgent for PlanningAgent {
     fn surfaces_activity(&self) -> bool {
         true
     }
+
+    fn supports_todos(&self) -> bool {
+        true
+    }
 }
 
 /// A project row may already exist for this session — the "+ Add new project" entry point

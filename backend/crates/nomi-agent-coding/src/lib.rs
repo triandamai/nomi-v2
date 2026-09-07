@@ -154,6 +154,10 @@ impl SubAgent for CodingAgent {
         true
     }
 
+    fn supports_todos(&self) -> bool {
+        true
+    }
+
     fn validate_delegation_task(&self, task: &str) -> Result<(), String> {
         if has_project_prefix(task) {
             Ok(())

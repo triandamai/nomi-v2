@@ -14,6 +14,8 @@ use crate::subagent::SubAgent;
 const MAX_TOOL_TURNS: u32 = 10;
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
+pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
+pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 
 fn complete_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
@@ -51,6 +53,50 @@ fn delegate_tool_definition(targets: &[&str]) -> ToolDefinition {
     }
 }
 
+fn show_table_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: SHOW_TABLE_TOOL_NAME.to_string(),
+        description: "Show the user a table of structured data — either a plain data table or a side-by-side comparison of a few items across criteria.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "variant": {"type": "string", "enum": ["data", "comparison"]},
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "object", "properties": {"key": {"type": "string"}, "label": {"type": "string"}}, "required": ["key", "label"]}
+                },
+                "rows": {"type": "array", "items": {"type": "object"}}
+            },
+            "required": ["variant", "columns", "rows"]
+        }),
+    }
+}
+
+fn update_todos_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: UPDATE_TODOS_TOOL_NAME.to_string(),
+        description: "Set or replace your current multi-step task checklist, shown live to the user. Call this again with the full updated list whenever a step's status changes.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "text": {"type": "string"},
+                            "status": {"type": "string", "enum": ["pending", "in_progress", "done"]}
+                        },
+                        "required": ["id", "text", "status"]
+                    }
+                }
+            },
+            "required": ["items"]
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
@@ -82,6 +128,10 @@ pub async fn run_agent_turn(
         if !targets.is_empty() {
             tools.push(delegate_tool_definition(&targets));
         }
+    }
+    tools.push(show_table_tool_definition());
+    if agent.supports_todos() {
+        tools.push(update_todos_tool_definition());
     }
 
     let memories = if agent.uses_memory() {
@@ -229,6 +279,23 @@ pub async fn run_agent_turn(
                         },
                     };
                     (text, err, None)
+                } else if name.as_str() == SHOW_TABLE_TOOL_NAME {
+                    match parse_table_input(input) {
+                        Ok((variant, columns, rows)) => {
+                            let text = table_display_text(&variant, rows.len());
+                            let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
+                            (text, false, Some(block))
+                        }
+                        Err(err) => (err, true, None),
+                    }
+                } else if name.as_str() == UPDATE_TODOS_TOOL_NAME {
+                    match parse_todo_items(input) {
+                        Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, items).await {
+                            Ok(text) => (text, false, None),
+                            Err(err) => (err, true, None),
+                        },
+                        Err(err) => (err, true, None),
+                    }
                 } else {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(outcome) => (outcome.display_text, false, outcome.block),
@@ -238,7 +305,12 @@ pub async fn run_agent_turn(
 
                 log_tool_call(conn, session_id, agent_session_id, agent.agent_type(), name, input, &result_text, is_error).await;
 
-                if agent.surfaces_activity() && name.as_str() != COMPLETE_TASK_TOOL_NAME && name.as_str() != DELEGATE_TOOL_NAME {
+                let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
+                    || (agent.surfaces_activity()
+                        && name.as_str() != COMPLETE_TASK_TOOL_NAME
+                        && name.as_str() != DELEGATE_TOOL_NAME
+                        && name.as_str() != UPDATE_TODOS_TOOL_NAME);
+                if should_post {
                     post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &result_text, rich_block.as_ref()).await;
                 }
 
@@ -302,6 +374,132 @@ async fn post_activity_message(
         .await;
     if let Some(publisher) = mqtt {
         let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+    }
+}
+
+fn parse_todo_items(input: &serde_json::Value) -> Result<Vec<crate::content_block::TodoItem>, String> {
+    let items = input.get("items").and_then(|v| v.as_array()).ok_or("items is required")?;
+    items
+        .iter()
+        .map(|item| {
+            let id = item.get("id").and_then(|v| v.as_str()).ok_or("each item needs an id")?.to_string();
+            let text = item.get("text").and_then(|v| v.as_str()).ok_or("each item needs text")?.to_string();
+            let status = match item.get("status").and_then(|v| v.as_str()) {
+                Some("pending") => crate::content_block::TodoStatus::Pending,
+                Some("in_progress") => crate::content_block::TodoStatus::InProgress,
+                Some("done") => crate::content_block::TodoStatus::Done,
+                _ => return Err("each item's status must be pending, in_progress, or done".to_string()),
+            };
+            Ok(crate::content_block::TodoItem { id, text, status })
+        })
+        .collect()
+}
+
+fn todo_list_display_text(items: &[crate::content_block::TodoItem]) -> String {
+    use crate::content_block::TodoStatus;
+    let mut out = String::from("📋 To-do list:\n");
+    for item in items {
+        let mark = match item.status {
+            TodoStatus::Done => "[x]",
+            TodoStatus::InProgress => "[~]",
+            TodoStatus::Pending => "[ ]",
+        };
+        out.push_str(&format!("{mark} {}\n", item.text));
+    }
+    out
+}
+
+/// Finds the most recent todo-list message for this agent session (tracked via
+/// `agent_sessions.state->>'todo_message_id'`) and updates it in place; inserts a fresh message
+/// and records its id into `state` the first time this agent session ever calls update_todos.
+/// Unlike every other block-producing tool, this posts/updates the message itself rather than
+/// returning a block for engine.rs's generic post-at-the-bottom-of-the-loop path, since that
+/// path only ever inserts — it has no notion of "update this existing row instead".
+async fn upsert_todo_list(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<&MqttPublisher>,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    items: Vec<crate::content_block::TodoItem>,
+) -> Result<String, String> {
+    let display_text = todo_list_display_text(&items);
+    let block = crate::content_block::ContentBlock::TodoList { items };
+    let content_blocks = serde_json::json!([block]);
+
+    let existing_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT (state->>'todo_message_id')::uuid FROM agent_sessions WHERE id = $1",
+    )
+    .bind(agent_session_id)
+    .fetch_one(&mut **conn)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match existing_id {
+        Some(message_id) => {
+            sqlx::query("UPDATE messages SET content = $1, content_blocks = $2 WHERE id = $3")
+                .bind(&display_text)
+                .bind(&content_blocks)
+                .bind(message_id)
+                .execute(&mut **conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        None => {
+            let message_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+            )
+            .bind(session_id)
+            .bind(&display_text)
+            .bind(&content_blocks)
+            .fetch_one(&mut **conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            sqlx::query("UPDATE agent_sessions SET state = state || jsonb_build_object('todo_message_id', $1::text) WHERE id = $2")
+                .bind(message_id.to_string())
+                .bind(agent_session_id)
+                .execute(&mut **conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    if let Some(publisher) = mqtt {
+        let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+    }
+
+    Ok("todo list updated".to_string())
+}
+
+fn parse_table_input(
+    input: &serde_json::Value,
+) -> Result<(crate::content_block::TableVariant, Vec<crate::content_block::TableColumn>, Vec<serde_json::Value>), String> {
+    use crate::content_block::{TableColumn, TableVariant};
+    let variant = match input.get("variant").and_then(|v| v.as_str()) {
+        Some("data") => TableVariant::Data,
+        Some("comparison") => TableVariant::Comparison,
+        _ => return Err("variant must be 'data' or 'comparison'".to_string()),
+    };
+    let columns: Vec<TableColumn> = input
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .ok_or("columns is required")?
+        .iter()
+        .map(|c| {
+            let key = c.get("key").and_then(|v| v.as_str()).ok_or("each column needs a key")?.to_string();
+            let label = c.get("label").and_then(|v| v.as_str()).ok_or("each column needs a label")?.to_string();
+            Ok(TableColumn { key, label })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let rows = input.get("rows").and_then(|v| v.as_array()).ok_or("rows is required")?.clone();
+    Ok((variant, columns, rows))
+}
+
+fn table_display_text(variant: &crate::content_block::TableVariant, row_count: usize) -> String {
+    use crate::content_block::TableVariant;
+    match variant {
+        TableVariant::Data => format!("📊 Showed a table with {row_count} row(s)"),
+        TableVariant::Comparison => format!("📊 Compared {row_count} item(s)"),
     }
 }
 

@@ -69,6 +69,13 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// When true, run_agent_turn gives this agent the engine-level `update_todos` tool for
+    /// maintaining a live multi-step task checklist. Off by default — most agents don't run
+    /// long enough multi-step builds to need one.
+    fn supports_todos(&self) -> bool {
+        false
+    }
+
     /// Called on the delegation *target* before `delegate_to_agent` creates anything, with the
     /// exact task string the delegating agent wrote. Return `Err(reason)` to reject the
     /// delegation outright — no delegation row is created, and `reason` is fed straight back to
