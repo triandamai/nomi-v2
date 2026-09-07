@@ -75,6 +75,29 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	resolveApproval: async ({ request, params, cookies, fetch }) => {
+		const data = await request.formData();
+		const messageId = data.get('messageId');
+		const decision = data.get('decision');
+		const remember = data.get('remember') === 'true';
+
+		if (typeof messageId !== 'string' || (decision !== 'approve' && decision !== 'deny')) {
+			return fail(400, { error: 'Invalid approval decision.' });
+		}
+
+		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages/${messageId}/approval`, {
+			method: 'PUT',
+			body: JSON.stringify({ decision, remember }),
+		});
+
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || 'Failed to record your decision.' });
+		}
+
+		return { success: true };
+	},
+
 	loadFile: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const projectId = data.get('projectId');
