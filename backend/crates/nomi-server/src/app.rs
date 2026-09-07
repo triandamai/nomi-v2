@@ -61,6 +61,10 @@ pub fn build_router(state: AppState) -> Router {
             put(sessions_routes::put_message_feedback).delete(sessions_routes::delete_message_feedback),
         )
         .route(
+            "/api/sessions/:id/messages/:message_id/approval",
+            put(sessions_routes::resolve_approval),
+        )
+        .route(
             "/api/admin/settings/llm/models",
             get(llm_models_routes::list_admin_models).post(llm_models_routes::create_admin_model),
         )

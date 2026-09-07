@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod bootstrap;
 pub mod ingest;
 pub mod lock;
@@ -12,6 +13,7 @@ use uuid::Uuid;
 
 use nomi_agent_core::AgentRegistry;
 use nomi_embedding::EmbeddingProvider;
+use nomi_llm::ContentBlock as LlmContentBlock;
 use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
@@ -22,6 +24,7 @@ const SUBAGENT_MAX_TOKENS: u32 = 1024;
 pub struct TurnOutcome {
     pub session_id: Uuid,
     pub reply: String,
+    pub message_id: Option<Uuid>,
 }
 
 pub async fn handle_inbound_message(
@@ -47,9 +50,9 @@ pub async fn handle_inbound_message(
     let result = run_locked_turn(&mut conn, None, provider, embedding_provider, registry, session_id, sender_channel_identity_id, user_id, text).await;
 
     match result {
-        Ok(reply) => {
+        Ok((reply, message_id)) => {
             release_lock_ignoring_errors(&mut conn, session_id).await;
-            Ok(TurnOutcome { session_id, reply })
+            Ok(TurnOutcome { session_id, reply, message_id })
         }
         Err(err) => {
             let _ = sqlx::query(
@@ -99,9 +102,9 @@ pub async fn process_turn(
     .await;
 
     match result {
-        Ok(reply) => {
+        Ok((reply, message_id)) => {
             release_lock_ignoring_errors(&mut conn, session_id).await;
-            Ok(TurnOutcome { session_id, reply })
+            Ok(TurnOutcome { session_id, reply, message_id })
         }
         Err(err) => {
             let _ = sqlx::query(
@@ -137,7 +140,7 @@ async fn run_locked_turn(
     sender_channel_identity_id: Uuid,
     user_id: Uuid,
     text: &str,
-) -> Result<String, TurnError> {
+) -> Result<(String, Option<Uuid>), TurnError> {
     let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
 
     enum RoutingOutcome<'a> {
@@ -197,24 +200,31 @@ async fn run_subagent_turn(
     session_id: Uuid,
     agent_session_id: Uuid,
     user_id: Uuid,
-) -> Result<String, TurnError> {
+) -> Result<(String, Option<Uuid>), TurnError> {
     let messages = fetch_recent_messages(conn, session_id).await?;
 
     let outcome = nomi_agent_core::run_agent_turn(
-        conn,
-        mqtt,
-        provider,
-        embedding_provider,
-        registry,
-        agent,
-        session_id,
-        agent_session_id,
-        user_id,
-        messages,
-        SUBAGENT_MAX_TOKENS,
+        conn, mqtt, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id, messages, SUBAGENT_MAX_TOKENS,
     )
     .await?;
 
+    finish_agent_turn(conn, session_id, agent_session_id, agent, outcome).await
+}
+
+/// Persists a `LoopOutcome` (insert the final reply / completion message, record bookkeeping
+/// events, update `last_activity_at`) and returns the reply text plus the persisted message's
+/// id (`None` for `AwaitingApproval`, which already inserted its own approval message inside
+/// `resolve_tool_batch` — nothing more to persist here). Shared by the fresh-turn path
+/// (`run_subagent_turn`) and the resume path (`resume_paused_turn`) below, since both end up
+/// with a `LoopOutcome` to finish the same way.
+#[allow(clippy::too_many_arguments)]
+async fn finish_agent_turn(
+    conn: &mut PoolConnection<Postgres>,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    agent: &dyn nomi_agent_core::SubAgent,
+    outcome: nomi_agent_core::LoopOutcome,
+) -> Result<(String, Option<Uuid>), TurnError> {
     match outcome {
         nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens } => {
             let mut tx = conn.begin().await?;
@@ -236,8 +246,7 @@ async fn run_subagent_turn(
             // reuses session_id as agent_session_id for it as a sentinel (see its call site).
             // agent_events.agent_session_id has a foreign key into agent_sessions, so binding
             // that sentinel directly would fail every default-agent reply; NULL it out instead.
-            let agent_session_id_for_event =
-                if agent_session_id == session_id { None } else { Some(agent_session_id) };
+            let agent_session_id_for_event = if agent_session_id == session_id { None } else { Some(agent_session_id) };
             sqlx::query(
                 "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, $2, $3, 'AgentReplied', $4)",
             )
@@ -252,33 +261,151 @@ async fn run_subagent_turn(
                 .execute(&mut *tx)
                 .await?;
             tx.commit().await?;
-            Ok(reply_text)
+            Ok((reply_text, Some(reply_message_id)))
         }
         nomi_agent_core::LoopOutcome::Completed { status, summary } => {
             let mut tx = conn.begin().await?;
-            sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
-                .bind(session_id)
-                .bind(&summary)
-                .execute(&mut *tx)
-                .await?;
+            let message_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id",
+            )
+            .bind(session_id)
+            .bind(&summary)
+            .fetch_one(&mut *tx)
+            .await?;
             tx.commit().await?;
 
             routing::complete_agent_session(conn, agent_session_id, session_id, agent.agent_type(), &status, &summary).await?;
 
-            Ok(summary)
+            Ok((summary, Some(message_id)))
         }
-        // Stopgap only: Task 6 introduces the real resume path and Task 7 threads a proper
-        // `TurnOutcome` variant through for this (see plan
-        // docs/superpowers/plans/2026-09-07-rich-content-blocks-implementation.md). For now,
-        // just surface the persisted approval-request message's text so a pending-approval
-        // turn doesn't silently vanish, and the workspace keeps compiling now that
-        // `LoopOutcome` has this variant.
-        nomi_agent_core::LoopOutcome::AwaitingApproval { message_id } => {
-            let content: String = sqlx::query_scalar("SELECT content FROM messages WHERE id = $1")
-                .bind(message_id)
-                .fetch_one(&mut **conn)
-                .await?;
-            Ok(content)
+        nomi_agent_core::LoopOutcome::AwaitingApproval { .. } => Ok(("Waiting for approval.".to_string(), None)),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn resume_paused_turn(
+    pool: &PgPool,
+    mqtt: &MqttPublisher,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
+    message_id: Uuid,
+    decision: &str,
+    remember: bool,
+) -> Result<TurnOutcome, TurnError> {
+    let session_id: Uuid = sqlx::query_scalar("SELECT session_id FROM messages WHERE id = $1")
+        .bind(message_id)
+        .fetch_one(pool)
+        .await?;
+
+    let mut conn = lock::acquire_session_lock(pool, session_id).await?;
+
+    let result = resume_locked(&mut conn, mqtt, provider, embedding_provider, registry, session_id, message_id, decision, remember).await;
+
+    match result {
+        Ok((reply, resumed_message_id)) => {
+            release_lock_ignoring_errors(&mut conn, session_id).await;
+            Ok(TurnOutcome { session_id, reply, message_id: resumed_message_id })
+        }
+        Err(err) => {
+            let _ = sqlx::query("INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)")
+                .bind(session_id)
+                .bind(serde_json::json!({"error": err.to_string()}))
+                .execute(&mut *conn)
+                .await;
+            let _ = mqtt.publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: err.to_string() }).await;
+            release_lock_ignoring_errors(&mut conn, session_id).await;
+            Err(err)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resume_locked(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: &MqttPublisher,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
+    session_id: Uuid,
+    message_id: Uuid,
+    decision: &str,
+    remember: bool,
+) -> Result<(String, Option<Uuid>), TurnError> {
+    let row: Option<(Uuid, String, serde_json::Value, Uuid)> = sqlx::query_as(
+        "SELECT id, agent_type, state, sender_channel_identity_id FROM agent_sessions \
+         WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true",
+    )
+    .bind(message_id.to_string())
+    .fetch_optional(&mut **conn)
+    .await?;
+
+    let Some((agent_session_id, agent_type, state, sender_channel_identity_id)) = row else {
+        return Err(TurnError::ApprovalNoLongerPending);
+    };
+
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
+        .bind(sender_channel_identity_id)
+        .fetch_one(&mut **conn)
+        .await?;
+
+    let agent = registry.find(&agent_type).ok_or(TurnError::ApprovalNoLongerPending)?;
+
+    let tool_use_blocks: Vec<LlmContentBlock> =
+        serde_json::from_value(state["tool_use_blocks"].clone()).map_err(|_| TurnError::ApprovalNoLongerPending)?;
+    let messages: Vec<LlmMessage> =
+        serde_json::from_value(state["messages"].clone()).map_err(|_| TurnError::ApprovalNoLongerPending)?;
+    let pending_tool_use_id = state["pending_tool_use_id"].as_str().unwrap_or_default().to_string();
+
+    if remember {
+        if let Some(LlmContentBlock::ToolUse { name, input, .. }) =
+            tool_use_blocks.iter().find(|b| matches!(b, LlmContentBlock::ToolUse { id, .. } if *id == pending_tool_use_id))
+        {
+            let path = input.get("path").and_then(|v| v.as_str());
+            let rule_decision = if decision == "approve" { "allow" } else { "deny" };
+            let _ = nomi_agent_core::permissions::remember_decision(conn, user_id, name, path, rule_decision).await;
+        }
+    }
+
+    // Clear the paused-state keys before resolving — resolving may pause again on a different
+    // block in the same batch, in which case it writes fresh paused keys right back.
+    let _ = sqlx::query(
+        "UPDATE agent_sessions SET state = state - 'paused_for_approval' - 'pending_approval_message_id' - 'pending_tool_use_id' - 'tool_use_blocks' - 'messages' WHERE id = $1",
+    )
+    .bind(agent_session_id)
+    .execute(&mut **conn)
+    .await?;
+
+    let batch_outcome = nomi_agent_core::resolve_tool_batch(
+        conn,
+        Some((mqtt, Uuid::nil())),
+        registry,
+        agent,
+        session_id,
+        agent_session_id,
+        user_id,
+        &tool_use_blocks,
+        &messages,
+        Some((pending_tool_use_id.as_str(), decision == "approve")),
+    )
+    .await?;
+
+    match batch_outcome {
+        nomi_agent_core::ToolBatchOutcome::AwaitingApproval { .. } => Ok(("Waiting for another approval.".to_string(), None)),
+        nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => {
+            finish_agent_turn(conn, session_id, agent_session_id, agent, nomi_agent_core::LoopOutcome::Completed { status, summary }).await
+        }
+        nomi_agent_core::ToolBatchOutcome::Resolved(tool_results) => {
+            let mut full_messages = messages;
+            full_messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
+
+            let outcome = nomi_agent_core::run_agent_turn(
+                conn, Some((mqtt, Uuid::nil())), provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id,
+                full_messages, SUBAGENT_MAX_TOKENS,
+            )
+            .await?;
+
+            finish_agent_turn(conn, session_id, agent_session_id, agent, outcome).await
         }
     }
 }

@@ -479,6 +479,47 @@ pub async fn put_message_feedback(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+pub struct ApprovalRequest {
+    pub decision: String,
+    #[serde(default)]
+    pub remember: bool,
+}
+
+pub async fn resolve_approval(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, message_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<ApprovalRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    authorize_message_in_session(&state.pool, session_id, message_id).await?;
+
+    if req.decision != "approve" && req.decision != "deny" {
+        return Err((StatusCode::BAD_REQUEST, "decision must be 'approve' or 'deny'"));
+    }
+
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true)",
+    )
+    .bind(message_id.to_string())
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check approval status"))?;
+
+    if !pending {
+        return Err((StatusCode::CONFLICT, "this action is no longer pending"));
+    }
+
+    let mut tx = state.pool.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to start transaction"))?;
+    nomi_turn::approval::enqueue(&mut tx, message_id, &req.decision, req.remember)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+
+    Ok(StatusCode::ACCEPTED)
+}
+
 pub async fn delete_message_feedback(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,

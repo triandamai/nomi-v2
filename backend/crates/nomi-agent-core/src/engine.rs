@@ -284,141 +284,187 @@ pub async fn run_agent_turn(
             }
         }
 
-        // Permission pre-scan: before executing ANY tool call from this response, check whether
-        // any of them need approval. If so, none of them run yet — the whole batch pauses on the
-        // first one needing a decision. Resume (Task 6) re-enters this exact scan-then-execute
-        // logic from scratch once a decision is made, so nothing here needs to track partial
-        // progress within a batch.
         let pending_tool_use_blocks: Vec<ContentBlock> =
             response.content.iter().filter(|b| matches!(b, ContentBlock::ToolUse { .. })).cloned().collect();
 
-        for block in &pending_tool_use_blocks {
-            if let ContentBlock::ToolUse { id, name, input, .. } = block {
-                if !is_gateable(name) {
-                    continue;
-                }
-                let decision = permissions::check_tool_permission(conn, user_id, name, input).await;
-                if !matches!(decision, permissions::PermissionDecision::Ask) {
-                    continue;
-                }
-
-                let description = describe_pending_action(name, input);
-                let approval_block = crate::content_block::ContentBlock::ApprovalRequest {
-                    id: Uuid::new_v4(),
-                    tool_name: name.clone(),
-                    description: description.clone(),
-                    input: input.clone(),
-                    status: crate::content_block::ApprovalStatus::Pending,
-                    decided_at: None,
-                };
-                let content_blocks = serde_json::json!([approval_block]);
-                let message_id: Option<Uuid> = sqlx::query_scalar(
-                    "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
-                )
-                .bind(session_id)
-                .bind(format!("⏳ {description}"))
-                .bind(&content_blocks)
-                .fetch_one(&mut **conn)
-                .await
-                .ok();
-
-                let Some(message_id) = message_id else {
-                    return Err(TurnError::ToolLoopExceeded);
-                };
-
-                if let Some((publisher, _)) = mqtt {
-                    let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
-                }
-
-                let state_patch = serde_json::json!({
-                    "paused_for_approval": true,
-                    "pending_approval_message_id": message_id.to_string(),
-                    "pending_tool_use_id": id,
-                    "tool_use_blocks": pending_tool_use_blocks,
-                    "messages": messages,
-                });
-                let _ = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
-                    .bind(&state_patch)
-                    .bind(agent_session_id)
-                    .execute(&mut **conn)
-                    .await;
-
-                return Ok(LoopOutcome::AwaitingApproval { message_id });
+        match resolve_tool_batch(conn, mqtt, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, None).await? {
+            ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
+            ToolBatchOutcome::Completed { status, summary } => return Ok(LoopOutcome::Completed { status, summary }),
+            ToolBatchOutcome::Resolved(tool_results) => {
+                messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
             }
         }
+    }
 
-        let mut tool_results = Vec::new();
-        for block in &response.content {
-            if let ContentBlock::ToolUse { id, name, input, .. } = block {
-                let (result_text, is_error, rich_block) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
-                    (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false, None)
-                } else if name.as_str() == DELEGATE_TOOL_NAME {
-                    let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
-                    let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
-                    let rejection = registry.find(target_agent).and_then(|t| t.validate_delegation_task(task).err());
-                    let (text, err) = match rejection {
-                        Some(reason) => (reason, true),
-                        None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
-                            Ok(ack) => (ack, false),
-                            Err(err) => (err, true),
-                        },
-                    };
-                    (text, err, None)
-                } else if name.as_str() == SHOW_TABLE_TOOL_NAME {
-                    match parse_table_input(input) {
-                        Ok((variant, columns, rows)) => {
-                            let text = table_display_text(&variant, rows.len());
-                            let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
-                            (text, false, Some(block))
-                        }
-                        Err(err) => (err, true, None),
+    Err(TurnError::ToolLoopExceeded)
+}
+
+/// The result of resolving one response's worth of tool_use blocks.
+#[derive(Debug)]
+pub enum ToolBatchOutcome {
+    Resolved(Vec<ContentBlock>),
+    Completed { status: String, summary: String },
+    AwaitingApproval { message_id: Uuid },
+}
+
+/// Resolves every ToolUse block in `tool_use_blocks`, in order. `already_decided`, when set, is
+/// `(tool_use_id, approved)` for a block whose approval was just resolved externally (a user
+/// clicked Approve/Deny on its card) — that one block skips the permission check and uses the
+/// given decision directly; every other block still goes through the normal
+/// check-permission-then-execute-or-pause path, which may itself pause again on a *different*
+/// block — handled identically to the very first pause (see nomi-turn's resume path, which calls
+/// this same function again when that happens).
+#[allow(clippy::too_many_arguments)]
+pub async fn resolve_tool_batch(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    registry: &AgentRegistry,
+    agent: &dyn SubAgent,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    user_id: Uuid,
+    tool_use_blocks: &[ContentBlock],
+    conversation_so_far: &[LlmMessage],
+    already_decided: Option<(&str, bool)>,
+) -> Result<ToolBatchOutcome, TurnError> {
+    for (index, block) in tool_use_blocks.iter().enumerate() {
+        if let ContentBlock::ToolUse { id, name, input, .. } = block {
+            if already_decided.map(|(decided_id, _)| decided_id == id.as_str()).unwrap_or(false) {
+                continue;
+            }
+            if !is_gateable(name) {
+                continue;
+            }
+            let decision = permissions::check_tool_permission(conn, user_id, name, input).await;
+            if !matches!(decision, permissions::PermissionDecision::Ask) {
+                continue;
+            }
+
+            let description = describe_pending_action(name, input);
+            let approval_block = crate::content_block::ContentBlock::ApprovalRequest {
+                id: Uuid::new_v4(),
+                tool_name: name.clone(),
+                description: description.clone(),
+                input: input.clone(),
+                status: crate::content_block::ApprovalStatus::Pending,
+                decided_at: None,
+            };
+            let content_blocks = serde_json::json!([approval_block]);
+            let message_id: Option<Uuid> = sqlx::query_scalar(
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+            )
+            .bind(session_id)
+            .bind(format!("⏳ {description}"))
+            .bind(&content_blocks)
+            .fetch_one(&mut **conn)
+            .await
+            .ok();
+
+            let Some(message_id) = message_id else {
+                return Err(TurnError::ToolLoopExceeded);
+            };
+
+            if let Some((publisher, _)) = mqtt {
+                let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+            }
+
+            // Only the not-yet-resolved blocks from this point on need to survive into the next
+            // resume — everything before `index` is already resolved by the time this is reached
+            // (either during THIS call's own execution pass below, on a later resume, or never
+            // executed at all on the very first pass, where nothing runs until the pre-scan
+            // finds no more "Ask" blocks).
+            let state_patch = serde_json::json!({
+                "paused_for_approval": true,
+                "pending_approval_message_id": message_id.to_string(),
+                "pending_tool_use_id": id,
+                "tool_use_blocks": &tool_use_blocks[index..],
+                "messages": conversation_so_far,
+            });
+            let _ = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
+                .bind(&state_patch)
+                .bind(agent_session_id)
+                .execute(&mut **conn)
+                .await;
+
+            return Ok(ToolBatchOutcome::AwaitingApproval { message_id });
+        }
+    }
+
+    let mut tool_results = Vec::new();
+    for block in tool_use_blocks {
+        if let ContentBlock::ToolUse { id, name, input, .. } = block {
+            let (result_text, is_error, rich_block) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
+                (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false, None)
+            } else if name.as_str() == DELEGATE_TOOL_NAME {
+                let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
+                let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
+                let rejection = registry.find(target_agent).and_then(|t| t.validate_delegation_task(task).err());
+                let (text, err) = match rejection {
+                    Some(reason) => (reason, true),
+                    None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
+                        Ok(ack) => (ack, false),
+                        Err(err) => (err, true),
+                    },
+                };
+                (text, err, None)
+            } else if name.as_str() == SHOW_TABLE_TOOL_NAME {
+                match parse_table_input(input) {
+                    Ok((variant, columns, rows)) => {
+                        let text = table_display_text(&variant, rows.len());
+                        let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
+                        (text, false, Some(block))
                     }
-                } else if name.as_str() == UPDATE_TODOS_TOOL_NAME {
-                    match parse_todo_items(input) {
-                        Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, items).await {
-                            Ok(text) => (text, false, None),
-                            Err(err) => (err, true, None),
-                        },
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == UPDATE_TODOS_TOOL_NAME {
+                match parse_todo_items(input) {
+                    Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, items).await {
+                        Ok(text) => (text, false, None),
                         Err(err) => (err, true, None),
-                    }
-                } else if matches!(permissions::check_tool_permission(conn, user_id, name, input).await, permissions::PermissionDecision::Deny) {
-                    ("Denied by your permission rules.".to_string(), true, None)
-                } else {
+                    },
+                    Err(err) => (err, true, None),
+                }
+            } else if already_decided.map(|(decided_id, _)| decided_id == id.as_str()).unwrap_or(false) {
+                let approved = already_decided.unwrap().1;
+                if approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(outcome) => (outcome.display_text, false, outcome.block),
                         Err(err) => (describe_tool_error(name, input, &err), true, None),
                     }
-                };
-
-                log_tool_call(conn, session_id, agent_session_id, agent.agent_type(), name, input, &result_text, is_error).await;
-
-                let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
-                    || (agent.surfaces_activity()
-                        && name.as_str() != COMPLETE_TASK_TOOL_NAME
-                        && name.as_str() != DELEGATE_TOOL_NAME
-                        && name.as_str() != UPDATE_TODOS_TOOL_NAME);
-                if should_post {
-                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &result_text, rich_block.as_ref()).await;
+                } else {
+                    ("Denied by your permission rules.".to_string(), true, None)
                 }
-
-                if name.as_str() == COMPLETE_TASK_TOOL_NAME {
-                    let status = input.get("status").and_then(|v| v.as_str()).unwrap_or("completed").to_string();
-                    let summary = input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                    return Ok(LoopOutcome::Completed { status, summary });
+            } else if matches!(permissions::check_tool_permission(conn, user_id, name, input).await, permissions::PermissionDecision::Deny) {
+                ("Denied by your permission rules.".to_string(), true, None)
+            } else {
+                match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
+                    Ok(outcome) => (outcome.display_text, false, outcome.block),
+                    Err(err) => (describe_tool_error(name, input, &err), true, None),
                 }
+            };
 
-                tool_results.push(ContentBlock::ToolResult {
-                    tool_use_id: id.clone(),
-                    content: result_text,
-                    is_error,
-                });
+            log_tool_call(conn, session_id, agent_session_id, agent.agent_type(), name, input, &result_text, is_error).await;
+
+            let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
+                || (agent.surfaces_activity()
+                    && name.as_str() != COMPLETE_TASK_TOOL_NAME
+                    && name.as_str() != DELEGATE_TOOL_NAME
+                    && name.as_str() != UPDATE_TODOS_TOOL_NAME);
+            if should_post {
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &result_text, rich_block.as_ref()).await;
             }
-        }
 
-        messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
+            if name.as_str() == COMPLETE_TASK_TOOL_NAME {
+                let status = input.get("status").and_then(|v| v.as_str()).unwrap_or("completed").to_string();
+                let summary = input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                return Ok(ToolBatchOutcome::Completed { status, summary });
+            }
+
+            tool_results.push(ContentBlock::ToolResult { tool_use_id: id.clone(), content: result_text, is_error });
+        }
     }
 
-    Err(TurnError::ToolLoopExceeded)
+    Ok(ToolBatchOutcome::Resolved(tool_results))
 }
 
 async fn log_tool_call(
