@@ -327,7 +327,7 @@ pub async fn resolve_tool_batch(
     conversation_so_far: &[LlmMessage],
     already_decided: Option<(&str, bool)>,
 ) -> Result<ToolBatchOutcome, TurnError> {
-    for (index, block) in tool_use_blocks.iter().enumerate() {
+    for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
             if already_decided.map(|(decided_id, _)| decided_id == id.as_str()).unwrap_or(false) {
                 continue;
@@ -368,16 +368,18 @@ pub async fn resolve_tool_batch(
                 let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
             }
 
-            // Only the not-yet-resolved blocks from this point on need to survive into the next
-            // resume — everything before `index` is already resolved by the time this is reached
-            // (either during THIS call's own execution pass below, on a later resume, or never
-            // executed at all on the very first pass, where nothing runs until the pre-scan
-            // finds no more "Ask" blocks).
+            // The FULL batch must survive into the next resume, not just the blocks from this
+            // point on: this pre-scan loop only checks permissions, it never executes anything —
+            // execution only happens in the pass below, and only once the pre-scan clears with
+            // zero remaining "Ask" blocks. So every block before this one has been scanned but
+            // NOT yet executed; dropping them here would silently lose their results forever
+            // (and leave the eventual ToolResult message missing entries for ToolUse blocks the
+            // assistant turn actually declared).
             let state_patch = serde_json::json!({
                 "paused_for_approval": true,
                 "pending_approval_message_id": message_id.to_string(),
                 "pending_tool_use_id": id,
-                "tool_use_blocks": &tool_use_blocks[index..],
+                "tool_use_blocks": tool_use_blocks,
                 "messages": conversation_so_far,
             });
             let _ = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
