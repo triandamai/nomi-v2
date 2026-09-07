@@ -3,7 +3,7 @@ use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 
 use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
-use nomi_agent_core::{run_agent_turn, LoopOutcome, SubAgent, COMPLETE_TASK_TOOL_NAME};
+use nomi_agent_core::{run_agent_turn, LoopOutcome, SubAgent, ToolOutcome, COMPLETE_TASK_TOOL_NAME};
 use nomi_agent_core::AgentRegistry;
 use nomi_agent_core::TurnError;
 
@@ -34,9 +34,9 @@ impl SubAgent for TestAgent {
         _user_id: Uuid,
         name: &str,
         input: serde_json::Value,
-    ) -> Result<String, String> {
+    ) -> Result<ToolOutcome, String> {
         match name {
-            "echo" => Ok(format!("echoed: {input}")),
+            "echo" => Ok(ToolOutcome::text(format!("echoed: {input}"))),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -72,7 +72,7 @@ impl SubAgent for PersonalityAwareTestAgent {
         _user_id: Uuid,
         name: &str,
         _input: serde_json::Value,
-    ) -> Result<String, String> {
+    ) -> Result<ToolOutcome, String> {
         Err(format!("unknown tool: {name}"))
     }
     fn intent_label(&self) -> &'static str {

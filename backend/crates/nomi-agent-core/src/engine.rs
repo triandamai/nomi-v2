@@ -163,7 +163,7 @@ pub async fn run_agent_turn(
         for block in &response.content {
             if let ContentBlock::Thinking { text, .. } = block {
                 if !text.trim().is_empty() {
-                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("🧠 {}", text.trim())).await;
+                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("🧠 {}", text.trim()), None).await;
                 }
             }
         }
@@ -208,38 +208,38 @@ pub async fn run_agent_turn(
                 ContentBlock::Text { text } if !text.trim().is_empty() => Some(text.clone()),
                 _ => None,
             }) {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("💭 {}", thought.trim())).await;
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("💭 {}", thought.trim()), None).await;
             }
         }
 
         let mut tool_results = Vec::new();
         for block in &response.content {
             if let ContentBlock::ToolUse { id, name, input, .. } = block {
-                let (result_text, is_error) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
-                    (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false)
+                let (result_text, is_error, rich_block) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
+                    (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false, None)
                 } else if name.as_str() == DELEGATE_TOOL_NAME {
                     let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
                     let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
                     let rejection = registry.find(target_agent).and_then(|t| t.validate_delegation_task(task).err());
-                    match rejection {
+                    let (text, err) = match rejection {
                         Some(reason) => (reason, true),
                         None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
                             Ok(ack) => (ack, false),
                             Err(err) => (err, true),
                         },
-                    }
+                    };
+                    (text, err, None)
                 } else {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
-                        Ok(text) => (text, false),
-                        Err(err) => (err, true),
+                        Ok(outcome) => (outcome.display_text, false, outcome.block),
+                        Err(err) => (describe_tool_error(name, input, &err), true, None),
                     }
                 };
 
                 log_tool_call(conn, session_id, agent_session_id, agent.agent_type(), name, input, &result_text, is_error).await;
 
                 if agent.surfaces_activity() && name.as_str() != COMPLETE_TASK_TOOL_NAME && name.as_str() != DELEGATE_TOOL_NAME {
-                    let description = describe_tool_activity(name, input, &result_text, is_error);
-                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &description).await;
+                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &result_text, rich_block.as_ref()).await;
                 }
 
                 if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -291,10 +291,13 @@ async fn post_activity_message(
     mqtt: Option<&MqttPublisher>,
     session_id: Uuid,
     content: &str,
+    block: Option<&crate::content_block::ContentBlock>,
 ) {
-    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+    let content_blocks = block.map(|b| serde_json::json!([b]));
+    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3)")
         .bind(session_id)
         .bind(content)
+        .bind(&content_blocks)
         .execute(&mut **conn)
         .await;
     if let Some(publisher) = mqtt {
@@ -302,33 +305,18 @@ async fn post_activity_message(
     }
 }
 
-/// Templated, non-LLM descriptions of the coding/planning agents' own tools — deliberately not
-/// phrased through the LLM (unlike phrase_delegation_result/phrase_delegation_started): a build
-/// can make many tool calls in a row, and a live activity log needs to keep up with them, not
-/// wait on a completion round-trip per step.
-fn describe_tool_activity(tool_name: &str, input: &serde_json::Value, result: &str, is_error: bool) -> String {
+/// Templated, non-LLM description of a failed tool call — kept generic in the engine (unlike a
+/// success's display_text, which each tool builds itself) since failures never carry a block and
+/// the "⚠️ couldn't X — {reason}" shape is the same regardless of which crate the tool lives in.
+fn describe_tool_error(tool_name: &str, input: &serde_json::Value, result: &str) -> String {
     let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("the file");
-    if is_error {
-        return match tool_name {
-            "write_file" => format!("⚠️ Couldn't write `{path}` — {result}"),
-            "read_file" => format!("⚠️ Couldn't read `{path}` — {result}"),
-            "delete_file" => format!("⚠️ Couldn't delete `{path}` — {result}"),
-            "list_files" => format!("⚠️ Couldn't list project files — {result}"),
-            "create_project" => format!("⚠️ Couldn't create the project — {result}"),
-            "write_plan" => format!("⚠️ Couldn't save the plan — {result}"),
-            other => format!("⚠️ `{other}` failed — {result}"),
-        };
-    }
     match tool_name {
-        "write_file" => format!("📝 Wrote `{path}`"),
-        "read_file" => format!("🔍 Read `{path}`"),
-        "delete_file" => format!("🗑️ Deleted `{path}`"),
-        "list_files" => "📂 Listed project files".to_string(),
-        "create_project" => {
-            let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("the project");
-            format!("✨ Created project \"{name}\"")
-        }
-        "write_plan" => "📋 Saved the build plan".to_string(),
-        other => format!("Ran `{other}`"),
+        "write_file" => format!("⚠️ Couldn't write `{path}` — {result}"),
+        "read_file" => format!("⚠️ Couldn't read `{path}` — {result}"),
+        "delete_file" => format!("⚠️ Couldn't delete `{path}` — {result}"),
+        "list_files" => format!("⚠️ Couldn't list project files — {result}"),
+        "create_project" => format!("⚠️ Couldn't create the project — {result}"),
+        "write_plan" => format!("⚠️ Couldn't save the plan — {result}"),
+        other => format!("⚠️ `{other}` failed — {result}"),
     }
 }

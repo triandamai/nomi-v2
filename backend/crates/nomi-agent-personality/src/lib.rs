@@ -72,11 +72,11 @@ impl SubAgent for PersonalityAgent {
         user_id: Uuid,
         name: &str,
         input: Value,
-    ) -> Result<String, String> {
+    ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
-            "set_personality" => set_personality(conn, session_id, agent_session_id, user_id, input).await,
-            "list_personality_versions" => list_personality_versions(conn, user_id).await,
-            "rollback_personality" => rollback_personality(conn, session_id, agent_session_id, user_id, input).await,
+            "set_personality" => set_personality(conn, session_id, agent_session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
+            "list_personality_versions" => list_personality_versions(conn, user_id).await.map(nomi_agent_core::ToolOutcome::text),
+            "rollback_personality" => rollback_personality(conn, session_id, agent_session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
     }

@@ -43,8 +43,8 @@ async fn list_transactions_returns_recent_transactions_for_the_user(pool: PgPool
         .await
         .unwrap();
 
-    assert!(result.contains("lunch"));
-    assert!(!result.contains("someone else's lunch"));
+    assert!(result.display_text.contains("lunch"));
+    assert!(!result.display_text.contains("someone else's lunch"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -60,8 +60,8 @@ async fn list_transactions_filters_by_category(pool: PgPool) {
         .await
         .unwrap();
 
-    assert!(result.contains("lunch"));
-    assert!(!result.contains("monthly rent"));
+    assert!(result.display_text.contains("lunch"));
+    assert!(!result.display_text.contains("monthly rent"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -72,7 +72,7 @@ async fn list_transactions_with_no_matches_says_so(pool: PgPool) {
         .execute_tool(&mut conn, Uuid::new_v4(), Uuid::new_v4(), user_id, "list_transactions", serde_json::json!({"limit": 10}))
         .await
         .unwrap();
-    assert_eq!(result, "No transactions found.");
+    assert_eq!(result.display_text, "No transactions found.");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -89,8 +89,8 @@ async fn summarize_budget_groups_totals_by_category(pool: PgPool) {
         .await
         .unwrap();
 
-    assert!(result.contains("food: 40.00"));
-    assert!(result.contains("rent: 50.00"));
+    assert!(result.display_text.contains("food: 40.00"));
+    assert!(result.display_text.contains("rent: 50.00"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -108,8 +108,8 @@ async fn summarize_budget_respects_since_filter(pool: PgPool) {
         .await
         .unwrap();
 
-    assert!(result.contains("food: 20.00"));
-    assert!(!result.contains("food: 30.00"));
+    assert!(result.display_text.contains("food: 20.00"));
+    assert!(!result.display_text.contains("food: 30.00"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

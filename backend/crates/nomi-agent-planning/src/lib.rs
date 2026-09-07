@@ -65,10 +65,10 @@ impl SubAgent for PlanningAgent {
         user_id: Uuid,
         name: &str,
         input: Value,
-    ) -> Result<String, String> {
+    ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
-            "create_project" => create_project(conn, session_id, user_id, input).await,
-            "write_plan" => write_plan(conn, user_id, input).await,
+            "create_project" => create_project(conn, session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
+            "write_plan" => write_plan(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
     }

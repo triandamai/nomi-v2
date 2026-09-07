@@ -40,7 +40,7 @@ async fn create_project_succeeds_and_stamps_the_calling_session(pool: PgPool) {
         .await
         .unwrap();
 
-    let project_id: Uuid = result.parse().expect("create_project should return the new project id");
+    let project_id: Uuid = result.display_text.parse().expect("create_project should return the new project id");
     let stored_session_id: Uuid = sqlx::query_scalar("SELECT session_id FROM projects WHERE id = $1")
         .bind(project_id)
         .fetch_one(&pool)
@@ -79,7 +79,7 @@ async fn create_project_renames_a_pre_existing_placeholder_instead_of_duplicatin
         .await
         .unwrap();
 
-    let project_id: Uuid = result.parse().unwrap();
+    let project_id: Uuid = result.display_text.parse().unwrap();
     assert_eq!(project_id, placeholder_id, "should rename the existing row, not create a new one");
 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE session_id = $1")
@@ -118,7 +118,7 @@ async fn write_plan_updates_an_existing_project(pool: PgPool) {
         )
         .await
         .unwrap();
-    assert_eq!(result, "plan saved");
+    assert_eq!(result.display_text, "plan saved");
 
     let stored_plan: Option<String> = sqlx::query_scalar("SELECT plan FROM projects WHERE id = $1")
         .bind(project_id)

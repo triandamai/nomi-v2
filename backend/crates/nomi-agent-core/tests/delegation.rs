@@ -5,7 +5,7 @@ use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 
 use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
-use nomi_agent_core::{run_agent_turn, AgentRegistry, LoopOutcome, SubAgent};
+use nomi_agent_core::{run_agent_turn, AgentRegistry, LoopOutcome, SubAgent, ToolOutcome};
 
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
 
@@ -22,7 +22,7 @@ impl SubAgent for DelegatingAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {
@@ -52,7 +52,7 @@ impl SubAgent for TargetAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {
@@ -76,7 +76,7 @@ impl SubAgent for StrictTargetAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {

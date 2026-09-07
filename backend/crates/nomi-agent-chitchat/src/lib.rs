@@ -34,7 +34,7 @@ impl SubAgent for ChitchatAgent {
         _user_id: Uuid,
         _name: &str,
         _input: Value,
-    ) -> Result<String, String> {
+    ) -> Result<nomi_agent_core::ToolOutcome, String> {
         // Unreachable: tools() returns an empty list, so the engine never calls this for
         // chitchat (the only tool it could ever see is complete_task, which the engine
         // handles itself before reaching an agent's execute_tool).

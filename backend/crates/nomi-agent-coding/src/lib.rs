@@ -132,11 +132,11 @@ impl SubAgent for CodingAgent {
         user_id: Uuid,
         name: &str,
         input: Value,
-    ) -> Result<String, String> {
+    ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
             "write_file" => self.write_file(conn, user_id, input).await,
-            "read_file" => self.read_file(conn, user_id, input).await,
-            "list_files" => list_files(conn, user_id, input).await,
+            "read_file" => self.read_file(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
+            "list_files" => list_files(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             "delete_file" => self.delete_file(conn, user_id, input).await,
             other => Err(format!("unknown tool: {other}")),
         }
@@ -188,7 +188,7 @@ async fn owns_project(conn: &mut PoolConnection<Postgres>, project_id: Uuid, use
 }
 
 impl CodingAgent {
-    async fn write_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
+    async fn write_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
         let project_id = parse_project_id(&input)?;
         if !owns_project(conn, project_id, user_id).await? {
             return Err("project not found".to_string());
@@ -198,7 +198,13 @@ impl CodingAgent {
         let content = input.get("content").and_then(|v| v.as_str()).ok_or("content is required")?;
         let content_type = guess_content_type(path);
 
-        self.storage.put_object(&project_file_key(project_id, path), content, content_type).await.map_err(|e| e.to_string())?;
+        let key = project_file_key(project_id, path);
+        // Read before overwrite: this is the only point in the whole system where the file's
+        // prior content is ever observable — capturing it here is what makes the diff view
+        // possible later, since a second read after the write would just see the new content.
+        let previous_content = self.storage.get_object(&key).await.map_err(|e| e.to_string())?;
+
+        self.storage.put_object(&key, content, content_type).await.map_err(|e| e.to_string())?;
 
         sqlx::query(
             "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
@@ -218,7 +224,15 @@ impl CodingAgent {
             .await
             .map_err(|e| e.to_string())?;
 
-        Ok(format!("wrote {path}"))
+        Ok(nomi_agent_core::ToolOutcome {
+            display_text: format!("📝 Wrote `{path}`"),
+            block: Some(nomi_agent_core::ContentBlock::FileWrite {
+                project_id,
+                path: path.to_string(),
+                content: content.to_string(),
+                previous_content,
+            }),
+        })
     }
 
     async fn read_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
@@ -235,7 +249,7 @@ impl CodingAgent {
         }
     }
 
-    async fn delete_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
+    async fn delete_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
         let project_id = parse_project_id(&input)?;
         if !owns_project(conn, project_id, user_id).await? {
             return Err("project not found".to_string());
@@ -251,7 +265,10 @@ impl CodingAgent {
             .await
             .map_err(|e| e.to_string())?;
 
-        Ok(format!("deleted {path}"))
+        Ok(nomi_agent_core::ToolOutcome {
+            display_text: format!("🗑️ Deleted `{path}`"),
+            block: Some(nomi_agent_core::ContentBlock::FileDelete { project_id, path: path.to_string() }),
+        })
     }
 }
 
