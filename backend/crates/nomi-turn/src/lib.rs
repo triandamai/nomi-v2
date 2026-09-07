@@ -367,6 +367,16 @@ async fn resume_locked(
         }
     }
 
+    let new_status = if decision == "approve" { "approved" } else { "denied" };
+    let _ = sqlx::query(
+        "UPDATE messages SET content_blocks = jsonb_set(jsonb_set(content_blocks, '{0,status}', to_jsonb($1::text)), '{0,decided_at}', to_jsonb(now())) WHERE id = $2",
+    )
+    .bind(new_status)
+    .bind(message_id)
+    .execute(&mut **conn)
+    .await;
+    let _ = mqtt.publish(session_id, &StreamEnvelope::MessageUpdated { message_id }).await;
+
     // Clear the paused-state keys before resolving — resolving may pause again on a different
     // block in the same batch, in which case it writes fresh paused keys right back.
     let _ = sqlx::query(

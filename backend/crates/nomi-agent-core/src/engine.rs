@@ -365,7 +365,7 @@ pub async fn resolve_tool_batch(
             };
 
             if let Some((publisher, _)) = mqtt {
-                let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+                let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
             }
 
             // The FULL batch must survive into the next resume, not just the blocks from this
@@ -499,17 +499,22 @@ async fn post_activity_message(
     session_id: Uuid,
     content: &str,
     block: Option<&crate::content_block::ContentBlock>,
-) {
+) -> Option<Uuid> {
     let content_blocks = block.map(|b| serde_json::json!([b]));
-    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3)")
-        .bind(session_id)
-        .bind(content)
-        .bind(&content_blocks)
-        .execute(&mut **conn)
-        .await;
-    if let Some(publisher) = mqtt {
-        let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+    let message_id: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(content)
+    .bind(&content_blocks)
+    .fetch_one(&mut **conn)
+    .await
+    .ok();
+
+    if let (Some(id), Some(publisher)) = (message_id, mqtt) {
+        let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id: id }).await;
     }
+    message_id
 }
 
 fn parse_todo_items(input: &serde_json::Value) -> Result<Vec<crate::content_block::TodoItem>, String> {
@@ -578,6 +583,9 @@ async fn upsert_todo_list(
                 .execute(&mut **conn)
                 .await
                 .map_err(|e| e.to_string())?;
+            if let Some(publisher) = mqtt {
+                let _ = publisher.publish(session_id, &StreamEnvelope::MessageUpdated { message_id }).await;
+            }
         }
         None => {
             let message_id: Uuid = sqlx::query_scalar(
@@ -596,11 +604,11 @@ async fn upsert_todo_list(
                 .execute(&mut **conn)
                 .await
                 .map_err(|e| e.to_string())?;
-        }
-    }
 
-    if let Some(publisher) = mqtt {
-        let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+            if let Some(publisher) = mqtt {
+                let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
+            }
+        }
     }
 
     Ok("todo list updated".to_string())
