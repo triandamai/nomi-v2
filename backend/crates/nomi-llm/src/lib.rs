@@ -1,6 +1,7 @@
 pub mod types;
 pub mod anthropic;
 pub mod openai;
+pub mod openrouter;
 pub mod gemini;
 pub mod config;
 pub mod fake;
@@ -40,6 +41,14 @@ pub fn response_to_stream(response: LlmResponse) -> LlmEventStream {
                 // A provider's own response never contains a ToolResult block (that's only ever
                 // something we send as part of a request) — nothing to emit.
             }
+            ContentBlock::Thinking { text, signature } => {
+                events.push(Ok(StreamEvent::ContentBlockStart { index, block: PartialBlock::Thinking }));
+                events.push(Ok(StreamEvent::ThinkingDelta { index, text }));
+                if let Some(signature) = signature {
+                    events.push(Ok(StreamEvent::ThinkingSignature { index, signature }));
+                }
+                events.push(Ok(StreamEvent::ContentBlockDone { index }));
+            }
         }
     }
     events.push(Ok(StreamEvent::Done {
@@ -64,6 +73,7 @@ pub async fn validate_model_config(config: ModelConfig, http_client: reqwest::Cl
         messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: "Hi".to_string() }] }],
         tools: vec![],
         max_tokens: 8,
+        enable_reasoning: false,
     };
     complete(provider.as_ref(), request).await?;
     Ok(())
@@ -81,12 +91,14 @@ pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Cli
     let base_url = config.base_url.clone().unwrap_or_else(|| match config.provider {
         ProviderKind::Anthropic => anthropic::AnthropicProvider::default_base_url(),
         ProviderKind::OpenAi => openai::OpenAiProvider::default_base_url(),
+        ProviderKind::OpenRouter => openrouter::OpenRouterProvider::default_base_url(),
         ProviderKind::Gemini => gemini::GeminiProvider::default_base_url(),
         ProviderKind::Fake => String::new(),
     });
     match config.provider {
         ProviderKind::Anthropic => anthropic::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::OpenAi => openai::list_models(&http_client, &config.api_key, &base_url).await,
+        ProviderKind::OpenRouter => openrouter::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::Gemini => gemini::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::Fake => Ok(vec![ModelSummary {
             id: "fake-model".to_string(),
@@ -97,6 +109,7 @@ pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Cli
 
 enum PendingBlock {
     Text(String),
+    Thinking { text: String, signature: Option<String> },
     ToolUse { id: String, name: String, input_json: String, thought_signature: Option<String> },
 }
 
@@ -109,6 +122,7 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
             StreamEvent::ContentBlockStart { index, block } => {
                 let pending_block = match block {
                     PartialBlock::Text => PendingBlock::Text(String::new()),
+                    PartialBlock::Thinking => PendingBlock::Thinking { text: String::new(), signature: None },
                     PartialBlock::ToolUse { id, name, thought_signature } => {
                         PendingBlock::ToolUse { id, name, input_json: String::new(), thought_signature }
                     }
@@ -120,6 +134,16 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
                     buffer.push_str(&text);
                 }
             }
+            StreamEvent::ThinkingDelta { index, text } => {
+                if let Some(PendingBlock::Thinking { text: buffer, .. }) = pending.get_mut(&index) {
+                    buffer.push_str(&text);
+                }
+            }
+            StreamEvent::ThinkingSignature { index, signature } => {
+                if let Some(PendingBlock::Thinking { signature: slot, .. }) = pending.get_mut(&index) {
+                    *slot = Some(signature);
+                }
+            }
             StreamEvent::ToolInputDelta { index, partial_json } => {
                 if let Some(PendingBlock::ToolUse { input_json, .. }) = pending.get_mut(&index) {
                     input_json.push_str(&partial_json);
@@ -129,6 +153,7 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
                 if let Some(block) = pending.remove(&index) {
                     let content_block = match block {
                         PendingBlock::Text(text) => ContentBlock::Text { text },
+                        PendingBlock::Thinking { text, signature } => ContentBlock::Thinking { text, signature },
                         PendingBlock::ToolUse { id, name, input_json, thought_signature } => {
                             let input = if input_json.is_empty() {
                                 serde_json::json!({})

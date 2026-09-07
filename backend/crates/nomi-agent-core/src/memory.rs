@@ -83,6 +83,7 @@ pub async fn extract_and_store_memory(
         ],
         tools: vec![],
         max_tokens: EXTRACTION_MAX_TOKENS,
+        enable_reasoning: false,
     };
 
     let response = match nomi_llm::complete(provider, request).await {

@@ -27,10 +27,19 @@ impl LlmProvider for FakeLlmProvider {
             return Err(LlmError::ProviderError("simulated failure for e2e testing".to_string()));
         }
 
+        let mut content = Vec::new();
+        if request.enable_reasoning {
+            content.push(ContentBlock::Thinking {
+                text: "Thinking through a fake response for local development and testing.".to_string(),
+                signature: None,
+            });
+        }
+        content.push(ContentBlock::Text {
+            text: "This is a fake response for local development and testing.".to_string(),
+        });
+
         Ok(response_to_stream(LlmResponse {
-            content: vec![ContentBlock::Text {
-                text: "This is a fake response for local development and testing.".to_string(),
-            }],
+            content,
             stop_reason: StopReason::EndTurn,
             input_tokens: 0,
             output_tokens: 0,

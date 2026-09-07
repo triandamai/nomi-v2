@@ -17,6 +17,14 @@ pub enum ContentBlock {
     /// providers.
     ToolUse { id: String, name: String, input: Value, thought_signature: Option<String> },
     ToolResult { tool_use_id: String, content: String, is_error: bool },
+    /// A provider's own reasoning/thinking trace, kept separate from `Text` so callers can show
+    /// it distinctly (and so it's never mistaken for the actual reply). `signature` is
+    /// Anthropic-specific: extended thinking blocks carry a signature that must be echoed back
+    /// verbatim when replayed into a later turn in the same tool loop, or the API rejects the
+    /// request. `None` for providers with no such requirement (Gemini's thought summaries,
+    /// OpenRouter's unified `reasoning` field) or when a provider can only report that reasoning
+    /// happened without exposing its text (see `openai.rs`).
+    Thinking { text: String, signature: Option<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +46,11 @@ pub struct LlmRequest {
     pub messages: Vec<LlmMessage>,
     pub tools: Vec<ToolDefinition>,
     pub max_tokens: u32,
+    /// Asks the provider to produce a reasoning/thinking trace alongside its reply, when it
+    /// supports one (see each provider's `build_body`). Left `false` for one-shot utility calls
+    /// (title generation, memory extraction, BYOK validation, supervisor phrasing) where the
+    /// extra latency/cost isn't worth it — only `run_agent_turn`'s main reply request sets it.
+    pub enable_reasoning: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -69,6 +82,7 @@ pub enum LlmError {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PartialBlock {
     Text,
+    Thinking,
     ToolUse { id: String, name: String, thought_signature: Option<String> },
 }
 
@@ -76,6 +90,10 @@ pub enum PartialBlock {
 pub enum StreamEvent {
     ContentBlockStart { index: usize, block: PartialBlock },
     TextDelta { index: usize, text: String },
+    ThinkingDelta { index: usize, text: String },
+    /// Anthropic-only: arrives after a thinking block's text is complete, carrying the
+    /// signature that must be echoed back verbatim if this block is replayed into a later turn.
+    ThinkingSignature { index: usize, signature: String },
     ToolInputDelta { index: usize, partial_json: String },
     ContentBlockDone { index: usize },
     Done { stop_reason: StopReason, input_tokens: u32, output_tokens: u32 },
@@ -97,6 +115,7 @@ mod tests {
             }],
             tools: vec![],
             max_tokens: 1024,
+            enable_reasoning: false,
         };
 
         assert_eq!(request.system, Some("be helpful".to_string()));

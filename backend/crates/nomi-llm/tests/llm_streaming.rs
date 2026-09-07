@@ -116,6 +116,7 @@ async fn the_default_complete_stream_impl_wraps_a_non_streaming_providers_comple
         messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: "hey".to_string() }] }],
         tools: vec![],
         max_tokens: 10,
+        enable_reasoning: false,
     };
 
     let response = complete(&provider, request).await.unwrap();

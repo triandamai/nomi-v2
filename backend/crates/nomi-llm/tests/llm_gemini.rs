@@ -13,6 +13,7 @@ fn text_request() -> LlmRequest {
         }],
         tools: vec![],
         max_tokens: 100,
+        enable_reasoning: false,
     }
 }
 
@@ -178,6 +179,58 @@ async fn a_replayed_tool_use_with_a_thought_signature_includes_it_on_the_request
     let response = collect_stream(stream).await.unwrap();
 
     assert_eq!(response.content, vec![ContentBlock::Text { text: "done".to_string() }]);
+}
+
+#[tokio::test]
+async fn a_thought_part_is_captured_separately_from_the_reply_text() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"pondering the question\",\"thought\":true}]}}]}\n\n",
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":5}}\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/v1beta/models/.*:streamGenerateContent$"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = GeminiProvider::new(reqwest::Client::new(), "test-key".to_string(), "gemini-2.0-flash".to_string(), server.uri());
+
+    let mut request = text_request();
+    request.enable_reasoning = true;
+
+    let stream = provider.complete_stream(request).await.unwrap();
+    let response = collect_stream(stream).await.unwrap();
+
+    assert_eq!(
+        response.content,
+        vec![
+            ContentBlock::Thinking { text: "pondering the question".to_string(), signature: None },
+            ContentBlock::Text { text: "hi".to_string() },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn enabling_reasoning_sets_thinking_config_on_the_request() {
+    let server = MockServer::start().await;
+    let sse_body = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]},\"finishReason\":\"STOP\"}]}\n\n";
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/v1beta/models/.*:streamGenerateContent$"))
+        .and(body_string_contains("\"includeThoughts\":true"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = GeminiProvider::new(reqwest::Client::new(), "test-key".to_string(), "gemini-2.0-flash".to_string(), server.uri());
+
+    let mut request = text_request();
+    request.enable_reasoning = true;
+
+    // If the request body didn't contain includeThoughts, wiremock's mock never matches and
+    // this 404s — collect_stream then returns an Err, failing this test.
+    let stream = provider.complete_stream(request).await.unwrap();
+    collect_stream(stream).await.unwrap();
 }
 
 #[tokio::test]

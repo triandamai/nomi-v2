@@ -8,20 +8,25 @@ use std::collections::BTreeMap;
 use super::types::{ContentBlock, LlmError, LlmEventStream, LlmRequest, LlmRole, PartialBlock, StopReason, StreamEvent};
 use super::LlmProvider;
 
-pub struct OpenAiProvider {
+/// OpenRouter speaks the same chat-completions wire format as OpenAI, with two additions this
+/// module cares about: a `reasoning` request param that's safe to send regardless of whether the
+/// underlying model supports it (unlike OpenAI's own `reasoning_effort`, which 400s on
+/// non-reasoning models — see `openai.rs`), and a plain-string `reasoning` field on each delta
+/// for models that produce one.
+pub struct OpenRouterProvider {
     client: reqwest::Client,
     api_key: String,
     model: String,
     base_url: String,
 }
 
-impl OpenAiProvider {
+impl OpenRouterProvider {
     pub fn new(client: reqwest::Client, api_key: String, model: String, base_url: String) -> Self {
         Self { client, api_key, model, base_url }
     }
 
     pub fn default_base_url() -> String {
-        "https://api.openai.com".to_string()
+        "https://openrouter.ai/api/v1".to_string()
     }
 
     fn build_body(&self, request: &LlmRequest, stream: bool) -> serde_json::Value {
@@ -38,9 +43,9 @@ impl OpenAiProvider {
             for block in &m.content {
                 match block {
                     ContentBlock::Text { text } => text_parts.push(text.clone()),
-                    // Chat Completions has no "thinking" message part, and this text is only
-                    // ever a synthetic reasoning-tokens note anyway (see complete_stream below,
-                    // and `is_reasoning_model`) — nothing meaningful to replay.
+                    // Dropped when replaying history: OpenRouter's own reasoning field is
+                    // provider-dependent to round-trip correctly, and the reasoning is only
+                    // useful live (surfaced as it streams), not as conversational context.
                     ContentBlock::Thinking { .. } => {}
                     ContentBlock::ToolUse { id, name, input, .. } => {
                         tool_calls.push(json!({
@@ -91,12 +96,8 @@ impl OpenAiProvider {
         if !tools.is_empty() {
             body["tools"] = json!(tools);
         }
-        // `reasoning_effort` is rejected with a 400 by non-reasoning models (unlike OpenRouter's
-        // tolerant unified `reasoning` param) — only send it when the model_id looks like one of
-        // OpenAI's own reasoning families, so enabling reasoning globally can't break every other
-        // OpenAI model a user might pick.
-        if request.enable_reasoning && is_reasoning_model(&self.model) {
-            body["reasoning_effort"] = json!("medium");
+        if request.enable_reasoning {
+            body["reasoning"] = json!({ "effort": "medium" });
         }
         if stream {
             body["stream"] = json!(true);
@@ -113,18 +114,13 @@ fn role_to_str(role: &LlmRole) -> &'static str {
     }
 }
 
-fn is_reasoning_model(model_id: &str) -> bool {
-    let id = model_id.to_lowercase();
-    id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4") || id.contains("gpt-5")
-}
-
 pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
-    let response = client.get(format!("{base_url}/v1/models")).bearer_auth(api_key).send().await?;
+    let response = client.get(format!("{base_url}/models")).bearer_auth(api_key).send().await?;
 
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(LlmError::ProviderError(format!("openai returned {status}: {text}")));
+        return Err(LlmError::ProviderError(format!("openrouter returned {status}: {text}")));
     }
 
     let body: serde_json::Value = response.json().await.map_err(|e| LlmError::ParseError(e.to_string()))?;
@@ -132,19 +128,22 @@ pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str
 
     Ok(data
         .iter()
-        .filter_map(|m| m.get("id").and_then(|v| v.as_str()))
-        .map(|id| crate::ModelSummary { id: id.to_string(), label: None })
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())?.to_string();
+            let label = m.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+            Some(crate::ModelSummary { id, label })
+        })
         .collect())
 }
 
 #[async_trait]
-impl LlmProvider for OpenAiProvider {
+impl LlmProvider for OpenRouterProvider {
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
         let body = self.build_body(&request, true);
 
         let response = self
             .client
-            .post(format!("{}/v1/chat/completions", self.base_url))
+            .post(format!("{}/chat/completions", self.base_url))
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()
@@ -153,7 +152,7 @@ impl LlmProvider for OpenAiProvider {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(LlmError::ProviderError(format!("openai returned {status}: {text}")));
+            return Err(LlmError::ProviderError(format!("openrouter returned {status}: {text}")));
         }
 
         let mut events = response.bytes_stream().eventsource();
@@ -161,12 +160,12 @@ impl LlmProvider for OpenAiProvider {
         let stream = try_stream! {
             let mut next_index: usize = 0;
             let mut text_index: Option<usize> = None;
+            let mut thinking_index: Option<usize> = None;
             let mut tool_index_map: BTreeMap<u64, usize> = BTreeMap::new();
             let mut open_indices: Vec<usize> = Vec::new();
             let mut stop_reason = StopReason::Other("unknown".to_string());
             let mut input_tokens: u32 = 0;
             let mut output_tokens: u32 = 0;
-            let mut reasoning_tokens: u32 = 0;
 
             loop {
                 let event = match events.next().await {
@@ -175,20 +174,6 @@ impl LlmProvider for OpenAiProvider {
                 };
 
                 if event.data == "[DONE]" {
-                    // Chat Completions never exposes the actual reasoning trace for o-series
-                    // models — only a token count — so this is the most honest thing to surface:
-                    // a note that reasoning happened, not fabricated reasoning text.
-                    if reasoning_tokens > 0 {
-                        let index = next_index;
-                        yield StreamEvent::ContentBlockStart { index, block: PartialBlock::Thinking };
-                        yield StreamEvent::ThinkingDelta {
-                            index,
-                            text: format!(
-                                "(OpenAI used internal reasoning — its API doesn't expose the trace; ~{reasoning_tokens} reasoning tokens spent)"
-                            ),
-                        };
-                        yield StreamEvent::ContentBlockDone { index };
-                    }
                     yield StreamEvent::Done { stop_reason, input_tokens, output_tokens };
                     return;
                 }
@@ -200,11 +185,6 @@ impl LlmProvider for OpenAiProvider {
                     if !usage.is_null() {
                         input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        reasoning_tokens = usage
-                            .get("completion_tokens_details")
-                            .and_then(|d| d.get("reasoning_tokens"))
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0) as u32;
                     }
                 }
 
@@ -213,7 +193,23 @@ impl LlmProvider for OpenAiProvider {
                     continue;
                 };
 
-                if let Some(text) = choice.get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
+                let delta = choice.get("delta");
+
+                if let Some(text) = delta.and_then(|d| d.get("reasoning")).and_then(|c| c.as_str()) {
+                    let is_first = thinking_index.is_none();
+                    let index = *thinking_index.get_or_insert_with(|| {
+                        let idx = next_index;
+                        next_index += 1;
+                        open_indices.push(idx);
+                        idx
+                    });
+                    if is_first {
+                        yield StreamEvent::ContentBlockStart { index, block: PartialBlock::Thinking };
+                    }
+                    yield StreamEvent::ThinkingDelta { index, text: text.to_string() };
+                }
+
+                if let Some(text) = delta.and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
                     let is_first = text_index.is_none();
                     let index = *text_index.get_or_insert_with(|| {
                         let idx = next_index;
@@ -227,7 +223,7 @@ impl LlmProvider for OpenAiProvider {
                     yield StreamEvent::TextDelta { index, text: text.to_string() };
                 }
 
-                if let Some(tool_calls) = choice.get("delta").and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array()) {
+                if let Some(tool_calls) = delta.and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array()) {
                     for tc in tool_calls {
                         let raw_index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
                         let is_new = !tool_index_map.contains_key(&raw_index);

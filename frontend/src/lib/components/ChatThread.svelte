@@ -31,6 +31,7 @@
 	} = $props();
 
 	let pendingReply = $state(false);
+	let submitting = $state(false);
 	let turnError = $state(false);
 	let connectionLost = $state(false);
 	let activitySheetOpen = $state(false);
@@ -59,11 +60,20 @@
 		agentActivity.filter((d) => d.status === 'pending' || d.status === 'processing').length,
 	);
 
+	// `submitting` covers the gap between hitting Send and the first streamed token arriving —
+	// `pendingReply` alone only flips once a WS "Delta" event lands, which leaves a brief window
+	// right after sending where neither the button nor the "Typing…" bubble showed any feedback.
+	const isWorking = $derived(submitting || pendingReply);
+
+	$effect(() => {
+		if (pendingReply || turnError) submitting = false;
+	});
+
 	// Always keep the latest message (and the "Typing…" indicator) in view — re-runs whenever
 	// the message list changes or a reply starts streaming.
 	$effect(() => {
 		messages.length;
-		pendingReply;
+		isWorking;
 		messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
 	});
 
@@ -140,13 +150,14 @@
 		{#each messages as message, i (message.id)}
 			<MessageBubble {message} chained={isChained(messages, i)} first={i === 0} />
 		{/each}
-		{#if pendingReply}
+		{#if isWorking}
 			<div class="mt-4 flex justify-start">
 				<div
-					class="md-body-large max-w-md px-4 py-2"
+					class="md-body-large flex items-center gap-2 max-w-md px-4 py-2"
 					style="background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small)"
 				>
-					Typing…
+					<span class="m3-spinner" aria-hidden="true"></span>
+					Nomi is working…
 				</div>
 			</div>
 		{/if}
@@ -185,6 +196,7 @@
 			method="POST"
 			action="?/sendMessage"
 			use:enhance={() => {
+				submitting = true;
 				return async ({ update }) => {
 					await update({ reset: true });
 					messageInput?.focus();
@@ -204,7 +216,14 @@
 					class="md-body-large flex-1 border-none bg-transparent outline-none"
 					style="color: var(--md-sys-color-on-surface)"
 				/>
-				<Button type="submit" variant="filled">Send</Button>
+				<Button type="submit" variant="filled" disabled={isWorking}>
+					{#if isWorking}
+						<span class="m3-spinner m3-spinner--on-primary" aria-hidden="true"></span>
+						Sending…
+					{:else}
+						Send
+					{/if}
+				</Button>
 			</div>
 		</form>
 		{#if extraControls}
@@ -238,3 +257,24 @@
 		{/if}
 	{/snippet}
 </BottomSheet>
+
+<style>
+	.m3-spinner {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		border: 2px solid color-mix(in srgb, var(--md-sys-color-on-surface-variant) 30%, transparent);
+		border-top-color: var(--md-sys-color-on-surface-variant);
+		animation: m3-spin 0.7s linear infinite;
+	}
+	.m3-spinner--on-primary {
+		border-color: color-mix(in srgb, var(--md-sys-color-on-primary) 30%, transparent);
+		border-top-color: var(--md-sys-color-on-primary);
+	}
+	@keyframes m3-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+</style>

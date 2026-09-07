@@ -47,7 +47,16 @@ impl GeminiProvider {
                 .collect();
             body["tools"] = json!([{ "functionDeclarations": declarations }]);
         }
-        body["generationConfig"] = json!({ "maxOutputTokens": request.max_tokens });
+        // Thinking tokens count against maxOutputTokens same as the final reply — leave headroom
+        // beyond what the caller asked for so enabling reasoning doesn't starve the reply itself.
+        let max_output_tokens = if request.enable_reasoning { request.max_tokens.max(2048) } else { request.max_tokens };
+        let mut generation_config = json!({ "maxOutputTokens": max_output_tokens });
+        if request.enable_reasoning {
+            // -1 (dynamic) lets the model decide how much to think per-request rather than a
+            // fixed budget, matching how lightly a "hi" should be reasoned about versus a build task.
+            generation_config["thinkingConfig"] = json!({ "includeThoughts": true, "thinkingBudget": -1 });
+        }
+        body["generationConfig"] = generation_config;
         body
     }
 }
@@ -85,6 +94,9 @@ pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str
 fn content_block_to_part(block: &ContentBlock) -> serde_json::Value {
     match block {
         ContentBlock::Text { text } => json!({ "text": text }),
+        // Gemini's thought summaries don't require a signature to replay (unlike its function-call
+        // thoughtSignature, or Anthropic's thinking signature) — just the `thought: true` marker.
+        ContentBlock::Thinking { text, .. } => json!({ "text": text, "thought": true }),
         ContentBlock::ToolUse { name, input, thought_signature, .. } => {
             let mut part = json!({ "functionCall": { "name": name, "args": input } });
             if let Some(signature) = thought_signature {
@@ -120,6 +132,7 @@ impl LlmProvider for GeminiProvider {
         let stream = try_stream! {
             let mut next_index: usize = 0;
             let mut text_index: Option<usize> = None;
+            let mut thinking_index: Option<usize> = None;
             let mut saw_function_call = false;
             let mut input_tokens: u32 = 0;
             let mut output_tokens: u32 = 0;
@@ -151,7 +164,21 @@ impl LlmProvider for GeminiProvider {
                 let parts = candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array());
                 if let Some(parts) = parts {
                     for part in parts {
-                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                        let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
+                        if is_thought {
+                            if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                let is_first = thinking_index.is_none();
+                                let index = *thinking_index.get_or_insert_with(|| {
+                                    let idx = next_index;
+                                    next_index += 1;
+                                    idx
+                                });
+                                if is_first {
+                                    yield StreamEvent::ContentBlockStart { index, block: PartialBlock::Thinking };
+                                }
+                                yield StreamEvent::ThinkingDelta { index, text: text.to_string() };
+                            }
+                        } else if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                             let is_first = text_index.is_none();
                             let index = *text_index.get_or_insert_with(|| {
                                 let idx = next_index;
@@ -186,6 +213,9 @@ impl LlmProvider for GeminiProvider {
                 }
             }
 
+            if let Some(index) = thinking_index {
+                yield StreamEvent::ContentBlockDone { index };
+            }
             if let Some(index) = text_index {
                 yield StreamEvent::ContentBlockDone { index };
             }

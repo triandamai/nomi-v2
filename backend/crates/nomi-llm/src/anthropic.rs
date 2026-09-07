@@ -41,9 +41,14 @@ impl AnthropicProvider {
             .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.input_schema }))
             .collect();
 
+        // Anthropic requires max_tokens to exceed the thinking budget, since thinking tokens
+        // count against the same output budget as the final reply — bump it here rather than
+        // making every caller of LlmRequest reason about this provider-specific constraint.
+        let max_tokens = if request.enable_reasoning { request.max_tokens.max(THINKING_BUDGET_TOKENS + 1024) } else { request.max_tokens };
+
         let mut body = json!({
             "model": self.model,
-            "max_tokens": request.max_tokens,
+            "max_tokens": max_tokens,
             "messages": messages,
             "stream": stream,
         });
@@ -53,9 +58,17 @@ impl AnthropicProvider {
         if !tools.is_empty() {
             body["tools"] = json!(tools);
         }
+        if request.enable_reasoning {
+            body["thinking"] = json!({ "type": "enabled", "budget_tokens": THINKING_BUDGET_TOKENS });
+        }
         body
     }
 }
+
+/// How many of `max_tokens` extended thinking may spend before the final reply. Anthropic's
+/// minimum is 1024; this is a modest middle ground between reasoning depth and latency/cost for
+/// every agent turn (see `enable_reasoning` on `LlmRequest`).
+const THINKING_BUDGET_TOKENS: u32 = 2048;
 
 fn role_to_str(role: &LlmRole) -> &'static str {
     match role {
@@ -99,6 +112,17 @@ fn content_block_to_json(block: &ContentBlock) -> serde_json::Value {
         }
         ContentBlock::ToolResult { tool_use_id, content, is_error } => {
             json!({ "type": "tool_result", "tool_use_id": tool_use_id, "content": content, "is_error": is_error })
+        }
+        // Replaying a thinking block into a later turn (within the same tool loop) requires its
+        // original signature verbatim, or the API rejects the request — `signature` is only
+        // absent if something upstream went wrong, in which case letting Anthropic's own
+        // validation reject it is more honest than silently omitting the field.
+        ContentBlock::Thinking { text, signature } => {
+            let mut value = json!({ "type": "thinking", "thinking": text });
+            if let Some(signature) = signature {
+                value["signature"] = json!(signature);
+            }
+            value
         }
     }
 }
@@ -155,6 +179,7 @@ impl LlmProvider for AnthropicProvider {
                             .ok_or_else(|| LlmError::ParseError("missing content_block".to_string()))?;
                         let partial = match block.get("type").and_then(|t| t.as_str()) {
                             Some("text") => PartialBlock::Text,
+                            Some("thinking") => PartialBlock::Thinking,
                             Some("tool_use") => PartialBlock::ToolUse {
                                 id: block.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
                                 name: block.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
@@ -175,6 +200,14 @@ impl LlmProvider for AnthropicProvider {
                             Some("text_delta") => {
                                 let text = delta.get("text").and_then(|v| v.as_str()).unwrap_or_default().to_string();
                                 yield StreamEvent::TextDelta { index, text };
+                            }
+                            Some("thinking_delta") => {
+                                let text = delta.get("thinking").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                yield StreamEvent::ThinkingDelta { index, text };
+                            }
+                            Some("signature_delta") => {
+                                let signature = delta.get("signature").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                yield StreamEvent::ThinkingSignature { index, signature };
                             }
                             Some("input_json_delta") => {
                                 let partial_json =

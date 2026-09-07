@@ -320,6 +320,82 @@ async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn every_llm_request_asks_for_reasoning(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Hello!", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &registry,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    assert!(requests[0].enable_reasoning);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_thinking_block_is_posted_as_activity_even_for_an_agent_that_does_not_surface_activity(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    // TestAgent doesn't override `surfaces_activity` (defaults to false) — reasoning must show
+    // up regardless, unlike the tool-call "💭" commentary which stays gated behind that flag.
+    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+        content: vec![
+            ContentBlock::Thinking { text: "working through it".to_string(), signature: None },
+            ContentBlock::Text { text: "Hello!".to_string() },
+        ],
+        stop_reason: StopReason::EndTurn,
+        input_tokens: 1,
+        output_tokens: 1,
+    }]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    run_agent_turn(
+        &mut conn,
+        None,
+        &provider,
+        &embedding_provider,
+        &registry,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
+
+    let content: String = sqlx::query_scalar(
+        "SELECT content FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(content, "🧠 working through it");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_stored_personality_is_folded_into_the_system_prompt_when_uses_personality_is_true(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;

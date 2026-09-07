@@ -11,9 +11,10 @@ fn llm_provider_kind_from_str(s: &str) -> ProviderKind {
     match s {
         "anthropic" => ProviderKind::Anthropic,
         "openai" => ProviderKind::OpenAi,
+        "openrouter" => ProviderKind::OpenRouter,
         "gemini" => ProviderKind::Gemini,
         "fake" => ProviderKind::Fake,
-        other => panic!("unknown LLM provider: {other} (expected anthropic, openai, gemini, or fake)"),
+        other => panic!("unknown LLM provider: {other} (expected anthropic, openai, openrouter, gemini, or fake)"),
     }
 }
 

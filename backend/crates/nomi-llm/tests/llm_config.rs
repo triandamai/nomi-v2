@@ -11,6 +11,7 @@ fn simple_request() -> LlmRequest {
         }],
         tools: vec![],
         max_tokens: 50,
+        enable_reasoning: false,
     }
 }
 
@@ -107,6 +108,34 @@ async fn build_provider_selects_gemini() {
 }
 
 #[tokio::test]
+async fn build_provider_selects_openrouter() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"openrouter reply\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = build_provider(
+        ModelConfig {
+            provider: ProviderKind::OpenRouter,
+            model_id: "anthropic/claude-sonnet-5".to_string(),
+            api_key: "key".to_string(),
+            base_url: Some(server.uri()),
+        },
+        reqwest::Client::new(),
+    );
+
+    let response = complete(provider.as_ref(), simple_request()).await.unwrap();
+    assert_eq!(response.content, vec![ContentBlock::Text { text: "openrouter reply".to_string() }]);
+}
+
+#[tokio::test]
 async fn build_provider_uses_the_real_default_base_url_when_none_given() {
     // No mock server involved — this only checks construction doesn't panic
     // and that omitting base_url falls through to each provider's own default,
@@ -133,6 +162,15 @@ async fn build_provider_uses_the_real_default_base_url_when_none_given() {
         ModelConfig {
             provider: ProviderKind::Gemini,
             model_id: "gemini-2.0-flash".to_string(),
+            api_key: "key".to_string(),
+            base_url: None,
+        },
+        reqwest::Client::new(),
+    );
+    let _openrouter = build_provider(
+        ModelConfig {
+            provider: ProviderKind::OpenRouter,
+            model_id: "anthropic/claude-sonnet-5".to_string(),
             api_key: "key".to_string(),
             base_url: None,
         },

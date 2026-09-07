@@ -22,6 +22,7 @@ pub async fn classify_intent<'a>(provider: &dyn LlmProvider, registry: &'a Agent
         messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: text.to_string() }] }],
         tools: vec![],
         max_tokens: INTENT_CLASSIFICATION_MAX_TOKENS,
+        enable_reasoning: false,
     };
 
     let response = match nomi_llm::complete(provider, request).await {

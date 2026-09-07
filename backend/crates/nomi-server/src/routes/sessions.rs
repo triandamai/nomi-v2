@@ -392,6 +392,7 @@ async fn generate_session_title(
         }],
         tools: vec![],
         max_tokens: TITLE_GENERATION_MAX_TOKENS,
+        enable_reasoning: false,
     };
 
     let generated = match nomi_llm::complete(provider.as_ref(), request).await {

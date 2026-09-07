@@ -124,6 +124,7 @@ pub async fn run_agent_turn(
             messages: messages.clone(),
             tools: tools.clone(),
             max_tokens,
+            enable_reasoning: true,
         };
 
         // The LLM call happens outside any DB transaction: holding a transaction open across
@@ -155,6 +156,17 @@ pub async fn run_agent_turn(
         };
 
         messages.push(LlmMessage { role: LlmRole::Assistant, content: response.content.clone() });
+
+        // Reasoning is shown for every agent, unlike the tool-call "💭" commentary below (which
+        // stays gated behind `surfaces_activity()`) — a provider's own thinking trace is worth
+        // seeing regardless of whether this agent normally narrates its tool calls.
+        for block in &response.content {
+            if let ContentBlock::Thinking { text, .. } = block {
+                if !text.trim().is_empty() {
+                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("🧠 {}", text.trim())).await;
+                }
+            }
+        }
 
         if response.stop_reason != StopReason::ToolUse {
             let input_tokens = response.input_tokens;

@@ -1,4 +1,4 @@
-use nomi_llm::openai::OpenAiProvider;
+use nomi_llm::openrouter::OpenRouterProvider;
 use nomi_llm::{collect_stream, ContentBlock, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmRole, StopReason, ToolDefinition};
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -28,18 +28,12 @@ async fn streamed_text_reply_collects_into_the_same_text_block() {
         "data: [DONE]\n\n",
     );
     Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(body_partial_json(json!({"stream": true, "stream_options": {"include_usage": true}})))
+        .and(path("/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;
 
-    let provider = OpenAiProvider::new(
-        reqwest::Client::new(),
-        "test-key".to_string(),
-        "gpt-4o".to_string(),
-        server.uri(),
-    );
+    let provider = OpenRouterProvider::new(reqwest::Client::new(), "test-key".to_string(), "anthropic/claude-sonnet-5".to_string(), server.uri());
 
     let stream = provider.complete_stream(text_request()).await.unwrap();
     let response = collect_stream(stream).await.unwrap();
@@ -55,24 +49,17 @@ async fn streamed_tool_call_reassembles_fragmented_arguments_by_index() {
     let server = MockServer::start().await;
     let sse_body = concat!(
         "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\"}}]},\"finish_reason\":null}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Paris\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
         "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
-        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":8}}\n\n",
         "data: [DONE]\n\n",
     );
     Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
+        .and(path("/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;
 
-    let provider = OpenAiProvider::new(
-        reqwest::Client::new(),
-        "test-key".to_string(),
-        "gpt-4o".to_string(),
-        server.uri(),
-    );
+    let provider = OpenRouterProvider::new(reqwest::Client::new(), "test-key".to_string(), "anthropic/claude-sonnet-5".to_string(), server.uri());
 
     let mut request = text_request();
     request.tools = vec![ToolDefinition {
@@ -97,7 +84,7 @@ async fn streamed_tool_call_reassembles_fragmented_arguments_by_index() {
 }
 
 #[tokio::test]
-async fn enabling_reasoning_on_a_reasoning_model_sends_reasoning_effort() {
+async fn enabling_reasoning_sends_the_unified_reasoning_param() {
     let server = MockServer::start().await;
     let sse_body = concat!(
         "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
@@ -105,64 +92,38 @@ async fn enabling_reasoning_on_a_reasoning_model_sends_reasoning_effort() {
         "data: [DONE]\n\n",
     );
     Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(body_partial_json(json!({"reasoning_effort": "medium"})))
+        .and(path("/chat/completions"))
+        .and(body_partial_json(json!({"reasoning": {"effort": "medium"}})))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;
 
-    let provider = OpenAiProvider::new(reqwest::Client::new(), "test-key".to_string(), "o3-mini".to_string(), server.uri());
+    let provider = OpenRouterProvider::new(reqwest::Client::new(), "test-key".to_string(), "deepseek/deepseek-r1".to_string(), server.uri());
 
     let mut request = text_request();
     request.enable_reasoning = true;
 
-    // If reasoning_effort wasn't sent, wiremock's mock never matches and this 404s.
+    // If the `reasoning` param wasn't sent, wiremock's mock never matches and this 404s.
     let stream = provider.complete_stream(request).await.unwrap();
     collect_stream(stream).await.unwrap();
 }
 
 #[tokio::test]
-async fn enabling_reasoning_on_a_non_reasoning_model_never_sends_reasoning_effort() {
+async fn a_reasoning_delta_is_captured_as_a_thinking_block_before_the_reply_text() {
     let server = MockServer::start().await;
     let sse_body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"reasoning\":\"working it out\"},\"finish_reason\":null}]}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
         "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
         "data: [DONE]\n\n",
     );
-    // No `reasoning_effort` matcher here — gpt-4o would 400 on that param in the real API, so
-    // this mock only ever matches a plain request with no such field.
     Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
+        .and(path("/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;
 
-    let provider = OpenAiProvider::new(reqwest::Client::new(), "test-key".to_string(), "gpt-4o".to_string(), server.uri());
-
-    let mut request = text_request();
-    request.enable_reasoning = true;
-
-    let stream = provider.complete_stream(request).await.unwrap();
-    let response = collect_stream(stream).await.unwrap();
-    assert_eq!(response.content, vec![ContentBlock::Text { text: "hi".to_string() }]);
-}
-
-#[tokio::test]
-async fn reasoning_token_usage_surfaces_as_a_synthetic_thinking_note() {
-    let server = MockServer::start().await;
-    let sse_body = concat!(
-        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
-        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":50,\"completion_tokens_details\":{\"reasoning_tokens\":40}}}\n\n",
-        "data: [DONE]\n\n",
-    );
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
-        .mount(&server)
-        .await;
-
-    let provider = OpenAiProvider::new(reqwest::Client::new(), "test-key".to_string(), "o3-mini".to_string(), server.uri());
+    let provider = OpenRouterProvider::new(reqwest::Client::new(), "test-key".to_string(), "deepseek/deepseek-r1".to_string(), server.uri());
 
     let mut request = text_request();
     request.enable_reasoning = true;
@@ -173,11 +134,8 @@ async fn reasoning_token_usage_surfaces_as_a_synthetic_thinking_note() {
     assert_eq!(
         response.content,
         vec![
+            ContentBlock::Thinking { text: "working it out".to_string(), signature: None },
             ContentBlock::Text { text: "hi".to_string() },
-            ContentBlock::Thinking {
-                text: "(OpenAI used internal reasoning — its API doesn't expose the trace; ~40 reasoning tokens spent)".to_string(),
-                signature: None,
-            },
         ]
     );
 }
@@ -186,17 +144,12 @@ async fn reasoning_token_usage_surfaces_as_a_synthetic_thinking_note() {
 async fn non_success_status_is_returned_before_any_stream_is_produced() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
+        .and(path("/chat/completions"))
         .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
         .mount(&server)
         .await;
 
-    let provider = OpenAiProvider::new(
-        reqwest::Client::new(),
-        "test-key".to_string(),
-        "gpt-4o".to_string(),
-        server.uri(),
-    );
+    let provider = OpenRouterProvider::new(reqwest::Client::new(), "test-key".to_string(), "anthropic/claude-sonnet-5".to_string(), server.uri());
 
     let result = provider.complete_stream(text_request()).await;
     assert!(matches!(result, Err(LlmError::ProviderError(_))));

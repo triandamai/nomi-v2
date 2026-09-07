@@ -2,12 +2,14 @@ use super::anthropic::AnthropicProvider;
 use super::fake::FakeLlmProvider;
 use super::gemini::GeminiProvider;
 use super::openai::OpenAiProvider;
+use super::openrouter::OpenRouterProvider;
 use super::LlmProvider;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderKind {
     Anthropic,
     OpenAi,
+    OpenRouter,
     Gemini,
     Fake,
 }
@@ -29,6 +31,10 @@ pub fn build_provider(config: ModelConfig, http_client: reqwest::Client) -> Box<
         ProviderKind::OpenAi => {
             let base_url = config.base_url.unwrap_or_else(OpenAiProvider::default_base_url);
             Box::new(OpenAiProvider::new(http_client, config.api_key, config.model_id, base_url))
+        }
+        ProviderKind::OpenRouter => {
+            let base_url = config.base_url.unwrap_or_else(OpenRouterProvider::default_base_url);
+            Box::new(OpenRouterProvider::new(http_client, config.api_key, config.model_id, base_url))
         }
         ProviderKind::Gemini => {
             let base_url = config.base_url.unwrap_or_else(GeminiProvider::default_base_url);

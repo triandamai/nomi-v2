@@ -13,6 +13,7 @@
 	const PROVIDER_OPTIONS = [
 		{ value: 'anthropic', label: 'Anthropic' },
 		{ value: 'openai', label: 'OpenAI' },
+		{ value: 'openrouter', label: 'OpenRouter' },
 		{ value: 'gemini', label: 'Gemini' },
 		{ value: 'fake', label: 'Fake (testing)' },
 	];
