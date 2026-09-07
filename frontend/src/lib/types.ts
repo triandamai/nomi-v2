@@ -10,10 +10,37 @@ export interface SessionSummary {
 	project_id: string | null;
 }
 
+export interface TodoItem {
+	id: string;
+	text: string;
+	status: 'pending' | 'in_progress' | 'done';
+}
+
+export interface TableColumn {
+	key: string;
+	label: string;
+}
+
+export type ContentBlock =
+	| { kind: 'file_write'; project_id: string; path: string; content: string; previous_content: string | null }
+	| { kind: 'file_delete'; project_id: string; path: string }
+	| { kind: 'todo_list'; items: TodoItem[] }
+	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
+	| {
+			kind: 'approval_request';
+			id: string;
+			tool_name: string;
+			description: string;
+			input: Record<string, unknown>;
+			status: 'pending' | 'approved' | 'denied';
+			decided_at: string | null;
+	  };
+
 export interface MessageItem {
 	id: string;
 	sender: 'user' | 'assistant';
 	content: string;
+	content_blocks: ContentBlock[] | null;
 	created_at: string;
 	my_feedback: 'up' | 'down' | null;
 }
