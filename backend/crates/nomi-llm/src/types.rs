@@ -2,13 +2,13 @@ use serde_json::Value;
 use std::pin::Pin;
 use futures_core::Stream;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LlmRole {
     User,
     Assistant,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ContentBlock {
     Text { text: String },
     /// `thought_signature` is Gemini-specific: its "thinking" models attach an opaque signature
@@ -27,7 +27,7 @@ pub enum ContentBlock {
     Thinking { text: String, signature: Option<String> },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
     pub content: Vec<ContentBlock>,

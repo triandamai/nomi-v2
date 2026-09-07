@@ -267,6 +267,19 @@ async fn run_subagent_turn(
 
             Ok(summary)
         }
+        // Stopgap only: Task 6 introduces the real resume path and Task 7 threads a proper
+        // `TurnOutcome` variant through for this (see plan
+        // docs/superpowers/plans/2026-09-07-rich-content-blocks-implementation.md). For now,
+        // just surface the persisted approval-request message's text so a pending-approval
+        // turn doesn't silently vanish, and the workspace keeps compiling now that
+        // `LoopOutcome` has this variant.
+        nomi_agent_core::LoopOutcome::AwaitingApproval { message_id } => {
+            let content: String = sqlx::query_scalar("SELECT content FROM messages WHERE id = $1")
+                .bind(message_id)
+                .fetch_one(&mut **conn)
+                .await?;
+            Ok(content)
+        }
     }
 }
 

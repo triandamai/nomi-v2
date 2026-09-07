@@ -8,6 +8,7 @@ use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 use crate::error::TurnError;
 use crate::memory;
+use crate::permissions;
 use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
@@ -101,6 +102,27 @@ fn update_todos_tool_definition() -> ToolDefinition {
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
+    AwaitingApproval { message_id: Uuid },
+}
+
+/// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
+/// delegate_to_agent, show_table, update_todos) — none of these touch anything a user would
+/// want to approve/deny.
+fn is_gateable(tool_name: &str) -> bool {
+    tool_name != COMPLETE_TASK_TOOL_NAME
+        && tool_name != DELEGATE_TOOL_NAME
+        && tool_name != SHOW_TABLE_TOOL_NAME
+        && tool_name != UPDATE_TODOS_TOOL_NAME
+}
+
+fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String {
+    let path = input.get("path").and_then(|v| v.as_str());
+    match (tool_name, path) {
+        ("delete_file", Some(path)) => format!("Delete {path}"),
+        ("write_file", Some(path)) => format!("Overwrite {path}"),
+        (other, Some(path)) => format!("Run {other} on {path}"),
+        (other, None) => format!("Run {other}"),
+    }
 }
 
 /// Runs one agent turn to completion: retrieves memory first if `agent.uses_memory()`,
@@ -262,6 +284,69 @@ pub async fn run_agent_turn(
             }
         }
 
+        // Permission pre-scan: before executing ANY tool call from this response, check whether
+        // any of them need approval. If so, none of them run yet — the whole batch pauses on the
+        // first one needing a decision. Resume (Task 6) re-enters this exact scan-then-execute
+        // logic from scratch once a decision is made, so nothing here needs to track partial
+        // progress within a batch.
+        let pending_tool_use_blocks: Vec<ContentBlock> =
+            response.content.iter().filter(|b| matches!(b, ContentBlock::ToolUse { .. })).cloned().collect();
+
+        for block in &pending_tool_use_blocks {
+            if let ContentBlock::ToolUse { id, name, input, .. } = block {
+                if !is_gateable(name) {
+                    continue;
+                }
+                let decision = permissions::check_tool_permission(conn, user_id, name, input).await;
+                if !matches!(decision, permissions::PermissionDecision::Ask) {
+                    continue;
+                }
+
+                let description = describe_pending_action(name, input);
+                let approval_block = crate::content_block::ContentBlock::ApprovalRequest {
+                    id: Uuid::new_v4(),
+                    tool_name: name.clone(),
+                    description: description.clone(),
+                    input: input.clone(),
+                    status: crate::content_block::ApprovalStatus::Pending,
+                    decided_at: None,
+                };
+                let content_blocks = serde_json::json!([approval_block]);
+                let message_id: Option<Uuid> = sqlx::query_scalar(
+                    "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+                )
+                .bind(session_id)
+                .bind(format!("⏳ {description}"))
+                .bind(&content_blocks)
+                .fetch_one(&mut **conn)
+                .await
+                .ok();
+
+                let Some(message_id) = message_id else {
+                    return Err(TurnError::ToolLoopExceeded);
+                };
+
+                if let Some((publisher, _)) = mqtt {
+                    let _ = publisher.publish(session_id, &StreamEnvelope::SessionActivity { session_id }).await;
+                }
+
+                let state_patch = serde_json::json!({
+                    "paused_for_approval": true,
+                    "pending_approval_message_id": message_id.to_string(),
+                    "pending_tool_use_id": id,
+                    "tool_use_blocks": pending_tool_use_blocks,
+                    "messages": messages,
+                });
+                let _ = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
+                    .bind(&state_patch)
+                    .bind(agent_session_id)
+                    .execute(&mut **conn)
+                    .await;
+
+                return Ok(LoopOutcome::AwaitingApproval { message_id });
+            }
+        }
+
         let mut tool_results = Vec::new();
         for block in &response.content {
             if let ContentBlock::ToolUse { id, name, input, .. } = block {
@@ -296,6 +381,8 @@ pub async fn run_agent_turn(
                         },
                         Err(err) => (err, true, None),
                     }
+                } else if matches!(permissions::check_tool_permission(conn, user_id, name, input).await, permissions::PermissionDecision::Deny) {
+                    ("Denied by your permission rules.".to_string(), true, None)
                 } else {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(outcome) => (outcome.display_text, false, outcome.block),

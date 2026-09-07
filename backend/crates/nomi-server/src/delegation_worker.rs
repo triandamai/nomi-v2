@@ -191,6 +191,24 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
 
                     tracing::info!(delegation_id = %claimed.id, "delegation worker: delegation completed");
                 }
+                // Stopgap only: delegated-turn approval resume isn't wired up yet (Task 6 adds
+                // the resume path for the main turn loop; delegation isn't in this plan's
+                // scope). Surface that this delegation is waiting on a decision instead of
+                // silently dropping it — leave `agent_delegations.status` as `claimed` rather
+                // than marking completed/failed, since neither is true yet.
+                Ok(LoopOutcome::AwaitingApproval { message_id }) => {
+                    tracing::info!(delegation_id = %claimed.id, %message_id, "delegation worker: delegated turn is awaiting tool approval");
+                    let notice = format!(
+                        "The {} agent is waiting on your approval for a tool call before it can continue.",
+                        claimed.target_agent_type
+                    );
+                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+                        .bind(claimed.session_id)
+                        .bind(&notice)
+                        .execute(&mut *conn)
+                        .await;
+                    let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
+                }
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
                     let sorry = format!("I wasn't able to get an answer from the {} agent — {}.", claimed.target_agent_type, e);

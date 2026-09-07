@@ -59,6 +59,14 @@ async fn seed_speaker(pool: &PgPool, channel_user_id: &str) -> (Uuid, Uuid) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn money_intent_with_no_active_agent_spawns_and_runs_the_money_agent(pool: PgPool) {
+    let (user_id, _identity_id) = seed_speaker(&pool, "tg-1").await;
+    // Permission-gated by default (Task 5) — allow `list_transactions` so this test still
+    // exercises normal tool execution rather than the approval pause.
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'list_transactions', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let provider = FakeLlmProvider::sequence(vec![
@@ -276,7 +284,14 @@ async fn a_stale_active_agent_is_expired_and_the_message_falls_through_to_chitch
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn after_completion_a_new_money_intent_message_spawns_a_fresh_second_agent_session(pool: PgPool) {
-    let (_user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
+    let (user_id, identity_id) = seed_speaker(&pool, "tg-1").await;
+    // Permission-gated by default (Task 5) — allow `list_transactions` so this test still
+    // exercises normal tool execution rather than the approval pause.
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'list_transactions', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
         .fetch_one(&pool).await.unwrap();
     let session_id: Uuid = sqlx::query_scalar(

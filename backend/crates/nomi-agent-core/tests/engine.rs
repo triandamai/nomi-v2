@@ -183,6 +183,14 @@ async fn a_tool_use_is_executed_and_its_result_fed_back(pool: PgPool) {
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
 
+    // Permission-gated by default (Task 5) — allow `echo` so this test still exercises normal
+    // tool execution rather than the approval pause.
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
     let provider = FakeLlmProvider::sequence(vec![
         tool_use_response("t1", "echo", serde_json::json!({"x": 1})),
         text_response("Done!", StopReason::EndTurn),
@@ -254,6 +262,14 @@ async fn exceeding_the_turn_cap_returns_tool_loop_exceeded(pool: PgPool) {
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
 
+    // Permission-gated by default (Task 5) — allow `echo` so this test still exercises the
+    // tool-turn cap rather than the approval pause.
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
     let responses: Vec<LlmResponse> =
         (0..11).map(|i| tool_use_response(&format!("t{i}"), "echo", serde_json::json!({}))).collect();
     let provider = FakeLlmProvider::sequence(responses);
@@ -283,6 +299,14 @@ async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
+
+    // Permission-gated by default (Task 5) — allow `echo` so this test still exercises normal
+    // tool execution/logging rather than the approval pause.
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let provider = FakeLlmProvider::sequence(vec![
         tool_use_response("t1", "echo", serde_json::json!({"x": 1})),
@@ -554,4 +578,118 @@ async fn update_todos_upserts_the_same_message_instead_of_creating_a_new_one_eac
     .await
     .unwrap();
     assert_eq!(status, "done");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_unmatched_tool_call_pauses_the_turn_and_never_executes(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![tool_use_response("t1", "echo", serde_json::json!({"x": 1}))]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let message_id = match outcome {
+        LoopOutcome::AwaitingApproval { message_id } => message_id,
+        other => panic!("expected AwaitingApproval, got {other:?}"),
+    };
+
+    let content_blocks: serde_json::Value = sqlx::query_scalar("SELECT content_blocks FROM messages WHERE id = $1")
+        .bind(message_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(content_blocks[0]["kind"], "approval_request");
+    assert_eq!(content_blocks[0]["status"], "pending");
+    assert_eq!(content_blocks[0]["tool_name"], "echo");
+
+    let state: serde_json::Value = sqlx::query_scalar("SELECT state FROM agent_sessions WHERE id = $1")
+        .bind(agent_session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(state["paused_for_approval"], true);
+    assert_eq!(state["pending_tool_use_id"], "t1");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_allow_rule_lets_the_tool_execute_without_pausing(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "echo", serde_json::json!({"x": 1})),
+        text_response("Done!", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, LoopOutcome::Reply { text: "Done!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 });
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_deny_rule_blocks_the_tool_but_lets_the_turn_continue(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'deny')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "echo", serde_json::json!({"x": 1})),
+        text_response("Okay, I won't.", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, LoopOutcome::Reply { text: "Okay, I won't.".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 });
+
+    let requests = provider.received_requests.lock().unwrap();
+    let second_request_text = format!("{:?}", requests[1].messages);
+    assert!(second_request_text.contains("Denied by your permission rules."));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn show_table_and_update_todos_are_never_gated(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    // No permission rules at all — if these were gated the same way `echo` is, this would pause.
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "show_table", serde_json::json!({"variant": "data", "columns": [], "rows": []})),
+        text_response("Done!", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }));
 }

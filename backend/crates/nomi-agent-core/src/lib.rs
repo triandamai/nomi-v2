@@ -3,6 +3,7 @@ pub mod delegation;
 pub mod engine;
 pub mod error;
 pub mod memory;
+pub mod permissions;
 pub mod personality;
 pub mod prompts;
 pub mod registry;
