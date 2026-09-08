@@ -38,6 +38,34 @@
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let messageInput: HTMLInputElement | undefined = $state();
 
+	let localMessages = $state(messages);
+
+	// Resync whenever the page's own `messages` prop changes — navigating to a different
+	// session, or a full invalidateAll() (still used for AgentDelegationUpdated and on
+	// WS-reconnect-after-drop, see below).
+	$effect(() => {
+		localMessages = messages;
+	});
+
+	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+	async function fetchAndUpsertMessage(id: string) {
+		try {
+			const response = await fetch(`message/${id}`);
+			if (!response.ok) return;
+			const message: RenderedMessage = await response.json();
+			const index = localMessages.findIndex((m) => m.id === message.id);
+			if (index === -1) {
+				localMessages = [...localMessages, message];
+			} else {
+				localMessages = [...localMessages.slice(0, index), message, ...localMessages.slice(index + 1)];
+			}
+		} catch {
+			// Best-effort — a dropped connection triggers a full invalidateAll() on reconnect
+			// (see the socket 'open' handler below), which reconciles anything missed here.
+		}
+	}
+
 	const TERMINAL_CLOSE_CODES = new Set([4401, 4404]);
 	const INITIAL_RETRY_DELAY_MS = 1000;
 	const MAX_RETRY_DELAY_MS = 30000;
@@ -70,9 +98,12 @@
 	});
 
 	// Always keep the latest message (and the "Typing…" indicator) in view — re-runs whenever
-	// the message list changes or a reply starts streaming.
+	// the message list changes or a reply starts streaming. Depends on `localMessages` (not the
+	// `messages` prop) since that's what actually grows when MessageCreated/TurnCompleted patch a
+	// new message in via fetchAndUpsertMessage — the prop itself only changes on navigation or a
+	// full invalidateAll().
 	$effect(() => {
-		messages.length;
+		localMessages.length;
 		isWorking;
 		messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
 	});
@@ -101,7 +132,7 @@
 			});
 
 			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string };
+				let envelope: { kind: string; message_id?: string };
 				try {
 					envelope = JSON.parse(event.data);
 				} catch {
@@ -112,14 +143,16 @@
 				} else if (envelope.kind === 'TurnCompleted') {
 					pendingReply = false;
 					turnError = false;
-					invalidateAll();
+					if (envelope.message_id && envelope.message_id !== NIL_UUID) {
+						fetchAndUpsertMessage(envelope.message_id);
+					}
 				} else if (envelope.kind === 'TurnFailed') {
 					pendingReply = false;
 					turnError = true;
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
 					invalidateAll();
-				} else if (envelope.kind === 'SessionActivity') {
-					invalidateAll();
+				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
+					if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 				}
 			});
 
@@ -147,8 +180,8 @@
 
 <div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
 	<div bind:this={messagesContainer} class="flex-1 overflow-y-auto px-6 py-6">
-		{#each messages as message, i (message.id)}
-			<MessageBubble {message} chained={isChained(messages, i)} first={i === 0} />
+		{#each localMessages as message, i (message.id)}
+			<MessageBubble {message} chained={isChained(localMessages, i)} first={i === 0} />
 		{/each}
 		{#if isWorking}
 			<div class="mt-4 flex justify-start">
