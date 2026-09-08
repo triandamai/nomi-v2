@@ -342,3 +342,124 @@ async fn a_pause_on_a_non_first_block_preserves_every_block_for_resume(pool: PgP
     .unwrap();
     assert!(list_result.contains("Marker Description"), "list_transactions result was: {list_result}");
 }
+
+/// Regression test for the whole-branch-review bug: a single assistant response with TWO gated
+/// tool calls, NEITHER pre-ruled, must converge after two approvals instead of ping-ponging
+/// between approval cards forever.
+///
+/// Before the fix, the pause state tracked exactly ONE decided tool_use_id (a single
+/// `already_decided` tuple, never persisted across resumes). Approving card 1 (t1) resumed with
+/// `already_decided = (t1, true)`, which paused on t2 (card 2) — but t1's decision was NOT
+/// persisted. Approving card 2 (t2) resumed with `already_decided = (t2, true)` only, so the
+/// pre-scan re-checked t1 from the top, found it still un-ruled → `Ask`, and paused on t1 AGAIN
+/// (card 3). The turn looped between t1 and t2 and never completed.
+///
+/// The fix accumulates decisions in `agent_sessions.state["decided_tool_use_ids"]`, so every
+/// previously-approved block stays approved on every subsequent pre-scan pass. This test drives:
+/// pause on t1 -> approve -> pause on t2 (NOT re-pause on t1, NOT completion yet) -> approve ->
+/// turn actually completes, with BOTH tools having executed.
+#[sqlx::test(migrations = "../../migrations")]
+async fn two_un_ruled_gated_tool_calls_converge_after_two_approvals(pool: PgPool) {
+    let (user_id, _identity_id) = seed_speaker(&pool, "tg-1").await;
+
+    // A real transaction so list_transactions has something to return once it finally executes.
+    sqlx::query(
+        "INSERT INTO mock_transactions (user_id, occurred_at, amount_cents, category, description) \
+         VALUES ($1, now(), 450, 'marker_category', 'Marker Description')",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    // NO tool_permission_rules rows at all: both tools resolve to Ask, so both must be approved
+    // individually via their own cards. This is the exact scenario the bug made non-terminating.
+    let provider = FakeLlmProvider::sequence(vec![
+        text_response("money"),
+        multi_tool_use_response(&[
+            ("t1", "summarize_budget", serde_json::json!({})),
+            ("t2", "list_transactions", serde_json::json!({"limit": 10})),
+        ]),
+        text_response("Here's everything"),
+    ]);
+    let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-two-gated-{}", Uuid::new_v4()));
+
+    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+        .await
+        .unwrap();
+    assert_eq!(first.reply, "Waiting for approval.");
+
+    // Card 1 pauses on the first gated block, t1.
+    let paused_id_1: String = sqlx::query_scalar("SELECT state->>'pending_tool_use_id' FROM agent_sessions WHERE session_id = $1")
+        .bind(first.session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(paused_id_1, "t1");
+    let card_1 = pending_approval_message_id(&pool, first.session_id).await;
+
+    // Approve card 1. Pre-fix AND post-fix this pauses again — the meaningful difference is what
+    // happens on the SECOND approval. Assert a real second pause on t2, not completion.
+    let after_first = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, card_1, "approve", false)
+        .await
+        .unwrap();
+    assert_eq!(after_first.reply, "Waiting for another approval.", "approving card 1 must pause for card 2, not complete");
+    assert_eq!(after_first.message_id, None);
+
+    // Card 2 must be paused on t2 — NOT back on t1 (the pre-fix bug would have re-paused on t1
+    // here on the *next* resume; more directly, the accumulator must now carry t1's approval).
+    let paused_id_2: String = sqlx::query_scalar("SELECT state->>'pending_tool_use_id' FROM agent_sessions WHERE session_id = $1")
+        .bind(first.session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(paused_id_2, "t2", "the second card must be for the second gated tool, t2");
+    let decided_after_first: serde_json::Value =
+        sqlx::query_scalar("SELECT state->'decided_tool_use_ids' FROM agent_sessions WHERE session_id = $1")
+            .bind(first.session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(decided_after_first, serde_json::json!([["t1", true]]), "t1's approval must be persisted into the accumulator across the pause");
+
+    let card_2 = pending_approval_message_id(&pool, first.session_id).await;
+    assert_ne!(card_2, card_1, "card 2 must be a distinct approval message from card 1");
+
+    // Approve card 2. WITH the fix, the accumulator is [t1, t2], the pre-scan finds zero
+    // remaining Ask blocks, both tools execute, and the turn completes. WITHOUT the fix, the
+    // pre-scan would re-pause on t1 (a third card) and the turn would never reach this reply.
+    let after_second = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, card_2, "approve", false)
+        .await
+        .unwrap();
+    assert_eq!(after_second.reply, "Here's everything", "the turn must actually complete after the second approval, not pause a third time");
+    assert!(after_second.message_id.is_some());
+
+    // Pause state fully cleared.
+    let still_paused: Option<bool> = sqlx::query_scalar("SELECT (state->>'paused_for_approval')::boolean FROM agent_sessions WHERE session_id = $1")
+        .bind(first.session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(still_paused, None);
+
+    // Both tools actually executed — neither was silently skipped by the accumulation logic.
+    let summarize_result: String = sqlx::query_scalar(
+        "SELECT payload->>'result' FROM agent_events WHERE session_id = $1 AND event_type = 'ToolCalled' AND payload->>'tool_name' = 'summarize_budget'",
+    )
+    .bind(first.session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(summarize_result.contains("marker_category"), "summarize_budget result was: {summarize_result}");
+
+    let list_result: String = sqlx::query_scalar(
+        "SELECT payload->>'result' FROM agent_events WHERE session_id = $1 AND event_type = 'ToolCalled' AND payload->>'tool_name' = 'list_transactions'",
+    )
+    .bind(first.session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(list_result.contains("Marker Description"), "list_transactions result was: {list_result}");
+}

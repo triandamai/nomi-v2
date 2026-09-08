@@ -564,7 +564,7 @@ async fn get_message_returns_the_message_with_its_content_blocks(pool: PgPool) {
     let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
     let session_id = create_body["session_id"].as_str().unwrap().to_string();
 
-    let content_blocks = json!([{"type": "todo_list", "items": [{"text": "step 1", "status": "pending"}]}]);
+    let content_blocks = json!([{"kind": "todo_list", "items": [{"id": "todo-1", "text": "step 1", "status": "pending"}]}]);
     let message_id: Uuid = sqlx::query_scalar(
         "INSERT INTO messages (session_id, content, content_blocks) VALUES ($1, $2, $3) RETURNING id",
     )

@@ -356,6 +356,8 @@ async fn resume_locked(
     let messages: Vec<LlmMessage> =
         serde_json::from_value(state["messages"].clone()).map_err(|_| TurnError::ApprovalNoLongerPending)?;
     let pending_tool_use_id = state["pending_tool_use_id"].as_str().unwrap_or_default().to_string();
+    let mut decided_tool_use_ids: Vec<(String, bool)> =
+        serde_json::from_value(state["decided_tool_use_ids"].clone()).unwrap_or_default();
 
     if remember {
         if let Some(LlmContentBlock::ToolUse { name, input, .. }) =
@@ -380,11 +382,16 @@ async fn resume_locked(
     // Clear the paused-state keys before resolving — resolving may pause again on a different
     // block in the same batch, in which case it writes fresh paused keys right back.
     let _ = sqlx::query(
-        "UPDATE agent_sessions SET state = state - 'paused_for_approval' - 'pending_approval_message_id' - 'pending_tool_use_id' - 'tool_use_blocks' - 'messages' WHERE id = $1",
+        "UPDATE agent_sessions SET state = state - 'paused_for_approval' - 'pending_approval_message_id' - 'pending_tool_use_id' - 'tool_use_blocks' - 'messages' - 'decided_tool_use_ids' WHERE id = $1",
     )
     .bind(agent_session_id)
     .execute(&mut **conn)
     .await?;
+
+    // Record the decision being resolved by THIS call, appended to the accumulator carried across
+    // earlier resumes of the same batch — so every previously-decided block stays decided on the
+    // next pre-scan pass and the batch converges instead of ping-ponging between cards.
+    decided_tool_use_ids.push((pending_tool_use_id.clone(), decision == "approve"));
 
     let batch_outcome = nomi_agent_core::resolve_tool_batch(
         conn,
@@ -396,7 +403,7 @@ async fn resume_locked(
         user_id,
         &tool_use_blocks,
         &messages,
-        Some((pending_tool_use_id.as_str(), decision == "approve")),
+        &decided_tool_use_ids,
     )
     .await?;
 

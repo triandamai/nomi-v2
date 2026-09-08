@@ -287,7 +287,7 @@ pub async fn run_agent_turn(
         let pending_tool_use_blocks: Vec<ContentBlock> =
             response.content.iter().filter(|b| matches!(b, ContentBlock::ToolUse { .. })).cloned().collect();
 
-        match resolve_tool_batch(conn, mqtt, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, None).await? {
+        match resolve_tool_batch(conn, mqtt, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => return Ok(LoopOutcome::Completed { status, summary }),
             ToolBatchOutcome::Resolved(tool_results) => {
@@ -307,13 +307,16 @@ pub enum ToolBatchOutcome {
     AwaitingApproval { message_id: Uuid },
 }
 
-/// Resolves every ToolUse block in `tool_use_blocks`, in order. `already_decided`, when set, is
-/// `(tool_use_id, approved)` for a block whose approval was just resolved externally (a user
-/// clicked Approve/Deny on its card) — that one block skips the permission check and uses the
-/// given decision directly; every other block still goes through the normal
-/// check-permission-then-execute-or-pause path, which may itself pause again on a *different*
-/// block — handled identically to the very first pause (see nomi-turn's resume path, which calls
-/// this same function again when that happens).
+/// Resolves every ToolUse block in `tool_use_blocks`, in order. `already_decided` is the
+/// ACCUMULATING set of `(tool_use_id, approved)` decisions for blocks whose approval was resolved
+/// externally across earlier resumes of this same paused batch (each a user clicking Approve/Deny
+/// on a card) — every block in that set skips the permission check and uses its recorded decision
+/// directly; every other block still goes through the normal check-permission-then-execute-or-pause
+/// path, which may itself pause again on a *different* block — handled identically to the very
+/// first pause (see nomi-turn's resume path, which calls this same function again with the grown
+/// accumulator when that happens). Accumulating (rather than tracking a single most-recent
+/// decision) is what lets a batch with two-or-more gated tool calls converge: without it, each
+/// resume forgets the previous card's decision and re-pauses on an already-decided block forever.
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve_tool_batch(
     conn: &mut PoolConnection<Postgres>,
@@ -325,11 +328,11 @@ pub async fn resolve_tool_batch(
     user_id: Uuid,
     tool_use_blocks: &[ContentBlock],
     conversation_so_far: &[LlmMessage],
-    already_decided: Option<(&str, bool)>,
+    already_decided: &[(String, bool)],
 ) -> Result<ToolBatchOutcome, TurnError> {
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
-            if already_decided.map(|(decided_id, _)| decided_id == id.as_str()).unwrap_or(false) {
+            if already_decided.iter().any(|(decided_id, _)| decided_id == id) {
                 continue;
             }
             if !is_gateable(name) {
@@ -381,6 +384,7 @@ pub async fn resolve_tool_batch(
                 "pending_tool_use_id": id,
                 "tool_use_blocks": tool_use_blocks,
                 "messages": conversation_so_far,
+                "decided_tool_use_ids": already_decided,
             });
             let _ = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
                 .bind(&state_patch)
@@ -426,9 +430,8 @@ pub async fn resolve_tool_batch(
                     },
                     Err(err) => (err, true, None),
                 }
-            } else if already_decided.map(|(decided_id, _)| decided_id == id.as_str()).unwrap_or(false) {
-                let approved = already_decided.unwrap().1;
-                if approved {
+            } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
+                if *approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(outcome) => (outcome.display_text, false, outcome.block),
                         Err(err) => (describe_tool_error(name, input, &err), true, None),
