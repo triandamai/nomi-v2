@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount, type Snippet } from 'svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import type { RenderedMessage } from '$lib/types';
 
 	interface AgentActivityItem {
@@ -51,7 +53,11 @@
 
 	async function fetchAndUpsertMessage(id: string) {
 		try {
-			const response = await fetch(`message/${id}`);
+			// Plain string concatenation via buildMessageFetchUrl, not a bare relative reference —
+			// this route never renders with a trailing slash, so `fetch('message/id')` would resolve
+			// against the current URL by dropping the sessionId segment (WHATWG relative-URL
+			// resolution rules), not appending to it. See buildMessageFetchUrl's own doc comment.
+			const response = await fetch(buildMessageFetchUrl(page.url.pathname, id));
 			if (!response.ok) return;
 			const message: RenderedMessage = await response.json();
 			const index = localMessages.findIndex((m) => m.id === message.id);
@@ -97,15 +103,25 @@
 		if (pendingReply || turnError) submitting = false;
 	});
 
-	// Always keep the latest message (and the "Typing…" indicator) in view — re-runs whenever
-	// the message list changes or a reply starts streaming. Depends on `localMessages` (not the
-	// `messages` prop) since that's what actually grows when MessageCreated/TurnCompleted patch a
-	// new message in via fetchAndUpsertMessage — the prop itself only changes on navigation or a
-	// full invalidateAll().
+	// -1 (not 0) so the very first run — the initial mount — always counts as "grew" and scrolls
+	// to the bottom of whatever history loaded, regardless of how many messages that is.
+	let lastMessageCount = -1;
+
+	// Keep the latest message (and the "Typing…" indicator) in view, but only when a message was
+	// actually appended or a turn is in progress — not on every fetchAndUpsertMessage call. Under
+	// Svelte 5, reassigning `localMessages` (even to replace one entry in place, e.g. a todo-list
+	// step flipping or an approval being decided after the turn has already finished) re-triggers
+	// any effect that reads `.length`, even though the length didn't change. Comparing against the
+	// previous count so an in-place `MessageUpdated` patch — which this task's whole point is to
+	// apply without visibly jumping the viewport — doesn't yank the scroll position, while a
+	// genuinely new message (or live progress while `isWorking`) still does.
 	$effect(() => {
-		localMessages.length;
-		isWorking;
-		messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+		const currentCount = localMessages.length;
+		const grew = currentCount > lastMessageCount;
+		lastMessageCount = currentCount;
+		if (grew || isWorking) {
+			messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+		}
 	});
 
 	onMount(() => {
