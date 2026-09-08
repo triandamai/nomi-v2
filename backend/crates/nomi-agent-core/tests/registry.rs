@@ -4,7 +4,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use nomi_agent_core::{AgentRegistry, SubAgent};
+use nomi_agent_core::{AgentRegistry, SubAgent, ToolOutcome};
 use nomi_llm::ToolDefinition;
 
 struct DefaultAgent;
@@ -20,7 +20,7 @@ impl SubAgent for DefaultAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {
@@ -50,7 +50,7 @@ impl SubAgent for SpecialistAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {
@@ -74,7 +74,7 @@ impl SubAgent for NonTargetableAgent {
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
     }
-    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<String, String> {
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {
@@ -135,7 +135,7 @@ impl SubAgent for StubAgent {
         _: Uuid,
         _: &str,
         _: Value,
-    ) -> Result<String, String> {
+    ) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
     fn intent_label(&self) -> &'static str {

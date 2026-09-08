@@ -555,3 +555,83 @@ async fn delete_session_cascades_its_project_and_disk_files(pool: PgPool) {
     assert_eq!(remaining_projects, 0);
     assert_eq!(storage.get_object(&format!("{project_id}/index.html")).await.unwrap(), None);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn get_message_returns_the_message_with_its_content_blocks(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "ivan@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+
+    let content_blocks = json!([{"kind": "todo_list", "items": [{"id": "todo-1", "text": "step 1", "status": "pending"}]}]);
+    let message_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, content, content_blocks) VALUES ($1, $2, $3) RETURNING id",
+    )
+    .bind(Uuid::parse_str(&session_id).unwrap())
+    .bind("todo list updated")
+    .bind(&content_blocks)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = json_request(
+        router,
+        "GET",
+        &format!("/api/sessions/{session_id}/messages/{message_id}"),
+        Value::Null,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["id"].as_str().unwrap(), message_id.to_string());
+    assert_eq!(body["content"], "todo list updated");
+    assert_eq!(body["sender"], "assistant");
+    assert_eq!(body["content_blocks"], content_blocks);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn get_message_returns_not_found_for_an_unknown_message_id(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "judy@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+
+    let (status, _) = json_request(
+        router,
+        "GET",
+        &format!("/api/sessions/{session_id}/messages/{}", Uuid::new_v4()),
+        Value::Null,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn get_message_returns_not_found_when_message_belongs_to_another_session(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "kevin@example.com").await;
+
+    let (_, create_a) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_a = create_a["session_id"].as_str().unwrap().to_string();
+    let (_, create_b) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_b = create_b["session_id"].as_str().unwrap().to_string();
+
+    let message_id: Uuid = sqlx::query_scalar("INSERT INTO messages (session_id, content) VALUES ($1, 'hi') RETURNING id")
+        .bind(Uuid::parse_str(&session_a).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let (status, _) = json_request(
+        router,
+        "GET",
+        &format!("/api/sessions/{session_b}/messages/{message_id}"),
+        Value::Null,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

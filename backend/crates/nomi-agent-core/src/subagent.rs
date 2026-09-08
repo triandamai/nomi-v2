@@ -6,6 +6,8 @@ use uuid::Uuid;
 
 use nomi_llm::ToolDefinition;
 
+use crate::content_block::ToolOutcome;
+
 #[async_trait]
 pub trait SubAgent: Send + Sync {
     fn agent_type(&self) -> &'static str;
@@ -19,7 +21,7 @@ pub trait SubAgent: Send + Sync {
         user_id: Uuid,
         name: &str,
         input: Value,
-    ) -> Result<String, String>;
+    ) -> Result<ToolOutcome, String>;
 
     /// Fed verbatim into the intent classifier's prompt. Never called for the agent that
     /// returns `true` from `is_default()` — that agent is the fallback, not something the
@@ -64,6 +66,13 @@ pub trait SubAgent: Send + Sync {
     /// summary. Off by default: most agents' tool calls are internal bookkeeping the user
     /// never needs to see.
     fn surfaces_activity(&self) -> bool {
+        false
+    }
+
+    /// When true, run_agent_turn gives this agent the engine-level `update_todos` tool for
+    /// maintaining a live multi-step task checklist. Off by default — most agents don't run
+    /// long enough multi-step builds to need one.
+    fn supports_todos(&self) -> bool {
         false
     }
 

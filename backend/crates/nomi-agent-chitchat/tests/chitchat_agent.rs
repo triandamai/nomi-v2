@@ -169,7 +169,7 @@ async fn retrieved_memories_are_folded_into_the_system_prompt_and_reported_as_us
 
     match outcome {
         LoopOutcome::Reply { memory_ids_used, .. } => assert_eq!(memory_ids_used, vec![memory_id]),
-        LoopOutcome::Completed { .. } => panic!("expected a Reply outcome"),
+        other => panic!("expected a Reply outcome, got {other:?}"),
     }
 
     let requests = provider.received_requests.lock().unwrap();

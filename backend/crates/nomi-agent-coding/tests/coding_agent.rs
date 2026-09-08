@@ -73,7 +73,7 @@ async fn write_file_then_read_file_round_trips(pool: PgPool) {
         )
         .await
         .unwrap();
-    assert_eq!(read_result, "<h1>hi</h1>");
+    assert_eq!(read_result.display_text, "<h1>hi</h1>");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -107,7 +107,7 @@ async fn list_files_on_an_empty_project_says_so(pool: PgPool) {
         .execute_tool(&mut conn, Uuid::new_v4(), Uuid::new_v4(), user_id, "list_files", serde_json::json!({"project_id": project_id.to_string()}))
         .await
         .unwrap();
-    assert_eq!(result, "no files yet");
+    assert_eq!(result.display_text, "no files yet");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

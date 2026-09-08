@@ -41,7 +41,7 @@ async fn list_recent_agent_activity_reports_no_delegations_when_none_exist(pool:
         .await
         .unwrap();
 
-    assert_eq!(result, "No background delegations for this session yet.");
+    assert_eq!(result.display_text, "No background delegations for this session yet.");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -57,11 +57,11 @@ async fn list_recent_agent_activity_summarizes_completed_and_pending_delegations
         .await
         .unwrap();
 
-    assert!(result.contains("money"));
-    assert!(result.contains("completed"));
-    assert!(result.contains("spent $42 on groceries"));
-    assert!(result.contains("personality"));
-    assert!(result.contains("pending"));
+    assert!(result.display_text.contains("money"));
+    assert!(result.display_text.contains("completed"));
+    assert!(result.display_text.contains("spent $42 on groceries"));
+    assert!(result.display_text.contains("personality"));
+    assert!(result.display_text.contains("pending"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -61,10 +61,10 @@ impl SubAgent for MoneyAgent {
         user_id: Uuid,
         name: &str,
         input: Value,
-    ) -> Result<String, String> {
+    ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
-            "list_transactions" => list_transactions(conn, user_id, input).await,
-            "summarize_budget" => summarize_budget(conn, user_id, input).await,
+            "list_transactions" => list_transactions(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
+            "summarize_budget" => summarize_budget(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
     }

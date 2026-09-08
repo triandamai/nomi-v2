@@ -54,11 +54,16 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages",
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
         )
+        .route("/api/sessions/:id/messages/:message_id", get(sessions_routes::get_message))
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
         .route(
             "/api/sessions/:id/messages/:message_id/feedback",
             put(sessions_routes::put_message_feedback).delete(sessions_routes::delete_message_feedback),
+        )
+        .route(
+            "/api/sessions/:id/messages/:message_id/approval",
+            put(sessions_routes::resolve_approval),
         )
         .route(
             "/api/admin/settings/llm/models",

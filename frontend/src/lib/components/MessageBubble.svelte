@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { deserialize } from '$app/forms';
+	import ContentBlockView from './blocks/ContentBlockView.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
 	import IconShare from './icons/IconShare.svelte';
@@ -102,12 +103,30 @@
 		});
 	}
 
+	// A reference-style citation ("[1] Attention is all you need — [1]: https://arxiv.org/...")
+	// renders through `marked` as a plain `<a href="...">1</a>` — no different from any other
+	// link. The heuristic: a citation's visible text is exactly its numeric label; a normal
+	// inline link's text is a real phrase. Not airtight (a link whose text happens to be a bare
+	// number also matches), but cheap and correct for the actual citation format this is for.
+	function enhanceCitations(root: HTMLElement) {
+		const links = root.querySelectorAll<HTMLAnchorElement>('a[href]');
+		links.forEach((link) => {
+			const text = link.textContent?.trim() ?? '';
+			if (/^\d+$/.test(text)) {
+				link.classList.add('citation-chip');
+			}
+		});
+	}
+
 	$effect(() => {
 		// Re-run whenever this message's rendered HTML changes — a brand-new message, or (since
 		// the chat page never patches a message in place, only invalidateAll()s the whole list)
 		// a full reload replacing every message's DOM at once.
 		void message.content_html;
-		if (bubbleEl) enhanceCodeBlocks(bubbleEl);
+		if (bubbleEl) {
+			enhanceCodeBlocks(bubbleEl);
+			enhanceCitations(bubbleEl);
+		}
 	});
 
 	function copyMessage() {
@@ -166,7 +185,15 @@
 			? `background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small) var(--md-sys-shape-corner-large)`
 			: `background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small)`}
 	>
-		{@html message.content_html}
+		{#if message.content_blocks && message.content_blocks.length > 0}
+			<div class="flex flex-col gap-2">
+				{#each message.content_blocks as block, i (i)}
+					<ContentBlockView {block} messageId={message.id} />
+				{/each}
+			</div>
+		{:else}
+			{@html message.content_html}
+		{/if}
 	</div>
 
 	<div class="flex items-center gap-1 px-1">
@@ -282,6 +309,22 @@
 	.message-bubble :global(a) {
 		color: inherit;
 		text-decoration: underline;
+	}
+	.message-bubble :global(a.citation-chip) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.2em;
+		height: 1.2em;
+		padding: 0 0.3em;
+		margin: 0 0.1em;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+		color: var(--md-sys-color-primary);
+		font-size: 0.7em;
+		font-weight: 600;
+		text-decoration: none;
+		vertical-align: super;
 	}
 	.message-bubble :global(table) {
 		border-collapse: collapse;

@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount, type Snippet } from 'svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import type { RenderedMessage } from '$lib/types';
 
 	interface AgentActivityItem {
@@ -38,6 +40,38 @@
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let messageInput: HTMLInputElement | undefined = $state();
 
+	let localMessages = $state(messages);
+
+	// Resync whenever the page's own `messages` prop changes — navigating to a different
+	// session, or a full invalidateAll() (still used for AgentDelegationUpdated and on
+	// WS-reconnect-after-drop, see below).
+	$effect(() => {
+		localMessages = messages;
+	});
+
+	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+	async function fetchAndUpsertMessage(id: string) {
+		try {
+			// Plain string concatenation via buildMessageFetchUrl, not a bare relative reference —
+			// this route never renders with a trailing slash, so `fetch('message/id')` would resolve
+			// against the current URL by dropping the sessionId segment (WHATWG relative-URL
+			// resolution rules), not appending to it. See buildMessageFetchUrl's own doc comment.
+			const response = await fetch(buildMessageFetchUrl(page.url.pathname, id));
+			if (!response.ok) return;
+			const message: RenderedMessage = await response.json();
+			const index = localMessages.findIndex((m) => m.id === message.id);
+			if (index === -1) {
+				localMessages = [...localMessages, message];
+			} else {
+				localMessages = [...localMessages.slice(0, index), message, ...localMessages.slice(index + 1)];
+			}
+		} catch {
+			// Best-effort — a dropped connection triggers a full invalidateAll() on reconnect
+			// (see the socket 'open' handler below), which reconciles anything missed here.
+		}
+	}
+
 	const TERMINAL_CLOSE_CODES = new Set([4401, 4404]);
 	const INITIAL_RETRY_DELAY_MS = 1000;
 	const MAX_RETRY_DELAY_MS = 30000;
@@ -69,12 +103,25 @@
 		if (pendingReply || turnError) submitting = false;
 	});
 
-	// Always keep the latest message (and the "Typing…" indicator) in view — re-runs whenever
-	// the message list changes or a reply starts streaming.
+	// -1 (not 0) so the very first run — the initial mount — always counts as "grew" and scrolls
+	// to the bottom of whatever history loaded, regardless of how many messages that is.
+	let lastMessageCount = -1;
+
+	// Keep the latest message (and the "Typing…" indicator) in view, but only when a message was
+	// actually appended or a turn is in progress — not on every fetchAndUpsertMessage call. Under
+	// Svelte 5, reassigning `localMessages` (even to replace one entry in place, e.g. a todo-list
+	// step flipping or an approval being decided after the turn has already finished) re-triggers
+	// any effect that reads `.length`, even though the length didn't change. Comparing against the
+	// previous count so an in-place `MessageUpdated` patch — which this task's whole point is to
+	// apply without visibly jumping the viewport — doesn't yank the scroll position, while a
+	// genuinely new message (or live progress while `isWorking`) still does.
 	$effect(() => {
-		messages.length;
-		isWorking;
-		messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+		const currentCount = localMessages.length;
+		const grew = currentCount > lastMessageCount;
+		lastMessageCount = currentCount;
+		if (grew || isWorking) {
+			messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+		}
 	});
 
 	onMount(() => {
@@ -101,7 +148,7 @@
 			});
 
 			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string };
+				let envelope: { kind: string; message_id?: string };
 				try {
 					envelope = JSON.parse(event.data);
 				} catch {
@@ -112,14 +159,16 @@
 				} else if (envelope.kind === 'TurnCompleted') {
 					pendingReply = false;
 					turnError = false;
-					invalidateAll();
+					if (envelope.message_id && envelope.message_id !== NIL_UUID) {
+						fetchAndUpsertMessage(envelope.message_id);
+					}
 				} else if (envelope.kind === 'TurnFailed') {
 					pendingReply = false;
 					turnError = true;
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
 					invalidateAll();
-				} else if (envelope.kind === 'SessionActivity') {
-					invalidateAll();
+				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
+					if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 				}
 			});
 
@@ -147,8 +196,8 @@
 
 <div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
 	<div bind:this={messagesContainer} class="flex-1 overflow-y-auto px-6 py-6">
-		{#each messages as message, i (message.id)}
-			<MessageBubble {message} chained={isChained(messages, i)} first={i === 0} />
+		{#each localMessages as message, i (message.id)}
+			<MessageBubble {message} chained={isChained(localMessages, i)} first={i === 0} />
 		{/each}
 		{#if isWorking}
 			<div class="mt-4 flex justify-start">

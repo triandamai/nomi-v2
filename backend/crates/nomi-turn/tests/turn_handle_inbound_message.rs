@@ -31,6 +31,42 @@ fn tool_use_response(id: &str, name: &str, input: serde_json::Value) -> LlmRespo
     }
 }
 
+/// Pre-seeds a user/org/membership/channel_identity (matching what
+/// `bootstrap_identity_and_session`'s "pre-existing identity" path expects) plus "allow"
+/// permission rules for the given tools. Task 5 permission-gates every tool by default — an
+/// unmatched call pauses the whole turn for approval — so tests exercising the personality
+/// agent's real tools end-to-end need these rules seeded up front or they'd pause instead of
+/// executing.
+async fn seed_speaker_with_allowed_tools(pool: &PgPool, channel_user_id: &str, tool_names: &[&str]) -> Uuid {
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    let org_id: Uuid =
+        sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ('Personal', true) RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')")
+        .bind(org_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'telegram', $2)")
+        .bind(user_id)
+        .bind(channel_user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    for tool_name in tool_names {
+        sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, $2, 'allow')")
+            .bind(user_id)
+            .bind(*tool_name)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    user_id
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn new_sender_gets_bootstrapped_and_receives_a_chitchat_reply(pool: PgPool) {
     let provider = FakeLlmProvider::success(canned_response("Hi! How can I help?"));
@@ -358,6 +394,7 @@ async fn a_personality_change_is_recorded_and_folded_into_the_next_chitchat_repl
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry =
         AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(PersonalityAgent)]);
+    seed_speaker_with_allowed_tools(&pool, "tg-1", &["set_personality"]).await;
 
     // Turn 1: classified as "personality"; the agent calls set_personality, then complete_task.
     let personality_provider = FakeLlmProvider::sequence(vec![
@@ -421,6 +458,7 @@ async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_co
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry =
         AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(PersonalityAgent)]);
+    seed_speaker_with_allowed_tools(&pool, "tg-user-1", &["set_personality"]).await;
 
     // Seed a personality change through a personal DM.
     let personality_provider = FakeLlmProvider::sequence(vec![
@@ -488,6 +526,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry =
         AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(PersonalityAgent)]);
+    seed_speaker_with_allowed_tools(&pool, "tg-1", &["set_personality", "list_personality_versions", "rollback_personality"]).await;
 
     // Turn 1: set an initial personality (v1).
     let set_v1_provider = FakeLlmProvider::sequence(vec![

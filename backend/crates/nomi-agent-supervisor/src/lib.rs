@@ -46,9 +46,9 @@ impl SubAgent for SupervisorAgent {
         _user_id: Uuid,
         name: &str,
         _input: Value,
-    ) -> Result<String, String> {
+    ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
-            "list_recent_agent_activity" => list_recent_agent_activity(conn, session_id).await,
+            "list_recent_agent_activity" => list_recent_agent_activity(conn, session_id).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("supervisor has no tool named {other}")),
         }
     }

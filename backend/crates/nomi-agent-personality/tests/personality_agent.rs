@@ -57,7 +57,7 @@ async fn set_personality_upserts_and_records_an_audit_event(pool: PgPool) {
         .await
         .unwrap();
 
-    assert!(result.contains("Be sarcastic and blunt."));
+    assert!(result.display_text.contains("Be sarcastic and blunt."));
 
     let stored: String = sqlx::query_scalar("SELECT description FROM user_personality WHERE user_id = $1")
         .bind(user_id)
@@ -162,11 +162,11 @@ async fn list_personality_versions_reports_history_with_the_current_one_marked(p
         .await
         .unwrap();
 
-    assert!(result.contains("v2"));
-    assert!(result.contains("Be warm."));
-    assert!(result.contains("(current)"));
-    assert!(result.contains("v1"));
-    assert!(result.contains("Be sarcastic."));
+    assert!(result.display_text.contains("v2"));
+    assert!(result.display_text.contains("Be warm."));
+    assert!(result.display_text.contains("(current)"));
+    assert!(result.display_text.contains("v1"));
+    assert!(result.display_text.contains("Be sarcastic."));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -180,7 +180,7 @@ async fn list_personality_versions_with_no_history_says_so(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(result, "No personality history yet.");
+    assert_eq!(result.display_text, "No personality history yet.");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -217,7 +217,7 @@ async fn rollback_personality_restores_an_old_version(pool: PgPool) {
         .await
         .unwrap();
 
-    assert!(result.contains("version 1"));
+    assert!(result.display_text.contains("version 1"));
 
     let stored: String = sqlx::query_scalar("SELECT description FROM user_personality WHERE user_id = $1")
         .bind(user_id)

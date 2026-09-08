@@ -6,4 +6,6 @@ pub enum TurnError {
     LlmCallFailed(#[from] nomi_llm::LlmError),
     #[error("tool-calling loop exceeded its turn limit without completing")]
     ToolLoopExceeded,
+    #[error("this action is no longer pending approval")]
+    ApprovalNoLongerPending,
 }

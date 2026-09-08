@@ -206,6 +206,7 @@ pub struct MessageItem {
     pub id: Uuid,
     pub sender: String,
     pub content: String,
+    pub content_blocks: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub my_feedback: Option<String>,
 }
@@ -216,12 +217,20 @@ pub struct ListMessagesResponse {
 }
 
 fn to_message_item(
-    (id, sender, content, created_at, my_feedback): (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<String>),
+    (id, sender, content, created_at, content_blocks, my_feedback): (
+        Uuid,
+        Option<Uuid>,
+        String,
+        DateTime<Utc>,
+        Option<serde_json::Value>,
+        Option<String>,
+    ),
 ) -> MessageItem {
     MessageItem {
         id,
         sender: if sender.is_some() { "user".to_string() } else { "assistant".to_string() },
         content,
+        content_blocks,
         created_at,
         my_feedback,
     }
@@ -237,9 +246,9 @@ pub async fn list_messages(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
-    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>, Option<String>)> = match query.before {
+    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>)> = match query.before {
         Some(before_id) => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, mf.rating \
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating \
              FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $4 \
              WHERE m.session_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2) \
@@ -253,7 +262,7 @@ pub async fn list_messages(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
         None => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, mf.rating \
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating \
              FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
              WHERE m.session_id = $1 \
@@ -271,6 +280,30 @@ pub async fn list_messages(
     messages.reverse();
 
     Ok(Json(ListMessagesResponse { messages }))
+}
+
+pub async fn get_message(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<MessageItem>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+
+    let row: (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>) = sqlx::query_as(
+        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating \
+         FROM messages m \
+         LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
+         WHERE m.id = $1 AND m.session_id = $2",
+    )
+    .bind(message_id)
+    .bind(session_id)
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch message"))?
+    .ok_or((StatusCode::NOT_FOUND, "message not found"))?;
+
+    Ok(Json(to_message_item(row)))
 }
 
 #[derive(Deserialize)]
@@ -349,6 +382,7 @@ pub async fn send_message(
         id: ingested.user_message_id,
         sender: "user".to_string(),
         content: req.text,
+        content_blocks: None,
         created_at,
         my_feedback: None,
     };
@@ -477,6 +511,47 @@ pub async fn put_message_feedback(
     })?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct ApprovalRequest {
+    pub decision: String,
+    #[serde(default)]
+    pub remember: bool,
+}
+
+pub async fn resolve_approval(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, message_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<ApprovalRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    authorize_message_in_session(&state.pool, session_id, message_id).await?;
+
+    if req.decision != "approve" && req.decision != "deny" {
+        return Err((StatusCode::BAD_REQUEST, "decision must be 'approve' or 'deny'"));
+    }
+
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true)",
+    )
+    .bind(message_id.to_string())
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check approval status"))?;
+
+    if !pending {
+        return Err((StatusCode::CONFLICT, "this action is no longer pending"));
+    }
+
+    let mut tx = state.pool.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to start transaction"))?;
+    nomi_turn::approval::enqueue(&mut tx, message_id, &req.decision, req.remember)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+
+    Ok(StatusCode::ACCEPTED)
 }
 
 pub async fn delete_message_feedback(

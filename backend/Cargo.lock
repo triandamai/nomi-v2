@@ -2125,6 +2125,7 @@ dependencies = [
  "nomi-llm",
  "nomi-realtime",
  "nomi-test-support",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror 1.0.69",
