@@ -143,7 +143,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 provider.as_ref(),
                 embedding_provider.as_ref(),
                 &registry,
-                agent,
+                agent.as_ref(),
                 claimed.session_id,
                 claimed.session_id,
                 claimed.user_id,

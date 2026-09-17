@@ -306,7 +306,7 @@ pub async fn delete_file(
     })
 }
 
-async fn list_files(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
+pub async fn list_files(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
     let project_id = parse_project_id(&input)?;
     if !owns_project(conn, project_id, user_id).await? {
         return Err("project not found".to_string());

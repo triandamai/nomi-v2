@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use nomi_agent_chitchat::ChitchatAgent;
-use nomi_agent_core::AgentRegistry;
+use nomi_agent_core::{AgentRegistry, ToolCatalog};
 use nomi_agent_money::MoneyAgent;
 use nomi_llm::{ContentBlock, LlmResponse, StopReason};
 use nomi_realtime::MqttPublisher;
@@ -27,6 +29,7 @@ async fn process_turn_produces_a_reply_for_an_already_ingested_message(pool: PgP
     let provider = FakeLlmProvider::success(canned_response("hi there"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-process-{}", Uuid::new_v4()));
 
     let user_id: Uuid = sqlx::query_scalar(
@@ -44,6 +47,7 @@ async fn process_turn_produces_a_reply_for_an_already_ingested_message(pool: PgP
         &provider,
         &embedder,
         &registry,
+        &catalog,
         ingested.turn_job_id,
         ingested.session_id,
         ingested.sender_channel_identity_id,
@@ -70,6 +74,7 @@ async fn process_turn_records_a_turn_failed_event_on_llm_failure(pool: PgPool) {
     let provider = FakeLlmProvider::failure("provider unavailable");
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-process-{}", Uuid::new_v4()));
 
     let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
@@ -85,6 +90,7 @@ async fn process_turn_records_a_turn_failed_event_on_llm_failure(pool: PgPool) {
         &provider,
         &embedder,
         &registry,
+        &catalog,
         ingested.turn_job_id,
         ingested.session_id,
         ingested.sender_channel_identity_id,

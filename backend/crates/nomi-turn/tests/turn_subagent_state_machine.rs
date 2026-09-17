@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -6,7 +8,7 @@ use nomi_llm::{ContentBlock, LlmResponse, StopReason};
 use nomi_turn::handle_inbound_message;
 
 use nomi_agent_chitchat::ChitchatAgent;
-use nomi_agent_core::AgentRegistry;
+use nomi_agent_core::{AgentRegistry, ToolCatalog};
 use nomi_agent_money::MoneyAgent;
 use nomi_test_support::{dummy_embedding, FakeEmbeddingProvider, FakeLlmProvider};
 
@@ -69,13 +71,14 @@ async fn money_intent_with_no_active_agent_spawns_and_runs_the_money_agent(pool:
         .unwrap();
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let provider = FakeLlmProvider::sequence(vec![
         text_response("money"),
         tool_use_response("t1", "list_transactions", serde_json::json!({"limit": 10})),
         text_response("Here's your spending"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
 
@@ -125,9 +128,10 @@ async fn an_active_agent_is_continued_without_reclassifying_intent(pool: PgPool)
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let provider = FakeLlmProvider::sequence(vec![text_response("Sure, here's more info")]);
 
-    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "and rent?", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "and rent?", None)
         .await
         .unwrap();
 
@@ -164,13 +168,14 @@ async fn complete_task_marks_the_agent_session_completed(pool: PgPool) {
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let provider = FakeLlmProvider::sequence(vec![tool_use_response(
         "complete_task",
         "complete_task",
         serde_json::json!({"status": "completed", "summary": "All set!"}),
     )]);
 
-    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "thanks, that's all", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "thanks, that's all", None)
         .await
         .unwrap();
 
@@ -209,13 +214,14 @@ async fn complete_task_with_cancelled_status_marks_the_agent_session_cancelled(p
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let provider = FakeLlmProvider::sequence(vec![tool_use_response(
         "complete_task",
         "complete_task",
         serde_json::json!({"status": "cancelled", "summary": "Nevermind, no problem!"}),
     )]);
 
-    handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "actually nevermind", None)
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "actually nevermind", None)
         .await
         .unwrap();
 
@@ -253,13 +259,14 @@ async fn a_stale_active_agent_is_expired_and_the_message_falls_through_to_chitch
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let provider = FakeLlmProvider::sequence(vec![
         text_response("chitchat"),
         text_response("Hi there!"),
         text_response("NONE"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello again", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "hello again", None)
         .await
         .unwrap();
 
@@ -305,13 +312,14 @@ async fn after_completion_a_new_money_intent_message_spawns_a_fresh_second_agent
 
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let provider = FakeLlmProvider::sequence(vec![
         text_response("money"),
         tool_use_response("t1", "list_transactions", serde_json::json!({"limit": 10})),
         text_response("Here's your spending again"),
     ]);
 
-    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "what about now?", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "what about now?", None)
         .await
         .unwrap();
 

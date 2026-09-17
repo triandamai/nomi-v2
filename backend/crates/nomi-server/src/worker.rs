@@ -43,7 +43,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
         return;
     }
 
-    let registry = crate::build_agent_registry(project_storage);
+    let registry = crate::build_agent_registry(project_storage.clone());
+    let catalog = crate::build_tool_catalog(project_storage);
 
     loop {
         // Wake on NOTIFY from either channel, or on the fallback interval if a NOTIFY is ever
@@ -89,6 +90,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 provider.as_ref(),
                 embedding_provider.as_ref(),
                 &registry,
+                &catalog,
                 claimed.id,
                 claimed.session_id,
                 claimed.sender_channel_identity_id,
@@ -160,7 +162,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
 
             let result = nomi_turn::resume_paused_turn(
-                &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry,
+                &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, &catalog,
                 claimed.message_id, &claimed.decision, claimed.remember,
             )
             .await;

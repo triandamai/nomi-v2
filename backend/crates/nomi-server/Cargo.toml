@@ -22,6 +22,7 @@ nomi-agent-planning = { path = "../nomi-agent-planning" }
 nomi-agent-coding = { path = "../nomi-agent-coding" }
 nomi-turn = { path = "../nomi-turn" }
 nomi-storage = { path = "../nomi-storage" }
+async-trait = "0.1"
 axum = { version = "0.7", features = ["ws"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 tokio = { version = "1", features = ["full"] }

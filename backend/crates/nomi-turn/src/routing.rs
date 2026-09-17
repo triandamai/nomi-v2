@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use nomi_agent_core::{AgentRegistry, SubAgent, TurnError};
+use nomi_agent_core::{AgentRegistry, DynamicAgent, SubAgent, TurnError};
+use nomi_agent_core::ToolCatalog;
 use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
 // Generous for a single-word reply: some models don't reliably follow "reply with only one
@@ -11,14 +14,23 @@ use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 // fallback handles that, but only if the label isn't truncated out of the response first.
 const INTENT_CLASSIFICATION_MAX_TOKENS: u32 = 20;
 
-/// Classifies `text` against whatever's registered in `registry`, returning the matching
-/// agent (or the registry's default agent on no match, a parse failure, or an LLM error).
-/// Replaces the old closed `Intent` enum — there is nothing here to edit when a new agent
-/// is registered; the classifier prompt and the matching logic are both built from
-/// `registry` at call time.
-pub async fn classify_intent<'a>(provider: &dyn LlmProvider, registry: &'a AgentRegistry, text: &str) -> &'a dyn SubAgent {
+/// Classifies `text` against every built-in agent in `registry` plus every currently-active
+/// dynamic agent (fetched fresh from the DB, no cache), returning the matching agent — built-in
+/// or dynamic — or the registry's default agent on no match, a parse failure, or an LLM error.
+pub async fn classify_intent(
+    conn: &mut PoolConnection<Postgres>,
+    provider: &dyn LlmProvider,
+    registry: &AgentRegistry,
+    catalog: &Arc<ToolCatalog>,
+    text: &str,
+) -> Arc<dyn SubAgent> {
+    let dynamic_rows = nomi_agent_core::dynamic_agent::fetch_active_dynamic_agents(conn).await.unwrap_or_default();
+    let extra_labels: Vec<String> = dynamic_rows.iter().map(|r| r.intent_label.clone()).collect();
+    let extra_options: Vec<String> =
+        dynamic_rows.iter().map(|r| format!("{}: {}", r.intent_label, r.intent_description)).collect();
+
     let request = LlmRequest {
-        system: Some(registry.classification_prompt()),
+        system: Some(registry.classification_prompt_with_extra(&extra_labels, &extra_options)),
         messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: text.to_string() }] }],
         tools: vec![],
         max_tokens: INTENT_CLASSIFICATION_MAX_TOKENS,
@@ -30,7 +42,7 @@ pub async fn classify_intent<'a>(provider: &dyn LlmProvider, registry: &'a Agent
         Err(_) => return registry.default_agent(),
     };
 
-    let text = response
+    let label_text = response
         .content
         .into_iter()
         .find_map(|block| match block {
@@ -39,7 +51,20 @@ pub async fn classify_intent<'a>(provider: &dyn LlmProvider, registry: &'a Agent
         })
         .unwrap_or_default();
 
-    registry.find_by_intent_label(&text).unwrap_or_else(|| registry.default_agent())
+    if let Some(agent) = registry.find_by_intent_label(&label_text) {
+        return agent;
+    }
+
+    let normalized = label_text.trim().to_lowercase();
+    let matched = dynamic_rows
+        .iter()
+        .find(|r| r.intent_label == normalized)
+        .or_else(|| dynamic_rows.iter().find(|r| normalized.split(|c: char| !c.is_alphanumeric()).any(|w| w == r.intent_label)));
+
+    match matched {
+        Some(row) => Arc::new(DynamicAgent::from_row(row.clone(), catalog.clone())) as Arc<dyn SubAgent>,
+        None => registry.default_agent(),
+    }
 }
 
 pub async fn find_active_agent_session(

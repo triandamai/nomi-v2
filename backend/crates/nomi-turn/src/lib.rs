@@ -7,6 +7,8 @@ pub mod routing;
 
 pub use nomi_agent_core::TurnError;
 
+use std::sync::Arc;
+
 use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, PgPool, Postgres};
 use uuid::Uuid;
@@ -33,6 +35,7 @@ pub async fn handle_inbound_message(
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
     channel: &str,
     chat_type: &str,
     chat_id: &str,
@@ -48,7 +51,7 @@ pub async fn handle_inbound_message(
 
     lock::insert_inbound_message(&mut conn, session_id, sender_channel_identity_id, text).await?;
 
-    let result = run_locked_turn(&mut conn, None, s3, provider, embedding_provider, registry, session_id, sender_channel_identity_id, user_id, text).await;
+    let result = run_locked_turn(&mut conn, None, s3, provider, embedding_provider, registry, catalog, session_id, sender_channel_identity_id, user_id, text).await;
 
     match result {
         Ok((reply, message_id)) => {
@@ -82,6 +85,7 @@ pub async fn process_turn(
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
     turn_job_id: Uuid,
     session_id: Uuid,
     sender_channel_identity_id: Uuid,
@@ -97,6 +101,7 @@ pub async fn process_turn(
         provider,
         embedding_provider,
         registry,
+        catalog,
         session_id,
         sender_channel_identity_id,
         user_id,
@@ -129,6 +134,26 @@ pub async fn process_turn(
     }
 }
 
+/// Resolves `agent_type` to a live `Arc<dyn SubAgent>` — a built-in agent from `registry` if
+/// one matches, otherwise a `DynamicAgent` freshly built from the `dynamic_agents` table (its
+/// row id, stringified, is what a dynamic agent's own `agent_type()` returns — see
+/// `DynamicAgent::agent_type`). `None` when neither matches, e.g. a stale `agent_sessions` row
+/// left over from a dynamic agent that's since been deleted... there is no delete in v1, so in
+/// practice this only happens for a genuinely unrecognized `agent_type` string.
+async fn resolve_agent(
+    conn: &mut PoolConnection<Postgres>,
+    registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
+    agent_type: &str,
+) -> Option<Arc<dyn nomi_agent_core::SubAgent>> {
+    if let Some(agent) = registry.find(agent_type) {
+        return Some(agent);
+    }
+    let id: Uuid = agent_type.parse().ok()?;
+    let row = nomi_agent_core::dynamic_agent::find_dynamic_agent_by_id(conn, id).await.ok()??;
+    Some(Arc::new(nomi_agent_core::DynamicAgent::from_row(row, catalog.clone())) as Arc<dyn nomi_agent_core::SubAgent>)
+}
+
 /// Shared by handle_inbound_message and process_turn: routing/classification and agent
 /// dispatch through `registry`, assuming the session lock is already held by the caller and
 /// the inbound message has already been persisted (by the caller, before this runs).
@@ -140,6 +165,7 @@ async fn run_locked_turn(
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
     session_id: Uuid,
     sender_channel_identity_id: Uuid,
     user_id: Uuid,
@@ -147,8 +173,8 @@ async fn run_locked_turn(
 ) -> Result<(String, Option<Uuid>), TurnError> {
     let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
 
-    enum RoutingOutcome<'a> {
-        Continue { agent: &'a dyn nomi_agent_core::SubAgent, agent_session_id: Uuid },
+    enum RoutingOutcome {
+        Continue { agent: Arc<dyn nomi_agent_core::SubAgent>, agent_session_id: Uuid },
         NeedsClassification,
     }
 
@@ -159,11 +185,11 @@ async fn run_locked_turn(
                 routing::mark_expired(conn, agent_session_id, session_id, &details.agent_type).await?;
                 RoutingOutcome::NeedsClassification
             } else {
-                match registry.find(&details.agent_type) {
-                    Some(agent) => RoutingOutcome::Continue { agent, agent_session_id },
+                match resolve_agent(conn, registry, catalog, &details.agent_type).await {
                     // The active session's agent_type isn't registered anymore (e.g. an
-                    // agent crate was removed) — fall back to classifying fresh, same as
-                    // an unrecognized/stale session.
+                    // agent crate was removed, or a dynamic agent row was somehow deleted) —
+                    // fall back to classifying fresh, same as an unrecognized/stale session.
+                    Some(agent) => RoutingOutcome::Continue { agent, agent_session_id },
                     None => RoutingOutcome::NeedsClassification,
                 }
             }
@@ -173,21 +199,21 @@ async fn run_locked_turn(
 
     match routing_outcome {
         RoutingOutcome::Continue { agent, agent_session_id } => {
-            run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
+            run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::NeedsClassification => {
-            let agent = routing::classify_intent(provider, registry, text).await;
+            let agent = routing::classify_intent(conn, provider, registry, catalog, text).await;
 
             if agent.agent_type() == registry.default_agent().agent_type() {
                 // The default agent (chitchat) never gets a persistent agent_sessions row —
                 // matching today's behavior, where chitchat has no agent_session_id at all.
                 // agent_session_id == session_id here purely as a stand-in for logging
                 // (see nomi-agent-chitchat's own comment on this at its call site's origin).
-                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, session_id, user_id).await
+                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, session_id, user_id).await
             } else {
                 let agent_session_id =
-                    routing::spawn_agent_session(conn, session_id, sender_channel_identity_id, agent.agent_type()).await?;
-                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
+                    routing::spawn_agent_session(conn, session_id, sender_channel_identity_id, agent.agent_type().as_ref()).await?;
+                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id).await
             }
         }
     }
@@ -257,7 +283,7 @@ async fn finish_agent_turn(
             )
             .bind(session_id)
             .bind(agent_session_id_for_event)
-            .bind(agent.agent_type())
+            .bind(agent.agent_type().as_ref())
             .bind(serde_json::json!({"input_tokens": input_tokens, "output_tokens": output_tokens}))
             .execute(&mut *tx)
             .await?;
@@ -279,7 +305,7 @@ async fn finish_agent_turn(
             .await?;
             tx.commit().await?;
 
-            routing::complete_agent_session(conn, agent_session_id, session_id, agent.agent_type(), &status, &summary).await?;
+            routing::complete_agent_session(conn, agent_session_id, session_id, agent.agent_type().as_ref(), &status, &summary).await?;
 
             Ok((summary, Some(message_id)))
         }
@@ -295,6 +321,7 @@ pub async fn resume_paused_turn(
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
     message_id: Uuid,
     decision: &str,
     remember: bool,
@@ -306,7 +333,7 @@ pub async fn resume_paused_turn(
 
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
-    let result = resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, session_id, message_id, decision, remember).await;
+    let result = resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, catalog, session_id, message_id, decision, remember).await;
 
     match result {
         Ok((reply, resumed_message_id)) => {
@@ -334,6 +361,7 @@ async fn resume_locked(
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
     session_id: Uuid,
     message_id: Uuid,
     decision: &str,
@@ -356,7 +384,7 @@ async fn resume_locked(
         .fetch_one(&mut **conn)
         .await?;
 
-    let agent = registry.find(&agent_type).ok_or(TurnError::ApprovalNoLongerPending)?;
+    let agent = resolve_agent(conn, registry, catalog, &agent_type).await.ok_or(TurnError::ApprovalNoLongerPending)?;
 
     let tool_use_blocks: Vec<LlmContentBlock> =
         serde_json::from_value(state["tool_use_blocks"].clone()).map_err(|_| TurnError::ApprovalNoLongerPending)?;
@@ -405,7 +433,7 @@ async fn resume_locked(
         Some((mqtt, Uuid::nil())),
         s3,
         registry,
-        agent,
+        agent.as_ref(),
         session_id,
         agent_session_id,
         user_id,
@@ -418,19 +446,19 @@ async fn resume_locked(
     match batch_outcome {
         nomi_agent_core::ToolBatchOutcome::AwaitingApproval { .. } => Ok(("Waiting for another approval.".to_string(), None)),
         nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => {
-            finish_agent_turn(conn, session_id, agent_session_id, agent, nomi_agent_core::LoopOutcome::Completed { status, summary }).await
+            finish_agent_turn(conn, session_id, agent_session_id, agent.as_ref(), nomi_agent_core::LoopOutcome::Completed { status, summary }).await
         }
         nomi_agent_core::ToolBatchOutcome::Resolved(tool_results) => {
             let mut full_messages = messages;
             full_messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
 
             let outcome = nomi_agent_core::run_agent_turn(
-                conn, Some((mqtt, Uuid::nil())), s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id,
+                conn, Some((mqtt, Uuid::nil())), s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id,
                 full_messages, SUBAGENT_MAX_TOKENS,
             )
             .await?;
 
-            finish_agent_turn(conn, session_id, agent_session_id, agent, outcome).await
+            finish_agent_turn(conn, session_id, agent_session_id, agent.as_ref(), outcome).await
         }
     }
 }

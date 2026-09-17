@@ -1,4 +1,6 @@
 
+use std::sync::Arc;
+
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -131,7 +133,7 @@ async fn ws_upgrade_with_a_valid_token_for_the_callers_own_session_succeeds(pool
 use std::time::Duration as StdDuration;
 
 use nomi_agent_chitchat::ChitchatAgent;
-use nomi_agent_core::AgentRegistry;
+use nomi_agent_core::{AgentRegistry, ToolCatalog};
 use nomi_agent_money::MoneyAgent;
 use nomi_llm::{ContentBlock, LlmResponse, PartialBlock, StopReason, StreamEvent};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
@@ -163,6 +165,7 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
     let provider = FakeLlmProvider::success(canned_response(reply_text));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let mqtt = MqttPublisher::connect(
         nomi_test_support::TEST_MQTT_BROKER_HOST,
         nomi_test_support::TEST_MQTT_BROKER_PORT,
@@ -176,6 +179,7 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
         &provider,
         &embedder,
         &registry,
+        &catalog,
         claimed.id,
         claimed.session_id,
         claimed.sender_channel_identity_id,
