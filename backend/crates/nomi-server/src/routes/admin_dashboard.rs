@@ -64,6 +64,8 @@ pub struct RunningAgentItem {
     pub channel: String,
     pub started_at: DateTime<Utc>,
     pub last_activity_at: DateTime<Utc>,
+    pub current_phase: String,
+    pub current_phase_detail: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -85,10 +87,10 @@ pub async fn get_agents(
 ) -> Result<Json<AgentsResponse>, (StatusCode, &'static str)> {
     require_system_config_permission(&claims)?;
 
-    let rows: Vec<(Uuid, Option<String>, String, String, Uuid, String, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, Option<String>, String, String, Uuid, String, DateTime<Utc>, DateTime<Utc>, String, Option<String>)> = sqlx::query_as(
         "SELECT \
              u.id, wc.email, ci.channel, ci.channel_user_id, \
-             ags.id, ags.agent_type, ags.started_at, ags.last_activity_at \
+             ags.id, ags.agent_type, ags.started_at, ags.last_activity_at, ags.current_phase, ags.current_phase_detail \
          FROM agent_sessions ags \
          JOIN channel_identities ci ON ci.id = ags.sender_channel_identity_id \
          JOIN users u ON u.id = ci.user_id \
@@ -106,8 +108,8 @@ pub async fn get_agents(
     // Rows are ORDER BY u.id, so every row for the same user is contiguous — grouping by
     // checking the last-pushed group's user_id needs no HashMap or second pass.
     let mut groups: Vec<UserAgentGroup> = Vec::new();
-    for (user_id, email, channel, channel_user_id, agent_session_id, agent_type, started_at, last_activity_at) in rows {
-        let agent = RunningAgentItem { agent_session_id, agent_type, channel: channel.clone(), started_at, last_activity_at };
+    for (user_id, email, channel, channel_user_id, agent_session_id, agent_type, started_at, last_activity_at, current_phase, current_phase_detail) in rows {
+        let agent = RunningAgentItem { agent_session_id, agent_type, channel: channel.clone(), started_at, last_activity_at, current_phase, current_phase_detail };
         match groups.last_mut() {
             Some(group) if group.user_id == user_id => group.agents.push(agent),
             _ => {

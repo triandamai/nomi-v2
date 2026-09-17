@@ -11,6 +11,8 @@
 		channel: string;
 		started_at: string;
 		last_activity_at: string;
+		current_phase: string;
+		current_phase_detail: string | null;
 	};
 
 	const rows: Row[] = $derived(
@@ -22,6 +24,8 @@
 				channel: agent.channel,
 				started_at: agent.started_at,
 				last_activity_at: agent.last_activity_at,
+				current_phase: agent.current_phase,
+				current_phase_detail: agent.current_phase_detail,
 			})),
 		),
 	);
@@ -30,9 +34,17 @@
 		{ key: 'user_label', label: 'User', sortable: true },
 		{ key: 'agent_type', label: 'Agent Type', sortable: true },
 		{ key: 'channel', label: 'Channel', sortable: true },
+		{ key: 'current_phase', label: 'Status', sortable: true },
 		{ key: 'started_at', label: 'Started', sortable: true },
 		{ key: 'last_activity_at', label: 'Last Activity', sortable: true },
 	];
+
+	function phaseLabel(row: Row): string {
+		if (row.current_phase === 'calling_tool' && row.current_phase_detail) {
+			return `calling tool: ${row.current_phase_detail}`;
+		}
+		return row.current_phase.replace('_', ' ');
+	}
 
 	let sortKey = $state<string | undefined>('user_label');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
@@ -42,8 +54,8 @@
 		const key = sortKey as keyof Row;
 		const direction = sortDirection === 'asc' ? 1 : -1;
 		return [...rows].sort((a, b) => {
-			const av = a[key];
-			const bv = b[key];
+			const av = a[key] ?? '';
+			const bv = b[key] ?? '';
 			if (av < bv) return -1 * direction;
 			if (av > bv) return 1 * direction;
 			return 0;
@@ -68,6 +80,7 @@
 					<td>{row.user_label}</td>
 					<td>{row.agent_type}</td>
 					<td>{row.channel}</td>
+					<td>{phaseLabel(row)}</td>
 					<td>{new Date(row.started_at).toLocaleString()}</td>
 					<td>{new Date(row.last_activity_at).toLocaleString()}</td>
 				</tr>

@@ -265,4 +265,8 @@ async fn agents_endpoint_groups_running_sessions_by_user_and_excludes_non_active
     assert_eq!(group_b["label"], "telegram:b-tg");
     assert_eq!(group_b["agents"].as_array().unwrap().len(), 1);
     assert_eq!(group_b["agents"][0]["agent_type"], "money");
+    // current_phase defaults to "waiting" (migration 0025) — neither session here ever went
+    // through the turn engine, so it's still at its just-inserted default.
+    assert_eq!(group_b["agents"][0]["current_phase"], "waiting");
+    assert!(group_b["agents"][0]["current_phase_detail"].is_null());
 }

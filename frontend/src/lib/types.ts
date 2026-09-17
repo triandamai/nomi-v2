@@ -125,6 +125,8 @@ export interface RunningAgentItem {
 	channel: string;
 	started_at: string;
 	last_activity_at: string;
+	current_phase: string;
+	current_phase_detail: string | null;
 }
 
 export interface UserAgentGroup {
