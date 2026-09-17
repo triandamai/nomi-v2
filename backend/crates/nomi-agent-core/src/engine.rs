@@ -773,7 +773,6 @@ fn describe_tool_error(tool_name: &str, input: &serde_json::Value, result: &str)
         "delete_file" => format!("⚠️ Couldn't delete `{path}` — {result}"),
         "list_files" => format!("⚠️ Couldn't list project files — {result}"),
         "create_project" => format!("⚠️ Couldn't create the project — {result}"),
-        "write_plan" => format!("⚠️ Couldn't save the plan — {result}"),
         other => format!("⚠️ `{other}` failed — {result}"),
     }
 }

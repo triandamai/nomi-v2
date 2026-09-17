@@ -29,32 +29,18 @@ impl SubAgent for PlanningAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            ToolDefinition {
-                name: "create_project".to_string(),
-                description: "Create a new project for the app the user wants built. Call this once, before writing a plan.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Short project name"},
-                        "description": {"type": "string", "description": "One-sentence description of what it does"}
-                    },
-                    "required": ["name", "description"]
-                }),
-            },
-            ToolDefinition {
-                name: "write_plan".to_string(),
-                description: "Write or replace the build plan for a project. The user sees this before building starts.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": {"type": "string", "description": "The project ID from create_project"},
-                        "plan": {"type": "string", "description": "The plan, in markdown"}
-                    },
-                    "required": ["project_id", "plan"]
-                }),
-            },
-        ]
+        vec![ToolDefinition {
+            name: "create_project".to_string(),
+            description: "Create a new project for the app the user wants built. Call this once, before writing a plan.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Short project name"},
+                    "description": {"type": "string", "description": "One-sentence description of what it does"}
+                },
+                "required": ["name", "description"]
+            }),
+        }]
     }
 
     async fn execute_tool(
@@ -68,7 +54,6 @@ impl SubAgent for PlanningAgent {
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
             "create_project" => create_project(conn, session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "write_plan" => write_plan(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -94,6 +79,10 @@ impl SubAgent for PlanningAgent {
     }
 
     fn supports_todos(&self) -> bool {
+        true
+    }
+
+    fn supports_plans(&self) -> bool {
         true
     }
 }
@@ -146,24 +135,4 @@ async fn create_project(
     };
 
     Ok(project_id.to_string())
-}
-
-async fn write_plan(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
-    let project_id_str = input.get("project_id").and_then(|v| v.as_str()).ok_or("project_id is required")?;
-    let project_id: Uuid = project_id_str.parse().map_err(|_| "project_id is not a valid UUID".to_string())?;
-    let plan = input.get("plan").and_then(|v| v.as_str()).ok_or("plan is required")?;
-
-    let updated = sqlx::query("UPDATE projects SET plan = $1, updated_at = now() WHERE id = $2 AND user_id = $3")
-        .bind(plan)
-        .bind(project_id)
-        .bind(user_id)
-        .execute(&mut **conn)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if updated.rows_affected() == 0 {
-        return Err("project not found".to_string());
-    }
-
-    Ok("plan saved".to_string())
 }
