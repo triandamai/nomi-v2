@@ -12,6 +12,21 @@ use nomi_llm::ToolDefinition;
 
 pub const PLANNING_AGENT_TYPE: &str = "planning";
 
+pub fn create_project_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "create_project".to_string(),
+        description: "Create a new project for the app the user wants built. Call this once, before writing a plan.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short project name"},
+                "description": {"type": "string", "description": "One-sentence description of what it does"}
+            },
+            "required": ["name", "description"]
+        }),
+    }
+}
+
 pub struct PlanningAgent;
 
 impl PlanningAgent {
@@ -31,18 +46,7 @@ impl SubAgent for PlanningAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![ToolDefinition {
-            name: "create_project".to_string(),
-            description: "Create a new project for the app the user wants built. Call this once, before writing a plan.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Short project name"},
-                    "description": {"type": "string", "description": "One-sentence description of what it does"}
-                },
-                "required": ["name", "description"]
-            }),
-        }]
+        vec![create_project_tool_definition()]
     }
 
     async fn execute_tool(
@@ -95,7 +99,7 @@ impl SubAgent for PlanningAgent {
 /// the model reliably calling this tool mid-conversation. Rename that existing row instead of
 /// inserting a second one; only insert fresh when a session organically becomes a project with
 /// no pre-existing row (e.g. "build me X" typed into a plain chat).
-async fn create_project(
+pub async fn create_project(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
     user_id: Uuid,

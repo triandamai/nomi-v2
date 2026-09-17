@@ -16,6 +16,34 @@ pub const MONEY_AGENT_TYPE: &str = "money";
 /// `list_transactions`'s default when the caller omits `limit`.
 const DEFAULT_TRANSACTION_LIMIT: i64 = 10;
 
+pub fn list_transactions_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "list_transactions".to_string(),
+        description: "List the user's most recent transactions, optionally filtered by category.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max number of transactions to return"},
+                "category": {"type": "string", "description": "Optional category filter"}
+            },
+            "required": ["limit"]
+        }),
+    }
+}
+
+pub fn summarize_budget_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "summarize_budget".to_string(),
+        description: "Summarize the user's spending totals grouped by category, optionally since a given date.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "since": {"type": "string", "description": "ISO 8601 date; omit for all-time"}
+            }
+        }),
+    }
+}
+
 pub struct MoneyAgent;
 
 #[async_trait]
@@ -29,30 +57,7 @@ impl SubAgent for MoneyAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            ToolDefinition {
-                name: "list_transactions".to_string(),
-                description: "List the user's most recent transactions, optionally filtered by category.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer", "description": "Max number of transactions to return"},
-                        "category": {"type": "string", "description": "Optional category filter"}
-                    },
-                    "required": ["limit"]
-                }),
-            },
-            ToolDefinition {
-                name: "summarize_budget".to_string(),
-                description: "Summarize the user's spending totals grouped by category, optionally since a given date.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "since": {"type": "string", "description": "ISO 8601 date; omit for all-time"}
-                    }
-                }),
-            },
-        ]
+        vec![list_transactions_tool_definition(), summarize_budget_tool_definition()]
     }
 
     async fn execute_tool(
@@ -80,7 +85,7 @@ impl SubAgent for MoneyAgent {
     }
 }
 
-async fn list_transactions(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
+pub async fn list_transactions(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
     let limit = input.get("limit").and_then(|v| v.as_i64()).unwrap_or(DEFAULT_TRANSACTION_LIMIT);
     let category = input.get("category").and_then(|v| v.as_str());
 
@@ -127,7 +132,7 @@ async fn list_transactions(conn: &mut PoolConnection<Postgres>, user_id: Uuid, i
     Ok(lines.join("\n"))
 }
 
-async fn summarize_budget(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
+pub async fn summarize_budget(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
     let since = input.get("since").and_then(|v| v.as_str());
 
     let rows: Vec<(String, i64)> = if let Some(since) = since {

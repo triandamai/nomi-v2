@@ -20,6 +20,14 @@ const RECENT_ACTIVITY_LIMIT: i64 = 10;
 /// never a multi-step reply, so a small budget is intentional, not an oversight.
 const SUPERVISOR_PHRASING_MAX_TOKENS: u32 = 256;
 
+pub fn list_recent_agent_activity_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "list_recent_agent_activity".to_string(),
+        description: "List recent and currently active background delegations for this chat session.".to_string(),
+        input_schema: json!({"type": "object", "properties": {}}),
+    }
+}
+
 pub struct SupervisorAgent;
 
 #[async_trait]
@@ -33,11 +41,7 @@ impl SubAgent for SupervisorAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![ToolDefinition {
-            name: "list_recent_agent_activity".to_string(),
-            description: "List recent and currently active background delegations for this chat session.".to_string(),
-            input_schema: json!({"type": "object", "properties": {}}),
-        }]
+        vec![list_recent_agent_activity_tool_definition()]
     }
 
     async fn execute_tool(
@@ -72,7 +76,7 @@ impl SubAgent for SupervisorAgent {
     }
 }
 
-async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<String, String> {
+pub async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<String, String> {
     let rows: Vec<(String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT target_agent_type, task, status, result, error FROM agent_delegations \
          WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2",

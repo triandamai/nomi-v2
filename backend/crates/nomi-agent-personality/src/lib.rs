@@ -15,6 +15,49 @@ pub const PERSONALITY_AGENT_TYPE: &str = "personality";
 /// How many past personality versions `list_personality_versions` shows.
 const PERSONALITY_HISTORY_LIMIT: i64 = 10;
 
+pub fn set_personality_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "set_personality".to_string(),
+        description: "Set nomi's personality — how it should talk and behave in future replies — for this user."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": "A concise instruction describing the personality, e.g. 'Be sarcastic and blunt.'"
+                }
+            },
+            "required": ["description"]
+        }),
+    }
+}
+
+pub fn list_personality_versions_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "list_personality_versions".to_string(),
+        description: "List your past personality descriptions, most recent first, so you can decide what to roll back to.".to_string(),
+        input_schema: json!({"type": "object", "properties": {}}),
+    }
+}
+
+pub fn rollback_personality_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "rollback_personality".to_string(),
+        description: "Roll back to a previous personality version. This creates a new version with that version's description rather than deleting anything.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "description": "The version number to restore, from list_personality_versions."
+                }
+            },
+            "required": ["version"]
+        }),
+    }
+}
+
 pub struct PersonalityAgent;
 
 #[async_trait]
@@ -29,40 +72,9 @@ impl SubAgent for PersonalityAgent {
 
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![
-            ToolDefinition {
-                name: "set_personality".to_string(),
-                description: "Set nomi's personality — how it should talk and behave in future replies — for this user."
-                    .to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "description": {
-                            "type": "string",
-                            "description": "A concise instruction describing the personality, e.g. 'Be sarcastic and blunt.'"
-                        }
-                    },
-                    "required": ["description"]
-                }),
-            },
-            ToolDefinition {
-                name: "list_personality_versions".to_string(),
-                description: "List your past personality descriptions, most recent first, so you can decide what to roll back to.".to_string(),
-                input_schema: json!({"type": "object", "properties": {}}),
-            },
-            ToolDefinition {
-                name: "rollback_personality".to_string(),
-                description: "Roll back to a previous personality version. This creates a new version with that version's description rather than deleting anything.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "version": {
-                            "type": "integer",
-                            "description": "The version number to restore, from list_personality_versions."
-                        }
-                    },
-                    "required": ["version"]
-                }),
-            },
+            set_personality_tool_definition(),
+            list_personality_versions_tool_definition(),
+            rollback_personality_tool_definition(),
         ]
     }
 
@@ -96,7 +108,7 @@ impl SubAgent for PersonalityAgent {
     }
 }
 
-async fn set_personality(
+pub async fn set_personality(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
     agent_session_id: Uuid,
@@ -117,7 +129,7 @@ async fn set_personality(
     Ok(format!("Personality updated to: {description}"))
 }
 
-async fn list_personality_versions(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> Result<String, String> {
+pub async fn list_personality_versions(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> Result<String, String> {
     let versions = nomi_agent_core::personality::list_versions(conn, user_id, PERSONALITY_HISTORY_LIMIT)
         .await
         .map_err(|e| e.to_string())?;
@@ -137,7 +149,7 @@ async fn list_personality_versions(conn: &mut PoolConnection<Postgres>, user_id:
     Ok(lines.join("\n"))
 }
 
-async fn rollback_personality(
+pub async fn rollback_personality(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
     agent_session_id: Uuid,
