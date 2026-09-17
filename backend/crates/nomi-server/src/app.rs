@@ -6,6 +6,7 @@ use nomi_auth::extractor::AuthClaims;
 use crate::routes::admin_dashboard as admin_dashboard_routes;
 use crate::routes::admin_users as admin_users_routes;
 use crate::routes::auth as auth_routes;
+use crate::routes::dynamic_agents as dynamic_agents_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
@@ -26,6 +27,7 @@ pub struct AppState {
     /// Avatar uploads only — project files live in `project_storage` (local disk), never here.
     pub s3: Option<S3Config>,
     pub project_storage: LocalFsStore,
+    pub tool_catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
 }
 
 impl nomi_auth::extractor::HasJwtSecret for AppState {
@@ -96,6 +98,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
+        .route(
+            "/api/admin/dynamic-agents",
+            get(dynamic_agents_routes::list_dynamic_agents).post(dynamic_agents_routes::create_dynamic_agent),
+        )
+        .route("/api/admin/dynamic-agents/:id", put(dynamic_agents_routes::update_dynamic_agent))
+        .route("/api/admin/dynamic-agents/:id/toggle-active", post(dynamic_agents_routes::toggle_active_dynamic_agent))
         .route(
             "/api/admin/users",
             get(admin_users_routes::list_users),

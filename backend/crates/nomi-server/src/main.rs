@@ -75,6 +75,8 @@ async fn main() {
         tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");
     }
 
+    let tool_catalog = nomi_server::build_tool_catalog(project_storage.clone());
+
     let state = nomi_server::app::AppState {
         pool,
         jwt_secret,
@@ -84,6 +86,7 @@ async fn main() {
         mqtt_broker_port,
         s3,
         project_storage,
+        tool_catalog,
     };
     let app = nomi_server::app::build_router(state);
 
