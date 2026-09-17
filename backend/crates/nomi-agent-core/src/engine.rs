@@ -648,7 +648,7 @@ async fn write_agent_plan(
     let content_blocks = serde_json::json!([block]);
     let message_text = format!("📋 {title}\n\n{content}");
 
-    let message_id: Option<Uuid> = sqlx::query_scalar(
+    let message_id: Uuid = sqlx::query_scalar(
         "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
     )
     .bind(session_id)
@@ -656,10 +656,10 @@ async fn write_agent_plan(
     .bind(&content_blocks)
     .fetch_one(&mut **conn)
     .await
-    .ok();
+    .map_err(|e| e.to_string())?;
 
-    if let (Some(id), Some(publisher)) = (message_id, mqtt) {
-        let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id: id }).await;
+    if let Some(publisher) = mqtt {
+        let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
     }
 
     Ok(format!("plan v{version} saved"))
