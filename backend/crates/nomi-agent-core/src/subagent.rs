@@ -76,6 +76,14 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// When true, run_agent_turn gives this agent the engine-level `write_plan` tool for writing
+    /// a durable, versioned plan before or during a multi-step task — see
+    /// docs/superpowers/specs/2026-09-17-agent-plan-artifacts-design.md. Off by default, same
+    /// reasoning as supports_todos(): most agents don't do work substantial enough to plan first.
+    fn supports_plans(&self) -> bool {
+        false
+    }
+
     /// Called on the delegation *target* before `delegate_to_agent` creates anything, with the
     /// exact task string the delegating agent wrote. Return `Err(reason)` to reject the
     /// delegation outright — no delegation row is created, and `reason` is fed straight back to

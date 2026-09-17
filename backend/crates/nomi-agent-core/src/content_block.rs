@@ -73,6 +73,12 @@ pub enum ContentBlock {
         status: ApprovalStatus,
         decided_at: Option<DateTime<Utc>>,
     },
+    Plan {
+        plan_id: Uuid,
+        agent_session_id: Uuid,
+        title: String,
+        version: i32,
+    },
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror
@@ -142,5 +148,19 @@ mod tests {
         let json = serde_json::to_string(&block).unwrap();
         let parsed: ContentBlock = serde_json::from_str(&json).unwrap();
         assert_eq!(block, parsed);
+    }
+
+    #[test]
+    fn plan_serializes_with_a_kind_tag_and_snake_case_fields() {
+        let block = ContentBlock::Plan {
+            plan_id: uuid::Uuid::nil(),
+            agent_session_id: uuid::Uuid::nil(),
+            title: "Build the login page".to_string(),
+            version: 2,
+        };
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "plan");
+        assert_eq!(json["title"], "Build the login page");
+        assert_eq!(json["version"], 2);
     }
 }
