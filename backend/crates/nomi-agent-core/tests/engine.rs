@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use sqlx::pool::PoolConnection;
 use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
@@ -13,11 +15,11 @@ struct TestAgent;
 
 #[async_trait::async_trait]
 impl SubAgent for TestAgent {
-    fn agent_type(&self) -> &'static str {
-        "test"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
-    fn system_prompt(&self) -> &'static str {
-        "test prompt"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![ToolDefinition {
@@ -40,11 +42,11 @@ impl SubAgent for TestAgent {
             other => Err(format!("unknown tool: {other}")),
         }
     }
-    fn intent_label(&self) -> &'static str {
-        "test"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
-    fn intent_description(&self) -> &'static str {
-        "test agent"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
     }
     fn is_default(&self) -> bool {
         true
@@ -61,11 +63,11 @@ struct PersonalityAwareTestAgent;
 
 #[async_trait::async_trait]
 impl SubAgent for PersonalityAwareTestAgent {
-    fn agent_type(&self) -> &'static str {
-        "personality-aware-test"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("personality-aware-test")
     }
-    fn system_prompt(&self) -> &'static str {
-        "test prompt"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -81,11 +83,11 @@ impl SubAgent for PersonalityAwareTestAgent {
     ) -> Result<ToolOutcome, String> {
         Err(format!("unknown tool: {name}"))
     }
-    fn intent_label(&self) -> &'static str {
-        "personality-aware-test"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("personality-aware-test")
     }
-    fn intent_description(&self) -> &'static str {
-        "test agent"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
     }
     fn uses_personality(&self) -> bool {
         true

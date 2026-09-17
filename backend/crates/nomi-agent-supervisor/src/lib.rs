@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -22,12 +24,12 @@ pub struct SupervisorAgent;
 
 #[async_trait]
 impl SubAgent for SupervisorAgent {
-    fn agent_type(&self) -> &'static str {
-        SUPERVISOR_AGENT_TYPE
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(SUPERVISOR_AGENT_TYPE)
     }
 
-    fn system_prompt(&self) -> &'static str {
-        SUPERVISOR_SYSTEM_PROMPT
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed(SUPERVISOR_SYSTEM_PROMPT)
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
@@ -53,12 +55,12 @@ impl SubAgent for SupervisorAgent {
         }
     }
 
-    fn intent_label(&self) -> &'static str {
-        SUPERVISOR_AGENT_TYPE
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(SUPERVISOR_AGENT_TYPE)
     }
 
-    fn intent_description(&self) -> &'static str {
-        "The user is asking what the other agents are doing, wants a status update, or explicitly asks for a report across multiple specialists"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("The user is asking what the other agents are doing, wants a status update, or explicitly asks for a report across multiple specialists")
     }
 
     fn uses_personality(&self) -> bool {

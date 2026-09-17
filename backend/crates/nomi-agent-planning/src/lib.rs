@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -20,12 +22,12 @@ impl PlanningAgent {
 
 #[async_trait]
 impl SubAgent for PlanningAgent {
-    fn agent_type(&self) -> &'static str {
-        PLANNING_AGENT_TYPE
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(PLANNING_AGENT_TYPE)
     }
 
-    fn system_prompt(&self) -> &'static str {
-        PLANNING_SYSTEM_PROMPT
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed(PLANNING_SYSTEM_PROMPT)
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
@@ -58,12 +60,12 @@ impl SubAgent for PlanningAgent {
         }
     }
 
-    fn intent_label(&self) -> &'static str {
-        PLANNING_AGENT_TYPE
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(PLANNING_AGENT_TYPE)
     }
 
-    fn intent_description(&self) -> &'static str {
-        "the user wants to build, create, or plan an app, website, or script"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("the user wants to build, create, or plan an app, website, or script")
     }
 
     fn uses_personality(&self) -> bool {

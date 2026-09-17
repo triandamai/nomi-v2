@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
@@ -11,11 +13,11 @@ struct DefaultAgent;
 
 #[async_trait]
 impl SubAgent for DefaultAgent {
-    fn agent_type(&self) -> &'static str {
-        "default"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("default")
     }
-    fn system_prompt(&self) -> &'static str {
-        "default"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("default")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -23,11 +25,11 @@ impl SubAgent for DefaultAgent {
     async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        "default"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("default")
     }
-    fn intent_description(&self) -> &'static str {
-        "default"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("default")
     }
     fn is_default(&self) -> bool {
         true
@@ -41,11 +43,11 @@ struct SpecialistAgent;
 
 #[async_trait]
 impl SubAgent for SpecialistAgent {
-    fn agent_type(&self) -> &'static str {
-        "specialist"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("specialist")
     }
-    fn system_prompt(&self) -> &'static str {
-        "specialist"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("specialist")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -53,11 +55,11 @@ impl SubAgent for SpecialistAgent {
     async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        "specialist"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("specialist")
     }
-    fn intent_description(&self) -> &'static str {
-        "specialist"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("specialist")
     }
 }
 
@@ -65,11 +67,11 @@ struct NonTargetableAgent;
 
 #[async_trait]
 impl SubAgent for NonTargetableAgent {
-    fn agent_type(&self) -> &'static str {
-        "non-targetable"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("non-targetable")
     }
-    fn system_prompt(&self) -> &'static str {
-        "non-targetable"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("non-targetable")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -77,11 +79,11 @@ impl SubAgent for NonTargetableAgent {
     async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        "non-targetable"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("non-targetable")
     }
-    fn intent_description(&self) -> &'static str {
-        "non-targetable"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("non-targetable")
     }
     fn is_delegation_target(&self) -> bool {
         false
@@ -118,11 +120,11 @@ struct StubAgent {
 
 #[async_trait]
 impl SubAgent for StubAgent {
-    fn agent_type(&self) -> &'static str {
-        self.agent_type
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.agent_type)
     }
-    fn system_prompt(&self) -> &'static str {
-        "stub"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("stub")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -138,11 +140,11 @@ impl SubAgent for StubAgent {
     ) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        self.intent_label
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.intent_label)
     }
-    fn intent_description(&self) -> &'static str {
-        "a stub agent"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("a stub agent")
     }
     fn is_default(&self) -> bool {
         self.is_default

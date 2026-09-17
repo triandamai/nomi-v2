@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -18,12 +20,12 @@ pub struct MoneyAgent;
 
 #[async_trait]
 impl SubAgent for MoneyAgent {
-    fn agent_type(&self) -> &'static str {
-        MONEY_AGENT_TYPE
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(MONEY_AGENT_TYPE)
     }
 
-    fn system_prompt(&self) -> &'static str {
-        MONEY_SYSTEM_PROMPT
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed(MONEY_SYSTEM_PROMPT)
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
@@ -69,12 +71,12 @@ impl SubAgent for MoneyAgent {
         }
     }
 
-    fn intent_label(&self) -> &'static str {
-        "money"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("money")
     }
 
-    fn intent_description(&self) -> &'static str {
-        "the user wants to look at their transactions, spending, or budget"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("the user wants to look at their transactions, spending, or budget")
     }
 }
 

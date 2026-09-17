@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -65,12 +67,12 @@ impl CodingAgent {
 
 #[async_trait]
 impl SubAgent for CodingAgent {
-    fn agent_type(&self) -> &'static str {
-        CODING_AGENT_TYPE
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(CODING_AGENT_TYPE)
     }
 
-    fn system_prompt(&self) -> &'static str {
-        CODING_SYSTEM_PROMPT
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed(CODING_SYSTEM_PROMPT)
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
@@ -142,12 +144,12 @@ impl SubAgent for CodingAgent {
         }
     }
 
-    fn intent_label(&self) -> &'static str {
-        CODING_AGENT_TYPE
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(CODING_AGENT_TYPE)
     }
 
-    fn intent_description(&self) -> &'static str {
-        "writing or editing code for a project — not reachable directly, only via delegation from planning"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("writing or editing code for a project — not reachable directly, only via delegation from planning")
     }
 
     fn surfaces_activity(&self) -> bool {

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
@@ -10,8 +12,8 @@ use crate::content_block::ToolOutcome;
 
 #[async_trait]
 pub trait SubAgent: Send + Sync {
-    fn agent_type(&self) -> &'static str;
-    fn system_prompt(&self) -> &'static str;
+    fn agent_type(&self) -> Cow<'static, str>;
+    fn system_prompt(&self) -> Cow<'static, str>;
     fn tools(&self) -> Vec<ToolDefinition>;
     async fn execute_tool(
         &self,
@@ -26,8 +28,8 @@ pub trait SubAgent: Send + Sync {
     /// Fed verbatim into the intent classifier's prompt. Never called for the agent that
     /// returns `true` from `is_default()` — that agent is the fallback, not something the
     /// classifier picks between.
-    fn intent_label(&self) -> &'static str;
-    fn intent_description(&self) -> &'static str;
+    fn intent_label(&self) -> Cow<'static, str>;
+    fn intent_description(&self) -> Cow<'static, str>;
 
     /// Exactly one registered agent must return `true`. See `AgentRegistry::new`.
     fn is_default(&self) -> bool {

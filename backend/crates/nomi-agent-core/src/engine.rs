@@ -34,7 +34,7 @@ fn complete_task_tool_definition() -> ToolDefinition {
     }
 }
 
-fn delegate_tool_definition(targets: &[&str]) -> ToolDefinition {
+fn delegate_tool_definition(targets: &[String]) -> ToolDefinition {
     ToolDefinition {
         name: DELEGATE_TOOL_NAME.to_string(),
         description: format!(
@@ -167,7 +167,7 @@ pub async fn run_agent_turn(
     let mut tools = agent.tools();
     tools.push(complete_task_tool_definition());
     if agent.can_delegate() {
-        let targets = registry.delegatable_agent_types(agent.agent_type());
+        let targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
         if !targets.is_empty() {
             tools.push(delegate_tool_definition(&targets));
         }
@@ -432,7 +432,7 @@ pub async fn resolve_tool_batch(
                 let rejection = registry.find(target_agent).and_then(|t| t.validate_delegation_task(task).err());
                 let (text, err) = match rejection {
                     Some(reason) => (reason, true),
-                    None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type(), target_agent, task, user_id).await {
+                    None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type().as_ref(), target_agent, task, user_id).await {
                         Ok(ack) => (ack, false),
                         Err(err) => (err, true),
                     },
@@ -478,7 +478,7 @@ pub async fn resolve_tool_batch(
                 }
             };
 
-            log_tool_call(conn, session_id, agent_session_id, agent.agent_type(), name, input, &result_text, is_error).await;
+            log_tool_call(conn, session_id, agent_session_id, agent.agent_type().as_ref(), name, input, &result_text, is_error).await;
 
             let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
                 || (agent.surfaces_activity()

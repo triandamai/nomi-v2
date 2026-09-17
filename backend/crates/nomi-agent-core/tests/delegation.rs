@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
@@ -13,11 +15,11 @@ struct DelegatingAgent;
 
 #[async_trait]
 impl SubAgent for DelegatingAgent {
-    fn agent_type(&self) -> &'static str {
-        "delegator"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("delegator")
     }
-    fn system_prompt(&self) -> &'static str {
-        "test"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -25,11 +27,11 @@ impl SubAgent for DelegatingAgent {
     async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        "delegator"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("delegator")
     }
-    fn intent_description(&self) -> &'static str {
-        "test"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
     fn is_default(&self) -> bool {
         true
@@ -43,11 +45,11 @@ struct TargetAgent;
 
 #[async_trait]
 impl SubAgent for TargetAgent {
-    fn agent_type(&self) -> &'static str {
-        "target"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("target")
     }
-    fn system_prompt(&self) -> &'static str {
-        "test"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -55,11 +57,11 @@ impl SubAgent for TargetAgent {
     async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        "target"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("target")
     }
-    fn intent_description(&self) -> &'static str {
-        "test"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
 }
 
@@ -67,11 +69,11 @@ struct StrictTargetAgent;
 
 #[async_trait]
 impl SubAgent for StrictTargetAgent {
-    fn agent_type(&self) -> &'static str {
-        "strict-target"
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("strict-target")
     }
-    fn system_prompt(&self) -> &'static str {
-        "test"
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
         vec![]
@@ -79,11 +81,11 @@ impl SubAgent for StrictTargetAgent {
     async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
         Err("no tools".to_string())
     }
-    fn intent_label(&self) -> &'static str {
-        "strict-target"
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("strict-target")
     }
-    fn intent_description(&self) -> &'static str {
-        "test"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
     }
     fn validate_delegation_task(&self, task: &str) -> Result<(), String> {
         if task.starts_with("VALID:") {

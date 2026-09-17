@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
@@ -14,12 +16,12 @@ pub struct ChitchatAgent;
 
 #[async_trait]
 impl SubAgent for ChitchatAgent {
-    fn agent_type(&self) -> &'static str {
-        CHITCHAT_AGENT_TYPE
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(CHITCHAT_AGENT_TYPE)
     }
 
-    fn system_prompt(&self) -> &'static str {
-        CHITCHAT_SYSTEM_PROMPT
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed(CHITCHAT_SYSTEM_PROMPT)
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
@@ -41,12 +43,12 @@ impl SubAgent for ChitchatAgent {
         Err("chitchat has no tools".to_string())
     }
 
-    fn intent_label(&self) -> &'static str {
-        CHITCHAT_AGENT_TYPE
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(CHITCHAT_AGENT_TYPE)
     }
 
-    fn intent_description(&self) -> &'static str {
-        "General conversation, questions, or anything not covered by another agent"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("General conversation, questions, or anything not covered by another agent")
     }
 
     fn is_default(&self) -> bool {

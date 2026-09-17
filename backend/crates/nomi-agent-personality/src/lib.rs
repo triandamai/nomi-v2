@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -17,12 +19,12 @@ pub struct PersonalityAgent;
 
 #[async_trait]
 impl SubAgent for PersonalityAgent {
-    fn agent_type(&self) -> &'static str {
-        PERSONALITY_AGENT_TYPE
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(PERSONALITY_AGENT_TYPE)
     }
 
-    fn system_prompt(&self) -> &'static str {
-        PERSONALITY_SYSTEM_PROMPT
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed(PERSONALITY_SYSTEM_PROMPT)
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
@@ -81,12 +83,12 @@ impl SubAgent for PersonalityAgent {
         }
     }
 
-    fn intent_label(&self) -> &'static str {
-        PERSONALITY_AGENT_TYPE
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(PERSONALITY_AGENT_TYPE)
     }
 
-    fn intent_description(&self) -> &'static str {
-        "The user wants to change how nomi talks or behaves — its tone, style, or personality"
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("The user wants to change how nomi talks or behaves — its tone, style, or personality")
     }
 
     fn uses_personality(&self) -> bool {
