@@ -55,6 +55,64 @@ pub fn guess_content_type(path: &str) -> &'static str {
     }
 }
 
+pub fn write_file_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "write_file".to_string(),
+        description: "Create or overwrite a file in the project.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "path": {"type": "string", "description": "Relative path, e.g. 'src/index.html'"},
+                "content": {"type": "string"}
+            },
+            "required": ["project_id", "path", "content"]
+        }),
+    }
+}
+
+pub fn read_file_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "read_file".to_string(),
+        description: "Read the current content of a file in the project.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "path": {"type": "string"}
+            },
+            "required": ["project_id", "path"]
+        }),
+    }
+}
+
+pub fn list_files_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "list_files".to_string(),
+        description: "List every file path currently in the project.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"]
+        }),
+    }
+}
+
+pub fn delete_file_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "delete_file".to_string(),
+        description: "Delete a file from the project.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "path": {"type": "string"}
+            },
+            "required": ["project_id", "path"]
+        }),
+    }
+}
+
 pub struct CodingAgent {
     storage: LocalFsStore,
 }
@@ -76,54 +134,7 @@ impl SubAgent for CodingAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            ToolDefinition {
-                name: "write_file".to_string(),
-                description: "Create or overwrite a file in the project.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": {"type": "string"},
-                        "path": {"type": "string", "description": "Relative path, e.g. 'src/index.html'"},
-                        "content": {"type": "string"}
-                    },
-                    "required": ["project_id", "path", "content"]
-                }),
-            },
-            ToolDefinition {
-                name: "read_file".to_string(),
-                description: "Read the current content of a file in the project.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": {"type": "string"},
-                        "path": {"type": "string"}
-                    },
-                    "required": ["project_id", "path"]
-                }),
-            },
-            ToolDefinition {
-                name: "list_files".to_string(),
-                description: "List every file path currently in the project.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {"project_id": {"type": "string"}},
-                    "required": ["project_id"]
-                }),
-            },
-            ToolDefinition {
-                name: "delete_file".to_string(),
-                description: "Delete a file from the project.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": {"type": "string"},
-                        "path": {"type": "string"}
-                    },
-                    "required": ["project_id", "path"]
-                }),
-            },
-        ]
+        vec![write_file_tool_definition(), read_file_tool_definition(), list_files_tool_definition(), delete_file_tool_definition()]
     }
 
     async fn execute_tool(
@@ -136,10 +147,10 @@ impl SubAgent for CodingAgent {
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
-            "write_file" => self.write_file(conn, user_id, input).await,
-            "read_file" => self.read_file(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
+            "write_file" => write_file(conn, &self.storage, user_id, input).await,
+            "read_file" => read_file(conn, &self.storage, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             "list_files" => list_files(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "delete_file" => self.delete_file(conn, user_id, input).await,
+            "delete_file" => delete_file(conn, &self.storage, user_id, input).await,
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -197,89 +208,102 @@ async fn owns_project(conn: &mut PoolConnection<Postgres>, project_id: Uuid, use
     Ok(exists)
 }
 
-impl CodingAgent {
-    async fn write_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
-        let project_id = parse_project_id(&input)?;
-        if !owns_project(conn, project_id, user_id).await? {
-            return Err("project not found".to_string());
-        }
-        let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
-        validate_path(path)?;
-        let content = input.get("content").and_then(|v| v.as_str()).ok_or("content is required")?;
-        let content_type = guess_content_type(path);
+pub async fn write_file(
+    conn: &mut PoolConnection<Postgres>,
+    storage: &LocalFsStore,
+    user_id: Uuid,
+    input: Value,
+) -> Result<nomi_agent_core::ToolOutcome, String> {
+    let project_id = parse_project_id(&input)?;
+    if !owns_project(conn, project_id, user_id).await? {
+        return Err("project not found".to_string());
+    }
+    let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+    validate_path(path)?;
+    let content = input.get("content").and_then(|v| v.as_str()).ok_or("content is required")?;
+    let content_type = guess_content_type(path);
 
-        let key = project_file_key(project_id, path);
-        // Read before overwrite: this is the only point in the whole system where the file's
-        // prior content is ever observable — capturing it here is what makes the diff view
-        // possible later, since a second read after the write would just see the new content.
-        let previous_content = self.storage.get_object(&key).await.map_err(|e| e.to_string())?;
+    let key = project_file_key(project_id, path);
+    // Read before overwrite: this is the only point in the whole system where the file's
+    // prior content is ever observable — capturing it here is what makes the diff view
+    // possible later, since a second read after the write would just see the new content.
+    let previous_content = storage.get_object(&key).await.map_err(|e| e.to_string())?;
 
-        self.storage.put_object(&key, content, content_type).await.map_err(|e| e.to_string())?;
+    storage.put_object(&key, content, content_type).await.map_err(|e| e.to_string())?;
 
-        sqlx::query(
-            "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
-             ON CONFLICT (project_id, path) DO UPDATE SET content_type = EXCLUDED.content_type, size_bytes = EXCLUDED.size_bytes, updated_at = now()",
-        )
+    sqlx::query(
+        "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (project_id, path) DO UPDATE SET content_type = EXCLUDED.content_type, size_bytes = EXCLUDED.size_bytes, updated_at = now()",
+    )
+    .bind(project_id)
+    .bind(path)
+    .bind(content_type)
+    .bind(content.len() as i32)
+    .execute(&mut **conn)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query("UPDATE projects SET status = 'building' WHERE id = $1 AND status = 'planning'")
         .bind(project_id)
-        .bind(path)
-        .bind(content_type)
-        .bind(content.len() as i32)
         .execute(&mut **conn)
         .await
         .map_err(|e| e.to_string())?;
 
-        sqlx::query("UPDATE projects SET status = 'building' WHERE id = $1 AND status = 'planning'")
-            .bind(project_id)
-            .execute(&mut **conn)
-            .await
-            .map_err(|e| e.to_string())?;
+    Ok(nomi_agent_core::ToolOutcome {
+        display_text: format!("📝 Wrote `{path}`"),
+        block: Some(nomi_agent_core::ContentBlock::FileWrite {
+            project_id,
+            path: path.to_string(),
+            content: content.to_string(),
+            previous_content,
+        }),
+    })
+}
 
-        Ok(nomi_agent_core::ToolOutcome {
-            display_text: format!("📝 Wrote `{path}`"),
-            block: Some(nomi_agent_core::ContentBlock::FileWrite {
-                project_id,
-                path: path.to_string(),
-                content: content.to_string(),
-                previous_content,
-            }),
-        })
+pub async fn read_file(
+    conn: &mut PoolConnection<Postgres>,
+    storage: &LocalFsStore,
+    user_id: Uuid,
+    input: Value,
+) -> Result<String, String> {
+    let project_id = parse_project_id(&input)?;
+    if !owns_project(conn, project_id, user_id).await? {
+        return Err("project not found".to_string());
     }
+    let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+    validate_path(path)?;
 
-    async fn read_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
-        let project_id = parse_project_id(&input)?;
-        if !owns_project(conn, project_id, user_id).await? {
-            return Err("project not found".to_string());
-        }
-        let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
-        validate_path(path)?;
-
-        match self.storage.get_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())? {
-            Some(content) => Ok(content),
-            None => Ok("file not found".to_string()),
-        }
+    match storage.get_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())? {
+        Some(content) => Ok(content),
+        None => Ok("file not found".to_string()),
     }
+}
 
-    async fn delete_file(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
-        let project_id = parse_project_id(&input)?;
-        if !owns_project(conn, project_id, user_id).await? {
-            return Err("project not found".to_string());
-        }
-        let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
-        validate_path(path)?;
-
-        self.storage.delete_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())?;
-        sqlx::query("DELETE FROM project_files WHERE project_id = $1 AND path = $2")
-            .bind(project_id)
-            .bind(path)
-            .execute(&mut **conn)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        Ok(nomi_agent_core::ToolOutcome {
-            display_text: format!("🗑️ Deleted `{path}`"),
-            block: Some(nomi_agent_core::ContentBlock::FileDelete { project_id, path: path.to_string() }),
-        })
+pub async fn delete_file(
+    conn: &mut PoolConnection<Postgres>,
+    storage: &LocalFsStore,
+    user_id: Uuid,
+    input: Value,
+) -> Result<nomi_agent_core::ToolOutcome, String> {
+    let project_id = parse_project_id(&input)?;
+    if !owns_project(conn, project_id, user_id).await? {
+        return Err("project not found".to_string());
     }
+    let path = input.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+    validate_path(path)?;
+
+    storage.delete_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM project_files WHERE project_id = $1 AND path = $2")
+        .bind(project_id)
+        .bind(path)
+        .execute(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(nomi_agent_core::ToolOutcome {
+        display_text: format!("🗑️ Deleted `{path}`"),
+        block: Some(nomi_agent_core::ContentBlock::FileDelete { project_id, path: path.to_string() }),
+    })
 }
 
 async fn list_files(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
