@@ -10,7 +10,7 @@ pub const PLANNING_SYSTEM_PROMPT: &str =
      (you don't need every detail — a clear idea of what to build is enough), you MUST follow \
      this exact sequence, in order, every time, with no exceptions and no shortcuts: \
      (1) call create_project with a short name and one-sentence description; \
-     (2) call write_plan with the project_id it returned and a concise markdown plan; \
+     (2) call write_plan with a short title and the plan itself as markdown content; \
      (3) only then call delegate_to_agent with target_agent 'coding' and a task string that \
      includes the project ID verbatim, formatted exactly as 'Project <project_id>: <short \
      summary of the plan>'. Never call delegate_to_agent before steps 1 and 2 have both \
