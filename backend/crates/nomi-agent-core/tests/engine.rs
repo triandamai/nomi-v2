@@ -52,6 +52,9 @@ impl SubAgent for TestAgent {
     fn supports_todos(&self) -> bool {
         true
     }
+    fn supports_plans(&self) -> bool {
+        true
+    }
 }
 
 struct PersonalityAwareTestAgent;
@@ -701,4 +704,121 @@ async fn show_table_and_update_todos_are_never_gated(pool: PgPool) {
         .unwrap();
 
     assert!(matches!(outcome, LoopOutcome::Reply { .. }));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn write_plan_is_only_available_to_agents_that_opt_in(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    // PersonalityAwareTestAgent does not override supports_plans(), so it stays false —
+    // calling write_plan should come back as an unrecognized tool, same as calling any tool an
+    // agent never registered.
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "write_plan", serde_json::json!({"title": "x", "content": "y"})),
+        text_response("ok", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(PersonalityAwareTestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &PersonalityAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    // The fake provider only queues 2 responses and PersonalityAwareTestAgent never actually
+    // calls write_plan for real (the tool was never in its `tools` list, so a well-behaved LLM
+    // wouldn't call it) — this test instead asserts no `write_plan` row appears in agent_plans
+    // for an agent that never opted in, proving the tool registration itself is gated correctly.
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }));
+    let plan_count: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_plans WHERE agent_session_id = $1")
+        .bind(agent_session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(plan_count, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn write_plan_creates_a_new_version_each_call_and_posts_a_message_with_the_full_body(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "write_plan", serde_json::json!({"title": "Build the login page", "content": "1. Add form\n2. Wire auth"})),
+        text_response("Wrote the plan.", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let (title, version, content, content_s3_key): (String, i32, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT title, version, content, content_s3_key FROM agent_plans WHERE agent_session_id = $1",
+    )
+    .bind(agent_session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(title, "Build the login page");
+    assert_eq!(version, 1);
+    assert_eq!(content.as_deref(), Some("1. Add form\n2. Wire auth"));
+    assert!(content_s3_key.is_none(), "no S3 configured in this test, so content must be stored inline");
+
+    let (message_content, content_blocks): (String, serde_json::Value) = sqlx::query_as(
+        "SELECT content, content_blocks FROM messages WHERE session_id = $1 AND content_blocks @> '[{\"kind\": \"plan\"}]'",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(message_content.contains("Build the login page"));
+    assert!(message_content.contains("1. Add form\n2. Wire auth"), "the posted message's plain-text content must carry the FULL plan body, so it stays in the LLM's own context on later turns");
+    assert_eq!(content_blocks[0]["kind"], "plan");
+    assert_eq!(content_blocks[0]["version"], 1);
+    assert_eq!(content_blocks[0]["agent_session_id"], agent_session_id.to_string());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_second_write_plan_call_creates_version_two_not_a_second_version_one(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "write_plan", serde_json::json!({"title": "v1", "content": "first draft"})),
+        text_response("ok", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let provider2 = FakeLlmProvider::sequence(vec![
+        tool_use_response("t2", "write_plan", serde_json::json!({"title": "v2", "content": "revised"})),
+        text_response("ok", StopReason::EndTurn),
+    ]);
+    run_agent_turn(&mut conn, None, None, &provider2, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let versions: Vec<i32> = sqlx::query_scalar("SELECT version FROM agent_plans WHERE agent_session_id = $1 ORDER BY version")
+        .bind(agent_session_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(versions, vec![1, 2]);
+
+    let plan_message_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM messages WHERE session_id = $1 AND content_blocks @> '[{\"kind\": \"plan\"}]'",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(plan_message_count, 2, "unlike update_todos, each write_plan call posts a NEW message — history, not an upsert");
 }

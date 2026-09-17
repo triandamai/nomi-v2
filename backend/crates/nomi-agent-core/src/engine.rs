@@ -17,6 +17,7 @@ pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
+pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
 
 fn complete_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
@@ -98,6 +99,24 @@ fn update_todos_tool_definition() -> ToolDefinition {
     }
 }
 
+fn write_plan_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: WRITE_PLAN_TOOL_NAME.to_string(),
+        description: "Write a new version of your plan for this task, before or during a \
+                       multi-step build. Call this again whenever the plan changes significantly \
+                       — each call is a new, separately viewable version, not an edit to the last \
+                       one.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Short label for this plan version"},
+                "content": {"type": "string", "description": "The plan, in markdown"}
+            },
+            "required": ["title", "content"]
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
@@ -113,6 +132,7 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != DELEGATE_TOOL_NAME
         && tool_name != SHOW_TABLE_TOOL_NAME
         && tool_name != UPDATE_TODOS_TOOL_NAME
+        && tool_name != WRITE_PLAN_TOOL_NAME
 }
 
 fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String {
@@ -155,6 +175,9 @@ pub async fn run_agent_turn(
     tools.push(show_table_tool_definition());
     if agent.supports_todos() {
         tools.push(update_todos_tool_definition());
+    }
+    if agent.supports_plans() {
+        tools.push(write_plan_tool_definition());
     }
 
     let memories = if agent.uses_memory() {
@@ -432,6 +455,11 @@ pub async fn resolve_tool_batch(
                     },
                     Err(err) => (err, true, None),
                 }
+            } else if name.as_str() == WRITE_PLAN_TOOL_NAME && agent.supports_plans() {
+                match write_agent_plan(conn, s3, mqtt.map(|(p, _)| p), session_id, agent_session_id, user_id, input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
             } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
                 if *approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
@@ -456,7 +484,8 @@ pub async fn resolve_tool_batch(
                 || (agent.surfaces_activity()
                     && name.as_str() != COMPLETE_TASK_TOOL_NAME
                     && name.as_str() != DELEGATE_TOOL_NAME
-                    && name.as_str() != UPDATE_TODOS_TOOL_NAME);
+                    && name.as_str() != UPDATE_TODOS_TOOL_NAME
+                    && name.as_str() != WRITE_PLAN_TOOL_NAME);
             if should_post {
                 post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &result_text, rich_block.as_ref()).await;
             }
@@ -552,6 +581,88 @@ fn todo_list_display_text(items: &[crate::content_block::TodoItem]) -> String {
         out.push_str(&format!("{mark} {}\n", item.text));
     }
     out
+}
+
+/// Inserts a new plan version (S3-backed when `s3` is configured and the upload succeeds, inline
+/// in Postgres otherwise — storage never fails just because S3 is unavailable or erroring) and
+/// posts a new chat message for it. Unlike `upsert_todo_list`, this always creates a NEW message
+/// per call (a version history, not an in-place edit) — matching what the plan design calls for.
+/// The posted message's plain-text `content` carries the FULL plan body, not a summary, since
+/// that's what keeps the plan in the LLM's own context on later turns via `fetch_recent_messages`.
+async fn write_agent_plan(
+    conn: &mut PoolConnection<Postgres>,
+    s3: Option<&nomi_storage::S3Config>,
+    mqtt: Option<&MqttPublisher>,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    user_id: Uuid,
+    input: &serde_json::Value,
+) -> Result<String, String> {
+    let title = input.get("title").and_then(|v| v.as_str()).ok_or("title is required")?.to_string();
+    let content = input.get("content").and_then(|v| v.as_str()).ok_or("content is required")?.to_string();
+    if content.trim().is_empty() {
+        return Err("content must not be empty".to_string());
+    }
+
+    let version: i32 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) + 1 FROM agent_plans WHERE agent_session_id = $1")
+        .bind(agent_session_id)
+        .fetch_one(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let s3_key = format!("plans/{agent_session_id}/{version}.md");
+    let stored_in_s3 = match s3 {
+        Some(s3) => s3.put_object(&s3_key, &content, "text/markdown").await.is_ok(),
+        None => false,
+    };
+
+    let plan_id: Uuid = if stored_in_s3 {
+        sqlx::query_scalar(
+            "INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content_s3_key, version) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        )
+        .bind(session_id)
+        .bind(agent_session_id)
+        .bind(user_id)
+        .bind(&title)
+        .bind(&s3_key)
+        .bind(version)
+        .fetch_one(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_scalar(
+            "INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        )
+        .bind(session_id)
+        .bind(agent_session_id)
+        .bind(user_id)
+        .bind(&title)
+        .bind(&content)
+        .bind(version)
+        .fetch_one(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?
+    };
+
+    let block = crate::content_block::ContentBlock::Plan { plan_id, agent_session_id, title: title.clone(), version };
+    let content_blocks = serde_json::json!([block]);
+    let message_text = format!("📋 {title}\n\n{content}");
+
+    let message_id: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(&message_text)
+    .bind(&content_blocks)
+    .fetch_one(&mut **conn)
+    .await
+    .ok();
+
+    if let (Some(id), Some(publisher)) = (message_id, mqtt) {
+        let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id: id }).await;
+    }
+
+    Ok(format!("plan v{version} saved"))
 }
 
 /// Finds the most recent todo-list message for this agent session (tracked via
