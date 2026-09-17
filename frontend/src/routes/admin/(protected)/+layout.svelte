@@ -68,6 +68,9 @@
 					<IconButton href="/admin/agents" aria-label="Agents">
 						<IconAgents />
 					</IconButton>
+					<IconButton href="/admin/dynamic-agents" aria-label="Dynamic Agents">
+						<IconAgents />
+					</IconButton>
 				{/if}
 				{#if data.canViewUsers}
 					<IconButton href="/admin/users" aria-label="Users">
@@ -80,6 +83,7 @@
 					<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
 					<a href="/admin/settings/embedding" class="m3-nav-link">Embedding Settings</a>
 					<a href="/admin/agents" class="m3-nav-link">Agents</a>
+					<a href="/admin/dynamic-agents" class="m3-nav-link">Dynamic Agents</a>
 				{/if}
 				{#if data.canViewUsers}
 					<a href="/admin/users" class="m3-nav-link">Users</a>

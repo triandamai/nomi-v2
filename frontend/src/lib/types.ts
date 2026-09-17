@@ -137,6 +137,19 @@ export interface AgentsResponse {
 	users: UserAgentGroup[];
 }
 
+export interface DynamicAgent {
+	id: string;
+	name: string;
+	system_prompt: string;
+	intent_label: string;
+	intent_description: string;
+	granted_tools: string[];
+	supports_todos: boolean;
+	supports_plans: boolean;
+	can_delegate: boolean;
+	is_active: boolean;
+}
+
 export interface AdminUserSummary {
 	id: string;
 	email: string;
