@@ -34,7 +34,8 @@ export type ContentBlock =
 			input: Record<string, unknown>;
 			status: 'pending' | 'approved' | 'denied';
 			decided_at: string | null;
-	  };
+	  }
+	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number };
 
 export interface MessageItem {
 	id: string;
@@ -43,6 +44,18 @@ export interface MessageItem {
 	content_blocks: ContentBlock[] | null;
 	created_at: string;
 	my_feedback: 'up' | 'down' | null;
+}
+
+export interface AgentPlanItem {
+	id: string;
+	title: string;
+	version: number;
+	content: string | null;
+	created_at: string;
+}
+
+export interface AgentPlansResponse {
+	plans: AgentPlanItem[];
 }
 
 export interface RenderedMessage extends MessageItem {
