@@ -20,4 +20,8 @@ pub enum StreamEnvelope {
     /// An existing message's content_blocks changed in place (a todo list step flipped, an
     /// approval was decided) — the frontend fetches it and replaces its existing entry.
     MessageUpdated { message_id: Uuid },
+    /// An agent's live status changed — thinking, calling a tool, writing a reply, or back to
+    /// waiting. `detail` carries the tool name for `calling_tool`, `None` otherwise. Never sent
+    /// for the default (chitchat) agent's turns, which have no real `agent_sessions` row.
+    AgentPhaseChanged { agent_session_id: Uuid, phase: String, detail: Option<String> },
 }

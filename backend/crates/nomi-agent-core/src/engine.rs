@@ -19,6 +19,11 @@ pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
 
+const PHASE_THINKING: &str = "thinking";
+const PHASE_CALLING_TOOL: &str = "calling_tool";
+const PHASE_WRITING_REPLY: &str = "writing_reply";
+const PHASE_WAITING: &str = "waiting";
+
 fn complete_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: COMPLETE_TASK_TOOL_NAME.to_string(),
@@ -215,6 +220,8 @@ pub async fn run_agent_turn(
     };
 
     for _ in 0..MAX_TOOL_TURNS {
+        update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_THINKING, None).await;
+
         let request = LlmRequest {
             system: Some(system_prompt.clone()),
             messages: messages.clone(),
@@ -265,6 +272,8 @@ pub async fn run_agent_turn(
         }
 
         if response.stop_reason != StopReason::ToolUse {
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WRITING_REPLY, None).await;
+
             let input_tokens = response.input_tokens;
             let output_tokens = response.output_tokens;
             let reply_text = response
@@ -290,6 +299,8 @@ pub async fn run_agent_turn(
                 // note that used to live in turn/chitchat.rs before this generalization.
                 memory::extract_and_store_memory(conn, provider, embedding_provider, user_id, &last_user_text, &reply_text).await;
             }
+
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
 
             return Ok(LoopOutcome::Reply {
                 text: reply_text,
@@ -396,6 +407,8 @@ pub async fn resolve_tool_batch(
                 let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
             }
 
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+
             // The FULL batch must survive into the next resume, not just the blocks from this
             // point on: this pre-scan loop only checks permissions, it never executes anything —
             // execution only happens in the pass below, and only once the pre-scan clears with
@@ -424,6 +437,8 @@ pub async fn resolve_tool_batch(
     let mut tool_results = Vec::new();
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await;
+
             let (result_text, is_error, rich_block) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                 (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false, None)
             } else if name.as_str() == DELEGATE_TOOL_NAME {
@@ -493,6 +508,7 @@ pub async fn resolve_tool_batch(
             if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                 let status = input.get("status").and_then(|v| v.as_str()).unwrap_or("completed").to_string();
                 let summary = input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
                 return Ok(ToolBatchOutcome::Completed { status, summary });
             }
 
@@ -522,6 +538,39 @@ async fn log_tool_call(
     .bind(serde_json::json!({"tool_name": tool_name, "input": input, "result": result, "is_error": is_error}))
     .execute(&mut **conn)
     .await;
+}
+
+/// Best-effort (never fails the turn, matches `post_activity_message`'s convention): updates
+/// `agent_sessions.current_phase`/`current_phase_detail` and, when `mqtt` is available, pushes
+/// the same change live over `StreamEnvelope::AgentPhaseChanged`. Silently a no-op for the
+/// default agent's turns, where `agent_session_id` is the `session_id` sentinel (see
+/// `nomi_turn::run_locked_turn`'s call site comment) — there is no real `agent_sessions` row
+/// with that id, so the UPDATE affects zero rows and nothing is published.
+async fn update_agent_phase(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<&MqttPublisher>,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    phase: &str,
+    detail: Option<&str>,
+) {
+    let result = sqlx::query("UPDATE agent_sessions SET current_phase = $1, current_phase_detail = $2 WHERE id = $3")
+        .bind(phase)
+        .bind(detail)
+        .bind(agent_session_id)
+        .execute(&mut **conn)
+        .await;
+
+    if let (Ok(outcome), Some(publisher)) = (&result, mqtt) {
+        if outcome.rows_affected() > 0 {
+            let envelope = StreamEnvelope::AgentPhaseChanged {
+                agent_session_id,
+                phase: phase.to_string(),
+                detail: detail.map(|d| d.to_string()),
+            };
+            let _ = publisher.publish(session_id, &envelope).await;
+        }
+    }
 }
 
 /// Inserts an activity message (an agent's "thought", or a description of a tool call it just

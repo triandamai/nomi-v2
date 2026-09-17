@@ -824,3 +824,61 @@ async fn a_second_write_plan_call_creates_version_two_not_a_second_version_one(p
     .unwrap();
     assert_eq!(plan_message_count, 2, "unlike update_todos, each write_plan call posts a NEW message — history, not an upsert");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn run_agent_turn_sets_phase_to_thinking_then_waiting_on_a_plain_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Hello!", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let (phase, detail): (String, Option<String>) =
+        sqlx::query_as("SELECT current_phase, current_phase_detail FROM agent_sessions WHERE id = $1")
+            .bind(agent_session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(phase, "waiting");
+    assert!(detail.is_none());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn resolve_tool_batch_sets_phase_to_calling_tool_with_the_tool_name_as_detail(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let tool_use_blocks =
+        vec![ContentBlock::ToolUse { id: "t1".to_string(), name: "echo".to_string(), input: serde_json::json!({"x": 1}), thought_signature: None }];
+
+    // Called directly (not via run_agent_turn) so the phase this write leaves behind isn't
+    // immediately overwritten by the next loop iteration's "thinking" update.
+    nomi_agent_core::resolve_tool_batch(
+        &mut conn, None, None, &registry, &TestAgent, session_id, agent_session_id, user_id, &tool_use_blocks, &[], &[],
+    )
+    .await
+    .unwrap();
+
+    let (phase, detail): (String, Option<String>) =
+        sqlx::query_as("SELECT current_phase, current_phase_detail FROM agent_sessions WHERE id = $1")
+            .bind(agent_session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(phase, "calling_tool");
+    assert_eq!(detail.as_deref(), Some("echo"));
+}
