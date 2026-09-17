@@ -139,6 +139,13 @@ export interface AgentsResponse {
 	users: UserAgentGroup[];
 }
 
+export interface AgentStatus {
+	agent_session_id: string;
+	agent_type: string;
+	current_phase: string;
+	current_phase_detail: string | null;
+}
+
 export interface DynamicAgent {
 	id: string;
 	name: string;

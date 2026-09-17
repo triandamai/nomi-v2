@@ -7,7 +7,7 @@
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
-	import type { RenderedMessage } from '$lib/types';
+	import type { AgentStatus, RenderedMessage } from '$lib/types';
 
 	interface AgentActivityItem {
 		id: string;
@@ -22,12 +22,14 @@
 		sessionId,
 		messages,
 		agentActivity,
+		agentStatus = null,
 		sendError = null,
 		extraControls,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
 		agentActivity: AgentActivityItem[];
+		agentStatus?: AgentStatus | null;
 		sendError?: string | null;
 		extraControls?: Snippet;
 	} = $props();
@@ -41,6 +43,17 @@
 	let messageInput: HTMLInputElement | undefined = $state();
 
 	let localMessages = $state(messages);
+
+	let currentPhase = $state<{ phase: string; detail: string | null } | null>(
+		agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null,
+	);
+
+	function phaseText(phase: string, detail: string | null): string {
+		if (phase === 'thinking') return 'Nomi is thinking…';
+		if (phase === 'writing_reply') return 'Nomi is writing a reply…';
+		if (phase === 'calling_tool') return detail ? `Nomi is using ${detail}…` : 'Nomi is using a tool…';
+		return 'Nomi is working…';
+	}
 
 	// Resync whenever the page's own `messages` prop changes — navigating to a different
 	// session, or a full invalidateAll() (still used for AgentDelegationUpdated and on
@@ -148,7 +161,7 @@
 			});
 
 			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string; message_id?: string };
+				let envelope: { kind: string; message_id?: string; phase?: string; detail?: string | null };
 				try {
 					envelope = JSON.parse(event.data);
 				} catch {
@@ -169,6 +182,10 @@
 					invalidateAll();
 				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
 					if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
+				} else if (envelope.kind === 'AgentPhaseChanged') {
+					if (typeof envelope.phase === 'string') {
+						currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
+					}
 				}
 			});
 
@@ -206,7 +223,7 @@
 					style="background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small)"
 				>
 					<span class="m3-spinner" aria-hidden="true"></span>
-					Nomi is working…
+					{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : 'Nomi is working…'}
 				</div>
 			</div>
 		{/if}

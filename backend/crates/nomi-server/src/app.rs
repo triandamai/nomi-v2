@@ -63,6 +63,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
+        .route("/api/sessions/:id/agent-status", get(sessions_routes::get_agent_status))
         .route(
             "/api/sessions/:id/messages/:message_id/feedback",
             put(sessions_routes::put_message_feedback).delete(sessions_routes::delete_message_feedback),

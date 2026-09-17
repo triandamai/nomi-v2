@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
-import type { LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage } from '$lib/types';
+import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
@@ -32,7 +32,10 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const agentActivityResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-activity`);
 	const agentActivity = agentActivityResponse.ok ? await agentActivityResponse.json() : [];
 
-	return { messages, models, personality, agentActivity };
+	const agentStatusResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-status`);
+	const agentStatus: AgentStatus | null = agentStatusResponse.ok ? await agentStatusResponse.json() : null;
+
+	return { messages, models, personality, agentActivity, agentStatus };
 };
 
 export const actions: Actions = {

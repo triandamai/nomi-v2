@@ -45,6 +45,7 @@
 			sessionId={page.params.sessionId as string}
 			messages={data.messages}
 			agentActivity={data.agentActivity}
+			agentStatus={data.agentStatus}
 			sendError={form?.error ?? null}
 		/>
 	</div>

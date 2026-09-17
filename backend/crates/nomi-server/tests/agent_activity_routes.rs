@@ -156,3 +156,65 @@ async fn a_session_belonging_to_a_different_org_is_not_accessible(pool: PgPool) 
         json_request(router, "GET", &format!("/api/sessions/{session_id}/agent-activity"), Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn agent_status_returns_none_when_no_active_agent_session(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "status-none@example.com").await;
+    let org_id = org_id_for(&pool, "status-none@example.com").await;
+
+    let session_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c4') RETURNING id",
+    )
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) =
+        json_request(router, "GET", &format!("/api/sessions/{session_id}/agent-status"), Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn agent_status_returns_the_active_agent_sessions_phase(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "status-active@example.com").await;
+    let org_id = org_id_for(&pool, "status-active@example.com").await;
+
+    let session_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c5') RETURNING id",
+    )
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let user_id = user_id_for(&pool, "status-active@example.com").await;
+    let identity_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'telegram', 'status-active-tg') RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let agent_session_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status) \
+         VALUES ($1, $2, 'money', 'active') RETURNING id",
+    )
+    .bind(session_id)
+    .bind(identity_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) =
+        json_request(router, "GET", &format!("/api/sessions/{session_id}/agent-status"), Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["agent_session_id"], agent_session_id.to_string());
+    assert_eq!(body["agent_type"], "money");
+    assert_eq!(body["current_phase"], "waiting");
+    assert!(body["current_phase_detail"].is_null());
+}

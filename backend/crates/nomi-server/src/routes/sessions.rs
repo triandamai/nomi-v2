@@ -676,6 +676,41 @@ pub async fn list_agent_activity(
     Ok(Json(items))
 }
 
+#[derive(Serialize)]
+pub struct AgentStatusResponse {
+    pub agent_session_id: Uuid,
+    pub agent_type: String,
+    pub current_phase: String,
+    pub current_phase_detail: Option<String>,
+}
+
+pub async fn get_agent_status(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<Option<AgentStatusResponse>>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+
+    let row: Option<(Uuid, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, agent_type, current_phase, current_phase_detail FROM agent_sessions \
+         WHERE session_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to load agent status");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load agent status")
+    })?;
+
+    Ok(Json(row.map(|(agent_session_id, agent_type, current_phase, current_phase_detail)| AgentStatusResponse {
+        agent_session_id,
+        agent_type,
+        current_phase,
+        current_phase_detail,
+    })))
+}
+
 async fn relay_session_stream(mut socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {
     let mut options = MqttOptions::new(format!("ws-bridge-{}", Uuid::new_v4()), broker_host, broker_port);
     options.set_keep_alive(Duration::from_secs(30));

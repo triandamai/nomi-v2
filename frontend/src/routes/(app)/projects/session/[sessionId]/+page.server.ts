@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
-import type { MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
+import type { AgentStatus, MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
@@ -20,12 +20,15 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const agentActivityResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-activity`);
 	const agentActivity = agentActivityResponse.ok ? await agentActivityResponse.json() : [];
 
+	const agentStatusResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-status`);
+	const agentStatus: AgentStatus | null = agentStatusResponse.ok ? await agentStatusResponse.json() : null;
+
 	// A session doesn't have a project yet until the planning agent calls create_project mid-chat
 	// — a 404 here is a normal "nothing to build yet" state, not an error.
 	const projectResponse = await apiFetch(fetch, cookies, `/api/projects/by-session/${params.sessionId}`);
 	const project: ProjectDetail | null = projectResponse.ok ? await projectResponse.json() : null;
 
-	return { messages, agentActivity, project };
+	return { messages, agentActivity, agentStatus, project };
 };
 
 export const actions: Actions = {
