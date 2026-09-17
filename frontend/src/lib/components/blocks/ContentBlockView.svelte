@@ -5,6 +5,7 @@
 	import TodoListBlock from './TodoListBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import ApprovalCard from './ApprovalCard.svelte';
+	import PlanBlock from './PlanBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 
 	let { block, messageId }: { block: ContentBlock; messageId: string } = $props();
@@ -20,4 +21,6 @@
 	<TableBlock {block} />
 {:else if block.kind === 'approval_request'}
 	<ApprovalCard {block} {messageId} />
+{:else if block.kind === 'plan'}
+	<PlanBlock {block} />
 {/if}
