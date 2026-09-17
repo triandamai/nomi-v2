@@ -8,6 +8,7 @@ nomi-agent-core = { path = "../nomi-agent-core" }
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
 nomi-realtime = { path = "../nomi-realtime" }
+nomi-storage = { path = "../nomi-storage" }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

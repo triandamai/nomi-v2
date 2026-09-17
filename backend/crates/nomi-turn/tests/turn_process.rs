@@ -40,6 +40,7 @@ async fn process_turn_produces_a_reply_for_an_already_ingested_message(pool: PgP
     let outcome = process_turn(
         &pool,
         &mqtt,
+        None,
         &provider,
         &embedder,
         &registry,
@@ -80,6 +81,7 @@ async fn process_turn_records_a_turn_failed_event_on_llm_failure(pool: PgPool) {
     let result = process_turn(
         &pool,
         &mqtt,
+        None,
         &provider,
         &embedder,
         &registry,

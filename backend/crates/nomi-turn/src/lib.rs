@@ -29,6 +29,7 @@ pub struct TurnOutcome {
 
 pub async fn handle_inbound_message(
     pool: &PgPool,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -47,7 +48,7 @@ pub async fn handle_inbound_message(
 
     lock::insert_inbound_message(&mut conn, session_id, sender_channel_identity_id, text).await?;
 
-    let result = run_locked_turn(&mut conn, None, provider, embedding_provider, registry, session_id, sender_channel_identity_id, user_id, text).await;
+    let result = run_locked_turn(&mut conn, None, s3, provider, embedding_provider, registry, session_id, sender_channel_identity_id, user_id, text).await;
 
     match result {
         Ok((reply, message_id)) => {
@@ -77,6 +78,7 @@ pub async fn handle_inbound_message(
 pub async fn process_turn(
     pool: &PgPool,
     mqtt: &MqttPublisher,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -91,6 +93,7 @@ pub async fn process_turn(
     let result = run_locked_turn(
         &mut conn,
         Some((mqtt, turn_job_id)),
+        s3,
         provider,
         embedding_provider,
         registry,
@@ -133,6 +136,7 @@ pub async fn process_turn(
 async fn run_locked_turn(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -169,7 +173,7 @@ async fn run_locked_turn(
 
     match routing_outcome {
         RoutingOutcome::Continue { agent, agent_session_id } => {
-            run_subagent_turn(conn, mqtt, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
+            run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
         }
         RoutingOutcome::NeedsClassification => {
             let agent = routing::classify_intent(provider, registry, text).await;
@@ -179,11 +183,11 @@ async fn run_locked_turn(
                 // matching today's behavior, where chitchat has no agent_session_id at all.
                 // agent_session_id == session_id here purely as a stand-in for logging
                 // (see nomi-agent-chitchat's own comment on this at its call site's origin).
-                run_subagent_turn(conn, mqtt, provider, embedding_provider, registry, agent, session_id, session_id, user_id).await
+                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, session_id, user_id).await
             } else {
                 let agent_session_id =
                     routing::spawn_agent_session(conn, session_id, sender_channel_identity_id, agent.agent_type()).await?;
-                run_subagent_turn(conn, mqtt, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
+                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id).await
             }
         }
     }
@@ -193,6 +197,7 @@ async fn run_locked_turn(
 async fn run_subagent_turn(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -204,7 +209,7 @@ async fn run_subagent_turn(
     let messages = fetch_recent_messages(conn, session_id).await?;
 
     let outcome = nomi_agent_core::run_agent_turn(
-        conn, mqtt, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id, messages, SUBAGENT_MAX_TOKENS,
+        conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id, messages, SUBAGENT_MAX_TOKENS,
     )
     .await?;
 
@@ -286,6 +291,7 @@ async fn finish_agent_turn(
 pub async fn resume_paused_turn(
     pool: &PgPool,
     mqtt: &MqttPublisher,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -300,7 +306,7 @@ pub async fn resume_paused_turn(
 
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
-    let result = resume_locked(&mut conn, mqtt, provider, embedding_provider, registry, session_id, message_id, decision, remember).await;
+    let result = resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, session_id, message_id, decision, remember).await;
 
     match result {
         Ok((reply, resumed_message_id)) => {
@@ -324,6 +330,7 @@ pub async fn resume_paused_turn(
 async fn resume_locked(
     conn: &mut PoolConnection<Postgres>,
     mqtt: &MqttPublisher,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -396,6 +403,7 @@ async fn resume_locked(
     let batch_outcome = nomi_agent_core::resolve_tool_batch(
         conn,
         Some((mqtt, Uuid::nil())),
+        s3,
         registry,
         agent,
         session_id,
@@ -417,7 +425,7 @@ async fn resume_locked(
             full_messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
 
             let outcome = nomi_agent_core::run_agent_turn(
-                conn, Some((mqtt, Uuid::nil())), provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id,
+                conn, Some((mqtt, Uuid::nil())), s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id,
                 full_messages, SUBAGENT_MAX_TOKENS,
             )
             .await?;

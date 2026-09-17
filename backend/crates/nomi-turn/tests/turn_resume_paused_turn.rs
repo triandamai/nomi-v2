@@ -112,7 +112,7 @@ async fn approving_a_paused_tool_call_resumes_the_turn_and_actually_executes_it(
     ]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-{}", Uuid::new_v4()));
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
     assert_eq!(first.reply, "Waiting for approval.");
@@ -130,7 +130,7 @@ async fn approving_a_paused_tool_call_resumes_the_turn_and_actually_executes_it(
 
     let message_id = pending_approval_message_id(&pool, first.session_id).await;
 
-    let resumed = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, message_id, "approve", false)
+    let resumed = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, message_id, "approve", false)
         .await
         .unwrap();
 
@@ -198,12 +198,12 @@ async fn denying_a_paused_tool_call_skips_execution_but_still_resumes_the_turn(p
     ]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-deny-{}", Uuid::new_v4()));
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
     let message_id = pending_approval_message_id(&pool, first.session_id).await;
 
-    let resumed = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, message_id, "deny", false)
+    let resumed = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, message_id, "deny", false)
         .await
         .unwrap();
 
@@ -250,7 +250,7 @@ async fn resuming_a_message_that_is_no_longer_pending_returns_approval_no_longer
     let provider = FakeLlmProvider::sequence(vec![]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-gone-{}", Uuid::new_v4()));
 
-    let result = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, message_id, "approve", false).await;
+    let result = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, message_id, "approve", false).await;
 
     assert!(matches!(result, Err(nomi_agent_core::TurnError::ApprovalNoLongerPending)));
 }
@@ -297,7 +297,7 @@ async fn a_pause_on_a_non_first_block_preserves_every_block_for_resume(pool: PgP
     ]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-multi-{}", Uuid::new_v4()));
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
     assert_eq!(first.reply, "Waiting for approval.");
@@ -317,7 +317,7 @@ async fn a_pause_on_a_non_first_block_preserves_every_block_for_resume(pool: PgP
 
     let message_id = pending_approval_message_id(&pool, first.session_id).await;
 
-    let resumed = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, message_id, "approve", false)
+    let resumed = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, message_id, "approve", false)
         .await
         .unwrap();
     assert_eq!(resumed.reply, "Here's everything");
@@ -386,7 +386,7 @@ async fn two_un_ruled_gated_tool_calls_converge_after_two_approvals(pool: PgPool
     ]);
     let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-two-gated-{}", Uuid::new_v4()));
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
         .await
         .unwrap();
     assert_eq!(first.reply, "Waiting for approval.");
@@ -402,7 +402,7 @@ async fn two_un_ruled_gated_tool_calls_converge_after_two_approvals(pool: PgPool
 
     // Approve card 1. Pre-fix AND post-fix this pauses again — the meaningful difference is what
     // happens on the SECOND approval. Assert a real second pause on t2, not completion.
-    let after_first = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, card_1, "approve", false)
+    let after_first = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, card_1, "approve", false)
         .await
         .unwrap();
     assert_eq!(after_first.reply, "Waiting for another approval.", "approving card 1 must pause for card 2, not complete");
@@ -430,7 +430,7 @@ async fn two_un_ruled_gated_tool_calls_converge_after_two_approvals(pool: PgPool
     // Approve card 2. WITH the fix, the accumulator is [t1, t2], the pre-scan finds zero
     // remaining Ask blocks, both tools execute, and the turn completes. WITHOUT the fix, the
     // pre-scan would re-pause on t1 (a third card) and the turn would never reach this reply.
-    let after_second = resume_paused_turn(&pool, &mqtt, &provider, &embedder, &registry, card_2, "approve", false)
+    let after_second = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, card_2, "approve", false)
         .await
         .unwrap();
     assert_eq!(after_second.reply, "Here's everything", "the turn must actually complete after the second approval, not pause a third time");

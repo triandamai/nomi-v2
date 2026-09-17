@@ -133,6 +133,7 @@ fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String
 pub async fn run_agent_turn(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
@@ -287,7 +288,7 @@ pub async fn run_agent_turn(
         let pending_tool_use_blocks: Vec<ContentBlock> =
             response.content.iter().filter(|b| matches!(b, ContentBlock::ToolUse { .. })).cloned().collect();
 
-        match resolve_tool_batch(conn, mqtt, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
+        match resolve_tool_batch(conn, mqtt, s3, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => return Ok(LoopOutcome::Completed { status, summary }),
             ToolBatchOutcome::Resolved(tool_results) => {
@@ -321,6 +322,7 @@ pub enum ToolBatchOutcome {
 pub async fn resolve_tool_batch(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
     registry: &AgentRegistry,
     agent: &dyn SubAgent,
     session_id: Uuid,

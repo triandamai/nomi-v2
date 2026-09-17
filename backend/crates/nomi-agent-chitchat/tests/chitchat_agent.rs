@@ -60,6 +60,7 @@ async fn end_turn_returns_the_reply_and_triggers_memory_extraction_afterward(poo
     let outcome = run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedder,
         &registry,
@@ -102,6 +103,7 @@ async fn provider_failure_returns_an_error_and_extracts_no_memory(pool: PgPool) 
 
     let result = run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedder,
@@ -154,6 +156,7 @@ async fn retrieved_memories_are_folded_into_the_system_prompt_and_reported_as_us
     let outcome = run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedder,
         &registry,
@@ -191,6 +194,7 @@ async fn a_failing_embedding_provider_does_not_prevent_a_normal_reply(pool: PgPo
 
     let outcome = run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedder,
@@ -235,6 +239,7 @@ async fn a_stored_personality_is_folded_into_chitchats_system_prompt(pool: PgPoo
 
     run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedder,

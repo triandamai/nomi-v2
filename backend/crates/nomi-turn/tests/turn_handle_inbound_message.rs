@@ -73,7 +73,7 @@ async fn new_sender_gets_bootstrapped_and_receives_a_chitchat_reply(pool: PgPool
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
         .await
         .unwrap();
 
@@ -98,10 +98,10 @@ async fn existing_sender_reuses_identity_and_session_across_two_calls(pool: PgPo
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "first", None)
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "first", None)
         .await
         .unwrap();
-    let second = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "second", None)
+    let second = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "second", None)
         .await
         .unwrap();
 
@@ -124,7 +124,7 @@ async fn inbound_message_is_durable_even_when_the_provider_call_fails(pool: PgPo
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let result = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
+    let result = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
         .await;
     assert!(result.is_err());
 
@@ -151,7 +151,7 @@ async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_sl
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
-    let first = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hi", None)
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hi", None)
         .await
         .unwrap();
 
@@ -170,7 +170,7 @@ async fn an_active_agent_session_does_not_block_the_chitchat_fallback_in_this_sl
     .await
     .unwrap();
 
-    let second = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "still there?", None)
+    let second = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "still there?", None)
         .await
         .unwrap();
 
@@ -182,14 +182,14 @@ async fn concurrent_messages_for_the_same_session_are_serialized(pool: PgPool) {
     let bootstrap_provider = FakeLlmProvider::success(canned_response("bootstrapped"));
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
-    handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
+    handle_inbound_message(&pool, None, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
         .await
         .unwrap();
 
     let provider = FakeLlmProvider::success(canned_response("ok")).with_delay(Duration::from_millis(200));
 
-    let call1 = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "first", None);
-    let call2 = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "second", None);
+    let call1 = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "first", None);
+    let call2 = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "second", None);
     let (result1, result2) = tokio::join!(call1, call2);
     result1.unwrap();
     result2.unwrap();
@@ -231,7 +231,7 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
     let bootstrap_provider = FakeLlmProvider::success(canned_response("bootstrapped"));
-    let bootstrap = handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
+    let bootstrap = handle_inbound_message(&pool, None, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "bootstrap", None)
         .await
         .unwrap();
 
@@ -265,7 +265,7 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let provider = FakeLlmProvider::success(canned_response("ok"));
-    handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
         .await
         .unwrap();
 
@@ -297,12 +297,12 @@ async fn chitchat_turn_maps_sender_presence_to_role_correctly(pool: PgPool) {
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
 
     let bootstrap_provider = FakeLlmProvider::success(canned_response("hello back"));
-    handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hi", None)
+    handle_inbound_message(&pool, None, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hi", None)
         .await
         .unwrap();
 
     let provider = FakeLlmProvider::success(canned_response("ok"));
-    handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "latest", None)
         .await
         .unwrap();
 
@@ -335,7 +335,7 @@ async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replie
     // memory with the same embedding as the one this test seeds below.
     let bootstrap_provider =
         FakeLlmProvider::sequence(vec![canned_response("chitchat"), canned_response("hi there"), canned_response("NONE")]);
-    handle_inbound_message(&pool, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
+    handle_inbound_message(&pool, None, &bootstrap_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hello", None)
         .await
         .unwrap();
     let user_id: Uuid = sqlx::query_scalar(
@@ -362,7 +362,7 @@ async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replie
         canned_response("Noted, no meat!"),
         canned_response("NONE"),
     ]);
-    let outcome = handle_inbound_message(&pool, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "what should I eat?", None)
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "what should I eat?", None)
         .await
         .unwrap();
 
@@ -408,6 +408,7 @@ async fn a_personality_change_is_recorded_and_folded_into_the_next_chitchat_repl
     ]);
     let outcome = handle_inbound_message(
         &pool,
+        None,
         &personality_provider,
         &embedder,
         &registry,
@@ -435,6 +436,7 @@ async fn a_personality_change_is_recorded_and_folded_into_the_next_chitchat_repl
         FakeLlmProvider::sequence(vec![canned_response("chitchat"), canned_response("Sure thing."), canned_response("NONE")]);
     handle_inbound_message(
         &pool,
+        None,
         &chitchat_provider,
         &embedder,
         &registry,
@@ -472,6 +474,7 @@ async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_co
     ]);
     handle_inbound_message(
         &pool,
+        None,
         &personality_provider,
         &embedder,
         &registry,
@@ -496,6 +499,7 @@ async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_co
     ]);
     let group_outcome = handle_inbound_message(
         &pool,
+        None,
         &chitchat_provider,
         &embedder,
         &registry,
@@ -534,7 +538,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
         tool_use_response("t1", "set_personality", serde_json::json!({"description": "Be sarcastic and blunt."})),
         tool_use_response("t2", "complete_task", serde_json::json!({"status": "completed", "summary": "Done, sarcastic now."})),
     ]);
-    handle_inbound_message(&pool, &set_v1_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "be sarcastic", None)
+    handle_inbound_message(&pool, None, &set_v1_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "be sarcastic", None)
         .await
         .unwrap();
 
@@ -544,7 +548,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
         tool_use_response("t3", "set_personality", serde_json::json!({"description": "Be warm and encouraging."})),
         tool_use_response("t4", "complete_task", serde_json::json!({"status": "completed", "summary": "Done, warm now."})),
     ]);
-    handle_inbound_message(&pool, &set_v2_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "actually be warm", None)
+    handle_inbound_message(&pool, None, &set_v2_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "actually be warm", None)
         .await
         .unwrap();
 
@@ -557,6 +561,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
     ]);
     let outcome = handle_inbound_message(
         &pool,
+        None,
         &rollback_provider,
         &embedder,
         &registry,
@@ -574,7 +579,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
     // Turn 4: a plain chitchat message should now carry v1's personality again.
     let chitchat_provider =
         FakeLlmProvider::sequence(vec![canned_response("chitchat"), canned_response("Yeah, whatever."), canned_response("NONE")]);
-    handle_inbound_message(&pool, &chitchat_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hey", None)
+    handle_inbound_message(&pool, None, &chitchat_provider, &embedder, &registry, "telegram", "dm", "chat-1", "tg-1", "hey", None)
         .await
         .unwrap();
 

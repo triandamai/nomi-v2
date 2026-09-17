@@ -172,6 +172,7 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
     process_turn(
         pool,
         &mqtt,
+        None,
         &provider,
         &embedder,
         &registry,

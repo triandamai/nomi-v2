@@ -149,6 +149,7 @@ async fn calling_delegate_to_agent_creates_a_pending_delegation_row(pool: PgPool
     let outcome = run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedding_provider,
         &registry,
@@ -231,6 +232,7 @@ async fn delegate_to_agent_is_rejected_when_the_target_rejects_the_task(pool: Pg
 
     run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedding_provider,

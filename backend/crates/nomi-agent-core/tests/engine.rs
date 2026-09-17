@@ -158,6 +158,7 @@ async fn end_turn_without_any_tool_use_returns_a_plain_reply(pool: PgPool) {
     let outcome = run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedding_provider,
         &registry,
@@ -201,6 +202,7 @@ async fn a_tool_use_is_executed_and_its_result_fed_back(pool: PgPool) {
     let outcome = run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedding_provider,
         &registry,
@@ -236,6 +238,7 @@ async fn complete_task_terminates_the_loop_with_a_completed_outcome(pool: PgPool
 
     let outcome = run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedding_provider,
@@ -278,6 +281,7 @@ async fn exceeding_the_turn_cap_returns_tool_loop_exceeded(pool: PgPool) {
 
     let result = run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedding_provider,
@@ -322,6 +326,7 @@ async fn every_tool_call_is_logged_as_a_tool_called_event(pool: PgPool) {
     run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedding_provider,
         &registry,
@@ -358,6 +363,7 @@ async fn every_llm_request_asks_for_reasoning(pool: PgPool) {
 
     run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedding_provider,
@@ -398,6 +404,7 @@ async fn a_thinking_block_is_posted_as_activity_even_for_an_agent_that_does_not_
 
     run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedding_provider,
@@ -441,6 +448,7 @@ async fn a_stored_personality_is_folded_into_the_system_prompt_when_uses_persona
     run_agent_turn(
         &mut conn,
         None,
+        None,
         &provider,
         &embedding_provider,
         &registry,
@@ -477,6 +485,7 @@ async fn a_stored_personality_is_not_folded_in_for_an_agent_that_does_not_opt_in
 
     run_agent_turn(
         &mut conn,
+        None,
         None,
         &provider,
         &embedding_provider,
@@ -516,7 +525,7 @@ async fn show_table_is_available_to_every_agent_and_posts_a_table_block(pool: Pg
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
-    run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 
@@ -549,7 +558,7 @@ async fn update_todos_upserts_the_same_message_instead_of_creating_a_new_one_eac
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
-    run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 
@@ -557,7 +566,7 @@ async fn update_todos_upserts_the_same_message_instead_of_creating_a_new_one_eac
         tool_use_response("t2", "update_todos", todo_input("done")),
         text_response("ok again", StopReason::EndTurn),
     ]);
-    run_agent_turn(&mut conn, None, &provider2, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    run_agent_turn(&mut conn, None, None, &provider2, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 
@@ -590,7 +599,7 @@ async fn an_unmatched_tool_call_pauses_the_turn_and_never_executes(pool: PgPool)
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
-    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 
@@ -636,7 +645,7 @@ async fn an_allow_rule_lets_the_tool_execute_without_pausing(pool: PgPool) {
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
-    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 
@@ -662,7 +671,7 @@ async fn a_deny_rule_blocks_the_tool_but_lets_the_turn_continue(pool: PgPool) {
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
-    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 
@@ -687,7 +696,7 @@ async fn show_table_and_update_todos_are_never_gated(pool: PgPool) {
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
-    let outcome = run_agent_turn(&mut conn, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap();
 

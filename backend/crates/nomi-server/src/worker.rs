@@ -17,7 +17,7 @@ const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
 /// `RUN_WORKER_INLINE` isn't set to `false`, a background task spawned by the main server
 /// binary (`src/main.rs`) — see that file for why embedding it there is opt-out rather than a
 /// separate always-required process for local/single-instance use.
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -85,6 +85,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
             let result = nomi_turn::process_turn(
                 &pool,
                 &mqtt,
+                s3.as_ref(),
                 provider.as_ref(),
                 embedding_provider.as_ref(),
                 &registry,
@@ -159,7 +160,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
 
             let result = nomi_turn::resume_paused_turn(
-                &pool, &mqtt, provider.as_ref(), embedding_provider.as_ref(), &registry,
+                &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry,
                 claimed.message_id, &claimed.decision, claimed.remember,
             )
             .await;

@@ -7,6 +7,7 @@ edition = "2021"
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
 nomi-realtime = { path = "../nomi-realtime" }
+nomi-storage = { path = "../nomi-storage" }
 async-trait = "0.1"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 uuid = { version = "1", features = ["v4", "serde"] }

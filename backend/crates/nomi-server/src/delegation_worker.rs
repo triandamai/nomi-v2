@@ -69,7 +69,7 @@ fn extract_project_id(task: &str) -> Option<Uuid> {
 /// each through nomi_agent_core::run_agent_turn directly, phrases the result via the supervisor
 /// agent, and delivers it. Deliberately does NOT take the conversational session's advisory
 /// lock (see the design spec) — this must never block a user's live conversation.
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -139,6 +139,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, settings_key: [u8; 32], http
             let outcome = nomi_agent_core::run_agent_turn(
                 &mut conn,
                 Some((&mqtt, claimed.id)),
+                s3.as_ref(),
                 provider.as_ref(),
                 embedding_provider.as_ref(),
                 &registry,
