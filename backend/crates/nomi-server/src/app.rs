@@ -55,6 +55,10 @@ pub fn build_router(state: AppState) -> Router {
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
         )
         .route("/api/sessions/:id/messages/:message_id", get(sessions_routes::get_message))
+        .route(
+            "/api/sessions/:id/agent-plans/:agent_session_id",
+            get(sessions_routes::list_agent_plans),
+        )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
         .route(

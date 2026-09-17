@@ -306,6 +306,53 @@ pub async fn get_message(
     Ok(Json(to_message_item(row)))
 }
 
+#[derive(Serialize)]
+pub struct AgentPlanItem {
+    pub id: Uuid,
+    pub title: String,
+    pub version: i32,
+    pub content: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+pub struct ListAgentPlansResponse {
+    pub plans: Vec<AgentPlanItem>,
+}
+
+pub async fn list_agent_plans(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, agent_session_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ListAgentPlansResponse>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+
+    let rows: Vec<(Uuid, String, i32, Option<String>, Option<String>, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT id, title, version, content, content_s3_key, created_at FROM agent_plans \
+         WHERE session_id = $1 AND agent_session_id = $2 ORDER BY version ASC",
+    )
+    .bind(session_id)
+    .bind(agent_session_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch plans"))?;
+
+    let mut plans = Vec::with_capacity(rows.len());
+    for (id, title, version, content, content_s3_key, created_at) in rows {
+        let resolved_content = match (content, content_s3_key) {
+            (Some(inline), _) => Some(inline),
+            (None, Some(key)) => match &state.s3 {
+                Some(s3) => s3.get_object(&key).await.ok().flatten(),
+                None => None,
+            },
+            (None, None) => None,
+        };
+        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at });
+    }
+
+    Ok(Json(ListAgentPlansResponse { plans }))
+}
+
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub text: String,

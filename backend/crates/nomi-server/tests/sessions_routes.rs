@@ -635,3 +635,64 @@ async fn get_message_returns_not_found_when_message_belongs_to_another_session(p
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn list_agent_plans_returns_every_version_ordered_oldest_first(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "plans@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap();
+    let session_uuid = uuid::Uuid::parse_str(session_id).unwrap();
+    let agent_session_id = uuid::Uuid::new_v4();
+    let user_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM users LIMIT 1").fetch_one(&pool).await.unwrap();
+
+    sqlx::query("INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version) VALUES ($1, $2, $3, 'v1', 'first', 1), ($1, $2, $3, 'v2', 'second', 2)")
+        .bind(session_uuid)
+        .bind(agent_session_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, body) = json_request(
+        router,
+        "GET",
+        &format!("/api/sessions/{session_id}/agent-plans/{agent_session_id}"),
+        Value::Null,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let plans = body["plans"].as_array().unwrap();
+    assert_eq!(plans.len(), 2);
+    assert_eq!(plans[0]["version"], 1);
+    assert_eq!(plans[0]["content"], "first");
+    assert_eq!(plans[1]["version"], 2);
+    assert_eq!(plans[1]["content"], "second");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn list_agent_plans_rejects_access_from_a_user_outside_the_session_org(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let owner_token = register_and_login(router.clone(), "owner@example.com").await;
+    let outsider_token = register_and_login(router.clone(), "outsider@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&owner_token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap();
+    let agent_session_id = uuid::Uuid::new_v4();
+
+    let (status, _) = json_request(
+        router,
+        "GET",
+        &format!("/api/sessions/{session_id}/agent-plans/{agent_session_id}"),
+        Value::Null,
+        Some(&outsider_token),
+    )
+    .await;
+    // authorize_session_access returns 404, not 403, for cross-org access — deliberately not
+    // leaking "this session exists but you can't see it" (see its own source: a failed
+    // authorize_org_action maps to StatusCode::NOT_FOUND, same as a session that doesn't exist
+    // at all).
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
