@@ -68,6 +68,7 @@ pub async fn find_dynamic_agent_by_id(conn: &mut PoolConnection<Postgres>, id: U
 /// turn or continuing an active `agent_sessions` row.
 pub struct DynamicAgent {
     id: Uuid,
+    name: String,
     system_prompt: String,
     intent_label: String,
     intent_description: String,
@@ -82,6 +83,7 @@ impl DynamicAgent {
     pub fn from_row(row: DynamicAgentRow, catalog: Arc<ToolCatalog>) -> Self {
         Self {
             id: row.id,
+            name: row.name,
             system_prompt: row.system_prompt,
             intent_label: row.intent_label,
             intent_description: row.intent_description,
@@ -132,6 +134,10 @@ impl SubAgent for DynamicAgent {
 
     fn intent_description(&self) -> Cow<'static, str> {
         Cow::Owned(self.intent_description.clone())
+    }
+
+    fn display_name(&self) -> Cow<'static, str> {
+        Cow::Owned(self.name.clone())
     }
 
     // v1 scope cut: both features assume a single, well-known prompt shape tuned per built-in

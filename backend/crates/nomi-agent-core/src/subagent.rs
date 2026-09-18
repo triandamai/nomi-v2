@@ -31,6 +31,21 @@ pub trait SubAgent: Send + Sync {
     fn intent_label(&self) -> Cow<'static, str>;
     fn intent_description(&self) -> Cow<'static, str>;
 
+    /// Human-readable label shown on this agent's chat bubbles (e.g. "Money" for the money
+    /// agent, stored on `messages.agent_display_name` at insert time). Defaults to Title Case
+    /// of `agent_type()` — correct for every built-in specialist agent (money → "Money",
+    /// planning → "Planning", etc.). Overridden by `ChitchatAgent` (the raw type "chitchat"
+    /// would read oddly as a label; "Nomi" is the actual product name) and by `DynamicAgent`
+    /// (which uses its own admin-configured name instead of its type, a stringified UUID).
+    fn display_name(&self) -> Cow<'static, str> {
+        let type_name = self.agent_type();
+        let mut chars = type_name.chars();
+        match chars.next() {
+            Some(first) => Cow::Owned(first.to_uppercase().collect::<String>() + chars.as_str()),
+            None => Cow::Borrowed(""),
+        }
+    }
+
     /// Exactly one registered agent must return `true`. See `AgentRegistry::new`.
     fn is_default(&self) -> bool {
         false

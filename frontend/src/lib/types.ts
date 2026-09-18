@@ -44,6 +44,7 @@ export interface MessageItem {
 	content_blocks: ContentBlock[] | null;
 	created_at: string;
 	my_feedback: 'up' | 'down' | null;
+	agent_display_name: string | null;
 }
 
 export interface AgentPlanItem {

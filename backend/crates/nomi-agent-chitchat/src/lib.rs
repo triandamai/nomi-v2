@@ -51,6 +51,10 @@ impl SubAgent for ChitchatAgent {
         Cow::Borrowed("General conversation, questions, or anything not covered by another agent")
     }
 
+    fn display_name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("Nomi")
+    }
+
     fn is_default(&self) -> bool {
         true
     }

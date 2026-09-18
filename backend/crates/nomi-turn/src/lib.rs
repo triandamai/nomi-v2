@@ -260,10 +260,11 @@ async fn finish_agent_turn(
         nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens } => {
             let mut tx = conn.begin().await?;
             let reply_message_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id",
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
             )
             .bind(session_id)
             .bind(&reply_text)
+            .bind(agent.display_name().as_ref())
             .fetch_one(&mut *tx)
             .await?;
             for memory_id in &memory_ids_used {
@@ -297,10 +298,11 @@ async fn finish_agent_turn(
         nomi_agent_core::LoopOutcome::Completed { status, summary } => {
             let mut tx = conn.begin().await?;
             let message_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id",
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
             )
             .bind(session_id)
             .bind(&summary)
+            .bind(agent.display_name().as_ref())
             .fetch_one(&mut *tx)
             .await?;
             tx.commit().await?;

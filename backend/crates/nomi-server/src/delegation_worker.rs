@@ -126,7 +126,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             .await
             .unwrap_or_else(|_| format!("Working on it with the {} agent — I'll update you here.", claimed.target_agent_type));
 
-            let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+            let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
                 .bind(claimed.session_id)
                 .bind(&started_message)
                 .execute(&mut *conn)
@@ -165,7 +165,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     .await
                     .unwrap_or_else(|_| text.clone());
 
-                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
                         .bind(claimed.session_id)
                         .bind(&phrased)
                         .execute(&mut *conn)
@@ -203,7 +203,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         "The {} agent is waiting on your approval for a tool call before it can continue.",
                         claimed.target_agent_type
                     );
-                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
                         .bind(claimed.session_id)
                         .bind(&notice)
                         .execute(&mut *conn)
@@ -213,7 +213,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
                     let sorry = format!("I wasn't able to get an answer from the {} agent — {}.", claimed.target_agent_type, e);
-                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2)")
+                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
                         .bind(claimed.session_id)
                         .bind(&sorry)
                         .execute(&mut *conn)

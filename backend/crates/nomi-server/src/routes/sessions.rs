@@ -209,6 +209,7 @@ pub struct MessageItem {
     pub content_blocks: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub my_feedback: Option<String>,
+    pub agent_display_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -217,12 +218,13 @@ pub struct ListMessagesResponse {
 }
 
 fn to_message_item(
-    (id, sender, content, created_at, content_blocks, my_feedback): (
+    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name): (
         Uuid,
         Option<Uuid>,
         String,
         DateTime<Utc>,
         Option<serde_json::Value>,
+        Option<String>,
         Option<String>,
     ),
 ) -> MessageItem {
@@ -233,6 +235,7 @@ fn to_message_item(
         content_blocks,
         created_at,
         my_feedback,
+        agent_display_name,
     }
 }
 
@@ -246,9 +249,9 @@ pub async fn list_messages(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
-    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>)> = match query.before {
+    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>)> = match query.before {
         Some(before_id) => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating \
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name \
              FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $4 \
              WHERE m.session_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2) \
@@ -262,7 +265,7 @@ pub async fn list_messages(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
         None => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating \
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name \
              FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
              WHERE m.session_id = $1 \
@@ -289,8 +292,8 @@ pub async fn get_message(
 ) -> Result<Json<MessageItem>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
 
-    let row: (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>) = sqlx::query_as(
-        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating \
+    let row: (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name \
          FROM messages m \
          LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
          WHERE m.id = $1 AND m.session_id = $2",
@@ -432,6 +435,7 @@ pub async fn send_message(
         content_blocks: None,
         created_at,
         my_feedback: None,
+        agent_display_name: None,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message })))

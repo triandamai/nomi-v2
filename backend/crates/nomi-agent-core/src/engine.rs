@@ -266,7 +266,7 @@ pub async fn run_agent_turn(
         for block in &response.content {
             if let ContentBlock::Thinking { text, .. } = block {
                 if !text.trim().is_empty() {
-                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("🧠 {}", text.trim()), None).await;
+                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("🧠 {}", text.trim()), None).await;
                 }
             }
         }
@@ -315,7 +315,7 @@ pub async fn run_agent_turn(
                 ContentBlock::Text { text } if !text.trim().is_empty() => Some(text.clone()),
                 _ => None,
             }) {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &format!("💭 {}", thought.trim()), None).await;
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("💭 {}", thought.trim()), None).await;
             }
         }
 
@@ -390,11 +390,12 @@ pub async fn resolve_tool_batch(
             };
             let content_blocks = serde_json::json!([approval_block]);
             let message_id: Option<Uuid> = sqlx::query_scalar(
-                "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, $4) RETURNING id",
             )
             .bind(session_id)
             .bind(format!("⏳ {description}"))
             .bind(&content_blocks)
+            .bind(agent.display_name().as_ref())
             .fetch_one(&mut **conn)
             .await
             .ok();
@@ -464,14 +465,14 @@ pub async fn resolve_tool_batch(
                 }
             } else if name.as_str() == UPDATE_TODOS_TOOL_NAME {
                 match parse_todo_items(input) {
-                    Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, items).await {
+                    Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, agent.display_name().as_ref(), items).await {
                         Ok(text) => (text, false, None),
                         Err(err) => (err, true, None),
                     },
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == WRITE_PLAN_TOOL_NAME && agent.supports_plans() {
-                match write_agent_plan(conn, s3, mqtt.map(|(p, _)| p), session_id, agent_session_id, user_id, input).await {
+                match write_agent_plan(conn, s3, mqtt.map(|(p, _)| p), session_id, agent_session_id, user_id, agent.display_name().as_ref(), input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
@@ -502,7 +503,7 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != UPDATE_TODOS_TOOL_NAME
                     && name.as_str() != WRITE_PLAN_TOOL_NAME);
             if should_post {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &result_text, rich_block.as_ref()).await;
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;
             }
 
             if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -580,16 +581,18 @@ async fn post_activity_message(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,
     session_id: Uuid,
+    agent_display_name: &str,
     content: &str,
     block: Option<&crate::content_block::ContentBlock>,
 ) -> Option<Uuid> {
     let content_blocks = block.map(|b| serde_json::json!([b]));
     let message_id: Option<Uuid> = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, $4) RETURNING id",
     )
     .bind(session_id)
     .bind(content)
     .bind(&content_blocks)
+    .bind(agent_display_name)
     .fetch_one(&mut **conn)
     .await
     .ok();
@@ -645,6 +648,7 @@ async fn write_agent_plan(
     session_id: Uuid,
     agent_session_id: Uuid,
     user_id: Uuid,
+    agent_display_name: &str,
     input: &serde_json::Value,
 ) -> Result<String, String> {
     let title = input.get("title").and_then(|v| v.as_str()).ok_or("title is required")?.to_string();
@@ -698,11 +702,12 @@ async fn write_agent_plan(
     let message_text = format!("📋 {title}\n\n{content}");
 
     let message_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, $4) RETURNING id",
     )
     .bind(session_id)
     .bind(&message_text)
     .bind(&content_blocks)
+    .bind(agent_display_name)
     .fetch_one(&mut **conn)
     .await
     .map_err(|e| e.to_string())?;
@@ -725,6 +730,7 @@ async fn upsert_todo_list(
     mqtt: Option<&MqttPublisher>,
     session_id: Uuid,
     agent_session_id: Uuid,
+    agent_display_name: &str,
     items: Vec<crate::content_block::TodoItem>,
 ) -> Result<String, String> {
     let display_text = todo_list_display_text(&items);
@@ -754,11 +760,12 @@ async fn upsert_todo_list(
         }
         None => {
             let message_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id",
+                "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, $4) RETURNING id",
             )
             .bind(session_id)
             .bind(&display_text)
             .bind(&content_blocks)
+            .bind(agent_display_name)
             .fetch_one(&mut **conn)
             .await
             .map_err(|e| e.to_string())?;

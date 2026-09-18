@@ -99,6 +99,10 @@
 		const previous = list[index - 1];
 		const current = list[index];
 		if (previous.sender !== current.sender) return false;
+		// For assistant messages, only chain when the exact same agent produced both — e.g. a
+		// money-agent reply immediately followed by a chitchat reply are both "assistant" but
+		// must never chain into one unlabeled group.
+		if (previous.agent_display_name !== current.agent_display_name) return false;
 		const gapMs = new Date(current.created_at).getTime() - new Date(previous.created_at).getTime();
 		return gapMs <= CHAIN_WINDOW_MS;
 	}

@@ -19,7 +19,7 @@
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
 
-	const senderLabel = message.sender === 'user' ? 'You' : 'Nomi';
+	const senderLabel = message.sender === 'user' ? 'You' : (message.agent_display_name ?? 'Nomi');
 	const formattedTime = new Date(message.created_at).toLocaleString(undefined, {
 		dateStyle: 'medium',
 		timeStyle: 'short',
@@ -169,9 +169,12 @@
 </script>
 
 <div
-	class="flex flex-col {message.sender === 'user' ? 'items-end' : 'items-start'} gap-1"
+	class="relative flex flex-col {message.sender === 'user' ? 'items-end' : 'items-start'} gap-1"
 	style="margin-top: {first ? '0' : chained ? '4px' : '16px'}"
 >
+	{#if chained}
+		<div class="chain-connector" class:chain-connector--user={message.sender === 'user'} aria-hidden="true"></div>
+	{/if}
 	{#if !chained}
 		<div class="flex items-center gap-2 px-1">
 			<span class="md-label-medium" style="color: var(--md-sys-color-on-surface)">{senderLabel}</span>
@@ -248,6 +251,25 @@
 </div>
 
 <style>
+	/* Bridges the small gap (4px, see the wrapper's margin-top above) between two chained
+	   bubbles from the same agent, so the group reads as one visual unit rather than
+	   disconnected pieces — extends from just above the wrapper down into the bubble's own
+	   top edge. Positioned under the bubble's left padding (assistant) or mirrored to the
+	   right (user) rather than centered, so it doesn't collide with bubble content. */
+	.chain-connector {
+		position: absolute;
+		top: -8px;
+		left: 8px;
+		width: 2px;
+		height: 12px;
+		border-radius: 1px;
+		background: var(--md-sys-color-outline-variant);
+	}
+	.chain-connector--user {
+		left: auto;
+		right: 8px;
+	}
+
 	.message-action-btn {
 		display: inline-flex;
 		align-items: center;

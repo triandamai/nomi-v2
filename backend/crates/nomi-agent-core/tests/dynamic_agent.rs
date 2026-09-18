@@ -56,6 +56,7 @@ async fn constructs_correctly_from_a_row() {
     assert_eq!(agent.intent_label(), "echo_intent");
     assert_eq!(agent.intent_description(), "the user wants something echoed");
     assert_eq!(agent.system_prompt(), "You echo things.");
+    assert_eq!(agent.display_name(), "Echo Bot");
     assert!(agent.supports_todos());
     assert!(!agent.supports_plans());
     assert!(!agent.can_delegate());
