@@ -8,6 +8,7 @@ use uuid::Uuid;
 use nomi_agent_core::{AgentRegistry, DynamicAgent, SubAgent, TurnError};
 use nomi_agent_core::ToolCatalog;
 use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
+use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 // Generous for a single-word reply: some models don't reliably follow "reply with only one
 // word" and add a short sentence around the label instead — find_by_intent_label's whole-word
@@ -108,6 +109,7 @@ pub fn is_stale(last_activity_at: DateTime<Utc>) -> bool {
 
 pub async fn mark_expired(
     conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
     agent_session_id: Uuid,
     session_id: Uuid,
     agent_type: &str,
@@ -124,14 +126,21 @@ pub async fn mark_expired(
         .execute(&mut **conn)
         .await?;
 
+    if let Some((publisher, _)) = mqtt {
+        let envelope = StreamEnvelope::AgentSessionEnded { agent_session_id, session_id, reason: "expired".to_string() };
+        let _ = publisher.publish(session_id, &envelope).await;
+    }
+
     Ok(())
 }
 
 pub async fn spawn_agent_session(
     conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
     session_id: Uuid,
     sender_channel_identity_id: Uuid,
     agent_type: &str,
+    agent_display_name: &str,
 ) -> Result<Uuid, TurnError> {
     let agent_session_id: Uuid = sqlx::query_scalar(
         "INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status) VALUES ($1, $2, $3, 'active') RETURNING id",
@@ -149,11 +158,41 @@ pub async fn spawn_agent_session(
         .execute(&mut **conn)
         .await?;
 
+    if let Some((publisher, _)) = mqtt {
+        // Best-effort, and only resolved when there's actually a publisher to send it to —
+        // mirrors this codebase's existing "MQTT is optional infrastructure" convention.
+        let row: Option<(Option<String>, String, String)> = sqlx::query_as(
+            "SELECT wc.email, ci.channel, ci.channel_user_id \
+             FROM channel_identities ci \
+             LEFT JOIN web_credentials wc ON wc.user_id = ci.user_id \
+             WHERE ci.id = $1",
+        )
+        .bind(sender_channel_identity_id)
+        .fetch_optional(&mut **conn)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((email, channel, channel_user_id)) = row {
+            let sender_label = email.unwrap_or_else(|| format!("{channel}:{channel_user_id}"));
+            let envelope = StreamEnvelope::AgentSessionStarted {
+                agent_session_id,
+                session_id,
+                agent_type: agent_type.to_string(),
+                agent_display_name: agent_display_name.to_string(),
+                channel,
+                sender_label,
+            };
+            let _ = publisher.publish(session_id, &envelope).await;
+        }
+    }
+
     Ok(agent_session_id)
 }
 
 pub async fn complete_agent_session(
     conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
     agent_session_id: Uuid,
     session_id: Uuid,
     agent_type: &str,
@@ -176,6 +215,12 @@ pub async fn complete_agent_session(
         .bind(serde_json::json!({"summary": summary}))
         .execute(&mut **conn)
         .await?;
+
+    if let Some((publisher, _)) = mqtt {
+        let reason = if status == "cancelled" { "cancelled" } else { "completed" };
+        let envelope = StreamEnvelope::AgentSessionEnded { agent_session_id, session_id, reason: reason.to_string() };
+        let _ = publisher.publish(session_id, &envelope).await;
+    }
 
     Ok(())
 }

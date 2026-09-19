@@ -182,7 +182,7 @@ async fn run_locked_turn(
         Some(agent_session_id) => {
             let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
             if routing::is_stale(details.last_activity_at) {
-                routing::mark_expired(conn, agent_session_id, session_id, &details.agent_type).await?;
+                routing::mark_expired(conn, mqtt, agent_session_id, session_id, &details.agent_type).await?;
                 RoutingOutcome::NeedsClassification
             } else {
                 match resolve_agent(conn, registry, catalog, &details.agent_type).await {
@@ -212,7 +212,7 @@ async fn run_locked_turn(
                 run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, session_id, user_id).await
             } else {
                 let agent_session_id =
-                    routing::spawn_agent_session(conn, session_id, sender_channel_identity_id, agent.agent_type().as_ref()).await?;
+                    routing::spawn_agent_session(conn, mqtt, session_id, sender_channel_identity_id, agent.agent_type().as_ref(), agent.display_name().as_ref()).await?;
                 run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id).await
             }
         }
@@ -239,7 +239,7 @@ async fn run_subagent_turn(
     )
     .await?;
 
-    finish_agent_turn(conn, session_id, agent_session_id, agent, outcome).await
+    finish_agent_turn(conn, mqtt, session_id, agent_session_id, agent, outcome).await
 }
 
 /// Persists a `LoopOutcome` (insert the final reply / completion message, record bookkeeping
@@ -251,6 +251,7 @@ async fn run_subagent_turn(
 #[allow(clippy::too_many_arguments)]
 async fn finish_agent_turn(
     conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
     session_id: Uuid,
     agent_session_id: Uuid,
     agent: &dyn nomi_agent_core::SubAgent,
@@ -307,7 +308,7 @@ async fn finish_agent_turn(
             .await?;
             tx.commit().await?;
 
-            routing::complete_agent_session(conn, agent_session_id, session_id, agent.agent_type().as_ref(), &status, &summary).await?;
+            routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, agent.agent_type().as_ref(), &status, &summary).await?;
 
             Ok((summary, Some(message_id)))
         }
@@ -448,7 +449,7 @@ async fn resume_locked(
     match batch_outcome {
         nomi_agent_core::ToolBatchOutcome::AwaitingApproval { .. } => Ok(("Waiting for another approval.".to_string(), None)),
         nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => {
-            finish_agent_turn(conn, session_id, agent_session_id, agent.as_ref(), nomi_agent_core::LoopOutcome::Completed { status, summary }).await
+            finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), nomi_agent_core::LoopOutcome::Completed { status, summary }).await
         }
         nomi_agent_core::ToolBatchOutcome::Resolved(tool_results) => {
             let mut full_messages = messages;
@@ -460,7 +461,7 @@ async fn resume_locked(
             )
             .await?;
 
-            finish_agent_turn(conn, session_id, agent_session_id, agent.as_ref(), outcome).await
+            finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await
         }
     }
 }
