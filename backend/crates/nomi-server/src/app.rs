@@ -99,6 +99,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
+        .route("/api/admin/agents/ws", get(admin_dashboard_routes::admin_agents_stream))
+        .route("/api/admin/agent-events", get(admin_dashboard_routes::list_agent_events))
         .route(
             "/api/admin/dynamic-agents",
             get(dynamic_agents_routes::list_dynamic_agents).post(dynamic_agents_routes::create_dynamic_agent),
