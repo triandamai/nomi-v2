@@ -10,6 +10,7 @@
 		{ value: 'openai', label: 'OpenAI' },
 		{ value: 'openrouter', label: 'OpenRouter' },
 		{ value: 'gemini', label: 'Gemini' },
+		{ value: 'deepseek', label: 'DeepSeek' },
 		{ value: 'fake', label: 'Fake (testing)' },
 	];
 

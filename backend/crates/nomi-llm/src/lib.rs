@@ -3,6 +3,7 @@ pub mod anthropic;
 pub mod openai;
 pub mod openrouter;
 pub mod gemini;
+pub mod deepseek;
 pub mod config;
 pub mod fake;
 
@@ -93,6 +94,7 @@ pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Cli
         ProviderKind::OpenAi => openai::OpenAiProvider::default_base_url(),
         ProviderKind::OpenRouter => openrouter::OpenRouterProvider::default_base_url(),
         ProviderKind::Gemini => gemini::GeminiProvider::default_base_url(),
+        ProviderKind::DeepSeek => deepseek::DeepSeekProvider::default_base_url(),
         ProviderKind::Fake => String::new(),
     });
     match config.provider {
@@ -100,6 +102,7 @@ pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Cli
         ProviderKind::OpenAi => openai::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::OpenRouter => openrouter::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::Gemini => gemini::list_models(&http_client, &config.api_key, &base_url).await,
+        ProviderKind::DeepSeek => deepseek::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::Fake => Ok(vec![ModelSummary {
             id: "fake-model".to_string(),
             label: Some("Fake Model (dev/testing)".to_string()),

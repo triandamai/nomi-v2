@@ -9,7 +9,7 @@ use nomi_auth::extractor::AuthClaims;
 use crate::routes::settings::require_system_config_permission;
 use nomi_settings::{self as settings, llm_models};
 
-pub(crate) const ALLOWED_PROVIDERS: [&str; 5] = ["anthropic", "openai", "openrouter", "gemini", "fake"];
+pub(crate) const ALLOWED_PROVIDERS: [&str; 6] = ["anthropic", "openai", "openrouter", "gemini", "deepseek", "fake"];
 
 #[derive(Serialize)]
 pub struct AdminLlmModelResponse {
@@ -349,6 +349,7 @@ fn provider_kind_from_str(s: &str) -> Option<nomi_llm::ProviderKind> {
         "openai" => Some(nomi_llm::ProviderKind::OpenAi),
         "openrouter" => Some(nomi_llm::ProviderKind::OpenRouter),
         "gemini" => Some(nomi_llm::ProviderKind::Gemini),
+        "deepseek" => Some(nomi_llm::ProviderKind::DeepSeek),
         "fake" => Some(nomi_llm::ProviderKind::Fake),
         _ => None,
     }
