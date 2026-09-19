@@ -131,6 +131,10 @@ pub async fn get_agents(
 /// fields named here. `AgentPhaseChanged`'s `detail` is a tool *name* (safe); nothing here can
 /// carry message content — that boundary is enforced in `admin_frame_for` below, not by the
 /// frontend choosing not to render something it already received.
+// Every variant is deliberately prefixed "Agent" — this enum is the allow-list of
+// agent-lifecycle events forwarded to admins, and the prefix carries wire-format meaning:
+// frontend/src/lib/types.ts's AdminStreamFrame union matches on these exact "kind" strings.
+#[allow(clippy::enum_variant_names)]
 #[derive(Serialize)]
 #[serde(tag = "kind")]
 enum AdminStreamFrame {
