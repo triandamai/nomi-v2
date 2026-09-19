@@ -27,8 +27,35 @@ function readCookie(cookieHeader, name) {
 	return undefined;
 }
 
-const SESSION_WS_PATH =
-	/^\/chat\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/ws$/;
+/**
+ * @typedef {Object} WsRoute
+ * @property {RegExp} pattern
+ * @property {(match: RegExpMatchArray) => string} upstreamPath
+ */
+
+/** @type {WsRoute[]} */
+const ROUTES = [
+	{
+		pattern: /^\/chat\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/ws$/,
+		upstreamPath: (match) => `/api/sessions/${match[1]}/ws`
+	},
+	{
+		pattern: /^\/admin\/agents\/ws$/,
+		upstreamPath: () => '/api/admin/agents/ws'
+	}
+];
+
+/**
+ * @param {string} pathname
+ * @returns {(WsRoute & { match: RegExpMatchArray }) | undefined}
+ */
+function matchRoute(pathname) {
+	for (const route of ROUTES) {
+		const match = pathname.match(route.pattern);
+		if (match) return { ...route, match };
+	}
+	return undefined;
+}
 
 const DEFAULT_INITIAL_RETRY_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30000;
@@ -51,23 +78,23 @@ function resolveApiUrl(options) {
 }
 
 /**
- * @param {string} sessionId
+ * @param {string} upstreamPath
  * @param {ProxyOptions} options
  * @returns {string}
  */
-function toUpstreamUrl(sessionId, options) {
+function toUpstreamUrl(upstreamPath, options) {
 	const wsBase = resolveApiUrl(options).replace(/^http/, 'ws');
-	return `${wsBase}/api/sessions/${sessionId}/ws`;
+	return `${wsBase}${upstreamPath}`;
 }
 
 /**
- * @param {string} sessionId
+ * @param {string} upstreamPath
  * @param {string | undefined} accessToken
  * @param {ProxyOptions} options
  * @returns {WebSocket}
  */
-function connectUpstream(sessionId, accessToken, options) {
-	return new WebSocket(toUpstreamUrl(sessionId, options), {
+function connectUpstream(upstreamPath, accessToken, options) {
+	return new WebSocket(toUpstreamUrl(upstreamPath, options), {
 		headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {}
 	});
 }
@@ -78,18 +105,18 @@ function connectUpstream(sessionId, accessToken, options) {
  * @param {import('node:http').Server | import('node:http2').Http2SecureServer | null | undefined} server
  * @param {ProxyOptions} [options]
  */
-export function attachSessionStreamProxy(server, options = {}) {
+export function attachWsProxy(server, options = {}) {
 	if (!server) return;
 	const wss = new WebSocketServer({ noServer: true });
 
 	server.on('upgrade', (request, socket, head) => {
 		const url = new URL(request.url ?? '', 'http://internal');
-		const match = url.pathname.match(SESSION_WS_PATH);
-		if (!match) return; // not ours; let it fall through untouched
+		const route = matchRoute(url.pathname);
+		if (!route) return; // not ours; let it fall through untouched
 
-		const sessionId = match[1];
+		const upstreamPath = route.upstreamPath(route.match);
 		const accessToken = readCookie(request.headers.cookie, 'access_token');
-		const upstream = connectUpstream(sessionId, accessToken, options);
+		const upstream = connectUpstream(upstreamPath, accessToken, options);
 
 		const cleanup = () => {
 			upstream.off('open', onOpen);
@@ -99,7 +126,7 @@ export function attachSessionStreamProxy(server, options = {}) {
 		const onOpen = () => {
 			cleanup();
 			wss.handleUpgrade(request, socket, head, (browserWs) => {
-				relay(browserWs, upstream, sessionId, accessToken, options);
+				relay(browserWs, upstream, upstreamPath, accessToken, options);
 			});
 		};
 		/**
@@ -141,11 +168,11 @@ function acceptThenClose(request, socket, head, wss, code) {
  * upstream's reconnect-with-backoff for the rest of the browser socket's lifetime.
  * @param {WebSocket} browserWs
  * @param {WebSocket} initialUpstream
- * @param {string} sessionId
+ * @param {string} upstreamPath
  * @param {string | undefined} accessToken
  * @param {ProxyOptions} options
  */
-function relay(browserWs, initialUpstream, sessionId, accessToken, options) {
+function relay(browserWs, initialUpstream, upstreamPath, accessToken, options) {
 	const initialRetryDelayMs = options.initialRetryDelayMs ?? DEFAULT_INITIAL_RETRY_DELAY_MS;
 	const maxRetryDelayMs = options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
 	const maxTotalRetryMs = options.maxTotalRetryMs ?? DEFAULT_MAX_TOTAL_RETRY_MS;
@@ -189,7 +216,7 @@ function relay(browserWs, initialUpstream, sessionId, accessToken, options) {
 
 	function attemptReconnect() {
 		if (finished) return;
-		const next = connectUpstream(sessionId, accessToken, options);
+		const next = connectUpstream(upstreamPath, accessToken, options);
 		let settled = false;
 		/** @param {() => void} fn */
 		const settleOnce = (fn) => {

@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite';
-import { attachSessionStreamProxy } from '../ws-proxy/session-stream-proxy.js';
+import { attachWsProxy } from '../ws-proxy/ws-proxy.js';
 
 /**
  * Wires the same relay used in production (server.js) into `vite dev` and `vite preview` — the
@@ -11,10 +11,10 @@ export function devWsProxy(): Plugin {
 	return {
 		name: 'dev-ws-proxy',
 		configureServer(server) {
-			attachSessionStreamProxy(server.httpServer);
+			attachWsProxy(server.httpServer);
 		},
 		configurePreviewServer(server) {
-			attachSessionStreamProxy(server.httpServer);
+			attachWsProxy(server.httpServer);
 		}
 	};
 }
