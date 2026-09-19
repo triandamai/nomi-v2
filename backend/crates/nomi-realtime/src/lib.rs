@@ -24,4 +24,19 @@ pub enum StreamEnvelope {
     /// waiting. `detail` carries the tool name for `calling_tool`, `None` otherwise. Never sent
     /// for the default (chitchat) agent's turns, which have no real `agent_sessions` row.
     AgentPhaseChanged { agent_session_id: Uuid, phase: String, detail: Option<String> },
+    /// An `agent_sessions` row was created — an agent started working. Every field the admin
+    /// command center needs to render a new table row is resolved once here (at spawn time,
+    /// mirroring how `messages.agent_display_name` is resolved at insert time) so the dashboard
+    /// never needs a follow-up lookup per event.
+    AgentSessionStarted {
+        agent_session_id: Uuid,
+        session_id: Uuid,
+        agent_type: String,
+        agent_display_name: String,
+        channel: String,
+        sender_label: String,
+    },
+    /// An `agent_sessions` row was closed. `reason` is one of "completed" | "cancelled" |
+    /// "expired", matching `agent_sessions.status`'s possible non-active values exactly.
+    AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
 }
