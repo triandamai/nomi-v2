@@ -243,3 +243,27 @@ export interface ProjectDetail {
 	status: 'planning' | 'building' | 'ready';
 	files: ProjectFileSummary[];
 }
+
+export type AdminStreamFrame =
+	| {
+			kind: 'AgentSessionStarted';
+			agent_session_id: string;
+			session_id: string;
+			agent_type: string;
+			agent_display_name: string;
+			channel: string;
+			sender_label: string;
+	  }
+	| { kind: 'AgentSessionEnded'; agent_session_id: string; session_id: string; reason: string }
+	| { kind: 'AgentPhaseChanged'; agent_session_id: string; session_id: string; phase: string; detail: string | null };
+
+export interface AgentEventItem {
+	id: string;
+	session_id: string | null;
+	agent_session_id: string | null;
+	agent_type: string | null;
+	event_type: string;
+	created_at: string;
+	tool_name: string | null;
+	is_error: boolean | null;
+}
