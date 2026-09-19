@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
+	import SideSheet from '$lib/components/m3/SideSheet.svelte';
 	import type { AdminStreamFrame, AgentEventItem } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -194,6 +195,23 @@
 			socket?.close();
 		};
 	});
+
+	let drillDownOpen = $state(false);
+	let drillDownRow = $state<Row | null>(null);
+	let drillDownEvents = $state<AgentEventItem[]>([]);
+	let drillDownLoading = $state(false);
+
+	async function openDrillDown(row: Row) {
+		drillDownRow = row;
+		drillDownOpen = true;
+		drillDownLoading = true;
+		try {
+			const response = await fetch(`/admin/agents/${row.agent_session_id}/events?sessionId=${row.session_id}`);
+			drillDownEvents = response.ok ? await response.json() : [];
+		} finally {
+			drillDownLoading = false;
+		}
+	}
 </script>
 
 <h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Command center</h1>
@@ -209,7 +227,7 @@
 	{:else}
 		<DataTable {columns} bind:sortKey bind:sortDirection>
 			{#each sortedRows as row (row.agent_session_id)}
-				<tr>
+				<tr onclick={() => openDrillDown(row)} style="cursor: pointer;">
 					<td>{row.user_label}</td>
 					<td>{row.agent_type}</td>
 					<td>{row.channel}</td>
@@ -233,3 +251,28 @@
 		{/each}
 	</div>
 </div>
+
+<SideSheet bind:open={drillDownOpen}>
+	{#snippet children()}
+		{#if drillDownRow}
+			<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface); margin: 0 0 4px;">
+				{drillDownRow.agent_type}
+			</h2>
+			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 16px;">
+				Session {drillDownRow.session_id || '(unknown until a live event arrives)'} · {phaseLabel(drillDownRow)}
+			</p>
+			{#if drillDownLoading}
+				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Loading…</p>
+			{:else if drillDownEvents.length === 0}
+				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No recent activity for this agent.</p>
+			{:else}
+				{#each drillDownEvents as item (item.id)}
+					<div style="padding: 8px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);">
+						<p class="md-body-large" style="color: var(--md-sys-color-on-surface)">{feedLine(item)}</p>
+						<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{new Date(item.created_at).toLocaleString()}</p>
+					</div>
+				{/each}
+			{/if}
+		{/if}
+	{/snippet}
+</SideSheet>
