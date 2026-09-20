@@ -2,6 +2,7 @@ pub mod app;
 pub mod bootstrap;
 pub mod delegation_worker;
 pub mod routes;
+mod scheduler_worker;
 mod tool_catalog_adapters;
 pub mod web_identity;
 pub mod worker;
