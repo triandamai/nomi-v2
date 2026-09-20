@@ -12,7 +12,8 @@
 		message,
 		chained = false,
 		first = false,
-	}: { message: RenderedMessage; chained?: boolean; first?: boolean } = $props();
+		showTimestamp = true,
+	}: { message: RenderedMessage; chained?: boolean; first?: boolean; showTimestamp?: boolean } = $props();
 
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	let feedback = $state(message.my_feedback);
@@ -200,7 +201,7 @@
 	</div>
 
 	<div class="flex items-center gap-1 px-1">
-		{#if !chained}
+		{#if showTimestamp}
 			<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{formattedTime}</span>
 		{/if}
 		<button

@@ -116,6 +116,13 @@
 		return sameMinute(previous.created_at, current.created_at);
 	}
 
+	// The sender label shows on the first bubble of a chain (announcing who's talking), but the
+	// timestamp shows on the last one instead — same convention as iMessage/Slack: what matters
+	// for a timestamp is when the group of messages finished, not when it started.
+	function isLastInChain(list: RenderedMessage[], index: number): boolean {
+		return index === list.length - 1 || !isChained(list, index + 1);
+	}
+
 	const activeDelegationCount = $derived(
 		agentActivity.filter((d) => d.status === 'pending' || d.status === 'processing').length,
 	);
@@ -227,7 +234,12 @@
 <div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
 	<div bind:this={messagesContainer} class="flex-1 overflow-y-auto px-6 py-6">
 		{#each localMessages as message, i (message.id)}
-			<MessageBubble {message} chained={isChained(localMessages, i)} first={i === 0} />
+			<MessageBubble
+				{message}
+				chained={isChained(localMessages, i)}
+				first={i === 0}
+				showTimestamp={isLastInChain(localMessages, i)}
+			/>
 		{/each}
 		{#if isWorking}
 			<div class="mt-4 flex justify-start">
