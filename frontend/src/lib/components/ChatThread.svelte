@@ -90,10 +90,19 @@
 	const INITIAL_RETRY_DELAY_MS = 1000;
 	const MAX_RETRY_DELAY_MS = 30000;
 
-	// Consecutive messages from the same sender, close enough in time, chain into one visual
-	// group (no repeated "You"/"Nomi" label, tighter spacing) — same idea as Slack/iMessage
-	// grouping. 5 minutes is a common grouping window for that pattern.
-	const CHAIN_WINDOW_MS = 5 * 60 * 1000;
+	// Consecutive messages from the same sender in the same minute chain into one visual group
+	// (no repeated "You"/"Nomi" label, tighter spacing) — same idea as Slack/iMessage grouping.
+	function sameMinute(a: string, b: string): boolean {
+		const da = new Date(a);
+		const db = new Date(b);
+		return (
+			da.getFullYear() === db.getFullYear() &&
+			da.getMonth() === db.getMonth() &&
+			da.getDate() === db.getDate() &&
+			da.getHours() === db.getHours() &&
+			da.getMinutes() === db.getMinutes()
+		);
+	}
 
 	function isChained(list: RenderedMessage[], index: number): boolean {
 		if (index === 0) return false;
@@ -104,8 +113,7 @@
 		// money-agent reply immediately followed by a chitchat reply are both "assistant" but
 		// must never chain into one unlabeled group.
 		if (previous.agent_display_name !== current.agent_display_name) return false;
-		const gapMs = new Date(current.created_at).getTime() - new Date(previous.created_at).getTime();
-		return gapMs <= CHAIN_WINDOW_MS;
+		return sameMinute(previous.created_at, current.created_at);
 	}
 
 	const activeDelegationCount = $derived(
