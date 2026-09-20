@@ -4,6 +4,7 @@ pub mod dynamic_agent;
 pub mod engine;
 pub mod error;
 pub mod memory;
+pub mod notification;
 pub mod permissions;
 pub mod personality;
 pub mod prompts;
@@ -18,6 +19,7 @@ pub use engine::{
     DELEGATE_TOOL_NAME, SHOW_TABLE_TOOL_NAME, UPDATE_TODOS_TOOL_NAME, WRITE_PLAN_TOOL_NAME,
 };
 pub use error::TurnError;
+pub use notification::{LogOnlyDelivery, NotificationDelivery};
 pub use registry::AgentRegistry;
 pub use subagent::SubAgent;
 pub use tool_catalog::{CatalogTool, ToolCatalog};
