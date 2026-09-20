@@ -110,6 +110,36 @@ async fn admin_can_create_then_list_a_model(pool: PgPool) {
     assert_eq!(list_body.as_array().unwrap().len(), 1);
 }
 
+/// Every provider ALLOWED_PROVIDERS (and nomi_llm::ProviderKind) claims to support must also be
+/// accepted by admin_llm_models' own DB-level CHECK constraint — that constraint is a second,
+/// independent gate the application-level allow-list doesn't cover, and OpenRouter and DeepSeek
+/// were both silently 500ing here despite being fully wired everywhere else, because no test
+/// ever created a real (non-anthropic, non-fake) admin model against a real Postgres instance.
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_can_create_a_model_for_every_supported_provider(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin-providers@example.com").await;
+
+    for (provider, model_id) in [
+        ("anthropic", "claude-sonnet-5"),
+        ("openai", "gpt-4o"),
+        ("openrouter", "anthropic/claude-sonnet-5"),
+        ("gemini", "gemini-2.5-flash"),
+        ("deepseek", "deepseek-flash"),
+    ] {
+        let (status, body) = json_request(
+            router.clone(),
+            "POST",
+            "/api/admin/settings/llm/models",
+            json!({ "label": provider, "provider": provider, "model_id": model_id, "api_key": "sk-test-key", "base_url": null }),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "provider {provider} failed to create: {body:?}");
+        assert_eq!(body["provider"], provider);
+    }
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn create_rejects_an_unknown_provider(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));

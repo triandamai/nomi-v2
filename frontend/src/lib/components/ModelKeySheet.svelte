@@ -96,10 +96,12 @@
 		method="POST"
 		action="?/selectCustomModel"
 		use:enhance={() => {
-			return async ({ update }) => {
-				await update({ reset: true });
-				open = false;
-				onSaved?.();
+			return async ({ result, update }) => {
+				await update({ reset: result.type === 'success' });
+				if (result.type === 'success') {
+					open = false;
+					onSaved?.();
+				}
 			};
 		}}
 		class="mt-4 flex flex-col gap-3"

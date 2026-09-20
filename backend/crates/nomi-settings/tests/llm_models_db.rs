@@ -174,6 +174,59 @@ async fn set_default_of_a_nonexistent_model_returns_not_found(pool: PgPool) {
     assert!(matches!(result, Err(SetDefaultAdminLlmModelError::NotFound)));
 }
 
+/// admin_llm_models.provider carries a DB-level CHECK constraint independent of any
+/// application-level allow-list (ALLOWED_PROVIDERS, ProviderKind) — OpenRouter and DeepSeek
+/// were both silently rejected here (a 500 at the INSERT, surfaced through create_admin_model
+/// as "failed to create model") despite being fully wired through every other layer, because no
+/// test ever created a real admin model for either provider against a real Postgres instance.
+#[sqlx::test(migrations = "../../migrations")]
+async fn create_admin_llm_model_accepts_every_supported_provider(pool: PgPool) {
+    let user_id = insert_user(&pool).await;
+
+    for provider in ["anthropic", "openai", "openrouter", "gemini", "deepseek", "fake"] {
+        let model = create_admin_llm_model(
+            &pool,
+            NewAdminLlmModel {
+                label: provider,
+                provider,
+                model_id: "some-model",
+                api_key_encrypted: vec![1, 2, 3],
+                base_url: None,
+                updated_by: user_id,
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("provider {provider} failed to create: {e}"));
+        assert_eq!(model.provider, provider);
+    }
+}
+
+/// Mirrors create_admin_llm_model_accepts_every_supported_provider above:
+/// user_llm_selections.custom_provider carries the same kind of independent CHECK constraint.
+#[sqlx::test(migrations = "../../migrations")]
+async fn set_user_llm_selection_custom_accepts_every_supported_provider(pool: PgPool) {
+    let user_id = insert_user(&pool).await;
+
+    for provider in ["anthropic", "openai", "openrouter", "gemini", "deepseek", "fake"] {
+        set_user_llm_selection_custom(
+            &pool,
+            user_id,
+            CustomLlmSelection {
+                label: provider,
+                provider,
+                model_id: "some-model",
+                api_key_encrypted: vec![4, 5, 6],
+                base_url: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("provider {provider} failed to save: {e}"));
+
+        let row = get_user_llm_selection(&pool, user_id).await.unwrap().unwrap();
+        assert_eq!(row.custom_provider, Some(provider.to_string()));
+    }
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_user_with_no_selection_row_resolves_to_none(pool: PgPool) {
     let user_id = insert_user(&pool).await;

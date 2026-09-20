@@ -153,9 +153,11 @@
 		method="POST"
 		action={editingId ? '?/update' : '?/create'}
 		use:enhance={() => {
-			return async ({ update }) => {
+			return async ({ result, update }) => {
 				await update({ reset: false });
-				sheetOpen = false;
+				if (result.type === 'success') {
+					sheetOpen = false;
+				}
 			};
 		}}
 		class="mt-4 flex flex-col gap-3"
