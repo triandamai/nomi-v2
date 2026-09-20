@@ -311,7 +311,10 @@ fn next_occurrence(
                 .unwrap()
                 .day();
             let clamped_day = day.min(last_day_of_month);
-            from.with_year(year).unwrap().with_month(month).unwrap().with_day(clamped_day).unwrap()
+            // Step through day=1 first: with_month()/with_year() reject a result that isn't a
+            // real calendar date, and `from`'s own day-of-month (e.g. 31) may not exist in the
+            // target month — day=1 always does, in every month.
+            from.with_day(1).unwrap().with_year(year).unwrap().with_month(month).unwrap().with_day(clamped_day).unwrap()
         }
         _ => from,
     }
