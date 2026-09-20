@@ -34,7 +34,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	const preferencesResponse = await apiFetch(fetch, cookies, '/api/preferences');
 	const preferences: Preferences = preferencesResponse.ok
 		? ((await preferencesResponse.json()) as Preferences)
-		: { theme: 'system', accent_color: 'green' };
+		: { theme: 'system', accent_color: 'green', timezone: 'UTC', has_stored_timezone: false };
 
 	return { canManageSystemConfig, canViewUsers, canManageUsers, preferences };
 };

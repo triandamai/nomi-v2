@@ -212,3 +212,37 @@ async fn preferences_are_isolated_per_user(pool: PgPool) {
     let (_, body_b) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token_b)).await;
     assert_eq!(body_b["theme"], "system");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn get_preferences_defaults_timezone_to_utc(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "omar@example.com").await;
+
+    let (status, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["timezone"], "UTC");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn put_preferences_rejects_an_invalid_timezone_string(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "pia@example.com").await;
+
+    let (status, _) =
+        json_request(router, "PUT", "/api/preferences", json!({ "timezone": "Not/A_Real_Zone" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn put_preferences_saves_a_valid_timezone(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "quinn@example.com").await;
+
+    let (status, put_body) =
+        json_request(router.clone(), "PUT", "/api/preferences", json!({ "timezone": "America/New_York" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(put_body["timezone"], "America/New_York");
+
+    let (_, get_body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(get_body["timezone"], "America/New_York");
+}

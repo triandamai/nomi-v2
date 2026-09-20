@@ -219,6 +219,8 @@ export type AccentColor = 'green' | 'blue' | 'purple' | 'pink' | 'orange' | 'tea
 export interface Preferences {
 	theme: Theme;
 	accent_color: AccentColor;
+	timezone: string;
+	has_stored_timezone: boolean;
 }
 
 export interface ProjectSummary {

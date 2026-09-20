@@ -19,7 +19,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 		: { display_name: null, username: null, email: userEmail, avatar_url: null };
 	const preferences: Preferences = preferencesResponse.ok
 		? ((await preferencesResponse.json()) as Preferences)
-		: { theme: 'system', accent_color: 'green' };
+		: { theme: 'system', accent_color: 'green', timezone: 'UTC', has_stored_timezone: false };
 
 	return { userEmail, profile, preferences };
 };

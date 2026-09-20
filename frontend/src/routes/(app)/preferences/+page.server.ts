@@ -5,7 +5,9 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/preferences');
-	const preferences: Preferences = response.ok ? ((await response.json()) as Preferences) : { theme: 'system', accent_color: 'green' };
+	const preferences: Preferences = response.ok
+		? ((await response.json()) as Preferences)
+		: { theme: 'system', accent_color: 'green', timezone: 'UTC', has_stored_timezone: false };
 	return { preferences };
 };
 
@@ -38,6 +40,22 @@ export const actions: Actions = {
 		const response = await apiFetch(fetch, cookies, '/api/preferences', {
 			method: 'PUT',
 			body: JSON.stringify({ accent_color: accentColor }),
+		});
+		if (!response.ok) {
+			return fail(response.status, { error: 'Failed to save preference.' });
+		}
+		return { success: true };
+	},
+
+	updateTimezone: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const timezone = data.get('timezone');
+		if (typeof timezone !== 'string' || timezone.length === 0) {
+			return fail(400, { error: 'Invalid timezone.' });
+		}
+		const response = await apiFetch(fetch, cookies, '/api/preferences', {
+			method: 'PUT',
+			body: JSON.stringify({ timezone }),
 		});
 		if (!response.ok) {
 			return fail(response.status, { error: 'Failed to save preference.' });
