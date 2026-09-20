@@ -106,4 +106,22 @@ impl AgentRegistry {
             .map(|a| a.agent_type().into_owned())
             .collect()
     }
+
+    /// agent_type() of every delegation-eligible agent, INCLUDING the default agent
+    /// (chitchat) and the calling agent itself — the valid `target_agent` list for a
+    /// `create_reminder` tool call. Deliberately does not apply `delegatable_agent_types`'s
+    /// `!is_default()`/`excluding` exclusions: those exist because "delegate to yourself" or
+    /// "delegate to the always-active default agent" are nonsensical for an *immediate*
+    /// specialist hand-off, but a reminder is a deferred task fired later, often by the very
+    /// same agent that created it — self-targeting chitchat is this feature's primary use case
+    /// ("remind me to take a bath", fired later by chitchat itself), not an edge case to filter
+    /// out. Still excludes non-`is_delegation_target()` agents (the supervisor), since those
+    /// exist to report on other agents' work, not to be handed a task of their own.
+    pub fn reminder_target_agent_types(&self) -> Vec<String> {
+        self.agents
+            .iter()
+            .filter(|a| a.is_delegation_target())
+            .map(|a| a.agent_type().into_owned())
+            .collect()
+    }
 }

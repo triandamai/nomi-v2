@@ -97,6 +97,44 @@ impl SubAgent for PersonalityAwareTestAgent {
     }
 }
 
+struct ReminderAwareTestAgent;
+
+#[async_trait::async_trait]
+impl SubAgent for ReminderAwareTestAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("reminder-aware-test")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("reminder-aware-test")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn supports_reminders(&self) -> bool {
+        true
+    }
+}
+
 async fn seed_session(pool: &PgPool) -> Uuid {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
         .fetch_one(pool)
@@ -881,4 +919,118 @@ async fn resolve_tool_batch_sets_phase_to_calling_tool_with_the_tool_name_as_det
             .unwrap();
     assert_eq!(phase, "calling_tool");
     assert_eq!(detail.as_deref(), Some("echo"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn create_reminder_is_only_available_to_agents_that_opt_in(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "create_reminder", serde_json::json!({"run_at": "2026-09-21T11:00:00Z", "label": "x", "prompt": "y", "target_agent": "test"})),
+        text_response("ok", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(PersonalityAwareTestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &PersonalityAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }));
+    let job_count: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduled_jobs WHERE session_id = $1")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(job_count, 0, "PersonalityAwareTestAgent never opted into supports_reminders()");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn create_reminder_inserts_a_job_and_returns_a_confirmation(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "create_reminder", serde_json::json!({"run_at": "2026-09-21T11:00:00Z", "label": "take a bath", "prompt": "Remind the user to take a bath.", "target_agent": "reminder-aware-test"})),
+        text_response("I'll remind you tomorrow at 11!", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &ReminderAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: "I'll remind you tomorrow at 11!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+    );
+    let label: String = sqlx::query_scalar("SELECT label FROM scheduled_jobs WHERE session_id = $1")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(label, "take a bath");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn cancel_reminder_updates_status(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let reminder_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO scheduled_jobs (session_id, user_id, created_by_agent_type, target_agent_type, label, prompt, run_at) \
+         VALUES ($1, $2, 'reminder-aware-test', 'reminder-aware-test', 'x', 'y', now() + interval '1 day') RETURNING id",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "cancel_reminder", serde_json::json!({"reminder_id": reminder_id.to_string()})),
+        text_response("Cancelled.", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]);
+
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &ReminderAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let status: String = sqlx::query_scalar("SELECT status FROM scheduled_jobs WHERE id = $1")
+        .bind(reminder_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "cancelled");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn system_prompt_carries_current_time_and_timezone_when_reminders_are_supported(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("INSERT INTO user_preferences (user_id, timezone) VALUES ($1, 'America/New_York')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("ok", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]);
+
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &ReminderAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let received = provider.received_requests.lock().unwrap();
+    let sent_system_prompt = received[0].system.as_deref().unwrap_or_default();
+    assert!(sent_system_prompt.contains("America/New_York"));
 }

@@ -18,6 +18,9 @@ pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
+pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
+pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
+pub const CANCEL_REMINDER_TOOL_NAME: &str = "cancel_reminder";
 
 const PHASE_THINKING: &str = "thinking";
 const PHASE_CALLING_TOOL: &str = "calling_tool";
@@ -122,6 +125,52 @@ fn write_plan_tool_definition() -> ToolDefinition {
     }
 }
 
+fn create_reminder_tool_definition(targets: &[String]) -> ToolDefinition {
+    ToolDefinition {
+        name: CREATE_REMINDER_TOOL_NAME.to_string(),
+        description: "Schedule a reminder to fire at a specific future time. Resolve any \
+                       relative time the user gives (\"tomorrow\", \"in an hour\") to an \
+                       absolute ISO 8601 datetime yourself, using the current date/time and the \
+                       user's timezone given in your system prompt.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "run_at": {"type": "string", "description": "Absolute ISO 8601 datetime, e.g. 2026-09-21T11:00:00-04:00"},
+                "label": {"type": "string", "description": "Short human label, e.g. \"take a bath\""},
+                "prompt": {"type": "string", "description": "The instruction the target agent will act on when this fires"},
+                "target_agent": {"type": "string", "enum": targets, "description": "Which agent takes this job when it fires"},
+                "recurrence": {"type": "string", "enum": ["daily", "weekly", "monthly"], "description": "Omit for a one-time reminder"},
+                "recurrence_weekday": {"type": "integer", "minimum": 0, "maximum": 6, "description": "Required when recurrence is weekly (0 = Sunday)"},
+                "recurrence_day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required when recurrence is monthly"}
+            },
+            "required": ["run_at", "label", "prompt", "target_agent"]
+        }),
+    }
+}
+
+fn list_reminders_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: LIST_REMINDERS_TOOL_NAME.to_string(),
+        description: "List your active reminders.".to_string(),
+        input_schema: serde_json::json!({"type": "object", "properties": {}}),
+    }
+}
+
+fn cancel_reminder_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: CANCEL_REMINDER_TOOL_NAME.to_string(),
+        description: "Cancel an active reminder by id. Call list_reminders first if you don't \
+                       already know the id.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reminder_id": {"type": "string", "description": "The reminder's id, from a prior list_reminders call"}
+            },
+            "required": ["reminder_id"]
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
@@ -138,6 +187,9 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != SHOW_TABLE_TOOL_NAME
         && tool_name != UPDATE_TODOS_TOOL_NAME
         && tool_name != WRITE_PLAN_TOOL_NAME
+        && tool_name != CREATE_REMINDER_TOOL_NAME
+        && tool_name != LIST_REMINDERS_TOOL_NAME
+        && tool_name != CANCEL_REMINDER_TOOL_NAME
 }
 
 fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String {
@@ -184,6 +236,12 @@ pub async fn run_agent_turn(
     if agent.supports_plans() {
         tools.push(write_plan_tool_definition());
     }
+    if agent.supports_reminders() {
+        let targets = registry.reminder_target_agent_types();
+        tools.push(create_reminder_tool_definition(&targets));
+        tools.push(list_reminders_tool_definition());
+        tools.push(cancel_reminder_tool_definition());
+    }
 
     let memories = if agent.uses_memory() {
         let last_user_text = messages
@@ -215,6 +273,19 @@ pub async fn run_agent_turn(
             Some(p) => format!("{system_prompt}\n\nAdopt this personality in your replies: {p}"),
             None => system_prompt,
         }
+    } else {
+        system_prompt
+    };
+
+    let system_prompt = if agent.supports_reminders() {
+        let timezone_name = crate::reminders::get_user_timezone(conn, user_id).await;
+        let tz: chrono_tz::Tz = timezone_name.parse().unwrap_or(chrono_tz::UTC);
+        let now = chrono::Utc::now().with_timezone(&tz);
+        format!(
+            "{system_prompt}\n\nCurrent date/time: {} ({timezone_name}). When scheduling a \
+             reminder, resolve relative times against this.",
+            now.to_rfc3339(),
+        )
     } else {
         system_prompt
     };
@@ -476,6 +547,21 @@ pub async fn resolve_tool_batch(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
+            } else if name.as_str() == CREATE_REMINDER_TOOL_NAME && agent.supports_reminders() {
+                match crate::reminders::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == LIST_REMINDERS_TOOL_NAME && agent.supports_reminders() {
+                match crate::reminders::list_reminders(conn, user_id).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == CANCEL_REMINDER_TOOL_NAME && agent.supports_reminders() {
+                match crate::reminders::cancel_reminder(conn, user_id, input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
             } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
                 if *approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
@@ -501,7 +587,10 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != COMPLETE_TASK_TOOL_NAME
                     && name.as_str() != DELEGATE_TOOL_NAME
                     && name.as_str() != UPDATE_TODOS_TOOL_NAME
-                    && name.as_str() != WRITE_PLAN_TOOL_NAME);
+                    && name.as_str() != WRITE_PLAN_TOOL_NAME
+                    && name.as_str() != CREATE_REMINDER_TOOL_NAME
+                    && name.as_str() != LIST_REMINDERS_TOOL_NAME
+                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME);
             if should_post {
                 post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;
             }

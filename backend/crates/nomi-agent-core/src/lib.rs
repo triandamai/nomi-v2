@@ -16,8 +16,9 @@ pub mod tool_catalog;
 pub use content_block::{ApprovalStatus, ContentBlock, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{
-    resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, COMPLETE_TASK_TOOL_NAME,
-    DELEGATE_TOOL_NAME, SHOW_TABLE_TOOL_NAME, UPDATE_TODOS_TOOL_NAME, WRITE_PLAN_TOOL_NAME,
+    resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, CANCEL_REMINDER_TOOL_NAME,
+    COMPLETE_TASK_TOOL_NAME, CREATE_REMINDER_TOOL_NAME, DELEGATE_TOOL_NAME, LIST_REMINDERS_TOOL_NAME,
+    SHOW_TABLE_TOOL_NAME, UPDATE_TODOS_TOOL_NAME, WRITE_PLAN_TOOL_NAME,
 };
 pub use error::TurnError;
 pub use notification::{LogOnlyDelivery, NotificationDelivery};
