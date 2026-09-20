@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { attachSessionStreamProxy } from './session-stream-proxy.js';
+import { attachWsProxy } from './ws-proxy.js';
 
 const SESSION_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -11,7 +11,7 @@ async function startProxyServer(options) {
 		res.statusCode = 404;
 		res.end();
 	});
-	attachSessionStreamProxy(server, options);
+	attachWsProxy(server, options);
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	const { port } = server.address();
 	return { server, port };
