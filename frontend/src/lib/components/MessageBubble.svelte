@@ -201,9 +201,6 @@
 	</div>
 
 	<div class="flex items-center gap-1 px-1">
-		{#if showTimestamp}
-			<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{formattedTime}</span>
-		{/if}
 		<button
 			type="button"
 			class="message-action-btn"
@@ -249,6 +246,9 @@
 			>
 				<IconThumbDown size={16} />
 			</button>
+		{/if}
+		{#if showTimestamp}
+			<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{formattedTime}</span>
 		{/if}
 	</div>
 </div>
