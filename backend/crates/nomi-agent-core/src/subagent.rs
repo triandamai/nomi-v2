@@ -101,6 +101,14 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// When true, run_agent_turn gives this agent the engine-level `create_reminder`,
+    /// `list_reminders`, and `cancel_reminder` tools for scheduling deferred/recurring tasks —
+    /// see docs/superpowers/specs/2026-09-20-scheduled-reminders-design.md. Off by default, same
+    /// reasoning as supports_plans(): only the conversational front door needs this.
+    fn supports_reminders(&self) -> bool {
+        false
+    }
+
     /// Called on the delegation *target* before `delegate_to_agent` creates anything, with the
     /// exact task string the delegating agent wrote. Return `Err(reason)` to reject the
     /// delegation outright — no delegation row is created, and `reason` is fed straight back to
