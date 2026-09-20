@@ -140,6 +140,12 @@
 		width: 100%;
 		max-width: 640px;
 		background: transparent;
+		/* showModal() moves initial focus onto the <dialog> itself (nothing inside asks for
+		   autofocus), and the UA default focus ring shows on it — a plain blue rectangle around
+		   the whole sheet. The dialog is a container, not a control a keyboard user interacts
+		   with directly, so it isn't a meaningful focus target to indicate; the actual form
+		   fields/buttons inside keep their own normal focus-visible styling untouched. */
+		outline: none;
 	}
 
 	.m3-bottom-sheet::backdrop {
