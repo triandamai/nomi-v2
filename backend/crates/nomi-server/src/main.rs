@@ -70,6 +70,17 @@ async fn main() {
         tokio::spawn(async move {
             nomi_server::delegation_worker::run(delegation_pool, delegation_mqtt, delegation_s3, settings_key, delegation_http_client, delegation_database_url, delegation_project_storage).await;
         });
+
+        let scheduler_mqtt_client_id = format!("nomi-orchestrator-scheduler-{}", uuid::Uuid::new_v4());
+        let scheduler_mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &scheduler_mqtt_client_id);
+        let scheduler_pool = pool.clone();
+        let scheduler_s3 = s3.clone();
+        let scheduler_http_client = http_client.clone();
+        let scheduler_project_storage = project_storage.clone();
+        let notification: std::sync::Arc<dyn nomi_agent_core::NotificationDelivery> = std::sync::Arc::new(nomi_agent_core::LogOnlyDelivery);
+        tokio::spawn(async move {
+            nomi_server::scheduler_worker::run(scheduler_pool, scheduler_mqtt, scheduler_s3, settings_key, scheduler_http_client, scheduler_project_storage, notification).await;
+        });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {
         tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");
