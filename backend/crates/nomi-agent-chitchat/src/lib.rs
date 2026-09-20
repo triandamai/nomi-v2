@@ -70,4 +70,8 @@ impl SubAgent for ChitchatAgent {
     fn can_delegate(&self) -> bool {
         true
     }
+
+    fn supports_reminders(&self) -> bool {
+        true
+    }
 }

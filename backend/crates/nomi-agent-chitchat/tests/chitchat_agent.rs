@@ -2,11 +2,16 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use nomi_llm::{ContentBlock, LlmMessage, LlmResponse, LlmRole, StopReason};
-use nomi_agent_core::{run_agent_turn, LoopOutcome};
+use nomi_agent_core::{run_agent_turn, LoopOutcome, SubAgent};
 use nomi_agent_core::AgentRegistry;
 use nomi_agent_chitchat::ChitchatAgent;
 
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
+
+#[test]
+fn chitchat_supports_reminders() {
+    assert!(ChitchatAgent.supports_reminders());
+}
 
 const CHITCHAT_MAX_TOKENS: u32 = 1024;
 
@@ -215,11 +220,15 @@ async fn a_failing_embedding_provider_does_not_prevent_a_normal_reply(pool: PgPo
         LoopOutcome::Reply { text: "Still here!".to_string(), memory_ids_used: vec![], input_tokens: 10, output_tokens: 5 }
     );
 
+    // ChitchatAgent.supports_reminders() is true, so run_agent_turn always appends the current
+    // date/time to the base system prompt (see the "reminders" test below) — asserted with
+    // `starts_with` rather than exact equality since that timestamp is real wall-clock time.
     let requests = provider.received_requests.lock().unwrap();
-    assert_eq!(
-        requests[0].system.as_ref().unwrap(),
-        "You are a helpful, friendly assistant chatting with the user. Keep replies concise."
-    );
+    assert!(requests[0]
+        .system
+        .as_ref()
+        .unwrap()
+        .starts_with("You are a helpful, friendly assistant chatting with the user. Keep replies concise."));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
