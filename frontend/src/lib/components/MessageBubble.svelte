@@ -200,7 +200,9 @@
 	</div>
 
 	<div class="flex items-center gap-1 px-1">
-		<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{formattedTime}</span>
+		{#if !chained}
+			<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{formattedTime}</span>
+		{/if}
 		<button
 			type="button"
 			class="message-action-btn"
