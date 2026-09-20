@@ -122,7 +122,9 @@ export interface DashboardStats {
 
 export interface RunningAgentItem {
 	agent_session_id: string;
+	session_id: string;
 	agent_type: string;
+	agent_display_name: string;
 	channel: string;
 	started_at: string;
 	last_activity_at: string;
@@ -262,6 +264,7 @@ export interface AgentEventItem {
 	session_id: string | null;
 	agent_session_id: string | null;
 	agent_type: string | null;
+	agent_display_name: string | null;
 	event_type: string;
 	created_at: string;
 	tool_name: string | null;

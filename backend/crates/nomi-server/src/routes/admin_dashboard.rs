@@ -64,7 +64,12 @@ pub async fn get_dashboard(
 #[derive(Serialize)]
 pub struct RunningAgentItem {
     pub agent_session_id: Uuid,
+    /// A single agent_type can be active in more than one session at once (the same user with
+    /// two open conversations, or two different users both mid-turn with the planning agent) —
+    /// this is what actually disambiguates one running row from another, not agent_type alone.
+    pub session_id: Uuid,
     pub agent_type: String,
+    pub agent_display_name: String,
     pub channel: String,
     pub started_at: DateTime<Utc>,
     pub last_activity_at: DateTime<Utc>,
@@ -91,14 +96,17 @@ pub async fn get_agents(
 ) -> Result<Json<AgentsResponse>, (StatusCode, &'static str)> {
     require_system_config_permission(&claims)?;
 
-    let rows: Vec<(Uuid, Option<String>, String, String, Uuid, String, DateTime<Utc>, DateTime<Utc>, String, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, Option<String>, String, String, Uuid, Uuid, String, String, DateTime<Utc>, DateTime<Utc>, String, Option<String>)> = sqlx::query_as(
         "SELECT \
              u.id, wc.email, ci.channel, ci.channel_user_id, \
-             ags.id, ags.agent_type, ags.started_at, ags.last_activity_at, ags.current_phase, ags.current_phase_detail \
+             ags.id, ags.session_id, ags.agent_type, \
+             COALESCE(da.name, CASE WHEN ags.agent_type = 'chitchat' THEN 'Nomi' ELSE initcap(ags.agent_type) END), \
+             ags.started_at, ags.last_activity_at, ags.current_phase, ags.current_phase_detail \
          FROM agent_sessions ags \
          JOIN channel_identities ci ON ci.id = ags.sender_channel_identity_id \
          JOIN users u ON u.id = ci.user_id \
          LEFT JOIN web_credentials wc ON wc.user_id = u.id \
+         LEFT JOIN dynamic_agents da ON da.id::text = ags.agent_type \
          WHERE ags.status = 'active' \
          ORDER BY u.id, ags.started_at DESC",
     )
@@ -112,8 +120,11 @@ pub async fn get_agents(
     // Rows are ORDER BY u.id, so every row for the same user is contiguous — grouping by
     // checking the last-pushed group's user_id needs no HashMap or second pass.
     let mut groups: Vec<UserAgentGroup> = Vec::new();
-    for (user_id, email, channel, channel_user_id, agent_session_id, agent_type, started_at, last_activity_at, current_phase, current_phase_detail) in rows {
-        let agent = RunningAgentItem { agent_session_id, agent_type, channel: channel.clone(), started_at, last_activity_at, current_phase, current_phase_detail };
+    for (user_id, email, channel, channel_user_id, agent_session_id, session_id, agent_type, agent_display_name, started_at, last_activity_at, current_phase, current_phase_detail) in rows {
+        let agent = RunningAgentItem {
+            agent_session_id, session_id, agent_type, agent_display_name, channel: channel.clone(),
+            started_at, last_activity_at, current_phase, current_phase_detail,
+        };
         match groups.last_mut() {
             Some(group) if group.user_id == user_id => group.agents.push(agent),
             _ => {
@@ -236,6 +247,7 @@ pub struct AgentEventItem {
     pub session_id: Option<Uuid>,
     pub agent_session_id: Option<Uuid>,
     pub agent_type: Option<String>,
+    pub agent_display_name: Option<String>,
     pub event_type: String,
     pub created_at: DateTime<Utc>,
     /// Only ever a tool *name* — never the tool's `input`/`result`, which is where a tool
@@ -255,15 +267,22 @@ pub async fn list_agent_events(
     require_system_config_permission(&claims)?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
 
-    let rows: Vec<(Uuid, Option<Uuid>, Option<Uuid>, Option<String>, String, DateTime<Utc>, Option<String>, Option<bool>)> =
+    // agent_type is a nullable column on agent_events — the CASE has no ELSE, so a NULL
+    // agent_type flows through as a NULL display name rather than being coerced into a bogus
+    // "Nomi"/initcap('') result.
+    const DISPLAY_NAME_SELECT: &str = "\
+        COALESCE(da.name, CASE WHEN ae.agent_type = 'chitchat' THEN 'Nomi' WHEN ae.agent_type IS NOT NULL THEN initcap(ae.agent_type) END)";
+
+    let rows: Vec<(Uuid, Option<Uuid>, Option<Uuid>, Option<String>, Option<String>, String, DateTime<Utc>, Option<String>, Option<bool>)> =
         match query.session_id {
-            Some(session_id) => sqlx::query_as(
-                "SELECT id, session_id, agent_session_id, agent_type, event_type, created_at, \
-                        payload->>'tool_name', (payload->>'is_error')::boolean \
-                 FROM agent_events \
-                 WHERE session_id = $1 AND event_type = ANY($2) \
-                 ORDER BY created_at DESC LIMIT $3",
-            )
+            Some(session_id) => sqlx::query_as(&format!(
+                "SELECT ae.id, ae.session_id, ae.agent_session_id, ae.agent_type, {DISPLAY_NAME_SELECT}, \
+                        ae.event_type, ae.created_at, ae.payload->>'tool_name', (ae.payload->>'is_error')::boolean \
+                 FROM agent_events ae \
+                 LEFT JOIN dynamic_agents da ON da.id::text = ae.agent_type \
+                 WHERE ae.session_id = $1 AND ae.event_type = ANY($2) \
+                 ORDER BY ae.created_at DESC LIMIT $3",
+            ))
             .bind(session_id)
             .bind(&AGENT_EVENT_TYPES[..])
             .bind(limit)
@@ -273,13 +292,14 @@ pub async fn list_agent_events(
                 tracing::error!(error = %e, "failed to list agent events");
                 (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agent events")
             })?,
-            None => sqlx::query_as(
-                "SELECT id, session_id, agent_session_id, agent_type, event_type, created_at, \
-                        payload->>'tool_name', (payload->>'is_error')::boolean \
-                 FROM agent_events \
-                 WHERE event_type = ANY($1) \
-                 ORDER BY created_at DESC LIMIT $2",
-            )
+            None => sqlx::query_as(&format!(
+                "SELECT ae.id, ae.session_id, ae.agent_session_id, ae.agent_type, {DISPLAY_NAME_SELECT}, \
+                        ae.event_type, ae.created_at, ae.payload->>'tool_name', (ae.payload->>'is_error')::boolean \
+                 FROM agent_events ae \
+                 LEFT JOIN dynamic_agents da ON da.id::text = ae.agent_type \
+                 WHERE ae.event_type = ANY($1) \
+                 ORDER BY ae.created_at DESC LIMIT $2",
+            ))
             .bind(&AGENT_EVENT_TYPES[..])
             .bind(limit)
             .fetch_all(&state.pool)
@@ -292,8 +312,8 @@ pub async fn list_agent_events(
 
     let items = rows
         .into_iter()
-        .map(|(id, session_id, agent_session_id, agent_type, event_type, created_at, tool_name, is_error)| AgentEventItem {
-            id, session_id, agent_session_id, agent_type, event_type, created_at, tool_name, is_error,
+        .map(|(id, session_id, agent_session_id, agent_type, agent_display_name, event_type, created_at, tool_name, is_error)| AgentEventItem {
+            id, session_id, agent_session_id, agent_type, agent_display_name, event_type, created_at, tool_name, is_error,
         })
         .collect();
 

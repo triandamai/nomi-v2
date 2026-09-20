@@ -7,6 +7,7 @@
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
+	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
 	import type { AgentStatus, RenderedMessage } from '$lib/types';
 
 	interface AgentActivityItem {
@@ -50,8 +51,8 @@
 
 	function phaseText(phase: string, detail: string | null): string {
 		if (phase === 'thinking') return 'Nomi is thinking…';
-		if (phase === 'writing_reply') return 'Nomi is writing a reply…';
-		if (phase === 'calling_tool') return detail ? `Nomi is using ${detail}…` : 'Nomi is using a tool…';
+		if (phase === 'writing_reply') return 'Nomi is finalizing a reply…';
+		if (phase === 'calling_tool') return detail ? `Nomi is ${toolActivityLabel(detail)}…` : 'Nomi is using a tool…';
 		return 'Nomi is working…';
 	}
 
@@ -313,7 +314,7 @@
 			{#each agentActivity as item (item.id)}
 				<div style="padding: 8px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);">
 					<p class="md-body-large" style="color: var(--md-sys-color-on-surface)">
-						{item.target_agent_type} — {item.status}
+						{agentTypeFallbackLabel(item.target_agent_type)} — {delegationStatusLabel(item.status)}
 					</p>
 					<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{item.task}</p>
 					{#if item.result}

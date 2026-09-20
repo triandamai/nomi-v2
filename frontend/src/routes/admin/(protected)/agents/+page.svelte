@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
 	import SideSheet from '$lib/components/m3/SideSheet.svelte';
+	import { agentTypeFallbackLabel, eventFeedLine, phaseLabel as sharedPhaseLabel, shortSessionId } from '$lib/agentLabels';
 	import type { AdminStreamFrame, AgentEventItem } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -9,9 +10,12 @@
 
 	type Row = {
 		agent_session_id: string;
+		// A single agent_display_name (e.g. "Planning") can be running in more than one session
+		// at once — the Session column below is what actually disambiguates one row from another.
 		session_id: string;
 		user_label: string;
 		agent_type: string;
+		agent_display_name: string;
 		channel: string;
 		current_phase: string;
 		current_phase_detail: string | null;
@@ -23,9 +27,10 @@
 		data.agents.users.flatMap((group) =>
 			group.agents.map((agent) => ({
 				agent_session_id: agent.agent_session_id,
-				session_id: '', // the initial snapshot doesn't carry session_id per row — stays unused until a live event replaces the row
+				session_id: agent.session_id,
 				user_label: group.label,
 				agent_type: agent.agent_type,
+				agent_display_name: agent.agent_display_name,
 				channel: agent.channel,
 				current_phase: agent.current_phase,
 				current_phase_detail: agent.current_phase_detail,
@@ -38,26 +43,18 @@
 	let feed = $state<AgentEventItem[]>(data.events);
 
 	function feedLine(item: AgentEventItem): string {
-		const who = item.agent_type ?? 'An agent';
-		if (item.event_type === 'AgentSpawned') return `${who} started`;
-		if (item.event_type === 'AgentCompleted') return `${who} finished (completed)`;
-		if (item.event_type === 'AgentCancelled') return `${who} finished (cancelled)`;
-		if (item.event_type === 'AgentExpired') return `${who} expired`;
-		if (item.event_type === 'ToolCalled') return `${who} called ${item.tool_name ?? 'a tool'}${item.is_error ? ' (failed)' : ''}`;
-		if (item.event_type === 'AgentReplied') return `${who} replied`;
-		return `${who}: ${item.event_type}`;
+		const who = item.agent_display_name ?? (item.agent_type ? agentTypeFallbackLabel(item.agent_type) : 'An agent');
+		return eventFeedLine(item.event_type, who, item.session_id, item.tool_name, item.is_error);
 	}
 
-	function phaseLabel(row: Row): string {
-		if (row.current_phase === 'calling_tool' && row.current_phase_detail) {
-			return `calling tool: ${row.current_phase_detail}`;
-		}
-		return row.current_phase.replace('_', ' ');
+	function rowPhaseLabel(row: Row): string {
+		return sharedPhaseLabel(row.current_phase, row.current_phase_detail);
 	}
 
 	const columns = [
 		{ key: 'user_label', label: 'User', sortable: true },
-		{ key: 'agent_type', label: 'Agent Type', sortable: true },
+		{ key: 'agent_display_name', label: 'Agent', sortable: true },
+		{ key: 'session_id', label: 'Session', sortable: true },
 		{ key: 'channel', label: 'Channel', sortable: true },
 		{ key: 'current_phase', label: 'Status', sortable: true },
 		{ key: 'started_at', label: 'Started', sortable: true },
@@ -85,6 +82,10 @@
 	const MAX_RETRY_DELAY_MS = 30000;
 	const MAX_FEED_ITEMS = 200;
 
+	function pushFeedItem(item: Omit<AgentEventItem, 'id' | 'created_at'>) {
+		feed = [{ id: crypto.randomUUID(), created_at: new Date().toISOString(), ...item }, ...feed].slice(0, MAX_FEED_ITEMS);
+	}
+
 	function applyFrame(frame: AdminStreamFrame) {
 		if (frame.kind === 'AgentSessionStarted') {
 			rows = [
@@ -94,6 +95,7 @@
 					session_id: frame.session_id,
 					user_label: frame.sender_label,
 					agent_type: frame.agent_type,
+					agent_display_name: frame.agent_display_name,
 					channel: frame.channel,
 					current_phase: 'waiting',
 					current_phase_detail: null,
@@ -101,56 +103,54 @@
 					last_activity_at: new Date().toISOString(),
 				},
 			];
-			feed = [
-				{
-					id: crypto.randomUUID(),
-					session_id: frame.session_id,
-					agent_session_id: frame.agent_session_id,
-					agent_type: frame.agent_type,
-					event_type: 'AgentSpawned',
-					created_at: new Date().toISOString(),
-					tool_name: null,
-					is_error: null,
-				},
-				...feed,
-			].slice(0, MAX_FEED_ITEMS);
+			pushFeedItem({
+				session_id: frame.session_id,
+				agent_session_id: frame.agent_session_id,
+				agent_type: frame.agent_type,
+				agent_display_name: frame.agent_display_name,
+				event_type: 'AgentSpawned',
+				tool_name: null,
+				is_error: null,
+			});
 		} else if (frame.kind === 'AgentSessionEnded') {
 			const ended = rows.find((r) => r.agent_session_id === frame.agent_session_id);
 			rows = rows.filter((r) => r.agent_session_id !== frame.agent_session_id);
-			feed = [
-				{
-					id: crypto.randomUUID(),
-					session_id: ended?.session_id ?? frame.session_id,
-					agent_session_id: frame.agent_session_id,
-					agent_type: ended?.agent_type ?? null,
-					event_type: frame.reason === 'cancelled' ? 'AgentCancelled' : frame.reason === 'expired' ? 'AgentExpired' : 'AgentCompleted',
-					created_at: new Date().toISOString(),
-					tool_name: null,
-					is_error: null,
-				},
-				...feed,
-			].slice(0, MAX_FEED_ITEMS);
+			pushFeedItem({
+				session_id: ended?.session_id ?? frame.session_id,
+				agent_session_id: frame.agent_session_id,
+				agent_type: ended?.agent_type ?? null,
+				agent_display_name: ended?.agent_display_name ?? null,
+				event_type: frame.reason === 'cancelled' ? 'AgentCancelled' : frame.reason === 'expired' ? 'AgentExpired' : 'AgentCompleted',
+				tool_name: null,
+				is_error: null,
+			});
 		} else if (frame.kind === 'AgentPhaseChanged') {
 			rows = rows.map((r) =>
 				r.agent_session_id === frame.agent_session_id
 					? { ...r, current_phase: frame.phase, current_phase_detail: frame.detail, last_activity_at: new Date().toISOString() }
 					: r,
 			);
+			const source = rows.find((r) => r.agent_session_id === frame.agent_session_id);
 			if (frame.phase === 'calling_tool' && frame.detail) {
-				const source = rows.find((r) => r.agent_session_id === frame.agent_session_id);
-				feed = [
-					{
-						id: crypto.randomUUID(),
-						session_id: frame.session_id,
-						agent_session_id: frame.agent_session_id,
-						agent_type: source?.agent_type ?? null,
-						event_type: 'ToolCalled',
-						created_at: new Date().toISOString(),
-						tool_name: frame.detail,
-						is_error: null,
-					},
-					...feed,
-				].slice(0, MAX_FEED_ITEMS);
+				pushFeedItem({
+					session_id: frame.session_id,
+					agent_session_id: frame.agent_session_id,
+					agent_type: source?.agent_type ?? null,
+					agent_display_name: source?.agent_display_name ?? null,
+					event_type: 'ToolCalled',
+					tool_name: frame.detail,
+					is_error: null,
+				});
+			} else if (frame.phase === 'writing_reply') {
+				pushFeedItem({
+					session_id: frame.session_id,
+					agent_session_id: frame.agent_session_id,
+					agent_type: source?.agent_type ?? null,
+					agent_display_name: source?.agent_display_name ?? null,
+					event_type: 'AgentFinalizing',
+					tool_name: null,
+					is_error: null,
+				});
 			}
 		}
 	}
@@ -229,9 +229,10 @@
 			{#each sortedRows as row (row.agent_session_id)}
 				<tr onclick={() => openDrillDown(row)} style="cursor: pointer;">
 					<td>{row.user_label}</td>
-					<td>{row.agent_type}</td>
+					<td>{row.agent_display_name}</td>
+					<td title={row.session_id}>{shortSessionId(row.session_id)}</td>
 					<td>{row.channel}</td>
-					<td>{phaseLabel(row)}</td>
+					<td>{rowPhaseLabel(row)}</td>
 					<td>{new Date(row.started_at).toLocaleString()}</td>
 					<td>{new Date(row.last_activity_at).toLocaleString()}</td>
 				</tr>
@@ -256,10 +257,10 @@
 	{#snippet children()}
 		{#if drillDownRow}
 			<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface); margin: 0 0 4px;">
-				{drillDownRow.agent_type}
+				{drillDownRow.agent_display_name}
 			</h2>
-			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 16px;">
-				Session {drillDownRow.session_id || '(unknown until a live event arrives)'} · {phaseLabel(drillDownRow)}
+			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 16px;" title={drillDownRow.session_id}>
+				Session {drillDownRow.session_id ? shortSessionId(drillDownRow.session_id) : '(unknown until a live event arrives)'} · {rowPhaseLabel(drillDownRow)}
 			</p>
 			{#if drillDownLoading}
 				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Loading…</p>

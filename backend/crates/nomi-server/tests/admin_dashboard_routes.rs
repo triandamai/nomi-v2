@@ -260,13 +260,71 @@ async fn agents_endpoint_groups_running_sessions_by_user_and_excludes_non_active
     let group_a = users.iter().find(|g| g["user_id"] == user_a.to_string()).unwrap();
     assert_eq!(group_a["label"], "a@example.com");
     assert_eq!(group_a["agents"].as_array().unwrap().len(), 1);
+    assert_eq!(group_a["agents"][0]["session_id"], session_id.to_string());
+    // chitchat is the one built-in agent whose display name deliberately diverges from a naive
+    // Title-Case of its agent_type — this is the case that would silently regress to "Chitchat"
+    // if the server-side resolution ever fell back to client-side title-casing instead.
+    assert_eq!(group_a["agents"][0]["agent_display_name"], "Nomi");
 
     let group_b = users.iter().find(|g| g["user_id"] == user_b.to_string()).unwrap();
     assert_eq!(group_b["label"], "telegram:b-tg");
     assert_eq!(group_b["agents"].as_array().unwrap().len(), 1);
     assert_eq!(group_b["agents"][0]["agent_type"], "money");
+    assert_eq!(group_b["agents"][0]["agent_display_name"], "Money");
+    assert_eq!(group_b["agents"][0]["session_id"], session_id.to_string());
     // current_phase defaults to "waiting" (migration 0025) — neither session here ever went
     // through the turn engine, so it's still at its just-inserted default.
     assert_eq!(group_b["agents"][0]["current_phase"], "waiting");
     assert!(group_b["agents"][0]["current_phase_detail"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn agents_endpoint_resolves_a_dynamic_agents_configured_name(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin2@example.com").await;
+
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let session_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'chat-2') RETURNING id",
+    )
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    let identity_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'telegram', 'dyn-tg') RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let dynamic_agent_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, created_by) \
+         VALUES ('Weather Bot', 'You report the weather.', 'weather', 'weather questions', $1) RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // agent_sessions.agent_type stores the dynamic agent's id as text for a dynamic agent.
+    sqlx::query(
+        "INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status) VALUES ($1, $2, $3, 'active')",
+    )
+    .bind(session_id)
+    .bind(identity_id)
+    .bind(dynamic_agent_id.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = json_request(router, "GET", "/api/admin/agents", Value::Null, Some(&admin_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let users = body["users"].as_array().unwrap();
+    let group = users.iter().find(|g| g["user_id"] == user_id.to_string()).unwrap();
+    assert_eq!(group["agents"][0]["agent_type"], dynamic_agent_id.to_string());
+    assert_eq!(group["agents"][0]["agent_display_name"], "Weather Bot");
 }

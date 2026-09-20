@@ -163,3 +163,51 @@ async fn session_id_filters_to_one_session(pool: PgPool) {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["session_id"], session_a.to_string());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn events_carry_a_resolved_agent_display_name(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "admin3@example.com").await;
+
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(&pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c2') RETURNING id")
+        .bind(org_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    let dynamic_agent_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, created_by) \
+         VALUES ('Weather Bot', 'You report the weather.', 'weather', 'weather questions', $1) RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // chitchat: the one built-in agent whose display name deliberately diverges from a naive
+    // Title-Case of its agent_type.
+    sqlx::query("INSERT INTO agent_events (session_id, agent_type, event_type) VALUES ($1, 'chitchat', 'AgentReplied')")
+        .bind(session_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // A dynamic agent: agent_type stores the dynamic_agents.id as text, resolved via a join.
+    sqlx::query("INSERT INTO agent_events (session_id, agent_type, event_type) VALUES ($1, $2, 'AgentSpawned')")
+        .bind(session_id)
+        .bind(dynamic_agent_id.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, body) = json_request(router, "GET", "/api/admin/agent-events", Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body.as_array().unwrap();
+    assert_eq!(items.len(), 2);
+
+    let chitchat_event = items.iter().find(|i| i["agent_type"] == "chitchat").unwrap();
+    assert_eq!(chitchat_event["agent_display_name"], "Nomi");
+
+    let dynamic_event = items.iter().find(|i| i["agent_type"] == dynamic_agent_id.to_string()).unwrap();
+    assert_eq!(dynamic_event["agent_display_name"], "Weather Bot");
+}
