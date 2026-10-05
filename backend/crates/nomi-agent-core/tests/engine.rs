@@ -303,6 +303,54 @@ async fn complete_task_terminates_the_loop_with_a_completed_outcome(pool: PgPool
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn an_answer_written_alongside_complete_task_is_the_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    // The answer arrives split across two text blocks, with complete_task in the same response.
+    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+        content: vec![
+            ContentBlock::Text { text: "Here is the itinerary.\n\n".to_string() },
+            ContentBlock::Text { text: "- 08:00 Arrive".to_string() },
+            ContentBlock::ToolUse {
+                id: "done".to_string(),
+                name: COMPLETE_TASK_TOOL_NAME.to_string(),
+                input: serde_json::json!({"status": "completed", "summary": "Itinerary sent"}),
+                thought_signature: None,
+            },
+        ],
+        stop_reason: StopReason::ToolUse,
+        input_tokens: 1,
+        output_tokens: 1,
+    }]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(
+        &mut conn,
+        None,
+        None,
+        &provider,
+        &embedding_provider,
+        &registry,
+        &TestAgent,
+        session_id,
+        agent_session_id,
+        user_id,
+        vec![],
+        100,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        outcome,
+        LoopOutcome::Completed { status: "completed".to_string(), summary: "Here is the itinerary.\n\n- 08:00 Arrive".to_string() }
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn exceeding_the_turn_cap_returns_tool_loop_exceeded(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;

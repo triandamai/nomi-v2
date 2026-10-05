@@ -299,6 +299,20 @@ export interface HomeSummary {
 	}[];
 	today: { id: string; run_at: string; label: string; agent: string; recurrence: string | null }[];
 	plans: { kind: 'todo' | 'plan'; title: string; agent: string; done: number; total: number; session_id: string; updated_at: string }[];
+	/** Full counts; the lists above carry at most four. */
+	while_you_were_out_total: number;
+	today_total: number;
+	plans_total: number;
+}
+
+/** GET /api/home/{updates,today,plans}: one page of a Home section. */
+export interface HomeSectionPage<T> {
+	since: string;
+	timezone: string;
+	items: T[];
+	total: number;
+	page: number;
+	per_page: number;
 }
 
 /** GET /api/money */

@@ -569,8 +569,11 @@
 		flex-direction: column;
 		justify-content: center;
 		gap: 6px;
+		min-width: 0;
 		padding: 18px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
+		/* The value scales with the tile, so a long category or amount stays inside it. */
+		container-type: inline-size;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
 	}
@@ -580,8 +583,10 @@
 	}
 	.tile dd {
 		margin: 0;
-		font-size: 1.75rem;
+		font-size: clamp(1.125rem, 15cqi, 1.75rem);
 		font-weight: 650;
+		line-height: 1.2;
+		overflow-wrap: anywhere;
 	}
 	.tile__text {
 		text-transform: capitalize;

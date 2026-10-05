@@ -18,7 +18,7 @@ pub const SUPERVISOR_AGENT_TYPE: &str = "supervisor";
 const RECENT_ACTIVITY_LIMIT: i64 = 10;
 
 /// `max_tokens` for the supervisor's one-shot, tool-free phrasing completions
-/// (`phrase_delegation_result`/`phrase_delegation_started`) — these are single short sentences,
+/// (`phrase_delegation_started`) — a single short sentence,
 /// never a multi-step reply, so a small budget is intentional, not an oversight.
 const SUPERVISOR_PHRASING_MAX_TOKENS: u32 = 256;
 
@@ -206,49 +206,9 @@ async fn personalize_system_prompt(conn: &mut PoolConnection<Postgres>, user_id:
     system
 }
 
-/// One-shot, tool-free completion that phrases a completed delegation's raw result in the
-/// supervisor's voice, folding in the user's identity and personality via personalize_system_prompt.
-pub async fn phrase_delegation_result(
-    provider: &dyn nomi_llm::LlmProvider,
-    conn: &mut PoolConnection<Postgres>,
-    user_id: Uuid,
-    target_agent_type: &str,
-    task: &str,
-    raw_result: &str,
-) -> Result<String, String> {
-    let base = format!(
-        "{SUPERVISOR_SYSTEM_PROMPT}\n\nDeliver this result from the {target_agent_type} agent to the user, in your \
-         own voice, as if reporting back after they asked you to look into something. Be natural and brief.\n\n\
-         What was asked: {task}\nRaw result: {raw_result}"
-    );
-    let system = personalize_system_prompt(conn, user_id, base).await;
-
-    let request = nomi_llm::LlmRequest {
-        system: Some(system),
-        messages: vec![nomi_llm::LlmMessage {
-            role: nomi_llm::LlmRole::User,
-            content: vec![nomi_llm::ContentBlock::Text { text: "Report back.".to_string() }],
-        }],
-        tools: vec![],
-        max_tokens: SUPERVISOR_PHRASING_MAX_TOKENS,
-        enable_reasoning: false,
-        reasoning_effort: Default::default(),
-    };
-    let response = nomi_llm::complete(provider, request).await.map_err(|e| e.to_string())?;
-    Ok(response
-        .content
-        .into_iter()
-        .find_map(|block| match block {
-            nomi_llm::ContentBlock::Text { text } => Some(text),
-            _ => None,
-        })
-        .unwrap_or(raw_result.to_string()))
-}
-
 /// One-shot, tool-free completion that tells the user work has just begun on a delegated task, in
-/// the supervisor's voice — same shape as phrase_delegation_result (see its doc comment for why
-/// this skips run_agent_turn's tool loop), but fires at claim-time instead of completion, so the
-/// user sees something happen immediately instead of only once the delegation finishes.
+/// the supervisor's voice, folding in the user's identity and personality. It fires at claim-time,
+/// so the user sees something happen right away; the agent posts its own answer when done.
 pub async fn phrase_delegation_started(
     provider: &dyn nomi_llm::LlmProvider,
     conn: &mut PoolConnection<Postgres>,

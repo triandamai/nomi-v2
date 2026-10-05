@@ -134,6 +134,46 @@ async fn home_reports_what_happened_whats_due_today_and_open_plans(pool: PgPool)
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn home_shows_four_per_card_and_each_section_pages_through_the_rest(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (token, user_id) = register_and_login(router.clone(), &pool, "pages@example.com").await;
+    let chat = org_session(&pool, user_id, "Errands").await;
+    for i in 0..7 {
+        sqlx::query(
+            "INSERT INTO agent_delegations (session_id, user_id, requesting_agent_type, target_agent_type, task, status, result, completed_at) \
+             VALUES ($1, $2, 'chitchat', 'money', $3, 'completed', 'done', now() - ($4 || ' minutes')::interval)",
+        )
+        .bind(chat)
+        .bind(user_id)
+        .bind(format!("Task {i}"))
+        .bind((i + 1).to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let (_, home) = authed(router.clone(), "GET", "/api/home", &token, None).await;
+    assert_eq!(home["while_you_were_out"].as_array().unwrap().len(), 4);
+    assert_eq!(home["while_you_were_out_total"], 7);
+
+    let (status, first) = authed(router.clone(), "GET", "/api/home/updates?page=1&per_page=5", &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((first["total"].as_u64(), first["page"].as_u64(), first["per_page"].as_u64()), (Some(7), Some(1), Some(5)));
+    assert_eq!(first["items"].as_array().unwrap().len(), 5);
+    assert_eq!(first["items"][0]["title"], "Money finished Task 0");
+    let (_, second) = authed(router.clone(), "GET", "/api/home/updates?page=2&per_page=5", &token, None).await;
+    assert_eq!(second["items"].as_array().unwrap().len(), 2);
+    // Reading a section doesn't count as a new visit: Home's window stays put.
+    assert_eq!(second["since"], home["since"]);
+
+    for path in ["/api/home/today", "/api/home/plans"] {
+        let (status, page) = authed(router.clone(), "GET", path, &token, None).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert_eq!(page["total"], 0, "{path}");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn money_totals_a_month_against_the_one_before(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let (token, user_id) = register_and_login(router.clone(), &pool, "money@example.com").await;
