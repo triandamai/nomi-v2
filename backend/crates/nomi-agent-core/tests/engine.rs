@@ -462,14 +462,16 @@ async fn a_thinking_block_is_posted_as_activity_even_for_an_agent_that_does_not_
     .await
     .unwrap();
 
-    let content: String = sqlx::query_scalar(
-        "SELECT content FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL",
+    let (content, blocks): (String, Option<serde_json::Value>) = sqlx::query_as(
+        "SELECT content, content_blocks FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL",
     )
     .bind(session_id)
     .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(content, "🧠 working through it");
+    // The chat renders this block as a collapsed "Thought process" on the agent's reply.
+    assert_eq!(blocks, Some(serde_json::json!([{"kind": "reasoning", "text": "working through it"}])));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

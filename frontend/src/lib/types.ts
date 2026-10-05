@@ -36,7 +36,9 @@ export type ContentBlock =
 			status: 'pending' | 'approved' | 'denied' | 'cancelled';
 			decided_at: string | null;
 	  }
-	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number };
+	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number }
+	/** The model's thinking; shown collapsed on the agent's next reply (see $lib/reasoning). */
+	| { kind: 'reasoning'; text: string };
 
 export interface MessageItem {
 	id: string;

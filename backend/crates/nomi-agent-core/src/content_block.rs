@@ -81,6 +81,11 @@ pub enum ContentBlock {
         title: String,
         version: i32,
     },
+    /// The model's own thinking before it acted or replied. The chat shows it collapsed, folded
+    /// into the agent's next reply.
+    Reasoning {
+        text: String,
+    },
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror

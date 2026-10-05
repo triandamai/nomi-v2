@@ -12,6 +12,7 @@
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
+	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage } from '$lib/types';
 
 	interface AgentActivityItem {
@@ -164,6 +165,10 @@
 	// `pendingReply` alone only flips once a WS "Delta" event lands, which leaves a brief window
 	// right after sending where neither the button nor the "Typing…" bubble showed any feedback.
 	const isWorking = $derived(submitting || pendingReply);
+
+	// Thinking steps fold into the reply they led to (see $lib/reasoning).
+	const threadItems = $derived(groupReasoning(localMessages));
+	const threadMessages = $derived(threadItems.map((item) => item.message));
 
 	const crew = $derived(
 		buildCrew({
@@ -318,12 +323,14 @@
 		<div class="chat__main">
 			<div bind:this={messagesContainer} class="thread">
 				<div class="thread__column">
-					{#each localMessages as message, i (message.id)}
+					{#each threadItems as item, i (item.message.id)}
 						<MessageBubble
-							{message}
-							chained={isChained(localMessages, i)}
+							message={item.message}
+							reasoning={item.reasoning}
+							thinkingOnly={item.thinkingOnly}
+							chained={isChained(threadMessages, i)}
 							first={i === 0}
-							showTimestamp={isLastInChain(localMessages, i)}
+							showTimestamp={isLastInChain(threadMessages, i)}
 						/>
 					{/each}
 					{#if isWorking}

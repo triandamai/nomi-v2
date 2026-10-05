@@ -3,6 +3,7 @@
 	import AgentShape from './m3/AgentShape.svelte';
 	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
+	import ReasoningDisclosure from './blocks/ReasoningDisclosure.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
 	import IconShare from './icons/IconShare.svelte';
@@ -15,7 +16,18 @@
 		chained = false,
 		first = false,
 		showTimestamp = true,
-	}: { message: RenderedMessage; chained?: boolean; first?: boolean; showTimestamp?: boolean } = $props();
+		reasoning = [],
+		thinkingOnly = false,
+	}: {
+		message: RenderedMessage;
+		chained?: boolean;
+		first?: boolean;
+		showTimestamp?: boolean;
+		/** Thinking that led to this message, shown collapsed above it (see $lib/reasoning). */
+		reasoning?: string[];
+		/** The message is only thinking so far: show the collapsed thinking and nothing else. */
+		thinkingOnly?: boolean;
+	} = $props();
 
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	let feedback = $state(message.my_feedback);
@@ -198,6 +210,11 @@
 			{/if}
 		{/if}
 
+		{#if reasoning.length > 0}
+			<ReasoningDisclosure steps={reasoning} live={thinkingOnly} />
+		{/if}
+
+		{#if !thinkingOnly}
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
@@ -261,6 +278,7 @@
 				<span class="message__time">{formattedTime}</span>
 			{/if}
 		</div>
+		{/if}
 	</div>
 </div>
 

@@ -360,7 +360,16 @@ pub async fn run_agent_turn(
         for block in &response.content {
             if let ContentBlock::Thinking { text, .. } = block {
                 if !text.trim().is_empty() {
-                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("🧠 {}", text.trim()), None).await;
+                    let reasoning = crate::content_block::ContentBlock::Reasoning { text: text.trim().to_string() };
+                    post_activity_message(
+                        conn,
+                        mqtt.map(|(p, _)| p),
+                        session_id,
+                        agent.display_name().as_ref(),
+                        &format!("🧠 {}", text.trim()),
+                        Some(&reasoning),
+                    )
+                    .await;
                 }
             }
         }
