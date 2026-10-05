@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes, HTMLAnchorAttributes } from 'svelte/elements';
 
-	type Variant = 'filled' | 'tonal' | 'outlined' | 'text' | 'elevated';
+	type Variant = 'filled' | 'gradient' | 'tonal' | 'outlined' | 'text' | 'elevated';
 	type Size = 'xs' | 's' | 'm' | 'l' | 'xl';
 
 	let {
@@ -33,6 +33,8 @@
 {/if}
 
 <style>
+	/* M3 Expressive button: fully round at rest, corners tighten on press (shape morph on a
+	   spring), so a press reads through shape — not just a color change. */
 	.m3-button {
 		display: inline-flex;
 		align-items: center;
@@ -44,13 +46,15 @@
 		white-space: nowrap;
 		text-decoration: none;
 		font-family: var(--md-sys-typescale-label-large-font);
-		font-weight: var(--md-sys-typescale-label-large-weight);
+		font-weight: 600;
 		font-size: var(--md-sys-typescale-label-large-size);
 		line-height: var(--md-sys-typescale-label-large-line-height);
 		letter-spacing: var(--md-sys-typescale-label-large-tracking);
 		transition:
-			background-color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
-			box-shadow var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+			border-radius var(--nomi-motion-spatial-fast),
+			background-color var(--nomi-motion-effects-fast),
+			box-shadow var(--nomi-motion-effects-fast),
+			filter var(--nomi-motion-effects-fast);
 	}
 
 	/* Declared before the variant rules below so .m3-button--text's own padding override
@@ -58,23 +62,45 @@
 	   size — text buttons keep tighter horizontal padding regardless of size, matching MD3. */
 	.m3-button--size-xs {
 		height: 32px;
-		padding: 0 16px;
+		padding: 0 14px;
 	}
 	.m3-button--size-s {
 		height: 40px;
-		padding: 0 24px;
+		padding: 0 18px;
+	}
+	.m3-button--size-s:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-small);
 	}
 	.m3-button--size-m {
-		height: 48px;
+		height: 56px;
 		padding: 0 24px;
+		font-size: 1rem;
+	}
+	.m3-button--size-m:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-medium);
 	}
 	.m3-button--size-l {
-		height: 56px;
-		padding: 0 32px;
+		height: 96px;
+		padding: 0 40px;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.625rem;
+		font-weight: 650;
+	}
+	.m3-button--size-l:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-extra-large);
 	}
 	.m3-button--size-xl {
-		height: 64px;
-		padding: 0 36px;
+		height: 136px;
+		padding: 0 56px;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 2.25rem;
+		font-weight: 700;
+	}
+	.m3-button--size-xl:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-extra-extra-large);
+	}
+	.m3-button--size-xs:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-small);
 	}
 
 	.m3-button:disabled {
@@ -90,12 +116,22 @@
 		box-shadow: var(--md-sys-elevation-shadow-level2);
 	}
 
+	/* The hero action. Use at most one per screen — gradient is a material, not a fill style. */
+	.m3-button--gradient {
+		background: var(--nomi-gradient-glow);
+		color: var(--nomi-on-gradient-glow);
+	}
+	.m3-button--gradient:not(:disabled):hover {
+		filter: saturate(1.15) brightness(1.03);
+		box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--md-sys-color-primary) 55%, transparent);
+	}
+
 	.m3-button--tonal {
 		background: var(--md-sys-color-secondary-container);
 		color: var(--md-sys-color-on-secondary-container);
 	}
 	.m3-button--tonal:not(:disabled):hover {
-		box-shadow: var(--md-sys-elevation-shadow-level2);
+		background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
 	}
 
 	.m3-button--elevated {
@@ -106,11 +142,11 @@
 
 	.m3-button--outlined {
 		background: transparent;
-		color: var(--md-sys-color-primary);
-		border: 1px solid var(--md-sys-color-outline);
+		color: var(--md-sys-color-on-surface);
+		border: 1.5px solid var(--md-sys-color-outline);
 	}
 	.m3-button--outlined:not(:disabled):hover {
-		background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 
 	.m3-button--text {

@@ -1,6 +1,7 @@
 <!-- frontend/src/lib/components/blocks/PlanBlock.svelte -->
 <script lang="ts">
 	import { page } from '$app/state';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import SideSheet from '$lib/components/m3/SideSheet.svelte';
 	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
 	import type { ContentBlock } from '$lib/types';
@@ -37,8 +38,11 @@
 </script>
 
 <button type="button" class="m3-block-card m3-block-card--plan" onclick={openSheet}>
-	<span aria-hidden="true">📋</span>
-	<span class="md-body-medium">{block.title} · v{block.version}</span>
+	<AgentShape agent="planning" size={36} />
+	<span class="m3-plan-text">
+		<span class="m3-plan-title">{block.title}</span>
+		<span class="nomi-meta">Plan · v{block.version} · open</span>
+	</span>
 </button>
 
 <SideSheet bind:open={sheetOpen}>
@@ -74,15 +78,31 @@
 	.m3-block-card--plan {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 10px 14px;
-		border-radius: var(--md-sys-shape-corner-medium);
-		border: 1px solid var(--md-sys-color-outline-variant);
-		background: var(--md-sys-color-surface-container-low);
+		gap: 14px;
+		width: 100%;
+		max-width: 480px;
+		padding: 14px 18px 14px 14px;
+		border: none;
+		border-radius: var(--nomi-shape-bubble-start);
+		background: color-mix(in srgb, #7ab0ff 16%, var(--md-sys-color-surface-container-lowest));
 		cursor: pointer;
 		font: inherit;
-		color: inherit;
+		color: var(--md-sys-color-on-surface);
 		text-align: left;
+		transition: border-radius var(--nomi-motion-spatial-fast);
+	}
+	.m3-block-card--plan:hover {
+		border-radius: var(--md-sys-shape-corner-large);
+	}
+	.m3-plan-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+	.m3-plan-title {
+		font-weight: 650;
+		font-size: 1rem;
 	}
 
 	.m3-plan-versions {

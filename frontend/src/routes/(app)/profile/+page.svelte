@@ -52,9 +52,9 @@
 	}
 </script>
 
-<div class="h-full overflow-y-auto p-8">
+<div class="h-full overflow-y-auto px-4 py-8 md:px-10">
 	<div class="max-w-lg">
-		<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Profile</h1>
+		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Profile</h1>
 
 		{#if form?.error}
 			<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>

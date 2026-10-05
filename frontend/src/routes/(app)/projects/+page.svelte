@@ -13,8 +13,8 @@
 	};
 </script>
 
-<div class="h-full overflow-y-auto p-8">
-	<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Projects</h1>
+<div class="h-full overflow-y-auto px-4 py-8 md:px-10">
+	<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Projects</h1>
 	<p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
 		Apps nomi has built or is building for you.
 	</p>

@@ -131,13 +131,13 @@
 	.m3-menu-panel {
 		inset: auto;
 		margin: 0;
-		padding: 8px;
+		padding: 6px;
 		min-width: 200px;
 		max-width: 320px;
 		max-height: 60vh;
 		overflow-y: auto;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-extra-small);
+		border-radius: var(--md-sys-shape-corner-large-increased);
 		background: var(--md-sys-color-surface-container);
 		color: var(--md-sys-color-on-surface);
 		box-shadow: var(--md-sys-elevation-shadow-level2);

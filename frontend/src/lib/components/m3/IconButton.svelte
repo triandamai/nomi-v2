@@ -6,12 +6,15 @@
 
 	let {
 		variant = 'standard',
+		selected,
 		href,
 		children,
 		class: extraClass = '',
 		...rest
 	}: {
 		variant?: Variant;
+		/** Makes this a toggle: announces aria-pressed and morphs round → square when on. */
+		selected?: boolean;
 		href?: string;
 		children: Snippet;
 		class?: string;
@@ -24,7 +27,13 @@
 		{@render children()}
 	</a>
 {:else}
-	<button type="button" class="m3-icon-btn m3-icon-btn--{variant} {extraClass}" {...rest}>
+	<button
+		type="button"
+		class="m3-icon-btn m3-icon-btn--{variant} {extraClass}"
+		class:m3-icon-btn--selected={selected}
+		aria-pressed={selected}
+		{...rest}
+	>
 		{@render children()}
 	</button>
 {/if}
@@ -40,7 +49,22 @@
 		border: none;
 		cursor: pointer;
 		text-decoration: none;
-		transition: background-color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+		transition:
+			border-radius var(--nomi-motion-spatial-fast),
+			background-color var(--nomi-motion-effects-fast),
+			color var(--nomi-motion-effects-fast);
+	}
+
+	.m3-icon-btn:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+
+	/* Toggle "on": shape, not just color, says selected. */
+	.m3-icon-btn.m3-icon-btn--selected {
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-primary);
+		color: var(--md-sys-color-on-primary);
+		border-color: transparent;
 	}
 
 	.m3-icon-btn:disabled {
@@ -74,7 +98,7 @@
 
 	.m3-icon-btn--outlined {
 		background: transparent;
-		border: 1px solid var(--md-sys-color-outline);
+		border: 1.5px solid var(--md-sys-color-outline);
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.m3-icon-btn--outlined:not(:disabled):hover {

@@ -20,9 +20,9 @@
 	});
 </script>
 
-<div class="h-full overflow-y-auto p-8">
+<div class="h-full overflow-y-auto px-4 py-8 md:px-10">
 	<div class="max-w-lg">
-		<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Model</h1>
+		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Model</h1>
 		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
 			Choose which model Nomi uses to reply to you, or bring your own API key.
 		</p>

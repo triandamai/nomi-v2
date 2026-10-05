@@ -6,6 +6,7 @@
 	import { css } from '@codemirror/lang-css';
 	import { html } from '@codemirror/lang-html';
 	import { javascript } from '@codemirror/lang-javascript';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import type { ContentBlock } from '$lib/types';
 
 	let { block }: { block: Extract<ContentBlock, { kind: 'file_write' }> } = $props();
@@ -42,7 +43,7 @@
 
 <div class="m3-block-card m3-block-card--write">
 	<div class="m3-block-card__header">
-		<span aria-hidden="true">{block.previous_content !== null ? '📝' : '✨'}</span>
+		<AgentShape agent="coding" size={22} />
 		<span class="md-body-medium">{block.previous_content !== null ? 'Updated' : 'Created'} <code>{block.path}</code></span>
 	</div>
 	<div class="m3-block-card__editor" bind:this={container}></div>
@@ -50,19 +51,22 @@
 
 <style>
 	.m3-block-card {
-		border-radius: var(--md-sys-shape-corner-medium);
-		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-large-increased);
 		overflow: hidden;
 	}
 	.m3-block-card--write {
-		background: var(--md-sys-color-surface-container-low);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.m3-block-card__header code {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.85em;
 	}
 	.m3-block-card__header {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 10px 14px;
-		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		padding: 12px 16px;
+		background: color-mix(in srgb, #3fb8c8 14%, var(--md-sys-color-surface-container-lowest));
 	}
 	.m3-block-card__editor {
 		max-height: 320px;

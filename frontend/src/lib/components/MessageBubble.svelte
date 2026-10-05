@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { deserialize } from '$app/forms';
+	import AgentShape from './m3/AgentShape.svelte';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
@@ -170,127 +171,177 @@
 </script>
 
 <div
-	class="relative flex flex-col {message.sender === 'user' ? 'items-end' : 'items-start'} gap-1"
-	style="margin-top: {first ? '0' : chained ? '4px' : '16px'}"
+	class="message"
+	class:message--user={message.sender === 'user'}
+	style="margin-top: {first ? '0' : chained ? '6px' : '22px'}"
 >
-	{#if chained}
-		<div class="chain-connector" class:chain-connector--user={message.sender === 'user'} aria-hidden="true"></div>
-	{/if}
-	{#if !chained}
-		<div class="flex items-center gap-2 px-1">
-			<span class="md-label-medium" style="color: var(--md-sys-color-on-surface)">{senderLabel}</span>
+	{#if message.sender !== 'user'}
+		<div class="message__avatar">
+			{#if !chained}
+				<AgentShape agent={message.agent_display_name} size={32} face={!message.agent_display_name} />
+			{/if}
 		</div>
 	{/if}
 
-	<div
-		bind:this={bubbleEl}
-		class="message-bubble md-body-large max-w-md px-4 py-2"
-		style={message.sender === 'user'
-			? `background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small) var(--md-sys-shape-corner-large)`
-			: `background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small)`}
-	>
-		{#if message.content_blocks && message.content_blocks.length > 0}
-			<div class="flex flex-col gap-2">
-				{#each message.content_blocks as block, i (i)}
-					<ContentBlockView {block} messageId={message.id} />
-				{/each}
-			</div>
-		{:else}
-			{@html message.content_html}
+	<div class="message__body">
+		{#if !chained && message.sender !== 'user'}
+			<span class="message__sender">{senderLabel}</span>
 		{/if}
-	</div>
 
-	<div class="flex items-center gap-1 px-1">
-		<button
-			type="button"
-			class="message-action-btn"
-			aria-label={messageCopied ? 'Copied' : 'Copy message'}
-			onclick={copyMessage}
-		>
-			{#if messageCopied}
-				<IconCheck size={16} />
+		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'}>
+			{#if message.content_blocks && message.content_blocks.length > 0}
+				<div class="flex flex-col gap-3">
+					{#each message.content_blocks as block, i (i)}
+						<ContentBlockView {block} messageId={message.id} />
+					{/each}
+				</div>
 			{:else}
-				<IconCopy size={16} />
+				{@html message.content_html}
 			{/if}
-		</button>
-		<button
-			type="button"
-			class="message-action-btn"
-			aria-label={shareCopied ? 'Copied' : 'Share message'}
-			onclick={shareMessage}
-		>
-			{#if shareCopied}
-				<IconCheck size={16} />
-			{:else}
-				<IconShare size={16} />
-			{/if}
-		</button>
-		{#if message.sender === 'assistant'}
+		</div>
+
+		<div class="message__actions">
 			<button
 				type="button"
 				class="message-action-btn"
-				class:message-action-btn--active={feedback === 'up'}
-				aria-label="Good response"
-				aria-pressed={feedback === 'up'}
-				onclick={() => setFeedback('up')}
+				aria-label={messageCopied ? 'Copied' : 'Copy message'}
+				onclick={copyMessage}
 			>
-				<IconThumbUp size={16} />
+				{#if messageCopied}
+					<IconCheck size={16} />
+				{:else}
+					<IconCopy size={16} />
+				{/if}
 			</button>
 			<button
 				type="button"
 				class="message-action-btn"
-				class:message-action-btn--active={feedback === 'down'}
-				aria-label="Bad response"
-				aria-pressed={feedback === 'down'}
-				onclick={() => setFeedback('down')}
+				aria-label={shareCopied ? 'Copied' : 'Share message'}
+				onclick={shareMessage}
 			>
-				<IconThumbDown size={16} />
+				{#if shareCopied}
+					<IconCheck size={16} />
+				{:else}
+					<IconShare size={16} />
+				{/if}
 			</button>
-		{/if}
-		{#if showTimestamp}
-			<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{formattedTime}</span>
-		{/if}
+			{#if message.sender === 'assistant'}
+				<button
+					type="button"
+					class="message-action-btn"
+					class:message-action-btn--active={feedback === 'up'}
+					aria-label="Good response"
+					aria-pressed={feedback === 'up'}
+					onclick={() => setFeedback('up')}
+				>
+					<IconThumbUp size={16} />
+				</button>
+				<button
+					type="button"
+					class="message-action-btn"
+					class:message-action-btn--active={feedback === 'down'}
+					aria-label="Bad response"
+					aria-pressed={feedback === 'down'}
+					onclick={() => setFeedback('down')}
+				>
+					<IconThumbDown size={16} />
+				</button>
+			{/if}
+			{#if showTimestamp}
+				<span class="message__time">{formattedTime}</span>
+			{/if}
+		</div>
 	</div>
 </div>
 
 <style>
-	/* Bridges the small gap (4px, see the wrapper's margin-top above) between two chained
-	   bubbles from the same agent, so the group reads as one visual unit rather than
-	   disconnected pieces — extends from just above the wrapper down into the bubble's own
-	   top edge. Positioned under the bubble's left padding (assistant) or mirrored to the
-	   right (user) rather than centered, so it doesn't collide with bubble content. */
-	.chain-connector {
-		position: absolute;
-		top: -8px;
-		left: 8px;
-		width: 2px;
-		height: 12px;
-		border-radius: 1px;
-		background: var(--md-sys-color-outline-variant);
+	/* Assistant turns are editorial — no bubble, the agent's shape as the avatar — so long
+	   answers read like a page. The user's own turns are compact bubbles whose tight corner
+	   points back at them. */
+	.message {
+		display: flex;
+		gap: 12px;
+		align-items: flex-start;
 	}
-	.chain-connector--user {
-		left: auto;
-		right: 8px;
+	.message--user {
+		justify-content: flex-end;
+	}
+	.message__avatar {
+		flex: none;
+		width: 32px;
+		padding-top: 2px;
+	}
+	.message__body {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+		flex: 1;
+	}
+	.message--user .message__body {
+		flex: 0 1 auto;
+		align-items: flex-end;
+		max-width: min(78%, 560px);
+	}
+	.message__sender {
+		font-family: var(--md-sys-typescale-label-large-font);
+		font-size: var(--md-sys-typescale-label-large-size);
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+		padding-top: 6px;
+	}
+	.message-bubble {
+		color: var(--md-sys-color-on-surface);
+		line-height: 1.6;
+		overflow-wrap: anywhere;
+	}
+	.message-bubble--user {
+		padding: 12px 18px;
+		border-radius: var(--nomi-shape-bubble-end);
+		background: var(--md-sys-color-primary);
+		color: var(--md-sys-color-on-primary);
+		line-height: 1.5;
+	}
+	.message__actions {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		opacity: 0.55;
+		transition: opacity var(--nomi-motion-effects-fast);
+	}
+	.message:hover .message__actions,
+	.message:focus-within .message__actions {
+		opacity: 1;
+	}
+	.message__time {
+		margin-left: 6px;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.04em;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 
 	.message-action-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 28px;
-		height: 28px;
+		width: 32px;
+		height: 32px;
 		padding: 0;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: transparent;
 		color: var(--md-sys-color-on-surface-variant);
 		cursor: pointer;
+		transition: border-radius var(--nomi-motion-spatial-fast), background-color var(--nomi-motion-effects-fast);
 	}
 	.message-action-btn:hover {
 		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 	.message-action-btn--active {
-		color: var(--md-sys-color-primary);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
 	}
 
 	/* content_html is server-rendered from trusted markdown+shiki output (sanitized before it
@@ -312,8 +363,8 @@
 		background: var(--md-sys-color-surface-container-highest);
 	}
 	.message-bubble :global(code) {
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.875em;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.85em;
 	}
 	.message-bubble :global(:not(pre) > code) {
 		background: color-mix(in srgb, currentColor 12%, transparent);
@@ -326,10 +377,10 @@
 		padding-left: 1.5em;
 	}
 	.message-bubble :global(blockquote) {
-		margin: 0.5em 0;
-		padding-left: 0.75em;
-		border-left: 3px solid currentColor;
-		opacity: 0.85;
+		margin: 0.75em 0;
+		padding: 10px 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
 	}
 	.message-bubble :global(a) {
 		color: inherit;
@@ -353,12 +404,20 @@
 	}
 	.message-bubble :global(table) {
 		border-collapse: collapse;
-		margin: 0.5em 0;
+		margin: 0.75em 0;
+		border-radius: var(--md-sys-shape-corner-large-increased);
+		overflow: hidden;
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.message-bubble :global(th) {
+		background: var(--md-sys-color-surface-container);
+		text-align: left;
+		font-weight: 650;
 	}
 	.message-bubble :global(th),
 	.message-bubble :global(td) {
-		border: 1px solid var(--md-sys-color-outline-variant);
-		padding: 4px 8px;
+		border-top: 1px solid var(--md-sys-color-surface-container);
+		padding: 10px 16px;
 	}
 
 	/* Shiki's dual-theme output paints its base (light) background as an inline style on <pre>
@@ -392,8 +451,8 @@
 	/* Code block header/collapse chrome — built client-side by enhanceCodeBlocks() above around
 	   the server-rendered <pre>, which ends up nested inside .code-block__body. */
 	.message-bubble :global(.code-block) {
-		margin: 0.5em 0;
-		border-radius: var(--md-sys-shape-corner-small);
+		margin: 0.75em 0;
+		border-radius: var(--md-sys-shape-corner-large-increased);
 		overflow: hidden;
 		border: 1px solid var(--md-sys-color-outline-variant);
 	}

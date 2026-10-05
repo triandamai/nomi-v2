@@ -65,7 +65,7 @@
 		justify-content: center;
 		width: 18px;
 		height: 18px;
-		border-radius: var(--md-sys-shape-corner-extra-small);
+		border-radius: 7px;
 		border: 2px solid var(--md-sys-color-outline);
 		color: var(--md-sys-color-on-primary);
 		background: transparent;

@@ -161,7 +161,7 @@
 				bind:value={systemPrompt}
 				required
 				rows="6"
-				class="rounded-md border px-3 py-2"
+				class="rounded-2xl border px-3 py-2"
 				style="border-color: var(--md-sys-color-outline); background: var(--md-sys-color-surface)"
 			></textarea>
 		</label>

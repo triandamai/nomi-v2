@@ -1,111 +1,113 @@
-/* Material Design 3 Expressive design tokens — vibrant green seed (#00C853),
-   generated with the SchemeVibrant variant from @material/material-color-utilities
-   (max chroma for the seed's hue, vs. the low-chroma default scheme), per
-   https://m3.material.io and the M3 Expressive update (May 2025). Web has no
-   official component library worth adopting (maintenance mode, SSR-hostile,
-   and M3 Expressive isn't implemented on Web at all — see
-   https://m3.material.io/develop/web), so this app expresses M3 purely as CSS
-   custom properties consumed by native elements and the components in
-   $lib/components/m3. Bebas Neue / Montserrat / Karla are loaded via the
-   Google Fonts stylesheet link in app.html — not @font-face here, so we
-   don't hand-roll a hosted-font URL. */
+/* Nomi Expressive — Material Design 3 Expressive design tokens.
+
+   Color: seed #1FC46B, SchemeVibrant variant (via @material/material-color-utilities, embedded
+   as static hex), with the tertiary role swapped to an "ember" orange so approvals and money
+   read warm against the green brand. The user-selectable accents further down (data-color on
+   <html>) still override the primary/secondary/tertiary roles exactly as before.
+
+   Gradients (--nomi-gradient-*) are a *material*, not a background: they paint objects that
+   act — Nomi's mark, the send button, an agent that is working, progress — never page grounds.
+   Each agent owns one gradient and one M3 Expressive shape (see $lib/components/m3/shapes.ts).
+
+   Web has no official M3 Expressive implementation (https://m3.material.io/develop/web), so the
+   system lives here as CSS custom properties consumed by the components in $lib/components/m3.
+   Bricolage Grotesque / Instrument Sans / JetBrains Mono load via the Google Fonts link in
+   app.html. */
 
 :root {
 	/* ---- Color: light scheme (default), SchemeVibrant, standard contrast ---- */
-	--md-sys-color-primary: #006e2a;
+	--md-sys-color-primary: #0b6b4a;
 	--md-sys-color-on-primary: #ffffff;
-	--md-sys-color-primary-container: #69ff87;
-	--md-sys-color-on-primary-container: #00531e;
-	--md-sys-color-secondary: #406652;
+	--md-sys-color-primary-container: #b9f5c8;
+	--md-sys-color-on-primary-container: #00391f;
+	--md-sys-color-secondary: #4e6356;
 	--md-sys-color-on-secondary: #ffffff;
-	--md-sys-color-secondary-container: #c2ecd3;
-	--md-sys-color-on-secondary-container: #284e3c;
-	--md-sys-color-tertiary: #22695b;
+	--md-sys-color-secondary-container: #d0e8d7;
+	--md-sys-color-on-secondary-container: #0b2016;
+	--md-sys-color-tertiary: #a33a12;
 	--md-sys-color-on-tertiary: #ffffff;
-	--md-sys-color-tertiary-container: #abf0de;
-	--md-sys-color-on-tertiary-container: #005144;
+	--md-sys-color-tertiary-container: #ffdbcb;
+	--md-sys-color-on-tertiary-container: #3a0b00;
 	--md-sys-color-error: #ba1a1a;
 	--md-sys-color-on-error: #ffffff;
 	--md-sys-color-error-container: #ffdad6;
 	--md-sys-color-on-error-container: #93000a;
-	--md-sys-color-surface: #f2fced;
-	--md-sys-color-on-surface: #151e15;
-	--md-sys-color-on-surface-variant: #3e4a3d;
+	--md-sys-color-surface: #f4f7f2;
+	--md-sys-color-on-surface: #0f1a14;
+	--md-sys-color-on-surface-variant: #47544b;
 	--md-sys-color-surface-container-lowest: #ffffff;
-	--md-sys-color-surface-container-low: #ecf7e8;
-	--md-sys-color-surface-container: #e7f1e2;
-	--md-sys-color-surface-container-high: #e1ebdd;
-	--md-sys-color-surface-container-highest: #dbe5d7;
-	--md-sys-color-surface-dim: #d3ddcf;
-	--md-sys-color-surface-bright: #f2fced;
-	--md-sys-color-outline: #6e7a6c;
-	--md-sys-color-outline-variant: #bdcab9;
+	--md-sys-color-surface-container-low: #edf2ea;
+	--md-sys-color-surface-container: #e6ede3;
+	--md-sys-color-surface-container-high: #dde6da;
+	--md-sys-color-surface-container-highest: #d6e0d3;
+	--md-sys-color-surface-dim: #cfd9cc;
+	--md-sys-color-surface-bright: #f4f7f2;
+	--md-sys-color-outline: #75837a;
+	--md-sys-color-outline-variant: #c3cfc4;
 	--md-sys-color-inverse-surface: #2a3329;
 	--md-sys-color-inverse-on-surface: #eaf4e5;
-	--md-sys-color-inverse-primary: #00e560;
+	--md-sys-color-inverse-primary: #7ce0a3;
 	--md-sys-color-scrim: #000000;
 
 	/* ---- Typography ----
-	   Three brand faces instead of MD3's usual two: Bebas Neue (brand) drives
-	   Display/Headline — a tall, condensed, single-weight (400 only, no bold on
-	   Google Fonts) display face, which is why its emphasized variants below stay
-	   at weight 400 rather than bumping to 700 like the other roles. Montserrat
-	   (a third, app-specific "title" ref — MD3 only names brand/plain, nothing
-	   stops an app adding a third) drives Title. Karla (plain) drives Body/Label. */
-	--md-ref-typeface-brand: 'Bebas Neue', system-ui, sans-serif;
-	--md-ref-typeface-title: 'Montserrat', system-ui, sans-serif;
-	--md-ref-typeface-plain: 'Karla', system-ui, sans-serif;
+	   Bricolage Grotesque (brand) drives Display/Headline — a variable grotesque with real 800
+	   weight, so emphasized display stays genuinely heavy. Instrument Sans drives Title, Body and
+	   Label. JetBrains Mono is the "meta" face: timestamps, agent status lines, counters. */
+	--md-ref-typeface-brand: 'Bricolage Grotesque', system-ui, sans-serif;
+	--md-ref-typeface-title: 'Instrument Sans', system-ui, sans-serif;
+	--md-ref-typeface-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--md-ref-typeface-plain: 'Instrument Sans', system-ui, sans-serif;
 
 	--md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-display-large-weight: 400;
+	--md-sys-typescale-display-large-weight: 800;
 	--md-sys-typescale-display-large-size: 3.5625rem;
 	--md-sys-typescale-display-large-line-height: 4rem;
-	--md-sys-typescale-display-large-tracking: -0.015625rem;
+	--md-sys-typescale-display-large-tracking: -0.04em;
 
 	--md-sys-typescale-display-medium-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-display-medium-weight: 400;
+	--md-sys-typescale-display-medium-weight: 750;
 	--md-sys-typescale-display-medium-size: 2.8125rem;
 	--md-sys-typescale-display-medium-line-height: 3.25rem;
-	--md-sys-typescale-display-medium-tracking: 0;
+	--md-sys-typescale-display-medium-tracking: -0.035em;
 
 	--md-sys-typescale-display-small-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-display-small-weight: 400;
+	--md-sys-typescale-display-small-weight: 700;
 	--md-sys-typescale-display-small-size: 2.25rem;
 	--md-sys-typescale-display-small-line-height: 2.75rem;
-	--md-sys-typescale-display-small-tracking: 0;
+	--md-sys-typescale-display-small-tracking: -0.03em;
 
 	--md-sys-typescale-headline-large-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-headline-large-weight: 400;
+	--md-sys-typescale-headline-large-weight: 700;
 	--md-sys-typescale-headline-large-size: 2rem;
 	--md-sys-typescale-headline-large-line-height: 2.5rem;
-	--md-sys-typescale-headline-large-tracking: 0;
+	--md-sys-typescale-headline-large-tracking: -0.02em;
 
 	--md-sys-typescale-headline-medium-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-headline-medium-weight: 400;
+	--md-sys-typescale-headline-medium-weight: 650;
 	--md-sys-typescale-headline-medium-size: 1.75rem;
 	--md-sys-typescale-headline-medium-line-height: 2.25rem;
-	--md-sys-typescale-headline-medium-tracking: 0;
+	--md-sys-typescale-headline-medium-tracking: -0.02em;
 
 	--md-sys-typescale-headline-small-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-headline-small-weight: 400;
+	--md-sys-typescale-headline-small-weight: 650;
 	--md-sys-typescale-headline-small-size: 1.5rem;
 	--md-sys-typescale-headline-small-line-height: 2rem;
-	--md-sys-typescale-headline-small-tracking: 0;
+	--md-sys-typescale-headline-small-tracking: -0.02em;
 
 	--md-sys-typescale-title-large-font: var(--md-ref-typeface-title);
-	--md-sys-typescale-title-large-weight: 400;
+	--md-sys-typescale-title-large-weight: 600;
 	--md-sys-typescale-title-large-size: 1.375rem;
 	--md-sys-typescale-title-large-line-height: 1.75rem;
 	--md-sys-typescale-title-large-tracking: 0;
 
 	--md-sys-typescale-title-medium-font: var(--md-ref-typeface-title);
-	--md-sys-typescale-title-medium-weight: 500;
+	--md-sys-typescale-title-medium-weight: 600;
 	--md-sys-typescale-title-medium-size: 1rem;
 	--md-sys-typescale-title-medium-line-height: 1.5rem;
 	--md-sys-typescale-title-medium-tracking: 0.009375rem;
 
 	--md-sys-typescale-title-small-font: var(--md-ref-typeface-title);
-	--md-sys-typescale-title-small-weight: 500;
+	--md-sys-typescale-title-small-weight: 600;
 	--md-sys-typescale-title-small-size: 0.875rem;
 	--md-sys-typescale-title-small-line-height: 1.25rem;
 	--md-sys-typescale-title-small-tracking: 0.00625rem;
@@ -147,47 +149,42 @@
 	--md-sys-typescale-label-small-tracking: 0.03125rem;
 
 	/* ---- Typography: emphasized variants (Expressive update) ----
-	   Same size/line-height/tracking as baseline, weight bumped to 700 for the
-	   Montserrat (title) and Karla (body/label) roles — the skill's spec doesn't
-	   publish exact per-style emphasized deltas (only "higher weight, minor
-	   adjustments"), so this uses one consistent, defensible rule (bold) rather
-	   than inventing precise numbers we can't verify. Display/Headline
-	   (Bebas Neue) stay at weight 400: Google Fonts only serves Bebas Neue at
-	   400, so a 700 there would just trigger the browser's synthetic/faux bold
-	   instead of a real bold face. Use for selected/active states, primary
+	   Same size/line-height/tracking as baseline, weight bumped: 700 for the Instrument Sans
+	   roles (title/body/label), 800 for the Bricolage Grotesque roles (display/headline), which
+	   Google Fonts serves as a real variable weight. Use for selected/active states, primary
 	   actions, headlines needing emphasis, and unread/important content. */
 	--md-sys-typescale-emphasized-display-large-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-display-large-weight: 400;
+	--md-sys-typescale-emphasized-display-large-weight: 800;
 	--md-sys-typescale-emphasized-display-large-size: var(--md-sys-typescale-display-large-size);
 	--md-sys-typescale-emphasized-display-large-line-height: var(--md-sys-typescale-display-large-line-height);
 	--md-sys-typescale-emphasized-display-large-tracking: var(--md-sys-typescale-display-large-tracking);
 
 	--md-sys-typescale-emphasized-display-medium-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-display-medium-weight: 400;
+	--md-sys-typescale-emphasized-display-medium-weight: 800;
 	--md-sys-typescale-emphasized-display-medium-size: var(--md-sys-typescale-display-medium-size);
 	--md-sys-typescale-emphasized-display-medium-line-height: var(--md-sys-typescale-display-medium-line-height);
 	--md-sys-typescale-emphasized-display-medium-tracking: var(--md-sys-typescale-display-medium-tracking);
 
 	--md-sys-typescale-emphasized-display-small-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-display-small-weight: 400;
+	--md-sys-typescale-emphasized-display-small-weight: 800;
 	--md-sys-typescale-emphasized-display-small-size: var(--md-sys-typescale-display-small-size);
 	--md-sys-typescale-emphasized-display-small-line-height: var(--md-sys-typescale-display-small-line-height);
 	--md-sys-typescale-emphasized-display-small-tracking: var(--md-sys-typescale-display-small-tracking);
 
 	--md-sys-typescale-emphasized-headline-large-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-headline-large-weight: 400;
+	--md-sys-typescale-emphasized-headline-large-weight: 800;
 	--md-sys-typescale-emphasized-headline-large-size: var(--md-sys-typescale-headline-large-size);
 	--md-sys-typescale-emphasized-headline-large-line-height: var(--md-sys-typescale-headline-large-line-height);
 	--md-sys-typescale-emphasized-headline-large-tracking: var(--md-sys-typescale-headline-large-tracking);
 
 	--md-sys-typescale-emphasized-headline-medium-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-headline-medium-weight: 400;
+	--md-sys-typescale-emphasized-headline-medium-weight: 800;
 	--md-sys-typescale-emphasized-headline-medium-size: var(--md-sys-typescale-headline-medium-size);
 	--md-sys-typescale-emphasized-headline-medium-line-height: var(--md-sys-typescale-headline-medium-line-height);
 	--md-sys-typescale-emphasized-headline-medium-tracking: var(--md-sys-typescale-headline-medium-tracking);
 
 	--md-sys-typescale-emphasized-headline-small-font: var(--md-ref-typeface-brand);
-	--md-sys-typescale-emphasized-headline-small-weight: 400;
+	--md-sys-typescale-emphasized-headline-small-weight: 800;
 	--md-sys-typescale-emphasized-headline-small-size: var(--md-sys-typescale-headline-small-size);
 	--md-sys-typescale-emphasized-headline-small-line-height: var(--md-sys-typescale-headline-small-line-height);
 	--md-sys-typescale-emphasized-headline-small-tracking: var(--md-sys-typescale-headline-small-tracking);
@@ -257,6 +254,27 @@
 	--md-sys-shape-corner-extra-large-increased: 32px;
 	--md-sys-shape-corner-extra-extra-large: 48px;
 	--md-sys-shape-corner-full: 9999px;
+	/* Asymmetric "speech" corners: the tight corner points at whoever is speaking. */
+	--nomi-shape-bubble-start: 28px 28px 28px 8px;
+	--nomi-shape-bubble-end: 28px 28px 8px 28px;
+
+	/* ---- Gradients (a material — see the header comment) ----
+	   Each has a matching --nomi-on-gradient-* ink that clears 4.5:1 across every stop. */
+	--nomi-gradient-glow: linear-gradient(135deg, #e4f76a 0%, #5be08f 55%, #1db9a0 100%);
+	--nomi-gradient-ember: linear-gradient(135deg, #ffd27a 0%, #ff7a4a 100%);
+	--nomi-gradient-tide: linear-gradient(135deg, #c4f3ea 0%, #3fb8c8 100%);
+	--nomi-gradient-sky: linear-gradient(135deg, #d6ecff 0%, #7ab0ff 100%);
+	--nomi-gradient-bloom: linear-gradient(135deg, #ffd9e2 0%, #ff8fa8 100%);
+	--nomi-on-gradient-glow: #062019;
+	--nomi-on-gradient-ember: #2b0d00;
+	--nomi-on-gradient-tide: #002a30;
+	--nomi-on-gradient-sky: #0a2340;
+	--nomi-on-gradient-bloom: #3d0716;
+
+	/* "Stage": the dark panel the agent shapes perform on (home crew card, auth brand panel).
+	   Stays dark in both themes — in dark mode it lifts one step off the page instead. */
+	--nomi-color-stage: #16231b;
+	--nomi-color-on-stage: #e3ede5;
 
 	/* ---- Elevation (tonal color per level; shadows reserved for floating-over-busy-content) ---- */
 	--md-sys-elevation-level0: var(--md-sys-color-surface);
@@ -290,6 +308,14 @@
 	--md-sys-motion-duration-extra-long2: 800ms;
 	--md-sys-motion-duration-extra-long3: 900ms;
 	--md-sys-motion-duration-extra-long4: 1000ms;
+
+	/* M3 Expressive springs, approximated as overshooting cubic-béziers. Spatial = position,
+	   size, shape (they bounce); effects = color and opacity (they never overshoot). */
+	--nomi-motion-spatial-fast: 350ms cubic-bezier(0.42, 1.67, 0.21, 0.9);
+	--nomi-motion-spatial-default: 500ms cubic-bezier(0.38, 1.21, 0.22, 1);
+	--nomi-motion-spatial-slow: 650ms cubic-bezier(0.39, 1.29, 0.35, 0.98);
+	--nomi-motion-effects-fast: 150ms cubic-bezier(0.31, 0.94, 0.34, 1);
+	--nomi-motion-effects-default: 200ms cubic-bezier(0.34, 0.8, 0.34, 1);
 }
 
 /* System/no-preference-set: follow the OS. Explicit user overrides (via the Preferences page,
@@ -298,37 +324,37 @@
    data-theme is absent or literally "system". */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']):not([data-theme='dark']) {
-		--md-sys-color-primary: #00e560;
-		--md-sys-color-on-primary: #003912;
-		--md-sys-color-primary-container: #00531e;
-		--md-sys-color-on-primary-container: #69ff87;
-		--md-sys-color-secondary: #a6d0b8;
-		--md-sys-color-on-secondary: #103726;
-		--md-sys-color-secondary-container: #284e3c;
-		--md-sys-color-on-secondary-container: #c2ecd3;
-		--md-sys-color-tertiary: #8fd4c2;
-		--md-sys-color-on-tertiary: #00382e;
-		--md-sys-color-tertiary-container: #005144;
-		--md-sys-color-on-tertiary-container: #abf0de;
+		--md-sys-color-primary: #7ce0a3;
+		--md-sys-color-on-primary: #00391f;
+		--md-sys-color-primary-container: #0b5236;
+		--md-sys-color-on-primary-container: #b9f5c8;
+		--md-sys-color-secondary: #b4ccbc;
+		--md-sys-color-on-secondary: #1f352a;
+		--md-sys-color-secondary-container: #354b3f;
+		--md-sys-color-on-secondary-container: #d0e8d7;
+		--md-sys-color-tertiary: #ffb596;
+		--md-sys-color-on-tertiary: #5a1a00;
+		--md-sys-color-tertiary-container: #7e2a06;
+		--md-sys-color-on-tertiary-container: #ffdbcb;
 		--md-sys-color-error: #ffb4ab;
 		--md-sys-color-on-error: #690005;
 		--md-sys-color-error-container: #93000a;
 		--md-sys-color-on-error-container: #ffdad6;
-		--md-sys-color-surface: #0d150d;
-		--md-sys-color-on-surface: #dbe5d7;
-		--md-sys-color-on-surface-variant: #bdcab9;
-		--md-sys-color-surface-container-lowest: #081008;
-		--md-sys-color-surface-container-low: #151e15;
-		--md-sys-color-surface-container: #192219;
-		--md-sys-color-surface-container-high: #232c23;
-		--md-sys-color-surface-container-highest: #2e372d;
-		--md-sys-color-surface-dim: #0d150d;
-		--md-sys-color-surface-bright: #323c32;
-		--md-sys-color-outline: #879485;
-		--md-sys-color-outline-variant: #3e4a3d;
-		--md-sys-color-inverse-surface: #dbe5d7;
+		--md-sys-color-surface: #0d1511;
+		--md-sys-color-on-surface: #e3ede5;
+		--md-sys-color-on-surface-variant: #b4c2b8;
+		--md-sys-color-surface-container-lowest: #08100c;
+		--md-sys-color-surface-container-low: #131c17;
+		--md-sys-color-surface-container: #1a251e;
+		--md-sys-color-surface-container-high: #222e27;
+		--md-sys-color-surface-container-highest: #2a372f;
+		--md-sys-color-surface-dim: #0d1511;
+		--md-sys-color-surface-bright: #33403a;
+		--md-sys-color-outline: #8d9b91;
+		--md-sys-color-outline-variant: #3a4a40;
+		--md-sys-color-inverse-surface: #e3ede5;
 		--md-sys-color-inverse-on-surface: #2a3329;
-		--md-sys-color-inverse-primary: #006e2a;
+		--md-sys-color-inverse-primary: #0b6b4a;
 		--md-sys-color-scrim: #000000;
 	}
 }
@@ -338,37 +364,37 @@
    file already holds the light values, and neither this selector nor the media query above
    matches when data-theme="light", so those base values simply apply unopposed.) */
 :root[data-theme='dark'] {
-	--md-sys-color-primary: #00e560;
-	--md-sys-color-on-primary: #003912;
-	--md-sys-color-primary-container: #00531e;
-	--md-sys-color-on-primary-container: #69ff87;
-	--md-sys-color-secondary: #a6d0b8;
-	--md-sys-color-on-secondary: #103726;
-	--md-sys-color-secondary-container: #284e3c;
-	--md-sys-color-on-secondary-container: #c2ecd3;
-	--md-sys-color-tertiary: #8fd4c2;
-	--md-sys-color-on-tertiary: #00382e;
-	--md-sys-color-tertiary-container: #005144;
-	--md-sys-color-on-tertiary-container: #abf0de;
+	--md-sys-color-primary: #7ce0a3;
+	--md-sys-color-on-primary: #00391f;
+	--md-sys-color-primary-container: #0b5236;
+	--md-sys-color-on-primary-container: #b9f5c8;
+	--md-sys-color-secondary: #b4ccbc;
+	--md-sys-color-on-secondary: #1f352a;
+	--md-sys-color-secondary-container: #354b3f;
+	--md-sys-color-on-secondary-container: #d0e8d7;
+	--md-sys-color-tertiary: #ffb596;
+	--md-sys-color-on-tertiary: #5a1a00;
+	--md-sys-color-tertiary-container: #7e2a06;
+	--md-sys-color-on-tertiary-container: #ffdbcb;
 	--md-sys-color-error: #ffb4ab;
 	--md-sys-color-on-error: #690005;
 	--md-sys-color-error-container: #93000a;
 	--md-sys-color-on-error-container: #ffdad6;
-	--md-sys-color-surface: #0d150d;
-	--md-sys-color-on-surface: #dbe5d7;
-	--md-sys-color-on-surface-variant: #bdcab9;
-	--md-sys-color-surface-container-lowest: #081008;
-	--md-sys-color-surface-container-low: #151e15;
-	--md-sys-color-surface-container: #192219;
-	--md-sys-color-surface-container-high: #232c23;
-	--md-sys-color-surface-container-highest: #2e372d;
-	--md-sys-color-surface-dim: #0d150d;
-	--md-sys-color-surface-bright: #323c32;
-	--md-sys-color-outline: #879485;
-	--md-sys-color-outline-variant: #3e4a3d;
-	--md-sys-color-inverse-surface: #dbe5d7;
+	--md-sys-color-surface: #0d1511;
+	--md-sys-color-on-surface: #e3ede5;
+	--md-sys-color-on-surface-variant: #b4c2b8;
+	--md-sys-color-surface-container-lowest: #08100c;
+	--md-sys-color-surface-container-low: #131c17;
+	--md-sys-color-surface-container: #1a251e;
+	--md-sys-color-surface-container-high: #222e27;
+	--md-sys-color-surface-container-highest: #2a372f;
+	--md-sys-color-surface-dim: #0d1511;
+	--md-sys-color-surface-bright: #33403a;
+	--md-sys-color-outline: #8d9b91;
+	--md-sys-color-outline-variant: #3a4a40;
+	--md-sys-color-inverse-surface: #e3ede5;
 	--md-sys-color-inverse-on-surface: #2a3329;
-	--md-sys-color-inverse-primary: #006e2a;
+	--md-sys-color-inverse-primary: #0b6b4a;
 	--md-sys-color-scrim: #000000;
 }
 
@@ -963,4 +989,64 @@ body {
 
 *::-webkit-scrollbar-thumb:hover {
 	background-color: var(--md-sys-color-outline);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--nomi-color-stage: #1f2b24;
+	}
+}
+:root[data-theme='dark'] {
+	--nomi-color-stage: #1f2b24;
+}
+
+/* ---- Expressive additions: display/headline utilities, the mono "meta" face, and the
+   gradient text-ink pairing for markup outside an m3 component ---- */
+.md-display-large {
+	font-family: var(--md-sys-typescale-display-large-font);
+	font-weight: var(--md-sys-typescale-display-large-weight);
+	font-size: clamp(2.5rem, 5vw, 4.25rem);
+	line-height: 1;
+	letter-spacing: var(--md-sys-typescale-display-large-tracking);
+}
+
+.md-display-small {
+	font-family: var(--md-sys-typescale-display-small-font);
+	font-weight: var(--md-sys-typescale-display-small-weight);
+	font-size: var(--md-sys-typescale-display-small-size);
+	line-height: var(--md-sys-typescale-display-small-line-height);
+	letter-spacing: var(--md-sys-typescale-display-small-tracking);
+}
+
+.md-headline-medium {
+	font-family: var(--md-sys-typescale-headline-medium-font);
+	font-weight: var(--md-sys-typescale-headline-medium-weight);
+	font-size: var(--md-sys-typescale-headline-medium-size);
+	line-height: var(--md-sys-typescale-headline-medium-line-height);
+	letter-spacing: var(--md-sys-typescale-headline-medium-tracking);
+}
+
+.nomi-meta {
+	font-family: var(--md-ref-typeface-mono);
+	font-size: 0.75rem;
+	line-height: 1rem;
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--md-sys-color-on-surface-variant);
+}
+
+:focus-visible {
+	outline: 3px solid var(--md-sys-color-primary);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }
