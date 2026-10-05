@@ -1,6 +1,7 @@
 pub mod app;
 pub mod bootstrap;
 pub mod delegation_worker;
+pub mod google_sign_in;
 pub mod routes;
 pub mod reminders_worker;
 pub mod scheduler_worker;

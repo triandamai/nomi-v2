@@ -55,6 +55,13 @@ pub async fn login(
         return Err(LoginError::InvalidCredentials);
     }
 
+    let token = issue_access_token(pool, user_id, jwt_secret).await?;
+    Ok((token, user_id))
+}
+
+/// An access token for a user whose identity was already proven some other way (a password
+/// above, or a Google sign-in). Same claims as a password login.
+pub async fn issue_access_token(pool: &PgPool, user_id: Uuid, jwt_secret: &str) -> Result<String, LoginError> {
     let permissions = compute_permissions(pool, user_id).await?;
 
     let active_org_id: Uuid = sqlx::query_scalar(
@@ -65,7 +72,5 @@ pub async fn login(
     .await?;
 
     let claims = Claims::new(user_id, active_org_id, permissions, ACCESS_TOKEN_TTL_SECONDS);
-    let token = claims.encode(jwt_secret)?;
-
-    Ok((token, user_id))
+    Ok(claims.encode(jwt_secret)?)
 }

@@ -1,6 +1,15 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
-import type { Actions } from './$types';
+import type { Actions, PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async ({ fetch, url }) => {
+	const response = await fetch(apiUrl('/api/auth/google/available')).catch(() => null);
+	const google = response?.ok ? ((await response.json()) as { available: boolean }).available : false;
+	const error = url.searchParams.get('google_error');
+	const googleError =
+		error === 'cancelled' ? 'Google sign-in was cancelled.' : error === 'unavailable' ? 'Google sign-in isn’t available right now.' : error;
+	return { google, googleError };
+};
 
 export const actions: Actions = {
 	default: async ({ request, cookies, fetch, url }) => {

@@ -76,7 +76,12 @@ pub async fn start_google(
         .map_err(internal)?,
         None => None,
     };
-    let url = connection::start_authorization(&mut conn, &config, claims.sub, &req.services, resume)
+    let google_email: Option<String> = sqlx::query_scalar("SELECT email FROM google_identities WHERE user_id = $1")
+        .bind(claims.sub)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(internal)?;
+    let url = connection::start_authorization(&mut conn, &config, claims.sub, &req.services, resume, google_email.as_deref())
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(StartResponse { url }))

@@ -4,6 +4,7 @@ pub mod admin_users;
 pub mod auth;
 pub mod connections;
 pub mod dynamic_agents;
+pub mod google_auth;
 pub mod home;
 pub mod llm_models;
 pub mod memory;

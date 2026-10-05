@@ -12,6 +12,7 @@ use crate::routes::agents as agents_routes;
 use crate::routes::home as home_routes;
 use crate::routes::money as money_routes;
 use crate::routes::connections as connections_routes;
+use crate::routes::google_auth as google_auth_routes;
 use crate::routes::reminders as reminders_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
@@ -47,6 +48,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/login", post(auth_routes::login_handler))
         .route("/api/auth/refresh", post(auth_routes::refresh_handler))
         .route("/api/auth/logout", post(auth_routes::logout_handler))
+        .route("/api/auth/google", get(google_auth_routes::get_methods).delete(google_auth_routes::unlink))
+        .route("/api/auth/google/available", get(google_auth_routes::available))
+        .route("/api/auth/google/start", post(google_auth_routes::start))
+        .route("/api/auth/google/link", post(google_auth_routes::start_link))
+        .route("/api/auth/google/callback", post(google_auth_routes::callback))
         .route(
             "/api/whoami",
             get(|AuthClaims(claims): AuthClaims| async move { axum::Json(claims) }),

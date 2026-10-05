@@ -37,7 +37,7 @@ async fn connect(pool: &PgPool, server: &MockServer, user: Uuid, services: &[&st
         .await;
     let mut conn = pool.acquire().await.unwrap();
     let wanted: Vec<String> = services.iter().map(|s| s.to_string()).collect();
-    let url = connection::start_authorization(&mut conn, &config, user, &wanted, None).await.unwrap();
+    let url = connection::start_authorization(&mut conn, &config, user, &wanted, None, None).await.unwrap();
     let state = reqwest::Url::parse(&url).unwrap().query_pairs().find(|(k, _)| k == "state").unwrap().1.to_string();
     connection::complete_authorization(&mut conn, &reqwest::Client::new(), &config, &KEY, user, &format!("{token}-code"), &state).await.unwrap();
 }
@@ -58,7 +58,7 @@ async fn connecting_asks_google_for_the_chosen_services_and_stores_the_tokens_en
     let config = GoogleConfig::all_at(&server.uri());
     let mut conn = pool.acquire().await.unwrap();
 
-    let url = connection::start_authorization(&mut conn, &config, user, &["sheets".into(), "gmail".into()], None).await.unwrap();
+    let url = connection::start_authorization(&mut conn, &config, user, &["sheets".into(), "gmail".into()], None, None).await.unwrap();
     let url = reqwest::Url::parse(&url).unwrap();
     let scope = url.query_pairs().find(|(k, _)| k == "scope").unwrap().1.to_string();
     assert_eq!(scope, "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/spreadsheets");
@@ -83,7 +83,7 @@ async fn a_sign_in_started_by_one_user_cannot_be_finished_by_another(pool: PgPoo
     let (ana, budi) = (seed_user(&pool).await, seed_user(&pool).await);
     let config = GoogleConfig::all_at(&server.uri());
     let mut conn = pool.acquire().await.unwrap();
-    let url = connection::start_authorization(&mut conn, &config, ana, &["gmail".into()], None).await.unwrap();
+    let url = connection::start_authorization(&mut conn, &config, ana, &["gmail".into()], None, None).await.unwrap();
     let state = reqwest::Url::parse(&url).unwrap().query_pairs().find(|(k, _)| k == "state").unwrap().1.to_string();
 
     let result = connection::complete_authorization(&mut conn, &reqwest::Client::new(), &config, &KEY, budi, "code", &state).await;

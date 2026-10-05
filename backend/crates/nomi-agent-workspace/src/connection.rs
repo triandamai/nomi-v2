@@ -35,6 +35,9 @@ pub struct GoogleConfig {
     /// The app's callback page, registered with the OAuth client
     /// (e.g. https://nomi.example.com/connections/google/callback).
     pub redirect_uri: String,
+    /// The app's Google sign-in callback page (GOOGLE_SIGNIN_REDIRECT_URI, else
+    /// /auth/google/callback on the same site as `redirect_uri`).
+    pub signin_redirect_uri: String,
     pub auth_url: String,
     pub token_url: String,
     pub revoke_url: String,
@@ -50,10 +53,16 @@ pub struct GoogleConfig {
 impl GoogleConfig {
     /// Google's real endpoints for an OAuth client.
     pub fn new(client_id: String, client_secret: String, redirect_uri: String) -> Self {
+        let signin_redirect_uri = reqwest::Url::parse(&redirect_uri)
+            .ok()
+            .and_then(|u| u.join("/auth/google/callback").ok())
+            .map(|u| u.to_string())
+            .unwrap_or_default();
         Self {
             client_id,
             client_secret,
             redirect_uri,
+            signin_redirect_uri,
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_url: "https://oauth2.googleapis.com/token".to_string(),
             revoke_url: "https://oauth2.googleapis.com/revoke".to_string(),
@@ -83,7 +92,16 @@ impl GoogleConfig {
     /// GOOGLE_REDIRECT_URI. `None` until whoever runs Nomi sets all three.
     pub fn from_env() -> Option<Self> {
         let get = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-        Some(Self::new(get("GOOGLE_CLIENT_ID")?, get("GOOGLE_CLIENT_SECRET")?, get("GOOGLE_REDIRECT_URI")?))
+        let mut config = Self::new(get("GOOGLE_CLIENT_ID")?, get("GOOGLE_CLIENT_SECRET")?, get("GOOGLE_REDIRECT_URI")?);
+        if let Some(signin) = get("GOOGLE_SIGNIN_REDIRECT_URI") {
+            config.signin_redirect_uri = signin;
+        }
+        // Development only: every Google endpoint on one fake server.
+        if let Some(base) = get("GOOGLE_FAKE_BASE_URL") {
+            let fake = Self::all_at(&base);
+            config = Self { client_id: config.client_id, client_secret: config.client_secret, redirect_uri: config.redirect_uri, signin_redirect_uri: config.signin_redirect_uri, ..fake };
+        }
+        Some(config)
     }
 }
 
@@ -100,6 +118,7 @@ pub async fn start_authorization(
     user_id: Uuid,
     services: &[String],
     resume_session_id: Option<Uuid>,
+    login_hint: Option<&str>,
 ) -> Result<String, String> {
     let services = normalize_services(services);
     if services.is_empty() {
@@ -136,6 +155,10 @@ pub async fn start_authorization(
         .append_pair("prompt", "consent")
         .append_pair("include_granted_scopes", "true")
         .append_pair("state", &state);
+    // Pre-selects the Google account the user signs in to Nomi with.
+    if let Some(hint) = login_hint {
+        url.query_pairs_mut().append_pair("login_hint", hint);
+    }
     Ok(url.to_string())
 }
 

@@ -47,6 +47,8 @@
 		if (params.size > 0) goto('/connections', { replaceState: true, noScroll: true, keepFocus: true });
 	});
 
+	// Just signed up with Google: offer Workspace with that same account (Google pre-selects it).
+	const welcome = page.url.searchParams.get('welcome') === '1';
 	const errorParam = page.url.searchParams.get('error');
 	const signInError = errorParam === 'declined' ? 'Google sign-in was cancelled. Nothing was connected.' : errorParam;
 
@@ -85,6 +87,26 @@
 
 		{#if !google}
 			<p class="notice" role="alert">Couldn't load your connections just now. Reload the page to try again.</p>
+		{:else if welcome && !connection}
+			<section class="welcome" aria-labelledby="welcome-title">
+				<AgentShape agent="nomi" size={56} />
+				<div class="welcome__text">
+					<h2 id="welcome-title" class="welcome__title">You're in. One more thing?</h2>
+					<p class="welcome__body">
+						Workspace can also work in this Google account: find invoices in Gmail, update your Sheets, draft Docs. You choose what it may use.
+					</p>
+				</div>
+				<div class="welcome__actions">
+					{#if google.configured}
+						<Button variant="gradient" size="m" onclick={() => openSheet()}>Connect Workspace</Button>
+					{/if}
+					<Button variant="text" size="m" href="/">Maybe later</Button>
+				</div>
+			</section>
+		{/if}
+
+		{#if !google}
+			<!-- shown above -->
 		{:else if connection}
 			<section class="card card--connected" aria-labelledby="google-title">
 				<div class="card__top">
@@ -275,6 +297,38 @@
 		color: var(--md-sys-color-on-error-container);
 	}
 
+	.welcome {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 16px 20px;
+		padding: 24px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.welcome__text {
+		display: flex;
+		flex: 1 1 280px;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.welcome__title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 700;
+	}
+	.welcome__body {
+		margin: 0;
+		font-size: 0.9375rem;
+		line-height: 1.5;
+	}
+	.welcome__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
 	.card {
 		display: flex;
 		flex-direction: column;

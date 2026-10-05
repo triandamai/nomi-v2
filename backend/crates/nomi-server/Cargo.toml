@@ -18,6 +18,9 @@ nomi-agent-money = { path = "../nomi-agent-money" }
 nomi-agent-reminders = { path = "../nomi-agent-reminders" }
 nomi-agent-files = { path = "../nomi-agent-files" }
 nomi-agent-workspace = { path = "../nomi-agent-workspace" }
+thiserror = "1"
+rand = "0.8"
+hex = "0.4"
 nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
