@@ -108,6 +108,15 @@ async fn main() {
     let app = nomi_server::app::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.expect("failed to bind to port 8080");
+    match nomi_agent_workspace::connection::GoogleConfig::from_env() {
+        // Both must be listed exactly under the Google OAuth client's authorized redirect URIs.
+        Some(google) => tracing::info!(
+            sign_in_redirect_uri = %google.signin_redirect_uri,
+            workspace_redirect_uri = %google.redirect_uri,
+            "Google sign-in and Workspace enabled"
+        ),
+        None => tracing::info!("Google not configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI)"),
+    }
     tracing::info!("listening on 0.0.0.0:8080");
     axum::serve(listener, app).await.expect("server error");
 }

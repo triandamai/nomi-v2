@@ -109,9 +109,20 @@ pub async fn unlink(State(state): State<AppState>, AuthClaims(claims): AuthClaim
 #[derive(Serialize)]
 pub struct AvailableResponse {
     pub available: bool,
+    /// The exact callback addresses sent to Google. Each must be listed, character for
+    /// character, under the OAuth client's "Authorized redirect URIs" (else Google answers
+    /// redirect_uri_mismatch). Not secret: Google's sign-in page shows them anyway.
+    pub sign_in_redirect_uri: Option<String>,
+    pub workspace_redirect_uri: Option<String>,
 }
 
-/// Public: whether the sign-in page should offer "Continue with Google".
+/// Public: whether the sign-in page should offer "Continue with Google", and which callback
+/// addresses this server sends to Google.
 pub async fn available() -> Json<AvailableResponse> {
-    Json(AvailableResponse { available: GoogleConfig::from_env().is_some() })
+    let config = GoogleConfig::from_env();
+    Json(AvailableResponse {
+        available: config.is_some(),
+        sign_in_redirect_uri: config.as_ref().map(|c| c.signin_redirect_uri.clone()),
+        workspace_redirect_uri: config.map(|c| c.redirect_uri),
+    })
 }
