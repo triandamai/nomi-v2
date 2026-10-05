@@ -83,7 +83,8 @@ pub async fn list_sessions(
             p.id \
          FROM sessions s \
          LEFT JOIN LATERAL ( \
-             SELECT content, created_at FROM messages m WHERE m.session_id = s.id ORDER BY m.created_at DESC LIMIT 1 \
+             SELECT content, created_at FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
+             ORDER BY m.created_at DESC LIMIT 1 \
          ) lm ON true \
          LEFT JOIN LATERAL ( \
              SELECT id FROM projects pr WHERE pr.session_id = s.id ORDER BY pr.created_at DESC LIMIT 1 \

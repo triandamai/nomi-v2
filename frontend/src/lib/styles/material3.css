@@ -279,6 +279,8 @@
 
 	/* "Stage": the dark panel the agent shapes perform on (home crew card, auth brand panel).
 	   Stays dark in both themes — in dark mode it lifts one step off the page instead. */
+	/* Money charts' single series hue (validated: dataviz lightness band + 3:1 on the surface). */
+	--nomi-chart-money: #d4521c;
 	--nomi-color-stage: #16231b;
 	--nomi-color-on-stage: #e3ede5;
 
@@ -330,6 +332,7 @@
    data-theme is absent or literally "system". */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']):not([data-theme='dark']) {
+		--nomi-chart-money: #e86a36;
 		--md-sys-color-primary: #7ce0a3;
 		--md-sys-color-on-primary: #00391f;
 		--md-sys-color-primary-container: #0b5236;
@@ -370,6 +373,7 @@
    file already holds the light values, and neither this selector nor the media query above
    matches when data-theme="light", so those base values simply apply unopposed.) */
 :root[data-theme='dark'] {
+	--nomi-chart-money: #e86a36;
 	--md-sys-color-primary: #7ce0a3;
 	--md-sys-color-on-primary: #00391f;
 	--md-sys-color-primary-container: #0b5236;

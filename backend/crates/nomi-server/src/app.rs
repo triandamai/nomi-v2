@@ -9,6 +9,9 @@ use crate::routes::auth as auth_routes;
 use crate::routes::dynamic_agents as dynamic_agents_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::agents as agents_routes;
+use crate::routes::home as home_routes;
+use crate::routes::money as money_routes;
+use crate::routes::reminders as reminders_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
 use crate::routes::projects as projects_routes;
@@ -93,6 +96,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
         .route("/api/agents", get(agents_routes::list_crew))
+        .route("/api/home", get(home_routes::home_summary))
+        .route("/api/money", get(money_routes::money_summary))
+        .route("/api/reminders", get(reminders_routes::list_reminders).post(reminders_routes::create_reminder))
+        .route("/api/reminders/:id/cancel", post(reminders_routes::cancel_reminder))
         .route("/api/memory", get(memory_routes::list_my_memories))
         .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory))
         .route(

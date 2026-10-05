@@ -13,6 +13,8 @@
 	import IconFolder from '$lib/components/icons/IconFolder.svelte';
 	import IconHome from '$lib/components/icons/IconHome.svelte';
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
+	import IconBell from '$lib/components/icons/IconBell.svelte';
+	import IconWallet from '$lib/components/icons/IconWallet.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
@@ -49,6 +51,8 @@
 		{ href: '/', label: 'Home', icon: IconHome },
 		{ href: '/chats', label: 'Chats', icon: IconChatBubble },
 		{ href: '/projects', label: 'Projects', icon: IconFolder },
+		{ href: '/money', label: 'Money', icon: IconWallet },
+		{ href: '/reminders', label: 'Reminders', icon: IconBell },
 		{ href: '/memory', label: 'Memory', icon: IconMemory },
 	];
 

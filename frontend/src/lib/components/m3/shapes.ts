@@ -121,6 +121,19 @@ export const GRADIENT_STOPS: Record<GradientTone, string[]> = {
 	slate: ['#dde6ec', '#7d93a3'],
 };
 
+/** A deep step of each tone for small marks (checks, dots) that need more contrast than a
+ * gradient's light end gives. */
+export const TONE_ACCENT: Record<GradientTone, string> = {
+	glow: '#0b6b4a',
+	ember: '#b8430f',
+	tide: '#0e7490',
+	sky: '#3e7be0',
+	bloom: '#be185d',
+	dusk: '#6d4fd8',
+	citrus: '#a16207',
+	slate: '#475569',
+};
+
 export interface AgentLook {
 	shape: ShapeName;
 	tone: GradientTone;

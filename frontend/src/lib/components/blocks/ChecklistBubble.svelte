@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
-	import { agentLook, GRADIENT_STOPS, type GradientTone } from '$lib/components/m3/shapes';
+	import { agentLook, GRADIENT_STOPS, TONE_ACCENT } from '$lib/components/m3/shapes';
 	import type { ChecklistItem } from '$lib/planChecklist';
 
 	// The chat's draft / to-do bubble (design: "Planning's draft 3 / 5"): the posting agent's
@@ -27,17 +27,6 @@
 		footer?: Snippet;
 	} = $props();
 
-	// Marks need more contrast than a gradient's light end gives, so each tone has a deep accent.
-	const ACCENT: Record<GradientTone, string> = {
-		glow: '#0b6b4a',
-		ember: '#b8430f',
-		tide: '#0e7490',
-		sky: '#3e7be0',
-		bloom: '#be185d',
-		dusk: '#6d4fd8',
-		citrus: '#a16207',
-		slate: '#475569',
-	};
 
 	const look = $derived(agentLook(agent));
 	const tint = $derived(GRADIENT_STOPS[look.tone].at(-1));
@@ -47,7 +36,7 @@
 	const hidden = $derived(items.length - shown.length);
 </script>
 
-<section class="checklist" aria-label={heading} style="--tint: {tint}; --accent: {ACCENT[look.tone]}">
+<section class="checklist" aria-label={heading} style="--tint: {tint}; --accent: {TONE_ACCENT[look.tone]}">
 	<div class="checklist__head">
 		<AgentShape {agent} size={26} {working} />
 		<span class="checklist__heading">{heading}</span>

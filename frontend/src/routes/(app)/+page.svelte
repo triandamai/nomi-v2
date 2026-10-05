@@ -5,6 +5,7 @@
 	import Chip from '$lib/components/m3/Chip.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import { rosterKey } from '$lib/crew';
+	import HomeStatusCards from '$lib/components/HomeStatusCards.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -34,6 +35,15 @@
 	});
 
 	const activeCount = $derived(data.recentSessions.filter((s) => s.agent_active).length);
+	const movedCount = $derived(data.summary?.while_you_were_out.length ?? 0);
+	const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'];
+	const subtitle = $derived(
+		movedCount > 0
+			? `${COUNT_WORDS[movedCount] ?? movedCount} ${movedCount === 1 ? 'thing' : 'things'} moved while you were out.`
+			: activeCount > 0
+				? `Your crew is working in ${activeCount} ${activeCount === 1 ? 'chat' : 'chats'}.`
+				: 'What should we get done?',
+	);
 
 	const SUGGESTIONS = [
 		'Summarize this week’s spending',
@@ -78,11 +88,7 @@
 			<div class="home__lead">
 				<h1 class="md-display-large home__title">
 					{greeting}{name ? `, ${name}` : ''}.
-					<span class="home__title-sub">
-						{activeCount > 0
-							? `Your crew is working in ${activeCount} ${activeCount === 1 ? 'chat' : 'chats'}.`
-							: 'What should we get done?'}
-					</span>
+					<span class="home__title-sub">{subtitle}</span>
 				</h1>
 
 				<form
@@ -152,6 +158,10 @@
 				</ul>
 			</section>
 		</section>
+
+		{#if data.summary}
+			<HomeStatusCards summary={data.summary} />
+		{/if}
 
 		<section class="recent" aria-labelledby="recent-heading">
 			<div class="recent__head">

@@ -281,3 +281,46 @@ export interface AgentEventItem {
 	tool_name: string | null;
 	is_error: boolean | null;
 }
+
+/** GET /api/home — the three status cards on Home. */
+export interface HomeSummary {
+	since: string;
+	timezone: string;
+	while_you_were_out: {
+		kind: 'finished' | 'failed' | 'stopped' | 'needs_you' | 'reminder' | 'reply';
+		agent: string;
+		title: string;
+		detail: string;
+		session_id: string | null;
+		at: string;
+	}[];
+	today: { id: string; run_at: string; label: string; agent: string; recurrence: string | null }[];
+	plans: { kind: 'todo' | 'plan'; title: string; agent: string; done: number; total: number; session_id: string; updated_at: string }[];
+}
+
+/** GET /api/money */
+export interface MoneySummary {
+	month: string;
+	timezone: string;
+	total_cents: number;
+	previous_total_cents: number;
+	transaction_count: number;
+	by_category: { category: string; cents: number; count: number }[];
+	by_day: { date: string; cents: number }[];
+	transactions: { id: string; occurred_at: string; amount_cents: number; category: string; description: string }[];
+	months: string[];
+}
+
+/** One scheduled reminder (GET /api/reminders). */
+export interface Reminder {
+	id: string;
+	label: string;
+	run_at: string;
+	recurrence: 'daily' | 'weekly' | 'monthly' | null;
+	recurrence_weekday: number | null;
+	recurrence_day_of_month: number | null;
+	agent: string;
+	status: 'active' | 'completed' | 'cancelled';
+	last_fired_at: string | null;
+	session_id: string;
+}
