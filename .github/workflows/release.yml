@@ -63,11 +63,23 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Trigger deployment via webhook
+        env:
+          # A repository secret, or a repository variable with the same name.
+          WEBHOOK_URL: ${{ secrets.BACKEND_WEBHOOK_URL || vars.BACKEND_WEBHOOK_URL }}
         run: |
-          curl -f -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.BACKEND_WEBHOOK_URL }}" \
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::BACKEND_WEBHOOK_URL is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
+            exit 1
+          fi
+          status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
+            -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}'
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}') || true
+          echo "backend webhook answered HTTP $status"
+          case "$status" in
+            2??) ;;
+            *) echo "::error::backend deploy webhook failed (HTTP $status)"; exit 1 ;;
+          esac
 
   # The frontend goes out only after the backend deploy was triggered successfully: the backend
   # runs the database migrations the new frontend relies on.
@@ -80,8 +92,20 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Trigger deployment via webhook
+        env:
+          # A repository secret, or a repository variable with the same name.
+          WEBHOOK_URL: ${{ secrets.FRONTEND_WEBHOOK_URL || vars.FRONTEND_WEBHOOK_URL }}
         run: |
-          curl -f -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.FRONTEND_WEBHOOK_URL }}" \
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::FRONTEND_WEBHOOK_URL is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
+            exit 1
+          fi
+          status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
+            -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}'
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}') || true
+          echo "frontend webhook answered HTTP $status"
+          case "$status" in
+            2??) ;;
+            *) echo "::error::frontend deploy webhook failed (HTTP $status)"; exit 1 ;;
+          esac
