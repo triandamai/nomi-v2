@@ -8,17 +8,19 @@
 	let { form }: { form: ActionData } = $props();
 </script>
 
-<AuthShell title="Welcome back">
-	<form method="POST" use:enhance class="flex flex-col gap-4">
+<AuthShell
+	title="Welcome back"
+	subtitle="Log in and pick up where your crew left off."
+	switchPrompt="New here?"
+	switchLabel="Create account"
+	switchHref="/register"
+>
+	<form method="POST" use:enhance class="flex flex-col gap-5">
 		{#if form?.error}
 			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label="Email" required />
-		<TextField id="password" name="password" type="password" label="Password" required />
-		<Button type="submit" variant="gradient" size="m" class="w-full">Log in</Button>
-		<p class="md-body-medium text-center" style="color: var(--md-sys-color-on-surface-variant)">
-			No account?
-			<a href="/register" style="color: var(--md-sys-color-primary); font-weight: 600">Register</a>
-		</p>
+		<TextField id="email" name="email" type="email" label="Email" autocomplete="email" required />
+		<TextField id="password" name="password" type="password" label="Password" autocomplete="current-password" required />
+		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">Log in</Button>
 	</form>
 </AuthShell>

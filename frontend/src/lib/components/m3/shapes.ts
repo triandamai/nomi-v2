@@ -2,12 +2,13 @@
 //
 // Every shape is a "polar" outline r(θ) = R·(1 + amplitude·cos(lobes·θ)) sampled at the same
 // number of points, all in a 48×48 viewBox. Sharing one point count is what lets
-// LoadingIndicator morph between any two of them by plain per-point interpolation.
+// MorphingShape morph between any two of them by plain per-point interpolation.
 
 export type ShapeName = 'cookie9' | 'sunny8' | 'cookie6' | 'clover4' | 'flower5' | 'circle';
 export type GradientTone = 'glow' | 'ember' | 'tide' | 'sky' | 'bloom';
 
-const POINTS = 60;
+// 120 keeps the outline smooth even at hero size (the auth stage draws one at 560px).
+const POINTS = 120;
 const RADIUS = 20;
 const CENTER = 24;
 
