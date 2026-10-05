@@ -14,6 +14,9 @@ use crate::subagent::SubAgent;
 
 const MAX_TOOL_TURNS: u32 = 10;
 
+/// Posted when the model hit its output limit before writing any answer.
+pub const CUT_OFF_REPLY: &str = "I ran out of room before I could finish that. Ask me to continue, or to keep it shorter.";
+
 /// How agents should think when reasoning is on. Users read the thinking in chat.
 pub const REASONING_STYLE: &str = "When you think before acting, keep it short and on point: what is \
      being asked, what you will do next, and any catch. A few plain sentences. Don't restate the \
@@ -408,14 +411,18 @@ pub async fn run_agent_turn(
 
             let input_tokens = response.input_tokens;
             let output_tokens = response.output_tokens;
+            let cut_off = response.stop_reason == StopReason::MaxTokens;
             let reply_text = response
                 .content
                 .into_iter()
                 .find_map(|block| match block {
-                    ContentBlock::Text { text } => Some(text),
+                    ContentBlock::Text { text } if !text.trim().is_empty() => Some(text),
                     _ => None,
                 })
                 .unwrap_or_default();
+            // The model ran out of room before answering (a half-written plan or tool call is
+            // dropped): say so instead of leaving only the thinking in chat.
+            let reply_text = if reply_text.is_empty() && cut_off { CUT_OFF_REPLY.to_string() } else { reply_text };
 
             if agent.uses_memory() {
                 let last_user_text = messages

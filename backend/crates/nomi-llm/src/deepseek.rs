@@ -92,7 +92,8 @@ impl DeepSeekProvider {
 
         let mut body = json!({
             "model": self.model,
-            "max_tokens": request.max_tokens,
+            // Thinking counts against max_tokens; it gets its own budget on top of the reply's.
+            "max_tokens": if request.enable_reasoning { request.max_tokens + request.reasoning_effort.budget_tokens() } else { request.max_tokens },
             "messages": messages,
         });
         if !tools.is_empty() {

@@ -1267,3 +1267,27 @@ async fn thinking_is_asked_to_stay_short_unless_it_is_off(pool: PgPool) {
         assert_eq!(system.contains(nomi_agent_core::engine::REASONING_STYLE), expect_style, "level {level}");
     }
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reply_cut_off_after_thinking_says_so_instead_of_coming_back_empty(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+        content: vec![ContentBlock::Thinking { text: "Plan the trip day by day.".to_string(), signature: None }],
+        stop_reason: StopReason::MaxTokens,
+        input_tokens: 1,
+        output_tokens: 1,
+    }]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: nomi_agent_core::engine::CUT_OFF_REPLY.to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+    );
+}

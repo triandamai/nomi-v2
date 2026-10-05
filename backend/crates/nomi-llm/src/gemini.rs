@@ -49,14 +49,9 @@ impl GeminiProvider {
         }
         // Thinking tokens count against maxOutputTokens same as the final reply — leave headroom
         // beyond what the caller asked for so enabling reasoning doesn't starve the reply itself.
-        // Budgets are kept tight: thinking is shown in chat and should stay short and on point.
-        let thinking_budget: i64 = match request.reasoning_effort {
-            crate::ReasoningEffort::Low => 512,
-            crate::ReasoningEffort::Medium => 1024,
-            crate::ReasoningEffort::High => 4096,
-        };
-        let headroom = thinking_budget as u32 + 1024;
-        let max_output_tokens = if request.enable_reasoning { request.max_tokens.max(headroom) } else { request.max_tokens };
+        // Thinking counts against maxOutputTokens, so its budget is added on top of the reply's.
+        let thinking_budget = request.reasoning_effort.budget_tokens();
+        let max_output_tokens = if request.enable_reasoning { request.max_tokens + thinking_budget } else { request.max_tokens };
         let mut generation_config = json!({ "maxOutputTokens": max_output_tokens });
         if request.enable_reasoning {
             generation_config["thinkingConfig"] = json!({ "includeThoughts": true, "thinkingBudget": thinking_budget });

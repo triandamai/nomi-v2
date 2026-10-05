@@ -73,6 +73,17 @@ impl ReasoningEffort {
             ReasoningEffort::High => "high",
         }
     }
+
+    /// Tokens thinking may use at this level, given on top of the reply's own `max_tokens` so
+    /// thinking never eats the room the answer needs. Kept small: thinking is shown in chat
+    /// and should stay short and on point.
+    pub fn budget_tokens(self) -> u32 {
+        match self {
+            ReasoningEffort::Low => 1024,
+            ReasoningEffort::Medium => 2048,
+            ReasoningEffort::High => 4096,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

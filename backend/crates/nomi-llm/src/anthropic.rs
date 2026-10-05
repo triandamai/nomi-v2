@@ -41,11 +41,10 @@ impl AnthropicProvider {
             .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.input_schema }))
             .collect();
 
-        // Anthropic requires max_tokens to exceed the thinking budget, since thinking tokens
-        // count against the same output budget as the final reply — bump it here rather than
-        // making every caller of LlmRequest reason about this provider-specific constraint.
-        let budget = thinking_budget(request.reasoning_effort);
-        let max_tokens = if request.enable_reasoning { request.max_tokens.max(budget + 1024) } else { request.max_tokens };
+        // Thinking tokens count against max_tokens, so the thinking budget is added on top of
+        // the reply's own room rather than taken out of it.
+        let budget = request.reasoning_effort.budget_tokens();
+        let max_tokens = if request.enable_reasoning { request.max_tokens + budget } else { request.max_tokens };
 
         let mut body = json!({
             "model": self.model,
@@ -63,17 +62,6 @@ impl AnthropicProvider {
             body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
         }
         body
-    }
-}
-
-/// How many of `max_tokens` extended thinking may spend before the final reply, per thinking
-/// level. Anthropic's minimum is 1024. Budgets are kept tight: thinking is shown in chat and
-/// should stay short and on point (see `REASONING_STYLE` in nomi-agent-core).
-fn thinking_budget(effort: crate::ReasoningEffort) -> u32 {
-    match effort {
-        crate::ReasoningEffort::Low => 1024,
-        crate::ReasoningEffort::Medium => 2048,
-        crate::ReasoningEffort::High => 4096,
     }
 }
 

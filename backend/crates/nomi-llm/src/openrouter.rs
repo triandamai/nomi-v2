@@ -88,16 +88,21 @@ impl OpenRouterProvider {
             }))
             .collect();
 
+        // Reasoning tokens count against max_tokens, so thinking gets its own budget on top of
+        // the reply's room. A share-based `effort` would take most of max_tokens for thinking at
+        // high and leave a plan or draft cut off.
+        let reasoning_budget = request.reasoning_effort.budget_tokens();
+        let max_tokens = if request.enable_reasoning { request.max_tokens + reasoning_budget } else { request.max_tokens };
         let mut body = json!({
             "model": self.model,
-            "max_tokens": request.max_tokens,
+            "max_tokens": max_tokens,
             "messages": messages,
         });
         if !tools.is_empty() {
             body["tools"] = json!(tools);
         }
         if request.enable_reasoning {
-            body["reasoning"] = json!({ "effort": request.reasoning_effort.as_str() });
+            body["reasoning"] = json!({ "max_tokens": reasoning_budget });
         }
         if stream {
             body["stream"] = json!(true);

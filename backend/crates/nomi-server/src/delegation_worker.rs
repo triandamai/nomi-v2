@@ -11,7 +11,9 @@ use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_
 
 const NOTIFY_CHANNEL: &str = "agent_delegations_channel";
 const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
-const DELEGATED_MAX_TOKENS: u32 = 1024;
+/// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
+/// plans, drafts and tables need far more than a chat line.
+const DELEGATED_MAX_TOKENS: u32 = 8192;
 
 struct ClaimedDelegation {
     id: Uuid,
