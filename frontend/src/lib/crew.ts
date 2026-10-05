@@ -139,3 +139,20 @@ export function buildCrew({
 
 	return [...members.values()];
 }
+
+const STATE_ORDER: Record<CrewRosterMember['state'], number> = { working: 0, waiting: 1, done: 2, idle: 3 };
+
+/** The crew, busiest first: working, then waiting on you, then done, then ready. Ties keep the
+ * roster's order (Nomi first). */
+export function crewByActivity(crew: CrewRosterMember[]): CrewRosterMember[] {
+	return crew
+		.map((member, index) => ({ member, index }))
+		.sort((a, b) => STATE_ORDER[a.member.state] - STATE_ORDER[b.member.state] || a.index - b.index)
+		.map(({ member }) => member);
+}
+
+/** Home's crew card: the `max` busiest members, and how many more the "See all" link leads to. */
+export function crewPreview(crew: CrewRosterMember[], max = 4): { shown: CrewRosterMember[]; more: number } {
+	const sorted = crewByActivity(crew);
+	return { shown: sorted.slice(0, max), more: Math.max(0, sorted.length - max) };
+}

@@ -4,7 +4,7 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
-	import { rosterKey } from '$lib/crew';
+	import { crewPreview, rosterKey } from '$lib/crew';
 	import HomeStatusCards from '$lib/components/HomeStatusCards.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -55,6 +55,8 @@
 	// Every agent the app has, with what each is doing for this user right now (/api/agents).
 	const crew = $derived(data.crew);
 	const workingCount = $derived(crew.filter((m) => m.state === 'working').length);
+	// Home shows the four busiest; the Crew page has everyone.
+	const preview = $derived(crewPreview(crew, 4));
 
 	function useSuggestion(suggestion: string) {
 		text = suggestion;
@@ -138,7 +140,7 @@
 					{/if}
 				</div>
 				<ul class="crew__list">
-					{#each crew as member (member.agent_type)}
+					{#each preview.shown as member (member.agent_type)}
 						{@const key = rosterKey(member.agent_type)}
 						<li class="crew__item" data-state={member.state}>
 							<AgentShape agent={key} size={44} face={key === 'nomi'} working={member.state === 'working'} />
@@ -156,6 +158,12 @@
 						</li>
 					{/each}
 				</ul>
+				{#if preview.more > 0}
+					<a class="crew__all" href="/crew">
+						See all {crew.length}
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+					</a>
+				{/if}
 			</section>
 		</section>
 
@@ -366,6 +374,33 @@
 	}
 	.crew__text {
 		min-width: 0;
+	}
+	.crew__all {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 40px;
+		margin-top: 12px;
+		padding: 0 16px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: color-mix(in srgb, var(--nomi-color-on-stage) 12%, transparent);
+		color: var(--nomi-color-on-stage);
+		font-size: 0.875rem;
+		font-weight: 650;
+		text-decoration: none;
+		transition:
+			background-color var(--nomi-motion-effects-fast),
+			border-radius var(--nomi-motion-spatial-fast);
+	}
+	.crew__all:hover {
+		background: color-mix(in srgb, var(--nomi-color-on-stage) 20%, transparent);
+	}
+	.crew__all:active {
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+	.crew__all:focus-visible {
+		outline: 2px solid var(--nomi-color-on-stage);
+		outline-offset: 2px;
 	}
 
 	.recent__head {
