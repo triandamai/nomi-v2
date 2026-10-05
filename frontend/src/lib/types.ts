@@ -163,6 +163,10 @@ export interface DynamicAgent {
 	supports_plans: boolean;
 	can_delegate: boolean;
 	is_active: boolean;
+	/** The agent's look (see ShapePicker). */
+	shape: string;
+	tone: string;
+	motion: string;
 }
 
 export interface AdminUserSummary {

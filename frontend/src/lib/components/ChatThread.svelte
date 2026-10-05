@@ -170,6 +170,7 @@
 			activity: agentActivity,
 			messageAuthors: localMessages.filter((m) => m.sender === 'assistant').map((m) => m.agent_display_name),
 			nomiWorking: isWorking,
+			roster: page.data.crew ?? [],
 			nomiStatus: currentPhase
 				? phaseText(currentPhase.phase, currentPhase.detail).replace(/^Nomi is /, '')
 				: isWorking

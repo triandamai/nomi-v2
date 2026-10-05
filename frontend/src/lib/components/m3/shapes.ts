@@ -4,21 +4,82 @@
 // number of points, all in a 48×48 viewBox. Sharing one point count is what lets
 // MorphingShape morph between any two of them by plain per-point interpolation.
 
-export type ShapeName = 'cookie9' | 'sunny8' | 'cookie6' | 'clover4' | 'flower5' | 'circle';
-export type GradientTone = 'glow' | 'ember' | 'tide' | 'sky' | 'bloom';
+// Keep these three lists in sync with SHAPES, TONES and MOTIONS in
+// backend/crates/nomi-server/src/routes/agents.rs (a dynamic agent stores its pick).
+export const SHAPE_NAMES = [
+	'cookie9',
+	'sunny8',
+	'cookie6',
+	'clover4',
+	'flower5',
+	'circle',
+	'sunny12',
+	'clover3',
+	'puffy7',
+	'burst16',
+	'wave10',
+	'soft-square',
+	'soft-triangle',
+	'pentagon',
+	'pill',
+] as const;
+export type ShapeName = (typeof SHAPE_NAMES)[number];
+
+export const GRADIENT_TONES = ['glow', 'ember', 'tide', 'sky', 'bloom', 'dusk', 'citrus', 'slate'] as const;
+export type GradientTone = (typeof GRADIENT_TONES)[number];
+
+/** How a shape moves while its agent works (AgentShape's `working`). */
+export const SHAPE_MOTIONS = ['spin', 'wobble', 'bounce', 'pulse', 'orbit'] as const;
+export type ShapeMotion = (typeof SHAPE_MOTIONS)[number];
+
+export const SHAPE_LABELS: Record<ShapeName, string> = {
+	cookie9: 'Cookie',
+	sunny8: 'Sunny',
+	cookie6: 'Gear',
+	clover4: 'Clover',
+	flower5: 'Flower',
+	circle: 'Circle',
+	sunny12: 'Sun',
+	clover3: 'Trefoil',
+	puffy7: 'Puffy',
+	burst16: 'Burst',
+	wave10: 'Wave',
+	'soft-square': 'Square',
+	'soft-triangle': 'Triangle',
+	pentagon: 'Pentagon',
+	pill: 'Pill',
+};
+
+export const MOTION_LABELS: Record<ShapeMotion, string> = {
+	spin: 'Spin',
+	wobble: 'Wobble',
+	bounce: 'Bounce',
+	pulse: 'Pulse',
+	orbit: 'Orbit',
+};
 
 // 120 keeps the outline smooth even at hero size (the auth stage draws one at 560px).
 const POINTS = 120;
 const RADIUS = 20;
 const CENTER = 24;
 
-const SPECS: Record<ShapeName, { lobes: number; amplitude: number }> = {
+// `phase` turns the shape (radians) so a flat side sits at the bottom where that reads better.
+const SPECS: Record<ShapeName, { lobes: number; amplitude: number; phase?: number }> = {
 	cookie9: { lobes: 9, amplitude: 0.09 },
 	sunny8: { lobes: 8, amplitude: 0.06 },
 	cookie6: { lobes: 6, amplitude: 0.1 },
 	clover4: { lobes: 4, amplitude: 0.2 },
 	flower5: { lobes: 5, amplitude: 0.16 },
 	circle: { lobes: 1, amplitude: 0 },
+	sunny12: { lobes: 12, amplitude: 0.045 },
+	clover3: { lobes: 3, amplitude: 0.19, phase: -Math.PI / 2 },
+	puffy7: { lobes: 7, amplitude: 0.13 },
+	burst16: { lobes: 16, amplitude: 0.055 },
+	wave10: { lobes: 10, amplitude: 0.08 },
+	'soft-square': { lobes: 4, amplitude: 0.075, phase: Math.PI / 4 },
+	'soft-triangle': { lobes: 3, amplitude: 0.12, phase: -Math.PI / 2 },
+	pentagon: { lobes: 5, amplitude: 0.055, phase: -Math.PI / 2 },
+	pill: { lobes: 2, amplitude: 0.17 },
 };
 
 export type Point = [number, number];
@@ -28,11 +89,11 @@ const pointCache = new Map<ShapeName, Point[]>();
 export function shapePoints(name: ShapeName): Point[] {
 	const cached = pointCache.get(name);
 	if (cached) return cached;
-	const { lobes, amplitude } = SPECS[name];
+	const { lobes, amplitude, phase = 0 } = SPECS[name];
 	const points: Point[] = [];
 	for (let i = 0; i < POINTS; i++) {
 		const theta = (2 * Math.PI * i) / POINTS;
-		const r = RADIUS * (1 + amplitude * Math.cos(lobes * theta));
+		const r = RADIUS * (1 + amplitude * Math.cos(lobes * (theta - phase)));
 		points.push([CENTER + r * Math.cos(theta), CENTER + r * Math.sin(theta)]);
 	}
 	pointCache.set(name, points);
@@ -55,20 +116,59 @@ export const GRADIENT_STOPS: Record<GradientTone, string[]> = {
 	tide: ['#c4f3ea', '#3fb8c8'],
 	sky: ['#d6ecff', '#7ab0ff'],
 	bloom: ['#ffd9e2', '#ff8fa8'],
+	dusk: ['#e6dcff', '#9b7bff'],
+	citrus: ['#fff4a3', '#ffc23c'],
+	slate: ['#dde6ec', '#7d93a3'],
 };
 
 export interface AgentLook {
 	shape: ShapeName;
 	tone: GradientTone;
+	motion: ShapeMotion;
 }
 
-/** Which shape + gradient an agent wears. Accepts either an agent_type ("money") or a display
- * name ("Money"); anything unrecognized — including chitchat and dynamic agents — is Nomi. */
+const NOMI_LOOK: AgentLook = { shape: 'cookie9', tone: 'glow', motion: 'spin' };
+
+// Dynamic agents' chosen looks, keyed by lowercase agent_type and name (see registerAgentLooks).
+const registered = new Map<string, AgentLook>();
+
+export function isShapeName(value: unknown): value is ShapeName {
+	return typeof value === 'string' && (SHAPE_NAMES as readonly string[]).includes(value);
+}
+export function isGradientTone(value: unknown): value is GradientTone {
+	return typeof value === 'string' && (GRADIENT_TONES as readonly string[]).includes(value);
+}
+export function isShapeMotion(value: unknown): value is ShapeMotion {
+	return typeof value === 'string' && (SHAPE_MOTIONS as readonly string[]).includes(value);
+}
+
+/** Teaches agentLook the crew's dynamic agents (the app layout calls this with /api/agents). */
+export function registerAgentLooks(
+	members: { agent_type: string; name: string; shape?: string | null; tone?: string | null; motion?: string | null }[],
+): void {
+	for (const member of members) {
+		if (!isShapeName(member.shape)) continue;
+		const look: AgentLook = {
+			shape: member.shape,
+			tone: isGradientTone(member.tone) ? member.tone : 'glow',
+			motion: isShapeMotion(member.motion) ? member.motion : 'spin',
+		};
+		registered.set(member.agent_type.toLowerCase(), look);
+		registered.set(member.name.toLowerCase(), look);
+	}
+}
+
+/** Which shape + gradient + motion an agent wears. Accepts either an agent_type ("money") or a
+ * display name ("Money"); a registered dynamic agent wears its own pick, and anything else
+ * unrecognized — chitchat included — is Nomi. */
 export function agentLook(agent: string | null | undefined): AgentLook {
 	const key = (agent ?? '').toLowerCase();
-	if (key.includes('money') || key.includes('budget')) return { shape: 'sunny8', tone: 'ember' };
-	if (key.includes('cod')) return { shape: 'cookie6', tone: 'tide' };
-	if (key.includes('plan')) return { shape: 'clover4', tone: 'sky' };
-	if (key.includes('personality') || key.includes('memory')) return { shape: 'flower5', tone: 'bloom' };
-	return { shape: 'cookie9', tone: 'glow' };
+	const custom = registered.get(key);
+	if (custom) return custom;
+	if (key.includes('money') || key.includes('budget')) return { shape: 'sunny8', tone: 'ember', motion: 'spin' };
+	if (key.includes('cod')) return { shape: 'cookie6', tone: 'tide', motion: 'spin' };
+	if (key.includes('plan')) return { shape: 'clover4', tone: 'sky', motion: 'spin' };
+	if (key.includes('personality') || key.includes('memory')) return { shape: 'flower5', tone: 'bloom', motion: 'spin' };
+	if (key.includes('supervisor')) return { shape: 'sunny12', tone: 'dusk', motion: 'orbit' };
+	return NOMI_LOOK;
 }

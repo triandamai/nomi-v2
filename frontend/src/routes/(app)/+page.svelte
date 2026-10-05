@@ -4,6 +4,7 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
+	import { rosterKey } from '$lib/crew';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -41,13 +42,9 @@
 		'Remind me to stretch at 4pm',
 	];
 
-	const CREW = [
-		{ agent: 'nomi', name: 'Nomi', role: 'Talks with you and routes the work' },
-		{ agent: 'money', name: 'Money', role: 'Transactions, budgets, subscriptions' },
-		{ agent: 'coding', name: 'Coding', role: 'Builds and edits project files' },
-		{ agent: 'planning', name: 'Planning', role: 'Plans, to-dos and reminders' },
-		{ agent: 'personality', name: 'Personality', role: 'Keeps Nomi sounding like you want' },
-	];
+	// Every agent the app has, with what each is doing for this user right now (/api/agents).
+	const crew = $derived(data.crew);
+	const workingCount = $derived(crew.filter((m) => m.state === 'working').length);
 
 	function useSuggestion(suggestion: string) {
 		text = suggestion;
@@ -128,15 +125,28 @@
 			</div>
 
 			<section class="crew" aria-labelledby="crew-heading">
-				<h2 id="crew-heading" class="crew__title">Your crew</h2>
+				<div class="crew__head">
+					<h2 id="crew-heading" class="crew__title">Your crew</h2>
+					{#if workingCount > 0}
+						<span class="nomi-meta crew__count">{workingCount} working</span>
+					{/if}
+				</div>
 				<ul class="crew__list">
-					{#each CREW as member (member.agent)}
-						<li class="crew__item">
-							<AgentShape agent={member.agent} size={44} face={member.agent === 'nomi'} />
+					{#each crew as member (member.agent_type)}
+						{@const key = rosterKey(member.agent_type)}
+						<li class="crew__item" data-state={member.state}>
+							<AgentShape agent={key} size={44} face={key === 'nomi'} working={member.state === 'working'} />
 							<span class="crew__text">
 								<span class="crew__name">{member.name}</span>
-								<span class="crew__role">{member.role}</span>
+								<span class="crew__role" title={member.role}>
+									{#if member.state === 'idle'}{member.role}{:else}{member.status}{/if}
+								</span>
 							</span>
+							{#if member.state === 'waiting'}
+								<span class="crew__badge">Needs you</span>
+							{:else if member.state === 'done'}
+								<span class="crew__badge crew__badge--done">Done</span>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -279,8 +289,36 @@
 		color: var(--nomi-color-on-stage);
 		min-width: 0;
 	}
+	.crew__head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 12px;
+	}
+	.crew__count {
+		color: var(--nomi-color-on-stage);
+		opacity: 0.8;
+	}
+	.crew__badge {
+		flex: none;
+		margin-left: auto;
+		padding: 4px 10px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--nomi-gradient-ember);
+		color: var(--nomi-on-gradient-ember);
+		font-size: 0.75rem;
+		font-weight: 700;
+	}
+	.crew__badge--done {
+		background: color-mix(in srgb, var(--nomi-color-on-stage) 14%, transparent);
+		color: var(--nomi-color-on-stage);
+	}
+	.crew__item[data-state='idle'] .crew__role {
+		opacity: 0.6;
+	}
 	.crew__title {
-		margin: 0 0 12px;
+		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
 		font-size: 1.75rem;
 		font-weight: 700;
@@ -311,7 +349,13 @@
 	}
 	.crew__role {
 		font-size: 0.875rem;
-		opacity: 0.75;
+		opacity: 0.8;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.crew__text {
+		min-width: 0;
 	}
 
 	.recent__head {

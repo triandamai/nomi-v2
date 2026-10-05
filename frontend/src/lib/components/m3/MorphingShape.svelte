@@ -46,7 +46,9 @@
 		let frame = 0;
 		const start = performance.now();
 		const tick = (now: number) => {
-			const elapsed = now - start;
+			// The first frame's timestamp can predate `start` by a fraction of a millisecond; a
+			// negative step would index past the start of `sequence`.
+			const elapsed = Math.max(0, now - start);
 			const step = Math.floor(elapsed / stepMs);
 			const t = (elapsed % stepMs) / stepMs;
 			const from = shapePoints(sequence[step % sequence.length]);

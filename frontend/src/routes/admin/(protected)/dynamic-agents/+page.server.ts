@@ -27,6 +27,9 @@ function readForm(data: FormData) {
 		supportsTodos: data.get('supports_todos') === 'true',
 		supportsPlans: data.get('supports_plans') === 'true',
 		canDelegate: data.get('can_delegate') === 'true',
+		shape: String(data.get('shape') ?? 'cookie9'),
+		tone: String(data.get('tone') ?? 'glow'),
+		motion: String(data.get('motion') ?? 'spin'),
 	};
 }
 
@@ -40,6 +43,9 @@ function toBody(fields: ReturnType<typeof readForm>) {
 		supports_todos: fields.supportsTodos,
 		supports_plans: fields.supportsPlans,
 		can_delegate: fields.canDelegate,
+		shape: fields.shape,
+		tone: fields.tone,
+		motion: fields.motion,
 	});
 }
 

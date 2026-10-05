@@ -1,5 +1,6 @@
 // Who's in this chat's crew and what each member is doing right now — derived from the data the
-// chat page already has (delegations, message authors, Nomi's live phase). No extra API calls.
+// chat page already has (the app-wide roster from /api/agents, delegations, message authors,
+// Nomi's live phase). No extra API calls.
 
 import { agentTypeFallbackLabel } from './agentLabels';
 import { agentLook } from './components/m3/shapes';
@@ -33,10 +34,31 @@ const CORE: { key: string; name: string; role: string }[] = [
 	{ key: 'personality', name: 'Personality', role: 'Keeps Nomi sounding how you like' },
 ];
 
+/** One agent from /api/agents. */
+export interface CrewRosterMember {
+	agent_type: string;
+	name: string;
+	role: string;
+	is_dynamic: boolean;
+	shape: string | null;
+	tone: string | null;
+	motion: string | null;
+	/** What it's doing for this user right now, across all chats. */
+	state: 'working' | 'waiting' | 'done' | 'idle';
+	status: string;
+}
+
+/** The crew key for an agent type: Nomi's is `nomi` (AgentShape's brand mark), others their type. */
+export function rosterKey(agentType: string): string {
+	return agentType === 'chitchat' ? 'nomi' : agentType;
+}
+
 const ACTIVE_STATUSES = new Set(['pending', 'processing', 'claimed']);
 
-function memberKey(agent: string): string {
+function memberKey(agent: string, roster: CrewRosterMember[]): string {
 	const lower = agent.toLowerCase();
+	const known = roster.find((m) => m.agent_type.toLowerCase() === lower || m.name.toLowerCase() === lower);
+	if (known) return rosterKey(known.agent_type);
 	if (lower === 'chitchat' || lower === 'nomi' || lower === 'supervisor') return 'nomi';
 	const core = CORE.find((m) => m.key !== 'nomi' && agentLook(lower).shape === agentLook(m.key).shape);
 	return core ? core.key : lower;
@@ -52,6 +74,7 @@ export function buildCrew({
 	messageAuthors,
 	nomiWorking,
 	nomiStatus,
+	roster = [],
 }: {
 	/** Newest first, as /agent-activity returns it. */
 	activity: CrewActivity[];
@@ -60,14 +83,17 @@ export function buildCrew({
 	nomiWorking: boolean;
 	/** Nomi's live phase line, e.g. "thinking…". */
 	nomiStatus: string | null;
+	/** Every agent the app has (from /api/agents). Without it, the five core members stand in. */
+	roster?: CrewRosterMember[];
 }): CrewMember[] {
 	const members = new Map<string, CrewMember>();
-	for (const core of CORE) {
-		members.set(core.key, { ...core, working: false, status: 'Standing by', involved: false });
+	const seed = roster.length > 0 ? roster.map((m) => ({ key: rosterKey(m.agent_type), name: m.name, role: m.role })) : CORE;
+	for (const member of seed) {
+		members.set(member.key, { ...member, working: false, status: 'Standing by', involved: false });
 	}
 
 	const ensure = (agent: string): CrewMember => {
-		const key = memberKey(agent);
+		const key = memberKey(agent, roster);
 		let member = members.get(key);
 		if (!member) {
 			// A dynamic agent this chat has met — joins the crew after the core members.
