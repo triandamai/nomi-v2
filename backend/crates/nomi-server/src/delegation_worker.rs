@@ -240,7 +240,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
-                    let sorry = format!("I wasn't able to get an answer from the {} agent — {}.", claimed.target_agent_type, e);
+                    let sorry = format!("I wasn't able to get an answer from the {} agent. {}", claimed.target_agent_type, e.user_message());
                     let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
                         .bind(claimed.session_id)
                         .bind(&sorry)
