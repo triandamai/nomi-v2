@@ -202,3 +202,26 @@ async fn non_success_status_is_returned_before_any_stream_is_produced() {
     let result = provider.complete_stream(text_request()).await;
     assert!(matches!(result, Err(LlmError::ProviderError(_))));
 }
+
+#[tokio::test]
+async fn a_reasoning_model_gets_max_completion_tokens_instead_of_max_tokens() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(body_partial_json(json!({"max_completion_tokens": 100})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiProvider::new(reqwest::Client::new(), "test-key".to_string(), "gpt-5-mini".to_string(), server.uri());
+
+    let stream = provider.complete_stream(text_request()).await.unwrap();
+    collect_stream(stream).await.unwrap();
+    let sent: serde_json::Value = server.received_requests().await.unwrap()[0].body_json().unwrap();
+    assert!(sent.get("max_tokens").is_none());
+}

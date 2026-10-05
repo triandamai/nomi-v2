@@ -140,17 +140,18 @@ impl SubAgent for DynamicAgent {
         Cow::Owned(self.name.clone())
     }
 
-    // v1 scope cut: both features assume a single, well-known prompt shape tuned per built-in
-    // agent — extending them to admin-authored agents is a real design question of its own,
-    // deliberately deferred rather than half-implemented. See the design spec's Out of Scope.
+    // Memory is the user's, not the agent's: every agent that talks to the user saves and
+    // recalls it, admin-authored ones included.
     fn uses_memory(&self) -> bool {
-        false
+        true
     }
 
     fn uses_records(&self) -> bool {
         true
     }
 
+    // Personality assumes a prompt shape tuned per built-in agent; admin-authored agents keep
+    // the voice their author wrote.
     fn uses_personality(&self) -> bool {
         false
     }

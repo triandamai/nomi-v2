@@ -360,6 +360,11 @@ pub struct RemindersAgent;
 
 #[async_trait]
 impl SubAgent for RemindersAgent {
+    /// Remembers durable facts the user mentions here and recalls them in later turns.
+    fn uses_memory(&self) -> bool {
+        true
+    }
+
     fn agent_type(&self) -> Cow<'static, str> {
         Cow::Borrowed(REMINDERS_AGENT_TYPE)
     }

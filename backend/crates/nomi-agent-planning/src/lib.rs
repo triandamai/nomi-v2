@@ -37,6 +37,11 @@ impl PlanningAgent {
 
 #[async_trait]
 impl SubAgent for PlanningAgent {
+    /// Remembers durable facts the user mentions here and recalls them in later turns.
+    fn uses_memory(&self) -> bool {
+        true
+    }
+
     fn agent_type(&self) -> Cow<'static, str> {
         Cow::Borrowed(PLANNING_AGENT_TYPE)
     }
