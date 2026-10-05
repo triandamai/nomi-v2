@@ -34,11 +34,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-		padding: 8px 12px;
-		border-radius: var(--md-sys-shape-corner-small);
+		padding: 10px 14px;
+		border-radius: var(--md-sys-shape-corner-large-increased);
 	}
 	.m3-list-item--selected {
-		background: var(--md-sys-color-secondary-container);
+		background: var(--md-sys-color-primary-container);
 	}
 	.m3-list-item__text {
 		min-width: 0;

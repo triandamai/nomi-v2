@@ -1,7 +1,6 @@
 <!-- frontend/src/lib/components/blocks/ApprovalCard.svelte -->
 <script lang="ts">
 	import { deserialize } from '$app/forms';
-	import Button from '$lib/components/m3/Button.svelte';
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
 	import type { ContentBlock } from '$lib/types';
 
@@ -33,9 +32,12 @@
 	}
 </script>
 
-<div class="m3-block-card m3-block-card--approval">
-	<p class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{block.description}</p>
-	<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">Tool: <code>{block.tool_name}</code></p>
+<div class="m3-block-card m3-block-card--approval" class:m3-block-card--settled={block.status !== 'pending'}>
+	{#if block.status === 'pending'}
+		<span class="nomi-meta m3-approval-eyebrow">Needs your OK</span>
+	{/if}
+	<p class="m3-approval-title">{block.description}</p>
+	<p class="m3-approval-tool">Tool: <code>{block.tool_name}</code></p>
 
 	{#if block.status === 'pending'}
 		{#if error}
@@ -46,28 +48,95 @@
 			<span class="md-body-small">Remember this decision for next time</span>
 		</label>
 		<div class="m3-block-card__actions">
-			<Button type="button" variant="filled" disabled={submitting} onclick={() => resolve('approve')}>Approve</Button>
-			<Button type="button" variant="outlined" disabled={submitting} onclick={() => resolve('deny')}>Deny</Button>
+			<button type="button" class="m3-approval-btn m3-approval-btn--allow" disabled={submitting} onclick={() => resolve('approve')}>
+				Approve
+			</button>
+			<button type="button" class="m3-approval-btn m3-approval-btn--deny" disabled={submitting} onclick={() => resolve('deny')}>
+				Deny
+			</button>
 		</div>
 	{:else}
-		<p
-			class="md-label-large"
-			style="color: {block.status === 'approved' ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-error)'}"
-		>
-			{block.status === 'approved' ? '✓ Approved' : '✗ Denied'}
+		<p class="m3-approval-result">
+			{#if block.status === 'approved'}
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>
+				Approved
+			{:else}
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+				Denied
+			{/if}
 		</p>
 	{/if}
 </div>
 
 <style>
+	/* Ember (tertiary) — the one place the warm accent appears in a conversation, so a
+	   pending decision is impossible to scroll past. Settles to a neutral surface once decided. */
 	.m3-block-card--approval {
-		padding: 14px;
-		border-radius: var(--md-sys-shape-corner-medium);
-		border: 1px solid var(--md-sys-color-outline-variant);
-		background: var(--md-sys-color-surface-container-low);
+		padding: 20px 22px;
+		border-radius: var(--nomi-shape-bubble-start);
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
 		display: flex;
 		flex-direction: column;
+		gap: 10px;
+	}
+	.m3-block-card--settled {
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface);
+	}
+	.m3-approval-eyebrow {
+		color: inherit;
+		opacity: 0.8;
+	}
+	.m3-approval-title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.25rem;
+		line-height: 1.3;
+		font-weight: 650;
+		letter-spacing: -0.01em;
+	}
+	.m3-approval-tool {
+		margin: 0;
+		font-size: var(--md-sys-typescale-body-small-size);
+		opacity: 0.8;
+	}
+	.m3-approval-tool code {
+		font-family: var(--md-ref-typeface-mono);
+	}
+	.m3-approval-result {
+		display: flex;
+		align-items: center;
 		gap: 8px;
+		margin: 0;
+		font-weight: 650;
+	}
+	.m3-approval-btn {
+		height: 48px;
+		padding: 0 24px;
+		border-radius: var(--md-sys-shape-corner-full);
+		font-family: var(--md-sys-typescale-label-large-font);
+		font-size: 0.9375rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-radius var(--nomi-motion-spatial-fast);
+	}
+	.m3-approval-btn:not(:disabled):active {
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+	.m3-approval-btn:disabled {
+		opacity: 0.38;
+		cursor: not-allowed;
+	}
+	.m3-approval-btn--allow {
+		border: none;
+		background: var(--md-sys-color-tertiary);
+		color: var(--md-sys-color-on-tertiary);
+	}
+	.m3-approval-btn--deny {
+		border: 1.5px solid currentColor;
+		background: transparent;
+		color: inherit;
 	}
 	.m3-approval-remember {
 		display: flex;

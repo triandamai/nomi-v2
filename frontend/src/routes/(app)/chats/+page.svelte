@@ -5,10 +5,10 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<div class="h-full overflow-y-auto p-8">
-	<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Chats</h1>
+<div class="h-full overflow-y-auto px-4 py-8 md:px-10">
+	<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Chats</h1>
 
-	<div class="mt-6 space-y-1">
+	<div class="mt-6 flex max-w-3xl flex-col gap-2">
 		{#each data.sessions as session (session.id)}
 			<SessionListItem {session} />
 		{/each}

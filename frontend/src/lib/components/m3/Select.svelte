@@ -72,10 +72,10 @@
 		justify-content: space-between;
 		width: 100%;
 		box-sizing: border-box;
-		height: 44px;
+		height: 52px;
 		padding: 0 16px;
-		border-radius: var(--md-sys-shape-corner-small);
-		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-large);
+		border: 1.5px solid var(--md-sys-color-outline);
 		background: var(--md-sys-color-surface);
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-sys-typescale-body-large-font);
@@ -85,6 +85,6 @@
 	.m3-select__trigger:focus-visible {
 		outline: none;
 		border: 2px solid var(--md-sys-color-primary);
-		padding: 0 15px;
+		padding: 0 15.5px;
 	}
 </style>

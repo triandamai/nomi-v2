@@ -118,11 +118,11 @@
 <div class="flex flex-col gap-3 md:flex-row">
 	<div
 		bind:this={container}
-		class="h-[320px] w-full rounded-lg md:h-[360px]"
+		class="h-[320px] w-full rounded-[28px] md:h-[360px]"
 		style="background: var(--md-sys-color-surface-container-low); cursor: grab"
 	></div>
 	<div
-		class="w-full shrink-0 rounded-lg p-4 md:w-64"
+		class="w-full shrink-0 rounded-[28px] p-4 md:w-64"
 		style="background: var(--md-sys-color-surface-container-low)"
 	>
 		{#if selected}

@@ -6,7 +6,7 @@
 		class: extraClass = '',
 		children
 	}: {
-		variant?: 'filled' | 'outlined' | 'elevated';
+		variant?: 'filled' | 'outlined' | 'elevated' | 'tonal';
 		class?: string;
 		children: Snippet;
 	} = $props();
@@ -18,12 +18,17 @@
 
 <style>
 	.m3-card {
-		border-radius: var(--md-sys-shape-corner-medium);
+		border-radius: var(--md-sys-shape-corner-extra-large);
 		overflow: hidden;
 	}
 
+	/* Default content surface on the tinted page ground: white (lowest), no border. */
+	.m3-card--tonal {
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+
 	.m3-card--outlined {
-		background: var(--md-sys-color-surface);
+		background: var(--md-sys-color-surface-container-lowest);
 		border: 1px solid var(--md-sys-color-outline-variant);
 	}
 

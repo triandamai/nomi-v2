@@ -4,8 +4,10 @@
 	import { page } from '$app/state';
 	import { onMount, type Snippet } from 'svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
-	import Button from '$lib/components/m3/Button.svelte';
+	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
+	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
 	import type { AgentStatus, RenderedMessage } from '$lib/types';
@@ -41,7 +43,7 @@
 	let connectionLost = $state(false);
 	let activitySheetOpen = $state(false);
 	let messagesContainer: HTMLDivElement | undefined = $state();
-	let messageInput: HTMLInputElement | undefined = $state();
+	let messageInput: HTMLTextAreaElement | undefined = $state();
 
 	let localMessages = $state(messages);
 
@@ -62,6 +64,15 @@
 	$effect(() => {
 		localMessages = messages;
 	});
+
+	// Enter sends, Shift+Enter breaks the line — the textarea grows with its content.
+	function onComposerKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+			event.preventDefault();
+			const field = event.currentTarget as HTMLTextAreaElement;
+			if (field.value.trim() && !isWorking) field.form?.requestSubmit();
+		}
+	}
 
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -232,60 +243,45 @@
 </script>
 
 <div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
-	<div bind:this={messagesContainer} class="flex-1 overflow-y-auto px-6 py-6">
-		{#each localMessages as message, i (message.id)}
-			<MessageBubble
-				{message}
-				chained={isChained(localMessages, i)}
-				first={i === 0}
-				showTimestamp={isLastInChain(localMessages, i)}
-			/>
-		{/each}
-		{#if isWorking}
-			<div class="mt-4 flex justify-start">
-				<div
-					class="md-body-large flex items-center gap-2 max-w-md px-4 py-2"
-					style="background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-extra-small)"
-				>
-					<span class="m3-spinner" aria-hidden="true"></span>
-					{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : 'Nomi is working…'}
+	<div bind:this={messagesContainer} class="thread flex-1 overflow-y-auto">
+		<div class="thread__column">
+			{#each localMessages as message, i (message.id)}
+				<MessageBubble
+					{message}
+					chained={isChained(localMessages, i)}
+					first={i === 0}
+					showTimestamp={isLastInChain(localMessages, i)}
+				/>
+			{/each}
+			{#if isWorking}
+				<div class="thread__status" role="status">
+					<LoadingIndicator size={28} label="Nomi is working" />
+					<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : 'Nomi is working…'}</span>
 				</div>
-			</div>
-		{/if}
-		{#if turnError}
-			<p class="md-body-medium mt-4 text-center" style="color: var(--md-sys-color-error)">
-				Something went wrong — try sending again.
-			</p>
-		{/if}
-		{#if sendError}
-			<p class="md-body-medium mt-4 text-center" style="color: var(--md-sys-color-error)">{sendError}</p>
-		{/if}
-		{#if connectionLost}
-			<p class="md-body-medium mt-4 text-center" style="color: var(--md-sys-color-error)">
-				Couldn't connect to this chat — try reloading the page.
-			</p>
-		{/if}
+			{/if}
+			{#if turnError}
+				<p class="thread__notice" role="alert">Something went wrong — try sending again.</p>
+			{/if}
+			{#if sendError}
+				<p class="thread__notice" role="alert">{sendError}</p>
+			{/if}
+			{#if connectionLost}
+				<p class="thread__notice" role="alert">Couldn't connect to this chat — try reloading the page.</p>
+			{/if}
+		</div>
 	</div>
 
-	<div
-		class="px-6 py-4"
-		style="background: var(--md-sys-color-surface-container-low); border-top: 1px solid var(--md-sys-color-outline-variant)"
-	>
+	<div class="dock">
 		{#if activeDelegationCount > 0}
-			<div class="mb-2 flex items-center">
-				<button
-					type="button"
-					class="md-label-medium"
-					style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 4px 8px;"
-					onclick={() => (activitySheetOpen = true)}
-				>
-					{activeDelegationCount === 1 ? '1 agent working…' : `${activeDelegationCount} agents working…`}
-				</button>
-			</div>
+			<button type="button" class="dock__activity" onclick={() => (activitySheetOpen = true)}>
+				<AgentShape size={20} working />
+				{activeDelegationCount === 1 ? '1 agent working' : `${activeDelegationCount} agents working`}
+			</button>
 		{/if}
 		<form
 			method="POST"
 			action="?/sendMessage"
+			class="composer"
 			use:enhance={() => {
 				submitting = true;
 				return async ({ update }) => {
@@ -294,34 +290,24 @@
 				};
 			}}
 		>
-			<div
-				class="flex items-center gap-2 px-4 py-2"
-				style="background: var(--md-sys-color-surface); border-radius: var(--md-sys-shape-corner-full); border: 1px solid var(--md-sys-color-outline)"
-			>
-				<input
-					bind:this={messageInput}
-					name="text"
-					type="text"
-					placeholder="Ask me anything..."
-					required
-					class="md-body-large flex-1 border-none bg-transparent outline-none"
-					style="color: var(--md-sys-color-on-surface)"
-				/>
-				<Button type="submit" variant="filled" disabled={isWorking}>
-					{#if isWorking}
-						<span class="m3-spinner m3-spinner--on-primary" aria-hidden="true"></span>
-						Sending…
-					{:else}
-						Send
-					{/if}
-				</Button>
-			</div>
+			{#if extraControls}
+				<div class="composer__controls">
+					{@render extraControls()}
+				</div>
+			{/if}
+			<label for="chat-message" class="sr-only">Message</label>
+			<textarea
+				id="chat-message"
+				bind:this={messageInput}
+				name="text"
+				rows="1"
+				placeholder="Message Nomi"
+				required
+				class="composer__input"
+				onkeydown={onComposerKeydown}
+			></textarea>
+			<SendButton working={isWorking} />
 		</form>
-		{#if extraControls}
-			<div class="mt-2 flex items-center gap-1">
-				{@render extraControls()}
-			</div>
-		{/if}
 	</div>
 </div>
 
@@ -350,22 +336,89 @@
 </BottomSheet>
 
 <style>
-	.m3-spinner {
-		display: inline-block;
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		border: 2px solid color-mix(in srgb, var(--md-sys-color-on-surface-variant) 30%, transparent);
-		border-top-color: var(--md-sys-color-on-surface-variant);
-		animation: m3-spin 0.7s linear infinite;
+	.thread {
+		padding: 24px clamp(16px, 3vw, 40px) 8px;
 	}
-	.m3-spinner--on-primary {
-		border-color: color-mix(in srgb, var(--md-sys-color-on-primary) 30%, transparent);
-		border-top-color: var(--md-sys-color-on-primary);
+	.thread__column {
+		max-width: 800px;
+		margin: 0 auto;
 	}
-	@keyframes m3-spin {
-		to {
-			transform: rotate(360deg);
-		}
+	.thread__status {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 20px;
+		padding-left: 4px;
+		font-family: var(--md-sys-typescale-body-large-font);
+		font-size: var(--md-sys-typescale-body-medium-size);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.thread__notice {
+		margin: 16px 0 0;
+		padding: 12px 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-on-error-container);
+		font-family: var(--md-sys-typescale-body-medium-font);
+		font-size: var(--md-sys-typescale-body-medium-size);
+	}
+
+	.dock {
+		padding: 8px clamp(12px, 3vw, 40px) 16px;
+	}
+	.dock__activity {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: 800px;
+		margin: 0 auto 8px;
+		height: 36px;
+		padding: 0 14px 0 10px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+		font-family: var(--md-sys-typescale-label-large-font);
+		font-size: var(--md-sys-typescale-label-large-size);
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.composer {
+		display: flex;
+		align-items: flex-end;
+		gap: 6px;
+		max-width: 800px;
+		margin: 0 auto;
+		padding: 8px 8px 8px 10px;
+		border-radius: var(--md-sys-shape-corner-extra-large-increased);
+		background: var(--md-sys-color-surface-container-lowest);
+		box-shadow:
+			0 1px 0 var(--md-sys-color-outline-variant),
+			0 18px 40px -28px color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
+	}
+	.composer__controls {
+		display: flex;
+		align-items: center;
+		align-self: center;
+		flex: none;
+	}
+	.composer__input {
+		flex: 1;
+		min-width: 0;
+		align-self: center;
+		max-height: 200px;
+		field-sizing: content;
+		padding: 12px 6px;
+		border: none;
+		resize: none;
+		outline: none;
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		font-family: var(--md-sys-typescale-body-large-font);
+		font-size: var(--md-sys-typescale-body-large-size);
+		line-height: 1.5;
+	}
+	.composer__input::placeholder {
+		color: var(--md-sys-color-on-surface-variant);
 	}
 </style>

@@ -43,10 +43,10 @@
 	.m3-field__input {
 		width: 100%;
 		box-sizing: border-box;
-		height: 44px;
+		height: 52px;
 		padding: 0 16px;
-		border-radius: var(--md-sys-shape-corner-small);
-		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-large);
+		border: 1.5px solid var(--md-sys-color-outline);
 		background: var(--md-sys-color-surface);
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-sys-typescale-body-large-font);
@@ -59,7 +59,7 @@
 	.m3-field__input:focus {
 		outline: none;
 		border: 2px solid var(--md-sys-color-primary);
-		padding: 0 15px;
+		padding: 0 15.5px;
 	}
 
 	.m3-field__input--error {

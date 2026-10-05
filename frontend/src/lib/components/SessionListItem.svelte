@@ -127,11 +127,16 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		border-radius: var(--md-sys-shape-corner-small);
+		border-radius: var(--md-sys-shape-corner-extra-large);
 		padding: 4px 4px 4px 0;
+		background: var(--md-sys-color-surface-container-lowest);
+		transition:
+			border-radius var(--nomi-motion-spatial-fast),
+			background-color var(--nomi-motion-effects-fast);
 	}
 	.m3-session-item:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-primary-container);
 	}
 
 	.m3-session-item__link {
@@ -140,7 +145,7 @@
 		flex: 1;
 		flex-direction: column;
 		gap: 4px;
-		padding: 8px 8px 8px 12px;
+		padding: 12px 8px 12px 18px;
 		text-decoration: none;
 	}
 
@@ -161,7 +166,7 @@
 
 	.m3-session-item__title {
 		color: var(--md-sys-color-on-surface);
-		font-weight: 500;
+		font-weight: 650;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;

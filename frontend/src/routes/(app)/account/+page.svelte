@@ -12,9 +12,9 @@
 	];
 </script>
 
-<div class="h-full overflow-y-auto p-8">
+<div class="h-full overflow-y-auto px-4 py-8 md:px-10">
 	<div class="max-w-lg">
-		<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Account settings</h1>
+		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Account settings</h1>
 
 		<section class="mt-6">
 			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Email</h2>

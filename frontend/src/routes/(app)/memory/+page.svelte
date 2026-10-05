@@ -27,7 +27,7 @@
 
 <div class="h-full overflow-y-auto p-4 md:p-8">
 	<div class="max-w-3xl">
-		<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Memory</h1>
+		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Memory</h1>
 		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
 			Long-term facts Nomi has remembered about you from past conversations (RAG memory).
 		</p>

@@ -36,11 +36,13 @@
 		background: transparent;
 		cursor: pointer;
 		text-align: left;
-		padding: 8px 12px;
-		border-radius: var(--md-sys-shape-corner-extra-small);
+		min-height: 44px;
+		padding: 8px 14px;
+		border-radius: var(--md-sys-shape-corner-medium);
 		font-family: var(--md-sys-typescale-label-large-font);
 		font-size: var(--md-sys-typescale-label-large-size);
 		color: var(--md-sys-color-on-surface);
+		transition: border-radius var(--nomi-motion-spatial-fast), background-color var(--nomi-motion-effects-fast);
 	}
 	.m3-menu-item:hover,
 	.m3-menu-item:focus-visible {
@@ -48,7 +50,9 @@
 		outline: none;
 	}
 	.m3-menu-item--selected {
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+		font-weight: 600;
 	}
 </style>
