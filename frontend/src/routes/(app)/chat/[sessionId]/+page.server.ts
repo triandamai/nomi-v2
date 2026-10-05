@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
-import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage } from '$lib/types';
+import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
@@ -35,7 +35,14 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const agentStatusResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-status`);
 	const agentStatus: AgentStatus | null = agentStatusResponse.ok ? await agentStatusResponse.json() : null;
 
-	return { messages, models, personality, agentActivity, agentStatus };
+	// There's no single-session endpoint; the title comes from the session list (best-effort).
+	const sessionsResponse = await apiFetch(fetch, cookies, '/api/sessions');
+	const sessions: SessionSummary[] = sessionsResponse.ok
+		? ((await sessionsResponse.json()) as { sessions: SessionSummary[] }).sessions
+		: [];
+	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? 'New chat';
+
+	return { messages, models, personality, agentActivity, agentStatus, title };
 };
 
 export const actions: Actions = {

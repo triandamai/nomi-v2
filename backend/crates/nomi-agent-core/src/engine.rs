@@ -496,11 +496,36 @@ pub async fn resolve_tool_batch(
                 "messages": conversation_so_far,
                 "decided_tool_use_ids": already_decided,
             });
-            let _ = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
+            let patched = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
                 .bind(&state_patch)
                 .bind(agent_session_id)
                 .execute(&mut **conn)
-                .await;
+                .await?
+                .rows_affected();
+
+            // The default agent and delegated turns run with a sentinel agent_session_id (the
+            // chat's own session_id) that has no agent_sessions row, so the patch above lands
+            // nowhere — the approval card would exist but could never be resolved ("this action
+            // is no longer pending"). Give the paused state a row of its own. Status
+            // 'awaiting_approval' (not 'active') keeps it clear of the one-active-agent-per-
+            // speaker index, which the chat's live agent session may already hold.
+            if patched == 0 {
+                let sender_channel_identity_id: Uuid =
+                    sqlx::query_scalar("SELECT id FROM channel_identities WHERE user_id = $1 ORDER BY created_at LIMIT 1")
+                        .bind(user_id)
+                        .fetch_one(&mut **conn)
+                        .await?;
+                sqlx::query(
+                    "INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status, state) \
+                     VALUES ($1, $2, $3, 'awaiting_approval', $4)",
+                )
+                .bind(session_id)
+                .bind(sender_channel_identity_id)
+                .bind(agent.agent_type().as_ref())
+                .bind(&state_patch)
+                .execute(&mut **conn)
+                .await?;
+            }
 
             return Ok(ToolBatchOutcome::AwaitingApproval { message_id });
         }

@@ -1,13 +1,21 @@
 name: Test
 
-# Runs directly on every push/PR (fast feedback), and is also called by
-# release.yml so a tagged build can never publish an image without a green
-# run of this exact same job first.
+# Runs on pull requests (opened, new commits, reopened) and when a PR is
+# merged into main — not on every branch push. Also called by release.yml so
+# a tagged build can never publish an image without a green run of this exact
+# same job first.
 on:
-  push:
-    branches: ['**']
   pull_request:
+  push:
+    branches: [main]
   workflow_call:
+
+# A new commit on a PR cancels that PR's still-running check. Runs on main and
+# tag releases get a group per ref+commit, so they never cancel or queue
+# behind each other (a tag on the same commit as a merge stays independent).
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}@{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always

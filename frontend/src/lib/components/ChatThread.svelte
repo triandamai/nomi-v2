@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount, type Snippet } from 'svelte';
+	import CrewPanel from '$lib/components/CrewPanel.svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -10,6 +11,7 @@
 	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
+	import { buildCrew } from '$lib/crew';
 	import type { AgentStatus, RenderedMessage } from '$lib/types';
 
 	interface AgentActivityItem {
@@ -27,6 +29,8 @@
 		agentActivity,
 		agentStatus = null,
 		sendError = null,
+		title = 'Chat',
+		context,
 		extraControls,
 	}: {
 		sessionId: string;
@@ -34,6 +38,11 @@
 		agentActivity: AgentActivityItem[];
 		agentStatus?: AgentStatus | null;
 		sendError?: string | null;
+		/** Shown in the app bar. */
+		title?: string;
+		/** Optional lead-in for the app bar's meta line, e.g. a project name. */
+		context?: string;
+		/** App-bar actions (model / personality menus). */
 		extraControls?: Snippet;
 	} = $props();
 
@@ -134,14 +143,30 @@
 		return index === list.length - 1 || !isChained(list, index + 1);
 	}
 
-	const activeDelegationCount = $derived(
-		agentActivity.filter((d) => d.status === 'pending' || d.status === 'processing').length,
-	);
 
 	// `submitting` covers the gap between hitting Send and the first streamed token arriving —
 	// `pendingReply` alone only flips once a WS "Delta" event lands, which leaves a brief window
 	// right after sending where neither the button nor the "Typing…" bubble showed any feedback.
 	const isWorking = $derived(submitting || pendingReply);
+
+	const crew = $derived(
+		buildCrew({
+			activity: agentActivity,
+			messageAuthors: localMessages.filter((m) => m.sender === 'assistant').map((m) => m.agent_display_name),
+			nomiWorking: isWorking,
+			nomiStatus: currentPhase
+				? phaseText(currentPhase.phase, currentPhase.detail).replace(/^Nomi is /, '')
+				: isWorking
+					? 'working…'
+					: null,
+		}),
+	);
+	const involvedCrew = $derived(crew.filter((m) => m.involved));
+	const workingCrew = $derived(crew.filter((m) => m.working));
+	// App-bar meta line: "TRAVEL · NOMI + MONEY + PLANNING"
+	const metaLine = $derived(
+		[context, involvedCrew.map((m) => m.name).join(' + ')].filter(Boolean).join(' · '),
+	);
 
 	$effect(() => {
 		if (pendingReply || turnError) submitting = false;
@@ -242,78 +267,103 @@
 	});
 </script>
 
-<div class="flex h-full flex-col" style="background: var(--md-sys-color-surface)">
-	<div bind:this={messagesContainer} class="thread flex-1 overflow-y-auto">
-		<div class="thread__column">
-			{#each localMessages as message, i (message.id)}
-				<MessageBubble
-					{message}
-					chained={isChained(localMessages, i)}
-					first={i === 0}
-					showTimestamp={isLastInChain(localMessages, i)}
-				/>
-			{/each}
-			{#if isWorking}
-				<div class="thread__status" role="status">
-					<LoadingIndicator size={28} label="Nomi is working" />
-					<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : 'Nomi is working…'}</span>
-				</div>
-			{/if}
-			{#if turnError}
-				<p class="thread__notice" role="alert">Something went wrong — try sending again.</p>
-			{/if}
-			{#if sendError}
-				<p class="thread__notice" role="alert">{sendError}</p>
-			{/if}
-			{#if connectionLost}
-				<p class="thread__notice" role="alert">Couldn't connect to this chat — try reloading the page.</p>
-			{/if}
+<div class="chat">
+	<header class="appbar">
+		<div class="appbar__titles">
+			<h1 class="appbar__title">{title}</h1>
+			<span class="appbar__meta">{metaLine}</span>
 		</div>
-	</div>
-
-	<div class="dock">
-		{#if activeDelegationCount > 0}
-			<button type="button" class="dock__activity" onclick={() => (activitySheetOpen = true)}>
-				<AgentShape size={20} working />
-				{activeDelegationCount === 1 ? '1 agent working' : `${activeDelegationCount} agents working`}
-			</button>
-		{/if}
-		<form
-			method="POST"
-			action="?/sendMessage"
-			class="composer"
-			use:enhance={() => {
-				submitting = true;
-				return async ({ update }) => {
-					await update({ reset: true });
-					messageInput?.focus();
-				};
-			}}
+		<button
+			type="button"
+			class="appbar__crew"
+			aria-label="Your crew: {workingCrew.length > 0 ? `${workingCrew.length} working` : 'all idle'}"
+			onclick={() => (activitySheetOpen = true)}
 		>
-			{#if extraControls}
-				<div class="composer__controls">
-					{@render extraControls()}
-				</div>
+			<span class="appbar__stack">
+				{#each involvedCrew.slice(0, 4) as member (member.key)}
+					<span class="appbar__stack-item"><AgentShape agent={member.key} size={30} working={member.working} /></span>
+				{/each}
+			</span>
+			{#if workingCrew.length > 0}
+				<span class="appbar__crew-label">{workingCrew.length} working</span>
 			{/if}
-			<label for="chat-message" class="sr-only">Message</label>
-			<textarea
-				id="chat-message"
-				bind:this={messageInput}
-				name="text"
-				rows="1"
-				placeholder="Message Nomi"
-				required
-				class="composer__input"
-				onkeydown={onComposerKeydown}
-			></textarea>
-			<SendButton working={isWorking} />
-		</form>
+		</button>
+		{#if extraControls}
+			<div class="appbar__actions">
+				{@render extraControls()}
+			</div>
+		{/if}
+	</header>
+
+	<div class="chat__body">
+		<div class="chat__main">
+			<div bind:this={messagesContainer} class="thread">
+				<div class="thread__column">
+					{#each localMessages as message, i (message.id)}
+						<MessageBubble
+							{message}
+							chained={isChained(localMessages, i)}
+							first={i === 0}
+							showTimestamp={isLastInChain(localMessages, i)}
+						/>
+					{/each}
+					{#if isWorking}
+						<div class="thread__status" role="status">
+							<LoadingIndicator size={28} label="Nomi is working" />
+							<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : 'Nomi is working…'}</span>
+						</div>
+					{/if}
+					{#if turnError}
+						<p class="thread__notice" role="alert">Something went wrong — try sending again.</p>
+					{/if}
+					{#if sendError}
+						<p class="thread__notice" role="alert">{sendError}</p>
+					{/if}
+					{#if connectionLost}
+						<p class="thread__notice" role="alert">Couldn't connect to this chat — try reloading the page.</p>
+					{/if}
+				</div>
+			</div>
+
+			<div class="dock">
+				<form
+					method="POST"
+					action="?/sendMessage"
+					class="composer"
+					use:enhance={() => {
+						submitting = true;
+						return async ({ update }) => {
+							await update({ reset: true });
+							messageInput?.focus();
+						};
+					}}
+				>
+					<label for="chat-message" class="sr-only">Message</label>
+					<textarea
+						id="chat-message"
+						bind:this={messageInput}
+						name="text"
+						rows="1"
+						placeholder="Message Nomi"
+						required
+						class="composer__input"
+						onkeydown={onComposerKeydown}
+					></textarea>
+					<SendButton working={isWorking} />
+				</form>
+			</div>
+		</div>
+
+		<aside class="chat__crew" aria-label="Crew">
+			<CrewPanel members={crew} />
+		</aside>
 	</div>
 </div>
 
 <BottomSheet bind:open={activitySheetOpen}>
 	{#snippet children()}
-		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 12px;">Agent activity</h2>
+		<CrewPanel members={crew} />
+		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 20px 0 12px;">Recent hand-offs</h2>
 		{#if agentActivity.length === 0}
 			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No background activity yet.</p>
 		{:else}
@@ -336,21 +386,156 @@
 </BottomSheet>
 
 <style>
+	/* The chat lays itself out by its own width (container queries), not the viewport — the same
+	   component sits full-width on /chat and in a 420px column on project pages. */
+	.chat {
+		container-type: inline-size;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		background: var(--md-sys-color-surface);
+	}
+
+	.appbar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 14px clamp(12px, 3vw, 32px) 10px;
+	}
+	.appbar__titles {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.appbar__title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.75rem;
+		line-height: 1.15;
+		font-weight: 700;
+		letter-spacing: -0.025em;
+		color: var(--md-sys-color-on-surface);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.appbar__meta {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--md-sys-color-on-surface-variant);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.appbar__crew {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 44px;
+		padding: 0 12px 0 6px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface);
+		font-family: var(--md-sys-typescale-label-large-font);
+		font-size: var(--md-sys-typescale-label-large-size);
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-radius var(--nomi-motion-spatial-fast);
+	}
+	.appbar__crew:active {
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+	.appbar__stack {
+		display: flex;
+		padding-left: 4px;
+	}
+	.appbar__stack-item {
+		display: flex;
+		margin-left: -8px;
+		border-radius: 50%;
+	}
+	.appbar__stack-item:first-child {
+		margin-left: 0;
+	}
+	.appbar__crew-label {
+		white-space: nowrap;
+	}
+	.appbar__actions {
+		display: flex;
+		align-items: center;
+	}
+
+	.chat__body {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		gap: 24px;
+		padding-right: 0;
+	}
+	.chat__main {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.chat__crew {
+		display: none;
+	}
+	/* Narrow chats (phones, the project page's side column): tighter title, crew button shows
+	   just the spinning stack. */
+	@container (max-width: 600px) {
+		.appbar {
+			gap: 4px;
+		}
+		.appbar__title {
+			font-size: 1.375rem;
+		}
+		.appbar__crew-label {
+			display: none;
+		}
+		.appbar__crew {
+			padding: 0 8px 0 6px;
+		}
+	}
+
+	/* Wide chats: the crew lives in its own column and the app-bar stack button steps aside. */
+	@container (min-width: 1100px) {
+		.chat__body {
+			padding-right: 24px;
+		}
+		.chat__crew {
+			display: block;
+			flex: none;
+			width: 300px;
+			overflow-y: auto;
+			padding-bottom: 16px;
+		}
+		.appbar__crew {
+			display: none;
+		}
+	}
+
 	.thread {
-		padding: 24px clamp(16px, 3vw, 40px) 8px;
+		flex: 1;
+		overflow-y: auto;
+		padding: 12px clamp(16px, 3vw, 40px) 8px;
 	}
 	.thread__column {
-		max-width: 800px;
+		max-width: 780px;
 		margin: 0 auto;
 	}
 	.thread__status {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		margin-top: 20px;
+		margin-top: 22px;
 		padding-left: 4px;
 		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: var(--md-sys-typescale-body-medium-size);
+		font-size: 0.9375rem;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.thread__notice {
@@ -366,41 +551,18 @@
 	.dock {
 		padding: 8px clamp(12px, 3vw, 40px) 16px;
 	}
-	.dock__activity {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		max-width: 800px;
-		margin: 0 auto 8px;
-		height: 36px;
-		padding: 0 14px 0 10px;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-primary-container);
-		color: var(--md-sys-color-on-primary-container);
-		font-family: var(--md-sys-typescale-label-large-font);
-		font-size: var(--md-sys-typescale-label-large-size);
-		font-weight: 600;
-		cursor: pointer;
-	}
 	.composer {
 		display: flex;
 		align-items: flex-end;
 		gap: 6px;
-		max-width: 800px;
+		max-width: 780px;
 		margin: 0 auto;
-		padding: 8px 8px 8px 10px;
+		padding: 8px 8px 8px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		box-shadow:
 			0 1px 0 var(--md-sys-color-outline-variant),
 			0 18px 40px -28px color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
-	}
-	.composer__controls {
-		display: flex;
-		align-items: center;
-		align-self: center;
-		flex: none;
 	}
 	.composer__input {
 		flex: 1;
@@ -408,7 +570,7 @@
 		align-self: center;
 		max-height: 200px;
 		field-sizing: content;
-		padding: 12px 6px;
+		padding: 12px 4px;
 		border: none;
 		resize: none;
 		outline: none;
