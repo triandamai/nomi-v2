@@ -3,13 +3,16 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import ButtonGroup from '$lib/components/m3/ButtonGroup.svelte';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import Pagination from '$lib/components/m3/Pagination.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import { GRADIENT_STOPS } from '$lib/components/m3/shapes';
 	import { fitPoints, STRENGTH_LABELS, strengthPips, timeAgo } from '$lib/memory';
+	import { clampPage, pageCount, pageSlice } from '$lib/pagination';
 	import { projectTo3D } from '$lib/pca';
 	import type { MemoryItem } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
@@ -30,6 +33,11 @@
 	let confirmOpen = $state(false);
 	let forgetting = $state(false);
 	let snackbarOpen = $state(false);
+	let detail = $state<MemoryItem | null>(null);
+	let detailOpen = $state(false);
+
+	const PER_PAGE = 12;
+	let page = $state(1);
 
 	const memories = $derived(data.memories);
 
@@ -42,6 +50,35 @@
 		if (sort === 'used') sorted.sort((a, b) => b.uses - a.uses || b.weight - a.weight);
 		return sorted;
 	});
+
+	const pages = $derived(pageCount(visible.length, PER_PAGE));
+	const shown = $derived(pageSlice(visible, clampPage(page, pages), PER_PAGE));
+
+	// A new search or sort starts from the first page.
+	$effect(() => {
+		void query;
+		void sort;
+		page = 1;
+	});
+
+	function goToPage(next: number) {
+		page = next;
+		document.querySelector('.toolbar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	function showDetail(memory: MemoryItem) {
+		detail = memory;
+		detailOpen = true;
+	}
+
+	/** Marks a memory's text as clamped when it runs past its eight lines. */
+	function clamped(node: HTMLElement) {
+		const measure = () => node.toggleAttribute('data-clamped', node.scrollHeight > node.clientHeight + 1);
+		const observer = new ResizeObserver(measure);
+		observer.observe(node);
+		measure();
+		return { destroy: () => observer.disconnect() };
+	}
 
 	const newest = $derived(
 		memories.length ? memories.reduce((a, b) => (Date.parse(a.created_at) > Date.parse(b.created_at) ? a : b)) : null,
@@ -68,7 +105,10 @@
 	function selectMemory(id: string) {
 		selectedId = selectedId === id ? null : id;
 		if (selectedId) {
-			document.getElementById(`memory-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			// The memory may be on another page of the list: go there first.
+			const index = visible.findIndex((m) => m.id === id);
+			if (index >= 0) page = Math.floor(index / PER_PAGE) + 1;
+			requestAnimationFrame(() => document.getElementById(`memory-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
 		}
 	}
 
@@ -205,7 +245,7 @@
 				<p class="memory__notice">Nothing matches “{query.trim()}”.</p>
 			{:else}
 				<ul class="cards">
-					{#each visible as memory (memory.id)}
+					{#each shown as memory (memory.id)}
 						{@const pips = strengthPips(memory.weight)}
 						<li
 							id="memory-{memory.id}"
@@ -218,7 +258,10 @@
 									<IconClose />
 								</IconButton>
 							</div>
-							<p class="card__content">{memory.content}</p>
+							<div class="card__body">
+								<p class="card__content" use:clamped>{memory.content}</p>
+								<Button variant="text" size="xs" class="card__more" onclick={() => showDetail(memory)}>Show more</Button>
+							</div>
 							<div class="card__foot">
 								<span class="strength" title="Weight {memory.weight.toFixed(2)}">
 									<span class="strength__pips" aria-hidden="true">
@@ -235,6 +278,7 @@
 						</li>
 					{/each}
 				</ul>
+				<Pagination page={clampPage(page, pages)} {pages} onselect={goToPage} label="Memory pages" />
 			{/if}
 		{/if}
 
@@ -286,6 +330,44 @@
 		</form>
 	{/snippet}
 </Dialog>
+
+<BottomSheet bind:open={detailOpen}>
+	{#snippet children()}
+		{#if detail}
+			{@const pips = strengthPips(detail.weight)}
+			<article class="detail" aria-labelledby="memory-detail-title">
+				<span class="nomi-meta">Learned {timeAgo(detail.created_at)}</span>
+				<h2 id="memory-detail-title" class="sr-only">Memory</h2>
+				<p class="detail__content">{detail.content}</p>
+				<dl class="detail__facts">
+					<div>
+						<dt class="nomi-meta">Strength</dt>
+						<dd>{STRENGTH_LABELS[pips - 1]}</dd>
+					</div>
+					<div>
+						<dt class="nomi-meta">Recalled</dt>
+						<dd>{detail.uses === 0 ? 'Not used yet' : `In ${detail.uses} ${detail.uses === 1 ? 'reply' : 'replies'}`}</dd>
+					</div>
+					<div>
+						<dt class="nomi-meta">Updated</dt>
+						<dd>{timeAgo(detail.updated_at)}</dd>
+					</div>
+				</dl>
+				<div class="detail__actions">
+					<Button
+						variant="outlined"
+						onclick={() => {
+							const memory = detail;
+							detailOpen = false;
+							if (memory) askToForget(memory);
+						}}>Forget</Button
+					>
+					<Button variant="filled" onclick={() => (detailOpen = false)}>Done</Button>
+				</div>
+			</article>
+		{/if}
+	{/snippet}
+</BottomSheet>
 
 <Snackbar bind:open={snackbarOpen} message={form?.error ?? 'Forgotten. Nomi won’t bring that up again.'} />
 
@@ -565,7 +647,18 @@
 		gap: 8px;
 		min-height: 40px;
 	}
+	.card__body {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+	}
 	.card__content {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 8;
+		line-clamp: 8;
+		overflow: hidden;
 		margin: 0;
 		padding-right: 10px;
 		font-size: 1.0625rem;
@@ -573,6 +666,44 @@
 		font-weight: 550;
 		color: inherit;
 		overflow-wrap: anywhere;
+	}
+	/* "Show more" only where the text was cut off. */
+	.card__body :global(.card__more) {
+		display: none;
+		margin-left: -12px;
+	}
+	.card__content:global([data-clamped]) + :global(.card__more) {
+		display: inline-flex;
+	}
+	.detail {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 8px 24px 24px;
+	}
+	.detail__content {
+		margin: 0;
+		font-size: 1.125rem;
+		line-height: 1.55;
+		font-weight: 550;
+		color: var(--md-sys-color-on-surface);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.detail__facts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px 28px;
+		margin: 0;
+	}
+	.detail__facts dd {
+		margin: 4px 0 0;
+		color: var(--md-sys-color-on-surface);
+	}
+	.detail__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
 	}
 	.card__foot {
 		margin-top: auto;
