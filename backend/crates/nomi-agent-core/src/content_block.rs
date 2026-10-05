@@ -94,6 +94,13 @@ pub enum ContentBlock {
         due_at: DateTime<Utc>,
         recurrence: Option<String>,
     },
+    /// The Workspace agent needs the user's own Google account: a card with a Connect button.
+    /// `services` are the ones the request needs; `reason` is "not_connected" or
+    /// "service_not_allowed".
+    WorkspaceConnect {
+        reason: String,
+        services: Vec<String>,
+    },
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror

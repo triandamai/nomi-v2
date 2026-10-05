@@ -168,6 +168,7 @@
 				<MenuItem onclick={() => goToAccountPage('/preferences')}>Preferences</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/profile')}>Profile</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/account')}>Account settings</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/connections')}>Connections</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/models')}>Model</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/memory')}>Memory</MenuItem>
 				<form method="POST" action="/logout">

@@ -518,7 +518,7 @@ pub async fn resolve_tool_batch(
                 continue;
             }
 
-            let description = describe_pending_action(name, input);
+            let description = agent.describe_action(name, input).unwrap_or_else(|| describe_pending_action(name, input));
             let approval_block = crate::content_block::ContentBlock::ApprovalRequest {
                 id: Uuid::new_v4(),
                 tool_name: name.clone(),
@@ -684,7 +684,10 @@ pub async fn resolve_tool_batch(
 
             log_tool_call(conn, session_id, agent_session_id, agent.agent_type().as_ref(), name, input, &result_text, is_error).await;
 
+            // A tool that returns a block (a table, a file change, a Connect card) means it to be
+            // seen, whether or not the agent narrates the rest of its tool calls.
             let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
+                || rich_block.is_some()
                 || (agent.surfaces_activity()
                     && name.as_str() != COMPLETE_TASK_TOOL_NAME
                     && name.as_str() != DELEGATE_TOOL_NAME

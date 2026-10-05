@@ -26,6 +26,7 @@ export type ContentBlock =
 	| { kind: 'file_delete'; project_id: string; path: string }
 	| { kind: 'todo_list'; items: TodoItem[] }
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
+	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
 	| {
 			kind: 'approval_request';
 			id: string;
@@ -342,3 +343,14 @@ export interface ScheduledTask {
 
 /** A chat's thinking level (see ThinkingMenu). */
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
+
+/** A Google service the Workspace agent can use. */
+export type WorkspaceService = 'gmail' | 'sheets' | 'docs' | 'drive' | 'calendar';
+
+/** GET /api/connections/google: this user's own Google account, if connected. */
+export interface GoogleConnection {
+	configured: boolean;
+	connection: { email: string; services: WorkspaceService[]; connected_at: string } | null;
+	activity: { service: WorkspaceService; summary: string; link: string | null; created_at: string }[];
+	services: WorkspaceService[];
+}

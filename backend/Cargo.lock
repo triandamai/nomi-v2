@@ -2239,6 +2239,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-workspace"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-settings",
+ "nomi-test-support",
+ "rand 0.8.7",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
 name = "nomi-auth"
 version = "0.1.0"
 dependencies = [
@@ -2325,6 +2348,7 @@ dependencies = [
  "nomi-agent-planning",
  "nomi-agent-reminders",
  "nomi-agent-supervisor",
+ "nomi-agent-workspace",
  "nomi-auth",
  "nomi-embedding",
  "nomi-llm",
