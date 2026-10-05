@@ -1,7 +1,7 @@
 name: Release
 
-# Only version tags trigger a build+push — plain pushes to main only run
-# Test (see test.yml). Push a tag like v1.2.3 to publish images.
+# Deploy: only version tags trigger a build+push — PRs and merges to main only
+# run Test (see test.yml). Push a tag like v1.2.3 to publish images.
 on:
   push:
     tags: ['v*.*.*']
