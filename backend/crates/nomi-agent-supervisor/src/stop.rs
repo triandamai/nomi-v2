@@ -96,7 +96,7 @@ pub fn parse_stop_command(text: &str, agents: &[KnownAgent]) -> Option<StopTarge
     }
 
     let name = named.join(" ");
-    let agent = agents.iter().find(|a| a.aliases.iter().any(|alias| *alias == name))?;
+    let agent = agents.iter().find(|a| a.aliases.contains(&name))?;
     // "stop nomi" means stop what's happening here, not just the default agent.
     Some(if agent.is_default { StopTarget::ThisChat } else { StopTarget::Agent { agent_type: agent.agent_type.clone() } })
 }

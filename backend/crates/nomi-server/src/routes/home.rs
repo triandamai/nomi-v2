@@ -102,6 +102,11 @@ pub fn checklist_progress(markdown: &str) -> (i64, i64) {
     (done, total)
 }
 
+type DelegationRow = (String, String, String, Option<String>, Option<String>, Uuid, DateTime<Utc>);
+type ReplyRow = (Uuid, Option<String>, Option<String>, String, DateTime<Utc>);
+type TodayRow = (Uuid, DateTime<Utc>, String, String, Option<String>);
+type TodoRow = (Uuid, Option<String>, Option<String>, serde_json::Value, DateTime<Utc>);
+
 fn internal(e: sqlx::Error) -> (StatusCode, &'static str) {
     tracing::error!(error = %e, "failed to load the home summary");
     (StatusCode::INTERNAL_SERVER_ERROR, "failed to load home")
@@ -183,7 +188,7 @@ pub async fn home_summary(
         });
     }
 
-    let delegations: Vec<(String, String, String, Option<String>, Option<String>, Uuid, DateTime<Utc>)> = sqlx::query_as(
+    let delegations: Vec<DelegationRow> = sqlx::query_as(
         "SELECT target_agent_type, status, task, result, error, session_id, completed_at FROM agent_delegations \
          WHERE user_id = $1 AND completed_at > $2 AND status IN ('completed', 'failed', 'cancelled') \
          ORDER BY completed_at DESC LIMIT $3",
@@ -226,7 +231,7 @@ pub async fn home_summary(
     }
 
     // Chats where the crew said something the user hasn't answered yet.
-    let replies: Vec<(Uuid, Option<String>, Option<String>, String, DateTime<Utc>)> = sqlx::query_as(
+    let replies: Vec<ReplyRow> = sqlx::query_as(
         "SELECT DISTINCT ON (m.session_id) m.session_id, s.title, m.agent_display_name, m.content, m.created_at \
          FROM messages m JOIN sessions s ON s.id = m.session_id \
          WHERE s.org_id = $1 AND m.sender_channel_identity_id IS NULL AND m.created_at > $2 \
@@ -263,7 +268,7 @@ pub async fn home_summary(
     let local_today = Utc::now().with_timezone(&tz).date_naive();
     let day_start = tz.from_local_datetime(&local_today.and_time(NaiveTime::MIN)).earliest().map(|t| t.with_timezone(&Utc));
     let day_start = day_start.unwrap_or_else(Utc::now);
-    let today: Vec<(Uuid, DateTime<Utc>, String, String, Option<String>)> = sqlx::query_as(
+    let today: Vec<TodayRow> = sqlx::query_as(
         "SELECT id, run_at, label, target_agent_type, recurrence FROM scheduled_jobs \
          WHERE user_id = $1 AND status = 'active' AND run_at >= $2 AND run_at < $2 + interval '1 day' ORDER BY run_at",
     )
@@ -280,7 +285,7 @@ pub async fn home_summary(
     // Plans in progress: the latest to-do list in each chat, and each written plan's latest
     // version, while they still have open items.
     let mut plans: Vec<PlanItem> = Vec::new();
-    let todos: Vec<(Uuid, Option<String>, Option<String>, serde_json::Value, DateTime<Utc>)> = sqlx::query_as(
+    let todos: Vec<TodoRow> = sqlx::query_as(
         "SELECT DISTINCT ON (m.session_id) m.session_id, s.title, m.agent_display_name, m.content_blocks->0->'items', m.created_at \
          FROM messages m JOIN sessions s ON s.id = m.session_id \
          WHERE s.org_id = $1 AND m.content_blocks->0->>'kind' = 'todo_list' \
@@ -322,7 +327,7 @@ pub async fn home_summary(
             plans.push(PlanItem { kind: "plan".into(), title, agent: "planning".into(), done, total, session_id, updated_at });
         }
     }
-    plans.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    plans.sort_by_key(|plan| std::cmp::Reverse(plan.updated_at));
     plans.truncate(4);
 
     Ok(Json(HomeSummary { since, timezone, while_you_were_out: out, today, plans }))
