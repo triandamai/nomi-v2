@@ -53,6 +53,7 @@ fn built_in_role(agent_type: &str) -> Option<&'static str> {
         "planning" => "Plans, to-dos and reminders",
         "personality" => "Keeps Nomi sounding like you want",
         "supervisor" => "Keeps track of the crew, and stops it when you ask",
+        "reminders" => "Reminds you on time, and keeps your reminders",
         _ => return None,
     })
 }

@@ -21,18 +21,6 @@ fn test_state(pool: PgPool) -> AppState {
     }
 }
 
-async fn json_request(router: axum::Router, method: &str, uri: &str, bearer: Option<&str>) -> (StatusCode, Value) {
-    let mut builder = Request::builder().method(method).uri(uri);
-    if let Some(token) = bearer {
-        builder = builder.header("authorization", format!("Bearer {token}"));
-    }
-    let response = router.oneshot(builder.body(Body::empty()).unwrap()).await.unwrap();
-    let status = response.status();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json_body = if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap_or(Value::Null) };
-    (status, json_body)
-}
-
 async fn register_and_login(router: axum::Router, pool: &PgPool, email: &str) -> (String, uuid::Uuid) {
     json_request_post(
         router.clone(),
@@ -172,31 +160,89 @@ async fn money_totals_a_month_against_the_one_before(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn a_reminder_made_on_the_page_lands_in_a_reminders_chat_and_can_be_cancelled(pool: PgPool) {
+async fn reminders_live_in_the_reminders_agents_table_with_done_snooze_and_cancel(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
-    let (token, _) = register_and_login(router.clone(), &pool, "remind@example.com").await;
-    let run_at = (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339();
+    let (token, user_id) = register_and_login(router.clone(), &pool, "remind@example.com").await;
+    let due_at = (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339();
 
     let (status, created) =
-        authed(router.clone(), "POST", "/api/reminders", &token, Some(json!({"label": "Stretch", "run_at": run_at, "recurrence": "daily"}))).await;
+        authed(router.clone(), "POST", "/api/reminders", &token, Some(json!({"title": "Stretch", "due_at": due_at, "recurrence": "daily"}))).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(created["recurrence"], "daily");
-    let (_, second) = authed(router.clone(), "POST", "/api/reminders", &token, Some(json!({"label": "Water", "run_at": run_at}))).await;
+    assert_eq!((created["recurrence"].as_str(), created["created_by"].as_str()), (Some("daily"), Some("user")));
+    let (_, second) = authed(router.clone(), "POST", "/api/reminders", &token, Some(json!({"title": "Water", "due_at": due_at}))).await;
     assert_eq!(second["session_id"], created["session_id"], "both share one Reminders chat");
 
-    let (status, _) = authed(router.clone(), "POST", "/api/reminders", &token, Some(json!({"label": "Past", "run_at": "2020-01-01T00:00:00Z"}))).await;
+    let (status, _) = authed(router.clone(), "POST", "/api/reminders", &token, Some(json!({"title": "Past", "due_at": "2020-01-01T00:00:00Z"}))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let id = created["id"].as_str().unwrap();
-    let (status, _) = authed(router.clone(), "POST", &format!("/api/reminders/{id}/cancel"), &token, None).await;
+    let first = created["id"].as_str().unwrap();
+    let second_id = second["id"].as_str().unwrap();
+    let (status, _) = authed(router.clone(), "POST", &format!("/api/reminders/{first}"), &token, Some(json!({"action": "done"}))).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) =
+        authed(router.clone(), "POST", &format!("/api/reminders/{second_id}"), &token, Some(json!({"action": "snooze", "minutes": 30}))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // A task an agent scheduled stays in the core scheduler, listed separately.
+    let session: uuid::Uuid = created["session_id"].as_str().unwrap().parse().unwrap();
+    let task: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO scheduled_jobs (session_id, user_id, created_by_agent_type, target_agent_type, label, prompt, run_at) \
+         VALUES ($1, $2, 'chitchat', 'money', 'Summarize spending', 'summarize', now() + interval '1 day') RETURNING id",
+    )
+    .bind(session)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
     let (_, list) = authed(router.clone(), "GET", "/api/reminders", &token, None).await;
     assert_eq!(list["upcoming"].as_array().unwrap().len(), 1);
-    assert_eq!(list["past"][0]["status"], "cancelled");
+    assert_eq!(list["upcoming"][0]["title"], "Water");
+    assert_eq!(list["past"][0]["status"], "done");
+    assert_eq!(list["scheduled_tasks"][0]["label"], "Summarize spending");
+
+    let (status, _) = authed(router.clone(), "POST", &format!("/api/scheduled-tasks/{task}/cancel"), &token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (other, _) = register_and_login(router.clone(), &pool, "other@example.com").await;
-    let second_id = second["id"].as_str().unwrap();
-    let (status, _) = authed(router, "POST", &format!("/api/reminders/{second_id}/cancel"), &other, None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "another user can't cancel it");
+    let (status, _) = authed(router, "POST", &format!("/api/reminders/{second_id}"), &other, Some(json!({"action": "cancel"}))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "another user can't touch it");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn money_budgets_and_manual_transactions_live_in_moneys_own_tables(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (token, user_id) = register_and_login(router.clone(), &pool, "budget@example.com").await;
+    let month = chrono::Utc::now().format("%Y-%m").to_string();
+
+    let (status, _) =
+        authed(router.clone(), "PUT", "/api/money/budgets", &token, Some(json!({"category": "Food", "monthly_limit": 300}))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = authed(
+        router.clone(),
+        "POST",
+        "/api/money/transactions",
+        &token,
+        Some(json!({"amount": 45.5, "category": "food", "description": "Lunch with Maya"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) =
+        authed(router.clone(), "POST", "/api/money/transactions", &token, Some(json!({"amount": -3, "category": "food", "description": "x"}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (_, money) = authed(router.clone(), "GET", &format!("/api/money?month={month}"), &token, None).await;
+    assert_eq!(money["budgets"], json!([{"category": "food", "limit_cents": 30000, "spent_cents": 4550}]));
+    assert_eq!(money["transactions"][0]["description"], "Lunch with Maya");
+
+    // Stored in the Money agent's table, marked as entered by hand; the old name still reads it.
+    let source: String = sqlx::query_scalar("SELECT source FROM money_transactions WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(source, "manual");
+    let via_old_name: i64 = sqlx::query_scalar("SELECT count(*) FROM mock_transactions WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(via_old_name, 1);
+
+    let (status, _) = authed(router.clone(), "DELETE", "/api/money/budgets/food", &token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = authed(router, "DELETE", "/api/money/budgets/food", &token, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

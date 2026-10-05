@@ -198,6 +198,8 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
+        // Record tools only touch the calling agent's own private records.
+        && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
 
 fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String {
@@ -244,6 +246,9 @@ pub async fn run_agent_turn(
     if agent.supports_plans() {
         tools.push(write_plan_tool_definition());
     }
+    if agent.uses_records() {
+        tools.extend(crate::records::record_tool_definitions());
+    }
     if agent.supports_reminders() {
         let targets = registry.reminder_target_agent_types();
         tools.push(create_reminder_tool_definition(&targets));
@@ -285,7 +290,7 @@ pub async fn run_agent_turn(
         system_prompt
     };
 
-    let system_prompt = if agent.supports_reminders() {
+    let system_prompt = if agent.supports_reminders() || agent.wants_current_time() {
         let timezone_name = crate::reminders::get_user_timezone(conn, user_id).await;
         let tz: chrono_tz::Tz = timezone_name.parse().unwrap_or(chrono_tz::UTC);
         let now = chrono::Utc::now().with_timezone(&tz);
@@ -487,7 +492,7 @@ pub async fn resolve_tool_batch(
             if already_decided.iter().any(|(decided_id, _)| decided_id == id) {
                 continue;
             }
-            if !is_gateable(name) {
+            if !is_gateable(name) || !agent.tool_needs_approval(name) {
                 continue;
             }
             let decision = permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await;
@@ -617,6 +622,12 @@ pub async fn resolve_tool_batch(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
+            } else if agent.uses_records() && crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()) {
+                match crate::records::execute(conn, agent.agent_type().as_ref(), user_id, name, input).await {
+                    Some(Ok(text)) => (text, false, None),
+                    Some(Err(err)) => (err, true, None),
+                    None => (format!("unknown tool: {name}"), true, None),
+                }
             } else if name.as_str() == CREATE_REMINDER_TOOL_NAME && agent.supports_reminders() {
                 match crate::reminders::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
                     Ok(text) => (text, false, None),
@@ -663,7 +674,8 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != WRITE_PLAN_TOOL_NAME
                     && name.as_str() != CREATE_REMINDER_TOOL_NAME
                     && name.as_str() != LIST_REMINDERS_TOOL_NAME
-                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME);
+                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME
+                    && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
                 post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;
             }

@@ -18,6 +18,30 @@ impl CatalogTool for ListTransactions {
     }
 }
 
+struct LogTransaction;
+#[async_trait]
+impl CatalogTool for LogTransaction {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        nomi_agent_money::log_transaction(conn, user_id, &input, "agent").await.map(ToolOutcome::text)
+    }
+}
+
+struct SetBudget;
+#[async_trait]
+impl CatalogTool for SetBudget {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        nomi_agent_money::set_budget(conn, user_id, &input).await.map(ToolOutcome::text)
+    }
+}
+
+struct ListBudgets;
+#[async_trait]
+impl CatalogTool for ListBudgets {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+        nomi_agent_money::list_budgets(conn, user_id).await.map(ToolOutcome::text)
+    }
+}
+
 struct SummarizeBudget;
 #[async_trait]
 impl CatalogTool for SummarizeBudget {
@@ -72,6 +96,9 @@ pub fn non_coding_entries() -> HashMap<&'static str, (ToolDefinition, Box<dyn Ca
     let mut entries: HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> = HashMap::new();
     entries.insert("list_transactions", (nomi_agent_money::list_transactions_tool_definition(), Box::new(ListTransactions)));
     entries.insert("summarize_budget", (nomi_agent_money::summarize_budget_tool_definition(), Box::new(SummarizeBudget)));
+    entries.insert("log_transaction", (nomi_agent_money::log_transaction_tool_definition(), Box::new(LogTransaction)));
+    entries.insert("set_budget", (nomi_agent_money::set_budget_tool_definition(), Box::new(SetBudget)));
+    entries.insert("list_budgets", (nomi_agent_money::list_budgets_tool_definition(), Box::new(ListBudgets)));
     entries.insert("create_project", (nomi_agent_planning::create_project_tool_definition(), Box::new(CreateProject)));
     entries.insert("set_personality", (nomi_agent_personality::set_personality_tool_definition(), Box::new(SetPersonality)));
     entries.insert(

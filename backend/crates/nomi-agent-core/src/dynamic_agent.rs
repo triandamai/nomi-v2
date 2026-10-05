@@ -147,6 +147,10 @@ impl SubAgent for DynamicAgent {
         false
     }
 
+    fn uses_records(&self) -> bool {
+        true
+    }
+
     fn uses_personality(&self) -> bool {
         false
     }

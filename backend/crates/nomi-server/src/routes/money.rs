@@ -1,6 +1,6 @@
 //! The Money page: one month of the user's transactions, totalled and broken down.
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
@@ -41,6 +41,14 @@ pub struct Transaction {
 }
 
 #[derive(Serialize)]
+pub struct Budget {
+    pub category: String,
+    pub limit_cents: i64,
+    /// Spent in the summary's month.
+    pub spent_cents: i64,
+}
+
+#[derive(Serialize)]
 pub struct MoneySummary {
     pub month: String,
     pub timezone: String,
@@ -52,6 +60,7 @@ pub struct MoneySummary {
     pub transactions: Vec<Transaction>,
     /// Months that have transactions, newest first (at most a year).
     pub months: Vec<String>,
+    pub budgets: Vec<Budget>,
 }
 
 fn internal(e: sqlx::Error) -> (StatusCode, &'static str) {
@@ -96,7 +105,7 @@ pub async fn money_summary(
     let prev_start = month_start(tz, prev_year, prev_month);
 
     let (total_cents, transaction_count): (i64, i64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(amount_cents), 0)::bigint, COUNT(*) FROM mock_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
+        "SELECT COALESCE(SUM(amount_cents), 0)::bigint, COUNT(*) FROM money_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
     )
     .bind(user_id)
     .bind(start)
@@ -105,7 +114,7 @@ pub async fn money_summary(
     .await
     .map_err(internal)?;
     let previous_total_cents: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM mock_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
+        "SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM money_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
     )
     .bind(user_id)
     .bind(prev_start)
@@ -115,7 +124,7 @@ pub async fn money_summary(
     .map_err(internal)?;
 
     let by_category: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT category, SUM(amount_cents)::bigint, COUNT(*) FROM mock_transactions \
+        "SELECT category, SUM(amount_cents)::bigint, COUNT(*) FROM money_transactions \
          WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 GROUP BY category ORDER BY 2 DESC",
     )
     .bind(user_id)
@@ -126,7 +135,7 @@ pub async fn money_summary(
     .map_err(internal)?;
 
     let by_day: Vec<(NaiveDate, i64)> = sqlx::query_as(
-        "SELECT (occurred_at AT TIME ZONE $4)::date, SUM(amount_cents)::bigint FROM mock_transactions \
+        "SELECT (occurred_at AT TIME ZONE $4)::date, SUM(amount_cents)::bigint FROM money_transactions \
          WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1 ORDER BY 1",
     )
     .bind(user_id)
@@ -138,7 +147,7 @@ pub async fn money_summary(
     .map_err(internal)?;
 
     let transactions: Vec<(Uuid, DateTime<Utc>, i64, String, String)> = sqlx::query_as(
-        "SELECT id, occurred_at, amount_cents, category, description FROM mock_transactions \
+        "SELECT id, occurred_at, amount_cents, category, description FROM money_transactions \
          WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 ORDER BY occurred_at DESC LIMIT $4",
     )
     .bind(user_id)
@@ -150,7 +159,7 @@ pub async fn money_summary(
     .map_err(internal)?;
 
     let months: Vec<String> = sqlx::query_scalar(
-        "SELECT to_char(date_trunc('month', occurred_at AT TIME ZONE $2), 'YYYY-MM') AS m FROM mock_transactions \
+        "SELECT to_char(date_trunc('month', occurred_at AT TIME ZONE $2), 'YYYY-MM') AS m FROM money_transactions \
          WHERE user_id = $1 GROUP BY m ORDER BY m DESC LIMIT 12",
     )
     .bind(user_id)
@@ -158,6 +167,14 @@ pub async fn money_summary(
     .fetch_all(pool)
     .await
     .map_err(internal)?;
+
+    let mut conn = pool.acquire().await.map_err(internal)?;
+    let budgets = nomi_agent_money::budgets_with_spending(&mut conn, user_id, start, end)
+        .await
+        .map_err(internal)?
+        .into_iter()
+        .map(|(category, limit_cents, spent_cents)| Budget { category, limit_cents, spent_cents })
+        .collect();
 
     Ok(Json(MoneySummary {
         month: format!("{year:04}-{month:02}"),
@@ -172,7 +189,52 @@ pub async fn money_summary(
             .map(|(id, occurred_at, amount_cents, category, description)| Transaction { id, occurred_at, amount_cents, category, description })
             .collect(),
         months,
+        budgets,
     }))
+}
+
+fn bad_request(message: String) -> (StatusCode, String) {
+    (StatusCode::BAD_REQUEST, message)
+}
+
+/// Adds a transaction from the Money page. Body: `{amount, category, description, occurred_at?}`.
+pub async fn add_transaction(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(input): Json<serde_json::Value>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    nomi_agent_money::log_transaction(&mut conn, claims.sub, &input, "manual").await.map_err(bad_request)?;
+    Ok(StatusCode::CREATED)
+}
+
+/// Sets a category's monthly budget from the Money page. Body: `{category, monthly_limit}`.
+pub async fn set_budget(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(input): Json<serde_json::Value>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    nomi_agent_money::set_budget(&mut conn, claims.sub, &input).await.map_err(bad_request)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn delete_budget(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(category): Path<String>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let deleted = sqlx::query("DELETE FROM money_budgets WHERE user_id = $1 AND category = $2")
+        .bind(claims.sub)
+        .bind(category.to_lowercase())
+        .execute(&state.pool)
+        .await
+        .map_err(internal)?
+        .rows_affected();
+    if deleted == 0 {
+        return Err((StatusCode::NOT_FOUND, "budget not found"));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]

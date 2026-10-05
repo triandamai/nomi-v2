@@ -2,6 +2,7 @@ pub mod app;
 pub mod bootstrap;
 pub mod delegation_worker;
 pub mod routes;
+pub mod reminders_worker;
 pub mod scheduler_worker;
 mod tool_catalog_adapters;
 pub mod web_identity;
@@ -14,6 +15,7 @@ pub fn build_agent_registry(project_storage: nomi_storage::LocalFsStore) -> nomi
     nomi_agent_core::AgentRegistry::new(vec![
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),
+        Box::new(nomi_agent_reminders::RemindersAgent),
         Box::new(nomi_agent_personality::PersonalityAgent),
         Box::new(nomi_agent_supervisor::SupervisorAgent),
         Box::new(nomi_agent_planning::PlanningAgent::new()),

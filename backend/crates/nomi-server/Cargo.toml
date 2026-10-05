@@ -15,6 +15,7 @@ nomi-auth = { path = "../nomi-auth" }
 nomi-settings = { path = "../nomi-settings" }
 nomi-agent-core = { path = "../nomi-agent-core" }
 nomi-agent-money = { path = "../nomi-agent-money" }
+nomi-agent-reminders = { path = "../nomi-agent-reminders" }
 nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }

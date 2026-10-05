@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareMonths, fillDays, niceScale, shiftMonth } from './money';
+import { budgetState, categoryLook, compareMonths, fillDays, niceScale, shiftMonth } from './money';
 
 describe('money helpers', () => {
 	it('fills every day of the month', () => {
@@ -20,5 +20,17 @@ describe('money helpers', () => {
 	it('shifts months across years', () => {
 		expect(shiftMonth('2026-01', -1)).toBe('2025-12');
 		expect(shiftMonth('2026-12', 1)).toBe('2027-01');
+	});
+});
+
+describe('categories and budgets', () => {
+	it('gives every category a stable look', () => {
+		expect(categoryLook('Food')).toEqual({ shape: 'cookie9', tone: 'citrus' });
+		expect(categoryLook('pets')).toEqual(categoryLook('pets'));
+	});
+	it('flags budgets that are nearly or over spent', () => {
+		expect(budgetState(85, 100)).toMatchObject({ nearly: true, over: false });
+		expect(budgetState(120, 100)).toMatchObject({ over: true });
+		expect(budgetState(10, 100)).toMatchObject({ nearly: false, over: false });
 	});
 });

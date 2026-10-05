@@ -209,6 +209,27 @@ pub async fn home_summary(
         out.push(OutItem { kind: kind.into(), agent: agent_type, title, detail: clip(&plain(&detail), 90), session_id: Some(session_id), at });
     }
 
+    let rang: Vec<(String, Uuid, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT title, session_id, last_fired_at FROM reminders \
+         WHERE user_id = $1 AND last_fired_at > $2 ORDER BY last_fired_at DESC LIMIT $3",
+    )
+    .bind(user_id)
+    .bind(since)
+    .bind(ITEM_LIMIT)
+    .fetch_all(pool)
+    .await
+    .map_err(internal)?;
+    for (title, session_id, at) in rang {
+        out.push(OutItem {
+            kind: "reminder".into(),
+            title: format!("Reminder: {}", clip(&title, 60)),
+            detail: "Went off in your Reminders chat".to_string(),
+            agent: "reminders".into(),
+            session_id: Some(session_id),
+            at,
+        });
+    }
+
     let fired: Vec<(String, String, Uuid, DateTime<Utc>)> = sqlx::query_as(
         "SELECT target_agent_type, label, session_id, last_fired_at FROM scheduled_jobs \
          WHERE user_id = $1 AND last_fired_at > $2 ORDER BY last_fired_at DESC LIMIT $3",
@@ -277,10 +298,21 @@ pub async fn home_summary(
     .fetch_all(pool)
     .await
     .map_err(internal)?;
-    let today = today
+    let reminders_today: Vec<TodayRow> = sqlx::query_as(
+        "SELECT id, due_at, title, 'reminders', recurrence FROM reminders \
+         WHERE user_id = $1 AND status = 'active' AND due_at >= $2 AND due_at < $2 + interval '1 day'",
+    )
+    .bind(user_id)
+    .bind(day_start)
+    .fetch_all(pool)
+    .await
+    .map_err(internal)?;
+    let mut today: Vec<TodayItem> = today
         .into_iter()
+        .chain(reminders_today)
         .map(|(id, run_at, label, agent, recurrence)| TodayItem { id, run_at, label, agent, recurrence })
         .collect();
+    today.sort_by_key(|item| item.run_at);
 
     // Plans in progress: the latest to-do list in each chat, and each written plan's latest
     // version, while they still have open items.

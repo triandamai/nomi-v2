@@ -102,8 +102,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/agents", get(agents_routes::list_crew))
         .route("/api/home", get(home_routes::home_summary))
         .route("/api/money", get(money_routes::money_summary))
+        .route("/api/money/transactions", post(money_routes::add_transaction))
+        .route("/api/money/budgets", put(money_routes::set_budget))
+        .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
         .route("/api/reminders", get(reminders_routes::list_reminders).post(reminders_routes::create_reminder))
-        .route("/api/reminders/:id/cancel", post(reminders_routes::cancel_reminder))
+        .route("/api/reminders/:id", post(reminders_routes::reminder_action))
+        .route("/api/scheduled-tasks/:id/cancel", post(reminders_routes::cancel_scheduled_task))
         .route("/api/memory", get(memory_routes::list_my_memories))
         .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory))
         .route(

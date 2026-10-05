@@ -1,4 +1,6 @@
-// Number helpers for the Money page (amounts arrive as integer cents).
+// Helpers for the Money page (amounts arrive as integer cents).
+
+import type { GradientTone, ShapeName } from './components/m3/shapes';
 
 export function formatAmount(cents: number, options: { compact?: boolean } = {}): string {
 	const value = cents / 100;
@@ -51,4 +53,37 @@ export function shiftMonth(month: string, by: number): string {
 export function monthLabel(month: string, style: 'long' | 'short' = 'long'): string {
 	const [year, m] = month.split('-').map(Number);
 	return new Intl.DateTimeFormat(undefined, { month: style, year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, m - 1, 1)));
+}
+
+const CATEGORY_LOOKS: Record<string, { shape: ShapeName; tone: GradientTone }> = {
+	food: { shape: 'cookie9', tone: 'citrus' },
+	groceries: { shape: 'cookie9', tone: 'citrus' },
+	transport: { shape: 'pill', tone: 'sky' },
+	travel: { shape: 'clover4', tone: 'tide' },
+	subscriptions: { shape: 'burst16', tone: 'dusk' },
+	shopping: { shape: 'soft-square', tone: 'bloom' },
+	bills: { shape: 'pentagon', tone: 'slate' },
+	health: { shape: 'puffy7', tone: 'glow' },
+	entertainment: { shape: 'sunny8', tone: 'ember' },
+};
+const FALLBACK_LOOKS: { shape: ShapeName; tone: GradientTone }[] = [
+	{ shape: 'flower5', tone: 'bloom' },
+	{ shape: 'wave10', tone: 'tide' },
+	{ shape: 'soft-triangle', tone: 'ember' },
+	{ shape: 'sunny12', tone: 'sky' },
+];
+
+/** The shape + gradient a spending category wears, stable for unknown categories too. */
+export function categoryLook(category: string): { shape: ShapeName; tone: GradientTone } {
+	const key = category.toLowerCase();
+	if (CATEGORY_LOOKS[key]) return CATEGORY_LOOKS[key];
+	let hash = 0;
+	for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+	return FALLBACK_LOOKS[hash % FALLBACK_LOOKS.length];
+}
+
+/** How a budget stands this month. */
+export function budgetState(spent: number, limit: number): { ratio: number; over: boolean; nearly: boolean } {
+	const ratio = limit > 0 ? spent / limit : 0;
+	return { ratio, over: ratio > 1, nearly: ratio >= 0.8 && ratio <= 1 };
 }

@@ -38,7 +38,9 @@ export type ContentBlock =
 	  }
 	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number }
 	/** The model's thinking; shown collapsed on the agent's next reply (see $lib/reasoning). */
-	| { kind: 'reasoning'; text: string };
+	| { kind: 'reasoning'; text: string }
+	/** A reminder going off, posted by the Reminders agent. */
+	| { kind: 'reminder'; reminder_id: string; title: string; notes: string | null; due_at: string; recurrence: string | null };
 
 export interface MessageItem {
 	id: string;
@@ -309,19 +311,32 @@ export interface MoneySummary {
 	by_day: { date: string; cents: number }[];
 	transactions: { id: string; occurred_at: string; amount_cents: number; category: string; description: string }[];
 	months: string[];
+	budgets: { category: string; limit_cents: number; spent_cents: number }[];
 }
 
-/** One scheduled reminder (GET /api/reminders). */
+/** One reminder, from the Reminders agent's own table (GET /api/reminders). */
 export interface Reminder {
 	id: string;
-	label: string;
-	run_at: string;
+	session_id: string;
+	title: string;
+	notes: string | null;
+	due_at: string;
 	recurrence: 'daily' | 'weekly' | 'monthly' | null;
 	recurrence_weekday: number | null;
 	recurrence_day_of_month: number | null;
-	agent: string;
-	status: 'active' | 'completed' | 'cancelled';
+	status: 'active' | 'fired' | 'done' | 'cancelled';
+	created_by: 'user' | 'agent';
 	last_fired_at: string | null;
+	created_at: string;
+}
+
+/** An agent task scheduled for later (core scheduler), shown on the Reminders page. */
+export interface ScheduledTask {
+	id: string;
+	label: string;
+	run_at: string;
+	recurrence: string | null;
+	agent: string;
 	session_id: string;
 }
 

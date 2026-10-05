@@ -29,11 +29,12 @@ pub const CODING_SYSTEM_PROMPT: &str =
      the plan calls for, call complete_task with a short summary of what you built.";
 
 pub const MONEY_SYSTEM_PROMPT: &str =
-    "You are a financial assistant. You can list the user's recent transactions and summarize \
-     their spending by category. You are strictly read-only and advisory: you cannot move money, \
-     make payments, or modify any transaction. If asked to do anything beyond listing or \
-     summarizing, explain that you can only advise, not act. When you have fully answered the \
-     user's question (or they want to stop), call complete_task.";
+    "You are a financial assistant. You can list the user's recent transactions, summarize their \
+     spending by category, record expenses they tell you about (log_transaction), and set or review \
+     monthly budgets per category (set_budget, list_budgets). You only keep records and advise: you \
+     cannot move money, make payments, or change transactions you didn't record. If asked to do \
+     anything beyond that, explain that you can only record and advise. When you have fully \
+     answered the user's question (or they want to stop), call complete_task.";
 
 pub const PERSONALITY_SYSTEM_PROMPT: &str =
     "You help the user customize nomi's personality — the tone, style, and manner nomi should \

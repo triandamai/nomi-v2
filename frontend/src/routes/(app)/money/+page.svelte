@@ -1,13 +1,60 @@
 <script lang="ts">
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
+	import { enhance } from '$app/forms';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
+	import Button from '$lib/components/m3/Button.svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
+	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import List from '$lib/components/m3/List.svelte';
+	import ListItem from '$lib/components/m3/ListItem.svelte';
+	import Snackbar from '$lib/components/m3/Snackbar.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
+	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
+	import IconClose from '$lib/components/icons/IconClose.svelte';
+	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
-	import { compareMonths, fillDays, formatAmount, monthLabel, niceScale, shiftMonth } from '$lib/money';
-	import type { PageData } from './$types';
+	import { budgetState, categoryLook, compareMonths, fillDays, formatAmount, monthLabel, niceScale, shiftMonth } from '$lib/money';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Bottom sheets for the page's two edits, and the snackbar that confirms them.
+	let expenseOpen = $state(false);
+	let budgetOpen = $state(false);
+	let budgetCategory = $state('');
+	let budgetLimit = $state('');
+	let saving = $state(false);
+	let snackbar = $state(false);
+	let snackbarMessage = $state('');
+	const today = new Date().toISOString().slice(0, 10);
+
+	function openBudget(category = '', limitCents?: number) {
+		budgetCategory = category;
+		budgetLimit = limitCents ? String(limitCents / 100) : '';
+		budgetOpen = true;
+	}
+	function notify(message: string) {
+		snackbarMessage = message;
+		snackbar = true;
+	}
+	function sheetSubmit(close: () => void, message: string) {
+		return () => {
+			saving = true;
+			return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+				await update();
+				saving = false;
+				if (result.type === 'success') {
+					close();
+					notify(message);
+				}
+			};
+		};
+	}
+	const knownCategories = $derived(
+		[...new Set([...(data.money?.by_category.map((c) => c.category) ?? []), ...(data.money?.budgets.map((b) => b.category) ?? [])])].sort(),
+	);
 
 	const money = $derived(data.money);
 	const thisMonth = $derived(money?.months[0] ?? money?.month ?? '');
@@ -75,24 +122,34 @@
 <div class="money">
 	<div class="money__inner">
 		<header class="money__head">
-			<div>
+			<div class="money__titles">
 				<h1 class="md-display-small money__title">Money</h1>
 				<p class="md-body-large money__lede">What you spent, where it went, and how this month compares. Money keeps an eye on it with you.</p>
 			</div>
-			<AgentShape agent="money" size={72} class="money__mark" />
+			<div class="money__actions">
+				<AgentShape agent="money" size={64} class="money__mark" />
+				<Button variant="tonal" size="m" onclick={() => openBudget()}>Set a budget</Button>
+				<Button variant="gradient" size="m" onclick={() => (expenseOpen = true)}>
+					<IconPlus size={20} />
+					Add expense
+				</Button>
+			</div>
 		</header>
 
 		{#if !money}
 			<p class="money__notice" role="alert">Couldn't load your spending just now. Reload the page to try again.</p>
 		{:else}
 			<nav class="months" aria-label="Month">
-				<a class="months__step" href="?month={shiftMonth(money.month, -1)}" aria-label="Previous month"><IconChevronLeft /></a>
+				<IconButton variant="filled-tonal" href="?month={shiftMonth(money.month, -1)}" aria-label="Previous month"><IconChevronLeft /></IconButton>
 				<span class="months__current">{monthLabel(money.month)}</span>
-				{#if money.month < thisMonth}
-					<a class="months__step" href="?month={shiftMonth(money.month, 1)}" aria-label="Next month"><IconChevronRight /></a>
-				{:else}
-					<span class="months__step months__step--off" aria-hidden="true"><IconChevronRight /></span>
-				{/if}
+				<IconButton
+					variant="filled-tonal"
+					href={money.month < thisMonth ? `?month=${shiftMonth(money.month, 1)}` : undefined}
+					disabled={money.month >= thisMonth}
+					aria-label="Next month"
+				>
+					<IconChevronRight />
+				</IconButton>
 			</nav>
 
 			{#if money.transaction_count === 0}
@@ -135,13 +192,64 @@
 					</dl>
 				</section>
 
+				<section class="panel" aria-labelledby="budget-heading">
+					<div class="panel__head">
+						<h2 id="budget-heading" class="panel__title">Budgets</h2>
+						<Button variant="text" onclick={() => openBudget()}>Add</Button>
+					</div>
+					{#if money.budgets.length === 0}
+						<p class="panel__hint">Give a category a monthly limit and Money tracks it here, and warns you before you go over.</p>
+					{:else}
+						<ul class="budgets">
+							{#each money.budgets as b (b.category)}
+								{@const look = categoryLook(b.category)}
+								{@const state = budgetState(b.spent_cents, b.limit_cents)}
+								<li class="budget" class:budget--over={state.over}>
+									<div class="budget__top">
+										<AgentShape shape={look.shape} tone={look.tone} size={36} />
+										<span class="budget__name">{b.category}</span>
+										<IconButton aria-label="Edit the {b.category} budget" onclick={() => openBudget(b.category, b.limit_cents)}>
+											<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+										</IconButton>
+										<form
+											method="POST"
+											action="?/deleteBudget"
+											use:enhance={() => async ({ result, update }) => {
+												await update();
+												if (result.type === 'success') notify(`Removed the ${b.category} budget.`);
+											}}
+										>
+											<input type="hidden" name="category" value={b.category} />
+											<IconButton type="submit" aria-label="Remove the {b.category} budget"><IconClose size={18} /></IconButton>
+										</form>
+									</div>
+									<div class="budget__row">
+										<span class="budget__figures">{formatAmount(b.spent_cents)} <span class="budget__of">of {formatAmount(b.limit_cents)}</span></span>
+										{#if state.over}
+											<span class="budget__flag">
+												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>
+												Over by {formatAmount(b.spent_cents - b.limit_cents)}
+											</span>
+										{:else if state.nearly}
+											<span class="budget__flag budget__flag--near">{formatAmount(b.limit_cents - b.spent_cents)} left</span>
+										{:else}
+											<span class="budget__left">{Math.round(state.ratio * 100)}% used</span>
+										{/if}
+									</div>
+									<WavyProgress value={Math.min(1, state.ratio)} tone={look.tone} label="{b.category}: {Math.round(state.ratio * 100)}% of the budget used" />
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+
 				<div class="charts">
 					<section class="panel" aria-labelledby="cat-heading">
 						<div class="panel__head">
 							<h2 id="cat-heading" class="panel__title">By category</h2>
-							<button type="button" class="panel__toggle" aria-pressed={showCategoryTable} onclick={() => (showCategoryTable = !showCategoryTable)}>
-								{showCategoryTable ? 'Chart' : 'Table'}
-							</button>
+							<IconButton selected={showCategoryTable} aria-label="Show as a table" onclick={() => (showCategoryTable = !showCategoryTable)}>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M9 10v10" /></svg>
+							</IconButton>
 						</div>
 						{#if showCategoryTable}
 							<table class="table">
@@ -185,9 +293,9 @@
 					<section class="panel" aria-labelledby="day-heading">
 						<div class="panel__head">
 							<h2 id="day-heading" class="panel__title">Day by day</h2>
-							<button type="button" class="panel__toggle" aria-pressed={showDayTable} onclick={() => (showDayTable = !showDayTable)}>
-								{showDayTable ? 'Chart' : 'Table'}
-							</button>
+							<IconButton selected={showDayTable} aria-label="Show as a table" onclick={() => (showDayTable = !showDayTable)}>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M9 10v10" /></svg>
+							</IconButton>
 						</div>
 						{#if showDayTable}
 							<div class="table-scroll">
@@ -266,22 +374,72 @@
 					{#if visibleTransactions.length === 0}
 						<p class="money__notice">No transactions match.</p>
 					{:else}
-						<ul class="tx">
+						<List class="tx">
 							{#each visibleTransactions as t (t.id)}
-								<li class="tx__row">
-									<span class="tx__date">{txDate(t.occurred_at)}</span>
-									<span class="tx__desc">{t.description}</span>
-									<span class="tx__cat">{t.category}</span>
-									<span class="tx__amount">{formatAmount(t.amount_cents)}</span>
-								</li>
+								{@const look = categoryLook(t.category)}
+								<ListItem headline={t.description} supportingText="{t.category} · {txDate(t.occurred_at)}">
+									{#snippet leading()}
+										<AgentShape shape={look.shape} tone={look.tone} size={36} />
+									{/snippet}
+									{#snippet trailing()}
+										<span class="tx__amount">{formatAmount(t.amount_cents)}</span>
+									{/snippet}
+								</ListItem>
 							{/each}
-						</ul>
+						</List>
 					{/if}
 				</section>
 			{/if}
 		{/if}
 	</div>
 </div>
+
+<BottomSheet bind:open={expenseOpen}>
+	<form method="POST" action="?/addExpense" class="sheet" use:enhance={sheetSubmit(() => (expenseOpen = false), 'Expense added.')}>
+		<div class="sheet__head">
+			<AgentShape agent="money" size={36} />
+			<h2 class="md-headline-small-emphasized sheet__title">Add an expense</h2>
+		</div>
+		<TextField id="expense-amount" name="amount" label="Amount" type="number" inputmode="decimal" min="0.01" step="0.01" required />
+		<TextField id="expense-description" name="description" label="What was it for?" required maxlength={200} />
+		<TextField id="expense-category" name="category" label="Category" required maxlength={40} list="money-categories" />
+		<datalist id="money-categories">
+			{#each knownCategories as c (c)}<option value={c}></option>{/each}
+		</datalist>
+		<label class="sheet__field">
+			<span class="sheet__label">Date</span>
+			<input type="date" name="occurred_at" value={today} max={today} class="sheet__date" />
+		</label>
+		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
+		<div class="sheet__actions">
+			<Button type="button" variant="text" onclick={() => (expenseOpen = false)}>Cancel</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving}>Add expense</Button>
+		</div>
+	</form>
+</BottomSheet>
+
+<BottomSheet bind:open={budgetOpen}>
+	<form method="POST" action="?/setBudget" class="sheet" use:enhance={sheetSubmit(() => (budgetOpen = false), 'Budget saved.')}>
+		<div class="sheet__head">
+			<AgentShape agent="money" size={36} />
+			<h2 class="md-headline-small-emphasized sheet__title">Monthly budget</h2>
+		</div>
+		<TextField id="budget-category" name="category" label="Category" bind:value={budgetCategory} required maxlength={40} list="money-categories" />
+		<TextField id="budget-limit" name="monthly_limit" label="Limit per month" type="number" inputmode="decimal" min="0.01" step="0.01" bind:value={budgetLimit} required />
+		<div class="sheet__chips">
+			{#each knownCategories as c (c)}
+				<Chip variant="filter" type="button" selected={budgetCategory === c} onclick={() => (budgetCategory = c)}>{c}</Chip>
+			{/each}
+		</div>
+		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
+		<div class="sheet__actions">
+			<Button type="button" variant="text" onclick={() => (budgetOpen = false)}>Cancel</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving}>Save budget</Button>
+		</div>
+	</form>
+</BottomSheet>
+
+<Snackbar bind:open={snackbar} message={snackbarMessage} />
 
 <style>
 	.money {
@@ -299,9 +457,19 @@
 	}
 	.money__head {
 		display: flex;
-		align-items: flex-start;
+		align-items: flex-end;
 		justify-content: space-between;
-		gap: 24px;
+		gap: 20px;
+		flex-wrap: wrap;
+	}
+	.money__titles {
+		flex: 1 1 360px;
+	}
+	.money__actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
 	}
 	.money__title {
 		margin: 0;
@@ -331,21 +499,7 @@
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-surface-container-high);
 	}
-	.months__step {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 44px;
-		height: 44px;
-		border-radius: var(--md-sys-shape-corner-full);
-		color: var(--md-sys-color-on-surface);
-	}
-	a.months__step:hover {
-		background: var(--md-sys-color-surface-container-highest);
-	}
-	.months__step--off {
-		opacity: 0.3;
-	}
+
 	.months__current {
 		min-width: 140px;
 		text-align: center;
@@ -460,17 +614,127 @@
 		font-size: 1.125rem;
 		font-weight: 700;
 	}
-	.panel__toggle {
-		height: 36px;
-		padding: 0 14px;
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-full);
+	.budgets {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+		gap: 12px;
+	}
+	.budget {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 12px 8px 16px 16px;
+		border-radius: var(--md-sys-shape-corner-large-increased);
+		background: var(--md-sys-color-surface-container-low);
+		transition: border-radius var(--nomi-motion-spatial-fast);
+	}
+	.budget:hover {
+		border-radius: var(--md-sys-shape-corner-large);
+	}
+	.budget--over {
+		background: color-mix(in srgb, var(--md-sys-color-error-container) 60%, var(--md-sys-color-surface-container-low));
+	}
+	.budget__top {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.budget__top .budget__name {
+		flex: 1;
+		min-width: 0;
+	}
+	.budget > :global(:last-child) {
+		margin-right: 8px;
+	}
+	.budget__left {
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.budget__row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		padding-right: 8px;
+	}
+	.budget__name {
+		font-weight: 650;
+		text-transform: capitalize;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.budget__figures {
+		font-size: 1.25rem;
+		font-weight: 650;
+		font-variant-numeric: tabular-nums;
+	}
+	.budget__of {
+		font-weight: 400;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.budget__flag {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.8125rem;
+		font-weight: 650;
+		color: var(--md-sys-color-error);
+	}
+	.budget__flag--near {
+		color: var(--md-sys-color-tertiary);
+	}
+	.sheet {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+	.sheet__head {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.sheet__title {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+	}
+	.sheet__field {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.sheet__label {
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.sheet__date {
+		height: 56px;
+		padding: 0 16px;
+		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-small);
 		background: transparent;
 		color: var(--md-sys-color-on-surface);
 		font: inherit;
-		font-size: 0.8125rem;
-		font-weight: 600;
-		cursor: pointer;
+		color-scheme: light dark;
+	}
+	.sheet__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.sheet__error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+		font-size: 0.875rem;
+	}
+	.sheet__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
 	}
 	.panel__hint {
 		margin: 0;
@@ -665,52 +929,9 @@
 		color: var(--md-sys-color-on-surface);
 		font: inherit;
 	}
-	.tx {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-	}
-	.tx__row {
-		display: grid;
-		grid-template-columns: 64px minmax(0, 1fr) auto auto;
-		align-items: center;
-		gap: 12px;
-		padding: 12px 4px;
-		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-		font-size: 0.9375rem;
-	}
-	.tx__row:last-child {
-		border-bottom: none;
-	}
-	.tx__date {
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.8125rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.tx__desc {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.tx__cat {
-		padding: 2px 10px;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-surface-container-high);
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: capitalize;
-	}
 	.tx__amount {
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		text-align: right;
-	}
-	@media (max-width: 560px) {
-		.tx__row {
-			grid-template-columns: 52px minmax(0, 1fr) auto;
-		}
-		.tx__cat {
-			display: none;
-		}
 	}
 </style>

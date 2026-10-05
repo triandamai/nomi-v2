@@ -1166,3 +1166,83 @@ async fn the_chats_thinking_level_reaches_the_model_request(pool: PgPool) {
         }
     }
 }
+
+struct RecordsAgent(&'static str);
+
+#[async_trait::async_trait]
+impl SubAgent for RecordsAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.0)
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("keeps records")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.0)
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("records")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn uses_records(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agent_keeps_private_records_that_other_agents_cannot_touch(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+
+    let scout = RecordsAgent("travel_scout");
+    let registry = AgentRegistry::new(vec![Box::new(RecordsAgent("travel_scout"))]);
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "save_record", serde_json::json!({"collection": "Trips", "data": {"place": "Bali", "nights": 5}})),
+        text_response("Saved", StopReason::EndTurn),
+    ]);
+    let mut conn = pool.acquire().await.unwrap();
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &scout, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    // Offered the tools, and never asked for approval to use its own storage.
+    assert!(provider.received_requests.lock().unwrap()[0].tools.iter().any(|t| t.name == "list_records"));
+    let (owner, collection, place): (String, String, String) =
+        sqlx::query_as("SELECT agent_type, collection, data->>'place' FROM agent_records WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!((owner.as_str(), collection.as_str(), place.as_str()), ("travel_scout", "trips", "Bali"));
+    let record_id: Uuid = sqlx::query_scalar("SELECT id FROM agent_records").fetch_one(&pool).await.unwrap();
+
+    // Another agent can neither list nor delete it.
+    let other = RecordsAgent("gift_finder");
+    let registry = AgentRegistry::new(vec![Box::new(RecordsAgent("gift_finder"))]);
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t2", "list_records", serde_json::json!({"collection": "trips"})),
+        tool_use_response("t3", "delete_record", serde_json::json!({"id": record_id.to_string()})),
+        text_response("done", StopReason::EndTurn),
+    ]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &other, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    let requests = provider.received_requests.lock().unwrap();
+    let results = format!("{:?}", requests[2].messages);
+    assert!(results.contains("No records in trips yet."), "{results}");
+    assert!(results.contains("no record of yours with that id"), "{results}");
+    let still_there: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_records").fetch_one(&pool).await.unwrap();
+    assert_eq!(still_there, 1);
+}

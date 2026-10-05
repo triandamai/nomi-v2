@@ -86,6 +86,14 @@ pub enum ContentBlock {
     Reasoning {
         text: String,
     },
+    /// A reminder going off (posted by the Reminders agent's worker), with Done / Snooze.
+    Reminder {
+        reminder_id: Uuid,
+        title: String,
+        notes: Option<String>,
+        due_at: DateTime<Utc>,
+        recurrence: Option<String>,
+    },
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror

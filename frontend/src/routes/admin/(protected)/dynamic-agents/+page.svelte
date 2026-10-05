@@ -26,6 +26,9 @@
 			tools: [
 				{ name: 'list_transactions', description: 'List recent transactions' },
 				{ name: 'summarize_budget', description: 'Summarize spending by category' },
+				{ name: 'log_transaction', description: 'Record an expense the user mentions' },
+				{ name: 'set_budget', description: 'Set a monthly budget for a category' },
+				{ name: 'list_budgets', description: 'List budgets and this month’s spending' },
 			],
 		},
 		{ label: 'Planning', tools: [{ name: 'create_project', description: 'Create a new project' }] },

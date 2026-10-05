@@ -109,6 +109,25 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// Gives the agent private record storage (save/list/update/delete_record; see
+    /// `crate::records`): for agents without tables of their own. Every dynamic agent has it.
+    fn uses_records(&self) -> bool {
+        false
+    }
+
+    /// Adds the current date and time (in the user's timezone) to the system prompt. Agents
+    /// that schedule things want it; `supports_reminders` agents always get it.
+    fn wants_current_time(&self) -> bool {
+        false
+    }
+
+    /// Whether a call to one of this agent's own tools needs the user's OK (subject to their
+    /// permission rules). Agents whose tools only touch the user's own records in the agent's
+    /// own tables can say no for those.
+    fn tool_needs_approval(&self, _tool_name: &str) -> bool {
+        true
+    }
+
     /// Called on the delegation *target* before `delegate_to_agent` creates anything, with the
     /// exact task string the delegating agent wrote. Return `Err(reason)` to reject the
     /// delegation outright — no delegation row is created, and `reason` is fed straight back to

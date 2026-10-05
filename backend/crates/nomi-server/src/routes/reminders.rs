@@ -1,5 +1,6 @@
-//! The Reminders page: the user's scheduled reminders, and creating or cancelling one directly.
-//! (Agents create them too, through the reminder tools in nomi-agent-core's reminders.rs.)
+//! The Reminders page. Reminders live in the Reminders agent's own table (nomi-agent-reminders);
+//! agent tasks scheduled for later (core `scheduled_jobs`) are listed alongside, read-only except
+//! for cancelling.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -10,6 +11,7 @@ use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::web_identity::ensure_web_channel_identity;
+use nomi_agent_reminders::Reminder;
 use nomi_auth::extractor::AuthClaims;
 use nomi_turn::bootstrap::bootstrap_identity_and_session;
 
@@ -18,16 +20,12 @@ const REMINDERS_CHAT_TITLE: &str = "Reminders";
 const PAST_LIMIT: i64 = 20;
 
 #[derive(Serialize)]
-pub struct Reminder {
+pub struct ScheduledTask {
     pub id: Uuid,
     pub label: String,
     pub run_at: DateTime<Utc>,
     pub recurrence: Option<String>,
-    pub recurrence_weekday: Option<i16>,
-    pub recurrence_day_of_month: Option<i16>,
     pub agent: String,
-    pub status: String,
-    pub last_fired_at: Option<DateTime<Utc>>,
     pub session_id: Uuid,
 }
 
@@ -36,69 +34,59 @@ pub struct RemindersResponse {
     pub timezone: String,
     pub upcoming: Vec<Reminder>,
     pub past: Vec<Reminder>,
+    /// Work an agent will do later (core scheduler), not reminders.
+    pub scheduled_tasks: Vec<ScheduledTask>,
 }
 
-type ReminderRow = (Uuid, String, DateTime<Utc>, Option<String>, Option<i16>, Option<i16>, String, String, Option<DateTime<Utc>>, Uuid);
+type ScheduledTaskRow = (Uuid, String, DateTime<Utc>, Option<String>, String, Uuid);
 
-const COLUMNS: &str =
-    "id, label, run_at, recurrence, recurrence_weekday, recurrence_day_of_month, target_agent_type, status, last_fired_at, session_id";
-
-fn to_reminder(row: ReminderRow) -> Reminder {
-    let (id, label, run_at, recurrence, recurrence_weekday, recurrence_day_of_month, agent, status, last_fired_at, session_id) = row;
-    Reminder { id, label, run_at, recurrence, recurrence_weekday, recurrence_day_of_month, agent, status, last_fired_at, session_id }
-}
-
-fn internal(e: sqlx::Error) -> (StatusCode, &'static str) {
+fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
     tracing::error!(error = %e, "reminders request failed");
-    (StatusCode::INTERNAL_SERVER_ERROR, "failed to load reminders")
+    (StatusCode::INTERNAL_SERVER_ERROR, "reminders request failed".to_string())
 }
 
 pub async fn list_reminders(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
-) -> Result<Json<RemindersResponse>, (StatusCode, &'static str)> {
-    let timezone: String = sqlx::query_scalar("SELECT timezone FROM user_preferences WHERE user_id = $1")
-        .bind(claims.sub)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(internal)?
-        .unwrap_or_else(|| "UTC".to_string());
-    let upcoming: Vec<ReminderRow> =
-        sqlx::query_as(&format!("SELECT {COLUMNS} FROM scheduled_jobs WHERE user_id = $1 AND status = 'active' ORDER BY run_at"))
-            .bind(claims.sub)
-            .fetch_all(&state.pool)
-            .await
-            .map_err(internal)?;
-    let past: Vec<ReminderRow> = sqlx::query_as(&format!(
-        "SELECT {COLUMNS} FROM scheduled_jobs WHERE user_id = $1 AND status <> 'active' \
-         ORDER BY COALESCE(cancelled_at, last_fired_at, run_at) DESC LIMIT $2"
-    ))
+) -> Result<Json<RemindersResponse>, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let timezone = nomi_agent_reminders::user_timezone(&mut conn, claims.sub).await.name().to_string();
+    let upcoming = nomi_agent_reminders::list(&mut conn, claims.sub, &["active"], 200).await.map_err(internal)?;
+    let past = nomi_agent_reminders::list(&mut conn, claims.sub, &["fired", "done", "cancelled"], PAST_LIMIT).await.map_err(internal)?;
+    let tasks: Vec<ScheduledTaskRow> = sqlx::query_as(
+        "SELECT id, label, run_at, recurrence, target_agent_type, session_id FROM scheduled_jobs \
+         WHERE user_id = $1 AND status = 'active' ORDER BY run_at",
+    )
     .bind(claims.sub)
-    .bind(PAST_LIMIT)
-    .fetch_all(&state.pool)
+    .fetch_all(&mut *conn)
     .await
     .map_err(internal)?;
     Ok(Json(RemindersResponse {
         timezone,
-        upcoming: upcoming.into_iter().map(to_reminder).collect(),
-        past: past.into_iter().map(to_reminder).collect(),
+        upcoming,
+        past,
+        scheduled_tasks: tasks
+            .into_iter()
+            .map(|(id, label, run_at, recurrence, agent, session_id)| ScheduledTask { id, label, run_at, recurrence, agent, session_id })
+            .collect(),
     }))
 }
 
 #[derive(Deserialize)]
 pub struct CreateReminderRequest {
-    pub label: String,
-    /// RFC 3339, with the user's offset.
-    pub run_at: String,
-    /// "daily", "weekly" (on run_at's weekday) or "monthly" (on run_at's day of the month).
+    pub title: String,
+    /// RFC 3339 with the user's offset, or a local date-time read in their timezone.
+    pub due_at: String,
+    /// "daily", "weekly" (on due_at's weekday) or "monthly" (on due_at's day of the month).
     pub recurrence: Option<String>,
+    pub notes: Option<String>,
 }
 
 /// The user's "Reminders" chat in their active org, created on first use.
-async fn reminders_session(state: &AppState, user_id: Uuid, org_id: Uuid) -> Result<Uuid, (StatusCode, &'static str)> {
+async fn reminders_session(state: &AppState, user_id: Uuid, org_id: Uuid) -> Result<Uuid, (StatusCode, String)> {
     let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT s.id FROM sessions s WHERE s.org_id = $1 AND s.channel = 'web' AND s.title = $2 \
-         AND EXISTS (SELECT 1 FROM scheduled_jobs j WHERE j.session_id = s.id AND j.user_id = $3) \
+         AND EXISTS (SELECT 1 FROM reminders r WHERE r.session_id = s.id AND r.user_id = $3) \
          ORDER BY s.created_at LIMIT 1",
     )
     .bind(org_id)
@@ -110,10 +98,10 @@ async fn reminders_session(state: &AppState, user_id: Uuid, org_id: Uuid) -> Res
     if let Some(id) = existing {
         return Ok(id);
     }
-    ensure_web_channel_identity(&state.pool, user_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to resolve web identity"))?;
+    ensure_web_channel_identity(&state.pool, user_id).await.map_err(internal)?;
     let created = bootstrap_identity_and_session(&state.pool, "web", "dm", &Uuid::new_v4().to_string(), &user_id.to_string(), Some(org_id))
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create the reminders chat"))?;
+        .map_err(internal)?;
     sqlx::query("UPDATE sessions SET title = $1 WHERE id = $2")
         .bind(REMINDERS_CHAT_TITLE)
         .bind(created.session_id)
@@ -127,47 +115,58 @@ pub async fn create_reminder(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Json(req): Json<CreateReminderRequest>,
-) -> Result<(StatusCode, Json<Reminder>), (StatusCode, &'static str)> {
-    let label = req.label.trim();
-    if label.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "label is required"));
-    }
-    let run_at = DateTime::parse_from_rfc3339(&req.run_at).map_err(|_| (StatusCode::BAD_REQUEST, "run_at must be an RFC 3339 time"))?;
-    if run_at.with_timezone(&Utc) <= Utc::now() {
-        return Err((StatusCode::BAD_REQUEST, "run_at must be in the future"));
-    }
-    let (weekday, day_of_month) = match req.recurrence.as_deref() {
-        None => (None, None),
-        Some("daily") => (None, None),
-        Some("weekly") => (Some(chrono::Datelike::weekday(&run_at).num_days_from_sunday() as i16), None),
-        Some("monthly") => (None, Some(chrono::Datelike::day(&run_at) as i16)),
-        Some(_) => return Err((StatusCode::BAD_REQUEST, "recurrence must be daily, weekly or monthly")),
-    };
+) -> Result<(StatusCode, Json<Reminder>), (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let tz = nomi_agent_reminders::user_timezone(&mut conn, claims.sub).await;
+    let due_at = nomi_agent_reminders::parse_due_at(&req.due_at, tz).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let session_id = reminders_session(&state, claims.sub, claims.active_org_id).await?;
-    let row: ReminderRow = sqlx::query_as(&format!(
-        "INSERT INTO scheduled_jobs (session_id, user_id, created_by_agent_type, target_agent_type, label, prompt, run_at, \
-         recurrence, recurrence_weekday, recurrence_day_of_month) \
-         VALUES ($1, $2, 'user', 'planning', $3, $4, $5, $6, $7, $8) RETURNING {COLUMNS}"
-    ))
-    .bind(session_id)
-    .bind(claims.sub)
-    .bind(label)
-    .bind(format!("It's time for the reminder the user set: \"{label}\". Remind them briefly and warmly."))
-    .bind(run_at.with_timezone(&Utc))
-    .bind(&req.recurrence)
-    .bind(weekday)
-    .bind(day_of_month)
-    .fetch_one(&state.pool)
+    let reminder = nomi_agent_reminders::add(
+        &mut conn,
+        claims.sub,
+        session_id,
+        nomi_agent_reminders::NewReminder { title: &req.title, notes: req.notes.as_deref(), due_at, recurrence: req.recurrence.as_deref() },
+        "user",
+    )
     .await
-    .map_err(internal)?;
-    Ok((StatusCode::CREATED, Json(to_reminder(row))))
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Ok((StatusCode::CREATED, Json(reminder)))
 }
 
-pub async fn cancel_reminder(
+#[derive(Deserialize)]
+pub struct ReminderAction {
+    /// "done", "cancel" or "snooze".
+    pub action: String,
+    /// For snooze; defaults to 10.
+    pub minutes: Option<i64>,
+}
+
+/// Done / cancel / snooze, from the page or from a reminder's bubble in chat.
+pub async fn reminder_action(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, (StatusCode, &'static str)> {
+    Json(req): Json<ReminderAction>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let changed = match req.action.as_str() {
+        "done" => nomi_agent_reminders::set_status(&mut conn, claims.sub, id, "done").await,
+        "cancel" => nomi_agent_reminders::set_status(&mut conn, claims.sub, id, "cancelled").await,
+        "snooze" => nomi_agent_reminders::snooze(&mut conn, claims.sub, id, req.minutes.unwrap_or(10)).await,
+        _ => return Err((StatusCode::BAD_REQUEST, "action must be done, cancel or snooze".to_string())),
+    }
+    .map_err(internal)?;
+    if !changed {
+        return Err((StatusCode::NOT_FOUND, "reminder not found".to_string()));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Cancels an agent task scheduled for later (core scheduler).
+pub async fn cancel_scheduled_task(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
     let cancelled = sqlx::query(
         "UPDATE scheduled_jobs SET status = 'cancelled', cancelled_at = now() WHERE id = $1 AND user_id = $2 AND status = 'active'",
     )
@@ -178,7 +177,7 @@ pub async fn cancel_reminder(
     .map_err(internal)?
     .rows_affected();
     if cancelled == 0 {
-        return Err((StatusCode::NOT_FOUND, "reminder not found"));
+        return Err((StatusCode::NOT_FOUND, "task not found".to_string()));
     }
     Ok(StatusCode::NO_CONTENT)
 }

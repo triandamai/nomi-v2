@@ -8,6 +8,7 @@ pub mod notification;
 pub mod permissions;
 pub mod personality;
 pub mod prompts;
+pub mod records;
 pub mod registry;
 pub mod reminders;
 pub mod stop;
