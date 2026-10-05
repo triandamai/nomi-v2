@@ -462,14 +462,16 @@ async fn a_thinking_block_is_posted_as_activity_even_for_an_agent_that_does_not_
     .await
     .unwrap();
 
-    let content: String = sqlx::query_scalar(
-        "SELECT content FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL",
+    let (content, blocks): (String, Option<serde_json::Value>) = sqlx::query_as(
+        "SELECT content, content_blocks FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL",
     )
     .bind(session_id)
     .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(content, "🧠 working through it");
+    // The chat renders this block as a collapsed "Thought process" on the agent's reply.
+    assert_eq!(blocks, Some(serde_json::json!([{"kind": "reasoning", "text": "working through it"}])));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -757,7 +759,7 @@ async fn a_deny_rule_blocks_the_tool_but_lets_the_turn_continue(pool: PgPool) {
 
     let requests = provider.received_requests.lock().unwrap();
     let second_request_text = format!("{:?}", requests[1].messages);
-    assert!(second_request_text.contains("Denied by your permission rules."));
+    assert!(second_request_text.contains("The user denied this action."));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -1068,4 +1070,179 @@ async fn system_prompt_carries_current_time_and_timezone_when_reminders_are_supp
     let received = provider.received_requests.lock().unwrap();
     let sent_system_prompt = received[0].system.as_deref().unwrap_or_default();
     assert!(sent_system_prompt.contains("America/New_York"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_stop_requested_while_the_model_is_answering_ends_the_turn_without_a_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+
+    // The model "thinks" for 500ms; the stop lands 150ms in, mid-call.
+    let provider = FakeLlmProvider::sequence(vec![text_response("Too late", StopReason::EndTurn)])
+        .with_delay(std::time::Duration::from_millis(500));
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let stop_pool = pool.clone();
+    let stopper = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        sqlx::query("INSERT INTO agent_stop_requests (user_id, session_id) VALUES ($1, $2)")
+            .bind(user_id)
+            .bind(session_id)
+            .execute(&stop_pool)
+            .await
+            .unwrap();
+    });
+
+    let mut conn = pool.acquire().await.unwrap();
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+    stopper.await.unwrap();
+
+    assert_eq!(outcome, LoopOutcome::Cancelled);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_old_stop_or_one_for_another_agent_does_not_stop_a_new_turn(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    // Both requests predate the turn or target someone else, so neither applies.
+    sqlx::query("INSERT INTO agent_stop_requests (user_id, session_id, requested_at) VALUES ($1, $2, now() - interval '1 minute')")
+        .bind(user_id)
+        .bind(session_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO agent_stop_requests (user_id, agent_type, requested_at) VALUES ($1, 'money', now() + interval '1 hour')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The supervisor exempting itself: a stop it asked for never stops its own turn.
+    sqlx::query("INSERT INTO agent_stop_requests (user_id, exempt_agent_type, requested_at) VALUES ($1, 'test', now() + interval '1 hour')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Hello!", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let mut conn = pool.acquire().await.unwrap();
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }), "got {outcome:?}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_chats_thinking_level_reaches_the_model_request(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    for (level, enabled, effort) in [
+        ("off", false, nomi_llm::ReasoningEffort::Medium),
+        ("low", true, nomi_llm::ReasoningEffort::Low),
+        ("high", true, nomi_llm::ReasoningEffort::High),
+    ] {
+        sqlx::query("UPDATE sessions SET thinking_level = $1 WHERE id = $2").bind(level).bind(session_id).execute(&pool).await.unwrap();
+        let provider = FakeLlmProvider::sequence(vec![text_response("ok", StopReason::EndTurn)]);
+        let mut conn = pool.acquire().await.unwrap();
+        run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+            .await
+            .unwrap();
+        let request = provider.received_requests.lock().unwrap()[0].clone();
+        assert_eq!(request.enable_reasoning, enabled, "{level}");
+        if enabled {
+            assert_eq!(request.reasoning_effort, effort, "{level}");
+        }
+    }
+}
+
+struct RecordsAgent(&'static str);
+
+#[async_trait::async_trait]
+impl SubAgent for RecordsAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.0)
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("keeps records")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.0)
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("records")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn uses_records(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agent_keeps_private_records_that_other_agents_cannot_touch(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+
+    let scout = RecordsAgent("travel_scout");
+    let registry = AgentRegistry::new(vec![Box::new(RecordsAgent("travel_scout"))]);
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "save_record", serde_json::json!({"collection": "Trips", "data": {"place": "Bali", "nights": 5}})),
+        text_response("Saved", StopReason::EndTurn),
+    ]);
+    let mut conn = pool.acquire().await.unwrap();
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &scout, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    // Offered the tools, and never asked for approval to use its own storage.
+    assert!(provider.received_requests.lock().unwrap()[0].tools.iter().any(|t| t.name == "list_records"));
+    let (owner, collection, place): (String, String, String) =
+        sqlx::query_as("SELECT agent_type, collection, data->>'place' FROM agent_records WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!((owner.as_str(), collection.as_str(), place.as_str()), ("travel_scout", "trips", "Bali"));
+    let record_id: Uuid = sqlx::query_scalar("SELECT id FROM agent_records").fetch_one(&pool).await.unwrap();
+
+    // Another agent can neither list nor delete it.
+    let other = RecordsAgent("gift_finder");
+    let registry = AgentRegistry::new(vec![Box::new(RecordsAgent("gift_finder"))]);
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t2", "list_records", serde_json::json!({"collection": "trips"})),
+        tool_use_response("t3", "delete_record", serde_json::json!({"id": record_id.to_string()})),
+        text_response("done", StopReason::EndTurn),
+    ]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &other, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    let requests = provider.received_requests.lock().unwrap();
+    let results = format!("{:?}", requests[2].messages);
+    assert!(results.contains("No records in trips yet."), "{results}");
+    assert!(results.contains("no record of yours with that id"), "{results}");
+    let still_there: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_records").fetch_one(&pool).await.unwrap();
+    assert_eq!(still_there, 1);
 }

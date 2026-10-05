@@ -32,10 +32,15 @@ export type ContentBlock =
 			tool_name: string;
 			description: string;
 			input: Record<string, unknown>;
-			status: 'pending' | 'approved' | 'denied';
+			/** `cancelled`: the user stopped the agent before deciding. */
+			status: 'pending' | 'approved' | 'denied' | 'cancelled';
 			decided_at: string | null;
 	  }
-	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number };
+	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number }
+	/** The model's thinking; shown collapsed on the agent's next reply (see $lib/reasoning). */
+	| { kind: 'reasoning'; text: string }
+	/** A reminder going off, posted by the Reminders agent. */
+	| { kind: 'reminder'; reminder_id: string; title: string; notes: string | null; due_at: string; recurrence: string | null };
 
 export interface MessageItem {
 	id: string;
@@ -106,6 +111,8 @@ export interface MemoryItem {
 	weight: number;
 	created_at: string;
 	updated_at: string;
+	/** How many of Nomi's replies drew on this memory. */
+	uses: number;
 	embedding: number[];
 }
 
@@ -160,6 +167,10 @@ export interface DynamicAgent {
 	supports_plans: boolean;
 	can_delegate: boolean;
 	is_active: boolean;
+	/** The agent's look (see ShapePicker). */
+	shape: string;
+	tone: string;
+	motion: string;
 }
 
 export interface AdminUserSummary {
@@ -272,3 +283,62 @@ export interface AgentEventItem {
 	tool_name: string | null;
 	is_error: boolean | null;
 }
+
+/** GET /api/home — the three status cards on Home. */
+export interface HomeSummary {
+	since: string;
+	timezone: string;
+	while_you_were_out: {
+		kind: 'finished' | 'failed' | 'stopped' | 'needs_you' | 'reminder' | 'reply';
+		agent: string;
+		title: string;
+		detail: string;
+		session_id: string | null;
+		at: string;
+	}[];
+	today: { id: string; run_at: string; label: string; agent: string; recurrence: string | null }[];
+	plans: { kind: 'todo' | 'plan'; title: string; agent: string; done: number; total: number; session_id: string; updated_at: string }[];
+}
+
+/** GET /api/money */
+export interface MoneySummary {
+	month: string;
+	timezone: string;
+	total_cents: number;
+	previous_total_cents: number;
+	transaction_count: number;
+	by_category: { category: string; cents: number; count: number }[];
+	by_day: { date: string; cents: number }[];
+	transactions: { id: string; occurred_at: string; amount_cents: number; category: string; description: string }[];
+	months: string[];
+	budgets: { category: string; limit_cents: number; spent_cents: number }[];
+}
+
+/** One reminder, from the Reminders agent's own table (GET /api/reminders). */
+export interface Reminder {
+	id: string;
+	session_id: string;
+	title: string;
+	notes: string | null;
+	due_at: string;
+	recurrence: 'daily' | 'weekly' | 'monthly' | null;
+	recurrence_weekday: number | null;
+	recurrence_day_of_month: number | null;
+	status: 'active' | 'fired' | 'done' | 'cancelled';
+	created_by: 'user' | 'agent';
+	last_fired_at: string | null;
+	created_at: string;
+}
+
+/** An agent task scheduled for later (core scheduler), shown on the Reminders page. */
+export interface ScheduledTask {
+	id: string;
+	label: string;
+	run_at: string;
+	recurrence: string | null;
+	agent: string;
+	session_id: string;
+}
+
+/** A chat's thinking level (see ThinkingMenu). */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';

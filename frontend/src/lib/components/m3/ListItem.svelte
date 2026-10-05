@@ -4,12 +4,15 @@
 	let {
 		headline,
 		supportingText,
+		leading,
 		trailing,
 		selected = false,
 		class: extraClass = '',
 	}: {
 		headline: string;
 		supportingText?: string;
+		/** An avatar, shape or checkbox before the text. */
+		leading?: Snippet;
 		trailing?: Snippet;
 		selected?: boolean;
 		class?: string;
@@ -17,6 +20,9 @@
 </script>
 
 <div role="listitem" class="m3-list-item {extraClass}" class:m3-list-item--selected={selected}>
+	{#if leading}
+		<div class="m3-list-item__leading">{@render leading()}</div>
+	{/if}
 	<div class="m3-list-item__text">
 		<p class="md-body-large" style="margin: 0; color: var(--md-sys-color-on-surface)">{headline}</p>
 		{#if supportingText}
@@ -51,5 +57,11 @@
 	}
 	.m3-list-item__trailing {
 		flex-shrink: 0;
+	}
+	.m3-list-item__leading {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		margin-right: 6px;
 	}
 </style>

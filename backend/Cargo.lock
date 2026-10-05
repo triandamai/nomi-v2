@@ -2147,6 +2147,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-files"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-money"
 version = "0.1.0"
 dependencies = [
@@ -2191,11 +2205,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-reminders"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "nomi-agent-chitchat",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-test-support",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-supervisor"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "nomi-agent-chitchat",
  "nomi-agent-core",
+ "nomi-agent-money",
  "nomi-llm",
  "nomi-test-support",
  "serde_json",
@@ -2285,9 +2319,11 @@ dependencies = [
  "nomi-agent-chitchat",
  "nomi-agent-coding",
  "nomi-agent-core",
+ "nomi-agent-files",
  "nomi-agent-money",
  "nomi-agent-personality",
  "nomi-agent-planning",
+ "nomi-agent-reminders",
  "nomi-agent-supervisor",
  "nomi-auth",
  "nomi-embedding",
@@ -2355,6 +2391,7 @@ dependencies = [
  "chrono",
  "nomi-agent-chitchat",
  "nomi-agent-core",
+ "nomi-agent-files",
  "nomi-agent-money",
  "nomi-agent-personality",
  "nomi-embedding",

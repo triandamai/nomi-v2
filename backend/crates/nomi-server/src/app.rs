@@ -8,6 +8,10 @@ use crate::routes::admin_users as admin_users_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::dynamic_agents as dynamic_agents_routes;
 use crate::routes::llm_models as llm_models_routes;
+use crate::routes::agents as agents_routes;
+use crate::routes::home as home_routes;
+use crate::routes::money as money_routes;
+use crate::routes::reminders as reminders_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
 use crate::routes::projects as projects_routes;
@@ -65,6 +69,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
         .route("/api/sessions/:id/agent-status", get(sessions_routes::get_agent_status))
         .route(
+            "/api/sessions/:id/thinking",
+            get(sessions_routes::get_thinking_level).put(sessions_routes::set_thinking_level),
+        )
+        .route(
             "/api/sessions/:id/messages/:message_id/feedback",
             put(sessions_routes::put_message_feedback).delete(sessions_routes::delete_message_feedback),
         )
@@ -91,7 +99,17 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/llm/models", get(llm_models_routes::get_user_models))
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
+        .route("/api/agents", get(agents_routes::list_crew))
+        .route("/api/home", get(home_routes::home_summary))
+        .route("/api/money", get(money_routes::money_summary))
+        .route("/api/money/transactions", post(money_routes::add_transaction))
+        .route("/api/money/budgets", put(money_routes::set_budget))
+        .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
+        .route("/api/reminders", get(reminders_routes::list_reminders).post(reminders_routes::create_reminder))
+        .route("/api/reminders/:id", post(reminders_routes::reminder_action))
+        .route("/api/scheduled-tasks/:id/cancel", post(reminders_routes::cancel_scheduled_task))
         .route("/api/memory", get(memory_routes::list_my_memories))
+        .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory))
         .route(
             "/api/personality/history",
             get(personality_routes::get_personality_history),

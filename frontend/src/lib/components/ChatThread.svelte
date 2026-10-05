@@ -9,10 +9,28 @@
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
+	import MicButton from '$lib/components/MicButton.svelte';
+	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
+	import Menu from '$lib/components/m3/Menu.svelte';
+	import MenuItem from '$lib/components/m3/MenuItem.svelte';
+	import ThinkingMenu from '$lib/components/ThinkingMenu.svelte';
+	import { deserialize } from '$app/forms';
+	import {
+		composeMessage,
+		formatBytes,
+		isAudioFile,
+		isTextFile,
+		voiceNoteName,
+		MAX_ATTACHMENTS,
+		MAX_FILE_BYTES,
+		MAX_TOTAL_BYTES,
+		type Attachment,
+	} from '$lib/attachments';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
-	import type { AgentStatus, RenderedMessage } from '$lib/types';
+	import { groupReasoning } from '$lib/reasoning';
+	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
 
 	interface AgentActivityItem {
 		id: string;
@@ -32,6 +50,7 @@
 		title = 'Chat',
 		context,
 		extraControls,
+		thinkingLevel = null,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -44,9 +63,105 @@
 		context?: string;
 		/** App-bar actions (model / personality menus). */
 		extraControls?: Snippet;
+		/** The chat's thinking level; null hides the picker. The page must have a setThinking action. */
+		thinkingLevel?: ThinkingLevel | null;
 	} = $props();
 
+	// Composer state: the typed draft, attached files, and the chat's thinking level.
+	let draft = $state('');
+	let attachments = $state<(Attachment & { size: number })[]>([]);
+	let attachError = $state<string | null>(null);
+	let fileInput: HTMLInputElement | undefined = $state();
+	let attachMenuOpen = $state(false);
+	let recordingVoice = $state(false);
+	let speechSupported = $state(false);
+	onMount(() => {
+		const w = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+		speechSupported = Boolean(w.SpeechRecognition ?? w.webkitSpeechRecognition);
+	});
+
+	function saveVoiceNote(transcript: string, seconds: number) {
+		recordingVoice = false;
+		if (attachments.length >= MAX_ATTACHMENTS) {
+			attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
+			return;
+		}
+		attachments = [...attachments, { name: voiceNoteName(seconds), text: transcript, kind: 'voice', size: new Blob([transcript]).size }];
+		messageInput?.focus();
+	}
+	let dictationBase = '';
+	let level = $state<ThinkingLevel>('medium');
+	$effect(() => {
+		if (thinkingLevel) level = thinkingLevel;
+	});
+
+	const canSend = $derived(draft.trim().length > 0 || attachments.length > 0);
+	const composedText = $derived(composeMessage(draft, attachments));
+
+	async function addFiles(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const files = [...(input.files ?? [])];
+		input.value = '';
+		attachError = null;
+		const refused: string[] = [];
+		const audio: string[] = [];
+		for (const file of files) {
+			if (attachments.length >= MAX_ATTACHMENTS) {
+				attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
+				break;
+			}
+			if (isAudioFile(file.name, file.type)) {
+				audio.push(file.name);
+				continue;
+			}
+			if (!isTextFile(file.name, file.type)) {
+				refused.push(file.name);
+				continue;
+			}
+			const total = attachments.reduce((sum, a) => sum + a.size, 0);
+			if (file.size > MAX_FILE_BYTES || total + file.size > MAX_TOTAL_BYTES) {
+				attachError = `${file.name} is too big (files up to ${formatBytes(MAX_FILE_BYTES)}, ${formatBytes(MAX_TOTAL_BYTES)} per message).`;
+				continue;
+			}
+			attachments = [...attachments, { name: file.name, text: await file.text(), kind: 'file', size: file.size }];
+		}
+		if (audio.length > 0) {
+			attachError = `${audio.join(', ')}: audio files can't be read yet. Record a voice note instead, from the attach menu.`;
+		}
+		if (refused.length > 0) {
+			attachError = `${refused.join(', ')}: only text files (notes, CSV, JSON, code) can be attached for now, not images or PDFs.`;
+		}
+	}
+
+	function removeAttachment(index: number) {
+		attachments = attachments.filter((_, i) => i !== index);
+		attachError = null;
+	}
+
+	function onTranscript(text: string, final: boolean) {
+		draft = dictationBase ? `${dictationBase} ${text}` : text;
+		if (final) dictationBase = draft;
+	}
+
+	async function setThinking(next: ThinkingLevel) {
+		const previous = level;
+		level = next;
+		const body = new FormData();
+		body.set('level', next);
+		try {
+			const response = await fetch('?/setThinking', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+			if (deserialize(await response.text()).type !== 'success') level = previous;
+		} catch {
+			level = previous;
+		}
+	}
+
 	let pendingReply = $state(false);
+	// Set once the supervisor has stopped this chat's crew: the stopped turn's last streamed
+	// deltas must not bring the working indicator back. Cleared when that turn ends or the user
+	// sends something new.
+	let stopRequested = $state(false);
+	let stopping = $state(false);
 	let submitting = $state(false);
 	let turnError = $state(false);
 	let connectionLost = $state(false);
@@ -79,11 +194,22 @@
 		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 			event.preventDefault();
 			const field = event.currentTarget as HTMLTextAreaElement;
-			if (field.value.trim() && !isWorking) field.form?.requestSubmit();
+			// While the crew works, only a stop command goes through (anything else would queue
+			// behind the running turn).
+			if (canSend && (!isWorking || STOP_COMMAND.test(draft))) field.form?.requestSubmit();
 		}
 	}
 
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+	const STOP_COMMAND = /^\W*(stop|cancel|abort|halt|berhenti|hentikan|batalkan)\b/i;
+
+	/** The supervisor answered a stop command: no turn is coming, and any running one is ending. */
+	function settleAfterStop() {
+		stopRequested = true;
+		submitting = false;
+		pendingReply = false;
+		currentPhase = null;
+	}
 
 	async function fetchAndUpsertMessage(id: string) {
 		try {
@@ -149,11 +275,16 @@
 	// right after sending where neither the button nor the "Typing…" bubble showed any feedback.
 	const isWorking = $derived(submitting || pendingReply);
 
+	// Thinking steps fold into the reply they led to (see $lib/reasoning).
+	const threadItems = $derived(groupReasoning(localMessages));
+	const threadMessages = $derived(threadItems.map((item) => item.message));
+
 	const crew = $derived(
 		buildCrew({
 			activity: agentActivity,
 			messageAuthors: localMessages.filter((m) => m.sender === 'assistant').map((m) => m.agent_display_name),
 			nomiWorking: isWorking,
+			roster: page.data.crew ?? [],
 			nomiStatus: currentPhase
 				? phaseText(currentPhase.phase, currentPhase.detail).replace(/^Nomi is /, '')
 				: isWorking
@@ -224,14 +355,16 @@
 					return;
 				}
 				if (envelope.kind === 'Delta') {
-					pendingReply = true;
+					if (!stopRequested) pendingReply = true;
 				} else if (envelope.kind === 'TurnCompleted') {
+					stopRequested = false;
 					pendingReply = false;
 					turnError = false;
 					if (envelope.message_id && envelope.message_id !== NIL_UUID) {
 						fetchAndUpsertMessage(envelope.message_id);
 					}
 				} else if (envelope.kind === 'TurnFailed') {
+					stopRequested = false;
 					pendingReply = false;
 					turnError = true;
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
@@ -239,7 +372,7 @@
 				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
 					if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 				} else if (envelope.kind === 'AgentPhaseChanged') {
-					if (typeof envelope.phase === 'string') {
+					if (typeof envelope.phase === 'string' && !stopRequested) {
 						currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
 					}
 				}
@@ -299,12 +432,14 @@
 		<div class="chat__main">
 			<div bind:this={messagesContainer} class="thread">
 				<div class="thread__column">
-					{#each localMessages as message, i (message.id)}
+					{#each threadItems as item, i (item.message.id)}
 						<MessageBubble
-							{message}
-							chained={isChained(localMessages, i)}
+							message={item.message}
+							reasoning={item.reasoning}
+							thinkingOnly={item.thinkingOnly}
+							chained={isChained(threadMessages, i)}
 							first={i === 0}
-							showTimestamp={isLastInChain(localMessages, i)}
+							showTimestamp={isLastInChain(threadMessages, i)}
 						/>
 					{/each}
 					{#if isWorking}
@@ -332,24 +467,120 @@
 					class="composer"
 					use:enhance={() => {
 						submitting = true;
-						return async ({ update }) => {
+						stopRequested = false;
+						return async ({ result, update }) => {
 							await update({ reset: true });
+							if (result.type === 'success') {
+								draft = '';
+								dictationBase = '';
+								attachments = [];
+								attachError = null;
+								if (result.data?.stopped) settleAfterStop();
+							}
 							messageInput?.focus();
 						};
 					}}
 				>
-					<label for="chat-message" class="sr-only">Message</label>
-					<textarea
-						id="chat-message"
-						bind:this={messageInput}
-						name="text"
-						rows="1"
-						placeholder="Message Nomi"
-						required
-						class="composer__input"
-						onkeydown={onComposerKeydown}
-					></textarea>
-					<SendButton working={isWorking} />
+					{#if attachments.length > 0 || attachError || recordingVoice}
+						<div class="composer__files">
+							{#each attachments as file, i (file.name + i)}
+								<span class="file-chip" class:file-chip--voice={file.kind === 'voice'} title={file.kind === 'voice' ? file.text : undefined}>
+									{#if file.kind === 'voice'}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+									{:else}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+									{/if}
+									<span class="file-chip__name">{file.name}</span>
+									<span class="file-chip__size">{formatBytes(file.size)}</span>
+									<button type="button" class="file-chip__remove" aria-label="Remove {file.name}" onclick={() => removeAttachment(i)}>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+									</button>
+								</span>
+							{/each}
+							{#if recordingVoice}
+								<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
+							{/if}
+							{#if attachError}
+								<p class="composer__error" role="alert">{attachError}</p>
+							{/if}
+						</div>
+					{/if}
+					<div class="composer__row">
+						<Menu bind:open={attachMenuOpen}>
+							{#snippet trigger({ toggle })}
+								<button type="button" class="composer__attach" aria-label="Attach" title="Attach files or a voice note" onclick={toggle}>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" /></svg>
+								</button>
+							{/snippet}
+							<MenuItem
+								type="button"
+								onclick={() => {
+									attachMenuOpen = false;
+									fileInput?.click();
+								}}
+							>
+								<span class="attach-option">
+									<span class="attach-option__label">Attach files</span>
+									<span class="attach-option__hint">Notes, CSV, JSON or code</span>
+								</span>
+							</MenuItem>
+							{#if speechSupported}
+								<MenuItem
+									type="button"
+									disabled={recordingVoice}
+									onclick={() => {
+										attachMenuOpen = false;
+										attachError = null;
+										recordingVoice = true;
+									}}
+								>
+									<span class="attach-option">
+										<span class="attach-option__label">Record a voice note</span>
+										<span class="attach-option__hint">Say it; Nomi works out what to do</span>
+									</span>
+								</MenuItem>
+							{/if}
+						</Menu>
+						<input bind:this={fileInput} type="file" multiple hidden onchange={addFiles} />
+						<label for="chat-message" class="sr-only">Message</label>
+						<textarea
+							id="chat-message"
+							bind:this={messageInput}
+							bind:value={draft}
+							rows="1"
+							placeholder="Message Nomi"
+							class="composer__input"
+							onkeydown={onComposerKeydown}
+							onfocus={() => (dictationBase = draft)}
+						></textarea>
+						<input type="hidden" name="text" value={composedText} />
+						<MicButton ontranscript={onTranscript} />
+						{#if thinkingLevel}
+							<ThinkingMenu {level} onchange={setThinking} />
+						{/if}
+						<SendButton
+							working={isWorking || stopping}
+							stopForm={stopping ? undefined : 'stop-crew'}
+							disabled={!canSend}
+						/>
+					</div>
+				</form>
+				<!-- The in-flight send button submits this: the same "stop" a user could type. -->
+				<form
+					id="stop-crew"
+					method="POST"
+					action="?/sendMessage"
+					hidden
+					use:enhance={() => {
+						stopping = true;
+						return async ({ result, update }) => {
+							await update({ reset: false });
+							stopping = false;
+							if (result.type === 'success' && result.data?.stopped) settleAfterStop();
+						};
+					}}
+				>
+					<input type="hidden" name="text" value="stop" />
 				</form>
 			</div>
 		</div>
@@ -553,11 +784,11 @@
 	}
 	.composer {
 		display: flex;
-		align-items: flex-end;
+		flex-direction: column;
 		gap: 6px;
 		max-width: 780px;
 		margin: 0 auto;
-		padding: 8px 8px 8px 20px;
+		padding: 8px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		box-shadow:
@@ -582,5 +813,102 @@
 	}
 	.composer__input::placeholder {
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.composer__row {
+		display: flex;
+		align-items: flex-end;
+		gap: 6px;
+	}
+	.composer__row > :global(*) {
+		align-self: center;
+	}
+	.composer__attach {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface);
+		cursor: pointer;
+		transition: border-radius var(--nomi-motion-spatial-fast);
+	}
+	.composer__attach:hover {
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+	.composer__attach:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.composer__files {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 4px 4px 0;
+	}
+	.composer__error {
+		flex-basis: 100%;
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-error);
+	}
+	.file-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		max-width: 100%;
+		height: 36px;
+		padding: 0 4px 0 10px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.8125rem;
+	}
+	.file-chip--voice {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.attach-option {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		text-align: left;
+	}
+	.attach-option__label {
+		font-weight: 650;
+	}
+	.attach-option__hint {
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.file-chip__name {
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 220px;
+	}
+	.file-chip__size {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.file-chip__remove {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+	}
+	.file-chip__remove:hover {
+		background: var(--md-sys-color-surface-container-highest);
 	}
 </style>

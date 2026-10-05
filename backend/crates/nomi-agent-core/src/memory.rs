@@ -65,7 +65,21 @@ pub async fn try_retrieve_memories(
     .unwrap_or_default()
 }
 
-const EXTRACTION_MAX_TOKENS: u32 = 128;
+const EXTRACTION_MAX_TOKENS: u32 = 256;
+
+/// The width of `memory_items.embedding`.
+const STORED_DIMENSIONS: usize = 1536;
+
+/// The extraction model's answer as a fact worth storing, or `None` for its "nothing to
+/// remember" answer, which models write as NONE, "None.", "**NONE**" and the like.
+fn extracted_fact(text: &str) -> Option<String> {
+    let fact = text.trim();
+    let bare: String = fact.chars().filter(|c| c.is_alphanumeric()).collect();
+    if bare.is_empty() || bare.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    Some(fact.to_string())
+}
 
 pub async fn extract_and_store_memory(
     conn: &mut PoolConnection<Postgres>,
@@ -84,11 +98,17 @@ pub async fn extract_and_store_memory(
         tools: vec![],
         max_tokens: EXTRACTION_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
 
+    // Memory is best-effort and never fails the turn, but every way it can fail is logged:
+    // these used to be swallowed silently, which left the memory page empty with no clue why.
     let response = match nomi_llm::complete(provider, request).await {
         Ok(r) => r,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "memory: fact extraction call failed");
+            return;
+        }
     };
 
     let extracted = response.content.into_iter().find_map(|block| match block {
@@ -96,18 +116,29 @@ pub async fn extract_and_store_memory(
         _ => None,
     });
 
-    let fact = match extracted {
-        Some(f) if f.trim() != "NONE" && !f.trim().is_empty() => f.trim().to_string(),
-        _ => return,
+    let Some(fact) = extracted.as_deref().and_then(extracted_fact) else {
+        return;
     };
 
     let embedding = match embedding_provider.embed(&fact).await {
         Ok(e) => e,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, provider = embedding_provider.provider_name(), "memory: embedding the extracted fact failed");
+            return;
+        }
     };
+    if embedding.len() != STORED_DIMENSIONS {
+        tracing::warn!(
+            got = embedding.len(),
+            expected = STORED_DIMENSIONS,
+            model = embedding_provider.model_id(),
+            "memory: the embedding model returns vectors of the wrong size, so memories can't be stored; pick a model that outputs 1536 dimensions",
+        );
+        return;
+    }
 
     let literal = to_vector_literal(&embedding);
-    let _ = sqlx::query(
+    let inserted = sqlx::query(
         "INSERT INTO memory_items (user_id, content, embedding, embedding_provider, embedding_model) \
          VALUES ($1, $2, $3::vector, $4, $5)",
     )
@@ -118,6 +149,22 @@ pub async fn extract_and_store_memory(
     .bind(embedding_provider.model_id())
     .execute(&mut **conn)
     .await;
+    if let Err(e) = inserted {
+        tracing::warn!(error = %e, "memory: storing the extracted fact failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extracted_fact;
+
+    #[test]
+    fn every_spelling_of_none_means_nothing_to_remember() {
+        for text in ["NONE", "None.", "**NONE**", " none ", "\"NONE\"", ""] {
+            assert_eq!(extracted_fact(text), None, "{text:?}");
+        }
+        assert_eq!(extracted_fact(" The user is vegetarian. "), Some("The user is vegetarian.".to_string()));
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -176,7 +176,15 @@ pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
+    /// The user stopped this agent mid-turn (see `crate::stop`). Nothing more is posted; whoever
+    /// asked for the stop has already told the user.
+    Cancelled,
 }
+
+/// Tool result for a call the user refused. Says plainly not to retry: models otherwise tend to
+/// try the same call again, which only puts the same approval card in front of the user again.
+const USER_DENIED_RESULT: &str =
+    "The user denied this action. Do not try it again; tell them it wasn't done and ask how they'd like to proceed.";
 
 /// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
 /// delegate_to_agent, show_table, update_todos) — none of these touch anything a user would
@@ -190,6 +198,8 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
+        // Record tools only touch the calling agent's own private records.
+        && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
 
 fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String {
@@ -236,6 +246,9 @@ pub async fn run_agent_turn(
     if agent.supports_plans() {
         tools.push(write_plan_tool_definition());
     }
+    if agent.uses_records() {
+        tools.extend(crate::records::record_tool_definitions());
+    }
     if agent.supports_reminders() {
         let targets = registry.reminder_target_agent_types();
         tools.push(create_reminder_tool_definition(&targets));
@@ -277,7 +290,7 @@ pub async fn run_agent_turn(
         system_prompt
     };
 
-    let system_prompt = if agent.supports_reminders() {
+    let system_prompt = if agent.supports_reminders() || agent.wants_current_time() {
         let timezone_name = crate::reminders::get_user_timezone(conn, user_id).await;
         let tz: chrono_tz::Tz = timezone_name.parse().unwrap_or(chrono_tz::UTC);
         let now = chrono::Utc::now().with_timezone(&tz);
@@ -290,7 +303,27 @@ pub async fn run_agent_turn(
         system_prompt
     };
 
+    let started_at = crate::stop::database_clock(conn).await?;
+
+    // The chat's thinking level (picked in the composer); delegated turns share their chat's.
+    let thinking_level: String = sqlx::query_scalar("SELECT thinking_level FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await?
+        .unwrap_or_else(|| "medium".to_string());
+    let reasoning_effort = match thinking_level.as_str() {
+        "low" => nomi_llm::ReasoningEffort::Low,
+        "high" => nomi_llm::ReasoningEffort::High,
+        _ => nomi_llm::ReasoningEffort::Medium,
+    };
+    let agent_type = agent.agent_type();
+
     for _ in 0..MAX_TOOL_TURNS {
+        if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+            return Ok(LoopOutcome::Cancelled);
+        }
+
         update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_THINKING, None).await;
 
         let request = LlmRequest {
@@ -298,7 +331,8 @@ pub async fn run_agent_turn(
             messages: messages.clone(),
             tools: tools.clone(),
             max_tokens,
-            enable_reasoning: true,
+            enable_reasoning: thinking_level != "off",
+            reasoning_effort,
         };
 
         // The LLM call happens outside any DB transaction: holding a transaction open across
@@ -329,6 +363,13 @@ pub async fn run_agent_turn(
             None => nomi_llm::collect_stream(stream).await.map_err(TurnError::LlmCallFailed)?,
         };
 
+        // The LLM call is the slow step, so this is where a stop most often lands: drop the
+        // response instead of replying or running its tools.
+        if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+            return Ok(LoopOutcome::Cancelled);
+        }
+
         messages.push(LlmMessage { role: LlmRole::Assistant, content: response.content.clone() });
 
         // Reasoning is shown for every agent, unlike the tool-call "💭" commentary below (which
@@ -337,7 +378,16 @@ pub async fn run_agent_turn(
         for block in &response.content {
             if let ContentBlock::Thinking { text, .. } = block {
                 if !text.trim().is_empty() {
-                    post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("🧠 {}", text.trim()), None).await;
+                    let reasoning = crate::content_block::ContentBlock::Reasoning { text: text.trim().to_string() };
+                    post_activity_message(
+                        conn,
+                        mqtt.map(|(p, _)| p),
+                        session_id,
+                        agent.display_name().as_ref(),
+                        &format!("🧠 {}", text.trim()),
+                        Some(&reasoning),
+                    )
+                    .await;
                 }
             }
         }
@@ -442,10 +492,10 @@ pub async fn resolve_tool_batch(
             if already_decided.iter().any(|(decided_id, _)| decided_id == id) {
                 continue;
             }
-            if !is_gateable(name) {
+            if !is_gateable(name) || !agent.tool_needs_approval(name) {
                 continue;
             }
-            let decision = permissions::check_tool_permission(conn, user_id, name, input).await;
+            let decision = permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await;
             if !matches!(decision, permissions::PermissionDecision::Ask) {
                 continue;
             }
@@ -572,6 +622,12 @@ pub async fn resolve_tool_batch(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
+            } else if agent.uses_records() && crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()) {
+                match crate::records::execute(conn, agent.agent_type().as_ref(), user_id, name, input).await {
+                    Some(Ok(text)) => (text, false, None),
+                    Some(Err(err)) => (err, true, None),
+                    None => (format!("unknown tool: {name}"), true, None),
+                }
             } else if name.as_str() == CREATE_REMINDER_TOOL_NAME && agent.supports_reminders() {
                 match crate::reminders::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
                     Ok(text) => (text, false, None),
@@ -594,10 +650,13 @@ pub async fn resolve_tool_batch(
                         Err(err) => (describe_tool_error(name, input, &err), true, None),
                     }
                 } else {
-                    ("Denied by your permission rules.".to_string(), true, None)
+                    (USER_DENIED_RESULT.to_string(), true, None)
                 }
-            } else if matches!(permissions::check_tool_permission(conn, user_id, name, input).await, permissions::PermissionDecision::Deny) {
-                ("Denied by your permission rules.".to_string(), true, None)
+            } else if matches!(
+                permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await,
+                permissions::PermissionDecision::Deny
+            ) {
+                (USER_DENIED_RESULT.to_string(), true, None)
             } else {
                 match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                     Ok(outcome) => (outcome.display_text, false, outcome.block),
@@ -615,7 +674,8 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != WRITE_PLAN_TOOL_NAME
                     && name.as_str() != CREATE_REMINDER_TOOL_NAME
                     && name.as_str() != LIST_REMINDERS_TOOL_NAME
-                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME);
+                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME
+                    && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
                 post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;
             }

@@ -2,7 +2,17 @@
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Card from '$lib/components/m3/Card.svelte';
+	import ShapePicker from '$lib/components/m3/ShapePicker.svelte';
+	import {
+		isGradientTone,
+		isShapeMotion,
+		isShapeName,
+		type GradientTone,
+		type ShapeMotion,
+		type ShapeName,
+	} from '$lib/components/m3/shapes';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import type { ActionData, PageData } from './$types';
 	import type { DynamicAgent } from '$lib/types';
@@ -16,6 +26,9 @@
 			tools: [
 				{ name: 'list_transactions', description: 'List recent transactions' },
 				{ name: 'summarize_budget', description: 'Summarize spending by category' },
+				{ name: 'log_transaction', description: 'Record an expense the user mentions' },
+				{ name: 'set_budget', description: 'Set a monthly budget for a category' },
+				{ name: 'list_budgets', description: 'List budgets and this month’s spending' },
 			],
 		},
 		{ label: 'Planning', tools: [{ name: 'create_project', description: 'Create a new project' }] },
@@ -49,6 +62,9 @@
 	let supportsTodos = $state(false);
 	let supportsPlans = $state(false);
 	let canDelegate = $state(false);
+	let shape = $state<ShapeName>('cookie9');
+	let tone = $state<GradientTone>('glow');
+	let motion = $state<ShapeMotion>('spin');
 
 	function openCreate() {
 		editingId = null;
@@ -60,6 +76,9 @@
 		supportsTodos = false;
 		supportsPlans = false;
 		canDelegate = false;
+		shape = 'cookie9';
+		tone = 'glow';
+		motion = 'spin';
 		sheetOpen = true;
 	}
 
@@ -73,6 +92,9 @@
 		supportsTodos = agent.supports_todos;
 		supportsPlans = agent.supports_plans;
 		canDelegate = agent.can_delegate;
+		shape = isShapeName(agent.shape) ? agent.shape : 'cookie9';
+		tone = isGradientTone(agent.tone) ? agent.tone : 'glow';
+		motion = isShapeMotion(agent.motion) ? agent.motion : 'spin';
 		sheetOpen = true;
 	}
 
@@ -89,8 +111,13 @@
 <div class="mt-6 space-y-3">
 	{#each data.agents as agent (agent.id)}
 		<Card variant="outlined" class="p-4">
-			<div class="flex items-center justify-between">
-				<div>
+			<div class="flex items-center justify-between gap-3">
+				<AgentShape
+					shape={isShapeName(agent.shape) ? agent.shape : 'cookie9'}
+					tone={isGradientTone(agent.tone) ? agent.tone : 'glow'}
+					size={40}
+				/>
+				<div class="min-w-0 flex-1">
 					<p class="md-title-medium" style="color: var(--md-sys-color-on-surface)">
 						{agent.name}
 						{#if !agent.is_active}
@@ -146,6 +173,7 @@
 			<input type="hidden" name="id" value={editingId} />
 		{/if}
 		<TextField id="name" name="name" label="Name" bind:value={name} required />
+		<ShapePicker bind:shape bind:tone bind:motion {name} />
 		<TextField id="intent_label" name="intent_label" label="Intent label (one word, unique)" bind:value={intentLabel} required />
 		<TextField
 			id="intent_description"

@@ -44,7 +44,8 @@ impl AnthropicProvider {
         // Anthropic requires max_tokens to exceed the thinking budget, since thinking tokens
         // count against the same output budget as the final reply — bump it here rather than
         // making every caller of LlmRequest reason about this provider-specific constraint.
-        let max_tokens = if request.enable_reasoning { request.max_tokens.max(THINKING_BUDGET_TOKENS + 1024) } else { request.max_tokens };
+        let budget = thinking_budget(request.reasoning_effort);
+        let max_tokens = if request.enable_reasoning { request.max_tokens.max(budget + 1024) } else { request.max_tokens };
 
         let mut body = json!({
             "model": self.model,
@@ -59,16 +60,22 @@ impl AnthropicProvider {
             body["tools"] = json!(tools);
         }
         if request.enable_reasoning {
-            body["thinking"] = json!({ "type": "enabled", "budget_tokens": THINKING_BUDGET_TOKENS });
+            body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
         }
         body
     }
 }
 
-/// How many of `max_tokens` extended thinking may spend before the final reply. Anthropic's
-/// minimum is 1024; this is a modest middle ground between reasoning depth and latency/cost for
-/// every agent turn (see `enable_reasoning` on `LlmRequest`).
-const THINKING_BUDGET_TOKENS: u32 = 2048;
+/// How many of `max_tokens` extended thinking may spend before the final reply, per thinking
+/// level. Anthropic's minimum is 1024; medium is a modest middle ground between reasoning depth
+/// and latency/cost for every agent turn (see `enable_reasoning` on `LlmRequest`).
+fn thinking_budget(effort: crate::ReasoningEffort) -> u32 {
+    match effort {
+        crate::ReasoningEffort::Low => 1024,
+        crate::ReasoningEffort::Medium => 2048,
+        crate::ReasoningEffort::High => 8192,
+    }
+}
 
 fn role_to_str(role: &LlmRole) -> &'static str {
     match role {

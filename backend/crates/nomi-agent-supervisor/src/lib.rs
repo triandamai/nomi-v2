@@ -10,6 +10,8 @@ use nomi_agent_core::prompts::SUPERVISOR_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
+pub mod stop;
+
 pub const SUPERVISOR_AGENT_TYPE: &str = "supervisor";
 
 /// How many recent delegations `list_recent_agent_activity` reports on.
@@ -28,6 +30,62 @@ pub fn list_recent_agent_activity_tool_definition() -> ToolDefinition {
     }
 }
 
+pub fn stop_agents_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "stop_agents".to_string(),
+        description: "Stop agents that are working, at the user's request. Cancels their running and queued work \
+                      and any approvals they are waiting on. Use scope \"this_chat\" for \"stop\" or \"cancel that\", \
+                      \"everything\" for every agent in every chat, or \"agent\" with the agent's name or type \
+                      (e.g. \"money\", \"coding\", \"planning\") to stop one agent."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "scope": {"type": "string", "enum": ["this_chat", "everything", "agent"]},
+                "agent": {"type": "string", "description": "Required when scope is \"agent\"."}
+            },
+            "required": ["scope"]
+        }),
+    }
+}
+
+/// Maps what the model passed as `agent` to an agent type: a dynamic agent by name or intent
+/// label, otherwise the lowercased text itself (the built-ins' types are their names).
+async fn resolve_agent_type(conn: &mut PoolConnection<Postgres>, agent: &str) -> String {
+    let wanted = agent.trim().to_lowercase();
+    let dynamic: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM dynamic_agents WHERE is_active = true AND (lower(name) = $1 OR lower(intent_label) = $1) LIMIT 1",
+    )
+    .bind(&wanted)
+    .fetch_optional(&mut **conn)
+    .await
+    .ok()
+    .flatten();
+    dynamic.map(|id| id.to_string()).unwrap_or_else(|| wanted.trim_end_matches(" agent").to_string())
+}
+
+async fn stop_agents_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, input: &Value) -> Result<String, String> {
+    use sqlx::Connection;
+
+    let (target, target_name) = match input["scope"].as_str() {
+        Some("this_chat") => (stop::StopTarget::ThisChat, None),
+        Some("everything") => (stop::StopTarget::Everything, None),
+        Some("agent") => {
+            let name = input["agent"].as_str().filter(|s| !s.trim().is_empty()).ok_or("scope \"agent\" needs the agent's name")?;
+            let agent_type = resolve_agent_type(conn, name).await;
+            (stop::StopTarget::Agent { agent_type }, Some(name.to_string()))
+        }
+        _ => return Err("scope must be this_chat, everything or agent".to_string()),
+    };
+
+    let mut tx = (**conn).begin().await.map_err(|e| e.to_string())?;
+    let report = stop::stop_agents(&mut tx, &stop::StopRequest { user_id, session_id, target: target.clone(), from_supervisor_turn: true })
+        .await
+        .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(stop::describe(&report, &target, target_name.as_deref()))
+}
+
 pub struct SupervisorAgent;
 
 #[async_trait]
@@ -41,7 +99,7 @@ impl SubAgent for SupervisorAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![list_recent_agent_activity_tool_definition()]
+        vec![list_recent_agent_activity_tool_definition(), stop_agents_tool_definition()]
     }
 
     async fn execute_tool(
@@ -49,12 +107,13 @@ impl SubAgent for SupervisorAgent {
         conn: &mut PoolConnection<Postgres>,
         session_id: Uuid,
         _agent_session_id: Uuid,
-        _user_id: Uuid,
+        user_id: Uuid,
         name: &str,
-        _input: Value,
+        input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
             "list_recent_agent_activity" => list_recent_agent_activity(conn, session_id).await.map(nomi_agent_core::ToolOutcome::text),
+            "stop_agents" => stop_agents_tool(conn, session_id, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("supervisor has no tool named {other}")),
         }
     }
@@ -64,7 +123,10 @@ impl SubAgent for SupervisorAgent {
     }
 
     fn intent_description(&self) -> Cow<'static, str> {
-        Cow::Borrowed("The user is asking what the other agents are doing, wants a status update, or explicitly asks for a report across multiple specialists")
+        Cow::Borrowed(
+            "The user is asking what the other agents are doing, wants a status update, explicitly asks for a report across \
+             multiple specialists, or wants to stop, cancel or call off one or all of the agents' work",
+        )
     }
 
     fn uses_personality(&self) -> bool {
@@ -170,6 +232,7 @@ pub async fn phrase_delegation_result(
         tools: vec![],
         max_tokens: SUPERVISOR_PHRASING_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
     let response = nomi_llm::complete(provider, request).await.map_err(|e| e.to_string())?;
     Ok(response
@@ -211,6 +274,7 @@ pub async fn phrase_delegation_started(
         tools: vec![],
         max_tokens: SUPERVISOR_PHRASING_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
     let response = nomi_llm::complete(provider, request).await.map_err(|e| e.to_string())?;
     Ok(response

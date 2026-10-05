@@ -1,11 +1,15 @@
+pub mod agents;
 pub mod admin_dashboard;
 pub mod admin_users;
 pub mod auth;
 pub mod dynamic_agents;
+pub mod home;
 pub mod llm_models;
 pub mod memory;
+pub mod money;
 pub mod personality;
 pub mod projects;
 pub mod profile;
+pub mod reminders;
 pub mod sessions;
 pub mod settings;

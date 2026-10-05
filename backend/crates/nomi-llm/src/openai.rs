@@ -96,7 +96,7 @@ impl OpenAiProvider {
         // OpenAI's own reasoning families, so enabling reasoning globally can't break every other
         // OpenAI model a user might pick.
         if request.enable_reasoning && is_reasoning_model(&self.model) {
-            body["reasoning_effort"] = json!("medium");
+            body["reasoning_effort"] = json!(request.reasoning_effort.as_str());
         }
         if stream {
             body["stream"] = json!(true);

@@ -171,6 +171,16 @@ async fn run_locked_turn(
     user_id: Uuid,
     text: &str,
 ) -> Result<(String, Option<Uuid>), TurnError> {
+    // Attachments (files, voice notes) always go to the Files agent first: it reads them and
+    // decides whether to answer itself or hand parts to Money, Reminders, Planning or Coding.
+    // It runs without an agent session of its own, so an ongoing conversation with another agent
+    // carries on afterwards.
+    if nomi_agent_core::attachments::has_attachments(text) {
+        if let Some(files) = registry.find(nomi_agent_core::attachments::FILES_AGENT_TYPE) {
+            return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, files.as_ref(), session_id, session_id, user_id).await;
+        }
+    }
+
     let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
 
     enum RoutingOutcome {
@@ -313,6 +323,8 @@ async fn finish_agent_turn(
             Ok((summary, Some(message_id)))
         }
         nomi_agent_core::LoopOutcome::AwaitingApproval { .. } => Ok(("Waiting for approval.".to_string(), None)),
+        // Stopped by the user mid-turn: the supervisor already replied, so nothing is posted.
+        nomi_agent_core::LoopOutcome::Cancelled => Ok((String::new(), None)),
     }
 }
 
@@ -407,6 +419,14 @@ async fn resume_locked(
         }
     }
 
+    // Reused for identical calls later in this chat (check_tool_permission_in_session), so a
+    // repeated or retried call doesn't ask again.
+    if let Some(LlmContentBlock::ToolUse { name, input, .. }) =
+        tool_use_blocks.iter().find(|b| matches!(b, LlmContentBlock::ToolUse { id, .. } if *id == pending_tool_use_id))
+    {
+        nomi_agent_core::permissions::record_session_decision(conn, session_id, user_id, name, input, decision == "approve").await?;
+    }
+
     let new_status = if decision == "approve" { "approved" } else { "denied" };
     let _ = sqlx::query(
         "UPDATE messages SET content_blocks = jsonb_set(jsonb_set(content_blocks, '{0,status}', to_jsonb($1::text)), '{0,decided_at}', to_jsonb(now())) WHERE id = $2",
@@ -460,7 +480,7 @@ async fn resume_locked(
             .await?
         }
     };
-    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. }) {
+    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. } | nomi_agent_core::LoopOutcome::Cancelled) {
         return finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await;
     }
 

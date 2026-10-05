@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod content_block;
 pub mod delegation;
 pub mod dynamic_agent;
@@ -8,8 +9,10 @@ pub mod notification;
 pub mod permissions;
 pub mod personality;
 pub mod prompts;
+pub mod records;
 pub mod registry;
 pub mod reminders;
+pub mod stop;
 pub mod subagent;
 pub mod tool_catalog;
 

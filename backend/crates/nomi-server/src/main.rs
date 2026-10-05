@@ -81,6 +81,12 @@ async fn main() {
         tokio::spawn(async move {
             nomi_server::scheduler_worker::run(scheduler_pool, scheduler_mqtt, scheduler_s3, settings_key, scheduler_http_client, scheduler_project_storage, notification).await;
         });
+        let reminders_mqtt_client_id = format!("nomi-orchestrator-reminders-{}", uuid::Uuid::new_v4());
+        let reminders_mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &reminders_mqtt_client_id);
+        let reminders_pool = pool.clone();
+        tokio::spawn(async move {
+            nomi_server::reminders_worker::run(reminders_pool, reminders_mqtt).await;
+        });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {
         tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");

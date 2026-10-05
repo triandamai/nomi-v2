@@ -698,3 +698,43 @@ async fn list_agent_plans_rejects_access_from_a_user_outside_the_session_org(poo
     // at all).
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_remembers_its_thinking_level(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "thinker@example.com").await;
+    let (_, created) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let uri = format!("/api/sessions/{}/thinking", created["session_id"].as_str().unwrap());
+
+    let (_, level) = json_request(router.clone(), "GET", &uri, Value::Null, Some(&token)).await;
+    assert_eq!(level["level"], "medium", "chats start where every turn used to be");
+
+    let (status, _) = json_request(router.clone(), "PUT", &uri, json!({ "level": "high" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, level) = json_request(router.clone(), "GET", &uri, Value::Null, Some(&token)).await;
+    assert_eq!(level["level"], "high");
+
+    let (status, _) = json_request(router.clone(), "PUT", &uri, json!({ "level": "maximum" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let stranger = register_and_login(router.clone(), "stranger@example.com").await;
+    let (status, _) = json_request(router, "PUT", &uri, json!({ "level": "off" }), Some(&stranger)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_stop_command_is_answered_at_once_and_never_queued(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "stopper@example.com").await;
+    let (_, created) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = created["session_id"].as_str().unwrap();
+
+    let (status, body) =
+        json_request(router, "POST", &format!("/api/sessions/{session_id}/messages"), json!({ "text": "stop all agents" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["user_message"]["content"], "stop all agents");
+    assert_eq!(body["supervisor_reply"]["agent_display_name"], "Supervisor");
+    assert_eq!(body["supervisor_reply"]["content"], "Nothing is running right now, so there's nothing to stop.");
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM turn_jobs").fetch_one(&pool).await.unwrap();
+    assert_eq!(queued, 0);
+}

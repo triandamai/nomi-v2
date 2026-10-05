@@ -225,7 +225,7 @@ async fn denying_a_paused_tool_call_skips_execution_but_still_resumes_the_turn(p
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(result, "Denied by your permission rules.");
+    assert!(result.starts_with("The user denied this action."), "{result}");
     assert!(is_error);
     assert!(!result.contains("Should Never Be Returned"));
 }
@@ -469,4 +469,73 @@ async fn two_un_ruled_gated_tool_calls_converge_after_two_approvals(pool: PgPool
     .await
     .unwrap();
     assert!(list_result.contains("Marker Description"), "list_transactions result was: {list_result}");
+}
+
+async fn approval_card_count(pool: &PgPool, session_id: Uuid) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM messages WHERE session_id = $1 AND content_blocks->0->>'kind' = 'approval_request'")
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+// Regression: after the user approved a call, the model making the very same call again (same
+// tool, same input) used to raise a second approval card for something already approved.
+#[sqlx::test(migrations = "../../migrations")]
+async fn repeating_an_approved_call_in_the_same_chat_does_not_ask_again(pool: PgPool) {
+    let _ = seed_speaker(&pool, "tg-1").await;
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+    let provider = FakeLlmProvider::sequence(vec![
+        text_response("money"),
+        tool_use_response("t1", "list_transactions", serde_json::json!({"limit": 10})), // asks
+        tool_use_response("t2", "list_transactions", serde_json::json!({"limit": 10})), // same call again
+        text_response("Here's your spending"),
+    ]);
+    let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-{}", Uuid::new_v4()));
+
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+        .await
+        .unwrap();
+    let card = pending_approval_message_id(&pool, first.session_id).await;
+
+    let resumed = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, &catalog, card, "approve", false).await.unwrap();
+
+    assert_eq!(resumed.reply, "Here's your spending");
+    assert_eq!(approval_card_count(&pool, first.session_id).await, 1, "the repeated call must reuse the approval");
+}
+
+// Regression: a model retrying a call the user just denied used to put the same card back up.
+#[sqlx::test(migrations = "../../migrations")]
+async fn retrying_a_denied_call_in_the_same_chat_is_refused_without_asking_again(pool: PgPool) {
+    let _ = seed_speaker(&pool, "tg-1").await;
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+    let provider = FakeLlmProvider::sequence(vec![
+        text_response("money"),
+        tool_use_response("t1", "list_transactions", serde_json::json!({"limit": 10})),
+        tool_use_response("t2", "list_transactions", serde_json::json!({"limit": 10})), // retry
+        text_response("Okay, I won't look"),
+    ]);
+    let mqtt = MqttPublisher::connect("localhost", 1883, &format!("test-resume-{}", Uuid::new_v4()));
+
+    let first = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "how much did I spend?", None)
+        .await
+        .unwrap();
+    let card = pending_approval_message_id(&pool, first.session_id).await;
+
+    let resumed = resume_paused_turn(&pool, &mqtt, None, &provider, &embedder, &registry, &catalog, card, "deny", false).await.unwrap();
+
+    assert_eq!(resumed.reply, "Okay, I won't look");
+    assert_eq!(approval_card_count(&pool, first.session_id).await, 1);
+    let ran: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM agent_events WHERE session_id = $1 AND event_type = 'ToolCalled' AND (payload->>'is_error')::boolean = false",
+    )
+    .bind(first.session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ran, 0, "a denied call never runs");
 }

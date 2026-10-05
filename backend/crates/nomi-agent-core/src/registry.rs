@@ -33,6 +33,11 @@ impl AgentRegistry {
         }
     }
 
+    /// Every built-in agent, the default one included.
+    pub fn agents(&self) -> &[Arc<dyn SubAgent>] {
+        &self.agents
+    }
+
     pub fn default_agent(&self) -> Arc<dyn SubAgent> {
         self.agents[self.default_index].clone()
     }

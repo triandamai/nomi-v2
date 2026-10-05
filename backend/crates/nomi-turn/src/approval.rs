@@ -16,6 +16,19 @@ pub async fn enqueue(
     decision: &str,
     remember: bool,
 ) -> Result<Uuid, TurnError> {
+    // One decision per card: a second click (double-click, or two tabs) while the first is still
+    // queued or running is dropped, instead of running a second resume that can only fail.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))").bind(format!("approval:{message_id}")).execute(&mut **tx).await?;
+    let in_flight: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM approval_resumes WHERE message_id = $1 AND status IN ('pending', 'processing') LIMIT 1",
+    )
+    .bind(message_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some(id) = in_flight {
+        return Ok(id);
+    }
+
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO approval_resumes (message_id, decision, remember) VALUES ($1, $2, $3) RETURNING id",
     )

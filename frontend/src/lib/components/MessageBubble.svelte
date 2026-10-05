@@ -3,6 +3,8 @@
 	import AgentShape from './m3/AgentShape.svelte';
 	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
+	import ReasoningDisclosure from './blocks/ReasoningDisclosure.svelte';
+	import { formatBytes, splitAttachments } from '$lib/attachments';
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
 	import IconShare from './icons/IconShare.svelte';
@@ -15,9 +17,23 @@
 		chained = false,
 		first = false,
 		showTimestamp = true,
-	}: { message: RenderedMessage; chained?: boolean; first?: boolean; showTimestamp?: boolean } = $props();
+		reasoning = [],
+		thinkingOnly = false,
+	}: {
+		message: RenderedMessage;
+		chained?: boolean;
+		first?: boolean;
+		showTimestamp?: boolean;
+		/** Thinking that led to this message, shown collapsed above it (see $lib/reasoning). */
+		reasoning?: string[];
+		/** The message is only thinking so far: show the collapsed thinking and nothing else. */
+		thinkingOnly?: boolean;
+	} = $props();
 
 	let bubbleEl: HTMLDivElement | undefined = $state();
+	// Files the user attached travel inside the message text (see $lib/attachments).
+	const attached = $derived(message.sender === 'user' ? splitAttachments(message.content) : null);
+	let openFile = $state<number | null>(null);
 	let feedback = $state(message.my_feedback);
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
@@ -198,13 +214,41 @@
 			{/if}
 		{/if}
 
+		{#if reasoning.length > 0}
+			<ReasoningDisclosure steps={reasoning} live={thinkingOnly} />
+		{/if}
+
+		{#if !thinkingOnly}
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} />
 					{/each}
 				</div>
+			{:else if attached && attached.files.length > 0}
+				{#if attached.text}<p class="message__plain">{attached.text}</p>{/if}
+				<div class="message__files">
+					{#each attached.files as file, i (i)}
+						<button
+							type="button"
+							class="message__file"
+							aria-expanded={openFile === i}
+							onclick={() => (openFile = openFile === i ? null : i)}
+						>
+							{#if file.kind === 'voice'}
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+							{:else}
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+							{/if}
+							<span class="message__file-name">{file.name}</span>
+							<span class="message__file-size">{formatBytes(new Blob([file.text]).size)}</span>
+						</button>
+					{/each}
+				</div>
+				{#if openFile !== null}
+					<pre class="message__file-preview">{attached.files[openFile].text}</pre>
+				{/if}
 			{:else}
 				{@html message.content_html}
 			{/if}
@@ -261,6 +305,7 @@
 				<span class="message__time">{formattedTime}</span>
 			{/if}
 		</div>
+		{/if}
 	</div>
 </div>
 
@@ -279,6 +324,58 @@
 	.message__avatar {
 		flex: none;
 		width: 36px;
+	}
+	.message__plain {
+		margin: 0 0 8px;
+		white-space: pre-wrap;
+	}
+	.message__files {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.message__file {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		max-width: 100%;
+		height: 34px;
+		padding: 0 12px 0 10px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: color-mix(in srgb, currentColor 14%, transparent);
+		color: inherit;
+		font: inherit;
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+	.message__file:focus-visible {
+		outline: 2px solid currentColor;
+		outline-offset: 2px;
+	}
+	.message__file-name {
+		font-weight: 650;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 200px;
+	}
+	.message__file-size {
+		opacity: 0.75;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+	}
+	.message__file-preview {
+		margin: 8px 0 0;
+		max-height: 260px;
+		overflow: auto;
+		padding: 10px 12px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: color-mix(in srgb, currentColor 10%, transparent);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.8125rem;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 	.message__body {
 		display: flex;

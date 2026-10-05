@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
@@ -129,4 +130,49 @@ pub async fn cancel_reminder(
         return Err("no active reminder with that id".to_string());
     }
     Ok("Reminder cancelled.".to_string())
+}
+
+/// The next time a recurring schedule fires after `from` (`weekday` 0 = Sunday). Shared by the
+/// scheduler (agent tasks) and the Reminders agent's worker.
+pub fn next_occurrence(
+    from: chrono::DateTime<chrono::Utc>,
+    recurrence: &str,
+    weekday: Option<i16>,
+    day_of_month: Option<i16>,
+) -> chrono::DateTime<chrono::Utc> {
+    match recurrence {
+        "daily" => from + chrono::Duration::days(1),
+        "weekly" => {
+            // `weekday` is 0=Sunday..6=Saturday (matches the create_reminder tool schema's
+            // description). chrono's Weekday::num_days_from_sunday() uses the same convention.
+            let target = weekday.unwrap_or(0) as u32;
+            let mut candidate = from + chrono::Duration::days(1);
+            while candidate.weekday().num_days_from_sunday() != target {
+                candidate += chrono::Duration::days(1);
+            }
+            candidate
+        }
+        "monthly" => {
+            let day = day_of_month.unwrap_or(1) as u32;
+            let (mut year, mut month) = (from.year(), from.month());
+            month += 1;
+            if month > 12 {
+                month = 1;
+                year += 1;
+            }
+            let last_day_of_month = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+                .unwrap()
+                .checked_add_months(chrono::Months::new(1))
+                .unwrap()
+                .pred_opt()
+                .unwrap()
+                .day();
+            let clamped_day = day.min(last_day_of_month);
+            // Step through day=1 first: with_month()/with_year() reject a result that isn't a
+            // real calendar date, and `from`'s own day-of-month (e.g. 31) may not exist in the
+            // target month — day=1 always does, in every month.
+            from.with_day(1).unwrap().with_year(year).unwrap().with_month(month).unwrap().with_day(clamped_day).unwrap()
+        }
+        _ => from,
+    }
 }

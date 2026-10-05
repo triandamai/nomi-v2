@@ -1,14 +1,20 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import { registerAgentLooks } from '$lib/components/m3/shapes';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	let mobileNavOpen = $state(false);
+
+	// Dynamic agents' chosen shapes: registered before any child renders an AgentShape, and again
+	// whenever the crew reloads.
+	registerAgentLooks(untrack(() => data.crew));
+	$effect.pre(() => registerAgentLooks(data.crew));
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;

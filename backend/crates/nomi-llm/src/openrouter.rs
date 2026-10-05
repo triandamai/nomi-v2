@@ -97,7 +97,7 @@ impl OpenRouterProvider {
             body["tools"] = json!(tools);
         }
         if request.enable_reasoning {
-            body["reasoning"] = json!({ "effort": "medium" });
+            body["reasoning"] = json!({ "effort": request.reasoning_effort.as_str() });
         }
         if stream {
             body["stream"] = json!(true);

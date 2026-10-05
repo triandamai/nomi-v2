@@ -4,6 +4,9 @@ use serde_json::json;
 use super::types::EmbeddingError;
 use super::EmbeddingProvider;
 
+/// The width of `memory_items.embedding`.
+const STORED_DIMENSIONS: u32 = 1536;
+
 pub struct OpenAiEmbeddingProvider {
     client: reqwest::Client,
     api_key: String,
@@ -48,10 +51,15 @@ pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str
 #[async_trait]
 impl EmbeddingProvider for OpenAiEmbeddingProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        let body = json!({
+        let mut body = json!({
             "model": self.model,
             "input": text,
         });
+        // memory_items.embedding is VECTOR(1536). The text-embedding-3 models default to more
+        // (3072 for -large) but can shorten their output; older models reject the parameter.
+        if self.model.contains("text-embedding-3") {
+            body["dimensions"] = json!(STORED_DIMENSIONS);
+        }
 
         let response = self
             .client

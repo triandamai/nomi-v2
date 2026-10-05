@@ -42,6 +42,7 @@
 	agentActivity={data.agentActivity}
 	agentStatus={data.agentStatus}
 	sendError={form?.error ?? null}
+	thinkingLevel={data.thinkingLevel}
 >
 	{#snippet extraControls()}
 		<Menu bind:open={modelMenuOpen}>

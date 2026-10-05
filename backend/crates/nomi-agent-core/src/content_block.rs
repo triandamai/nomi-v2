@@ -37,6 +37,8 @@ pub enum ApprovalStatus {
     Pending,
     Approved,
     Denied,
+    /// The user stopped the agent before deciding (see `nomi-agent-supervisor`'s stop).
+    Cancelled,
 }
 
 /// Structured widget data attached to a chat message alongside its plain-text `content` fallback
@@ -78,6 +80,19 @@ pub enum ContentBlock {
         agent_session_id: Uuid,
         title: String,
         version: i32,
+    },
+    /// The model's own thinking before it acted or replied. The chat shows it collapsed, folded
+    /// into the agent's next reply.
+    Reasoning {
+        text: String,
+    },
+    /// A reminder going off (posted by the Reminders agent's worker), with Done / Snooze.
+    Reminder {
+        reminder_id: Uuid,
+        title: String,
+        notes: Option<String>,
+        due_at: DateTime<Utc>,
+        recurrence: Option<String>,
     },
 }
 

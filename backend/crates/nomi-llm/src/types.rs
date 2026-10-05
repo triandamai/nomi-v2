@@ -51,6 +51,28 @@ pub struct LlmRequest {
     /// (title generation, memory extraction, BYOK validation, supervisor phrasing) where the
     /// extra latency/cost isn't worth it — only `run_agent_turn`'s main reply request sets it.
     pub enable_reasoning: bool,
+    /// How hard to think when `enable_reasoning` is on (the chat's thinking level). Providers map
+    /// it to their own knob: a thinking budget, or a reasoning-effort setting.
+    pub reasoning_effort: ReasoningEffort,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
+impl ReasoningEffort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -116,6 +138,7 @@ mod tests {
             tools: vec![],
             max_tokens: 1024,
             enable_reasoning: false,
+            reasoning_effort: Default::default(),
         };
 
         assert_eq!(request.system, Some("be helpful".to_string()));

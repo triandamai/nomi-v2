@@ -20,17 +20,35 @@ pub struct DynamicAgentResponse {
     pub supports_plans: bool,
     pub can_delegate: bool,
     pub is_active: bool,
+    pub shape: String,
+    pub tone: String,
+    pub motion: String,
 }
 
-type DynamicAgentRow = (Uuid, String, String, String, String, Vec<String>, bool, bool, bool, bool);
+type DynamicAgentRow = (Uuid, String, String, String, String, Vec<String>, bool, bool, bool, bool, String, String, String);
 
 fn to_response(row: DynamicAgentRow) -> DynamicAgentResponse {
-    let (id, name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, is_active) = row;
-    DynamicAgentResponse { id, name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, is_active }
+    let (id, name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, is_active, shape, tone, motion) =
+        row;
+    DynamicAgentResponse {
+        id,
+        name,
+        system_prompt,
+        intent_label,
+        intent_description,
+        granted_tools,
+        supports_todos,
+        supports_plans,
+        can_delegate,
+        is_active,
+        shape,
+        tone,
+        motion,
+    }
 }
 
 const SELECT_COLUMNS: &str =
-    "id, name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, is_active";
+    "id, name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, is_active, shape, tone, motion";
 
 pub async fn list_dynamic_agents(
     State(state): State<AppState>,
@@ -59,6 +77,23 @@ pub struct DynamicAgentRequest {
     pub supports_todos: bool,
     pub supports_plans: bool,
     pub can_delegate: bool,
+    /// The agent's look; omitted fields keep the defaults (Nomi's cookie in the glow gradient).
+    #[serde(default = "default_shape")]
+    pub shape: String,
+    #[serde(default = "default_tone")]
+    pub tone: String,
+    #[serde(default = "default_motion")]
+    pub motion: String,
+}
+
+fn default_shape() -> String {
+    "cookie9".to_string()
+}
+fn default_tone() -> String {
+    "glow".to_string()
+}
+fn default_motion() -> String {
+    "spin".to_string()
 }
 
 fn validate_request(req: &DynamicAgentRequest, catalog: &nomi_agent_core::ToolCatalog) -> Result<(), (StatusCode, &'static str)> {
@@ -73,6 +108,15 @@ fn validate_request(req: &DynamicAgentRequest, catalog: &nomi_agent_core::ToolCa
     }
     if req.intent_description.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "intent_description is required"));
+    }
+    if !crate::routes::agents::SHAPES.contains(&req.shape.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "shape is not a known shape"));
+    }
+    if !crate::routes::agents::TONES.contains(&req.tone.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "tone is not a known gradient"));
+    }
+    if !crate::routes::agents::MOTIONS.contains(&req.motion.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "motion is not a known motion"));
     }
     let known = catalog.known_tool_names();
     for tool in &req.granted_tools {
@@ -92,8 +136,8 @@ pub async fn create_dynamic_agent(
     validate_request(&req, &state.tool_catalog)?;
 
     let row: DynamicAgentRow = sqlx::query_as(&format!(
-        "INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING {SELECT_COLUMNS}"
+        "INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate, created_by, shape, tone, motion) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING {SELECT_COLUMNS}"
     ))
     .bind(&req.name)
     .bind(&req.system_prompt)
@@ -104,6 +148,9 @@ pub async fn create_dynamic_agent(
     .bind(req.supports_plans)
     .bind(req.can_delegate)
     .bind(claims.sub)
+    .bind(&req.shape)
+    .bind(&req.tone)
+    .bind(&req.motion)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
@@ -125,7 +172,8 @@ pub async fn update_dynamic_agent(
 
     let row: Option<DynamicAgentRow> = sqlx::query_as(&format!(
         "UPDATE dynamic_agents SET name = $1, system_prompt = $2, intent_label = $3, intent_description = $4, \
-         granted_tools = $5, supports_todos = $6, supports_plans = $7, can_delegate = $8, updated_at = now() \
+         granted_tools = $5, supports_todos = $6, supports_plans = $7, can_delegate = $8, \
+         shape = $10, tone = $11, motion = $12, updated_at = now() \
          WHERE id = $9 RETURNING {SELECT_COLUMNS}"
     ))
     .bind(&req.name)
@@ -137,6 +185,9 @@ pub async fn update_dynamic_agent(
     .bind(req.supports_plans)
     .bind(req.can_delegate)
     .bind(id)
+    .bind(&req.shape)
+    .bind(&req.tone)
+    .bind(&req.motion)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| {
