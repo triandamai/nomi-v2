@@ -144,7 +144,7 @@ async fn enabling_reasoning_sends_the_thinking_param_and_bumps_max_tokens() {
     );
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
-        .and(body_partial_json(json!({"thinking": {"type": "enabled", "budget_tokens": 2048}, "max_tokens": 3072})))
+        .and(body_partial_json(json!({"thinking": {"type": "enabled", "budget_tokens": 2048}, "max_tokens": 2148})))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;
@@ -153,7 +153,7 @@ async fn enabling_reasoning_sends_the_thinking_param_and_bumps_max_tokens() {
 
     let mut request = text_request();
     request.enable_reasoning = true;
-    request.max_tokens = 100; // below the thinking budget — the provider must bump it itself
+    request.max_tokens = 100; // the reply's room; the thinking budget is added on top
 
     let stream = provider.complete_stream(request).await.unwrap();
     let response = collect_stream(stream).await.unwrap();

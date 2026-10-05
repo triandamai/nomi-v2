@@ -12,7 +12,9 @@ use nomi_realtime::{MqttPublisher, StreamEnvelope};
 use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
-const REMINDER_MAX_TOKENS: u32 = 1024;
+/// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
+/// plans, drafts and tables need far more than a chat line.
+const REMINDER_MAX_TOKENS: u32 = 8192;
 
 // pub, not pub(crate): backend/crates/nomi-server/tests/scheduler_worker.rs is a separate
 // integration-test crate and needs to call claim_next/process_claimed_job and construct/read
@@ -181,6 +183,12 @@ pub async fn process_claimed_job(
                 .await;
             finish_one_time_or_advance_recurring(pool, &job).await;
         }
+    }
+
+    // This run streamed its progress into the chat under its own turn id; close it so the chat
+    // stops showing it as working.
+    if let Some(publisher) = mqtt {
+        let _ = publisher.publish(job.session_id, &StreamEnvelope::TurnCompleted { turn_job_id: job.id, message_id: Uuid::nil() }).await;
     }
 }
 

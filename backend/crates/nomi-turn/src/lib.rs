@@ -20,7 +20,9 @@ use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 const SUBAGENT_HISTORY_LIMIT: i64 = 20;
-const SUBAGENT_MAX_TOKENS: u32 = 1024;
+/// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
+/// plans, drafts and tables need far more than a chat line.
+const SUBAGENT_MAX_TOKENS: u32 = 8192;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnOutcome {

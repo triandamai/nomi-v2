@@ -13,6 +13,14 @@ use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
 const MAX_TOOL_TURNS: u32 = 10;
+
+/// Posted when the model hit its output limit before writing any answer.
+pub const CUT_OFF_REPLY: &str = "I ran out of room before I could finish that. Ask me to continue, or to keep it shorter.";
+
+/// How agents should think when reasoning is on. Users read the thinking in chat.
+pub const REASONING_STYLE: &str = "When you think before acting, keep it short and on point: what is \
+     being asked, what you will do next, and any catch. A few plain sentences. Don't restate the \
+     request, list every option, or draft the reply in your thinking.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
@@ -316,6 +324,12 @@ pub async fn run_agent_turn(
         "high" => nomi_llm::ReasoningEffort::High,
         _ => nomi_llm::ReasoningEffort::Medium,
     };
+    // Thinking is shown in chat, so keep it to the point rather than a running monologue.
+    let system_prompt = if thinking_level != "off" {
+        format!("{system_prompt}\n\n{REASONING_STYLE}")
+    } else {
+        system_prompt
+    };
     let agent_type = agent.agent_type();
 
     for _ in 0..MAX_TOOL_TURNS {
@@ -397,14 +411,18 @@ pub async fn run_agent_turn(
 
             let input_tokens = response.input_tokens;
             let output_tokens = response.output_tokens;
+            let cut_off = response.stop_reason == StopReason::MaxTokens;
             let reply_text = response
                 .content
                 .into_iter()
                 .find_map(|block| match block {
-                    ContentBlock::Text { text } => Some(text),
+                    ContentBlock::Text { text } if !text.trim().is_empty() => Some(text),
                     _ => None,
                 })
                 .unwrap_or_default();
+            // The model ran out of room before answering (a half-written plan or tool call is
+            // dropped): say so instead of leaving only the thinking in chat.
+            let reply_text = if reply_text.is_empty() && cut_off { CUT_OFF_REPLY.to_string() } else { reply_text };
 
             if agent.uses_memory() {
                 let last_user_text = messages

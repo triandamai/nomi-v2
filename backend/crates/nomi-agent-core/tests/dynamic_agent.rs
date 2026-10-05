@@ -60,7 +60,7 @@ async fn constructs_correctly_from_a_row() {
     assert!(agent.supports_todos());
     assert!(!agent.supports_plans());
     assert!(!agent.can_delegate());
-    assert!(!agent.uses_memory());
+    assert!(agent.uses_memory());
     assert!(!agent.uses_personality());
 }
 

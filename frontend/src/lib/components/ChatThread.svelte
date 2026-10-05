@@ -156,7 +156,11 @@
 		}
 	}
 
-	let pendingReply = $state(false);
+	// Turns streaming into this chat right now, by turn id: the user's own turn plus any
+	// hand-off or scheduled run. Nomi is working while any is open; each closes on its own
+	// TurnCompleted/TurnFailed, so one finishing never hides (or strands) another.
+	let openTurns = $state<string[]>([]);
+	const pendingReply = $derived(openTurns.length > 0);
 	// Set once the supervisor has stopped this chat's crew: the stopped turn's last streamed
 	// deltas must not bring the working indicator back. Cleared when that turn ends or the user
 	// sends something new.
@@ -207,8 +211,15 @@
 	function settleAfterStop() {
 		stopRequested = true;
 		submitting = false;
-		pendingReply = false;
+		openTurns = [];
 		currentPhase = null;
+	}
+
+	/** A turn ended. Also ends "sending": a turn can finish without streaming anything (an approval, a stop). */
+	function closeTurn(turnId: string) {
+		openTurns = openTurns.filter((id) => id !== turnId);
+		submitting = false;
+		if (openTurns.length === 0) currentPhase = null;
 	}
 
 	async function fetchAndUpsertMessage(id: string) {
@@ -341,31 +352,34 @@
 				connectionLost = false;
 				if (hasConnectedBefore) {
 					// Reconnected after a drop; neither leg replays missed events, so re-fetch to
-					// reconcile anything that happened while disconnected.
+					// reconcile anything that happened while disconnected. A turn that ended in the
+					// gap would otherwise stay "working"; one still running streams again.
+					openTurns = [];
 					invalidateAll();
 				}
 				hasConnectedBefore = true;
 			});
 
 			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string; message_id?: string; phase?: string; detail?: string | null };
+				let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null };
 				try {
 					envelope = JSON.parse(event.data);
 				} catch {
 					return;
 				}
+				const turnId = envelope.turn_job_id ?? NIL_UUID;
 				if (envelope.kind === 'Delta') {
-					if (!stopRequested) pendingReply = true;
+					if (!stopRequested && !openTurns.includes(turnId)) openTurns = [...openTurns, turnId];
 				} else if (envelope.kind === 'TurnCompleted') {
 					stopRequested = false;
-					pendingReply = false;
+					closeTurn(turnId);
 					turnError = false;
 					if (envelope.message_id && envelope.message_id !== NIL_UUID) {
 						fetchAndUpsertMessage(envelope.message_id);
 					}
 				} else if (envelope.kind === 'TurnFailed') {
 					stopRequested = false;
-					pendingReply = false;
+					closeTurn(turnId);
 					turnError = true;
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
 					invalidateAll();
@@ -593,7 +607,7 @@
 
 <BottomSheet bind:open={activitySheetOpen}>
 	{#snippet children()}
-		<CrewPanel members={crew} />
+		<CrewPanel members={crew} surface />
 		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 20px 0 12px;">Recent hand-offs</h2>
 		{#if agentActivity.length === 0}
 			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No background activity yet.</p>

@@ -5,7 +5,15 @@
 	// The chat's crew: every agent, with what it's doing right now. Members working in this chat
 	// come first and spin; the rest show their role and stand by.
 
-	let { members }: { members: CrewMember[] } = $props();
+	let {
+		members,
+		surface = false,
+	}: {
+		members: CrewMember[];
+		/** Sit on the surrounding surface (a bottom sheet) and follow the light/dark theme,
+		 * instead of the dark stage card used beside the chat. */
+		surface?: boolean;
+	} = $props();
 
 	const sorted = $derived(
 		[...members].sort((a, b) => Number(b.working) - Number(a.working) || Number(b.involved) - Number(a.involved)),
@@ -13,7 +21,7 @@
 	const workingCount = $derived(members.filter((m) => m.working).length);
 </script>
 
-<section class="crew" aria-labelledby="crew-panel-title">
+<section class="crew" class:crew--surface={surface} aria-labelledby="crew-panel-title">
 	<div class="crew__head">
 		<h2 id="crew-panel-title" class="crew__title">Your crew</h2>
 		<span class="crew__count" class:crew__count--live={workingCount > 0}>
@@ -45,6 +53,24 @@
 		border-radius: 32px 32px 32px 10px;
 		background: var(--nomi-color-stage);
 		color: var(--nomi-color-on-stage);
+	}
+	.crew--surface {
+		padding: 4px 0 0;
+		border-radius: 0;
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+	}
+	.crew--surface .crew__count--live,
+	.crew--surface .crew__live {
+		color: var(--md-sys-color-primary);
+	}
+	.crew--surface .crew__item--working {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.crew--surface .crew__status {
+		color: var(--md-sys-color-on-surface-variant);
+		opacity: 1;
 	}
 	.crew__head {
 		display: flex;

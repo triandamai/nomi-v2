@@ -65,7 +65,13 @@ pub async fn try_retrieve_memories(
     .unwrap_or_default()
 }
 
-const EXTRACTION_MAX_TOKENS: u32 = 256;
+/// Room for the one-line fact. Reasoning models spend part of this on thinking before they
+/// answer, so it can't be as tight as the fact itself.
+const EXTRACTION_MAX_TOKENS: u32 = 1024;
+
+/// A new fact this close (cosine distance) to one already stored is the same fact said again:
+/// it strengthens the existing memory instead of adding a duplicate.
+const DUPLICATE_DISTANCE: f64 = 0.08;
 
 /// The width of `memory_items.embedding`.
 const STORED_DIMENSIONS: usize = 1536;
@@ -138,6 +144,27 @@ pub async fn extract_and_store_memory(
     }
 
     let literal = to_vector_literal(&embedding);
+    let duplicate: Result<Option<Uuid>, sqlx::Error> = sqlx::query_scalar(
+        "SELECT id FROM memory_items \
+         WHERE user_id = $1 AND embedding_provider = $2 AND embedding_model = $3 \
+           AND (embedding <=> $4::vector) < $5 \
+         ORDER BY embedding <=> $4::vector LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(embedding_provider.provider_name())
+    .bind(embedding_provider.model_id())
+    .bind(&literal)
+    .bind(DUPLICATE_DISTANCE)
+    .fetch_optional(&mut **conn)
+    .await;
+    if let Ok(Some(existing)) = duplicate {
+        let _ = sqlx::query("UPDATE memory_items SET weight = LEAST(weight * 1.1, 5.0), updated_at = now() WHERE id = $1")
+            .bind(existing)
+            .execute(&mut **conn)
+            .await;
+        return;
+    }
+
     let inserted = sqlx::query(
         "INSERT INTO memory_items (user_id, content, embedding, embedding_provider, embedding_model) \
          VALUES ($1, $2, $3::vector, $4, $5)",

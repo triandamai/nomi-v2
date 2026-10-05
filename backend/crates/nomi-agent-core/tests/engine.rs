@@ -546,7 +546,9 @@ async fn a_stored_personality_is_not_folded_in_for_an_agent_that_does_not_opt_in
     .unwrap();
 
     let requests = provider.received_requests.lock().unwrap();
-    assert_eq!(requests[0].system.as_ref().unwrap(), "test prompt");
+    let system = requests[0].system.as_ref().unwrap();
+    assert!(system.starts_with("test prompt"));
+    assert!(!system.contains("Be sarcastic and blunt."));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -1245,4 +1247,47 @@ async fn an_agent_keeps_private_records_that_other_agents_cannot_touch(pool: PgP
     assert!(results.contains("no record of yours with that id"), "{results}");
     let still_there: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_records").fetch_one(&pool).await.unwrap();
     assert_eq!(still_there, 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn thinking_is_asked_to_stay_short_unless_it_is_off(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    for (level, expect_style) in [("medium", true), ("off", false)] {
+        sqlx::query("UPDATE sessions SET thinking_level = $1 WHERE id = $2").bind(level).bind(session_id).execute(&pool).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        let provider = FakeLlmProvider::sequence(vec![text_response("Fine.", StopReason::EndTurn)]);
+        let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+        let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+        run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+            .await
+            .unwrap();
+        let requests = provider.received_requests.lock().unwrap();
+        let system = requests[0].system.as_ref().unwrap();
+        assert_eq!(system.contains(nomi_agent_core::engine::REASONING_STYLE), expect_style, "level {level}");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reply_cut_off_after_thinking_says_so_instead_of_coming_back_empty(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+        content: vec![ContentBlock::Thinking { text: "Plan the trip day by day.".to_string(), signature: None }],
+        stop_reason: StopReason::MaxTokens,
+        input_tokens: 1,
+        output_tokens: 1,
+    }]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        outcome,
+        LoopOutcome::Reply { text: nomi_agent_core::engine::CUT_OFF_REPLY.to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+    );
 }

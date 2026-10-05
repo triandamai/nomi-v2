@@ -90,3 +90,22 @@ async fn embedding_failure_after_a_good_extraction_stores_nothing(pool: PgPool) 
         .unwrap();
     assert_eq!(count, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_same_fact_said_twice_strengthens_one_memory_instead_of_duplicating_it(pool: PgPool) {
+    let user_id = seed_user(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let llm = FakeLlmProvider::success(extraction_response("User is vegetarian"));
+    let embedder = FakeEmbeddingProvider::success(vec![0.2; 1536]);
+
+    extract_and_store_memory(&mut conn, &llm, &embedder, user_id, "I don't eat meat", "Noted!").await;
+    extract_and_store_memory(&mut conn, &llm, &embedder, user_id, "Remember, no meat", "Got it!").await;
+
+    let rows: Vec<f64> = sqlx::query_scalar("SELECT weight FROM memory_items WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0] > 1.0);
+}

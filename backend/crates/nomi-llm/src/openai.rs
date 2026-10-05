@@ -85,9 +85,16 @@ impl OpenAiProvider {
 
         let mut body = json!({
             "model": self.model,
-            "max_tokens": request.max_tokens,
             "messages": messages,
         });
+        // OpenAI's reasoning models reject `max_tokens`; they take `max_completion_tokens`, which
+        // covers their thinking as well as the reply. They always think, so thinking gets its own
+        // budget on top of the reply's room.
+        if is_reasoning_model(&self.model) {
+            body["max_completion_tokens"] = json!(request.max_tokens + request.reasoning_effort.budget_tokens());
+        } else {
+            body["max_tokens"] = json!(request.max_tokens);
+        }
         if !tools.is_empty() {
             body["tools"] = json!(tools);
         }

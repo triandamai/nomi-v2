@@ -23,10 +23,39 @@
 	let panelEl: HTMLDivElement | undefined = $state();
 	let dragging = $state(false);
 	let closing = $state(false);
+	// The panel reached the top of the screen (small screens, tall content): it becomes a
+	// full-screen sheet with square top corners, and its content scrolls as one surface.
+	let expanded = $state(false);
 
 	let startY = 0;
 	let panelHeight = 0;
 	let activePointerId: number | undefined;
+
+	$effect(() => {
+		if (!panelEl || !open) return;
+		const panel = panelEl;
+		const measure = () => {
+			expanded = panel.getBoundingClientRect().height >= window.innerHeight - 1;
+		};
+		const observer = new ResizeObserver(measure);
+		observer.observe(panel);
+		window.addEventListener('resize', measure);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measure);
+		};
+	});
+
+	// The page behind a modal sheet stays put: scrolling never leaks through to it.
+	$effect(() => {
+		if (!open) return;
+		const root = document.documentElement;
+		const previous = root.style.overflow;
+		root.style.overflow = 'hidden';
+		return () => {
+			root.style.overflow = previous;
+		};
+	});
 
 	$effect(() => {
 		if (!dialogEl) return;
@@ -113,7 +142,12 @@
 	oncancel={handleCancel}
 	onclick={handleDialogClick}
 >
-	<div bind:this={panelEl} class="m3-bottom-sheet__panel" class:m3-bottom-sheet__panel--dragging={dragging}>
+	<div
+		bind:this={panelEl}
+		class="m3-bottom-sheet__panel"
+		class:m3-bottom-sheet__panel--dragging={dragging}
+		class:m3-bottom-sheet__panel--expanded={expanded}
+	>
 		<div
 			class="m3-bottom-sheet__handle-area"
 			role="button"
@@ -138,7 +172,11 @@
 		padding: 0;
 		border: none;
 		width: 100%;
-		max-width: 640px;
+		max-width: min(640px, 100%);
+		/* Undo the UA dialog inset (max-height: calc(100% - 2em - 6px)) so a sheet can reach
+		   the top of the screen. */
+		max-height: 100dvh;
+		overflow: hidden;
 		background: transparent;
 		/* showModal() moves initial focus onto the <dialog> itself (nothing inside asks for
 		   autofocus), and the UA default focus ring shows on it — a plain blue rectangle around
@@ -169,9 +207,25 @@
 		color: var(--md-sys-color-on-surface);
 		box-shadow: var(--md-sys-elevation-shadow-level3);
 		max-height: 80vh;
+		max-height: 80dvh;
 		display: flex;
 		flex-direction: column;
-		transition: transform var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+		transition:
+			transform var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
+			border-radius var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+	}
+
+	/* Small screens: tall content opens the sheet to full screen instead of trapping it in a
+	   short scrolling box. */
+	@media (max-width: 600px) {
+		.m3-bottom-sheet__panel {
+			max-height: 100dvh;
+		}
+	}
+
+	.m3-bottom-sheet__panel--expanded {
+		border-radius: 0;
+		padding-top: env(safe-area-inset-top);
 	}
 
 	/* Entrance: the panel slides up from fully off-screen. @starting-style only governs the
@@ -214,7 +268,10 @@
 	}
 
 	.m3-bottom-sheet__body {
+		min-height: 0;
+		overflow-x: hidden;
 		overflow-y: auto;
-		padding: 0 24px 24px;
+		overscroll-behavior: contain;
+		padding: 0 24px calc(24px + env(safe-area-inset-bottom));
 	}
 </style>
