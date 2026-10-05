@@ -299,6 +299,18 @@ pub async fn run_agent_turn(
     };
 
     let started_at = crate::stop::database_clock(conn).await?;
+
+    // The chat's thinking level (picked in the composer); delegated turns share their chat's.
+    let thinking_level: String = sqlx::query_scalar("SELECT thinking_level FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await?
+        .unwrap_or_else(|| "medium".to_string());
+    let reasoning_effort = match thinking_level.as_str() {
+        "low" => nomi_llm::ReasoningEffort::Low,
+        "high" => nomi_llm::ReasoningEffort::High,
+        _ => nomi_llm::ReasoningEffort::Medium,
+    };
     let agent_type = agent.agent_type();
 
     for _ in 0..MAX_TOOL_TURNS {
@@ -314,7 +326,8 @@ pub async fn run_agent_turn(
             messages: messages.clone(),
             tools: tools.clone(),
             max_tokens,
-            enable_reasoning: true,
+            enable_reasoning: thinking_level != "off",
+            reasoning_effort,
         };
 
         // The LLM call happens outside any DB transaction: holding a transaction open across

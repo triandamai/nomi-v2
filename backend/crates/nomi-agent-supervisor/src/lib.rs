@@ -232,6 +232,7 @@ pub async fn phrase_delegation_result(
         tools: vec![],
         max_tokens: SUPERVISOR_PHRASING_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
     let response = nomi_llm::complete(provider, request).await.map_err(|e| e.to_string())?;
     Ok(response
@@ -273,6 +274,7 @@ pub async fn phrase_delegation_started(
         tools: vec![],
         max_tokens: SUPERVISOR_PHRASING_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
     let response = nomi_llm::complete(provider, request).await.map_err(|e| e.to_string())?;
     Ok(response

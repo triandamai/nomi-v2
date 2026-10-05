@@ -560,6 +560,7 @@ async fn generate_session_title(
         tools: vec![],
         max_tokens: TITLE_GENERATION_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
 
     let generated = match nomi_llm::complete(provider.as_ref(), request).await {
@@ -824,4 +825,45 @@ async fn relay_session_stream(mut socket: WebSocket, session_id: Uuid, broker_ho
             }
         }
     }
+}
+
+const THINKING_LEVELS: [&str; 4] = ["off", "low", "medium", "high"];
+
+#[derive(Serialize, Deserialize)]
+pub struct ThinkingLevel {
+    pub level: String,
+}
+
+/// The chat's thinking level (see migration 0034).
+pub async fn get_thinking_level(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<ThinkingLevel>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    let level: String = sqlx::query_scalar("SELECT thinking_level FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load thinking level"))?;
+    Ok(Json(ThinkingLevel { level }))
+}
+
+pub async fn set_thinking_level(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    Json(req): Json<ThinkingLevel>,
+) -> Result<Json<ThinkingLevel>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    if !THINKING_LEVELS.contains(&req.level.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "level must be off, low, medium or high"));
+    }
+    sqlx::query("UPDATE sessions SET thinking_level = $1 WHERE id = $2")
+        .bind(&req.level)
+        .bind(session_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save thinking level"))?;
+    Ok(Json(req))
 }

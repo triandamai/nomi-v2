@@ -75,6 +75,7 @@ pub async fn validate_model_config(config: ModelConfig, http_client: reqwest::Cl
         tools: vec![],
         max_tokens: 8,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
     complete(provider.as_ref(), request).await?;
     Ok(())

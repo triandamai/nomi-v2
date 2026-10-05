@@ -14,6 +14,7 @@ fn text_request() -> LlmRequest {
         tools: vec![],
         max_tokens: 100,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     }
 }
 
@@ -177,6 +178,7 @@ async fn a_thinking_block_is_replayed_with_its_signature_intact() {
         tools: vec![],
         max_tokens: 100,
         enable_reasoning: true,
+        reasoning_effort: Default::default(),
     };
 
     let server = MockServer::start().await;

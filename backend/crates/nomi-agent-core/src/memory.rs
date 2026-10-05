@@ -98,6 +98,7 @@ pub async fn extract_and_store_memory(
         tools: vec![],
         max_tokens: EXTRACTION_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
 
     // Memory is best-effort and never fails the turn, but every way it can fail is logged:

@@ -324,3 +324,6 @@ export interface Reminder {
 	last_fired_at: string | null;
 	session_id: string;
 }
+
+/** A chat's thinking level (see ThinkingMenu). */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';

@@ -12,6 +12,7 @@ fn simple_request() -> LlmRequest {
         tools: vec![],
         max_tokens: 50,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     }
 }
 

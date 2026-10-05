@@ -49,12 +49,19 @@ impl GeminiProvider {
         }
         // Thinking tokens count against maxOutputTokens same as the final reply — leave headroom
         // beyond what the caller asked for so enabling reasoning doesn't starve the reply itself.
-        let max_output_tokens = if request.enable_reasoning { request.max_tokens.max(2048) } else { request.max_tokens };
+        // Medium keeps the dynamic budget (-1): the model decides how much to think per request.
+        let thinking_budget: i64 = match request.reasoning_effort {
+            crate::ReasoningEffort::Low => 1024,
+            crate::ReasoningEffort::Medium => -1,
+            crate::ReasoningEffort::High => 8192,
+        };
+        let headroom = if thinking_budget > 0 { thinking_budget as u32 + 1024 } else { 2048 };
+        let max_output_tokens = if request.enable_reasoning { request.max_tokens.max(headroom) } else { request.max_tokens };
         let mut generation_config = json!({ "maxOutputTokens": max_output_tokens });
         if request.enable_reasoning {
             // -1 (dynamic) lets the model decide how much to think per-request rather than a
             // fixed budget, matching how lightly a "hi" should be reasoned about versus a build task.
-            generation_config["thinkingConfig"] = json!({ "includeThoughts": true, "thinkingBudget": -1 });
+            generation_config["thinkingConfig"] = json!({ "includeThoughts": true, "thinkingBudget": thinking_budget });
         }
         body["generationConfig"] = generation_config;
         body

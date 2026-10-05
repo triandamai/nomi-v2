@@ -9,11 +9,23 @@
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
+	import MicButton from '$lib/components/MicButton.svelte';
+	import ThinkingMenu from '$lib/components/ThinkingMenu.svelte';
+	import { deserialize } from '$app/forms';
+	import {
+		composeMessage,
+		formatBytes,
+		isTextFile,
+		MAX_ATTACHMENTS,
+		MAX_FILE_BYTES,
+		MAX_TOTAL_BYTES,
+		type Attachment,
+	} from '$lib/attachments';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
 	import { groupReasoning } from '$lib/reasoning';
-	import type { AgentStatus, RenderedMessage } from '$lib/types';
+	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
 
 	interface AgentActivityItem {
 		id: string;
@@ -33,6 +45,7 @@
 		title = 'Chat',
 		context,
 		extraControls,
+		thinkingLevel = null,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -45,7 +58,73 @@
 		context?: string;
 		/** App-bar actions (model / personality menus). */
 		extraControls?: Snippet;
+		/** The chat's thinking level; null hides the picker. The page must have a setThinking action. */
+		thinkingLevel?: ThinkingLevel | null;
 	} = $props();
+
+	// Composer state: the typed draft, attached files, and the chat's thinking level.
+	let draft = $state('');
+	let attachments = $state<(Attachment & { size: number })[]>([]);
+	let attachError = $state<string | null>(null);
+	let fileInput: HTMLInputElement | undefined = $state();
+	let dictationBase = '';
+	let level = $state<ThinkingLevel>('medium');
+	$effect(() => {
+		if (thinkingLevel) level = thinkingLevel;
+	});
+
+	const canSend = $derived(draft.trim().length > 0 || attachments.length > 0);
+	const composedText = $derived(composeMessage(draft, attachments));
+
+	async function addFiles(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const files = [...(input.files ?? [])];
+		input.value = '';
+		attachError = null;
+		const refused: string[] = [];
+		for (const file of files) {
+			if (attachments.length >= MAX_ATTACHMENTS) {
+				attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
+				break;
+			}
+			if (!isTextFile(file.name, file.type)) {
+				refused.push(file.name);
+				continue;
+			}
+			const total = attachments.reduce((sum, a) => sum + a.size, 0);
+			if (file.size > MAX_FILE_BYTES || total + file.size > MAX_TOTAL_BYTES) {
+				attachError = `${file.name} is too big (files up to ${formatBytes(MAX_FILE_BYTES)}, ${formatBytes(MAX_TOTAL_BYTES)} per message).`;
+				continue;
+			}
+			attachments = [...attachments, { name: file.name, text: await file.text(), size: file.size }];
+		}
+		if (refused.length > 0) {
+			attachError = `${refused.join(', ')}: only text files (notes, CSV, JSON, code) can be attached for now, not images or PDFs.`;
+		}
+	}
+
+	function removeAttachment(index: number) {
+		attachments = attachments.filter((_, i) => i !== index);
+		attachError = null;
+	}
+
+	function onTranscript(text: string, final: boolean) {
+		draft = dictationBase ? `${dictationBase} ${text}` : text;
+		if (final) dictationBase = draft;
+	}
+
+	async function setThinking(next: ThinkingLevel) {
+		const previous = level;
+		level = next;
+		const body = new FormData();
+		body.set('level', next);
+		try {
+			const response = await fetch('?/setThinking', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+			if (deserialize(await response.text()).type !== 'success') level = previous;
+		} catch {
+			level = previous;
+		}
+	}
 
 	let pendingReply = $state(false);
 	// Set once the supervisor has stopped this chat's crew: the stopped turn's last streamed
@@ -87,7 +166,7 @@
 			const field = event.currentTarget as HTMLTextAreaElement;
 			// While the crew works, only a stop command goes through (anything else would queue
 			// behind the running turn).
-			if (field.value.trim() && (!isWorking || STOP_COMMAND.test(field.value))) field.form?.requestSubmit();
+			if (canSend && (!isWorking || STOP_COMMAND.test(draft))) field.form?.requestSubmit();
 		}
 	}
 
@@ -361,23 +440,61 @@
 						stopRequested = false;
 						return async ({ result, update }) => {
 							await update({ reset: true });
-							if (result.type === 'success' && result.data?.stopped) settleAfterStop();
+							if (result.type === 'success') {
+								draft = '';
+								dictationBase = '';
+								attachments = [];
+								attachError = null;
+								if (result.data?.stopped) settleAfterStop();
+							}
 							messageInput?.focus();
 						};
 					}}
 				>
-					<label for="chat-message" class="sr-only">Message</label>
-					<textarea
-						id="chat-message"
-						bind:this={messageInput}
-						name="text"
-						rows="1"
-						placeholder="Message Nomi"
-						required
-						class="composer__input"
-						onkeydown={onComposerKeydown}
-					></textarea>
-					<SendButton working={isWorking || stopping} stopForm={stopping ? undefined : 'stop-crew'} />
+					{#if attachments.length > 0 || attachError}
+						<div class="composer__files">
+							{#each attachments as file, i (file.name + i)}
+								<span class="file-chip">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+									<span class="file-chip__name">{file.name}</span>
+									<span class="file-chip__size">{formatBytes(file.size)}</span>
+									<button type="button" class="file-chip__remove" aria-label="Remove {file.name}" onclick={() => removeAttachment(i)}>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+									</button>
+								</span>
+							{/each}
+							{#if attachError}
+								<p class="composer__error" role="alert">{attachError}</p>
+							{/if}
+						</div>
+					{/if}
+					<div class="composer__row">
+						<button type="button" class="composer__attach" aria-label="Attach files" title="Attach text files" onclick={() => fileInput?.click()}>
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" /></svg>
+						</button>
+						<input bind:this={fileInput} type="file" multiple hidden onchange={addFiles} />
+						<label for="chat-message" class="sr-only">Message</label>
+						<textarea
+							id="chat-message"
+							bind:this={messageInput}
+							bind:value={draft}
+							rows="1"
+							placeholder="Message Nomi"
+							class="composer__input"
+							onkeydown={onComposerKeydown}
+							onfocus={() => (dictationBase = draft)}
+						></textarea>
+						<input type="hidden" name="text" value={composedText} />
+						<MicButton ontranscript={onTranscript} />
+						{#if thinkingLevel}
+							<ThinkingMenu {level} onchange={setThinking} />
+						{/if}
+						<SendButton
+							working={isWorking || stopping}
+							stopForm={stopping ? undefined : 'stop-crew'}
+							disabled={!canSend}
+						/>
+					</div>
 				</form>
 				<!-- The in-flight send button submits this: the same "stop" a user could type. -->
 				<form
@@ -598,11 +715,11 @@
 	}
 	.composer {
 		display: flex;
-		align-items: flex-end;
+		flex-direction: column;
 		gap: 6px;
 		max-width: 780px;
 		margin: 0 auto;
-		padding: 8px 8px 8px 20px;
+		padding: 8px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		box-shadow:
@@ -627,5 +744,85 @@
 	}
 	.composer__input::placeholder {
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.composer__row {
+		display: flex;
+		align-items: flex-end;
+		gap: 6px;
+	}
+	.composer__row > :global(*) {
+		align-self: center;
+	}
+	.composer__attach {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface);
+		cursor: pointer;
+		transition: border-radius var(--nomi-motion-spatial-fast);
+	}
+	.composer__attach:hover {
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+	.composer__attach:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.composer__files {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 4px 4px 0;
+	}
+	.composer__error {
+		flex-basis: 100%;
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-error);
+	}
+	.file-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		max-width: 100%;
+		height: 36px;
+		padding: 0 4px 0 10px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.8125rem;
+	}
+	.file-chip__name {
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 220px;
+	}
+	.file-chip__size {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.file-chip__remove {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+	}
+	.file-chip__remove:hover {
+		background: var(--md-sys-color-surface-container-highest);
 	}
 </style>

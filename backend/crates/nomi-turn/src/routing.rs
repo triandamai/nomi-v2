@@ -36,6 +36,7 @@ pub async fn classify_intent(
         tools: vec![],
         max_tokens: INTENT_CLASSIFICATION_MAX_TOKENS,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
 
     let response = match nomi_llm::complete(provider, request).await {

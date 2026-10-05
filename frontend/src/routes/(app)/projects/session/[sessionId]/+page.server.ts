@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
 import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
@@ -28,10 +29,13 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const projectResponse = await apiFetch(fetch, cookies, `/api/projects/by-session/${params.sessionId}`);
 	const project: ProjectDetail | null = projectResponse.ok ? await projectResponse.json() : null;
 
-	return { messages, agentActivity, agentStatus, project };
+	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
+	return { messages, agentActivity, agentStatus, project, thinkingLevel };
 };
 
 export const actions: Actions = {
+	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
+
 	sendMessage: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();
 		const text = data.get('text');

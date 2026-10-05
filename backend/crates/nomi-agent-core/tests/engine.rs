@@ -1140,3 +1140,29 @@ async fn an_old_stop_or_one_for_another_agent_does_not_stop_a_new_turn(pool: PgP
 
     assert!(matches!(outcome, LoopOutcome::Reply { .. }), "got {outcome:?}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_chats_thinking_level_reaches_the_model_request(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    for (level, enabled, effort) in [
+        ("off", false, nomi_llm::ReasoningEffort::Medium),
+        ("low", true, nomi_llm::ReasoningEffort::Low),
+        ("high", true, nomi_llm::ReasoningEffort::High),
+    ] {
+        sqlx::query("UPDATE sessions SET thinking_level = $1 WHERE id = $2").bind(level).bind(session_id).execute(&pool).await.unwrap();
+        let provider = FakeLlmProvider::sequence(vec![text_response("ok", StopReason::EndTurn)]);
+        let mut conn = pool.acquire().await.unwrap();
+        run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+            .await
+            .unwrap();
+        let request = provider.received_requests.lock().unwrap()[0].clone();
+        assert_eq!(request.enable_reasoning, enabled, "{level}");
+        if enabled {
+            assert_eq!(request.reasoning_effort, effort, "{level}");
+        }
+    }
+}

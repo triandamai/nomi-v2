@@ -117,6 +117,7 @@ async fn the_default_complete_stream_impl_wraps_a_non_streaming_providers_comple
         tools: vec![],
         max_tokens: 10,
         enable_reasoning: false,
+        reasoning_effort: Default::default(),
     };
 
     let response = complete(&provider, request).await.unwrap();

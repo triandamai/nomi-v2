@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
 import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
@@ -42,10 +43,13 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		: [];
 	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? 'New chat';
 
-	return { messages, models, personality, agentActivity, agentStatus, title };
+	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
+	return { messages, models, personality, agentActivity, agentStatus, title, thinkingLevel };
 };
 
 export const actions: Actions = {
+	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
+
 	// Named (not `default`) because this actions object also has selectAdminModel and
 	// selectCustomModel — SvelteKit forbids mixing a `default` action with named actions in the
 	// same file (throws "When using named actions, the default action cannot be used" at request
