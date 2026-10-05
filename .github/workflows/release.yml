@@ -2,7 +2,8 @@ name: Release
 
 # Deploy: only version tags trigger a build+push+deploy — PRs and merges to main only
 # run Test (see test.yml). Push a tag like v1.2.3 to publish images, then roll out the
-# backend first (it runs the database migrations) and the frontend after it.
+# backend first (it runs the database migrations) and the frontend after it, each through
+# its deploy webhook (BACKEND_WEBHOOK_URL, FRONTEND_WEBHOOK_URL).
 on:
   push:
     tags: ['v*.*.*']
@@ -52,53 +53,35 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-  deploy:
-    name: Deploy (backend, then frontend)
-    needs: build-and-push
+  deploy-backend:
+    name: Deploy Backend
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    needs: build-and-push
     # One rollout at a time: a newer tag waits for the running deploy instead of racing it.
     concurrency:
-      group: deploy
+      group: deploy-backend
       cancel-in-progress: false
-    env:
-      BACKEND_HOOK: ${{ secrets.SHIPYARD_BACKEND_DEPLOY_HOOK }}
-      FRONTEND_HOOK: ${{ secrets.SHIPYARD_FRONTEND_DEPLOY_HOOK }}
-      # Optional: the backend's health URL. When set, the frontend waits until it answers.
-      BACKEND_HEALTH_URL: ${{ secrets.BACKEND_HEALTH_URL }}
     steps:
-      - name: Check deploy hooks are set
+      - name: Trigger deployment via webhook
         run: |
-          missing=""
-          [ -n "$BACKEND_HOOK" ] || missing="$missing SHIPYARD_BACKEND_DEPLOY_HOOK"
-          [ -n "$FRONTEND_HOOK" ] || missing="$missing SHIPYARD_FRONTEND_DEPLOY_HOOK"
-          if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing"
-            exit 1
-          fi
+          curl -f -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.BACKEND_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}'
 
-      - name: Trigger backend deploy
+  # The frontend goes out only after the backend deploy was triggered successfully: the backend
+  # runs the database migrations the new frontend relies on.
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
+    steps:
+      - name: Trigger deployment via webhook
         run: |
-          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --max-time 60 \
-            -X POST "$BACKEND_HOOK"
-          echo "Backend deploy triggered for ${{ github.ref_name }}"
-
-      - name: Wait for the backend to come up
-        if: env.BACKEND_HEALTH_URL != ''
-        run: |
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent --max-time 10 "$BACKEND_HEALTH_URL" > /dev/null; then
-              echo "Backend is up (attempt $attempt)"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "::error::Backend didn't answer at BACKEND_HEALTH_URL within 10 minutes; frontend not deployed"
-          exit 1
-
-      - name: Trigger frontend deploy
-        run: |
-          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --max-time 60 \
-            -X POST "$FRONTEND_HOOK"
-          echo "Frontend deploy triggered for ${{ github.ref_name }}"
+          curl -f -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.FRONTEND_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}'
