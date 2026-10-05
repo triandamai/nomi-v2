@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
+import { planChecklist, planExcerpt, type ChecklistItem } from '$lib/planChecklist';
 import type { AgentPlansResponse } from '$lib/types';
 
 /** Fetches every plan version for one agent_session and server-renders each version's markdown
@@ -14,7 +15,18 @@ export async function fetchAgentPlans(
 	cookies: Cookies,
 	sessionId: string,
 	agentSessionId: string,
-): Promise<{ id: string; title: string; version: number; content_html: string | null; created_at: string }[]> {
+): Promise<
+	{
+		id: string;
+		title: string;
+		version: number;
+		content_html: string | null;
+		/** For the chat's draft bubble (see PlanBlock). */
+		checklist: ChecklistItem[];
+		excerpt: string;
+		created_at: string;
+	}[]
+> {
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}`);
 	if (!response.ok) {
 		throw error(response.status, 'Could not load this plan.');
@@ -26,6 +38,8 @@ export async function fetchAgentPlans(
 			title: plan.title,
 			version: plan.version,
 			content_html: plan.content !== null ? await renderMarkdown(plan.content) : null,
+			checklist: plan.content !== null ? planChecklist(plan.content) : [],
+			excerpt: plan.content !== null ? planExcerpt(plan.content) : '',
 			created_at: plan.created_at,
 		})),
 	);
