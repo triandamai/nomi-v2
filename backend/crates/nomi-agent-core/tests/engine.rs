@@ -757,7 +757,7 @@ async fn a_deny_rule_blocks_the_tool_but_lets_the_turn_continue(pool: PgPool) {
 
     let requests = provider.received_requests.lock().unwrap();
     let second_request_text = format!("{:?}", requests[1].messages);
-    assert!(second_request_text.contains("Denied by your permission rules."));
+    assert!(second_request_text.contains("The user denied this action."));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

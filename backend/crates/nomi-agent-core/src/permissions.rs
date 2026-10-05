@@ -63,6 +63,62 @@ pub async fn check_tool_permission(
     }
 }
 
+/// How long a decision on an approval card covers identical calls in the same chat.
+const SESSION_DECISION_WINDOW_MINUTES: i32 = 60;
+
+/// `check_tool_permission`, but first honours what the user already decided on an approval card
+/// in this chat for the very same call (same tool, same input) within the last hour. Without
+/// this, a model that repeats an approved call, or retries a denied one, asks again every time.
+pub async fn check_tool_permission_in_session(
+    conn: &mut PoolConnection<Postgres>,
+    user_id: Uuid,
+    session_id: Uuid,
+    tool_name: &str,
+    input: &Value,
+) -> PermissionDecision {
+    let recent: Option<String> = sqlx::query_scalar(
+        "SELECT decision FROM session_tool_decisions \
+         WHERE session_id = $1 AND user_id = $2 AND tool_name = $3 AND input = $4 \
+           AND decided_at > now() - make_interval(mins => $5) \
+         ORDER BY decided_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(tool_name)
+    .bind(input)
+    .bind(SESSION_DECISION_WINDOW_MINUTES)
+    .fetch_optional(&mut **conn)
+    .await
+    .ok()
+    .flatten();
+
+    match recent.as_deref() {
+        Some("allow") => PermissionDecision::Allow,
+        Some("deny") => PermissionDecision::Deny,
+        _ => check_tool_permission(conn, user_id, tool_name, input).await,
+    }
+}
+
+/// Records the user's decision on an approval card for `check_tool_permission_in_session`.
+pub async fn record_session_decision(
+    conn: &mut PoolConnection<Postgres>,
+    session_id: Uuid,
+    user_id: Uuid,
+    tool_name: &str,
+    input: &Value,
+    approved: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO session_tool_decisions (session_id, user_id, tool_name, input, decision) VALUES ($1, $2, $3, $4, $5)")
+        .bind(session_id)
+        .bind(user_id)
+        .bind(tool_name)
+        .bind(input)
+        .bind(if approved { "allow" } else { "deny" })
+        .execute(&mut **conn)
+        .await?;
+    Ok(())
+}
+
 /// Persists an "always allow/deny" decision from an approval card so future calls to this same
 /// tool (optionally scoped to a path pattern) skip the approval prompt.
 pub async fn remember_decision(

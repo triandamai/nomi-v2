@@ -181,6 +181,11 @@ pub enum LoopOutcome {
     Cancelled,
 }
 
+/// Tool result for a call the user refused. Says plainly not to retry: models otherwise tend to
+/// try the same call again, which only puts the same approval card in front of the user again.
+const USER_DENIED_RESULT: &str =
+    "The user denied this action. Do not try it again; tell them it wasn't done and ask how they'd like to proceed.";
+
 /// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
 /// delegate_to_agent, show_table, update_todos) — none of these touch anything a user would
 /// want to approve/deny.
@@ -463,7 +468,7 @@ pub async fn resolve_tool_batch(
             if !is_gateable(name) {
                 continue;
             }
-            let decision = permissions::check_tool_permission(conn, user_id, name, input).await;
+            let decision = permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await;
             if !matches!(decision, permissions::PermissionDecision::Ask) {
                 continue;
             }
@@ -612,10 +617,13 @@ pub async fn resolve_tool_batch(
                         Err(err) => (describe_tool_error(name, input, &err), true, None),
                     }
                 } else {
-                    ("Denied by your permission rules.".to_string(), true, None)
+                    (USER_DENIED_RESULT.to_string(), true, None)
                 }
-            } else if matches!(permissions::check_tool_permission(conn, user_id, name, input).await, permissions::PermissionDecision::Deny) {
-                ("Denied by your permission rules.".to_string(), true, None)
+            } else if matches!(
+                permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await,
+                permissions::PermissionDecision::Deny
+            ) {
+                (USER_DENIED_RESULT.to_string(), true, None)
             } else {
                 match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                     Ok(outcome) => (outcome.display_text, false, outcome.block),
