@@ -182,6 +182,12 @@ pub async fn process_claimed_job(
             finish_one_time_or_advance_recurring(pool, &job).await;
         }
     }
+
+    // This run streamed its progress into the chat under its own turn id; close it so the chat
+    // stops showing it as working.
+    if let Some(publisher) = mqtt {
+        let _ = publisher.publish(job.session_id, &StreamEnvelope::TurnCompleted { turn_job_id: job.id, message_id: Uuid::nil() }).await;
+    }
 }
 
 /// Runs the scheduler-worker loop forever: every `POLL_INTERVAL`, claims and fires every due

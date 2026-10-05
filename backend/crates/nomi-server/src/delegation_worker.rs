@@ -152,6 +152,12 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             )
             .await;
 
+            // The delegated run streamed its progress into the chat under the delegation's id;
+            // close it so the chat stops showing it as working.
+            let _ = mqtt
+                .publish(claimed.session_id, &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: Uuid::nil() })
+                .await;
+
             match outcome {
                 Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) => {
                     let phrased = nomi_agent_supervisor::phrase_delegation_result(
