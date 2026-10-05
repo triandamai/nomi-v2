@@ -35,6 +35,36 @@ const PHASE_CALLING_TOOL: &str = "calling_tool";
 const PHASE_WRITING_REPLY: &str = "writing_reply";
 const PHASE_WAITING: &str = "waiting";
 
+/// Everything the model wrote in one response, in order. Providers can split a reply across
+/// several text blocks; keeping only the first cut answers short.
+pub fn reply_text_of(content: &[ContentBlock]) -> String {
+    let joined: String = content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    joined.trim().to_string()
+}
+
+#[cfg(test)]
+mod reply_text_tests {
+    use super::reply_text_of;
+    use nomi_llm::ContentBlock;
+
+    #[test]
+    fn keeps_every_text_block_in_order() {
+        let content = vec![
+            ContentBlock::Text { text: "Here is your plan:\n\n".into() },
+            ContentBlock::Thinking { text: "hidden".into(), signature: None },
+            ContentBlock::Text { text: "1. Pack\n2. Go".into() },
+        ];
+        assert_eq!(reply_text_of(&content), "Here is your plan:\n\n1. Pack\n2. Go");
+        assert_eq!(reply_text_of(&[]), "");
+    }
+}
+
 fn complete_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: COMPLETE_TASK_TOOL_NAME.to_string(),
@@ -412,14 +442,7 @@ pub async fn run_agent_turn(
             let input_tokens = response.input_tokens;
             let output_tokens = response.output_tokens;
             let cut_off = response.stop_reason == StopReason::MaxTokens;
-            let reply_text = response
-                .content
-                .into_iter()
-                .find_map(|block| match block {
-                    ContentBlock::Text { text } if !text.trim().is_empty() => Some(text),
-                    _ => None,
-                })
-                .unwrap_or_default();
+            let reply_text = reply_text_of(&response.content);
             // The model ran out of room before answering (a half-written plan or tool call is
             // dropped): say so instead of leaving only the thinking in chat.
             let reply_text = if reply_text.is_empty() && cut_off { CUT_OFF_REPLY.to_string() } else { reply_text };
@@ -449,21 +472,25 @@ pub async fn run_agent_turn(
             });
         }
 
-        if agent.surfaces_activity() {
-            if let Some(thought) = response.content.iter().find_map(|b| match b {
-                ContentBlock::Text { text } if !text.trim().is_empty() => Some(text.clone()),
-                _ => None,
-            }) {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("💭 {}", thought.trim()), None).await;
-            }
-        }
-
         let pending_tool_use_blocks: Vec<ContentBlock> =
             response.content.iter().filter(|b| matches!(b, ContentBlock::ToolUse { .. })).cloned().collect();
 
+        // Text written alongside complete_task is the agent's answer, not commentary: it becomes
+        // the reply instead of a "💭" line (or, for quieter agents, being dropped).
+        let written = reply_text_of(&response.content);
+        let finishing = pending_tool_use_blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == COMPLETE_TASK_TOOL_NAME));
+        if agent.surfaces_activity() && !finishing && !written.is_empty() {
+            post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("💭 {written}"), None).await;
+        }
+
         match resolve_tool_batch(conn, mqtt, s3, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
-            ToolBatchOutcome::Completed { status, summary } => return Ok(LoopOutcome::Completed { status, summary }),
+            ToolBatchOutcome::Completed { status, summary } => {
+                let summary = if written.is_empty() { summary } else { written };
+                return Ok(LoopOutcome::Completed { status, summary });
+            }
             ToolBatchOutcome::Resolved(tool_results) => {
                 messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
             }

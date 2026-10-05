@@ -57,6 +57,22 @@ async fn fail_and_notify(pool: &PgPool, mqtt: &MqttPublisher, delegation_id: Uui
     let _ = mqtt.publish(session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id }).await;
 }
 
+/// Posts a message into the chat and tells the open chat about it right away.
+async fn post(conn: &mut sqlx::PgConnection, mqtt: &MqttPublisher, session_id: Uuid, author: &str, text: &str) {
+    let message_id: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(text)
+    .bind(author)
+    .fetch_one(conn)
+    .await
+    .ok();
+    if let Some(message_id) = message_id {
+        let _ = mqtt.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
+    }
+}
+
 /// Planning's delegation task is always formatted "Project <uuid>: ..." (see
 /// nomi-agent-planning's system prompt) — this is the only place that convention needs parsing,
 /// since it's just used to know which project to mark ready, a UI/status nicety. A malformed or
@@ -68,9 +84,8 @@ fn extract_project_id(task: &str) -> Option<Uuid> {
 
 /// Runs the delegation-processing worker loop forever: claims pending `agent_delegations` (via
 /// LISTEN/NOTIFY with a polling fallback, mirroring worker.rs's turn_jobs loop exactly), runs
-/// each through nomi_agent_core::run_agent_turn directly, phrases the result via the supervisor
-/// agent, and delivers it. Deliberately does NOT take the conversational session's advisory
-/// lock (see the design spec) — this must never block a user's live conversation.
+/// each through nomi_agent_core::run_agent_turn directly, and posts the agent's own answer.
+/// Deliberately does NOT take the conversational session's advisory lock (see the design spec) — this must never block a user's live conversation.
 pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
@@ -128,11 +143,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             .await
             .unwrap_or_else(|_| format!("Working on it with the {} agent — I'll update you here.", claimed.target_agent_type));
 
-            let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
-                .bind(claimed.session_id)
-                .bind(&started_message)
-                .execute(&mut *conn)
-                .await;
+            post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &started_message).await;
 
             let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
@@ -162,22 +173,11 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
             match outcome {
                 Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) => {
-                    let phrased = nomi_agent_supervisor::phrase_delegation_result(
-                        provider.as_ref(),
-                        &mut conn,
-                        claimed.user_id,
-                        &claimed.target_agent_type,
-                        &claimed.task,
-                        &text,
-                    )
-                    .await
-                    .unwrap_or_else(|_| text.clone());
-
-                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
-                        .bind(claimed.session_id)
-                        .bind(&phrased)
-                        .execute(&mut *conn)
-                        .await;
+                    // The agent's own answer, whole: rewording it through a short supervisor
+                    // completion cut long plans and lists off mid-sentence.
+                    if !text.trim().is_empty() {
+                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &text).await;
+                    }
 
                     let _ = sqlx::query(
                         "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1 AND status = 'processing'",
@@ -219,11 +219,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         "The {} agent is waiting on your approval for a tool call before it can continue.",
                         claimed.target_agent_type
                     );
-                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
-                        .bind(claimed.session_id)
-                        .bind(&notice)
-                        .execute(&mut *conn)
-                        .await;
+                    post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &notice).await;
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
                 }
                 // Stopped by the user (nomi-agent-supervisor's stop). The supervisor already marked
@@ -241,11 +237,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
                     let sorry = format!("I wasn't able to get an answer from the {} agent. {}", claimed.target_agent_type, e.user_message());
-                    let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, 'Supervisor')")
-                        .bind(claimed.session_id)
-                        .bind(&sorry)
-                        .execute(&mut *conn)
-                        .await;
+                    post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &sorry).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }
             }

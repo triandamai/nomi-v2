@@ -74,7 +74,9 @@ impl SubAgent for PlanningAgent {
     }
 
     fn intent_description(&self) -> Cow<'static, str> {
-        Cow::Borrowed("the user wants to build, create, or plan an app, website, or script")
+        Cow::Borrowed(
+            "the user wants a plan made or changed: a trip or itinerary, an event, a schedule or routine, a study or work plan, or an app, website or script to build",
+        )
     }
 
     fn uses_personality(&self) -> bool {
