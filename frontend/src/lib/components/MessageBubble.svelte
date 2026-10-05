@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { deserialize } from '$app/forms';
 	import AgentShape from './m3/AgentShape.svelte';
+	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
@@ -22,6 +23,11 @@
 	let shareCopied = $state(false);
 
 	const senderLabel = message.sender === 'user' ? 'You' : (message.agent_display_name ?? 'Nomi');
+	// Crew members other than Nomi get their name as a chip tinted with their gradient, so a
+	// hand-off reads at a glance (matches the agent's avatar shape).
+	const look = $derived(agentLook(message.agent_display_name));
+	const isCrewMember = $derived(message.sender === 'assistant' && look.tone !== 'glow');
+	const senderTint = $derived(GRADIENT_STOPS[look.tone].at(-1));
 	const formattedTime = new Date(message.created_at).toLocaleString(undefined, {
 		dateStyle: 'medium',
 		timeStyle: 'short',
@@ -173,19 +179,23 @@
 <div
 	class="message"
 	class:message--user={message.sender === 'user'}
-	style="margin-top: {first ? '0' : chained ? '6px' : '22px'}"
+	style="margin-top: {first ? '0' : chained ? '2px' : '14px'}"
 >
 	{#if message.sender !== 'user'}
 		<div class="message__avatar">
 			{#if !chained}
-				<AgentShape agent={message.agent_display_name} size={32} face={!message.agent_display_name} />
+				<AgentShape agent={message.agent_display_name} size={36} face={!isCrewMember} />
 			{/if}
 		</div>
 	{/if}
 
 	<div class="message__body">
 		{#if !chained && message.sender !== 'user'}
-			<span class="message__sender">{senderLabel}</span>
+			{#if isCrewMember}
+				<span class="message__sender message__sender--chip" style="--tint: {senderTint}">{senderLabel}</span>
+			{:else}
+				<span class="message__sender">{senderLabel}</span>
+			{/if}
 		{/if}
 
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'}>
@@ -260,7 +270,7 @@
 	   points back at them. */
 	.message {
 		display: flex;
-		gap: 12px;
+		gap: 14px;
 		align-items: flex-start;
 	}
 	.message--user {
@@ -268,35 +278,50 @@
 	}
 	.message__avatar {
 		flex: none;
-		width: 32px;
-		padding-top: 2px;
+		width: 36px;
 	}
 	.message__body {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		align-items: flex-start;
+		gap: 8px;
 		min-width: 0;
 		flex: 1;
 	}
 	.message--user .message__body {
 		flex: 0 1 auto;
 		align-items: flex-end;
-		max-width: min(78%, 560px);
+		max-width: 78%;
 	}
 	.message__sender {
 		font-family: var(--md-sys-typescale-label-large-font);
 		font-size: var(--md-sys-typescale-label-large-size);
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
-		padding-top: 6px;
+		line-height: 36px;
+	}
+	.message__sender--chip {
+		display: inline-flex;
+		align-items: center;
+		height: 28px;
+		margin-top: 4px;
+		padding: 0 12px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: color-mix(in srgb, var(--tint) 24%, var(--md-sys-color-surface-container-lowest));
+		line-height: 1;
+		font-size: 0.8125rem;
 	}
 	.message-bubble {
+		align-self: stretch;
 		color: var(--md-sys-color-on-surface);
+		font-size: 1.0625rem;
 		line-height: 1.6;
 		overflow-wrap: anywhere;
 	}
 	.message-bubble--user {
-		padding: 12px 18px;
+		align-self: auto;
+		padding: 16px 20px;
+		font-size: 1rem;
 		border-radius: var(--nomi-shape-bubble-end);
 		background: var(--md-sys-color-primary);
 		color: var(--md-sys-color-on-primary);
@@ -306,8 +331,15 @@
 		display: flex;
 		align-items: center;
 		gap: 2px;
-		opacity: 0.55;
+		margin-top: -4px;
+		opacity: 0;
 		transition: opacity var(--nomi-motion-effects-fast);
+	}
+	/* Touch screens have no hover — keep the actions quietly visible there. */
+	@media (hover: none) {
+		.message__actions {
+			opacity: 0.6;
+		}
 	}
 	.message:hover .message__actions,
 	.message:focus-within .message__actions {
@@ -418,6 +450,14 @@
 	.message-bubble :global(td) {
 		border-top: 1px solid var(--md-sys-color-surface-container);
 		padding: 10px 16px;
+		overflow-wrap: normal;
+	}
+	/* Wide tables scroll inside their own rounded box instead of squeezing words apart. */
+	.message-bubble :global(table) {
+		display: block;
+		max-width: 100%;
+		overflow-x: auto;
+		width: fit-content;
 	}
 
 	/* Shiki's dual-theme output paints its base (light) background as an inline style on <pre>

@@ -43,6 +43,8 @@
 	<div class="w-[420px] shrink-0" style="border-right: 1px solid var(--md-sys-color-outline-variant)">
 		<ChatThread
 			sessionId={page.params.sessionId as string}
+			title={data.project?.name ?? 'New project'}
+			context="Project"
 			messages={data.messages}
 			agentActivity={data.agentActivity}
 			agentStatus={data.agentStatus}

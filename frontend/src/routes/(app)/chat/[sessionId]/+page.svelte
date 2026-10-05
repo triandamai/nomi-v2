@@ -35,7 +35,14 @@
 	});
 </script>
 
-<ChatThread sessionId={page.params.sessionId as string} messages={data.messages} agentActivity={data.agentActivity} agentStatus={data.agentStatus} sendError={form?.error ?? null}>
+<ChatThread
+	sessionId={page.params.sessionId as string}
+	title={data.title}
+	messages={data.messages}
+	agentActivity={data.agentActivity}
+	agentStatus={data.agentStatus}
+	sendError={form?.error ?? null}
+>
 	{#snippet extraControls()}
 		<Menu bind:open={modelMenuOpen}>
 			{#snippet trigger({ toggle })}
