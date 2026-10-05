@@ -67,13 +67,13 @@ impl AnthropicProvider {
 }
 
 /// How many of `max_tokens` extended thinking may spend before the final reply, per thinking
-/// level. Anthropic's minimum is 1024; medium is a modest middle ground between reasoning depth
-/// and latency/cost for every agent turn (see `enable_reasoning` on `LlmRequest`).
+/// level. Anthropic's minimum is 1024. Budgets are kept tight: thinking is shown in chat and
+/// should stay short and on point (see `REASONING_STYLE` in nomi-agent-core).
 fn thinking_budget(effort: crate::ReasoningEffort) -> u32 {
     match effort {
         crate::ReasoningEffort::Low => 1024,
         crate::ReasoningEffort::Medium => 2048,
-        crate::ReasoningEffort::High => 8192,
+        crate::ReasoningEffort::High => 4096,
     }
 }
 

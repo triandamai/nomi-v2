@@ -13,6 +13,11 @@ use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
 const MAX_TOOL_TURNS: u32 = 10;
+
+/// How agents should think when reasoning is on. Users read the thinking in chat.
+pub const REASONING_STYLE: &str = "When you think before acting, keep it short and on point: what is \
+     being asked, what you will do next, and any catch. A few plain sentences. Don't restate the \
+     request, list every option, or draft the reply in your thinking.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
@@ -315,6 +320,12 @@ pub async fn run_agent_turn(
         "low" => nomi_llm::ReasoningEffort::Low,
         "high" => nomi_llm::ReasoningEffort::High,
         _ => nomi_llm::ReasoningEffort::Medium,
+    };
+    // Thinking is shown in chat, so keep it to the point rather than a running monologue.
+    let system_prompt = if thinking_level != "off" {
+        format!("{system_prompt}\n\n{REASONING_STYLE}")
+    } else {
+        system_prompt
     };
     let agent_type = agent.agent_type();
 
