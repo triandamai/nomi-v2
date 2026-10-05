@@ -361,7 +361,7 @@
 			});
 
 			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null };
+				let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string };
 				try {
 					envelope = JSON.parse(event.data);
 				} catch {
@@ -380,7 +380,9 @@
 				} else if (envelope.kind === 'TurnFailed') {
 					stopRequested = false;
 					closeTurn(turnId);
-					turnError = true;
+					// The server posts why (out of credits, a rejected key, ...) as a message in the
+					// chat; the generic notice is only for a failure that came with no explanation.
+					turnError = !envelope.error;
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
 					invalidateAll();
 				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {

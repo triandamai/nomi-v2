@@ -174,7 +174,7 @@ pub async fn process_claimed_job(
         }
         Err(e) => {
             tracing::warn!(job_id = %job.id, error = %e, "scheduler worker: fired reminder failed");
-            let sorry = format!("I wasn't able to complete your reminder — {e}.");
+            let sorry = format!("I wasn't able to complete your scheduled task. {}", e.user_message());
             let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3)")
                 .bind(job.session_id)
                 .bind(&sorry)

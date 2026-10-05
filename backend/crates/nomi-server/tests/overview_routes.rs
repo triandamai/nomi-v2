@@ -246,3 +246,35 @@ async fn money_budgets_and_manual_transactions_live_in_moneys_own_tables(pool: P
     let (status, _) = authed(router, "DELETE", "/api/money/budgets/food", &token, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn connections_show_each_users_own_google_account_only(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (ana_token, ana) = register_and_login(router.clone(), &pool, "ana@example.com").await;
+    let (budi_token, _) = register_and_login(router.clone(), &pool, "budi@example.com").await;
+    sqlx::query(
+        "INSERT INTO workspace_connections (user_id, google_email, services, access_token_encrypted, expires_at) \
+         VALUES ($1, 'ana@gmail.example', ARRAY['gmail','sheets'], '\\x00', now() + interval '1 hour')",
+    )
+    .bind(ana)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO workspace_activity (user_id, service, summary) VALUES ($1, 'sheets', 'Added 2 rows to Stays')").bind(ana).execute(&pool).await.unwrap();
+
+    let (status, body) = authed(router.clone(), "GET", "/api/connections/google", &ana_token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["connection"]["email"], "ana@gmail.example");
+    assert_eq!(body["connection"]["services"], json!(["gmail", "sheets"]));
+    assert_eq!(body["activity"][0]["summary"], "Added 2 rows to Stays");
+    assert_eq!(body["services"], json!(["gmail", "sheets", "docs", "drive", "calendar"]));
+
+    let (_, body) = authed(router.clone(), "GET", "/api/connections/google", &budi_token, None).await;
+    assert_eq!(body["connection"], Value::Null);
+    assert_eq!(body["activity"], json!([]));
+
+    let (status, _) = authed(router.clone(), "DELETE", "/api/connections/google", &ana_token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, body) = authed(router, "GET", "/api/connections/google", &ana_token, None).await;
+    assert_eq!(body["connection"], Value::Null);
+}

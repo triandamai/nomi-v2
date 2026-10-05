@@ -55,6 +55,7 @@ fn built_in_role(agent_type: &str) -> Option<&'static str> {
         "supervisor" => "Keeps track of the crew, and stops it when you ask",
         "reminders" => "Reminds you on time, and keeps your reminders",
         "files" => "Reads what you attach and passes it to the right agent",
+        "workspace" => "Works in your own Google account: Gmail, Sheets, Docs, Drive, Calendar",
         _ => return None,
     })
 }

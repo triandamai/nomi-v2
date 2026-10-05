@@ -126,8 +126,9 @@ pub async fn process_turn(
             .await;
 
             // Best-effort: an MQTT publish failure never changes the turn's outcome.
+            let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err).await;
             let _ = mqtt
-                .publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id, error: err.to_string() })
+                .publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id, error: explanation })
                 .await;
 
             release_lock_ignoring_errors(&mut conn, session_id).await;
@@ -363,7 +364,8 @@ pub async fn resume_paused_turn(
                 .bind(serde_json::json!({"error": err.to_string()}))
                 .execute(&mut *conn)
                 .await;
-            let _ = mqtt.publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: err.to_string() }).await;
+            let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err).await;
+            let _ = mqtt.publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: explanation }).await;
             release_lock_ignoring_errors(&mut conn, session_id).await;
             Err(err)
         }
@@ -536,4 +538,21 @@ async fn fetch_recent_messages(
 
 async fn release_lock_ignoring_errors(conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>, session_id: uuid::Uuid) {
     let _ = lock::release_session_lock(conn, session_id).await;
+}
+
+/// Tells the user in the chat why their message got no reply (out of credits, a rejected API
+/// key, ...) and returns that explanation. Best-effort, like the rest of the failure path.
+async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPublisher, session_id: Uuid, err: &TurnError) -> String {
+    let explanation = err.user_message();
+    let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, NULL) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(&explanation)
+    .fetch_one(&mut **conn)
+    .await;
+    if let Ok(message_id) = inserted {
+        let _ = mqtt.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
+    }
+    explanation
 }

@@ -128,6 +128,12 @@ pub trait SubAgent: Send + Sync {
         true
     }
 
+    /// What the approval card says this call will do ("Send an email to …"). `None` falls back
+    /// to the engine's generic wording.
+    fn describe_action(&self, _tool_name: &str, _input: &Value) -> Option<String> {
+        None
+    }
+
     /// Called on the delegation *target* before `delegate_to_agent` creates anything, with the
     /// exact task string the delegating agent wrote. Return `Err(reason)` to reject the
     /// delegation outright — no delegation row is created, and `reason` is fed straight back to

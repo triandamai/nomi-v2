@@ -1,60 +1,172 @@
 <script lang="ts">
-	import type { PageData } from './$types';
+	import { page } from '$app/state';
+	import Button from '$lib/components/m3/Button.svelte';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// No OAuth integration exists in this app yet — these are honest "not connected"
-	// placeholders, not a functioning connect flow. See the connected-identities design note.
-	const PROVIDERS = [
-		{ id: 'google', label: 'Google' },
-		{ id: 'facebook', label: 'Facebook' },
-		{ id: 'github', label: 'GitHub' },
-	];
+	const methods = $derived(data.methods);
+	const googleError = page.url.searchParams.get('google_error');
+	const justLinked = page.url.searchParams.get('google') === 'linked';
 </script>
 
-<div class="h-full overflow-y-auto px-4 py-8 md:px-10">
-	<div class="max-w-lg">
-		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Account settings</h1>
+<div class="account">
+	<div class="account__inner">
+		<h1 class="md-display-small account__title">Account settings</h1>
 
-		<section class="mt-6">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Email</h2>
-			<p class="md-body-large mt-1" style="color: var(--md-sys-color-on-surface-variant)">{data.profile?.email ?? '—'}</p>
+		<section class="section">
+			<h2 class="section__label">Email</h2>
+			<p class="md-body-large account__email">{data.profile?.email ?? '—'}</p>
 		</section>
 
-		<section class="mt-8">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Connected accounts</h2>
-			<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
-				Sign in with another provider. Not available yet.
+		<section class="section" aria-labelledby="methods-title">
+			<h2 id="methods-title" class="section__label">How you sign in</h2>
+			{#if justLinked}
+				<p class="note note--ok" role="status">Google is linked. You can now sign in with it.</p>
+			{/if}
+			{#if googleError || form?.error}
+				<p class="note note--error" role="alert">{form?.error ?? (googleError === 'cancelled' ? 'Linking Google was cancelled.' : googleError)}</p>
+			{/if}
+			<ul class="rows">
+				<li class="row">
+					<span class="row__icon" aria-hidden="true">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+					</span>
+					<span class="row__text">
+						<span class="row__headline">Email and password</span>
+						<span class="row__supporting">{methods?.password ? 'On' : 'Not set: you sign in with Google'}</span>
+					</span>
+				</li>
+				<li class="row">
+					<span class="row__icon" aria-hidden="true">
+						<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" /><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" /><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" /><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" /></svg>
+					</span>
+					<span class="row__text">
+						<span class="row__headline">Google</span>
+						<span class="row__supporting">
+							{#if methods?.google_email}{methods.google_email}{:else if methods?.configured}Not linked{:else}Not available on this server{/if}
+						</span>
+					</span>
+					{#if methods?.google_email}
+						{#if methods.password}
+							<form method="POST" action="?/unlink"><Button variant="text" size="s" type="submit">Unlink</Button></form>
+						{/if}
+					{:else if methods?.configured}
+						<form method="POST" action="?/link"><Button variant="tonal" size="s" type="submit">Link Google</Button></form>
+					{/if}
+				</li>
+			</ul>
+			<p class="hint">
+				Signing in with Google doesn't give the crew access to your Gmail or files. That's separate, in
+				<a href="/connections">Connections</a>.
 			</p>
-			<div class="mt-3 space-y-2">
-				{#each PROVIDERS as provider (provider.id)}
-					<div class="m3-connected-row">
-						<span class="md-body-large" style="color: var(--md-sys-color-on-surface)">{provider.label}</span>
-						<button type="button" class="m3-connect-btn" disabled>Coming soon</button>
-					</div>
-				{/each}
-			</div>
 		</section>
 	</div>
 </div>
 
 <style>
-	.m3-connected-row {
+	.account {
+		height: 100%;
+		overflow-y: auto;
+		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		box-sizing: border-box;
+	}
+	.account__inner {
+		display: flex;
+		flex-direction: column;
+		gap: 28px;
+		max-width: 640px;
+	}
+	.account__title {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+	}
+	.account__email {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+	}
+	.section {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.section__label {
+		margin: 0 8px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		font-weight: 400;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.rows {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin: 0;
+		padding: 0;
+		overflow: hidden;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		list-style: none;
+	}
+	.row {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 12px 16px;
-		border-radius: var(--md-sys-shape-corner-small);
-		border: 1px solid var(--md-sys-color-outline-variant);
+		gap: 14px;
+		min-height: 64px;
+		padding: 10px 12px 10px 16px;
+		background: var(--md-sys-color-surface-container-lowest);
 	}
-	.m3-connect-btn {
-		padding: 6px 16px;
-		border-radius: var(--md-sys-shape-corner-full);
-		border: 1px solid var(--md-sys-color-outline-variant);
-		background: transparent;
-		color: var(--md-sys-color-outline);
-		cursor: not-allowed;
-		font-family: var(--md-sys-typescale-label-large-font);
-		font-size: var(--md-sys-typescale-label-large-size);
+	.row__icon {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-primary);
+	}
+	.row__text {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+	.row__headline {
+		color: var(--md-sys-color-on-surface);
+		font-size: 1rem;
+		font-weight: 600;
+	}
+	.row__supporting {
+		overflow-wrap: anywhere;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
+	.note {
+		margin: 0;
+		padding: 12px 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		font-size: 0.875rem;
+	}
+	.note--ok {
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+	}
+	.note--error {
+		background: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-on-error-container);
+	}
+	.hint {
+		margin: 0 8px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+		line-height: 1.5;
+	}
+	.hint a {
+		color: var(--md-sys-color-primary);
+		font-weight: 600;
 	}
 </style>

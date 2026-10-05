@@ -6,6 +6,7 @@ pub mod gemini;
 pub mod deepseek;
 pub mod config;
 pub mod fake;
+mod user_message;
 
 pub use types::*;
 pub use config::{build_provider, ModelConfig, ProviderKind};
