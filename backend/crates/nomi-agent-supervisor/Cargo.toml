@@ -14,3 +14,5 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 nomi-test-support = { path = "../nomi-test-support" }
+nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
+nomi-agent-money = { path = "../nomi-agent-money" }

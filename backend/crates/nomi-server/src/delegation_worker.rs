@@ -47,7 +47,7 @@ async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedDelegation>, sqlx::Er
 }
 
 async fn fail_and_notify(pool: &PgPool, mqtt: &MqttPublisher, delegation_id: Uuid, session_id: Uuid, error: &str) {
-    let _ = sqlx::query("UPDATE agent_delegations SET status = 'failed', completed_at = now(), error = $2 WHERE id = $1")
+    let _ = sqlx::query("UPDATE agent_delegations SET status = 'failed', completed_at = now(), error = $2 WHERE id = $1 AND status <> 'cancelled'")
         .bind(delegation_id)
         .bind(error)
         .execute(pool)
@@ -172,7 +172,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         .await;
 
                     let _ = sqlx::query(
-                        "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1",
+                        "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1 AND status = 'processing'",
                     )
                     .bind(claimed.id)
                     .bind(&text)
@@ -216,6 +216,18 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         .bind(&notice)
                         .execute(&mut *conn)
                         .await;
+                    let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
+                }
+                // Stopped by the user (nomi-agent-supervisor's stop). The supervisor already marked
+                // the delegation cancelled and told the user; this only refreshes the crew panel.
+                Ok(LoopOutcome::Cancelled) => {
+                    tracing::info!(delegation_id = %claimed.id, "delegation worker: delegated turn was stopped by the user");
+                    let _ = sqlx::query(
+                        "UPDATE agent_delegations SET status = 'cancelled', completed_at = now() WHERE id = $1 AND status = 'processing'",
+                    )
+                    .bind(claimed.id)
+                    .execute(&pool)
+                    .await;
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
                 }
                 Err(e) => {

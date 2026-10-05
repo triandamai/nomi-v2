@@ -70,6 +70,7 @@ const DELEGATION_STATUS_LABELS: Record<string, string> = {
 	claimed: 'Working…',
 	completed: 'Done',
 	failed: 'Failed',
+	cancelled: 'Stopped',
 };
 
 /** Friendly label for an agent_delegations.status value. */

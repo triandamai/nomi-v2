@@ -32,7 +32,8 @@ export type ContentBlock =
 			tool_name: string;
 			description: string;
 			input: Record<string, unknown>;
-			status: 'pending' | 'approved' | 'denied';
+			/** `cancelled`: the user stopped the agent before deciding. */
+			status: 'pending' | 'approved' | 'denied' | 'cancelled';
 			decided_at: string | null;
 	  }
 	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number };
@@ -106,6 +107,8 @@ export interface MemoryItem {
 	weight: number;
 	created_at: string;
 	updated_at: string;
+	/** How many of Nomi's replies drew on this memory. */
+	uses: number;
 	embedding: number[];
 }
 

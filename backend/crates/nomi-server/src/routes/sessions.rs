@@ -364,6 +364,10 @@ pub struct SendMessageRequest {
 #[derive(Serialize)]
 pub struct IngestMessageResponse {
     pub user_message: MessageItem,
+    /// Set when the message was a stop command the supervisor handled on the spot (see
+    /// nomi_agent_supervisor::stop): its reply, already in the chat. Nothing was queued.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supervisor_reply: Option<MessageItem>,
 }
 
 #[tracing::instrument(skip(state, claims, req), fields(session_id = %session_id, user_id = %claims.sub, text_len = req.text.len()))]
@@ -388,6 +392,10 @@ pub async fn send_message(
                 tracing::warn!(error = %e, "session lookup failed");
                 (StatusCode::NOT_FOUND, "session not found")
             })?;
+
+    if let Some(response) = try_stop_command(&state, &claims, &channel, &chat_type, &chat_id, &req.text).await? {
+        return Ok((StatusCode::OK, Json(response)));
+    }
 
     tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
     let ingested = nomi_turn::ingest::ingest_inbound_message(
@@ -438,7 +446,80 @@ pub async fn send_message(
         agent_display_name: None,
     };
 
-    Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message })))
+    Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
+}
+
+async fn fetch_message_created_at(pool: &sqlx::PgPool, message_id: Uuid) -> Result<DateTime<Utc>, (StatusCode, &'static str)> {
+    sqlx::query_scalar("SELECT created_at FROM messages WHERE id = $1").bind(message_id).fetch_one(pool).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to fetch persisted message");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch persisted message")
+    })
+}
+
+/// "stop" / "stop all agents" can't wait in the turn queue behind the agent it means to stop,
+/// so the supervisor handles it here, before anything is queued.
+async fn try_stop_command(
+    state: &AppState,
+    claims: &nomi_auth::claims::Claims,
+    channel: &str,
+    chat_type: &str,
+    chat_id: &str,
+    text: &str,
+) -> Result<Option<IngestMessageResponse>, (StatusCode, &'static str)> {
+    if !nomi_agent_supervisor::stop::looks_like_stop_command(text) {
+        return Ok(None);
+    }
+    let bootstrap = nomi_turn::bootstrap::bootstrap_identity_and_session(
+        &state.pool,
+        channel,
+        chat_type,
+        chat_id,
+        &claims.sub.to_string(),
+        Some(claims.active_org_id),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "bootstrap failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to ingest message")
+    })?;
+    let registry = crate::build_agent_registry(state.project_storage.clone());
+    let outcome = nomi_agent_supervisor::stop::handle_stop_message(
+        &state.pool,
+        &registry,
+        bootstrap.session_id,
+        bootstrap.sender_channel_identity_id,
+        bootstrap.user_id,
+        text,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "stop command failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to stop agents")
+    })?;
+    let Some(outcome) = outcome else {
+        return Ok(None);
+    };
+    tracing::info!(stopped = ?outcome.report.stopped, chats = outcome.report.chats, "supervisor stopped agents");
+
+    let user_message = MessageItem {
+        id: outcome.user_message_id,
+        sender: "user".to_string(),
+        content: text.to_string(),
+        content_blocks: None,
+        created_at: fetch_message_created_at(&state.pool, outcome.user_message_id).await?,
+        my_feedback: None,
+        agent_display_name: None,
+    };
+    let supervisor_reply = MessageItem {
+        id: outcome.reply_message_id,
+        sender: "assistant".to_string(),
+        content: outcome.reply,
+        content_blocks: None,
+        created_at: fetch_message_created_at(&state.pool, outcome.reply_message_id).await?,
+        my_feedback: None,
+        agent_display_name: Some("Supervisor".to_string()),
+    };
+    Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }
 
 const TITLE_FALLBACK_MAX_CHARS: usize = 60;

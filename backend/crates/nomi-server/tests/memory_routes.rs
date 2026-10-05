@@ -122,3 +122,49 @@ async fn fetching_memories_without_auth_is_rejected(pool: PgPool) {
     let (status, _) = json_request(router, "GET", "/api/memory", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+async fn delete_request(router: axum::Router, uri: &str, bearer: &str) -> StatusCode {
+    router
+        .oneshot(Request::builder().method("DELETE").uri(uri).header("authorization", format!("Bearer {bearer}")).body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+        .status()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_user_can_forget_their_own_memory_but_not_someone_elses(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (owner_token, owner_id) = register_and_login(router.clone(), &pool, "forgetful@example.com").await;
+    let (other_token, _) = register_and_login(router.clone(), &pool, "nosy@example.com").await;
+    seed_memory(&pool, owner_id, "allergic to peanuts").await;
+    let memory_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM memory_items WHERE user_id = $1").bind(owner_id).fetch_one(&pool).await.unwrap();
+
+    // A memory a reply drew on can still be forgotten.
+    let session_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ((SELECT id FROM organizations LIMIT 1), 'web', 'c') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let message_id: uuid::Uuid = sqlx::query_scalar("INSERT INTO messages (session_id, content) VALUES ($1, 'noted') RETURNING id")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO message_memory_usage (message_id, memory_id) VALUES ($1, $2)")
+        .bind(message_id)
+        .bind(memory_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/memory", Some(&owner_token)).await;
+    assert_eq!(body["memories"][0]["uses"], 1);
+
+    let uri = format!("/api/memory/{memory_id}");
+    assert_eq!(delete_request(router.clone(), &uri, &other_token).await, StatusCode::NOT_FOUND);
+    assert_eq!(delete_request(router.clone(), &uri, &owner_token).await, StatusCode::NO_CONTENT);
+
+    let (_, body) = json_request(router, "GET", "/api/memory", Some(&owner_token)).await;
+    assert_eq!(body["memories"].as_array().unwrap().len(), 0);
+}

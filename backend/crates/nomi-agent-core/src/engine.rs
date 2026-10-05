@@ -176,6 +176,9 @@ pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
+    /// The user stopped this agent mid-turn (see `crate::stop`). Nothing more is posted; whoever
+    /// asked for the stop has already told the user.
+    Cancelled,
 }
 
 /// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
@@ -290,7 +293,15 @@ pub async fn run_agent_turn(
         system_prompt
     };
 
+    let started_at = crate::stop::database_clock(conn).await?;
+    let agent_type = agent.agent_type();
+
     for _ in 0..MAX_TOOL_TURNS {
+        if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+            return Ok(LoopOutcome::Cancelled);
+        }
+
         update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_THINKING, None).await;
 
         let request = LlmRequest {
@@ -328,6 +339,13 @@ pub async fn run_agent_turn(
             }
             None => nomi_llm::collect_stream(stream).await.map_err(TurnError::LlmCallFailed)?,
         };
+
+        // The LLM call is the slow step, so this is where a stop most often lands: drop the
+        // response instead of replying or running its tools.
+        if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
+            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+            return Ok(LoopOutcome::Cancelled);
+        }
 
         messages.push(LlmMessage { role: LlmRole::Assistant, content: response.content.clone() });
 

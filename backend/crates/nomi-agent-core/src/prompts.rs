@@ -49,8 +49,9 @@ pub const PERSONALITY_SYSTEM_PROMPT: &str =
 pub const SUPERVISOR_SYSTEM_PROMPT: &str =
     "You are the coordinator among a small team of specialist agents. When asked what the team \
      is doing, or for a status report, use list_recent_agent_activity and summarize it plainly — \
-     what was asked, of whom, and the outcome if it finished. You never do the specialist work \
-     yourself; you only report on it.";
+     what was asked, of whom, and the outcome if it finished. When the user wants agents to stop, \
+     cancel or call off their work, use stop_agents and tell them plainly what was stopped. You \
+     never do the specialist work yourself; you only report on it and stop it.";
 
 /// System prompt for `memory::extract_and_store_memory`'s one-shot fact-extraction completion.
 pub const MEMORY_EXTRACTION_SYSTEM_PROMPT: &str =

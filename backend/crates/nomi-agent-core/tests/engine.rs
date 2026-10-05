@@ -1069,3 +1069,72 @@ async fn system_prompt_carries_current_time_and_timezone_when_reminders_are_supp
     let sent_system_prompt = received[0].system.as_deref().unwrap_or_default();
     assert!(sent_system_prompt.contains("America/New_York"));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_stop_requested_while_the_model_is_answering_ends_the_turn_without_a_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+
+    // The model "thinks" for 500ms; the stop lands 150ms in, mid-call.
+    let provider = FakeLlmProvider::sequence(vec![text_response("Too late", StopReason::EndTurn)])
+        .with_delay(std::time::Duration::from_millis(500));
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let stop_pool = pool.clone();
+    let stopper = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        sqlx::query("INSERT INTO agent_stop_requests (user_id, session_id) VALUES ($1, $2)")
+            .bind(user_id)
+            .bind(session_id)
+            .execute(&stop_pool)
+            .await
+            .unwrap();
+    });
+
+    let mut conn = pool.acquire().await.unwrap();
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+    stopper.await.unwrap();
+
+    assert_eq!(outcome, LoopOutcome::Cancelled);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_old_stop_or_one_for_another_agent_does_not_stop_a_new_turn(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    // Both requests predate the turn or target someone else, so neither applies.
+    sqlx::query("INSERT INTO agent_stop_requests (user_id, session_id, requested_at) VALUES ($1, $2, now() - interval '1 minute')")
+        .bind(user_id)
+        .bind(session_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO agent_stop_requests (user_id, agent_type, requested_at) VALUES ($1, 'money', now() + interval '1 hour')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The supervisor exempting itself: a stop it asked for never stops its own turn.
+    sqlx::query("INSERT INTO agent_stop_requests (user_id, exempt_agent_type, requested_at) VALUES ($1, 'test', now() + interval '1 hour')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Hello!", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let mut conn = pool.acquire().await.unwrap();
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }), "got {outcome:?}");
+}

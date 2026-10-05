@@ -47,6 +47,11 @@
 	} = $props();
 
 	let pendingReply = $state(false);
+	// Set once the supervisor has stopped this chat's crew: the stopped turn's last streamed
+	// deltas must not bring the working indicator back. Cleared when that turn ends or the user
+	// sends something new.
+	let stopRequested = $state(false);
+	let stopping = $state(false);
 	let submitting = $state(false);
 	let turnError = $state(false);
 	let connectionLost = $state(false);
@@ -79,11 +84,22 @@
 		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 			event.preventDefault();
 			const field = event.currentTarget as HTMLTextAreaElement;
-			if (field.value.trim() && !isWorking) field.form?.requestSubmit();
+			// While the crew works, only a stop command goes through (anything else would queue
+			// behind the running turn).
+			if (field.value.trim() && (!isWorking || STOP_COMMAND.test(field.value))) field.form?.requestSubmit();
 		}
 	}
 
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+	const STOP_COMMAND = /^\W*(stop|cancel|abort|halt|berhenti|hentikan|batalkan)\b/i;
+
+	/** The supervisor answered a stop command: no turn is coming, and any running one is ending. */
+	function settleAfterStop() {
+		stopRequested = true;
+		submitting = false;
+		pendingReply = false;
+		currentPhase = null;
+	}
 
 	async function fetchAndUpsertMessage(id: string) {
 		try {
@@ -224,14 +240,16 @@
 					return;
 				}
 				if (envelope.kind === 'Delta') {
-					pendingReply = true;
+					if (!stopRequested) pendingReply = true;
 				} else if (envelope.kind === 'TurnCompleted') {
+					stopRequested = false;
 					pendingReply = false;
 					turnError = false;
 					if (envelope.message_id && envelope.message_id !== NIL_UUID) {
 						fetchAndUpsertMessage(envelope.message_id);
 					}
 				} else if (envelope.kind === 'TurnFailed') {
+					stopRequested = false;
 					pendingReply = false;
 					turnError = true;
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
@@ -239,7 +257,7 @@
 				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
 					if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 				} else if (envelope.kind === 'AgentPhaseChanged') {
-					if (typeof envelope.phase === 'string') {
+					if (typeof envelope.phase === 'string' && !stopRequested) {
 						currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
 					}
 				}
@@ -332,8 +350,10 @@
 					class="composer"
 					use:enhance={() => {
 						submitting = true;
-						return async ({ update }) => {
+						stopRequested = false;
+						return async ({ result, update }) => {
 							await update({ reset: true });
+							if (result.type === 'success' && result.data?.stopped) settleAfterStop();
 							messageInput?.focus();
 						};
 					}}
@@ -349,7 +369,24 @@
 						class="composer__input"
 						onkeydown={onComposerKeydown}
 					></textarea>
-					<SendButton working={isWorking} />
+					<SendButton working={isWorking || stopping} stopForm={stopping ? undefined : 'stop-crew'} />
+				</form>
+				<!-- The in-flight send button submits this: the same "stop" a user could type. -->
+				<form
+					id="stop-crew"
+					method="POST"
+					action="?/sendMessage"
+					hidden
+					use:enhance={() => {
+						stopping = true;
+						return async ({ result, update }) => {
+							await update({ reset: false });
+							stopping = false;
+							if (result.type === 'success' && result.data?.stopped) settleAfterStop();
+						};
+					}}
+				>
+					<input type="hidden" name="text" value="stop" />
 				</form>
 			</div>
 		</div>

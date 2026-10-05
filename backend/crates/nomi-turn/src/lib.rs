@@ -313,6 +313,8 @@ async fn finish_agent_turn(
             Ok((summary, Some(message_id)))
         }
         nomi_agent_core::LoopOutcome::AwaitingApproval { .. } => Ok(("Waiting for approval.".to_string(), None)),
+        // Stopped by the user mid-turn: the supervisor already replied, so nothing is posted.
+        nomi_agent_core::LoopOutcome::Cancelled => Ok((String::new(), None)),
     }
 }
 
@@ -460,7 +462,7 @@ async fn resume_locked(
             .await?
         }
     };
-    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. }) {
+    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. } | nomi_agent_core::LoopOutcome::Cancelled) {
         return finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await;
     }
 

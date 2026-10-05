@@ -93,7 +93,12 @@ export function buildCrew({
 			member.working = true;
 			member.status = clip(item.task);
 		} else if (!member.working) {
-			member.status = item.status === 'failed' ? `Couldn't finish: ${clip(item.task, 48)}` : `Done: ${clip(item.task, 54)}`;
+			member.status =
+				item.status === 'failed'
+					? `Couldn't finish: ${clip(item.task, 48)}`
+					: item.status === 'cancelled'
+						? `Stopped: ${clip(item.task, 51)}`
+						: `Done: ${clip(item.task, 54)}`;
 		}
 	}
 

@@ -70,9 +70,13 @@ export const actions: Actions = {
 			return fail(response.status, { error: 'Failed to send message.' });
 		}
 
-		const { user_message } = (await response.json()) as { user_message: MessageItem };
+		const { user_message, supervisor_reply } = (await response.json()) as {
+			user_message: MessageItem;
+			supervisor_reply?: MessageItem;
+		};
 
-		return { user_message };
+		// A stop command is answered on the spot by the supervisor, so no turn is coming.
+		return { user_message, stopped: supervisor_reply !== undefined };
 	},
 
 	selectAdminModel: async ({ request, cookies, fetch }) => {

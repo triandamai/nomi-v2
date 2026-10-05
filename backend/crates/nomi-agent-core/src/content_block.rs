@@ -37,6 +37,8 @@ pub enum ApprovalStatus {
     Pending,
     Approved,
     Denied,
+    /// The user stopped the agent before deciding (see `nomi-agent-supervisor`'s stop).
+    Cancelled,
 }
 
 /// Structured widget data attached to a chat message alongside its plain-text `content` fallback

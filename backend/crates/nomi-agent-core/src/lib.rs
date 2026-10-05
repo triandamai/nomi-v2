@@ -10,6 +10,7 @@ pub mod personality;
 pub mod prompts;
 pub mod registry;
 pub mod reminders;
+pub mod stop;
 pub mod subagent;
 pub mod tool_catalog;
 

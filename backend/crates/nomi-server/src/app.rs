@@ -92,6 +92,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
         .route("/api/memory", get(memory_routes::list_my_memories))
+        .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory))
         .route(
             "/api/personality/history",
             get(personality_routes::get_personality_history),

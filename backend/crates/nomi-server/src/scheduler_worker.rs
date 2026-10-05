@@ -194,6 +194,12 @@ pub async fn process_claimed_job(
             let _ = notification.deliver(job.user_id, &text).await;
             finish_one_time_or_advance_recurring(pool, &job).await;
         }
+        // The user stopped their agents while this run was in flight. Only this run ends; a
+        // recurring reminder still fires next time.
+        Ok(LoopOutcome::Cancelled) => {
+            tracing::info!(job_id = %job.id, "scheduler worker: fired reminder was stopped by the user");
+            finish_one_time_or_advance_recurring(pool, &job).await;
+        }
         Ok(LoopOutcome::AwaitingApproval { .. }) => {
             tracing::info!(job_id = %job.id, "scheduler worker: fired reminder needed a tool approval it can't get unattended");
             let notice = "Your reminder needed a tool approval it can't get automatically, so it didn't complete.";
