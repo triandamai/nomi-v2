@@ -171,6 +171,16 @@ async fn run_locked_turn(
     user_id: Uuid,
     text: &str,
 ) -> Result<(String, Option<Uuid>), TurnError> {
+    // Attachments (files, voice notes) always go to the Files agent first: it reads them and
+    // decides whether to answer itself or hand parts to Money, Reminders, Planning or Coding.
+    // It runs without an agent session of its own, so an ongoing conversation with another agent
+    // carries on afterwards.
+    if nomi_agent_core::attachments::has_attachments(text) {
+        if let Some(files) = registry.find(nomi_agent_core::attachments::FILES_AGENT_TYPE) {
+            return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, files.as_ref(), session_id, session_id, user_id).await;
+        }
+    }
+
     let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
 
     enum RoutingOutcome {

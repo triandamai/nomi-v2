@@ -30,6 +30,7 @@ Nomi or another agent.
 |---|---|---|
 | Money | `money_transactions`, `money_budgets` | `list_transactions`, `summarize_budget`, `log_transaction`, `set_budget`, `list_budgets` |
 | Reminders | `reminders` (fired by `reminders_worker`, no model call) | `add_reminder`, `show_reminders`, `edit_reminder`, `complete_reminder`, `remove_reminder` |
+| Files | none: reads attachments and voice notes in the message, then answers or delegates to the agent that owns the data | `delegate` (no tools of its own) |
 | Dynamic agents | `agent_records` (scoped per agent) | record tools + whatever the admin grants |
 
 Agent tasks scheduled for later ("every Monday, summarize my spending") remain the core

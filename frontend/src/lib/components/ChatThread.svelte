@@ -10,12 +10,17 @@
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
+	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
+	import Menu from '$lib/components/m3/Menu.svelte';
+	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import ThinkingMenu from '$lib/components/ThinkingMenu.svelte';
 	import { deserialize } from '$app/forms';
 	import {
 		composeMessage,
 		formatBytes,
+		isAudioFile,
 		isTextFile,
+		voiceNoteName,
 		MAX_ATTACHMENTS,
 		MAX_FILE_BYTES,
 		MAX_TOTAL_BYTES,
@@ -67,6 +72,23 @@
 	let attachments = $state<(Attachment & { size: number })[]>([]);
 	let attachError = $state<string | null>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
+	let attachMenuOpen = $state(false);
+	let recordingVoice = $state(false);
+	let speechSupported = $state(false);
+	onMount(() => {
+		const w = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+		speechSupported = Boolean(w.SpeechRecognition ?? w.webkitSpeechRecognition);
+	});
+
+	function saveVoiceNote(transcript: string, seconds: number) {
+		recordingVoice = false;
+		if (attachments.length >= MAX_ATTACHMENTS) {
+			attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
+			return;
+		}
+		attachments = [...attachments, { name: voiceNoteName(seconds), text: transcript, kind: 'voice', size: new Blob([transcript]).size }];
+		messageInput?.focus();
+	}
 	let dictationBase = '';
 	let level = $state<ThinkingLevel>('medium');
 	$effect(() => {
@@ -82,10 +104,15 @@
 		input.value = '';
 		attachError = null;
 		const refused: string[] = [];
+		const audio: string[] = [];
 		for (const file of files) {
 			if (attachments.length >= MAX_ATTACHMENTS) {
 				attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
 				break;
+			}
+			if (isAudioFile(file.name, file.type)) {
+				audio.push(file.name);
+				continue;
 			}
 			if (!isTextFile(file.name, file.type)) {
 				refused.push(file.name);
@@ -96,7 +123,10 @@
 				attachError = `${file.name} is too big (files up to ${formatBytes(MAX_FILE_BYTES)}, ${formatBytes(MAX_TOTAL_BYTES)} per message).`;
 				continue;
 			}
-			attachments = [...attachments, { name: file.name, text: await file.text(), size: file.size }];
+			attachments = [...attachments, { name: file.name, text: await file.text(), kind: 'file', size: file.size }];
+		}
+		if (audio.length > 0) {
+			attachError = `${audio.join(', ')}: audio files can't be read yet. Record a voice note instead, from the attach menu.`;
 		}
 		if (refused.length > 0) {
 			attachError = `${refused.join(', ')}: only text files (notes, CSV, JSON, code) can be attached for now, not images or PDFs.`;
@@ -451,11 +481,15 @@
 						};
 					}}
 				>
-					{#if attachments.length > 0 || attachError}
+					{#if attachments.length > 0 || attachError || recordingVoice}
 						<div class="composer__files">
 							{#each attachments as file, i (file.name + i)}
-								<span class="file-chip">
-									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+								<span class="file-chip" class:file-chip--voice={file.kind === 'voice'} title={file.kind === 'voice' ? file.text : undefined}>
+									{#if file.kind === 'voice'}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+									{:else}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+									{/if}
 									<span class="file-chip__name">{file.name}</span>
 									<span class="file-chip__size">{formatBytes(file.size)}</span>
 									<button type="button" class="file-chip__remove" aria-label="Remove {file.name}" onclick={() => removeAttachment(i)}>
@@ -463,15 +497,50 @@
 									</button>
 								</span>
 							{/each}
+							{#if recordingVoice}
+								<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
+							{/if}
 							{#if attachError}
 								<p class="composer__error" role="alert">{attachError}</p>
 							{/if}
 						</div>
 					{/if}
 					<div class="composer__row">
-						<button type="button" class="composer__attach" aria-label="Attach files" title="Attach text files" onclick={() => fileInput?.click()}>
-							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" /></svg>
-						</button>
+						<Menu bind:open={attachMenuOpen}>
+							{#snippet trigger({ toggle })}
+								<button type="button" class="composer__attach" aria-label="Attach" title="Attach files or a voice note" onclick={toggle}>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" /></svg>
+								</button>
+							{/snippet}
+							<MenuItem
+								type="button"
+								onclick={() => {
+									attachMenuOpen = false;
+									fileInput?.click();
+								}}
+							>
+								<span class="attach-option">
+									<span class="attach-option__label">Attach files</span>
+									<span class="attach-option__hint">Notes, CSV, JSON or code</span>
+								</span>
+							</MenuItem>
+							{#if speechSupported}
+								<MenuItem
+									type="button"
+									disabled={recordingVoice}
+									onclick={() => {
+										attachMenuOpen = false;
+										attachError = null;
+										recordingVoice = true;
+									}}
+								>
+									<span class="attach-option">
+										<span class="attach-option__label">Record a voice note</span>
+										<span class="attach-option__hint">Say it; Nomi works out what to do</span>
+									</span>
+								</MenuItem>
+							{/if}
+						</Menu>
 						<input bind:this={fileInput} type="file" multiple hidden onchange={addFiles} />
 						<label for="chat-message" class="sr-only">Message</label>
 						<textarea
@@ -797,6 +866,23 @@
 		background: var(--md-sys-color-surface-container);
 		color: var(--md-sys-color-on-surface);
 		font-size: 0.8125rem;
+	}
+	.file-chip--voice {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.attach-option {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		text-align: left;
+	}
+	.attach-option__label {
+		font-weight: 650;
+	}
+	.attach-option__hint {
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.file-chip__name {
 		font-weight: 600;

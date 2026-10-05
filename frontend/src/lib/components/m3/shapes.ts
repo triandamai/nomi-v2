@@ -184,5 +184,6 @@ export function agentLook(agent: string | null | undefined): AgentLook {
 	if (key.includes('personality') || key.includes('memory')) return { shape: 'flower5', tone: 'bloom', motion: 'spin' };
 	if (key.includes('supervisor')) return { shape: 'sunny12', tone: 'dusk', motion: 'orbit' };
 	if (key.includes('reminder')) return { shape: 'clover3', tone: 'citrus', motion: 'pulse' };
+	if (key === 'files') return { shape: 'soft-square', tone: 'slate', motion: 'wobble' };
 	return NOMI_LOOK;
 }

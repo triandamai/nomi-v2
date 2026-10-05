@@ -17,6 +17,7 @@ serde_json = "1"
 [dev-dependencies]
 nomi-agent-money = { path = "../nomi-agent-money" }
 nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
+nomi-agent-files = { path = "../nomi-agent-files" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-test-support = { path = "../nomi-test-support" }
 tokio = { version = "1", features = ["full"] }

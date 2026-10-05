@@ -16,6 +16,7 @@ pub fn build_agent_registry(project_storage: nomi_storage::LocalFsStore) -> nomi
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),
         Box::new(nomi_agent_reminders::RemindersAgent),
+        Box::new(nomi_agent_files::FilesAgent),
         Box::new(nomi_agent_personality::PersonalityAgent),
         Box::new(nomi_agent_supervisor::SupervisorAgent),
         Box::new(nomi_agent_planning::PlanningAgent::new()),

@@ -2147,6 +2147,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-files"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-money"
 version = "0.1.0"
 dependencies = [
@@ -2305,6 +2319,7 @@ dependencies = [
  "nomi-agent-chitchat",
  "nomi-agent-coding",
  "nomi-agent-core",
+ "nomi-agent-files",
  "nomi-agent-money",
  "nomi-agent-personality",
  "nomi-agent-planning",
@@ -2376,6 +2391,7 @@ dependencies = [
  "chrono",
  "nomi-agent-chitchat",
  "nomi-agent-core",
+ "nomi-agent-files",
  "nomi-agent-money",
  "nomi-agent-personality",
  "nomi-embedding",

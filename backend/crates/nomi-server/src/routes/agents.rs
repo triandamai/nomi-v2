@@ -54,6 +54,7 @@ fn built_in_role(agent_type: &str) -> Option<&'static str> {
         "personality" => "Keeps Nomi sounding like you want",
         "supervisor" => "Keeps track of the crew, and stops it when you ask",
         "reminders" => "Reminds you on time, and keeps your reminders",
+        "files" => "Reads what you attach and passes it to the right agent",
         _ => return None,
     })
 }

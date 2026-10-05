@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod content_block;
 pub mod delegation;
 pub mod dynamic_agent;
