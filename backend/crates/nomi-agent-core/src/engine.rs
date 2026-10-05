@@ -726,7 +726,7 @@ async fn log_tool_call(
     is_error: bool,
 ) {
     let _ = sqlx::query(
-        "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, $2, $3, 'ToolCalled', $4)",
+        "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, (SELECT id FROM agent_sessions WHERE id = $2), $3, 'ToolCalled', $4)",
     )
     .bind(session_id)
     .bind(agent_session_id)

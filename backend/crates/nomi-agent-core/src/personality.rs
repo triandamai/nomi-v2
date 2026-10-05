@@ -66,7 +66,7 @@ pub async fn set_personality(
 
     sqlx::query(
         "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) \
-         VALUES ($1, $2, 'personality', 'PersonalityChanged', $3)",
+         VALUES ($1, (SELECT id FROM agent_sessions WHERE id = $2), 'personality', 'PersonalityChanged', $3)",
     )
     .bind(session_id)
     .bind(agent_session_id)
