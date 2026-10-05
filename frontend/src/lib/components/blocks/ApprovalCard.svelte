@@ -12,6 +12,7 @@
 	let remember = $state(false);
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
+	let expired = $state(false);
 
 	async function resolve(decision: 'approve' | 'deny') {
 		submitting = true;
@@ -25,7 +26,12 @@
 		const result = deserialize(await response.text());
 		submitting = false;
 		if (result.type === 'failure') {
-			error = (result.data?.error as string) ?? 'Failed to record your decision.';
+			// 409: the turn behind this card has already moved on (or the card predates a fix that
+			// lost its paused state) — retrying can't help, so say what to do instead.
+			expired = result.status === 409;
+			error = expired
+				? 'This request expired. Ask again and the agent will ask for your OK again.'
+				: ((result.data?.error as string) ?? 'Failed to record your decision.');
 		}
 		// On success the card's own status flips via the MessageUpdated WS event landing shortly
 		// after (Task 12) — no local optimistic update needed here.
@@ -43,18 +49,20 @@
 		{#if error}
 			<p class="md-body-small" style="color: var(--md-sys-color-error)">{error}</p>
 		{/if}
-		<label class="m3-approval-remember">
-			<Checkbox bind:checked={remember} />
-			<span class="md-body-small">Remember this decision for next time</span>
-		</label>
-		<div class="m3-block-card__actions">
-			<button type="button" class="m3-approval-btn m3-approval-btn--allow" disabled={submitting} onclick={() => resolve('approve')}>
-				Approve
-			</button>
-			<button type="button" class="m3-approval-btn m3-approval-btn--deny" disabled={submitting} onclick={() => resolve('deny')}>
-				Deny
-			</button>
-		</div>
+		{#if !expired}
+			<label class="m3-approval-remember">
+				<Checkbox bind:checked={remember} />
+				<span class="md-body-small">Remember this decision for next time</span>
+			</label>
+			<div class="m3-block-card__actions">
+				<button type="button" class="m3-approval-btn m3-approval-btn--allow" disabled={submitting} onclick={() => resolve('approve')}>
+					Approve
+				</button>
+				<button type="button" class="m3-approval-btn m3-approval-btn--deny" disabled={submitting} onclick={() => resolve('deny')}>
+					Deny
+				</button>
+			</div>
+		{/if}
 	{:else}
 		<p class="m3-approval-result">
 			{#if block.status === 'approved'}

@@ -446,24 +446,46 @@ async fn resume_locked(
     )
     .await?;
 
-    match batch_outcome {
-        nomi_agent_core::ToolBatchOutcome::AwaitingApproval { .. } => Ok(("Waiting for another approval.".to_string(), None)),
-        nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => {
-            finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), nomi_agent_core::LoopOutcome::Completed { status, summary }).await
-        }
+    let outcome = match batch_outcome {
+        nomi_agent_core::ToolBatchOutcome::AwaitingApproval { .. } => return Ok(("Waiting for another approval.".to_string(), None)),
+        nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => nomi_agent_core::LoopOutcome::Completed { status, summary },
         nomi_agent_core::ToolBatchOutcome::Resolved(tool_results) => {
             let mut full_messages = messages;
             full_messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
 
-            let outcome = nomi_agent_core::run_agent_turn(
+            nomi_agent_core::run_agent_turn(
                 conn, Some((mqtt, Uuid::nil())), s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id,
                 full_messages, SUBAGENT_MAX_TOKENS,
             )
-            .await?;
-
-            finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await
+            .await?
         }
+    };
+    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. }) {
+        return finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await;
     }
+
+    let (reply, reply_message_id) =
+        finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await?;
+
+    // A row the engine created only to hold this pause (default agent / delegated turn — see
+    // resolve_tool_batch) has served its purpose once the turn finishes.
+    sqlx::query("UPDATE agent_sessions SET status = 'completed', ended_at = now() WHERE id = $1 AND status = 'awaiting_approval'")
+        .bind(agent_session_id)
+        .execute(&mut **conn)
+        .await?;
+
+    // A delegated turn that paused for approval left its delegation 'processing' (the delegation
+    // worker tags the paused state with its id); now that it has finished, close it out.
+    if let Some(delegation_id) = state["delegation_id"].as_str().and_then(|id| id.parse::<Uuid>().ok()) {
+        sqlx::query("UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1")
+            .bind(delegation_id)
+            .bind(&reply)
+            .execute(&mut **conn)
+            .await?;
+        let _ = mqtt.publish(session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id }).await;
+    }
+
+    Ok((reply, reply_message_id))
 }
 
 async fn fetch_recent_messages(

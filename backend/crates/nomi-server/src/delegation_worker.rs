@@ -192,13 +192,21 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
                     tracing::info!(delegation_id = %claimed.id, "delegation worker: delegation completed");
                 }
-                // Stopgap only: delegated-turn approval resume isn't wired up yet (Task 6 adds
-                // the resume path for the main turn loop; delegation isn't in this plan's
-                // scope). Surface that this delegation is waiting on a decision instead of
-                // silently dropping it — leave `agent_delegations.status` as `claimed` rather
-                // than marking completed/failed, since neither is true yet.
+                // The engine parked the paused turn in its own agent_sessions row; the approval
+                // worker resumes it from there (nomi_turn::resume_paused_turn). Tag that row with
+                // this delegation so the resume can mark the delegation completed once the
+                // delegated agent finishes. Until then it stays 'processing', since it isn't
+                // done yet.
                 Ok(LoopOutcome::AwaitingApproval { message_id }) => {
                     tracing::info!(delegation_id = %claimed.id, %message_id, "delegation worker: delegated turn is awaiting tool approval");
+                    let _ = sqlx::query(
+                        "UPDATE agent_sessions SET state = state || jsonb_build_object('delegation_id', $1::text) \
+                         WHERE state->>'pending_approval_message_id' = $2",
+                    )
+                    .bind(claimed.id.to_string())
+                    .bind(message_id.to_string())
+                    .execute(&pool)
+                    .await;
                     let notice = format!(
                         "The {} agent is waiting on your approval for a tool call before it can continue.",
                         claimed.target_agent_type

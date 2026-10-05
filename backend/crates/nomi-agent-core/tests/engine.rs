@@ -670,6 +670,41 @@ async fn an_unmatched_tool_call_pauses_the_turn_and_never_executes(pool: PgPool)
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn a_pause_with_no_agent_session_row_parks_the_state_in_a_row_of_its_own(pool: PgPool) {
+    // The default agent and delegated turns pass the chat's session_id as a sentinel
+    // agent_session_id with no agent_sessions row behind it. Pausing must still leave a paused
+    // state the approval endpoint can find — otherwise every click on the card answers
+    // "this action is no longer pending".
+    let session_id = seed_session(&pool).await;
+    let (user_id, live_agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![tool_use_response("t1", "echo", serde_json::json!({"x": 1}))]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    let message_id = match outcome {
+        LoopOutcome::AwaitingApproval { message_id } => message_id,
+        other => panic!("expected AwaitingApproval, got {other:?}"),
+    };
+
+    let (id, status, agent_type, state): (Uuid, String, String, serde_json::Value) = sqlx::query_as(
+        "SELECT id, status, agent_type, state FROM agent_sessions WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true",
+    )
+    .bind(message_id.to_string())
+    .fetch_one(&pool)
+    .await
+    .expect("the paused state must be findable by its approval message id");
+    assert_ne!(id, live_agent_session_id, "the chat's live agent session must not be hijacked");
+    assert_eq!(status, "awaiting_approval");
+    assert_eq!(agent_type, "test");
+    assert_eq!(state["pending_tool_use_id"], "t1");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn an_allow_rule_lets_the_tool_execute_without_pausing(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
