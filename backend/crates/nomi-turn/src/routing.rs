@@ -208,7 +208,7 @@ pub async fn complete_agent_session(
 
     let event_type = if status == "cancelled" { "AgentCancelled" } else { "AgentCompleted" };
 
-    sqlx::query("INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, $2, $3, $4, $5)")
+    sqlx::query("INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, (SELECT id FROM agent_sessions WHERE id = $2), $3, $4, $5)")
         .bind(session_id)
         .bind(agent_session_id)
         .bind(agent_type)

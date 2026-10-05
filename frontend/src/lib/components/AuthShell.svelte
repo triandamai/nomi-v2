@@ -111,12 +111,23 @@
 			</div>
 			{@render children()}
 		</div>
+
+		<footer class="panel__footer">
+			<span>© 2026</span>
+			<span aria-hidden="true">·</span>
+			<span class="panel__made">
+				Made with
+				<svg width="14" height="14" viewBox="0 0 24 24" aria-label="love" role="img"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" /></svg>
+				by <a href="https://trian.space" target="_blank" rel="noopener">Trian</a>
+			</span>
+		</footer>
 	</main>
 </div>
 
 <style>
 	.auth {
 		min-height: 100vh;
+		min-height: 100dvh;
 		display: flex;
 		flex-wrap: wrap;
 		background: var(--md-sys-color-surface);
@@ -127,6 +138,7 @@
 		position: relative;
 		flex: 1 1 520px;
 		min-height: calc(100vh - 24px);
+		min-height: calc(100dvh - 24px);
 		margin: 12px;
 		border-radius: 40px 40px 40px 12px;
 		background: var(--nomi-color-stage);
@@ -286,6 +298,33 @@
 		flex-direction: column;
 		padding: 20px clamp(16px, 4vw, 48px) 40px;
 		box-sizing: border-box;
+	}
+	.panel__footer {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		margin-top: auto;
+		padding-top: 32px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+	}
+	.panel__made {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.panel__made svg {
+		color: var(--md-sys-color-tertiary);
+	}
+	.panel__footer a {
+		color: var(--md-sys-color-primary);
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.panel__footer a:hover {
+		text-decoration: underline;
 	}
 	.panel__top {
 		display: flex;

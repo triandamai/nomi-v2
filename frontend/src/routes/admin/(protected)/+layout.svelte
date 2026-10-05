@@ -32,7 +32,7 @@
 	});
 </script>
 
-<div class="flex h-screen" style="background: var(--md-sys-color-surface)">
+<div class="app-shell flex" style="background: var(--md-sys-color-surface)">
 	<aside
 		class="flex flex-col p-4 transition-[width] duration-200"
 		class:w-56={!collapsed}

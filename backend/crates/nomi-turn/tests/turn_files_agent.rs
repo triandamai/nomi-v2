@@ -85,3 +85,31 @@ async fn a_message_without_attachments_is_classified_as_usual(pool: PgPool) {
         .unwrap();
     assert_eq!(outcome.reply, "Hi!");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_files_agent_can_finish_with_complete_task_without_its_own_agent_session(pool: PgPool) {
+    seed_speaker(&pool, "tg-3").await;
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(FilesAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    // The Files agent runs on the chat's id instead of an agent session of its own; finishing
+    // with complete_task used to write an AgentCompleted event pointing at an agent session that
+    // doesn't exist, which failed the whole turn.
+    let provider = FakeLlmProvider::sequence(vec![tool_use_response(
+        "t1",
+        "complete_task",
+        serde_json::json!({"status": "completed", "summary": "Read your notes: nothing to do."}),
+    )]);
+
+    let message = "fyi\n\n<attachment name=\"notes.txt\" kind=\"file\">\nall good\n</attachment>";
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-3", "tg-3", message, None)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.reply, "Read your notes: nothing to do.");
+    let (agent_session, event): (Option<Uuid>, String) =
+        sqlx::query_as("SELECT agent_session_id, event_type FROM agent_events WHERE event_type = 'AgentCompleted'").fetch_one(&pool).await.unwrap();
+    assert_eq!((agent_session, event.as_str()), (None, "AgentCompleted"));
+    let logged: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_events WHERE event_type = 'ToolCalled'").fetch_one(&pool).await.unwrap();
+    assert_eq!(logged, 1, "the tool call is logged too");
+}

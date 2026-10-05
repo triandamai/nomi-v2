@@ -970,6 +970,19 @@ body {
 	font-family: var(--md-ref-typeface-plain);
 }
 
+/* The signed-in app's frame: exactly the visible screen. 100vh on phones includes the area
+   behind the browser's address bar, which made the page itself scroll on top of the content's
+   own scrolling and pushed the app bar out of view; 100dvh is the height actually shown. The
+   content areas inside scroll; the frame never does. `position: relative` makes absolutely
+   positioned descendants (visually hidden inputs, tooltips) belong to the frame, so its
+   overflow clips them instead of letting them stretch the page. */
+.app-shell {
+	position: relative;
+	height: 100vh;
+	height: 100dvh;
+	overflow: hidden;
+}
+
 /* ---- Scrollbars (M3 Expressive) ----
    Applied globally via `*` so every scrollable container in the app (sidebar session list,
    chat message list, code blocks, Menu/BottomSheet panels, DataTable) gets the same thin,
