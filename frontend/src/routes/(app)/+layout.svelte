@@ -22,7 +22,7 @@
 	});
 </script>
 
-<div class="flex h-screen" style="background: var(--md-sys-color-surface)">
+<div class="app-shell flex" style="background: var(--md-sys-color-surface)">
 	<Sidebar userEmail={data.userEmail} profile={data.profile} bind:mobileOpen={mobileNavOpen} />
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
