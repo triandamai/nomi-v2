@@ -607,7 +607,7 @@
 
 <BottomSheet bind:open={activitySheetOpen}>
 	{#snippet children()}
-		<CrewPanel members={crew} />
+		<CrewPanel members={crew} surface />
 		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 20px 0 12px;">Recent hand-offs</h2>
 		{#if agentActivity.length === 0}
 			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No background activity yet.</p>
