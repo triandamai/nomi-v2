@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize, enhance } from '$app/forms';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -30,7 +31,7 @@
 		if (result.type !== 'success' || !result.data?.uploadUrl) {
 			uploading = false;
 			uploadError =
-				(result.type === 'failure' && (result.data?.error as string)) || 'Could not prepare the upload — try again.';
+				(result.type === 'failure' && (result.data?.error as string)) || m.profile_prepare_failed();
 			input.value = '';
 			return;
 		}
@@ -44,7 +45,7 @@
 		input.value = '';
 
 		if (!uploadResponse.ok) {
-			uploadError = 'Upload failed — try again.';
+			uploadError = m.profile_upload_failed();
 			return;
 		}
 
@@ -54,7 +55,7 @@
 
 <div class="h-full overflow-y-auto px-4 py-8 md:px-10">
 	<div class="max-w-lg">
-		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Profile</h1>
+		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">{m.profile_title()}</h1>
 
 		{#if form?.error}
 			<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -74,7 +75,7 @@
 					onchange={handleFileSelected}
 				/>
 				<Button type="button" variant="outlined" onclick={() => fileInput?.click()} disabled={uploading}>
-					{uploading ? 'Uploading…' : 'Change photo'}
+					{uploading ? m.profile_uploading() : m.profile_change_photo()}
 				</Button>
 			</div>
 		</div>
@@ -90,9 +91,9 @@
 		class="mt-6 flex flex-col gap-3"
 	>
 			<input type="hidden" name="avatar_url" value={avatarUrl} />
-			<TextField id="display_name" name="display_name" label="Display name" bind:value={displayName} />
-			<TextField id="username" name="username" label="Username" bind:value={username} />
-			<Button type="submit" variant="filled" class="w-fit">Save</Button>
+			<TextField id="display_name" name="display_name" label={m.profile_display_name()} bind:value={displayName} />
+			<TextField id="username" name="username" label={m.profile_username()} bind:value={username} />
+			<Button type="submit" variant="filled" class="w-fit">{m.common_save()}</Button>
 		</form>
 	</div>
 </div>

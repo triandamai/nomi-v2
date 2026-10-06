@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
@@ -9,6 +10,7 @@
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
 	import { DEFAULT_SERVICES, WORKSPACE_SERVICE_ORDER, WORKSPACE_SERVICES, isWorkspaceService } from '$lib/workspace';
+	import { timeAgo } from '$lib/i18n';
 	import type { WorkspaceService } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -41,7 +43,7 @@
 			openSheet((params.get('services') ?? '').split(',').filter(isWorkspaceService));
 		}
 		if (params.get('connected') === '1') {
-			snackbarMessage = 'Google Workspace connected';
+			snackbarMessage = m.conn_connected_snack();
 			snackbar = true;
 		}
 		if (params.size > 0) goto('/connections', { replaceState: true, noScroll: true, keepFocus: true });
@@ -50,19 +52,10 @@
 	// Just signed up with Google: offer Workspace with that same account (Google pre-selects it).
 	const welcome = page.url.searchParams.get('welcome') === '1';
 	const errorParam = page.url.searchParams.get('error');
-	const signInError = errorParam === 'declined' ? 'Google sign-in was cancelled. Nothing was connected.' : errorParam;
+	const signInError = errorParam === 'declined' ? m.conn_signin_cancelled() : errorParam;
 
 	const missing = $derived(connection ? WORKSPACE_SERVICE_ORDER.filter((s) => !connection.services.includes(s)) : []);
 
-	function timeAgo(iso: string): string {
-		const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-		if (minutes < 1) return 'just now';
-		if (minutes < 60) return `${minutes} min ago`;
-		const hours = Math.round(minutes / 60);
-		if (hours < 24) return `${hours} h ago`;
-		const days = Math.round(hours / 24);
-		return days === 1 ? 'yesterday' : `${days} days ago`;
-	}
 </script>
 
 {#snippet serviceIcon(service: WorkspaceService, size = 20)}
@@ -74,8 +67,8 @@
 <div class="connections">
 	<div class="connections__inner">
 		<header class="connections__head">
-			<h1 class="md-display-small connections__title">Connections</h1>
-			<p class="md-body-large connections__lede">Connect your own accounts. Each one is yours alone: the crew only works in it when you ask.</p>
+			<h1 class="md-display-small connections__title">{m.conn_title()}</h1>
+			<p class="md-body-large connections__lede">{m.conn_lede()}</p>
 		</header>
 
 		{#if signInError}
@@ -86,21 +79,21 @@
 		{/if}
 
 		{#if !google}
-			<p class="notice" role="alert">Couldn't load your connections just now. Reload the page to try again.</p>
+			<p class="notice" role="alert">{m.conn_load_failed()}</p>
 		{:else if welcome && !connection}
 			<section class="welcome" aria-labelledby="welcome-title">
 				<AgentShape agent="nomi" size={56} />
 				<div class="welcome__text">
-					<h2 id="welcome-title" class="welcome__title">You're in. One more thing?</h2>
+					<h2 id="welcome-title" class="welcome__title">{m.conn_welcome_title()}</h2>
 					<p class="welcome__body">
-						Workspace can also work in this Google account: find invoices in Gmail, update your Sheets, draft Docs. You choose what it may use.
+						{m.conn_welcome_body()}
 					</p>
 				</div>
 				<div class="welcome__actions">
 					{#if google.configured}
-						<Button variant="gradient" size="m" onclick={() => openSheet()}>Connect Workspace</Button>
+						<Button variant="gradient" size="m" onclick={() => openSheet()}>{m.conn_connect_workspace()}</Button>
 					{/if}
-					<Button variant="text" size="m" href="/">Maybe later</Button>
+					<Button variant="text" size="m" href="/">{m.conn_maybe_later()}</Button>
 				</div>
 			</section>
 		{/if}
@@ -116,8 +109,8 @@
 						<span class="card__sub">{connection.email}</span>
 					</div>
 				</div>
-				<span class="live"><span class="live__dot"></span>Connected · only you</span>
-				<ul class="chips" aria-label="Allowed services">
+				<span class="live"><span class="live__dot"></span>{m.conn_connected_only_you()}</span>
+				<ul class="chips" aria-label={m.conn_allowed_services()}>
 					{#each connection.services as service (service)}
 						<li class="chip">{WORKSPACE_SERVICES[service].label}</li>
 					{/each}
@@ -127,9 +120,9 @@
 				</ul>
 			</section>
 
-			<h2 class="section-label">Recently in your Workspace</h2>
+			<h2 class="section-label">{m.conn_recent()}</h2>
 			{#if google.activity.length === 0}
-				<p class="empty">Nothing yet. Ask in any chat, like "add my hotel invoices to my budget sheet".</p>
+				<p class="empty">{m.conn_recent_empty()}</p>
 			{:else}
 				<ul class="rows">
 					{#each google.activity as item, i (i)}
@@ -140,22 +133,22 @@
 								<span class="row__supporting">{WORKSPACE_SERVICES[item.service]?.label ?? item.service} · {timeAgo(item.created_at)}</span>
 							</span>
 							{#if item.link}
-								<a class="row__link" href={item.link} target="_blank" rel="noreferrer">Open</a>
+								<a class="row__link" href={item.link} target="_blank" rel="noreferrer">{m.common_open()}</a>
 							{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
 
-			<h2 class="section-label">Always ask me before</h2>
+			<h2 class="section-label">{m.conn_always_ask()}</h2>
 			<ul class="rows">
-				<li class="row row--plain"><span class="row__headline">Sending email</span><span class="always">Always</span></li>
-				<li class="row row--plain"><span class="row__headline">Inviting people to events</span><span class="always">Always</span></li>
+				<li class="row row--plain"><span class="row__headline">{m.conn_sending_email()}</span><span class="always">{m.conn_always()}</span></li>
+				<li class="row row--plain"><span class="row__headline">{m.conn_inviting()}</span><span class="always">{m.conn_always()}</span></li>
 			</ul>
 
 			<div class="connections__actions">
-				<Button variant="tonal" size="m" onclick={() => openSheet()}>Change access</Button>
-				<Button variant="outlined" size="m" class="danger" onclick={() => (confirmOpen = true)}>Disconnect</Button>
+				<Button variant="tonal" size="m" onclick={() => openSheet()}>{m.conn_change_access()}</Button>
+				<Button variant="outlined" size="m" class="danger" onclick={() => (confirmOpen = true)}>{m.conn_disconnect()}</Button>
 			</div>
 		{:else}
 			<section class="card" aria-labelledby="google-title">
@@ -163,30 +156,30 @@
 					<AgentShape agent="workspace" size={52} />
 					<div class="card__titles">
 						<h2 id="google-title" class="card__title">Google Workspace</h2>
-						<span class="card__sub">For the Workspace agent</span>
-						<span class="status">Not connected</span>
+						<span class="card__sub">{m.conn_for_workspace()}</span>
+						<span class="status">{m.conn_not_connected()}</span>
 					</div>
 				</div>
-				<ul class="tiles" aria-label="What it covers">
+				<ul class="tiles" aria-label={m.conn_what_it_covers()}>
 					{#each WORKSPACE_SERVICE_ORDER as service (service)}
 						<li class="tile">{@render serviceIcon(service)}<span>{WORKSPACE_SERVICES[service].label}</span></li>
 					{/each}
 				</ul>
 				{#if google.configured}
-					<Button variant="filled" size="m" class="card__cta" onclick={() => openSheet()}>Connect my Google account</Button>
+					<Button variant="filled" size="m" class="card__cta" onclick={() => openSheet()}>{m.conn_connect_google()}</Button>
 				{:else}
 					<p class="unconfigured">
-						Google sign-in isn't set up on this server yet. Whoever runs Nomi needs to add <code>GOOGLE_CLIENT_ID</code>,
-						<code>GOOGLE_CLIENT_SECRET</code> and <code>GOOGLE_REDIRECT_URI</code>.
+						{m.conn_unconfigured()} <code>GOOGLE_CLIENT_ID</code>,
+						<code>GOOGLE_CLIENT_SECRET</code> {m.conn_and()} <code>GOOGLE_REDIRECT_URI</code>.
 					</p>
 				{/if}
 			</section>
 
-			<h2 class="section-label">How it works</h2>
+			<h2 class="section-label">{m.conn_how()}</h2>
 			<ol class="steps">
-				<li><span class="steps__n">1</span>You sign in with Google and pick what Nomi may use. No one else on Nomi can reach it.</li>
-				<li><span class="steps__n">2</span>Ask in any chat. Nomi hands the job to Workspace, which works in your account only.</li>
-				<li><span class="steps__n">3</span>Sending email and inviting people always ask you first.</li>
+				<li><span class="steps__n">1</span>{m.conn_step1()}</li>
+				<li><span class="steps__n">2</span>{m.conn_step2()}</li>
+				<li><span class="steps__n">3</span>{m.conn_step3()}</li>
 			</ol>
 		{/if}
 	</div>
@@ -210,8 +203,8 @@
 				};
 			}}
 		>
-			<h2 class="sheet__title">What can Workspace do?</h2>
-			<p class="sheet__lede">Only in your Google account. You can change this any time here.</p>
+			<h2 class="sheet__title">{m.conn_sheet_title()}</h2>
+			<p class="sheet__lede">{m.conn_sheet_lede()}</p>
 			<ul class="rows">
 				{#each WORKSPACE_SERVICE_ORDER as service (service)}
 					<li class="row">
@@ -219,7 +212,7 @@
 							<span class="row__headline">{WORKSPACE_SERVICES[service].label}</span>
 							<span class="row__supporting">{WORKSPACE_SERVICES[service].detail}</span>
 						</label>
-						<Switch id="svc-{service}" bind:checked={picked[service]} aria-label="Allow {WORKSPACE_SERVICES[service].label}" />
+						<Switch id="svc-{service}" bind:checked={picked[service]} aria-label={m.conn_allow({ service: WORKSPACE_SERVICES[service].label })} />
 						{#if picked[service]}<input type="hidden" name="service" value={service} />{/if}
 					</li>
 				{/each}
@@ -227,24 +220,24 @@
 			{#if resume}<input type="hidden" name="resume" value={resume} />{/if}
 			<p class="sheet__guard">
 				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" /></svg>
-				Sending email and inviting people to events always ask you first, every time.
+				{m.conn_guard()}
 			</p>
 			<div class="sheet__actions">
 				<Button variant="filled" size="m" type="submit" disabled={starting || !Object.values(picked).some(Boolean)}>
-					{starting ? 'Opening Google…' : 'Continue to Google'}
+					{starting ? m.conn_opening_google() : m.conn_continue_google()}
 				</Button>
-				<Button variant="text" size="m" onclick={() => (sheetOpen = false)}>Not now</Button>
+				<Button variant="text" size="m" onclick={() => (sheetOpen = false)}>{m.common_not_now()}</Button>
 			</div>
 		</form>
 	{/snippet}
 </BottomSheet>
 
-<Dialog bind:open={confirmOpen} headline="Disconnect Google Workspace?">
+<Dialog bind:open={confirmOpen} headline={m.conn_disconnect_title()}>
 	{#snippet children()}
-		<p class="md-body-medium">Workspace won't be able to read or change anything in {connection?.email ?? 'your account'} until you connect again.</p>
+		<p class="md-body-medium">{m.conn_disconnect_body({ account: connection?.email ?? m.conn_your_account() })}</p>
 	{/snippet}
 	{#snippet actions()}
-		<Button variant="text" size="s" onclick={() => (confirmOpen = false)}>Cancel</Button>
+		<Button variant="text" size="s" onclick={() => (confirmOpen = false)}>{m.common_cancel()}</Button>
 		<form
 			method="POST"
 			action="?/disconnect"
@@ -252,11 +245,11 @@
 				confirmOpen = false;
 				await update();
 				await invalidateAll();
-				snackbarMessage = 'Google Workspace disconnected';
+				snackbarMessage = m.conn_disconnected_snack();
 				snackbar = true;
 			}}
 		>
-			<Button variant="filled" size="s" type="submit">Disconnect</Button>
+			<Button variant="filled" size="s" type="submit">{m.conn_disconnect()}</Button>
 		</form>
 	{/snippet}
 </Dialog>

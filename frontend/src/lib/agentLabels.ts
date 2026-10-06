@@ -1,3 +1,5 @@
+import { m } from '$lib/paraglide/messages';
+
 // Human-readable labels for the raw agent_type/tool_name/phase/status strings that flow through
 // the realtime and history APIs. Centralized here so the in-chat status line, the in-chat agent
 // activity panel, and the admin command center's table/feed/drill-down all use the same wording
@@ -6,27 +8,27 @@
 /** Gerund phrases for known tool calls, fit to read naturally after "is" — e.g. "Money is
  * checking your transactions". Covers every tool defined across the engine and every agent
  * (backend/crates/nomi-agent-core/src/engine.rs + nomi-agent-{money,coding,personality,supervisor}). */
-const TOOL_LABELS: Record<string, string> = {
+const TOOL_LABELS: Record<string, () => string> = {
 	// Engine-level tools, available to any agent that opts in
-	complete_task: 'wrapping up',
-	delegate_to_agent: 'delegating to another agent',
-	update_todos: 'updating the to-do list',
-	write_plan: 'writing the plan',
+	complete_task: m.tool_complete_task,
+	delegate_to_agent: m.tool_delegate_to_agent,
+	update_todos: m.tool_update_todos,
+	write_plan: m.tool_write_plan,
 	// Money agent
-	list_transactions: 'checking your transactions',
-	summarize_budget: 'summarizing your budget',
+	list_transactions: m.tool_list_transactions,
+	summarize_budget: m.tool_summarize_budget,
 	// Coding agent
-	create_project: 'setting up the project',
-	read_file: 'reading a file',
-	write_file: 'writing a file',
-	delete_file: 'deleting a file',
-	list_files: 'listing files',
+	create_project: m.tool_create_project,
+	read_file: m.tool_read_file,
+	write_file: m.tool_write_file,
+	delete_file: m.tool_delete_file,
+	list_files: m.tool_list_files,
 	// Personality agent
-	set_personality: 'updating its personality',
-	rollback_personality: 'rolling back its personality',
-	list_personality_versions: 'checking personality history',
+	set_personality: m.tool_set_personality,
+	rollback_personality: m.tool_rollback_personality,
+	list_personality_versions: m.tool_list_personality_versions,
 	// Supervisor agent
-	list_recent_agent_activity: 'checking recent agent activity',
+	list_recent_agent_activity: m.tool_list_recent_agent_activity,
 };
 
 function humanize(raw: string): string {
@@ -36,7 +38,7 @@ function humanize(raw: string): string {
 /** A gerund phrase describing what a tool call is doing, e.g. "writing the plan". Falls back to
  * "using {humanized name}" for anything not in the map above — never the raw snake_case name. */
 export function toolActivityLabel(toolName: string): string {
-	return TOOL_LABELS[toolName] ?? `using ${humanize(toolName)}`;
+	return TOOL_LABELS[toolName]?.() ?? m.tool_using({ tool: humanize(toolName) });
 }
 
 /** Best-effort display name for an agent_type with no resolved agent_display_name available.
@@ -46,36 +48,36 @@ export function toolActivityLabel(toolName: string): string {
  * before the initial snapshot fetch resolves). */
 export function agentTypeFallbackLabel(agentType: string): string {
 	if (agentType === 'chitchat') return 'Nomi';
-	if (!agentType) return 'An agent';
+	if (!agentType) return m.agent_an_agent();
 	return agentType.charAt(0).toUpperCase() + agentType.slice(1);
 }
 
-const PHASE_LABELS: Record<string, string> = {
-	thinking: 'thinking',
-	writing_reply: 'finalizing',
-	waiting: 'idle',
+const PHASE_LABELS: Record<string, () => string> = {
+	thinking: m.phase_thinking,
+	writing_reply: m.phase_finalizing,
+	waiting: m.phase_idle,
 };
 
 /** A short label for an agent's current phase, e.g. "finalizing" or "checking your transactions"
  * (for calling_tool, via toolActivityLabel). Used standalone after an agent name: "{name} is
  * {phaseLabel(...)}". */
 export function phaseLabel(phase: string, detail: string | null): string {
-	if (phase === 'calling_tool') return detail ? toolActivityLabel(detail) : 'using a tool';
-	return PHASE_LABELS[phase] ?? humanize(phase);
+	if (phase === 'calling_tool') return detail ? toolActivityLabel(detail) : m.tool_using_a_tool();
+	return PHASE_LABELS[phase]?.() ?? humanize(phase);
 }
 
-const DELEGATION_STATUS_LABELS: Record<string, string> = {
-	pending: 'Queued',
-	processing: 'Working…',
-	claimed: 'Working…',
-	completed: 'Done',
-	failed: 'Failed',
-	cancelled: 'Stopped',
+const DELEGATION_STATUS_LABELS: Record<string, () => string> = {
+	pending: m.status_queued,
+	processing: m.status_working,
+	claimed: m.status_working,
+	completed: m.common_done,
+	failed: m.status_failed,
+	cancelled: m.status_stopped,
 };
 
 /** Friendly label for an agent_delegations.status value. */
 export function delegationStatusLabel(status: string): string {
-	return DELEGATION_STATUS_LABELS[status] ?? humanize(status);
+	return DELEGATION_STATUS_LABELS[status]?.() ?? humanize(status);
 }
 
 /** The first 8 hex characters of a UUID — enough to visually distinguish concurrent sessions in
@@ -102,22 +104,24 @@ export function eventFeedLine(
 	toolName: string | null,
 	isError: boolean | null,
 ): string {
-	const where = sessionId ? ` session ${shortSessionId(sessionId)}` : '';
+	const where = sessionId ? m.feed_where({ session: shortSessionId(sessionId) }) : '';
 	switch (eventType) {
 		case 'AgentSpawned':
-			return `${agentLabel} picked up${where}`;
+			return m.feed_picked_up({ agent: agentLabel, where });
 		case 'AgentCompleted':
-			return `${agentLabel} finished${where}`;
+			return m.feed_finished({ agent: agentLabel, where });
 		case 'AgentCancelled':
-			return `${agentLabel} was cancelled on${where}`;
+			return m.feed_cancelled({ agent: agentLabel, where });
 		case 'AgentExpired':
-			return `${agentLabel} expired on${where}`;
-		case 'ToolCalled':
-			return `${agentLabel} is ${toolName ? toolActivityLabel(toolName) : 'using a tool'} on${where}${isError ? ' (failed)' : ''}`;
+			return m.feed_expired({ agent: agentLabel, where });
+		case 'ToolCalled': {
+			const line = m.feed_is_on({ agent: agentLabel, activity: toolName ? toolActivityLabel(toolName) : m.tool_using_a_tool(), where });
+			return isError ? m.feed_failed_suffix({ text: line }) : line;
+		}
 		case 'AgentFinalizing':
-			return `${agentLabel} is finalizing on${where}`;
+			return m.feed_is_on({ agent: agentLabel, activity: m.phase_finalizing(), where });
 		case 'AgentReplied':
-			return `${agentLabel} replied on${where}`;
+			return m.feed_replied({ agent: agentLabel, where });
 		default:
 			return `${agentLabel}: ${eventType}${where}`;
 	}

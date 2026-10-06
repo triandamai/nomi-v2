@@ -7,6 +7,7 @@ use nomi_embedding::EmbeddingProvider;
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 use crate::error::TurnError;
+use crate::locale::Locale;
 use crate::memory;
 use crate::permissions;
 use crate::registry::AgentRegistry;
@@ -17,12 +18,9 @@ const MAX_TOOL_TURNS: u32 = 10;
 /// Posted when the model hit its output limit before writing any answer.
 /// Asked once when a model ends its turn having only thought, with no answer written.
 const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to the user now.";
-/// Said when even that produced nothing, so the chat never ends on a silent turn.
-pub const NO_ANSWER_REPLY: &str = "I couldn't put an answer together that time. Could you ask again?";
-/// The reply that goes with a plan the engine moved into a draft.
-pub const PLAN_DRAFT_REPLY: &str = "Your plan is in the draft above. Tell me what you'd like to change.";
-
-pub const CUT_OFF_REPLY: &str = "I ran out of room before I could finish that. Ask me to continue, or to keep it shorter.";
+// When even that produces nothing, the reply is `engine.no_answer` (or `engine.cut_off` when the
+// model ran out of room), so the chat never ends on a silent turn; a plan moved into a draft is
+// answered with `engine.plan_draft`. All three in the person's language (nomi-i18n).
 
 /// How agents should think when reasoning is on. Users read the thinking in chat.
 pub const REASONING_STYLE: &str = "When you think before acting, keep it short and on point: what is \
@@ -124,6 +122,7 @@ async fn keep_plan_in_draft(
     session_id: Uuid,
     agent_session_id: Uuid,
     user_id: Uuid,
+    locale: Locale,
     wrote_plan: bool,
     reply: String,
 ) -> String {
@@ -132,7 +131,7 @@ async fn keep_plan_in_draft(
     }
     let input = serde_json::json!({ "title": plan_title(&reply), "content": reply });
     match write_agent_plan(conn, s3, mqtt.map(|(p, _)| p), session_id, agent_session_id, user_id, agent.display_name().as_ref(), &input).await {
-        Ok(_) => PLAN_DRAFT_REPLY.to_string(),
+        Ok(_) => locale.t("engine.plan_draft"),
         Err(e) => {
             tracing::warn!(error = %e, "couldn't save a written-out plan as a draft; posting it as text");
             reply
@@ -318,13 +317,13 @@ fn is_gateable(tool_name: &str) -> bool {
         && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
 
-fn describe_pending_action(tool_name: &str, input: &serde_json::Value) -> String {
+fn describe_pending_action(tool_name: &str, input: &serde_json::Value, locale: Locale) -> String {
     let path = input.get("path").and_then(|v| v.as_str());
     match (tool_name, path) {
-        ("delete_file", Some(path)) => format!("Delete {path}"),
-        ("write_file", Some(path)) => format!("Overwrite {path}"),
-        (other, Some(path)) => format!("Run {other} on {path}"),
-        (other, None) => format!("Run {other}"),
+        ("delete_file", Some(path)) => locale.tf("engine.approve_delete", &[("path", path)]),
+        ("write_file", Some(path)) => locale.tf("engine.approve_overwrite", &[("path", path)]),
+        (other, Some(path)) => locale.tf("engine.approve_run_on", &[("tool", other), ("path", path)]),
+        (other, None) => locale.tf("engine.approve_run", &[("tool", other)]),
     }
 }
 
@@ -397,6 +396,10 @@ pub async fn run_agent_turn(
         prompt
     };
 
+    // Every agent answers in the person's language.
+    let locale = crate::locale::user_locale(conn, user_id).await;
+    let system_prompt = format!("{system_prompt}\n\n{}", locale.reply_instruction());
+
     let system_prompt = if agent.uses_personality() {
         match crate::personality::get_current_personality(conn, user_id).await {
             Some(p) => format!("{system_prompt}\n\nAdopt this personality in your replies: {p}"),
@@ -407,7 +410,7 @@ pub async fn run_agent_turn(
     };
 
     let system_prompt = if agent.supports_reminders() || agent.wants_current_time() {
-        let timezone_name = crate::reminders::get_user_timezone(conn, user_id).await;
+        let timezone_name = crate::scheduled_jobs::get_user_timezone(conn, user_id).await;
         let tz: chrono_tz::Tz = timezone_name.parse().unwrap_or(chrono_tz::UTC);
         let now = chrono::Utc::now().with_timezone(&tz);
         format!(
@@ -537,11 +540,11 @@ pub async fn run_agent_turn(
             // The model ran out of room before answering (a half-written plan or tool call is
             // dropped): say so instead of leaving only the thinking in chat.
             let reply_text = match (reply_text.is_empty(), cut_off) {
-                (true, true) => CUT_OFF_REPLY.to_string(),
-                (true, false) => NO_ANSWER_REPLY.to_string(),
+                (true, true) => locale.t("engine.cut_off"),
+                (true, false) => locale.t("engine.no_answer"),
                 _ => reply_text,
             };
-            let reply_text = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, wrote_plan, reply_text).await;
+            let reply_text = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, reply_text).await;
 
             if agent.uses_memory() {
                 let last_user_text = messages
@@ -589,7 +592,7 @@ pub async fn run_agent_turn(
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => {
                 let summary = if written.is_empty() { summary } else { written };
-                let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, wrote_plan, summary).await;
+                let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, summary).await;
                 return Ok(LoopOutcome::Completed { status, summary });
             }
             ToolBatchOutcome::HandOff { target_agent, task } => {
@@ -638,6 +641,7 @@ pub async fn resolve_tool_batch(
     conversation_so_far: &[LlmMessage],
     already_decided: &[(String, bool)],
 ) -> Result<ToolBatchOutcome, TurnError> {
+    let locale = crate::locale::user_locale(conn, user_id).await;
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
             if already_decided.iter().any(|(decided_id, _)| decided_id == id) {
@@ -651,7 +655,7 @@ pub async fn resolve_tool_batch(
                 continue;
             }
 
-            let description = agent.describe_action(name, input).unwrap_or_else(|| describe_pending_action(name, input));
+            let description = agent.describe_action(name, input, locale).unwrap_or_else(|| describe_pending_action(name, input, locale));
             let approval_block = crate::content_block::ContentBlock::ApprovalRequest {
                 id: Uuid::new_v4(),
                 tool_name: name.clone(),
@@ -767,7 +771,7 @@ pub async fn resolve_tool_batch(
             } else if name.as_str() == SHOW_TABLE_TOOL_NAME {
                 match parse_table_input(input) {
                     Ok((variant, columns, rows)) => {
-                        let text = table_display_text(&variant, rows.len());
+                        let text = table_display_text(&variant, rows.len(), locale);
                         let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
                         (text, false, Some(block))
                     }
@@ -793,17 +797,17 @@ pub async fn resolve_tool_batch(
                     None => (format!("unknown tool: {name}"), true, None),
                 }
             } else if name.as_str() == CREATE_REMINDER_TOOL_NAME && agent.supports_reminders() {
-                match crate::reminders::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
+                match crate::scheduled_jobs::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == LIST_REMINDERS_TOOL_NAME && agent.supports_reminders() {
-                match crate::reminders::list_reminders(conn, user_id).await {
+                match crate::scheduled_jobs::list_reminders(conn, user_id).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == CANCEL_REMINDER_TOOL_NAME && agent.supports_reminders() {
-                match crate::reminders::cancel_reminder(conn, user_id, input).await {
+                match crate::scheduled_jobs::cancel_reminder(conn, user_id, input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
@@ -811,7 +815,7 @@ pub async fn resolve_tool_batch(
                 if *approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(outcome) => (outcome.display_text, false, outcome.block),
-                        Err(err) => (describe_tool_error(name, input, &err), true, None),
+                        Err(err) => (describe_tool_error(name, input, &err, locale), true, None),
                     }
                 } else {
                     (USER_DENIED_RESULT.to_string(), true, None)
@@ -824,7 +828,7 @@ pub async fn resolve_tool_batch(
             } else {
                 match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
                     Ok(outcome) => (outcome.display_text, false, outcome.block),
-                    Err(err) => (describe_tool_error(name, input, &err), true, None),
+                    Err(err) => (describe_tool_error(name, input, &err, locale), true, None),
                 }
             };
 
@@ -1151,25 +1155,28 @@ fn parse_table_input(
     Ok((variant, columns, rows))
 }
 
-fn table_display_text(variant: &crate::content_block::TableVariant, row_count: usize) -> String {
+fn table_display_text(variant: &crate::content_block::TableVariant, row_count: usize, locale: Locale) -> String {
     use crate::content_block::TableVariant;
+    let count = row_count.to_string();
     match variant {
-        TableVariant::Data => format!("📊 Showed a table with {row_count} row(s)"),
-        TableVariant::Comparison => format!("📊 Compared {row_count} item(s)"),
+        TableVariant::Data => locale.tf("engine.table_data", &[("count", &count)]),
+        TableVariant::Comparison => locale.tf("engine.table_comparison", &[("count", &count)]),
     }
 }
 
 /// Templated, non-LLM description of a failed tool call — kept generic in the engine (unlike a
 /// success's display_text, which each tool builds itself) since failures never carry a block and
 /// the "⚠️ couldn't X — {reason}" shape is the same regardless of which crate the tool lives in.
-fn describe_tool_error(tool_name: &str, input: &serde_json::Value, result: &str) -> String {
-    let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("the file");
-    match tool_name {
-        "write_file" => format!("⚠️ Couldn't write `{path}` — {result}"),
-        "read_file" => format!("⚠️ Couldn't read `{path}` — {result}"),
-        "delete_file" => format!("⚠️ Couldn't delete `{path}` — {result}"),
-        "list_files" => format!("⚠️ Couldn't list project files — {result}"),
-        "create_project" => format!("⚠️ Couldn't create the project — {result}"),
-        other => format!("⚠️ `{other}` failed — {result}"),
-    }
+fn describe_tool_error(tool_name: &str, input: &serde_json::Value, result: &str, locale: Locale) -> String {
+    let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+    let args = [("path", path), ("reason", result), ("tool", tool_name)];
+    let key = match tool_name {
+        "write_file" => "engine.failed_write",
+        "read_file" => "engine.failed_read",
+        "delete_file" => "engine.failed_delete",
+        "list_files" => "engine.failed_list",
+        "create_project" => "engine.failed_project",
+        _ => "engine.failed_tool",
+    };
+    locale.tf(key, &args)
 }

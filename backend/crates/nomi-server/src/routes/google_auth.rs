@@ -6,12 +6,24 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::google_sign_in::{self, Finished, Purpose, SignInError, SignInMethods};
+use nomi_auth::google::{self as google_sign_in, Finished, GoogleSignInConfig, Purpose, SignInError, SignInMethods};
 use nomi_agent_workspace::connection::GoogleConfig;
 use nomi_auth::extractor::AuthClaims;
 
 fn not_configured() -> (StatusCode, String) {
     (StatusCode::SERVICE_UNAVAILABLE, "Google sign-in isn't set up on this server yet.".to_string())
+}
+
+/// Signing in uses the server's Google OAuth client, the same one the Workspace agent connects with.
+fn sign_in_config() -> Option<GoogleSignInConfig> {
+    GoogleConfig::from_env().map(|c| GoogleSignInConfig {
+        client_id: c.client_id,
+        client_secret: c.client_secret,
+        redirect_uri: c.signin_redirect_uri,
+        auth_url: c.auth_url,
+        token_url: c.token_url,
+        userinfo_url: c.userinfo_url,
+    })
 }
 
 fn sign_in_error(e: SignInError) -> (StatusCode, String) {
@@ -38,7 +50,7 @@ pub struct StartResponse {
 
 /// Public: the Google page for signing in or signing up.
 pub async fn start(State(state): State<AppState>, body: Option<Json<StartRequest>>) -> Result<Json<StartResponse>, (StatusCode, String)> {
-    let config = GoogleConfig::from_env().ok_or_else(not_configured)?;
+    let config = sign_in_config().ok_or_else(not_configured)?;
     let invite_code = body.and_then(|Json(b)| b.invite_code);
     let url = google_sign_in::start(&state.pool, &config, Purpose::SignIn { invite_code }).await.map_err(sign_in_error)?;
     Ok(Json(StartResponse { url }))
@@ -46,7 +58,7 @@ pub async fn start(State(state): State<AppState>, body: Option<Json<StartRequest
 
 /// Signed in: the Google page for adding Google to this account.
 pub async fn start_link(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<StartResponse>, (StatusCode, String)> {
-    let config = GoogleConfig::from_env().ok_or_else(not_configured)?;
+    let config = sign_in_config().ok_or_else(not_configured)?;
     let url = google_sign_in::start(&state.pool, &config, Purpose::Link { user_id: claims.sub }).await.map_err(sign_in_error)?;
     Ok(Json(StartResponse { url }))
 }
@@ -69,7 +81,7 @@ pub struct CallbackResponse {
 }
 
 pub async fn callback(State(state): State<AppState>, Json(req): Json<CallbackRequest>) -> Result<Json<CallbackResponse>, (StatusCode, String)> {
-    let config = GoogleConfig::from_env().ok_or_else(not_configured)?;
+    let config = sign_in_config().ok_or_else(not_configured)?;
     let finished = google_sign_in::finish(&state.pool, &state.http_client, &config, &req.code, &req.state).await.map_err(sign_in_error)?;
     match finished {
         Finished::Linked { email, .. } => Ok(Json(CallbackResponse { email, is_new: false, linked: true, access_token: None, refresh_token: None })),

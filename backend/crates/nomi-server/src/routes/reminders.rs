@@ -10,13 +10,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::web_identity::ensure_web_channel_identity;
+use nomi_turn::bootstrap::ensure_web_channel_identity;
 use nomi_agent_reminders::Reminder;
 use nomi_auth::extractor::AuthClaims;
 use nomi_turn::bootstrap::bootstrap_identity_and_session;
 
 /// The chat that reminders created on this page report back into.
-const REMINDERS_CHAT_TITLE: &str = "Reminders";
 const PAST_LIMIT: i64 = 20;
 
 #[derive(Serialize)]
@@ -85,12 +84,13 @@ pub struct CreateReminderRequest {
 /// The user's "Reminders" chat in their active org, created on first use.
 async fn reminders_session(state: &AppState, user_id: Uuid, org_id: Uuid) -> Result<Uuid, (StatusCode, String)> {
     let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT s.id FROM sessions s WHERE s.org_id = $1 AND s.user_id = $3 AND s.channel = 'web' AND s.title = $2 \
+        "SELECT s.id FROM sessions s WHERE s.org_id = $1 AND s.user_id = $3 AND s.channel = 'web' AND s.title = ANY($2) \
          AND EXISTS (SELECT 1 FROM reminders r WHERE r.session_id = s.id AND r.user_id = $3) \
          ORDER BY s.created_at LIMIT 1",
     )
     .bind(org_id)
-    .bind(REMINDERS_CHAT_TITLE)
+    // Named in the person's language when it was made, so any language's name finds it.
+    .bind(nomi_agent_core::Locale::ALL.map(|l| l.t("reminders.chat_title")).to_vec())
     .bind(user_id)
     .fetch_optional(&state.pool)
     .await
@@ -99,11 +99,15 @@ async fn reminders_session(state: &AppState, user_id: Uuid, org_id: Uuid) -> Res
         return Ok(id);
     }
     ensure_web_channel_identity(&state.pool, user_id).await.map_err(internal)?;
+    let locale = {
+        let mut conn = state.pool.acquire().await.map_err(internal)?;
+        nomi_agent_core::user_locale(&mut conn, user_id).await
+    };
     let created = bootstrap_identity_and_session(&state.pool, "web", "dm", &Uuid::new_v4().to_string(), &user_id.to_string(), Some(org_id))
         .await
         .map_err(internal)?;
     sqlx::query("UPDATE sessions SET title = $1 WHERE id = $2")
-        .bind(REMINDERS_CHAT_TITLE)
+        .bind(locale.t("reminders.chat_title"))
         .bind(created.session_id)
         .execute(&state.pool)
         .await

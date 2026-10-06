@@ -1,3 +1,8 @@
+//! The crew's scheduled jobs (`scheduled_jobs`): work an agent will run later, such as a weekly
+//! spending summary, run by the server's scheduler worker. The engine offers these to agents that
+//! opt in as `create_reminder`, `list_reminders` and `cancel_reminder`. The person's own reminders
+//! are a separate thing, owned by `nomi-agent-reminders`.
+
 use chrono::Datelike;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/m3/Button.svelte';
 	import OutList from '$lib/components/home/OutList.svelte';
 	import PlanList from '$lib/components/home/PlanList.svelte';
@@ -14,41 +15,41 @@
 
 {#snippet more(total: number, shown: number, href: string, what: string)}
 	{#if total > shown}
-		<Button variant="tonal" size="s" {href} class="card__more" aria-label="Show all {total} {what}">Show more · {total - shown}</Button>
+		<Button variant="tonal" size="s" {href} class="card__more" aria-label={m.home_show_all({ count: total, what })}>{m.home_show_more({ count: total - shown })}</Button>
 	{/if}
 {/snippet}
 
 <div class="cards">
 	<section class="card" aria-labelledby="out-heading">
-		<h2 id="out-heading" class="card__title">While you were out</h2>
+		<h2 id="out-heading" class="card__title">{m.home_out_title()}</h2>
 		{#if summary.while_you_were_out.length === 0}
-			<p class="card__empty">All quiet. Nothing new from the crew since you last looked.</p>
+			<p class="card__empty">{m.home_out_empty()}</p>
 		{:else}
 			<OutList items={summary.while_you_were_out} />
-			{@render more(summary.while_you_were_out_total, summary.while_you_were_out.length, '/home/updates', 'updates')}
+			{@render more(summary.while_you_were_out_total, summary.while_you_were_out.length, '/home/updates', m.home_what_updates())}
 		{/if}
 	</section>
 
 	<section class="card" aria-labelledby="today-heading">
 		<div class="card__head">
-			<h2 id="today-heading" class="card__title">Today</h2>
-			<a class="card__link" href="/reminders">Reminders</a>
+			<h2 id="today-heading" class="card__title">{m.home_today_title()}</h2>
+			<a class="card__link" href="/reminders">{m.nav_reminders()}</a>
 		</div>
 		{#if summary.today.length === 0}
-			<p class="card__empty">Nothing scheduled for today. Ask Nomi to remind you of something, or add it on Reminders.</p>
+			<p class="card__empty">{m.home_today_empty()}</p>
 		{:else}
 			<TodayList items={summary.today} timezone={summary.timezone} />
-			{@render more(summary.today_total, summary.today.length, '/home/today', 'items for today')}
+			{@render more(summary.today_total, summary.today.length, '/home/today', m.home_what_today())}
 		{/if}
 	</section>
 
 	<section class="card" aria-labelledby="plans-heading">
-		<h2 id="plans-heading" class="card__title">Plans in progress</h2>
+		<h2 id="plans-heading" class="card__title">{m.home_plans_title()}</h2>
 		{#if summary.plans.length === 0}
-			<p class="card__empty">No plans on the go. Ask Planning to draft one and its progress shows up here.</p>
+			<p class="card__empty">{m.home_plans_empty()}</p>
 		{:else}
 			<PlanList items={summary.plans} />
-			{@render more(summary.plans_total, summary.plans.length, '/home/plans', 'plans')}
+			{@render more(summary.plans_total, summary.plans.length, '/home/plans', m.home_what_plans())}
 		{/if}
 	</section>
 </div>

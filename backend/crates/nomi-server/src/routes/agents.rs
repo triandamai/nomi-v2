@@ -9,6 +9,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
+use nomi_agent_core::Locale;
 use nomi_auth::extractor::AuthClaims;
 
 /// The looks a dynamic agent can pick. Must match `ShapeName`, `GradientTone` and `ShapeMotion`
@@ -43,21 +44,11 @@ pub struct CrewResponse {
     pub agents: Vec<CrewMember>,
 }
 
-/// One-line roles for the built-ins. Their intent descriptions are written for the router, not
-/// for people.
-fn built_in_role(agent_type: &str) -> Option<&'static str> {
-    Some(match agent_type {
-        "chitchat" => "Talks with you and routes the work",
-        "money" => "Transactions, budgets, subscriptions",
-        "coding" => "Builds and edits project files",
-        "planning" => "Plans, to-dos and reminders",
-        "personality" => "Keeps Nomi sounding like you want",
-        "supervisor" => "Keeps track of the crew, and stops it when you ask",
-        "reminders" => "Reminds you on time, and keeps your reminders",
-        "files" => "Reads what you attach and passes it to the right agent",
-        "workspace" => "Works in your own Google account: Gmail, Sheets, Docs, Drive, Calendar",
-        _ => return None,
-    })
+/// One-line roles for the built-ins, in the person's language. Their intent descriptions are
+/// written for the router, not for people.
+fn built_in_role(agent_type: &str, locale: Locale) -> Option<String> {
+    let known = ["chitchat", "money", "coding", "planning", "personality", "supervisor", "reminders", "files", "workspace"];
+    known.contains(&agent_type).then(|| locale.t(&format!("crew.role_{agent_type}")))
 }
 
 fn first_sentence(text: &str) -> String {
@@ -80,7 +71,7 @@ fn clip(text: &str, max: usize) -> String {
 }
 
 /// Each agent's live state for `user_id`, keyed by agent type. Agents not in the map are idle.
-async fn crew_states(pool: &sqlx::PgPool, user_id: Uuid, default_agent_type: &str) -> Result<HashMap<String, (String, String)>, sqlx::Error> {
+async fn crew_states(pool: &sqlx::PgPool, user_id: Uuid, default_agent_type: &str, locale: Locale) -> Result<HashMap<String, (String, String)>, sqlx::Error> {
     let mut states: HashMap<String, (String, String)> = HashMap::new();
 
     // Lowest priority first; later inserts overwrite: done < working < waiting.
@@ -94,7 +85,7 @@ async fn crew_states(pool: &sqlx::PgPool, user_id: Uuid, default_agent_type: &st
     for (agent_type, status, task) in delegations {
         match status.as_str() {
             "completed" => {
-                states.insert(agent_type, ("done".into(), format!("Finished · {}", clip(&task, 48))));
+                states.insert(agent_type, ("done".into(), locale.tf("crew.finished", &[("task", &clip(&task, 48))])));
             }
             "pending" | "processing" => {
                 states.insert(agent_type, ("working".into(), clip(&task, 56)));
@@ -113,9 +104,9 @@ async fn crew_states(pool: &sqlx::PgPool, user_id: Uuid, default_agent_type: &st
     .await?;
     for (agent_type, phase, paused) in &sessions {
         if *paused == Some(true) {
-            states.insert(agent_type.clone(), ("waiting".into(), "Waiting on you · approval needed".into()));
+            states.insert(agent_type.clone(), ("waiting".into(), locale.t("crew.waiting_approval")));
         } else if phase != "waiting" && states.get(agent_type).is_none_or(|(s, _)| s != "waiting") {
-            states.insert(agent_type.clone(), ("working".into(), "Working…".into()));
+            states.insert(agent_type.clone(), ("working".into(), locale.t("crew.working")));
         }
     }
 
@@ -128,7 +119,7 @@ async fn crew_states(pool: &sqlx::PgPool, user_id: Uuid, default_agent_type: &st
     .fetch_one(pool)
     .await?;
     if nomi_busy && !states.contains_key(default_agent_type) {
-        states.insert(default_agent_type.to_string(), ("working".into(), "Working…".into()));
+        states.insert(default_agent_type.to_string(), ("working".into(), locale.t("crew.working")));
     }
     Ok(states)
 }
@@ -137,6 +128,10 @@ pub async fn list_crew(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<CrewResponse>, (StatusCode, &'static str)> {
+    let locale = {
+        let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents"))?;
+        nomi_agent_core::user_locale(&mut conn, claims.sub).await
+    };
     let registry = crate::build_agent_registry(state.project_storage.clone());
     let mut agents: Vec<CrewMember> = registry
         .agents()
@@ -144,7 +139,7 @@ pub async fn list_crew(
         .map(|agent| {
             let agent_type = agent.agent_type().into_owned();
             CrewMember {
-                role: built_in_role(&agent_type).map(str::to_string).unwrap_or_else(|| first_sentence(&agent.intent_description())),
+                role: built_in_role(&agent_type, locale).unwrap_or_else(|| first_sentence(&agent.intent_description())),
                 name: agent.display_name().into_owned(),
                 agent_type,
                 is_dynamic: false,
@@ -184,7 +179,7 @@ pub async fn list_crew(
     }));
 
     let default_type = registry.default_agent().agent_type().into_owned();
-    let states = crew_states(&state.pool, claims.sub, &default_type).await.map_err(|e| {
+    let states = crew_states(&state.pool, claims.sub, &default_type, locale).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load the crew's live states");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents")
     })?;
@@ -195,7 +190,7 @@ pub async fn list_crew(
                 agent.status = status.clone();
             }
             None => {
-                agent.status = if agent.agent_type == default_type { "Ready when you are".into() } else { "Standing by".into() };
+                agent.status = if agent.agent_type == default_type { locale.t("crew.ready") } else { locale.t("crew.standing_by") };
             }
         }
     }

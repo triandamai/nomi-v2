@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import MorphingShape from './MorphingShape.svelte';
 	import type { GradientTone } from './shapes';
 
@@ -8,7 +9,7 @@
 		size = 48,
 		tone = 'glow',
 		contained = false,
-		label = 'Working',
+		label = m.loading_working(),
 	}: { size?: number; tone?: GradientTone; contained?: boolean; label?: string } = $props();
 </script>
 

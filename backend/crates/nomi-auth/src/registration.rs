@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use super::password::{hash_password, PasswordError};
@@ -50,45 +50,44 @@ pub async fn register_user(
         .execute(&mut *tx)
         .await?;
 
-    match org_mode {
-        OrgMode::Create { name } => {
-            let org_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO organizations (name, is_personal) VALUES ($1, false) RETURNING id",
-            )
-            .bind(&name)
-            .fetch_one(&mut *tx)
-            .await?;
-
-            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')")
-                .bind(org_id)
-                .bind(user_id)
-                .execute(&mut *tx)
-                .await?;
-        }
-        OrgMode::Join { invite_code } => {
-            let invite: Option<(Uuid, String)> = sqlx::query_as(
-                "SELECT org_id, role FROM org_invites WHERE code = $1 AND used_at IS NULL AND expires_at > now()",
-            )
-            .bind(&invite_code)
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            let (org_id, role) = invite.ok_or(RegistrationError::InvalidInvite)?;
-
-            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3)")
-                .bind(org_id)
-                .bind(user_id)
-                .bind(&role)
-                .execute(&mut *tx)
-                .await?;
-
-            sqlx::query("UPDATE org_invites SET used_at = now() WHERE code = $1")
-                .bind(&invite_code)
-                .execute(&mut *tx)
-                .await?;
-        }
+    if !place_in_org(&mut tx, user_id, org_mode).await? {
+        return Err(RegistrationError::InvalidInvite);
     }
 
     tx.commit().await?;
     Ok(user_id)
+}
+
+/// Puts a new user in an organization: one of their own (as owner), or the invite's (with its
+/// role, using the invite up). `false` when the invite is unknown, expired or already used.
+pub(crate) async fn place_in_org(conn: &mut PgConnection, user_id: Uuid, org_mode: OrgMode) -> Result<bool, sqlx::Error> {
+    match org_mode {
+        OrgMode::Create { name } => {
+            let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ($1, false) RETURNING id")
+                .bind(&name)
+                .fetch_one(&mut *conn)
+                .await?;
+            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')")
+                .bind(org_id)
+                .bind(user_id)
+                .execute(&mut *conn)
+                .await?;
+        }
+        OrgMode::Join { invite_code } => {
+            let invite: Option<(Uuid, String)> =
+                sqlx::query_as("SELECT org_id, role FROM org_invites WHERE code = $1 AND used_at IS NULL AND expires_at > now()")
+                    .bind(&invite_code)
+                    .fetch_optional(&mut *conn)
+                    .await?;
+            let Some((org_id, role)) = invite else { return Ok(false) };
+            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3)")
+                .bind(org_id)
+                .bind(user_id)
+                .bind(&role)
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("UPDATE org_invites SET used_at = now() WHERE code = $1").bind(&invite_code).execute(&mut *conn).await?;
+        }
+    }
+    Ok(true)
 }

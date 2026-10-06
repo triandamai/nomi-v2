@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -6,6 +7,7 @@
 	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import { crewPreview, rosterKey } from '$lib/crew';
 	import HomeStatusCards from '$lib/components/HomeStatusCards.svelte';
+	import { timeAgo } from '$lib/i18n';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -28,28 +30,31 @@
 		} catch {
 			// Unknown timezone string — fall back to the runtime's local hour.
 		}
-		if (hour < 5) return 'Still up';
-		if (hour < 12) return 'Morning';
-		if (hour < 18) return 'Afternoon';
-		return 'Evening';
+		if (hour < 5) return m.home_still_up();
+		if (hour < 12) return m.home_morning();
+		if (hour < 18) return m.home_afternoon();
+		return m.home_evening();
 	});
 
 	const activeCount = $derived(data.recentSessions.filter((s) => s.agent_active).length);
 	const movedCount = $derived(data.summary?.while_you_were_out.length ?? 0);
-	const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'];
 	const subtitle = $derived(
 		movedCount > 0
-			? `${COUNT_WORDS[movedCount] ?? movedCount} ${movedCount === 1 ? 'thing' : 'things'} moved while you were out.`
+			? movedCount === 1
+				? m.home_moved_one()
+				: m.home_moved_many({ count: movedCount })
 			: activeCount > 0
-				? `Your crew is working in ${activeCount} ${activeCount === 1 ? 'chat' : 'chats'}.`
-				: 'What should we get done?',
+				? activeCount === 1
+					? m.home_working_one()
+					: m.home_working_many({ count: activeCount })
+				: m.home_what_next(),
 	);
 
 	const SUGGESTIONS = [
-		'Summarize this week’s spending',
-		'Plan my Saturday',
-		'Start a small website project',
-		'Remind me to stretch at 4pm',
+		m.home_suggest_spending(),
+		m.home_suggest_saturday(),
+		m.home_suggest_website(),
+		m.home_suggest_stretch(),
 	];
 
 	// Every agent the app has, with what each is doing for this user right now (/api/agents).
@@ -70,26 +75,18 @@
 		}
 	}
 
-	function timeAgo(iso: string): string {
-		const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-		if (minutes < 1) return 'now';
-		if (minutes < 60) return `${minutes}m`;
-		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return `${hours}h`;
-		return `${Math.floor(hours / 24)}d`;
-	}
 </script>
 
 <div class="home">
 	<div class="home__inner">
 		{#if page.url.searchParams.get('error') === 'forbidden'}
-			<p class="md-body-medium home__error" role="alert">That account does not have admin access.</p>
+			<p class="md-body-medium home__error" role="alert">{m.home_forbidden()}</p>
 		{/if}
 
 		<section class="home__hero">
 			<div class="home__lead">
 				<h1 class="md-display-large home__title">
-					{greeting}{name ? `, ${name}` : ''}.
+					{name ? m.home_greeting_named({ greeting, name }) : m.home_greeting({ greeting })}
 					<span class="home__title-sub">{subtitle}</span>
 				</h1>
 
@@ -105,20 +102,20 @@
 						};
 					}}
 				>
-					<label for="home-ask" class="sr-only">Message Nomi</label>
+					<label for="home-ask" class="sr-only">{m.home_message_nomi()}</label>
 					<textarea
 						id="home-ask"
 						bind:this={input}
 						bind:value={text}
 						name="text"
 						rows="2"
-						placeholder="Ask Nomi, or hand something to the crew…"
+						placeholder={m.home_placeholder()}
 						class="composer__input"
 						onkeydown={onKeydown}
 					></textarea>
 					<div class="composer__bar">
-						<span class="nomi-meta">Enter to send · Shift+Enter for a new line</span>
-						<SendButton working={submitting} disabled={!text.trim()} label="Start chat" />
+						<span class="nomi-meta">{m.home_enter_hint()}</span>
+						<SendButton working={submitting} disabled={!text.trim()} label={m.home_start_chat()} />
 					</div>
 				</form>
 				{#if form?.error}
@@ -134,9 +131,9 @@
 
 			<section class="crew" aria-labelledby="crew-heading">
 				<div class="crew__head">
-					<h2 id="crew-heading" class="crew__title">Your crew</h2>
+					<h2 id="crew-heading" class="crew__title">{m.home_your_crew()}</h2>
 					{#if workingCount > 0}
-						<span class="nomi-meta crew__count">{workingCount} working</span>
+						<span class="nomi-meta crew__count">{m.home_working_count({ count: workingCount })}</span>
 					{/if}
 				</div>
 				<ul class="crew__list">
@@ -151,16 +148,16 @@
 								</span>
 							</span>
 							{#if member.state === 'waiting'}
-								<span class="crew__badge">Needs you</span>
+								<span class="crew__badge">{m.home_needs_you()}</span>
 							{:else if member.state === 'done'}
-								<span class="crew__badge crew__badge--done">Done</span>
+								<span class="crew__badge crew__badge--done">{m.common_done()}</span>
 							{/if}
 						</li>
 					{/each}
 				</ul>
 				{#if preview.more > 0}
 					<a class="crew__all" href="/crew">
-						See all {crew.length}
+						{m.home_see_all({ count: crew.length })}
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
 					</a>
 				{/if}
@@ -173,12 +170,12 @@
 
 		<section class="recent" aria-labelledby="recent-heading">
 			<div class="recent__head">
-				<h2 id="recent-heading" class="md-title-large" style="font-weight: 700">Recent</h2>
-				<a href="/chats" class="recent__all">All chats</a>
+				<h2 id="recent-heading" class="md-title-large" style="font-weight: 700">{m.home_recent()}</h2>
+				<a href="/chats" class="recent__all">{m.home_all_chats()}</a>
 			</div>
 			{#if data.recentSessions.length === 0}
 				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">
-					Nothing yet — your chats will show up here.
+					{m.home_recent_empty()}
 				</p>
 			{:else}
 				<ul class="recent__grid">
@@ -190,10 +187,10 @@
 							>
 								<span class="recent__top">
 									<AgentShape size={28} working={session.agent_active} />
-									<span class="nomi-meta">{session.agent_active ? 'Working' : timeAgo(session.updated_at)}</span>
+									<span class="nomi-meta">{session.agent_active ? m.home_working() : timeAgo(session.updated_at)}</span>
 								</span>
-								<span class="recent__name">{session.title ?? 'New chat'}</span>
-								<span class="recent__preview">{session.last_message?.content ?? 'No messages yet'}</span>
+								<span class="recent__name">{session.title ?? m.nav_new_chat()}</span>
+								<span class="recent__preview">{session.last_message?.content ?? m.session_no_messages()}</span>
 							</a>
 						</li>
 					{/each}

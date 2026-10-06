@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import Pagination from './Pagination.svelte';
 	import IconChevronDown from '../icons/IconChevronDown.svelte';
@@ -16,7 +17,7 @@
 		onPageChange,
 		searchQuery = $bindable(''),
 		onSearch,
-		searchPlaceholder = 'Search...',
+		searchPlaceholder = m.common_search(),
 		children,
 		card = false,
 		class: extraClass = '',

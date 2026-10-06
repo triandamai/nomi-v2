@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import BottomSheet from './m3/BottomSheet.svelte';
@@ -8,6 +9,7 @@
 	import MenuItem from './m3/MenuItem.svelte';
 	import IconFolder from './icons/IconFolder.svelte';
 	import IconMore from './icons/IconMore.svelte';
+	import { timeAgo } from '$lib/i18n';
 	import type { SessionSummary } from '$lib/types';
 
 	let { session }: { session: SessionSummary } = $props();
@@ -17,27 +19,17 @@
 	let deleting = $state(false);
 
 	const href = $derived(session.project_id ? `/projects/session/${session.id}` : `/chat/${session.id}`);
-	const title = $derived(session.title ?? 'New chat');
-
-	function timeAgo(iso: string): string {
-		const diffMs = Date.now() - new Date(iso).getTime();
-		const minutes = Math.floor(diffMs / 60000);
-		if (minutes < 1) return 'just now';
-		if (minutes < 60) return `${minutes}m`;
-		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return `${hours}h`;
-		return `${Math.floor(hours / 24)}d`;
-	}
+	const title = $derived(session.title ?? m.nav_new_chat());
 
 	// A message that's entirely one fenced code block (the common "show me some code" reply)
 	// makes a useless, unreadable list preview — show what kind of content it is instead of
 	// dumping raw source. Anything that isn't wholly a single fence falls through unchanged.
 	function previewText(content: string | undefined | null): string {
-		if (!content) return 'No messages yet';
+		if (!content) return m.session_no_messages();
 		const fenceMatch = content.trim().match(/^```(\S*)\r?\n[\s\S]*?```$/);
 		if (fenceMatch) {
 			const lang = fenceMatch[1]?.trim();
-			return lang ? `${lang} code` : 'code';
+			return lang ? m.session_lang_code({ lang }) : m.session_code();
 		}
 		return content;
 	}
@@ -75,7 +67,7 @@
 			class:m3-session-item__badge--project={!!session.project_id}
 		>
 			{#if session.project_id}<IconFolder size={12} />{/if}
-			{session.project_id ? 'Project' : 'Chat'}
+			{session.project_id ? m.session_project() : m.session_chat()}
 		</span>
 		<p class="md-body-large m3-session-item__title">{title}</p>
 		<div class="flex items-center gap-2">
@@ -93,13 +85,13 @@
 						suppressMenuNavigation(event);
 						toggle();
 					}}
-					aria-label="More options"
+					aria-label={m.common_more_options()}
 				>
 					<IconMore size={18} />
 				</IconButton>
 			{/snippet}
 			<div class="w-full">
-				<MenuItem onclick={openDeleteConfirm}>Delete</MenuItem>
+				<MenuItem onclick={openDeleteConfirm}>{m.common_delete()}</MenuItem>
 			</div>
 		</Menu>
 	</div>
@@ -107,17 +99,17 @@
 
 <BottomSheet bind:open={confirmOpen}>
 	{#snippet children()}
-		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 8px;">Delete this chat?</h2>
+		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 8px;">{m.session_delete_title()}</h2>
 		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 20px;">
 			{#if session.project_id}
-				This permanently deletes the conversation and its project, including all its files. This can't be undone.
+				{m.session_delete_project_body()}
 			{:else}
-				This permanently deletes the conversation. This can't be undone.
+				{m.session_delete_body()}
 			{/if}
 		</p>
 		<div class="flex justify-end gap-2">
-			<Button variant="text" onclick={() => (confirmOpen = false)} disabled={deleting}>Cancel</Button>
-			<Button variant="filled" onclick={confirmDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</Button>
+			<Button variant="text" onclick={() => (confirmOpen = false)} disabled={deleting}>{m.common_cancel()}</Button>
+			<Button variant="filled" onclick={confirmDelete} disabled={deleting}>{deleting ? m.common_deleting() : m.common_delete()}</Button>
 		</div>
 	{/snippet}
 </BottomSheet>

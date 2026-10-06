@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import IconChevronLeft from '../icons/IconChevronLeft.svelte';
 	import IconChevronRight from '../icons/IconChevronRight.svelte';
 	import { pageWindow } from '$lib/pagination';
@@ -10,7 +11,7 @@
 		pages,
 		href,
 		onselect,
-		label = 'Pages',
+		label = m.page_pages(),
 	}: {
 		page: number;
 		pages: number;
@@ -47,19 +48,19 @@
 
 {#if pages > 1}
 	<nav class="pager" aria-label={label}>
-		{@render control(page - 1, 'prev', false, 'Previous page')}
+		{@render control(page - 1, 'prev', false, m.page_prev())}
 		<ol class="pager__pages">
 			{#each items as item, i (i)}
 				<li>
 					{#if item === 'gap'}
 						<span class="pager__gap" aria-hidden="true">…</span>
 					{:else}
-						{@render control(item, String(item), item === page, `Page ${item}`)}
+						{@render control(item, String(item), item === page, m.page_n({ page: item }))}
 					{/if}
 				</li>
 			{/each}
 		</ol>
-		{@render control(page + 1, 'next', false, 'Next page')}
+		{@render control(page + 1, 'next', false, m.page_next())}
 	</nav>
 {/if}
 

@@ -4,7 +4,10 @@
 const MIN_WEIGHT = 0.1;
 const MAX_WEIGHT = 5;
 
-export const STRENGTH_LABELS = ['Faint', 'Light', 'Steady', 'Strong', 'Core'] as const;
+/** How strong a memory reads for its 1–5 pips. */
+export function strengthLabel(pips: number): string {
+	return [m.mem_strength_faint, m.mem_strength_light, m.mem_strength_steady, m.mem_strength_strong, m.mem_strength_core][Math.min(5, Math.max(1, pips)) - 1]();
+}
 
 /**
  * Weight as 1–5 pips on a log scale, so the starting weight (1.0) reads as a middling 3 and each
@@ -16,18 +19,9 @@ export function strengthPips(weight: number): number {
 	return Math.min(5, Math.max(1, Math.round(ratio * 5)));
 }
 
-export function timeAgo(iso: string, now: number = Date.now()): string {
-	const minutes = Math.floor((now - new Date(iso).getTime()) / 60000);
-	if (minutes < 1) return 'just now';
-	if (minutes < 60) return `${minutes}m ago`;
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
-	const days = Math.floor(hours / 24);
-	if (days < 30) return `${days}d ago`;
-	const months = Math.floor(days / 30);
-	if (months < 12) return `${months}mo ago`;
-	return `${Math.floor(months / 12)}y ago`;
-}
+import { m } from '$lib/paraglide/messages';
+
+export { timeAgo } from '$lib/i18n';
 
 /**
  * Fits 2D points into a `size`×`size` box with `padding` on every side, keeping their aspect

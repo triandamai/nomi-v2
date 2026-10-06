@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
@@ -28,10 +29,10 @@
 	} = $props();
 
 	const ACTIVITY = [
-		{ agent: 'money', name: 'Money', text: 'found 3 subscriptions you stopped using' },
-		{ agent: 'planning', name: 'Planning', text: 'moved your dentist reminder to 09:00' },
-		{ agent: 'coding', name: 'Coding', text: 'published a preview of portfolio-site' },
-		{ agent: 'personality', name: 'Personality', text: 'kept replies short, like you asked' },
+		{ agent: 'money', name: 'Money', text: m.auth_tick_money() },
+		{ agent: 'planning', name: 'Planning', text: m.auth_tick_planning() },
+		{ agent: 'coding', name: 'Coding', text: m.auth_tick_coding() },
+		{ agent: 'personality', name: 'Personality', text: m.auth_tick_personality() },
 	];
 
 	let activityIndex = $state(0);
@@ -81,7 +82,7 @@
 				<AgentShape size={44} face />
 				<span class="stage__word">nomi</span>
 			</a>
-			<p class="stage__line">A small crew of agents that remembers you.</p>
+			<p class="stage__line">{m.auth_line()}</p>
 
 			<div class="ticker">
 				{#key activityIndex}
@@ -91,7 +92,7 @@
 							<span class="ticker__name">{current.name}</span>
 							<span class="ticker__what">{current.text}</span>
 						</span>
-						<span class="ticker__time">just now</span>
+						<span class="ticker__time">{m.time_just_now()}</span>
 					</div>
 				{/key}
 			</div>
@@ -116,9 +117,9 @@
 			<span>© 2026</span>
 			<span aria-hidden="true">·</span>
 			<span class="panel__made">
-				Made with
-				<svg width="14" height="14" viewBox="0 0 24 24" aria-label="love" role="img"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" /></svg>
-				by <a href="https://trian.space" target="_blank" rel="noopener">Trian</a>
+				{m.auth_made_with()}
+				<svg width="14" height="14" viewBox="0 0 24 24" aria-label={m.auth_love()} role="img"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" /></svg>
+				{m.auth_by()} <a href="https://trian.space" target="_blank" rel="noopener">Trian</a>
 			</span>
 		</footer>
 	</main>

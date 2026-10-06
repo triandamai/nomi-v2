@@ -246,3 +246,23 @@ async fn put_preferences_saves_a_valid_timezone(pool: PgPool) {
     let (_, get_body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(get_body["timezone"], "America/New_York");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn language_defaults_to_english_and_switches_to_indonesian(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "sari@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(body["language"], "en");
+
+    let (status, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "language": "id" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["language"], "id");
+    assert_eq!(body["theme"], "system");
+
+    let (status, _) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "language": "fr" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (_, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(body["language"], "id");
+}

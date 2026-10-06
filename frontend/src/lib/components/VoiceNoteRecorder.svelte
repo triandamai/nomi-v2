@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
+	import { speechLanguage } from '$lib/i18n';
 	import { onMount } from 'svelte';
 
 	// Records a voice note: the browser transcribes speech as the user talks, and the transcript
@@ -36,11 +38,11 @@
 		const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
 		const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
 		if (!Ctor) {
-			problem = 'This browser can’t record voice notes.';
+			problem = m.voice_unsupported();
 			return;
 		}
 		recognition = new Ctor();
-		recognition.lang = navigator.language || 'en-US';
+		recognition.lang = speechLanguage();
 		recognition.continuous = true;
 		recognition.interimResults = true;
 		recognition.onresult = (event) => {
@@ -49,7 +51,7 @@
 			transcript = text.trim();
 		};
 		recognition.onerror = (event) => {
-			problem = event.error === 'not-allowed' ? 'Microphone access is blocked for this site.' : event.error === 'no-speech' ? null : 'Recording stopped.';
+			problem = event.error === 'not-allowed' ? m.mic_blocked() : event.error === 'no-speech' ? null : m.voice_stopped();
 		};
 		// Browsers end recognition after a pause; keep listening until the user stops.
 		recognition.onend = () => {
@@ -69,7 +71,7 @@
 		saving = true;
 		recognition?.stop();
 		if (transcript) onsave(transcript, seconds);
-		else problem = 'Nothing was heard. Try again, a little closer to the mic.';
+		else problem = m.voice_nothing();
 	}
 
 	function discard() {
@@ -81,7 +83,7 @@
 	const clock = $derived(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
 </script>
 
-<div class="voice" role="group" aria-label="Recording a voice note">
+<div class="voice" role="group" aria-label={m.voice_recording()}>
 	<span class="voice__dot" aria-hidden="true"></span>
 	<span class="voice__clock">{clock}</span>
 	<span class="voice__text" aria-live="polite">
@@ -90,11 +92,11 @@
 		{:else if transcript}
 			{transcript}
 		{:else}
-			<span class="voice__hint">Listening… say what you need</span>
+			<span class="voice__hint">{m.voice_listening()}</span>
 		{/if}
 	</span>
-	<button type="button" class="voice__btn" onclick={discard}>Discard</button>
-	<button type="button" class="voice__btn voice__btn--primary" onclick={stop} disabled={!!problem && !transcript}>Done</button>
+	<button type="button" class="voice__btn" onclick={discard}>{m.voice_discard()}</button>
+	<button type="button" class="voice__btn voice__btn--primary" onclick={stop} disabled={!!problem && !transcript}>{m.common_done()}</button>
 </div>
 
 <style>

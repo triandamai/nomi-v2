@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	// The Workspace agent needs the user's own Google account (or a service they haven't allowed):
 	// a card that takes them to connect it, then back to this chat, where the request carries on.
 	import { page } from '$app/state';
@@ -17,20 +18,20 @@
 {#if !dismissed}
 	<div class="connect">
 		<p class="connect__title">
-			{missingService ? `Turn on ${services} for Workspace` : 'I need your Google account to do this'}
+			{missingService ? m.wsc_turn_on_for({ services }) : m.wsc_need_account()}
 		</p>
 		<p class="connect__body">
 			{#if missingService}
-				You connected Google without {services}. Turn it on and I'll carry on with your request.
+				{m.wsc_missing_body({ services })}
 			{:else}
-				Connect your own Google Workspace and I'll take it from here. Only your account is used, and anything I send waits for your OK.
+				{m.wsc_connect_body()}
 			{/if}
 		</p>
 		<div class="connect__actions">
-			<Button variant="filled" size="s" {href}>{missingService ? `Turn on ${services}` : 'Connect Google Workspace'}</Button>
-			<Button variant="text" size="s" onclick={() => (dismissed = true)}>Not now</Button>
+			<Button variant="filled" size="s" {href}>{missingService ? m.wsc_turn_on({ services }) : m.wsc_connect()}</Button>
+			<Button variant="text" size="s" onclick={() => (dismissed = true)}>{m.common_not_now()}</Button>
 		</div>
-		<p class="connect__note">Your message is kept: once you connect, I'll pick it up from here.</p>
+		<p class="connect__note">{m.wsc_note()}</p>
 	</div>
 {/if}
 

@@ -7,13 +7,14 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"prepare": "npm run i18n && svelte-kit sync || echo ''",
+		"check": "npm run i18n && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test:e2e": "playwright install && playwright test",
 		"test": "npm run test:e2e",
 		"start": "node server.js",
-		"test:unit": "vitest run"
+		"test:unit": "npm run i18n && vitest run",
+		"i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide"
 	},
 	"dependencies": {
 		"@codemirror/lang-css": "^6.3.1",
@@ -27,6 +28,8 @@
 		"ws": "^8.21.3"
 	},
 	"devDependencies": {
+		"@inlang/paraglide-js": "^2.25.4",
+		"@inlang/plugin-message-format": "^4.4.4",
 		"@playwright/test": "^1.60.0",
 		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/adapter-node": "^5.5.7",

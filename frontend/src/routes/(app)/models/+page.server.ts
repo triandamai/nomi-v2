@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { LlmModelsResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/llm/models');
@@ -17,7 +18,7 @@ export const actions: Actions = {
 		const adminModelId = data.get('admin_model_id');
 
 		if (typeof adminModelId !== 'string') {
-			return fail(400, { error: 'Invalid model selection.' });
+			return fail(400, { error: m.err_invalid_model_selection() });
 		}
 
 		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
@@ -27,7 +28,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to select model.' });
+			return fail(response.status, { error: message || m.err_select_model() });
 		}
 		return { success: true };
 	},
@@ -48,7 +49,7 @@ export const actions: Actions = {
 			!label.trim() ||
 			!provider.trim()
 		) {
-			return fail(400, { error: 'Label and provider are required.' });
+			return fail(400, { error: m.err_label_provider_required() });
 		}
 
 		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
@@ -65,7 +66,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to validate and save this model.' });
+			return fail(response.status, { error: message || m.err_validate_model() });
 		}
 		return { success: true };
 	},
@@ -77,7 +78,7 @@ export const actions: Actions = {
 		const baseUrl = data.get('base_url');
 
 		if (typeof provider !== 'string' || !provider) {
-			return fail(400, { error: 'Provider is required.' });
+			return fail(400, { error: m.err_provider_required() });
 		}
 
 		const response = await apiFetch(fetch, cookies, '/api/llm/fetch-models', {
@@ -91,7 +92,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Could not fetch models — enter the model ID manually.' });
+			return fail(response.status, { error: message || m.err_fetch_models() });
 		}
 		const result = (await response.json()) as { models: { id: string; label: string | null }[] };
 		return { models: result.models };

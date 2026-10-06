@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { Reminder, ScheduledTask } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/reminders');
@@ -12,7 +13,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 
 async function errorText(response: Response, fallback: string): Promise<string> {
 	const text = await response.text();
-	if (text.includes('future')) return 'Pick a time in the future.';
+	if (text.includes('future')) return m.rem_future();
 	return text && text.length < 120 ? text : fallback;
 }
 
@@ -23,13 +24,13 @@ export const actions: Actions = {
 		const dueAt = String(data.get('due_at') ?? '');
 		const recurrence = String(data.get('recurrence') ?? 'once');
 		const notes = String(data.get('notes') ?? '').trim();
-		if (!title) return fail(400, { error: 'Say what to remind you about.' });
-		if (!dueAt) return fail(400, { error: 'Pick a date and time.' });
+		if (!title) return fail(400, { error: m.rem_say_what() });
+		if (!dueAt) return fail(400, { error: m.rem_pick_time() });
 		const response = await apiFetch(fetch, cookies, '/api/reminders', {
 			method: 'POST',
 			body: JSON.stringify({ title, due_at: dueAt, recurrence: recurrence === 'once' ? null : recurrence, notes: notes || null }),
 		});
-		if (!response.ok) return fail(response.status, { error: await errorText(response, 'Couldn’t save that reminder.') });
+		if (!response.ok) return fail(response.status, { error: await errorText(response, m.rem_save_failed()) });
 		return { created: title };
 	},
 	act: async ({ request, cookies, fetch }) => {
@@ -41,13 +42,13 @@ export const actions: Actions = {
 			method: 'POST',
 			body: JSON.stringify({ action, minutes }),
 		});
-		if (!response.ok && response.status !== 404) return fail(response.status, { error: 'Couldn’t update that reminder.' });
+		if (!response.ok && response.status !== 404) return fail(response.status, { error: m.rem_update_failed() });
 		return { acted: action };
 	},
 	cancelTask: async ({ request, cookies, fetch }) => {
 		const id = String((await request.formData()).get('id') ?? '');
 		const response = await apiFetch(fetch, cookies, `/api/scheduled-tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
-		if (!response.ok && response.status !== 404) return fail(response.status, { error: 'Couldn’t cancel that task.' });
+		if (!response.ok && response.status !== 404) return fail(response.status, { error: m.rem_task_cancel_failed() });
 		return { acted: 'cancelTask' };
 	},
 };

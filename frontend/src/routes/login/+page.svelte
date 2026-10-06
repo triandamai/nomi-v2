@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -10,26 +11,26 @@
 </script>
 
 <AuthShell
-	title="Welcome back"
-	subtitle="Log in and pick up where your crew left off."
-	switchPrompt="New here?"
-	switchLabel="Create account"
+	title={m.login_title()}
+	subtitle={m.login_subtitle()}
+	switchPrompt={m.login_new_here()}
+	switchLabel={m.login_create()}
 	switchHref="/register"
 >
 	{#if data.googleError}
 		<p class="md-body-medium mb-4" role="alert" style="color: var(--md-sys-color-error)">{data.googleError}</p>
 	{/if}
 	{#if data.google}
-		<GoogleButton label="Continue with Google" />
-		<div class="or" aria-hidden="true"><span>or</span></div>
+		<GoogleButton label={m.google_continue()} />
+		<div class="or" aria-hidden="true"><span>{m.auth_or()}</span></div>
 	{/if}
 	<form method="POST" use:enhance class="flex flex-col gap-5">
 		{#if form?.error}
 			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label="Email" autocomplete="email" required />
-		<TextField id="password" name="password" type="password" label="Password" autocomplete="current-password" required />
-		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">Log in</Button>
+		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" required />
+		<TextField id="password" name="password" type="password" label={m.auth_password()} autocomplete="current-password" required />
+		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.login_submit()}</Button>
 	</form>
 </AuthShell>
 

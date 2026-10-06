@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
+import { settleLanguageAfterSignIn } from '$lib/server/locale';
 import type { RequestHandler } from './$types';
 
 /** Google sends people back here after signing in (or adding Google to their account). */
@@ -31,6 +32,7 @@ export const GET: RequestHandler = async ({ url, cookies, fetch }) => {
 	cookies.set('access_token', result.access_token, { httpOnly: true, path: '/', sameSite: 'lax' });
 	cookies.set('refresh_token', result.refresh_token, { httpOnly: true, path: '/', sameSite: 'lax' });
 	cookies.set('user_email', result.email, { httpOnly: false, path: '/', sameSite: 'lax' });
+	await settleLanguageAfterSignIn(fetch, cookies, result.is_new);
 	// New here: offer to let Workspace use this same Google account.
 	redirect(303, result.is_new ? '/connections?welcome=1' : '/');
 };

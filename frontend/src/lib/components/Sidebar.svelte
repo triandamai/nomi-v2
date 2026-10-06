@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
@@ -49,12 +50,12 @@
 	const effectiveCollapsed = $derived(collapsed && !mobileOpen);
 
 	const NAV = [
-		{ href: '/', label: 'Home', icon: IconHome },
-		{ href: '/chats', label: 'Chats', icon: IconChatBubble },
-		{ href: '/projects', label: 'Projects', icon: IconFolder },
-		{ href: '/money', label: 'Money', icon: IconWallet },
-		{ href: '/reminders', label: 'Reminders', icon: IconBell },
-		{ href: '/memory', label: 'Memory', icon: IconMemory },
+		{ href: '/', label: m.nav_home(), icon: IconHome },
+		{ href: '/chats', label: m.nav_chats(), icon: IconChatBubble },
+		{ href: '/projects', label: m.nav_projects(), icon: IconFolder },
+		{ href: '/money', label: m.nav_money(), icon: IconWallet },
+		{ href: '/reminders', label: m.nav_reminders(), icon: IconBell },
+		{ href: '/memory', label: m.nav_memory(), icon: IconMemory },
 	];
 
 	function isActive(href: string): boolean {
@@ -76,7 +77,7 @@
 		type="button"
 		class="fixed inset-0 z-40 md:hidden"
 		style="background: color-mix(in srgb, black 40%, transparent); border: none; padding: 0; cursor: default"
-		aria-label="Close menu"
+		aria-label={m.nav_close_menu()}
 		onclick={() => (mobileOpen = false)}
 	></button>
 {/if}
@@ -92,7 +93,7 @@
 		class:justify-center={effectiveCollapsed}
 		class:justify-between={!effectiveCollapsed}
 	>
-		<a href="/" class="nomi-brand" aria-label="Nomi home" onclick={() => (mobileOpen = false)}>
+		<a href="/" class="nomi-brand" aria-label={m.nav_nomi_home()} onclick={() => (mobileOpen = false)}>
 			<AgentShape size={40} face />
 			{#if !effectiveCollapsed}<span class="nomi-brand__word">nomi</span>{/if}
 		</a>
@@ -102,32 +103,32 @@
 		     to every scoped selector), so the utility class can't win no matter the breakpoint. -->
 		{#if !effectiveCollapsed}
 			<div class="hidden md:block">
-				<IconButton onclick={toggleCollapsed} aria-label="Collapse sidebar">
+				<IconButton onclick={toggleCollapsed} aria-label={m.nav_collapse()}>
 					<IconChevronLeft />
 				</IconButton>
 			</div>
 		{/if}
 		<div class="md:hidden">
-			<IconButton onclick={() => (mobileOpen = false)} aria-label="Close menu">
+			<IconButton onclick={() => (mobileOpen = false)} aria-label={m.nav_close_menu()}>
 				<IconClose />
 			</IconButton>
 		</div>
 	</div>
 
 	<form method="POST" action="/?/newChat" use:enhance class={effectiveCollapsed ? 'pt-2' : 'px-4 pt-2'} onsubmit={() => (mobileOpen = false)}>
-		<button type="submit" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label="New chat">
+		<button type="submit" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label={m.nav_new_chat()}>
 			<IconPlus size={24} />
-			{#if !effectiveCollapsed}<span>New chat</span>{/if}
+			{#if !effectiveCollapsed}<span>{m.nav_new_chat()}</span>{/if}
 		</button>
 	</form>
 
-	<NavList items={NAV} rail={effectiveCollapsed} {isActive} label="Main" onnavigate={() => (mobileOpen = false)} />
+	<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} onnavigate={() => (mobileOpen = false)} />
 
 	<div class="flex-1"></div>
 
 	{#if effectiveCollapsed}
 		<div class="hidden pb-2 md:block">
-			<IconButton onclick={toggleCollapsed} aria-label="Expand sidebar">
+			<IconButton onclick={toggleCollapsed} aria-label={m.nav_expand()}>
 				<IconChevronRight />
 			</IconButton>
 		</div>
@@ -141,7 +142,7 @@
 					onclick={toggle}
 					class="m3-account-trigger w-full"
 					class:justify-center={effectiveCollapsed}
-					aria-label="Account menu"
+					aria-label={m.nav_account_menu()}
 				>
 					<Avatar name={accountLabel} avatarUrl={profile.avatar_url} size={36} />
 					{#if !effectiveCollapsed}
@@ -152,14 +153,14 @@
 				</button>
 			{/snippet}
 			<div class="w-full">
-				<MenuItem onclick={() => goToAccountPage('/preferences')}>Preferences</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/profile')}>Profile</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/account')}>Account settings</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/connections')}>Connections</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/models')}>Model</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/memory')}>Memory</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/preferences')}>{m.nav_preferences()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/profile')}>{m.nav_profile()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/account')}>{m.nav_account()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/connections')}>{m.nav_connections()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/models')}>{m.nav_model()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/memory')}>{m.nav_memory()}</MenuItem>
 				<form method="POST" action="/logout">
-					<MenuItem type="submit">Log out</MenuItem>
+					<MenuItem type="submit">{m.nav_log_out()}</MenuItem>
 				</form>
 			</div>
 		</Menu>

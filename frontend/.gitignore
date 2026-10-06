@@ -23,3 +23,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 # Playwright
 test-results
+
+# Paraglide (compiled from messages/ by the Vite plugin and `npm run i18n`)
+/src/lib/paraglide
+/project.inlang/cache

@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_server::web_identity::ensure_web_channel_identity;
+use nomi_turn::bootstrap::ensure_web_channel_identity;
 
 async fn seed_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap()

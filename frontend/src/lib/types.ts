@@ -1,3 +1,4 @@
+import type { Locale } from '$lib/i18n';
 export interface SessionSummary {
 	id: string;
 	channel: string;
@@ -233,6 +234,8 @@ export interface Preferences {
 	theme: Theme;
 	accent_color: AccentColor;
 	timezone: string;
+	/** "en" or "id": the app's language and the crew's. */
+	language: Locale;
 	has_stored_timezone: boolean;
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 	import AgentShape from './AgentShape.svelte';
 	import LoadingIndicator from './LoadingIndicator.svelte';
@@ -10,7 +11,7 @@
 	let {
 		working = false,
 		size = 52,
-		label = 'Send',
+		label = m.send_send(),
 		stopForm,
 		...rest
 	}: {
@@ -31,12 +32,12 @@
 	class="nomi-send"
 	class:nomi-send--stop={stoppable}
 	style="--size: {size}px"
-	aria-label={stoppable ? 'Stop the crew' : working ? 'Sending' : label}
-	title={stoppable ? 'Stop' : undefined}
+	aria-label={stoppable ? m.send_stop_crew() : working ? m.send_sending() : label}
+	title={stoppable ? m.send_stop() : undefined}
 	disabled={stoppable ? false : working || rest.disabled}
 >
 	{#if working}
-		<LoadingIndicator size={size - 8} label={stoppable ? 'Working' : 'Sending'} />
+		<LoadingIndicator size={size - 8} label={stoppable ? m.send_working() : m.send_sending()} />
 		{#if stoppable}
 			<svg class="nomi-send__stop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3.5" /></svg>
 		{/if}

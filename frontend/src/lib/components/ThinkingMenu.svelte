@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import type { ThinkingLevel } from '$lib/types';
@@ -15,10 +16,10 @@
 	} = $props();
 
 	const LEVELS: { value: ThinkingLevel; label: string; hint: string }[] = [
-		{ value: 'off', label: 'Off', hint: 'Fastest. Answers straight away' },
-		{ value: 'low', label: 'Low', hint: 'A quick think first' },
-		{ value: 'medium', label: 'Medium', hint: 'Balanced (the default)' },
-		{ value: 'high', label: 'High', hint: 'Slower, for tricky problems' },
+		{ value: 'off', label: m.think_off(), hint: m.think_off_hint() },
+		{ value: 'low', label: m.think_low(), hint: m.think_low_hint() },
+		{ value: 'medium', label: m.think_medium(), hint: m.think_medium_hint() },
+		{ value: 'high', label: m.think_high(), hint: m.think_high_hint() },
 	];
 
 	let open = $state(false);
@@ -27,7 +28,7 @@
 
 <Menu bind:open>
 	{#snippet trigger({ toggle })}
-		<button type="button" class="thinking" class:thinking--off={level === 'off'} onclick={toggle} aria-label="Thinking: {current.label}" title="Thinking level">
+		<button type="button" class="thinking" class:thinking--off={level === 'off'} onclick={toggle} aria-label={m.think_label({ level: current.label })} title={m.think_title()}>
 			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 				<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3Z" />
 			</svg>
@@ -35,7 +36,7 @@
 		</button>
 	{/snippet}
 	<div class="levels">
-		<p class="md-label-medium levels__title">Thinking</p>
+		<p class="md-label-medium levels__title">{m.think_heading()}</p>
 		{#each LEVELS as option (option.value)}
 			<MenuItem
 				type="button"

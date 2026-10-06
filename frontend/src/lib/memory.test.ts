@@ -19,7 +19,7 @@ describe('timeAgo', () => {
 	it('reads naturally across ranges', () => {
 		expect(timeAgo('2026-10-05T11:59:40Z', now)).toBe('just now');
 		expect(timeAgo('2026-10-05T11:15:00Z', now)).toBe('45m ago');
-		expect(timeAgo('2026-10-04T12:00:00Z', now)).toBe('1d ago');
+		expect(timeAgo('2026-10-03T12:00:00Z', now)).toBe('2d ago');
 		expect(timeAgo('2026-06-05T12:00:00Z', now)).toBe('4mo ago');
 	});
 });

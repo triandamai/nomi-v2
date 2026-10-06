@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Button from '$lib/components/m3/Button.svelte';
+	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -12,20 +14,25 @@
 
 <div class="account">
 	<div class="account__inner">
-		<h1 class="md-display-small account__title">Account settings</h1>
+		<h1 class="md-display-small account__title">{m.account_title()}</h1>
 
 		<section class="section">
-			<h2 class="section__label">Email</h2>
+			<h2 class="section__label">{m.account_email()}</h2>
 			<p class="md-body-large account__email">{data.profile?.email ?? '—'}</p>
 		</section>
 
+		<section class="section" aria-labelledby="language-title">
+			<h2 id="language-title" class="section__label">{m.account_language()}</h2>
+			<LanguagePicker />
+		</section>
+
 		<section class="section" aria-labelledby="methods-title">
-			<h2 id="methods-title" class="section__label">How you sign in</h2>
+			<h2 id="methods-title" class="section__label">{m.account_sign_in_title()}</h2>
 			{#if justLinked}
-				<p class="note note--ok" role="status">Google is linked. You can now sign in with it.</p>
+				<p class="note note--ok" role="status">{m.account_google_linked()}</p>
 			{/if}
 			{#if googleError || form?.error}
-				<p class="note note--error" role="alert">{form?.error ?? (googleError === 'cancelled' ? 'Linking Google was cancelled.' : googleError)}</p>
+				<p class="note note--error" role="alert">{form?.error ?? (googleError === 'cancelled' ? m.account_google_cancelled() : googleError)}</p>
 			{/if}
 			<ul class="rows">
 				<li class="row">
@@ -33,8 +40,8 @@
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
 					</span>
 					<span class="row__text">
-						<span class="row__headline">Email and password</span>
-						<span class="row__supporting">{methods?.password ? 'On' : 'Not set: you sign in with Google'}</span>
+						<span class="row__headline">{m.account_password_method()}</span>
+						<span class="row__supporting">{methods?.password ? m.account_on() : m.account_password_not_set()}</span>
 					</span>
 				</li>
 				<li class="row">
@@ -44,21 +51,20 @@
 					<span class="row__text">
 						<span class="row__headline">Google</span>
 						<span class="row__supporting">
-							{#if methods?.google_email}{methods.google_email}{:else if methods?.configured}Not linked{:else}Not available on this server{/if}
+							{#if methods?.google_email}{methods.google_email}{:else if methods?.configured}{m.account_not_linked()}{:else}{m.account_google_unavailable()}{/if}
 						</span>
 					</span>
 					{#if methods?.google_email}
 						{#if methods.password}
-							<form method="POST" action="?/unlink"><Button variant="text" size="s" type="submit">Unlink</Button></form>
+							<form method="POST" action="?/unlink"><Button variant="text" size="s" type="submit">{m.account_unlink()}</Button></form>
 						{/if}
 					{:else if methods?.configured}
-						<form method="POST" action="?/link"><Button variant="tonal" size="s" type="submit">Link Google</Button></form>
+						<form method="POST" action="?/link"><Button variant="tonal" size="s" type="submit">{m.account_link_google()}</Button></form>
 					{/if}
 				</li>
 			</ul>
 			<p class="hint">
-				Signing in with Google doesn't give the crew access to your Gmail or files. That's separate, in
-				<a href="/connections">Connections</a>.
+				{m.account_google_hint()} <a href="/connections">{m.nav_connections()}</a>.
 			</p>
 		</section>
 	</div>

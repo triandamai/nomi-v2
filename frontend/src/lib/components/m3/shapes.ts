@@ -4,6 +4,8 @@
 // number of points, all in a 48×48 viewBox. Sharing one point count is what lets
 // MorphingShape morph between any two of them by plain per-point interpolation.
 
+import { m } from '$lib/paraglide/messages';
+
 // Keep these three lists in sync with SHAPES, TONES and MOTIONS in
 // backend/crates/nomi-server/src/routes/agents.rs (a dynamic agent stores its pick).
 export const SHAPE_NAMES = [
@@ -32,30 +34,30 @@ export type GradientTone = (typeof GRADIENT_TONES)[number];
 export const SHAPE_MOTIONS = ['spin', 'wobble', 'bounce', 'pulse', 'orbit'] as const;
 export type ShapeMotion = (typeof SHAPE_MOTIONS)[number];
 
-export const SHAPE_LABELS: Record<ShapeName, string> = {
-	cookie9: 'Cookie',
-	sunny8: 'Sunny',
-	cookie6: 'Gear',
-	clover4: 'Clover',
-	flower5: 'Flower',
-	circle: 'Circle',
-	sunny12: 'Sun',
-	clover3: 'Trefoil',
-	puffy7: 'Puffy',
-	burst16: 'Burst',
-	wave10: 'Wave',
-	'soft-square': 'Square',
-	'soft-triangle': 'Triangle',
-	pentagon: 'Pentagon',
-	pill: 'Pill',
+export const SHAPE_LABELS: Record<ShapeName, () => string> = {
+	cookie9: m.shape_name_cookie9,
+	sunny8: m.shape_name_sunny8,
+	cookie6: m.shape_name_cookie6,
+	clover4: m.shape_name_clover4,
+	flower5: m.shape_name_flower5,
+	circle: m.shape_name_circle,
+	sunny12: m.shape_name_sunny12,
+	clover3: m.shape_name_clover3,
+	puffy7: m.shape_name_puffy7,
+	burst16: m.shape_name_burst16,
+	wave10: m.shape_name_wave10,
+	'soft-square': m.shape_name_soft_square,
+	'soft-triangle': m.shape_name_soft_triangle,
+	pentagon: m.shape_name_pentagon,
+	pill: m.shape_name_pill,
 };
 
-export const MOTION_LABELS: Record<ShapeMotion, string> = {
-	spin: 'Spin',
-	wobble: 'Wobble',
-	bounce: 'Bounce',
-	pulse: 'Pulse',
-	orbit: 'Orbit',
+export const MOTION_LABELS: Record<ShapeMotion, () => string> = {
+	spin: m.motion_spin,
+	wobble: m.motion_wobble,
+	bounce: m.motion_bounce,
+	pulse: m.motion_pulse,
+	orbit: m.motion_orbit,
 };
 
 // 120 keeps the outline smooth even at hero size (the auth stage draws one at 560px).

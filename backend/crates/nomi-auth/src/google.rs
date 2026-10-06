@@ -1,12 +1,26 @@
 //! Sign in with Google: create an account, sign in, or add Google to an account that already has
-//! a password. Uses the same server OAuth client as the Workspace agent (identity scopes only:
+//! a password. Uses the server's OAuth client (shared with the Workspace agent) (identity scopes only:
 //! signing in never grants Workspace access; that is a separate, per-user connection).
 
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_agent_workspace::connection::GoogleConfig;
+use crate::password::hash_password;
+use crate::registration::{place_in_org, OrgMode};
+
+/// The server's Google OAuth client, as far as signing in needs it. The server builds this from
+/// the same client the Workspace agent uses.
+#[derive(Debug, Clone)]
+pub struct GoogleSignInConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    /// The app's sign-in callback page, registered with the OAuth client.
+    pub redirect_uri: String,
+    pub auth_url: String,
+    pub token_url: String,
+    pub userinfo_url: String,
+}
 
 /// What a finished Google sign-in did.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,7 +61,7 @@ pub enum Purpose {
 }
 
 /// The Google page to send the person to.
-pub async fn start(pool: &PgPool, config: &GoogleConfig, purpose: Purpose) -> Result<String, SignInError> {
+pub async fn start(pool: &PgPool, config: &GoogleSignInConfig, purpose: Purpose) -> Result<String, SignInError> {
     let state = {
         use rand::RngCore;
         let mut bytes = [0u8; 24];
@@ -70,7 +84,7 @@ pub async fn start(pool: &PgPool, config: &GoogleConfig, purpose: Purpose) -> Re
     let mut url = reqwest::Url::parse(&config.auth_url).map_err(|e| SignInError::Other(e.to_string()))?;
     url.query_pairs_mut()
         .append_pair("client_id", &config.client_id)
-        .append_pair("redirect_uri", &config.signin_redirect_uri)
+        .append_pair("redirect_uri", &config.redirect_uri)
         .append_pair("response_type", "code")
         .append_pair("scope", "openid email profile")
         .append_pair("prompt", "select_account")
@@ -95,7 +109,7 @@ struct UserInfo {
 
 /// Finishes a Google sign-in: checks the state, asks Google who this is, then signs in, creates
 /// the account, or links Google, as the state's purpose says.
-pub async fn finish(pool: &PgPool, http: &reqwest::Client, config: &GoogleConfig, code: &str, state: &str) -> Result<Finished, SignInError> {
+pub async fn finish(pool: &PgPool, http: &reqwest::Client, config: &GoogleSignInConfig, code: &str, state: &str) -> Result<Finished, SignInError> {
     let pending: Option<(String, Option<Uuid>, Option<String>)> = sqlx::query_as(
         "DELETE FROM google_sign_in_states WHERE state = $1 AND created_at > now() - interval '10 minutes' \
          RETURNING purpose, user_id, invite_code",
@@ -111,7 +125,7 @@ pub async fn finish(pool: &PgPool, http: &reqwest::Client, config: &GoogleConfig
             ("code", code),
             ("client_id", &config.client_id),
             ("client_secret", &config.client_secret),
-            ("redirect_uri", &config.signin_redirect_uri),
+            ("redirect_uri", &config.redirect_uri),
             ("grant_type", "authorization_code"),
         ])
         .send()
@@ -206,7 +220,7 @@ async fn create_account(
         use rand::RngCore;
         let mut bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut bytes);
-        nomi_auth::password::hash_password(&hex::encode(bytes)).map_err(|e| SignInError::Other(e.to_string()))?
+        hash_password(&hex::encode(bytes)).map_err(|e| SignInError::Other(e.to_string()))?
     };
 
     let mut tx = pool.begin().await?;
@@ -224,24 +238,12 @@ async fn create_account(
         .execute(&mut *tx)
         .await?;
 
-    match invite_code {
-        Some(code) => {
-            let invite: Option<(Uuid, String)> =
-                sqlx::query_as("SELECT org_id, role FROM org_invites WHERE code = $1 AND used_at IS NULL AND expires_at > now()")
-                    .bind(code)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-            let (org_id, role) = invite.ok_or(SignInError::InvalidInvite)?;
-            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3)").bind(org_id).bind(user_id).bind(&role).execute(&mut *tx).await?;
-            sqlx::query("UPDATE org_invites SET used_at = now() WHERE code = $1").bind(code).execute(&mut *tx).await?;
-        }
-        None => {
-            let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ($1, false) RETURNING id")
-                .bind(format!("{first_name}'s space"))
-                .fetch_one(&mut *tx)
-                .await?;
-            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')").bind(org_id).bind(user_id).execute(&mut *tx).await?;
-        }
+    let org = match invite_code {
+        Some(code) => OrgMode::Join { invite_code: code.to_string() },
+        None => OrgMode::Create { name: format!("{first_name}'s space") },
+    };
+    if !place_in_org(&mut tx, user_id, org).await? {
+        return Err(SignInError::InvalidInvite);
     }
 
     if let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) {

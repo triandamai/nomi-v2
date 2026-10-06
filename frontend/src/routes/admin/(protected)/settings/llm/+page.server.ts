@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { AdminLlmModel } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models');
@@ -31,7 +32,7 @@ export const actions: Actions = {
 	create: async ({ request, cookies, fetch }) => {
 		const { label, provider, modelId, apiKey, baseUrl } = readForm(await request.formData());
 		if (!label || !provider) {
-			return fail(400, { error: 'Label and provider are required.' });
+			return fail(400, { error: m.err_label_provider_required() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models', {
 			method: 'POST',
@@ -39,7 +40,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to create model.' });
+			return fail(response.status, { error: message || m.err_create_model() });
 		}
 		return { success: true };
 	},
@@ -49,7 +50,7 @@ export const actions: Actions = {
 		const id = data.get('id');
 		const { label, provider, modelId, apiKey, baseUrl } = readForm(data);
 		if (typeof id !== 'string' || !label || !provider) {
-			return fail(400, { error: 'Label and provider are required.' });
+			return fail(400, { error: m.err_label_provider_required() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}`, {
 			method: 'PUT',
@@ -57,7 +58,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to update model.' });
+			return fail(response.status, { error: message || m.err_update_model() });
 		}
 		return { success: true };
 	},
@@ -66,12 +67,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const id = data.get('id');
 		if (typeof id !== 'string') {
-			return fail(400, { error: 'Invalid model.' });
+			return fail(400, { error: m.err_invalid_model() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}`, { method: 'DELETE' });
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to delete model.' });
+			return fail(response.status, { error: message || m.err_delete_model() });
 		}
 		return { success: true };
 	},
@@ -80,12 +81,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const id = data.get('id');
 		if (typeof id !== 'string') {
-			return fail(400, { error: 'Invalid model.' });
+			return fail(400, { error: m.err_invalid_model() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}/default`, { method: 'PUT' });
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to set default.' });
+			return fail(response.status, { error: message || m.err_set_default() });
 		}
 		return { success: true };
 	},
@@ -97,7 +98,7 @@ export const actions: Actions = {
 		const baseUrl = data.get('base_url');
 		const existingModelId = data.get('existing_model_id');
 		if (typeof provider !== 'string' || !provider) {
-			return fail(400, { error: 'Provider is required.' });
+			return fail(400, { error: m.err_provider_required() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models/fetch-models', {
 			method: 'POST',
@@ -110,7 +111,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Could not fetch models — enter the model ID manually.' });
+			return fail(response.status, { error: message || m.err_fetch_models() });
 		}
 		const result = (await response.json()) as { models: { id: string; label: string | null }[] };
 		return { models: result.models };

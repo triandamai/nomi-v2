@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	// An agent's thinking, collapsed to one quiet line by default; opens in place.
 
 	let {
@@ -26,9 +27,9 @@
 		<svg class="reasoning__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 			<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3Z" />
 		</svg>
-		<span class="reasoning__label">{live ? 'Thinking' : 'Thought process'}</span>
+		<span class="reasoning__label">{live ? m.reasoning_thinking() : m.reasoning_process()}</span>
 		{#if steps.length > 1}
-			<span class="nomi-meta reasoning__count">{steps.length} steps</span>
+			<span class="nomi-meta reasoning__count">{m.reasoning_steps({ count: steps.length })}</span>
 		{/if}
 		<svg class="reasoning__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
 	</button>

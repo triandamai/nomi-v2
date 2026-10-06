@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages';
 // Files attached in the composer travel inside the message text, so every model provider can
 // read them: each becomes an <attachment name="…" kind="…">…</attachment> section after the typed
 // text (the backend routes such messages to the Files agent). `kind` is "file", or "voice" for a
@@ -29,7 +30,7 @@ export function isAudioFile(name: string, type: string): boolean {
 /** "Voice note (0:42)" */
 export function voiceNoteName(seconds: number): string {
 	const s = Math.max(0, Math.round(seconds));
-	return `Voice note (${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')})`;
+	return m.voice_note_name({ length: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` });
 }
 
 /** Whether a file can be attached as text. Images, PDFs and other binaries can't (yet). */

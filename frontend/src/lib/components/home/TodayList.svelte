@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { agentName, clockTime, RECURRENCE, type TodayItem } from '$lib/home';
+	import { m } from '$lib/paraglide/messages';
+	import { agentName, clockTime, recurrenceLabel, type TodayItem } from '$lib/home';
 
 	let { items, timezone }: { items: TodayItem[]; timezone: string } = $props();
 </script>
@@ -10,7 +11,7 @@
 			<span class="today__time">{clockTime(item.run_at, timezone)}</span>
 			<span class="today__text">
 				<span class="today__label">{item.label}</span>
-				<span class="today__meta">{item.recurrence ? RECURRENCE[item.recurrence] : `From ${agentName(item.agent)}`}</span>
+				<span class="today__meta">{item.recurrence ? recurrenceLabel(item.recurrence) : m.home_from_agent({ agent: agentName(item.agent) })}</span>
 			</span>
 		</li>
 	{/each}

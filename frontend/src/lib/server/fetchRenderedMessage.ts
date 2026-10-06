@@ -3,6 +3,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
 import type { MessageItem, RenderedMessage } from '$lib/types';
+import { m } from '$lib/paraglide/messages';
 
 /** Fetches one message from the backend and server-renders its markdown (skipped when it
  * carries content_blocks — those render client-side via ContentBlockView, not {@html}). Used by
@@ -16,7 +17,7 @@ export async function fetchRenderedMessage(
 ): Promise<RenderedMessage> {
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${sessionId}/messages/${messageId}`);
 	if (!response.ok) {
-		throw error(response.status, 'Could not load this message.');
+		throw error(response.status, m.err_load_message());
 	}
 	const message = (await response.json()) as MessageItem;
 	const content_html =

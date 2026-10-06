@@ -101,8 +101,6 @@ pub struct CallbackResponse {
     pub resume_session_id: Option<Uuid>,
 }
 
-const RESUME_NOTICE: &str = "Google Workspace is connected. Picking up your request.";
-
 pub async fn complete_google(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -127,10 +125,11 @@ pub async fn complete_google(
         .await
         .map_err(internal)?;
         if let Some((identity_id, text)) = last {
+            let resume_notice = nomi_agent_core::user_locale(&mut conn, claims.sub).await.t("turn.workspace_resumed");
             let mut tx = state.pool.begin().await.map_err(internal)?;
             sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, NULL)")
                 .bind(session_id)
-                .bind(RESUME_NOTICE)
+                .bind(&resume_notice)
                 .execute(&mut *tx)
                 .await
                 .map_err(internal)?;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -26,30 +27,30 @@
 		{
 			label: 'Money',
 			tools: [
-				{ name: 'list_transactions', description: 'List recent transactions' },
-				{ name: 'summarize_budget', description: 'Summarize spending by category' },
-				{ name: 'log_transaction', description: 'Record an expense the user mentions' },
-				{ name: 'set_budget', description: 'Set a monthly budget for a category' },
-				{ name: 'list_budgets', description: 'List budgets and this month’s spending' },
+				{ name: 'list_transactions', description: m.tooldesc_list_transactions() },
+				{ name: 'summarize_budget', description: m.tooldesc_summarize_budget() },
+				{ name: 'log_transaction', description: m.tooldesc_log_transaction() },
+				{ name: 'set_budget', description: m.tooldesc_set_budget() },
+				{ name: 'list_budgets', description: m.tooldesc_list_budgets() },
 			],
 		},
-		{ label: 'Planning', tools: [{ name: 'create_project', description: 'Create a new project' }] },
+		{ label: 'Planning', tools: [{ name: 'create_project', description: m.tooldesc_create_project() }] },
 		{
 			label: 'Personality',
 			tools: [
-				{ name: 'set_personality', description: 'Set personality' },
-				{ name: 'list_personality_versions', description: 'List personality history' },
-				{ name: 'rollback_personality', description: 'Roll back personality' },
+				{ name: 'set_personality', description: m.tooldesc_set_personality() },
+				{ name: 'list_personality_versions', description: m.tooldesc_list_personality_versions() },
+				{ name: 'rollback_personality', description: m.tooldesc_rollback_personality() },
 			],
 		},
-		{ label: 'Supervisor', tools: [{ name: 'list_recent_agent_activity', description: 'List recent agent activity' }] },
+		{ label: 'Supervisor', tools: [{ name: 'list_recent_agent_activity', description: m.tooldesc_list_recent_agent_activity() }] },
 		{
 			label: 'Coding',
 			tools: [
-				{ name: 'write_file', description: 'Write a project file' },
-				{ name: 'read_file', description: 'Read a project file' },
-				{ name: 'list_files', description: 'List project files' },
-				{ name: 'delete_file', description: 'Delete a project file' },
+				{ name: 'write_file', description: m.tooldesc_write_file() },
+				{ name: 'read_file', description: m.tooldesc_read_file() },
+				{ name: 'list_files', description: m.tooldesc_list_files() },
+				{ name: 'delete_file', description: m.tooldesc_delete_file() },
 			],
 		},
 	];
@@ -106,18 +107,18 @@
 </script>
 
 <PageHeader
-	title="Custom agents"
-	lede="Crew members you define: their own prompt, a picked set of tools and a shape. They run on the same engine as the built-in agents."
+	title={m.admin_custom_agents()}
+	lede={m.dyn_lede()}
 >
 	{#snippet actions()}
-		<Button type="button" variant="filled" onclick={openCreate}><IconPlus size={18} /> Add agent</Button>
+		<Button type="button" variant="filled" onclick={openCreate}><IconPlus size={18} /> {m.dyn_add()}</Button>
 	{/snippet}
 </PageHeader>
 
 {#if data.agents.length === 0}
 	<div class="empty">
 		<AgentShape shape="flower5" tone="dusk" size={64} />
-		<p class="empty__text"><strong>No custom agents yet.</strong> Add one to give the crew a new specialist.</p>
+		<p class="empty__text"><strong>{m.dyn_empty_title()}</strong> {m.dyn_empty()}</p>
 	</div>
 {:else}
 	<ul class="grid">
@@ -133,17 +134,17 @@
 						<h3 class="card__name">{agent.name}</h3>
 						<p class="card__meta">
 							<span class="chip">{agent.intent_label}</span>
-							<span>{agent.granted_tools.length} {agent.granted_tools.length === 1 ? 'tool' : 'tools'}</span>
-							{#if !agent.is_active}<span class="chip chip--off">Off</span>{/if}
+							<span>{agent.granted_tools.length === 1 ? m.dyn_tool_one() : m.dyn_tool_many({ count: agent.granted_tools.length })}</span>
+							{#if !agent.is_active}<span class="chip chip--off">{m.dyn_off()}</span>{/if}
 						</p>
 					</div>
 				</div>
 				<p class="card__intent">{agent.intent_description}</p>
 				<div class="card__actions">
-					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(agent)}>Edit</Button>
+					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(agent)}>{m.dyn_edit()}</Button>
 					<form method="POST" action="?/toggleActive" use:enhance>
 						<input type="hidden" name="id" value={agent.id} />
-						<Button type="submit" variant="text" size="xs">{agent.is_active ? 'Turn off' : 'Turn on'}</Button>
+						<Button type="submit" variant="text" size="xs">{agent.is_active ? m.dyn_turn_off() : m.dyn_turn_on()}</Button>
 					</form>
 				</div>
 			</li>
@@ -152,7 +153,7 @@
 {/if}
 
 <BottomSheet bind:open={sheetOpen}>
-	<h2 class="sheet-title">{editingId ? `Edit ${name || 'agent'}` : 'Add agent'}</h2>
+	<h2 class="sheet-title">{editingId ? m.dyn_edit_named({ name: name || m.dyn_agent() }) : m.dyn_add()}</h2>
 
 	{#if form?.error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -172,23 +173,23 @@
 		{#if editingId}
 			<input type="hidden" name="id" value={editingId} />
 		{/if}
-		<TextField id="name" name="name" label="Name" bind:value={name} required />
+		<TextField id="name" name="name" label={m.dyn_name()} bind:value={name} required />
 		<ShapePicker bind:shape bind:tone bind:motion {name} />
-		<TextField id="intent_label" name="intent_label" label="Intent label (one word, unique)" bind:value={intentLabel} required />
+		<TextField id="intent_label" name="intent_label" label={m.dyn_intent_label()} bind:value={intentLabel} required />
 		<TextField
 			id="intent_description"
 			name="intent_description"
-			label="Intent description (fed to the classifier)"
+			label={m.dyn_intent_description()}
 			bind:value={intentDescription}
 			required
 		/>
 		<label class="prompt">
-			<span class="prompt__label">System prompt</span>
+			<span class="prompt__label">{m.dyn_system_prompt()}</span>
 			<textarea name="system_prompt" bind:value={systemPrompt} required rows="6" class="prompt__field"></textarea>
 		</label>
 
 		<fieldset class="tools">
-			<legend class="section-label">Tools it can use</legend>
+			<legend class="section-label">{m.dyn_tools()}</legend>
 			{#each TOOL_GROUPS as group (group.label)}
 				<div class="tools__group">
 					<p class="tools__owner"><AgentShape agent={group.label} size={18} /> {group.label}</p>
@@ -206,18 +207,18 @@
 		</fieldset>
 
 		<fieldset class="tools">
-			<legend class="section-label">Abilities</legend>
-			<Checkbox bind:checked={supportsTodos} label="Keeps a live to-do checklist" />
-			<Checkbox bind:checked={supportsPlans} label="Writes versioned plans" />
-			<Checkbox bind:checked={canDelegate} label="Hands work to other agents" />
+			<legend class="section-label">{m.dyn_abilities()}</legend>
+			<Checkbox bind:checked={supportsTodos} label={m.dyn_todos()} />
+			<Checkbox bind:checked={supportsPlans} label={m.dyn_plans()} />
+			<Checkbox bind:checked={canDelegate} label={m.dyn_delegate()} />
 		</fieldset>
 		<input type="hidden" name="supports_todos" value={supportsTodos} />
 		<input type="hidden" name="supports_plans" value={supportsPlans} />
 		<input type="hidden" name="can_delegate" value={canDelegate} />
 
 		<div class="flex gap-2 pt-2">
-			<Button type="submit" variant="filled">{editingId ? 'Save' : 'Add agent'}</Button>
-			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>Cancel</Button>
+			<Button type="submit" variant="filled">{editingId ? m.common_save() : m.dyn_add()}</Button>
+			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>{m.common_cancel()}</Button>
 		</div>
 	</form>
 </BottomSheet>

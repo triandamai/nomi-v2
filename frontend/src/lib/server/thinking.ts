@@ -1,6 +1,7 @@
 import { fail, type Cookies } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { ThinkingLevel } from '$lib/types';
+import { m } from '$lib/paraglide/messages';
 
 const LEVELS = ['off', 'low', 'medium', 'high'];
 
@@ -15,8 +16,8 @@ export async function loadThinkingLevel(fetch: typeof globalThis.fetch, cookies:
 /** Shared `setThinking` form action body for the chat pages. */
 export async function saveThinkingLevel(fetch: typeof globalThis.fetch, cookies: Cookies, sessionId: string, data: FormData) {
 	const level = String(data.get('level') ?? '');
-	if (!LEVELS.includes(level)) return fail(400, { thinkingError: 'Unknown thinking level.' });
+	if (!LEVELS.includes(level)) return fail(400, { thinkingError: m.err_thinking_level() });
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${sessionId}/thinking`, { method: 'PUT', body: JSON.stringify({ level }) });
-	if (!response.ok) return fail(response.status, { thinkingError: 'Couldn’t change the thinking level.' });
+	if (!response.ok) return fail(response.status, { thinkingError: m.err_thinking_change() });
 	return { thinkingLevel: level };
 }

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import IconAgents from '$lib/components/icons/IconAgents.svelte';
@@ -10,35 +12,35 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
-	const full = new Intl.NumberFormat();
+	const compact = new Intl.NumberFormat(getLocale(), { notation: 'compact', maximumFractionDigits: 1 });
+	const full = new Intl.NumberFormat(getLocale());
 
 	const stats = $derived([
-		{ label: 'People', value: data.stats.total_users, note: 'with an account' },
-		{ label: 'Tokens today', value: data.stats.tokens_today, note: 'across every agent' },
-		{ label: 'Tokens all time', value: data.stats.tokens_all_time, note: 'since launch' },
+		{ label: m.admin_people(), value: data.stats.total_users, note: m.admin_people_note() },
+		{ label: m.admin_tokens_today(), value: data.stats.tokens_today, note: m.admin_tokens_today_note() },
+		{ label: m.admin_tokens_all(), value: data.stats.tokens_all_time, note: m.admin_tokens_all_note() },
 	]);
 	const running = $derived(data.stats.running_agents);
 
 	const AREAS = [
-		{ href: '/admin/agents', title: 'Live agents', body: 'Watch every agent at work and open any one to see what it did.', icon: IconAgents, users: false },
-		{ href: '/admin/dynamic-agents', title: 'Custom agents', body: 'Define new crew members with their own prompt, tools and shape.', icon: IconSparkle, users: false },
-		{ href: '/admin/settings/llm', title: 'Models', body: 'The language models Nomi can use, and which one is the default.', icon: IconChip, users: false },
-		{ href: '/admin/settings/embedding', title: 'Embeddings', body: 'The provider that turns memories into vectors for recall.', icon: IconMemory, users: false },
-		{ href: '/admin/users', title: 'Users', body: 'Find people, make them staff and grant permissions.', icon: IconPerson, users: true },
+		{ href: '/admin/agents', title: m.admin_live_agents(), body: m.admin_area_agents(), icon: IconAgents, users: false },
+		{ href: '/admin/dynamic-agents', title: m.admin_custom_agents(), body: m.admin_area_custom(), icon: IconSparkle, users: false },
+		{ href: '/admin/settings/llm', title: m.admin_models(), body: m.admin_area_models(), icon: IconChip, users: false },
+		{ href: '/admin/settings/embedding', title: m.admin_embeddings(), body: m.admin_area_embeddings(), icon: IconMemory, users: false },
+		{ href: '/admin/users', title: m.admin_users(), body: m.admin_area_users(), icon: IconPerson, users: true },
 	];
 </script>
 
-<PageHeader title="Overview" lede="How Nomi is doing right now, and where to change how it runs." agent="supervisor" />
+<PageHeader title={m.admin_overview()} lede={m.admin_overview_lede()} agent="supervisor" />
 
-<section class="stats" aria-label="At a glance">
+<section class="stats" aria-label={m.admin_at_glance()}>
 	<div class="stat stat--live" data-active={running > 0}>
 		<div class="stat__top">
-			<span class="nomi-meta">Running now</span>
+			<span class="nomi-meta">{m.admin_running()}</span>
 			<AgentShape agent="nomi" face size={44} working={running > 0} />
 		</div>
 		<span class="stat__value">{full.format(running)}</span>
-		<span class="stat__note">{running === 1 ? 'agent working' : 'agents working'}</span>
+		<span class="stat__note">{running === 1 ? m.admin_agent_working() : m.admin_agents_working()}</span>
 	</div>
 	{#each stats as stat (stat.label)}
 		<div class="stat">
@@ -50,7 +52,7 @@
 </section>
 
 <section class="areas" aria-labelledby="areas-title">
-	<h2 id="areas-title" class="section-label">Manage</h2>
+	<h2 id="areas-title" class="section-label">{m.admin_manage()}</h2>
 	<ul class="areas__grid">
 		{#each AREAS.filter((a) => (a.users ? data.canViewUsers : data.canManageSystemConfig)) as area (area.href)}
 			<li>

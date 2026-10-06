@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { HomeSummary, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 const RECENT_LIMIT = 6;
 
@@ -27,7 +28,7 @@ export const actions: Actions = {
 
 		const response = await apiFetch(fetch, cookies, '/api/sessions', { method: 'POST' });
 		if (!response.ok) {
-			return fail(500, { error: 'Could not start a new chat.' });
+			return fail(500, { error: m.home_new_chat_failed() });
 		}
 		const { session_id } = (await response.json()) as { session_id: string };
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import type { CrewMember } from '$lib/crew';
 
@@ -23,9 +24,9 @@
 
 <section class="crew" class:crew--surface={surface} aria-labelledby="crew-panel-title">
 	<div class="crew__head">
-		<h2 id="crew-panel-title" class="crew__title">Your crew</h2>
+		<h2 id="crew-panel-title" class="crew__title">{m.home_your_crew()}</h2>
 		<span class="crew__count" class:crew__count--live={workingCount > 0}>
-			{workingCount > 0 ? `${workingCount} working` : 'All idle'}
+			{workingCount > 0 ? m.home_working_count({ count: workingCount }) : m.crew_all_idle()}
 		</span>
 	</div>
 	<ul class="crew__list">
@@ -35,7 +36,7 @@
 				<span class="crew__text">
 					<span class="crew__name">
 						{member.name}
-						{#if member.working}<span class="crew__live">Live</span>{/if}
+						{#if member.working}<span class="crew__live">{m.crew_live()}</span>{/if}
 					</span>
 					<span class="crew__status">{member.involved ? member.status : member.role}</span>
 				</span>

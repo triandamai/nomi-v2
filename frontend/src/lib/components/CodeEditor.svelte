@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import { EditorView, basicSetup } from 'codemirror';
 	import { javascript } from '@codemirror/lang-javascript';
@@ -54,7 +55,7 @@
 			style="background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); border: none; cursor: pointer"
 			onclick={() => onSave(getContent())}
 		>
-			Save
+			{m.common_save()}
 		</button>
 	</div>
 </div>

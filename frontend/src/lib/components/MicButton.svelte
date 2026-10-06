@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { speechLanguage } from '$lib/i18n';
+	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 
 	// Dictation through the browser's own speech recognition. Renders nothing where the browser
@@ -35,7 +37,7 @@
 		if (!Ctor) return;
 		supported = true;
 		recognition = new Ctor();
-		recognition.lang = navigator.language || 'en-US';
+		recognition.lang = speechLanguage();
 		recognition.continuous = true;
 		recognition.interimResults = true;
 		recognition.onresult = (event) => {
@@ -50,7 +52,7 @@
 		recognition.onend = () => (listening = false);
 		recognition.onerror = (event) => {
 			listening = false;
-			problem = event.error === 'not-allowed' ? 'Microphone access is blocked for this site.' : null;
+			problem = event.error === 'not-allowed' ? m.mic_blocked() : null;
 		};
 		return () => recognition?.stop();
 	});
@@ -74,8 +76,8 @@
 		class="mic"
 		class:mic--on={listening}
 		aria-pressed={listening}
-		aria-label={listening ? 'Stop dictation' : 'Dictate'}
-		title={problem ?? (listening ? 'Listening… tap to stop' : 'Dictate')}
+		aria-label={listening ? m.mic_stop() : m.mic_dictate()}
+		title={problem ?? (listening ? m.mic_listening() : m.mic_dictate())}
 		{disabled}
 		onclick={toggle}
 	>

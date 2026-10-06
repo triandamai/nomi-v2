@@ -4,6 +4,7 @@ import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
 import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages`);
@@ -12,7 +13,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		throw redirect(303, '/');
 	}
 	if (!response.ok) {
-		throw error(response.status, 'Could not load this chat.');
+		throw error(response.status, m.err_load_chat());
 	}
 
 	const { messages: rawMessages } = (await response.json()) as { messages: MessageItem[] };
@@ -41,7 +42,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const sessions: SessionSummary[] = sessionsResponse.ok
 		? ((await sessionsResponse.json()) as { sessions: SessionSummary[] }).sessions
 		: [];
-	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? 'New chat';
+	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? m.nav_new_chat();
 
 	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
 	return { messages, models, personality, agentActivity, agentStatus, title, thinkingLevel };
@@ -59,7 +60,7 @@ export const actions: Actions = {
 		const text = data.get('text');
 
 		if (typeof text !== 'string' || !text.trim()) {
-			return fail(400, { error: 'Message cannot be empty.' });
+			return fail(400, { error: m.err_empty_message() });
 		}
 
 		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages`, {
@@ -71,7 +72,7 @@ export const actions: Actions = {
 			throw redirect(303, '/');
 		}
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to send message.' });
+			return fail(response.status, { error: m.err_send_message() });
 		}
 
 		const { user_message, supervisor_reply } = (await response.json()) as {
@@ -88,7 +89,7 @@ export const actions: Actions = {
 		const adminModelId = data.get('admin_model_id');
 
 		if (typeof adminModelId !== 'string') {
-			return fail(400, { modelError: 'Invalid model selection.' });
+			return fail(400, { modelError: m.err_invalid_model_selection() });
 		}
 
 		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
@@ -98,7 +99,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { modelError: message || 'Failed to select model.' });
+			return fail(response.status, { modelError: message || m.err_select_model() });
 		}
 
 		return { modelSelected: true };
@@ -120,7 +121,7 @@ export const actions: Actions = {
 			!label.trim() ||
 			!provider.trim()
 		) {
-			return fail(400, { modelError: 'Label and provider are required.' });
+			return fail(400, { modelError: m.err_label_provider_required() });
 		}
 
 		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
@@ -137,7 +138,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { modelError: message || 'Failed to validate and save this model.' });
+			return fail(response.status, { modelError: message || m.err_validate_model() });
 		}
 
 		return { modelSelected: true };
@@ -149,7 +150,7 @@ export const actions: Actions = {
 		const apiKey = data.get('api_key');
 		const baseUrl = data.get('base_url');
 		if (typeof provider !== 'string' || !provider) {
-			return fail(400, { error: 'Provider is required.' });
+			return fail(400, { error: m.err_provider_required() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/llm/fetch-models', {
 			method: 'POST',
@@ -161,7 +162,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Could not fetch models — enter the model ID manually.' });
+			return fail(response.status, { error: message || m.err_fetch_models() });
 		}
 		const result = (await response.json()) as { models: { id: string; label: string | null }[] };
 		return { models: result.models };
@@ -173,7 +174,7 @@ export const actions: Actions = {
 		const rating = data.get('rating');
 
 		if (typeof messageId !== 'string' || !messageId) {
-			return fail(400, { error: 'Invalid message.' });
+			return fail(400, { error: m.err_invalid_message() });
 		}
 
 		const path = `/api/sessions/${params.sessionId}/messages/${messageId}/feedback`;
@@ -183,7 +184,7 @@ export const actions: Actions = {
 				: await apiFetch(fetch, cookies, path, { method: 'DELETE' });
 
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to save feedback.' });
+			return fail(response.status, { error: m.err_save_feedback() });
 		}
 		return { success: true };
 	},
@@ -195,7 +196,7 @@ export const actions: Actions = {
 		const remember = data.get('remember') === 'true';
 
 		if (typeof messageId !== 'string' || (decision !== 'approve' && decision !== 'deny')) {
-			return fail(400, { error: 'Invalid approval decision.' });
+			return fail(400, { error: m.err_invalid_approval() });
 		}
 
 		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages/${messageId}/approval`, {
@@ -205,7 +206,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to record your decision.' });
+			return fail(response.status, { error: message || m.err_record_decision() });
 		}
 
 		return { success: true };
@@ -216,7 +217,7 @@ export const actions: Actions = {
 		const version = data.get('version');
 
 		if (typeof version !== 'string' || !version.trim()) {
-			return fail(400, { personalityError: 'Invalid version.' });
+			return fail(400, { personalityError: m.err_invalid_version() });
 		}
 
 		const response = await apiFetch(fetch, cookies, '/api/personality/rollback', {
@@ -226,7 +227,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { personalityError: message || 'Failed to roll back personality.' });
+			return fail(response.status, { personalityError: message || m.err_rollback_personality() });
 		}
 
 		return { personalityRestored: true };

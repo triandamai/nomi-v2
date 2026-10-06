@@ -13,7 +13,7 @@ use crate::app::AppState;
 use crate::bootstrap::build_llm_provider_for_user;
 use nomi_auth::extractor::AuthClaims;
 use nomi_turn::bootstrap::bootstrap_identity_and_session;
-use crate::web_identity::ensure_web_channel_identity;
+use nomi_turn::bootstrap::ensure_web_channel_identity;
 
 #[derive(Serialize)]
 pub struct CreateSessionResponse {
@@ -556,8 +556,16 @@ async fn generate_session_title(
     first_message: String,
 ) {
     let provider = build_llm_provider_for_user(&pool, user_id, &settings_key, http_client).await;
+    let locale = match pool.acquire().await {
+        Ok(mut conn) => nomi_agent_core::user_locale(&mut conn, user_id).await,
+        Err(_) => nomi_agent_core::Locale::En,
+    };
     let request = nomi_llm::LlmRequest {
-        system: Some(nomi_agent_core::prompts::SESSION_TITLE_SYSTEM_PROMPT.to_string()),
+        system: Some(format!(
+            "{}\n\nWrite the title in {}, unless the message is in another language.",
+            nomi_agent_core::prompts::SESSION_TITLE_SYSTEM_PROMPT,
+            locale.english_name()
+        )),
         messages: vec![nomi_llm::LlmMessage {
             role: nomi_llm::LlmRole::User,
             content: vec![nomi_llm::ContentBlock::Text { text: first_message.clone() }],

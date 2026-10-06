@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { enhance } from '$app/forms';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -24,17 +26,20 @@
 
 	type Repeat = 'once' | 'daily' | 'weekly' | 'monthly';
 	const REPEATS: { value: Repeat; label: string }[] = [
-		{ value: 'once', label: 'Once' },
-		{ value: 'daily', label: 'Daily' },
-		{ value: 'weekly', label: 'Weekly' },
-		{ value: 'monthly', label: 'Monthly' },
+		{ value: 'once', label: m.rem_once() },
+		{ value: 'daily', label: m.rem_daily() },
+		{ value: 'weekly', label: m.rem_weekly() },
+		{ value: 'monthly', label: m.rem_monthly() },
 	];
 	const SNOOZES = [
-		{ minutes: 10, label: '10 minutes' },
-		{ minutes: 60, label: '1 hour' },
-		{ minutes: 24 * 60, label: 'Tomorrow, same time' },
+		{ minutes: 10, label: m.rem_snooze_10m(), done: m.rem_snoozed_10m },
+		{ minutes: 60, label: m.rem_snooze_1h(), done: m.rem_snoozed_1h },
+		{ minutes: 24 * 60, label: m.rem_snooze_tomorrow(), done: m.rem_snoozed_tomorrow },
 	];
-	const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+	// Sunday first, matching the API's weekday numbers (1 Jan 2023 was a Sunday).
+	const WEEKDAYS = Array.from({ length: 7 }, (_, i) =>
+		new Intl.DateTimeFormat(getLocale(), { weekday: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2023, 0, 1 + i))),
+	);
 
 	let sheetOpen = $state(false);
 	let title = $state('');
@@ -78,26 +83,26 @@
 	}
 	function dayHeading(iso: string): string {
 		const key = dayKey(iso);
-		if (key === dayKey(new Date().toISOString())) return 'Today';
-		if (key === dayKey(new Date(Date.now() + 86_400_000).toISOString())) return 'Tomorrow';
-		return new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long', timeZone: timezone }).format(new Date(iso));
+		if (key === dayKey(new Date().toISOString())) return m.rem_today();
+		if (key === dayKey(new Date(Date.now() + 86_400_000).toISOString())) return m.rem_tomorrow();
+		return new Intl.DateTimeFormat(getLocale(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: timezone }).format(new Date(iso));
 	}
 	function time(iso: string): string {
-		return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(new Date(iso));
+		return new Intl.DateTimeFormat(getLocale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(new Date(iso));
 	}
 	function shortWhen(iso: string): string {
-		return new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(
+		return new Intl.DateTimeFormat(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(
 			new Date(iso),
 		);
 	}
 	function repeatText(r: { recurrence: string | null; recurrence_weekday?: number | null; recurrence_day_of_month?: number | null }): string | null {
-		if (r.recurrence === 'daily') return 'Every day';
-		if (r.recurrence === 'weekly') return r.recurrence_weekday != null ? `Every ${WEEKDAYS[r.recurrence_weekday]}` : 'Weekly';
-		if (r.recurrence === 'monthly') return r.recurrence_day_of_month != null ? `Monthly on day ${r.recurrence_day_of_month}` : 'Monthly';
+		if (r.recurrence === 'daily') return m.rem_every_day();
+		if (r.recurrence === 'weekly') return r.recurrence_weekday != null ? m.rem_every_weekday({ weekday: WEEKDAYS[r.recurrence_weekday] }) : m.rem_weekly();
+		if (r.recurrence === 'monthly') return r.recurrence_day_of_month != null ? m.rem_monthly_on({ day: r.recurrence_day_of_month }) : m.rem_monthly();
 		return null;
 	}
 	function supporting(r: Reminder): string {
-		return [repeatText(r), r.notes].filter(Boolean).join(' · ') || (r.created_by === 'agent' ? 'Set in chat' : 'Set here');
+		return [repeatText(r), r.notes].filter(Boolean).join(' · ') || (r.created_by === 'agent' ? m.rem_set_in_chat() : m.rem_set_here());
 	}
 	function agentName(agent: string): string {
 		return agent === 'chitchat' ? 'Nomi' : agent.charAt(0).toUpperCase() + agent.slice(1);
@@ -118,39 +123,39 @@
 		snackbar = true;
 	}
 
-	const PAST_LABEL: Record<string, string> = { fired: 'Went off', done: 'Done', cancelled: 'Cancelled' };
+	const PAST_LABEL: Record<string, string> = { fired: m.rem_went_off(), done: m.common_done(), cancelled: m.rem_cancelled() };
 </script>
 
 <div class="page">
 	<div class="page__inner">
 		<header class="head">
 			<div class="head__text">
-				<h1 class="md-display-small head__title">Reminders</h1>
-				<p class="md-body-large head__lede">Everything Nomi will nudge you about. Ask in any chat, like “remind me to stretch at 4pm”, or add one here.</p>
+				<h1 class="md-display-small head__title">{m.rem_title()}</h1>
+				<p class="md-body-large head__lede">{m.rem_lede()}</p>
 			</div>
 			<div class="head__actions">
 				<AgentShape agent="reminders" size={64} class="head__mark" />
 				<Button variant="gradient" size="m" onclick={openSheet}>
 					<IconPlus size={20} />
-					New reminder
+					{m.rem_new()}
 				</Button>
 			</div>
 		</header>
 
 		{#if !reminders}
-			<p class="notice" role="alert">Couldn't load your reminders just now. Reload the page to try again.</p>
+			<p class="notice" role="alert">{m.rem_load_failed()}</p>
 		{:else}
 			<section class="surface" aria-labelledby="upcoming-heading">
 				<div class="surface__head">
-					<h2 id="upcoming-heading" class="md-title-large surface__title">Coming up</h2>
+					<h2 id="upcoming-heading" class="md-title-large surface__title">{m.rem_coming_up()}</h2>
 					<span class="count">{reminders.upcoming.length}</span>
 				</div>
 				{#if groups.length === 0}
 					<div class="empty">
 						<AgentShape agent="reminders" size={88} working />
 						<div>
-							<p class="md-title-medium empty__title">Nothing to remind you about</p>
-							<p class="md-body-medium empty__body">Add one, or just tell Nomi in a chat.</p>
+							<p class="md-title-medium empty__title">{m.rem_empty_title()}</p>
+							<p class="md-body-medium empty__body">{m.rem_empty_body()}</p>
 						</div>
 					</div>
 				{:else}
@@ -166,13 +171,13 @@
 											use:enhance={() => {
 												return async ({ result, update }) => {
 													await update();
-													if (result.type === 'success') notify(`Ticked off “${r.title}”.`);
+													if (result.type === 'success') notify(m.rem_ticked({ title: r.title }));
 												};
 											}}
 										>
 											<input type="hidden" name="id" value={r.id} />
 											<input type="hidden" name="action" value="done" />
-											<Checkbox aria-label="Mark “{r.title}” done" onchange={(e) => (e.currentTarget as HTMLInputElement).form?.requestSubmit()} />
+											<Checkbox aria-label={m.rem_mark_done({ title: r.title })} onchange={(e) => (e.currentTarget as HTMLInputElement).form?.requestSubmit()} />
 										</form>
 									{/snippet}
 									{#snippet trailing()}
@@ -180,11 +185,11 @@
 											<span class="time">{time(r.due_at)}</span>
 											<Menu bind:open={() => menus[r.id] ?? false, (v) => (menus[r.id] = v)}>
 												{#snippet trigger({ toggle })}
-													<IconButton aria-label="Snooze or cancel “{r.title}”" onclick={toggle}>
+													<IconButton aria-label={m.rem_snooze_or_cancel({ title: r.title })} onclick={toggle}>
 														<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3" /></svg>
 													</IconButton>
 												{/snippet}
-												<p class="md-label-medium menu__title">Snooze</p>
+												<p class="md-label-medium menu__title">{m.rem_snooze()}</p>
 												{#each SNOOZES as s (s.minutes)}
 													<form
 														method="POST"
@@ -193,7 +198,7 @@
 															menus[r.id] = false;
 															return async ({ result, update }) => {
 																await update();
-																if (result.type === 'success') notify(`Snoozed “${r.title}” for ${s.label.toLowerCase()}.`);
+																if (result.type === 'success') notify(s.done({ title: r.title }));
 															};
 														}}
 													>
@@ -210,13 +215,13 @@
 														menus[r.id] = false;
 														return async ({ result, update }) => {
 															await update();
-															if (result.type === 'success') notify(`Cancelled “${r.title}”.`);
+															if (result.type === 'success') notify(m.rem_cancelled_item({ title: r.title }));
 														};
 													}}
 												>
 													<input type="hidden" name="id" value={r.id} />
 													<input type="hidden" name="action" value="cancel" />
-													<MenuItem type="submit">Cancel reminder</MenuItem>
+													<MenuItem type="submit">{m.rem_cancel_reminder()}</MenuItem>
 												</form>
 											</Menu>
 										</div>
@@ -231,10 +236,10 @@
 			{#if reminders.scheduled_tasks.length > 0}
 				<section class="surface surface--tonal" aria-labelledby="tasks-heading">
 					<div class="surface__head">
-						<h2 id="tasks-heading" class="md-title-large surface__title">Scheduled for the crew</h2>
+						<h2 id="tasks-heading" class="md-title-large surface__title">{m.rem_scheduled()}</h2>
 						<span class="count">{reminders.scheduled_tasks.length}</span>
 					</div>
-					<p class="md-body-medium surface__lede">Work an agent will do for you later, like a weekly spending summary.</p>
+					<p class="md-body-medium surface__lede">{m.rem_scheduled_lede()}</p>
 					<List>
 						{#each reminders.scheduled_tasks as task (task.id)}
 							<ListItem
@@ -251,12 +256,12 @@
 										use:enhance={() => {
 											return async ({ result, update }) => {
 												await update();
-												if (result.type === 'success') notify(`Cancelled “${task.label}”.`);
+												if (result.type === 'success') notify(m.rem_cancelled_item({ title: task.label }));
 											};
 										}}
 									>
 										<input type="hidden" name="id" value={task.id} />
-										<IconButton type="submit" aria-label="Cancel “{task.label}”"><IconClose size={20} /></IconButton>
+										<IconButton type="submit" aria-label={m.rem_cancel_item({ title: task.label })}><IconClose size={20} /></IconButton>
 									</form>
 								{/snippet}
 							</ListItem>
@@ -267,7 +272,7 @@
 
 			{#if reminders.past.length > 0}
 				<section class="surface surface--quiet" aria-labelledby="past-heading">
-					<h2 id="past-heading" class="md-title-large surface__title">Recently</h2>
+					<h2 id="past-heading" class="md-title-large surface__title">{m.rem_recently()}</h2>
 					<List>
 						{#each reminders.past as r (r.id)}
 							<ListItem headline={r.title} supportingText="{PAST_LABEL[r.status]} · {shortWhen(r.last_fired_at ?? r.due_at)}">
@@ -303,32 +308,32 @@
 				saving = false;
 				if (result.type === 'success') {
 					sheetOpen = false;
-					notify(`Reminder set for ${new Date(dueAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.`);
+					notify(m.rem_set_for({ when: new Date(dueAt).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' }) }));
 				}
 			};
 		}}
 	>
 		<div class="sheet__head">
 			<AgentShape agent="reminders" size={36} />
-			<h2 class="md-headline-small-emphasized sheet__title">New reminder</h2>
+			<h2 class="md-headline-small-emphasized sheet__title">{m.rem_new()}</h2>
 		</div>
-		<TextField id="reminder-title" name="title" label="Remind me to…" bind:value={title} required maxlength={200} />
-		<TextField id="reminder-notes" name="notes" label="Notes (optional)" bind:value={notes} maxlength={500} />
+		<TextField id="reminder-title" name="title" label={m.rem_remind_me()} bind:value={title} required maxlength={200} />
+		<TextField id="reminder-notes" name="notes" label={m.rem_notes()} bind:value={notes} maxlength={500} />
 		<label class="when">
-			<span class="field-label">When</span>
+			<span class="field-label">{m.rem_when()}</span>
 			<input type="datetime-local" bind:value={when} required class="when__input" />
 		</label>
 		<input type="hidden" name="due_at" value={dueAt} />
 		<div class="repeat">
-			<span class="field-label">Repeat</span>
-			<ButtonGroup options={REPEATS} bind:value={repeat} name="recurrence" aria-label="Repeat" />
+			<span class="field-label">{m.rem_repeat()}</span>
+			<ButtonGroup options={REPEATS} bind:value={repeat} name="recurrence" aria-label={m.rem_repeat()} />
 		</div>
 		{#if form?.error}
 			<p class="sheet__error" role="alert">{form.error}</p>
 		{/if}
 		<div class="sheet__actions">
-			<Button type="button" variant="text" onclick={() => (sheetOpen = false)}>Cancel</Button>
-			<Button type="submit" variant="filled" size="m" disabled={saving || !title.trim() || !dueAt}>Save reminder</Button>
+			<Button type="button" variant="text" onclick={() => (sheetOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving || !title.trim() || !dueAt}>{m.rem_save()}</Button>
 		</div>
 	</form>
 </BottomSheet>

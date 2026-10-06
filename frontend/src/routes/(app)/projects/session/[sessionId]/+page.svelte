@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import { page } from '$app/state';
 	import ChatThread from '$lib/components/ChatThread.svelte';
@@ -34,7 +35,7 @@
 		const response = await fetch('?/saveFile', { method: 'POST', body });
 		const result = deserialize(await response.text());
 		if (result.type !== 'success') {
-			saveError = (result.type === 'failure' && (result.data?.error as string)) || 'Failed to save.';
+			saveError = (result.type === 'failure' && (result.data?.error as string)) || m.project_save_failed();
 		}
 	}
 </script>
@@ -43,8 +44,8 @@
 	<div class="w-[420px] shrink-0" style="border-right: 1px solid var(--md-sys-color-outline-variant)">
 		<ChatThread
 			sessionId={page.params.sessionId as string}
-			title={data.project?.name ?? 'New project'}
-			context="Project"
+			title={data.project?.name ?? m.project_new()}
+			context={m.project_context()}
 			messages={data.messages}
 			agentActivity={data.agentActivity}
 			agentStatus={data.agentStatus}
@@ -57,7 +58,7 @@
 		{#if !data.project}
 			<div class="flex h-full items-center justify-center p-8 text-center">
 				<p class="md-body-large" style="color: var(--md-sys-color-on-surface-variant)">
-					Describe what you'd like to build in the chat — a project will show up here once nomi gets started.
+					{m.project_empty()}
 				</p>
 			</div>
 		{:else}
@@ -70,7 +71,7 @@
 					style="border: 1px solid var(--md-sys-color-outline); background: {view === 'preview' ? 'var(--md-sys-color-secondary-container)' : 'transparent'}; color: var(--md-sys-color-on-surface); cursor: pointer"
 					onclick={() => (view = 'preview')}
 				>
-					Preview
+					{m.project_preview()}
 				</button>
 				<button
 					type="button"
@@ -78,14 +79,14 @@
 					style="border: 1px solid var(--md-sys-color-outline); background: {view === 'code' ? 'var(--md-sys-color-secondary-container)' : 'transparent'}; color: var(--md-sys-color-on-surface); cursor: pointer"
 					onclick={() => (view = 'code')}
 				>
-					Code
+					{m.project_code()}
 				</button>
 			</div>
 
 			<div class="min-h-0 flex-1">
 				{#if view === 'preview'}
 					<iframe
-						title="Project preview"
+						title={m.project_preview_title()}
 						src={`/projects/${project.id}/preview/`}
 						sandbox="allow-scripts"
 						class="h-full w-full"
@@ -107,7 +108,7 @@
 								{/each}
 							</List>
 							{#if project.files.length === 0}
-								<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">No files yet.</p>
+								<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{m.project_no_files()}</p>
 							{/if}
 						</aside>
 						<div class="min-w-0 flex-1">
@@ -120,7 +121,7 @@
 								{/key}
 							{:else}
 								<div class="flex h-full items-center justify-center">
-									<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Select a file to edit.</p>
+									<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.project_select_file()}</p>
 								</div>
 							{/if}
 						</div>

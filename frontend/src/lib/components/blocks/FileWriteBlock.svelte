@@ -1,5 +1,6 @@
 <!-- frontend/src/lib/components/blocks/FileWriteBlock.svelte -->
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { EditorState } from '@codemirror/state';
 	import { EditorView, basicSetup } from 'codemirror';
 	import { MergeView } from '@codemirror/merge';
@@ -44,7 +45,7 @@
 <div class="m3-block-card m3-block-card--write">
 	<div class="m3-block-card__header">
 		<AgentShape agent="coding" size={22} />
-		<span class="md-body-medium">{block.previous_content !== null ? 'Updated' : 'Created'} <code>{block.path}</code></span>
+		<span class="md-body-medium">{block.previous_content !== null ? m.file_updated() : m.file_created()} <code>{block.path}</code></span>
 	</div>
 	<div class="m3-block-card__editor" bind:this={container}></div>
 </div>

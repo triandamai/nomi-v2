@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -15,7 +16,7 @@
 		{ value: 'openai', label: 'OpenAI' },
 		{ value: 'gemini', label: 'Gemini' },
 		{ value: 'cohere', label: 'Cohere' },
-		{ value: 'fake', label: 'Fake (testing)' },
+		{ value: 'fake', label: m.key_fake() },
 	];
 
 	let sheetOpen = $state(false);
@@ -61,7 +62,7 @@
 				modelId = fetchedModels[0].id;
 			}
 			if (fetchedModels.length === 0) {
-				fetchError = 'This provider returned no models — enter the model ID manually.';
+				fetchError = m.key_no_models();
 				modelEntryMode = 'manual';
 			}
 		} else {
@@ -69,34 +70,34 @@
 			modelEntryMode = 'manual';
 			fetchError =
 				(result.type === 'failure' && (result.data?.error as string)) ||
-				'Could not fetch models — enter the model ID manually.';
+				m.err_fetch_models();
 		}
 	}
 </script>
 
 <PageHeader
-	title="Embeddings"
-	lede="The provider that turns memories into vectors so Nomi can recall the right ones. Switching it leaves older memories in place, but they stop being found until new ones are stored."
+	title={m.admin_embeddings()}
+	lede={m.emb_lede()}
 	agent="memory"
 />
 
-<section class="provider" aria-label="Current provider">
+<section class="provider" aria-label={m.emb_current()}>
 	<span class="provider__icon"><IconMemory size={26} /></span>
 	<div class="provider__text">
 		{#if data.settings}
-			<span class="nomi-meta">In use</span>
+			<span class="nomi-meta">{m.emb_in_use()}</span>
 			<h2 class="provider__name">{PROVIDER_OPTIONS.find((o) => o.value === data.settings?.provider)?.label ?? data.settings.provider}</h2>
 			<p class="provider__facts">{data.settings.model_id} · {data.settings.api_key_masked}</p>
 		{:else}
-			<h2 class="provider__name">Not set up</h2>
-			<p class="provider__facts">Memories can't be recalled until a provider is chosen.</p>
+			<h2 class="provider__name">{m.emb_not_set()}</h2>
+			<p class="provider__facts">{m.emb_not_set_hint()}</p>
 		{/if}
 	</div>
-	<Button type="button" variant={data.settings ? 'tonal' : 'filled'} onclick={openEdit}>{data.settings ? 'Change' : 'Set up'}</Button>
+	<Button type="button" variant={data.settings ? 'tonal' : 'filled'} onclick={openEdit}>{data.settings ? m.emb_change() : m.emb_set_up()}</Button>
 </section>
 
 <BottomSheet bind:open={sheetOpen}>
-	<h2 class="sheet-title">Embedding provider</h2>
+	<h2 class="sheet-title">{m.emb_title()}</h2>
 
 	{#if form?.error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -113,16 +114,16 @@
 		}}
 		class="mt-4 flex flex-col gap-3"
 	>
-		<Select label="Provider" name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
+		<Select label={m.key_provider()} name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
 		<TextField
 			id="api_key"
 			name="api_key"
 			type="password"
-			label="API key"
+			label={m.key_api_key()}
 			bind:value={apiKey}
-			placeholder={data.settings ? `Leave blank to keep ${data.settings.api_key_masked}` : 'Required'}
+			placeholder={data.settings ? m.emb_keep_key({ key: data.settings.api_key_masked }) : m.emb_required()}
 		/>
-		<TextField id="base_url" name="base_url" label="Base URL (optional)" bind:value={baseUrl} />
+		<TextField id="base_url" name="base_url" label={m.key_base_url()} bind:value={baseUrl} />
 
 		<Button
 			type="button"
@@ -131,7 +132,7 @@
 			disabled={fetching || (provider !== 'fake' && !apiKey && !data.settings)}
 			onclick={fetchModels}
 		>
-			{fetching ? 'Fetching…' : 'Fetch models'}
+			{fetching ? m.key_fetching() : m.key_fetch()}
 		</Button>
 		{#if fetchError}
 			<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{fetchError}</p>
@@ -139,7 +140,7 @@
 
 		{#if modelEntryMode === 'select' && fetchedModels.length > 0}
 			<Select
-				label="Model"
+				label={m.key_model()}
 				name="model_id"
 				bind:value={modelId}
 				options={fetchedModels.map((m) => ({ value: m.id, label: m.label ? `${m.id} (${m.label})` : m.id }))}
@@ -150,10 +151,10 @@
 				style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
 				onclick={() => (modelEntryMode = 'manual')}
 			>
-				Enter model ID manually instead
+				{m.key_manual()}
 			</button>
 		{:else}
-			<TextField id="model_id" name="model_id" label="Model ID" bind:value={modelId} />
+			<TextField id="model_id" name="model_id" label={m.key_model_id()} bind:value={modelId} />
 			{#if fetchedModels.length > 0}
 				<button
 					type="button"
@@ -161,14 +162,14 @@
 					style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
 					onclick={() => (modelEntryMode = 'select')}
 				>
-					Choose from fetched list instead
+					{m.key_choose_list()}
 				</button>
 			{/if}
 		{/if}
 
 		<div class="flex gap-2 pt-2">
-			<Button type="submit" variant="filled">Save</Button>
-			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>Cancel</Button>
+			<Button type="submit" variant="filled">{m.common_save()}</Button>
+			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>{m.common_cancel()}</Button>
 		</div>
 	</form>
 </BottomSheet>

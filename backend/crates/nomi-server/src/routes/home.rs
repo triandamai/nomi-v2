@@ -117,6 +117,12 @@ fn plain(text: &str) -> String {
     text.replace(['*', '`', '#', '_'], "")
 }
 
+/// The person's language, for the text Home writes itself.
+async fn locale_of(pool: &sqlx::PgPool, user_id: Uuid) -> Result<nomi_agent_core::Locale, sqlx::Error> {
+    let mut conn = pool.acquire().await?;
+    Ok(nomi_agent_core::user_locale(&mut conn, user_id).await)
+}
+
 fn capitalize(agent_type: &str) -> String {
     if agent_type == "chitchat" {
         return "Nomi".to_string();
@@ -252,10 +258,11 @@ async fn while_you_were_out(
     since: DateTime<Utc>,
 ) -> Result<Vec<OutItem>, sqlx::Error> {
     let mut out: Vec<OutItem> = Vec::new();
+    let locale = locale_of(pool, user_id).await?;
 
     // Approvals waiting on the user, wherever they were raised.
-    let waiting: Vec<(String, Uuid, String, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT a.agent_type, a.session_id, COALESCE(m.content_blocks->0->>'description', 'An action'), m.created_at \
+    let waiting: Vec<(String, Uuid, Option<String>, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT a.agent_type, a.session_id, m.content_blocks->0->>'description', m.created_at \
          FROM agent_sessions a JOIN channel_identities ci ON ci.id = a.sender_channel_identity_id \
          JOIN messages m ON m.id = (a.state->>'pending_approval_message_id')::uuid \
          WHERE ci.user_id = $1 AND a.status IN ('active', 'awaiting_approval') AND (a.state->>'paused_for_approval')::boolean = true \
@@ -269,8 +276,8 @@ async fn while_you_were_out(
     for (agent_type, session_id, description, at) in waiting {
         out.push(OutItem {
             kind: "needs_you".into(),
-            title: format!("{} needs your OK", capitalize(&agent_type)),
-            detail: clip(&description, 90),
+            title: locale.tf("home.needs_ok", &[("agent", &capitalize(&agent_type))]),
+            detail: clip(&description.unwrap_or_else(|| locale.t("home.an_action")), 90),
             agent: agent_type,
             session_id: Some(session_id),
             at,
@@ -293,18 +300,18 @@ async fn while_you_were_out(
         let (kind, title, detail) = match status.as_str() {
             "completed" => (
                 "finished",
-                format!("{name} finished {}", clip(&task, 60)),
+                locale.tf("home.finished", &[("agent", &name), ("task", &clip(&task, 60))]),
                 result.unwrap_or_default(),
             ),
             "failed" => (
                 "failed",
-                format!("{name} couldn't finish {}", clip(&task, 52)),
+                locale.tf("home.failed", &[("agent", &name), ("task", &clip(&task, 52))]),
                 error.unwrap_or_default(),
             ),
             _ => (
                 "stopped",
-                format!("{name} stopped {}", clip(&task, 60)),
-                "You stopped this one".to_string(),
+                locale.tf("home.stopped", &[("agent", &name), ("task", &clip(&task, 60))]),
+                locale.t("home.you_stopped"),
             ),
         };
         out.push(OutItem {
@@ -329,8 +336,8 @@ async fn while_you_were_out(
     for (title, session_id, at) in rang {
         out.push(OutItem {
             kind: "reminder".into(),
-            title: format!("Reminder: {}", clip(&title, 60)),
-            detail: "Went off in your Reminders chat".to_string(),
+            title: locale.tf("home.reminder", &[("title", &clip(&title, 60))]),
+            detail: locale.t("home.reminder_went_off"),
             agent: "reminders".into(),
             session_id: Some(session_id),
             at,
@@ -349,8 +356,8 @@ async fn while_you_were_out(
     for (agent_type, label, session_id, at) in fired {
         out.push(OutItem {
             kind: "reminder".into(),
-            title: format!("Reminder: {}", clip(&label, 60)),
-            detail: format!("{} followed up in your chat", capitalize(&agent_type)),
+            title: locale.tf("home.reminder", &[("title", &clip(&label, 60))]),
+            detail: locale.tf("home.followed_up", &[("agent", &capitalize(&agent_type))]),
             agent: agent_type,
             session_id: Some(session_id),
             at,
@@ -380,9 +387,9 @@ async fn while_you_were_out(
         let agent = agent.unwrap_or_else(|| "Nomi".to_string());
         out.push(OutItem {
             kind: "reply".into(),
-            title: format!(
-                "{agent} replied in {}",
-                clip(title.as_deref().unwrap_or("a chat"), 40)
+            title: locale.tf(
+                "home.replied_in",
+                &[("agent", &agent), ("title", &clip(&title.unwrap_or_else(|| locale.t("home.untitled_chat")), 40))],
             ),
             detail: clip(&plain(&content), 90),
             agent,
@@ -457,6 +464,7 @@ async fn plans(
     // Plans in progress: the latest to-do list in each chat, and each written plan's latest
     // version, while they still have open items.
     let mut plans: Vec<PlanItem> = Vec::new();
+    let locale = locale_of(pool, user_id).await?;
     let todos: Vec<TodoRow> = sqlx::query_as(
         "SELECT DISTINCT ON (m.session_id) m.session_id, s.title, m.agent_display_name, m.content_blocks->0->'items', m.created_at \
          FROM messages m JOIN sessions s ON s.id = m.session_id \
@@ -475,7 +483,7 @@ async fn plans(
         if total > 0 && done < total {
             plans.push(PlanItem {
                 kind: "todo".into(),
-                title: title.unwrap_or_else(|| "To-do".to_string()),
+                title: title.unwrap_or_else(|| locale.t("home.todo")),
                 agent: agent.unwrap_or_else(|| "Nomi".to_string()),
                 done,
                 total,

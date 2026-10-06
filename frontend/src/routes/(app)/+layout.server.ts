@@ -1,5 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { getLocale } from '$lib/paraglide/runtime';
+import { setLanguageCookie } from '$lib/server/locale';
 import type { CrewRosterMember } from '$lib/crew';
 import type { Preferences, Profile } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
@@ -22,7 +24,10 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 		: { display_name: null, username: null, email: userEmail, avatar_url: null };
 	const preferences: Preferences = preferencesResponse.ok
 		? ((await preferencesResponse.json()) as Preferences)
-		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', has_stored_timezone: false };
+		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
+
+	// The saved language wins on every device; the cookie makes the next render use it.
+	if (preferencesResponse.ok && preferences.language !== getLocale()) setLanguageCookie(cookies, preferences.language);
 
 	return { userEmail, profile, preferences, crew };
 };

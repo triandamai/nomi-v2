@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import AdminSidebar from '$lib/components/AdminSidebar.svelte';
 	import AppearancePicker from '$lib/components/AppearancePicker.svelte';
@@ -6,12 +7,20 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
+	import { getLocale, setLocale } from '$lib/paraglide/runtime';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	let mobileNavOpen = $state(false);
 	let appearanceOpen = $state(false);
+
+	// The saved language follows the person to every device: switch (one reload) when this one
+	// is still showing another.
+	$effect(() => {
+		if (data.preferences.language && data.preferences.language !== getLocale()) setLocale(data.preferences.language);
+		document.documentElement.lang = getLocale();
+	});
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
@@ -23,11 +32,11 @@
 	<AdminSidebar canManageSystemConfig={data.canManageSystemConfig} canViewUsers={data.canViewUsers} bind:mobileOpen={mobileNavOpen} onappearance={() => (appearanceOpen = true)} />
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
-			<IconButton onclick={() => (mobileNavOpen = true)} aria-label="Open menu"><IconMenu /></IconButton>
+			<IconButton onclick={() => (mobileNavOpen = true)} aria-label={m.nav_open_menu()}><IconMenu /></IconButton>
 			<a href="/admin" class="mobile-brand">
 				<AgentShape size={28} face />
 				<span class="mobile-brand__word">nomi</span>
-				<span class="mobile-brand__tag">Admin</span>
+				<span class="mobile-brand__tag">{m.admin_tag()}</span>
 			</a>
 		</header>
 		<main class="admin-main">
@@ -39,8 +48,8 @@
 </div>
 
 <BottomSheet bind:open={appearanceOpen}>
-	<h2 class="sheet-title">Appearance</h2>
-	<p class="sheet-lede">The theme follows you between the admin console and Nomi.</p>
+	<h2 class="sheet-title">{m.admin_appearance()}</h2>
+	<p class="sheet-lede">{m.admin_appearance_lede()}</p>
 	<AppearancePicker preferences={data.preferences} />
 </BottomSheet>
 
