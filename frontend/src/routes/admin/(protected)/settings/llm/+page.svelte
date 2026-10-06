@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -18,7 +19,7 @@
 		{ value: 'openrouter', label: 'OpenRouter' },
 		{ value: 'gemini', label: 'Gemini' },
 		{ value: 'deepseek', label: 'DeepSeek' },
-		{ value: 'fake', label: 'Fake (testing)' },
+		{ value: 'fake', label: m.key_fake() },
 	];
 
 	const providerName = (value: string) => PROVIDER_OPTIONS.find((o) => o.value === value)?.label ?? value;
@@ -87,7 +88,7 @@
 				modelId = fetchedModels[0].id;
 			}
 			if (fetchedModels.length === 0) {
-				fetchError = 'This provider returned no models — enter the model ID manually.';
+				fetchError = m.key_no_models();
 				modelEntryMode = 'manual';
 			}
 		} else {
@@ -95,21 +96,21 @@
 			modelEntryMode = 'manual';
 			fetchError =
 				(result.type === 'failure' && (result.data?.error as string)) ||
-				'Could not fetch models — enter the model ID manually.';
+				m.err_fetch_models();
 		}
 	}
 </script>
 
-<PageHeader title="Models" lede="The language models Nomi's agents think with. The default answers every chat unless a person picks another." agent="coding">
+<PageHeader title={m.admin_models()} lede={m.llm_lede()} agent="coding">
 	{#snippet actions()}
-		<Button type="button" variant="filled" onclick={openCreate}><IconPlus size={18} /> Add model</Button>
+		<Button type="button" variant="filled" onclick={openCreate}><IconPlus size={18} /> {m.llm_add()}</Button>
 	{/snippet}
 </PageHeader>
 
 {#if data.models.length === 0}
 	<div class="empty">
 		<span class="model__icon"><IconChip size={26} /></span>
-		<p class="empty__text"><strong>No models yet.</strong> Add one with its provider and API key; the first becomes the default.</p>
+		<p class="empty__text"><strong>{m.llm_empty_title()}</strong> {m.llm_empty()}</p>
 	</div>
 {:else}
 	<ul class="models">
@@ -121,22 +122,22 @@
 						<h3 class="model__name">{model.label}</h3>
 						<p class="model__provider">{providerName(model.provider)}</p>
 					</div>
-					{#if model.is_default}<span class="chip">Default</span>{/if}
+					{#if model.is_default}<span class="chip">{m.llm_default()}</span>{/if}
 				</div>
 				<dl class="model__facts">
-					<div><dt>Model</dt><dd>{model.model_id}</dd></div>
-					<div><dt>Key</dt><dd>{model.api_key_masked || "None"}</dd></div>
+					<div><dt>{m.key_model()}</dt><dd>{model.model_id}</dd></div>
+					<div><dt>{m.llm_key()}</dt><dd>{model.api_key_masked || m.llm_none()}</dd></div>
 				</dl>
 				<div class="model__actions">
-					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(model)}>Edit</Button>
+					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(model)}>{m.dyn_edit()}</Button>
 					{#if !model.is_default}
 						<form method="POST" action="?/setDefault" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
-							<Button type="submit" variant="text" size="xs">Make default</Button>
+							<Button type="submit" variant="text" size="xs">{m.llm_make_default()}</Button>
 						</form>
 						<form method="POST" action="?/delete" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
-							<Button type="submit" variant="text" size="xs" class="danger">Delete</Button>
+							<Button type="submit" variant="text" size="xs" class="danger">{m.common_delete()}</Button>
 						</form>
 					{/if}
 				</div>
@@ -146,7 +147,7 @@
 {/if}
 
 <BottomSheet bind:open={sheetOpen}>
-	<h2 class="sheet-title">{editingId ? `Edit ${label || 'model'}` : 'Add model'}</h2>
+	<h2 class="sheet-title">{editingId ? m.llm_edit_named({ label: label || m.llm_model() }) : m.llm_add()}</h2>
 
 	{#if form?.error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -168,17 +169,17 @@
 		{#if editingId}
 			<input type="hidden" name="id" value={editingId} />
 		{/if}
-		<TextField id="label" name="label" label="Label" bind:value={label} required />
-		<Select label="Provider" name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
+		<TextField id="label" name="label" label={m.key_label()} bind:value={label} required />
+		<Select label={m.key_provider()} name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
 		<TextField
 			id="api_key"
 			name="api_key"
 			type="password"
-			label="API key"
+			label={m.key_api_key()}
 			bind:value={apiKey}
-			placeholder={editingId ? 'Leave blank to keep the existing key' : undefined}
+			placeholder={editingId ? m.llm_keep_key() : undefined}
 		/>
-		<TextField id="base_url" name="base_url" label="Base URL (optional)" bind:value={baseUrl} />
+		<TextField id="base_url" name="base_url" label={m.key_base_url()} bind:value={baseUrl} />
 
 		<Button
 			type="button"
@@ -187,7 +188,7 @@
 			disabled={fetching || (provider !== 'fake' && !apiKey && !editingId)}
 			onclick={fetchModels}
 		>
-			{fetching ? 'Fetching…' : 'Fetch models'}
+			{fetching ? m.key_fetching() : m.key_fetch()}
 		</Button>
 		{#if fetchError}
 			<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{fetchError}</p>
@@ -195,7 +196,7 @@
 
 		{#if modelEntryMode === 'select' && fetchedModels.length > 0}
 			<Select
-				label="Model"
+				label={m.key_model()}
 				name="model_id"
 				bind:value={modelId}
 				options={fetchedModels.map((m) => ({ value: m.id, label: m.label ? `${m.id} (${m.label})` : m.id }))}
@@ -206,10 +207,10 @@
 				style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
 				onclick={() => (modelEntryMode = 'manual')}
 			>
-				Enter model ID manually instead
+				{m.key_manual()}
 			</button>
 		{:else}
-			<TextField id="model_id" name="model_id" label="Model ID" bind:value={modelId} required />
+			<TextField id="model_id" name="model_id" label={m.key_model_id()} bind:value={modelId} required />
 			{#if fetchedModels.length > 0}
 				<button
 					type="button"
@@ -217,14 +218,14 @@
 					style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
 					onclick={() => (modelEntryMode = 'select')}
 				>
-					Choose from fetched list instead
+					{m.key_choose_list()}
 				</button>
 			{/if}
 		{/if}
 
 		<div class="flex gap-2 pt-2">
-			<Button type="submit" variant="filled">{editingId ? 'Save' : 'Add model'}</Button>
-			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>Cancel</Button>
+			<Button type="submit" variant="filled">{editingId ? m.common_save() : m.llm_add()}</Button>
+			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>{m.common_cancel()}</Button>
 		</div>
 	</form>
 </BottomSheet>

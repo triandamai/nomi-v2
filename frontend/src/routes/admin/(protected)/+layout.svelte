@@ -36,7 +36,7 @@
 			<a href="/admin" class="mobile-brand">
 				<AgentShape size={28} face />
 				<span class="mobile-brand__word">nomi</span>
-				<span class="mobile-brand__tag">Admin</span>
+				<span class="mobile-brand__tag">{m.admin_tag()}</span>
 			</a>
 		</header>
 		<main class="admin-main">
@@ -48,8 +48,8 @@
 </div>
 
 <BottomSheet bind:open={appearanceOpen}>
-	<h2 class="sheet-title">Appearance</h2>
-	<p class="sheet-lede">The theme follows you between the admin console and Nomi.</p>
+	<h2 class="sheet-title">{m.admin_appearance()}</h2>
+	<p class="sheet-lede">{m.admin_appearance_lede()}</p>
 	<AppearancePicker preferences={data.preferences} />
 </BottomSheet>
 

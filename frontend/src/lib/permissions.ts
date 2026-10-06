@@ -1,3 +1,5 @@
+import { m } from '$lib/paraglide/messages';
+
 export interface PermissionResourceDef {
 	resource: string;
 	label: string;
@@ -10,8 +12,24 @@ export interface PermissionResourceDef {
 // still grantable via the "Other" custom-resource row, since the backend's resource string is
 // free-form and other product areas may start enforcing new resources later.
 export const ADMIN_PERMISSION_RESOURCES: PermissionResourceDef[] = [
-	{ resource: 'user', label: 'Users', description: 'View and manage the admin user roster' },
-	{ resource: 'system_config', label: 'System settings', description: 'LLM and embedding provider configuration' },
+	{
+		resource: 'user',
+		get label() {
+			return m.admin_users();
+		},
+		get description() {
+			return m.perm_users_desc();
+		},
+	},
+	{
+		resource: 'system_config',
+		get label() {
+			return m.perm_system();
+		},
+		get description() {
+			return m.perm_system_desc();
+		},
+	},
 ];
 
 export const CUSTOM_PERMISSION_RESOURCE = 'other';

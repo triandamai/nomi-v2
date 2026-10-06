@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { onMount } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -46,7 +47,7 @@
 	let feed = $state<AgentEventItem[]>(data.events);
 
 	function feedLine(item: AgentEventItem): string {
-		const who = item.agent_display_name ?? (item.agent_type ? agentTypeFallbackLabel(item.agent_type) : 'An agent');
+		const who = item.agent_display_name ?? (item.agent_type ? agentTypeFallbackLabel(item.agent_type) : m.agent_an_agent());
 		return eventFeedLine(item.event_type, who, item.session_id, item.tool_name, item.is_error);
 	}
 
@@ -55,13 +56,13 @@
 	}
 
 	const columns = [
-		{ key: 'user_label', label: 'User', sortable: true },
-		{ key: 'agent_display_name', label: 'Agent', sortable: true },
-		{ key: 'session_id', label: 'Session', sortable: true },
-		{ key: 'channel', label: 'Channel', sortable: true },
-		{ key: 'current_phase', label: 'Status', sortable: true },
-		{ key: 'started_at', label: 'Started', sortable: true },
-		{ key: 'last_activity_at', label: 'Last activity', sortable: true },
+		{ key: 'user_label', label: m.live_user(), sortable: true },
+		{ key: 'agent_display_name', label: m.live_agent(), sortable: true },
+		{ key: 'session_id', label: m.live_session(), sortable: true },
+		{ key: 'channel', label: m.live_channel(), sortable: true },
+		{ key: 'current_phase', label: m.live_status(), sortable: true },
+		{ key: 'started_at', label: m.live_started(), sortable: true },
+		{ key: 'last_activity_at', label: m.live_last_activity(), sortable: true },
 	];
 
 	let sortKey = $state<string | undefined>('user_label');
@@ -217,14 +218,14 @@
 	}
 </script>
 
-<PageHeader title="Live agents" lede="Every agent at work right now, as it happens. Open one to see each step it took." agent="supervisor" />
+<PageHeader title={m.admin_live_agents()} lede={m.live_lede()} agent="supervisor" />
 
 <section aria-labelledby="running-title">
-	<h2 id="running-title" class="section-label">Working now · {sortedRows.length}</h2>
+	<h2 id="running-title" class="section-label">{m.live_working_now({ count: sortedRows.length })}</h2>
 	{#if sortedRows.length === 0}
 		<div class="quiet">
 			<AgentShape agent="nomi" face size={56} />
-			<p class="quiet__text"><strong>All quiet.</strong> No agent is working right now; new ones appear here the moment they start.</p>
+			<p class="quiet__text"><strong>{m.live_quiet_title()}</strong> {m.live_quiet()}</p>
 		</div>
 	{:else}
 		<DataTable card {columns} bind:sortKey bind:sortDirection>
@@ -249,9 +250,9 @@
 </section>
 
 <section aria-labelledby="activity-title">
-	<h2 id="activity-title" class="section-label">Activity</h2>
+	<h2 id="activity-title" class="section-label">{m.live_activity()}</h2>
 	{#if feed.length === 0}
-		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Nothing has happened yet.</p>
+		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.live_nothing()}</p>
 	{:else}
 		<ol class="feed">
 			{#each feed as item (item.id)}
@@ -272,12 +273,12 @@
 				{drillDownRow.agent_display_name}
 			</h2>
 			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 16px;" title={drillDownRow.session_id}>
-				Session {drillDownRow.session_id ? shortSessionId(drillDownRow.session_id) : '(unknown until a live event arrives)'} · {rowPhaseLabel(drillDownRow)}
+				{m.live_session_line({ session: drillDownRow.session_id ? shortSessionId(drillDownRow.session_id) : m.live_session_unknown(), phase: rowPhaseLabel(drillDownRow) })}
 			</p>
 			{#if drillDownLoading}
-				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Loading…</p>
+				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.common_loading()}</p>
 			{:else if drillDownEvents.length === 0}
-				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No recent activity for this agent.</p>
+				<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.live_no_recent()}</p>
 			{:else}
 				{#each drillDownEvents as item (item.id)}
 					<div style="padding: 8px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);">

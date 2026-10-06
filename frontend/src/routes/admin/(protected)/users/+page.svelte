@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { deserialize, enhance } from '$app/forms';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
@@ -23,15 +24,16 @@
 	let { data }: { data: PageData } = $props();
 
 	const columns = [
-		{ key: 'email', label: 'Person' },
-		{ key: 'staff', label: 'Role' },
-		{ key: 'orgs', label: 'Spaces' },
+		{ key: 'email', label: m.users_person() },
+		{ key: 'staff', label: m.users_role() },
+		{ key: 'orgs', label: m.users_spaces() },
 		{ key: 'actions', label: '' },
 	];
 
-	function role(user: { is_platform_admin: boolean; is_staff: boolean }): string {
-		return user.is_platform_admin ? 'Owner' : user.is_staff ? 'Staff' : 'Member';
+	function roleKey(user: { is_platform_admin: boolean; is_staff: boolean }): 'owner' | 'staff' | 'member' {
+		return user.is_platform_admin ? 'owner' : user.is_staff ? 'staff' : 'member';
 	}
+	const ROLE_LABELS = { owner: m.users_owner, staff: m.users_staff, member: m.users_member };
 
 	function handleSearch(query: string) {
 		goto(`?query=${encodeURIComponent(query)}&page=1`, { keepFocus: true });
@@ -81,7 +83,7 @@
 			actionView = false;
 			actionManage = false;
 		} else {
-			detailError = (result.type === 'failure' && (result.data?.error as string)) || 'Could not load this user.';
+			detailError = (result.type === 'failure' && (result.data?.error as string)) || m.users_load_failed();
 		}
 	}
 
@@ -95,7 +97,7 @@
 	});
 </script>
 
-<PageHeader title="Users" lede="Everyone with a Nomi account. Make people staff and choose what they can see and change." agent="personality" />
+<PageHeader title={m.admin_users()} lede={m.users_lede()} agent="personality" />
 
 <div>
 	<DataTable
@@ -107,7 +109,7 @@
 		onPageChange={handlePageChange}
 		searchQuery={data.query}
 		onSearch={handleSearch}
-		searchPlaceholder="Search by email"
+		searchPlaceholder={m.users_search()}
 	>
 		{#each data.users as user (user.id)}
 			<tr>
@@ -117,21 +119,21 @@
 						<span class="person__email">{user.email}</span>
 					</span>
 				</td>
-				<td><span class="role" data-role={role(user).toLowerCase()}>{role(user)}</span></td>
+				<td><span class="role" data-role={roleKey(user)}>{ROLE_LABELS[roleKey(user)]()}</span></td>
 				<td class="spaces">{user.org_count}</td>
 				<td>
 					<Menu>
 						{#snippet trigger({ toggle })}
-							<IconButton onclick={toggle} aria-label="Actions for {user.email}">
+							<IconButton onclick={toggle} aria-label={m.users_actions_for({ email: user.email })}>
 								<IconMore size={18} />
 							</IconButton>
 						{/snippet}
-						<MenuItem onclick={() => openSheet(user.id, 'user')}>Update user</MenuItem>
-						<MenuItem onclick={() => openSheet(user.id, 'role')}>Update role</MenuItem>
+						<MenuItem onclick={() => openSheet(user.id, 'user')}>{m.users_update_user()}</MenuItem>
+						<MenuItem onclick={() => openSheet(user.id, 'role')}>{m.users_update_role()}</MenuItem>
 						{#if !user.is_staff}
 							<form method="POST" action="?/promote" use:enhance>
 								<input type="hidden" name="userId" value={user.id} />
-								<MenuItem type="submit">Promote to staff</MenuItem>
+								<MenuItem type="submit">{m.users_promote()}</MenuItem>
 							</form>
 						{/if}
 					</Menu>
@@ -141,18 +143,18 @@
 	</DataTable>
 	{#if data.users.length === 0}
 		<p class="md-body-medium mt-4" style="color: var(--md-sys-color-on-surface-variant)">
-			{data.query ? `Nobody matches “${data.query}”.` : 'No one has signed up yet.'}
+			{data.query ? m.users_no_match({ query: data.query }) : m.users_none()}
 		</p>
 	{/if}
 </div>
 
 <BottomSheet bind:open={sheetOpen}>
 	{#if detailLoading}
-		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Loading…</p>
+		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.common_loading()}</p>
 	{:else if detailError}
 		<p class="md-body-medium" style="color: var(--md-sys-color-error)">{detailError}</p>
 	{:else if userDetail && sheetKind === 'user'}
-		<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Update user</h2>
+		<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{m.users_update_user()}</h2>
 		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">{userDetail.email}</p>
 
 		<form
@@ -169,23 +171,23 @@
 			class="mt-6 flex flex-col gap-3"
 		>
 			<input type="hidden" name="userId" value={activeUserId} />
-			<TextField id="display_name" name="display_name" label="Display name" bind:value={displayName} />
-			<TextField id="username" name="username" label="Username" bind:value={username} />
-			<Button type="submit" variant="filled" class="w-fit">Save</Button>
+			<TextField id="display_name" name="display_name" label={m.profile_display_name()} bind:value={displayName} />
+			<TextField id="username" name="username" label={m.profile_username()} bind:value={username} />
+			<Button type="submit" variant="filled" class="w-fit">{m.common_save()}</Button>
 		</form>
 	{:else if userDetail && sheetKind === 'role'}
-		<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Update role</h2>
+		<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{m.users_update_role()}</h2>
 		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">{userDetail.email}</p>
 
 		<section class="mt-6">
-			<h3 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Permissions</h3>
+			<h3 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.users_permissions()}</h3>
 			{#if userDetail.permissions.length === 0}
-				<p class="md-body-small mt-2" style="color: var(--md-sys-color-on-surface-variant)">No explicit grants.</p>
+				<p class="md-body-small mt-2" style="color: var(--md-sys-color-on-surface-variant)">{m.users_no_grants()}</p>
 			{:else}
 				<List class="mt-2">
 					{#each userDetail.permissions as grant (grant.id)}
 						<ListItem
-							headline="{grant.scope_type === 'admin' ? 'Admin' : (grant.org_name ?? 'Unknown org')}: {grant.resource}"
+							headline="{grant.scope_type === 'admin' ? m.admin_tag() : (grant.org_name ?? m.users_unknown_org())}: {grant.resource}"
 							supportingText={grant.actions.join(', ')}
 						>
 							{#snippet trailing()}
@@ -204,7 +206,7 @@
 									>
 										<input type="hidden" name="userId" value={activeUserId} />
 										<input type="hidden" name="permissionId" value={grant.id} />
-										<IconButton type="submit" aria-label="Revoke {grant.resource}">
+										<IconButton type="submit" aria-label={m.users_revoke({ resource: grant.resource })}>
 											<IconClose size={16} />
 										</IconButton>
 									</form>
@@ -233,7 +235,7 @@
 				>
 					<input type="hidden" name="userId" value={activeUserId} />
 					<div>
-						<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">Resource</span>
+						<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{m.users_resource()}</span>
 						<div class="mt-2 flex flex-col gap-2">
 							{#each ADMIN_PERMISSION_RESOURCES as resourceDef (resourceDef.resource)}
 								<div class="m3-resource-row">
@@ -244,33 +246,33 @@
 								</div>
 							{/each}
 							<div class="m3-resource-row">
-								<Radio name="resource" value={CUSTOM_PERMISSION_RESOURCE} bind:group={selectedResource} label="Other" />
+								<Radio name="resource" value={CUSTOM_PERMISSION_RESOURCE} bind:group={selectedResource} label={m.users_other()} />
 							</div>
 							{#if selectedResource === CUSTOM_PERMISSION_RESOURCE}
 								<TextField
 									id="customResource"
 									name="customResource"
-									label="Custom resource"
+									label={m.users_custom_resource()}
 									bind:value={customResource}
-									supportingText="Lowercase letters, digits, and underscores only."
+									supportingText={m.users_custom_hint()}
 								/>
 							{/if}
 						</div>
 					</div>
 
 					<div>
-						<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">Actions</span>
+						<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{m.users_actions()}</span>
 						<div class="mt-2 flex gap-4">
-							<Checkbox name="actions" value="view" bind:checked={actionView} label="View" />
-							<Checkbox name="actions" value="manage" bind:checked={actionManage} label="Manage" />
+							<Checkbox name="actions" value="view" bind:checked={actionView} label={m.users_view()} />
+							<Checkbox name="actions" value="manage" bind:checked={actionManage} label={m.users_manage()} />
 						</div>
 					</div>
 
-					<Button type="submit" variant="filled" class="w-fit">Grant</Button>
+					<Button type="submit" variant="filled" class="w-fit">{m.users_grant()}</Button>
 				</form>
 			{:else}
 				<p class="md-body-small mt-4" style="color: var(--md-sys-color-on-surface-variant)">
-					You need manage access to grant permissions.
+					{m.users_need_manage()}
 				</p>
 			{/if}
 		</section>

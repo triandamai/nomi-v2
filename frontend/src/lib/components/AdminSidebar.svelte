@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -45,14 +46,14 @@
 	const NAV = $derived([
 		...(canManageSystemConfig
 			? [
-					{ href: '/admin', label: 'Overview', icon: IconDashboard },
-					{ href: '/admin/agents', label: 'Live agents', icon: IconAgents },
-					{ href: '/admin/dynamic-agents', label: 'Custom agents', icon: IconSparkle },
-					{ href: '/admin/settings/llm', label: 'Models', icon: IconChip },
-					{ href: '/admin/settings/embedding', label: 'Embeddings', icon: IconMemory },
+					{ href: '/admin', label: m.admin_overview(), icon: IconDashboard },
+					{ href: '/admin/agents', label: m.admin_live_agents(), icon: IconAgents },
+					{ href: '/admin/dynamic-agents', label: m.admin_custom_agents(), icon: IconSparkle },
+					{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip },
+					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
 				]
 			: []),
-		...(canViewUsers ? [{ href: '/admin/users', label: 'Users', icon: IconPerson }] : []),
+		...(canViewUsers ? [{ href: '/admin/users', label: m.admin_users(), icon: IconPerson }] : []),
 	]);
 
 	function isActive(href: string): boolean {
@@ -62,7 +63,7 @@
 </script>
 
 {#if mobileOpen}
-	<button type="button" class="scrim md:hidden" aria-label="Close menu" onclick={() => (mobileOpen = false)}></button>
+	<button type="button" class="scrim md:hidden" aria-label={m.nav_close_menu()} onclick={() => (mobileOpen = false)}></button>
 {/if}
 
 <aside
@@ -72,34 +73,34 @@
 	style="background: var(--md-sys-color-surface-container-low)"
 >
 	<div class="flex w-full items-center gap-2 px-4 pt-5 pb-3" class:justify-center={rail} class:justify-between={!rail}>
-		<a href="/admin" class="brand" aria-label="Nomi admin" onclick={() => (mobileOpen = false)}>
+		<a href="/admin" class="brand" aria-label={m.admin_brand()} onclick={() => (mobileOpen = false)}>
 			<AgentShape size={40} face />
 			{#if !rail}
 				<span class="brand__word">nomi</span>
-				<span class="brand__tag">Admin</span>
+				<span class="brand__tag">{m.admin_tag()}</span>
 			{/if}
 		</a>
 		{#if !rail}
 			<div class="hidden md:block">
-				<IconButton onclick={toggleCollapsed} aria-label="Collapse sidebar"><IconChevronLeft /></IconButton>
+				<IconButton onclick={toggleCollapsed} aria-label={m.nav_collapse()}><IconChevronLeft /></IconButton>
 			</div>
 		{/if}
 		<div class="md:hidden">
-			<IconButton onclick={() => (mobileOpen = false)} aria-label="Close menu"><IconClose /></IconButton>
+			<IconButton onclick={() => (mobileOpen = false)} aria-label={m.nav_close_menu()}><IconClose /></IconButton>
 		</div>
 	</div>
 
-	<NavList items={NAV} {rail} {isActive} label="Admin" onnavigate={() => (mobileOpen = false)} />
+	<NavList items={NAV} {rail} {isActive} label={m.admin_tag()} onnavigate={() => (mobileOpen = false)} />
 
 	<div class="flex-1"></div>
 
 	{#if rail}
 		<div class="hidden flex-col items-center gap-1 pb-4 md:flex">
-			<IconButton onclick={toggleCollapsed} aria-label="Expand sidebar"><IconChevronRight /></IconButton>
-			<IconButton onclick={onappearance} aria-label="Appearance"><IconPalette /></IconButton>
-			<IconButton href="/" aria-label="Back to Nomi"><IconArrowBack /></IconButton>
+			<IconButton onclick={toggleCollapsed} aria-label={m.nav_expand()}><IconChevronRight /></IconButton>
+			<IconButton onclick={onappearance} aria-label={m.admin_appearance()}><IconPalette /></IconButton>
+			<IconButton href="/" aria-label={m.admin_back()}><IconArrowBack /></IconButton>
 			<form method="POST" action="/logout?redirect_to=/login">
-				<IconButton type="submit" aria-label="Log out"><IconLogout /></IconButton>
+				<IconButton type="submit" aria-label={m.nav_log_out()}><IconLogout /></IconButton>
 			</form>
 		</div>
 	{:else}
@@ -112,13 +113,13 @@
 					onappearance();
 				}}
 			>
-				<IconPalette size={20} /> Appearance
+				<IconPalette size={20} /> {m.admin_appearance()}
 			</button>
 			<a href="/" class="footer__item" onclick={() => (mobileOpen = false)}>
-				<IconArrowBack size={20} /> Back to Nomi
+				<IconArrowBack size={20} /> {m.admin_back()}
 			</a>
 			<form method="POST" action="/logout?redirect_to=/login">
-				<button type="submit" class="footer__item footer__item--quiet"><IconLogout size={20} /> Log out</button>
+				<button type="submit" class="footer__item footer__item--quiet"><IconLogout size={20} /> {m.nav_log_out()}</button>
 			</form>
 		</div>
 	{/if}
