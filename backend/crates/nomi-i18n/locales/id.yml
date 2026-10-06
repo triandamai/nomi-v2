@@ -23,6 +23,7 @@ turn:
   workspace_resumed: "Google Workspace sudah terhubung. Terima kasih! Aku lanjutkan permintaanmu, ya."
 error:
   tool_loop: "Sepertinya aku berputar-putar di situ, jadi aku hentikan dulu. Boleh dicoba dengan pertanyaan yang sedikit berbeda?"
+  timed_out: "Yang tadi kelamaan, jadi aku hentikan dulu. Coba kirim lagi, ya."
   approval_handled: "Persetujuan itu sudah ditangani, kok."
   internal: "Maaf, ada yang kurang beres di sisiku. Silakan kirim pesanmu sekali lagi."
   llm_unreachable: "Maaf, aku belum bisa menghubungi penyedia AI. Silakan periksa koneksi server, lalu kirim pesanmu lagi."

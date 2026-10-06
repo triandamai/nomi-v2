@@ -76,6 +76,13 @@ pub async fn handle_inbound_message(
     }
 }
 
+/// Longest one turn may run (`TURN_TIME_LIMIT_SECS`, default 10 minutes). Long enough for a
+/// many-step task on a slow model; short enough that a stuck one doesn't hold the queue.
+pub fn turn_time_limit() -> std::time::Duration {
+    let secs = std::env::var("TURN_TIME_LIMIT_SECS").ok().and_then(|v| v.trim().parse::<u64>().ok()).filter(|s| *s > 0).unwrap_or(600);
+    std::time::Duration::from_secs(secs)
+}
+
 /// The worker's entry point (see backend/src/bin/worker.rs): processes an already-ingested
 /// message (see nomi_turn::ingest::ingest_inbound_message) — bootstrap and the inbound
 /// message insert have already happened, so this only acquires the session lock and runs
@@ -97,20 +104,31 @@ pub async fn process_turn(
 ) -> Result<TurnOutcome, TurnError> {
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
-    let result = run_locked_turn(
-        &mut conn,
-        Some((mqtt, turn_job_id)),
-        s3,
-        provider,
-        embedding_provider,
-        registry,
-        catalog,
-        session_id,
-        sender_channel_identity_id,
-        user_id,
-        text,
+    // A stalled model or tool must never hold the chat (or the worker, which runs turns one at a
+    // time) forever: past the limit the turn is dropped and fails like any other error below,
+    // which also releases the session lock on this same connection.
+    let limit = turn_time_limit();
+    let result = match tokio::time::timeout(
+        limit,
+        run_locked_turn(
+            &mut conn,
+            Some((mqtt, turn_job_id)),
+            s3,
+            provider,
+            embedding_provider,
+            registry,
+            catalog,
+            session_id,
+            sender_channel_identity_id,
+            user_id,
+            text,
+        ),
     )
-    .await;
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(TurnError::TimedOut(limit)),
+    };
 
     match result {
         Ok((reply, message_id)) => {

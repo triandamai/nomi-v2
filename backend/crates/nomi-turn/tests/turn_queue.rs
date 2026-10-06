@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use nomi_turn::ingest::ingest_inbound_message;
 use nomi_turn::queue;
 
 async fn seed_session(pool: &PgPool) -> Uuid {
@@ -96,4 +97,46 @@ async fn mark_completed_and_mark_failed_update_status(pool: PgPool) {
             .unwrap();
     assert_eq!(status, "failed");
     assert_eq!(error.as_deref(), Some("boom"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_turn_left_processing_past_the_limit_is_failed_so_the_chat_stops_working(pool: PgPool) {
+    let stuck = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "hello", None).await.unwrap();
+    let fresh = ingest_inbound_message(&pool, "telegram", "dm", "chat-2", "tg-2", "hi", None).await.unwrap();
+    // Both claimed; the first by a worker that died an hour ago.
+    sqlx::query("UPDATE turn_jobs SET status = 'processing', claimed_at = now() WHERE id IN ($1, $2)")
+        .bind(stuck.turn_job_id)
+        .bind(fresh.turn_job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE turn_jobs SET claimed_at = now() - interval '1 hour' WHERE id = $1").bind(stuck.turn_job_id).execute(&pool).await.unwrap();
+
+    let failed = nomi_turn::queue::fail_abandoned(&pool, std::time::Duration::from_secs(12 * 60)).await.unwrap();
+
+    assert_eq!(failed, 1);
+    let status = |id| {
+        let pool = pool.clone();
+        async move { sqlx::query_scalar::<_, String>("SELECT status FROM turn_jobs WHERE id = $1").bind(id).fetch_one(&pool).await.unwrap() }
+    };
+    assert_eq!(status(stuck.turn_job_id).await, "failed");
+    assert_eq!(status(fresh.turn_job_id).await, "processing");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_busy_chat_waits_its_turn_while_other_chats_go_ahead(pool: PgPool) {
+    let first = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "plan my day", None).await.unwrap();
+    let follow_up = ingest_inbound_message(&pool, "telegram", "dm", "chat-1", "tg-1", "hello?", None).await.unwrap();
+    let other_chat = ingest_inbound_message(&pool, "telegram", "dm", "chat-2", "tg-2", "hi", None).await.unwrap();
+
+    let claimed = queue::claim_next(&pool).await.unwrap().unwrap();
+    assert_eq!(claimed.id, first.turn_job_id);
+    // chat-1 is busy, so its follow-up waits and chat-2 goes ahead.
+    let claimed = queue::claim_next(&pool).await.unwrap().unwrap();
+    assert_eq!(claimed.id, other_chat.turn_job_id);
+    assert!(queue::claim_next(&pool).await.unwrap().is_none());
+
+    queue::mark_completed(&pool, first.turn_job_id).await.unwrap();
+    let claimed = queue::claim_next(&pool).await.unwrap().unwrap();
+    assert_eq!(claimed.id, follow_up.turn_job_id);
 }

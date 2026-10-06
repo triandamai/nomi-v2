@@ -23,9 +23,10 @@ const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to 
 // answered with `engine.plan_draft`. All three in the person's language (nomi-i18n).
 
 /// How agents should think when reasoning is on. Users read the thinking in chat.
-pub const REASONING_STYLE: &str = "Before each reply or tool call, think it through briefly: 2-3 short \
-     points (about 60 words) on what the person needs, what you'll do, and any catch, in the language you \
-     reply in. In your thinking, don't restate their message, weigh every option, or draft the reply.";
+pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point: 2-3 short points (about \
+     60 words) on what the person needs, what you'll do, and any catch, in the language you reply in. Don't \
+     restate their message, weigh every option, or draft the reply there. Your reply is only the answer for \
+     the person: never write your thinking, your plan of action, or notes about what they asked in it.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
@@ -327,18 +328,10 @@ fn describe_pending_action(tool_name: &str, input: &serde_json::Value, locale: L
     }
 }
 
-/// After an agent answers in chat (a reply, or the summary it finished with), saves anything
-/// lasting the person said. Best-effort: never changes the turn's outcome.
-async fn learn_from_turn(
-    conn: &mut PoolConnection<Postgres>,
-    provider: &dyn LlmProvider,
-    embedding_provider: &dyn EmbeddingProvider,
-    user_id: Uuid,
-    session_id: Uuid,
-    messages: &[LlmMessage],
-    answer: &str,
-) {
-    // Fallback only: the extractor reads the person's latest chat message itself.
+/// After an agent answers in chat (a reply, or the summary it finished with), queues the exchange
+/// so the memory worker can save anything lasting the person said. Never waits on a model call.
+async fn learn_from_turn(conn: &mut PoolConnection<Postgres>, user_id: Uuid, session_id: Uuid, messages: &[LlmMessage], answer: &str) {
+    // Fallback only: the queue reads the person's latest chat message itself.
     let last_user_text = messages
         .iter()
         .rev()
@@ -348,7 +341,7 @@ async fn learn_from_turn(
             _ => None,
         }))
         .unwrap_or_default();
-    memory::extract_and_store_memory_in(conn, provider, embedding_provider, user_id, Some(session_id), &last_user_text, answer).await;
+    memory::queue_learning(conn, user_id, session_id, &last_user_text, answer).await;
 }
 
 /// Runs one agent turn to completion: retrieves memory first if `agent.uses_memory()`,
@@ -586,7 +579,7 @@ pub async fn run_agent_turn(
             let reply_text = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, reply_text).await;
 
             if agent.uses_memory() {
-                learn_from_turn(conn, provider, embedding_provider, user_id, session_id, &messages, &reply_text).await;
+                learn_from_turn(conn, user_id, session_id, &messages, &reply_text).await;
             }
 
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
@@ -623,7 +616,7 @@ pub async fn run_agent_turn(
                 let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, summary).await;
                 // The summary is this agent's answer in chat, so it's a turn to learn from too.
                 if agent.uses_memory() {
-                    learn_from_turn(conn, provider, embedding_provider, user_id, session_id, &messages, &summary).await;
+                    learn_from_turn(conn, user_id, session_id, &messages, &summary).await;
                 }
                 return Ok(LoopOutcome::Completed { status, summary });
             }

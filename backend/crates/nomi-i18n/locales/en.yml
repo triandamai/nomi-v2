@@ -23,6 +23,7 @@ turn:
   workspace_resumed: "Google Workspace is connected. Picking up your request."
 error:
   tool_loop: "I went around in circles on that one and stopped. Try asking in a different way."
+  timed_out: "That took too long, so I stopped. Please try again."
   approval_handled: "That approval was already handled."
   internal: "Something went wrong on my side. Send your message again."
   llm_unreachable: "I couldn't reach the AI provider. Check the server's connection, then send your message again."

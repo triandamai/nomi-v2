@@ -17,6 +17,9 @@ const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
 /// `RUN_WORKER_INLINE` isn't set to `false`, a background task spawned by the main server
 /// binary (`src/main.rs`) — see that file for why embedding it there is opt-out rather than a
 /// separate always-required process for local/single-instance use.
+/// Past the turn time limit, how long a 'processing' job may sit before it's counted as abandoned.
+const ABANDONED_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
+
 pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
@@ -44,7 +47,19 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
     }
 
     let registry = crate::build_agent_registry(project_storage.clone());
+    let turn_registry = crate::build_agent_registry(project_storage.clone());
     let catalog = crate::build_tool_catalog(project_storage);
+    let turns = std::sync::Arc::new(Turns {
+        pool: pool.clone(),
+        mqtt: mqtt.clone(),
+        s3: s3.clone(),
+        settings_key,
+        http_client: http_client.clone(),
+        registry: turn_registry,
+        catalog: catalog.clone(),
+    });
+    let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(turn_concurrency()));
+    let finished = std::sync::Arc::new(tokio::sync::Notify::new());
 
     loop {
         // Wake on NOTIFY from either channel, or on the fallback interval if a NOTIFY is ever
@@ -53,9 +68,24 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
         tokio::select! {
             _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, listener.recv()) => {}
             _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, approval_listener.recv()) => {}
+            _ = finished.notified() => {}
         }
 
+        // A turn can't legitimately run past its time limit, so anything still 'processing'
+        // well after it was orphaned by a crash or restart.
+        match queue::fail_abandoned(&pool, nomi_turn::turn_time_limit() + ABANDONED_GRACE).await {
+            Ok(0) => {}
+            Ok(n) => tracing::warn!(count = n, "worker: failed turn jobs that no worker finished"),
+            Err(e) => tracing::error!(error = %e, "worker: failed to clear abandoned turn jobs"),
+        }
+
+        // Turns from different chats run side by side, so one slow model call never holds up
+        // everyone else's; claim_next never hands out a chat's next message while one of its
+        // turns is still running, so each chat stays in order.
         loop {
+            let Ok(slot) = slots.clone().try_acquire_owned() else {
+                break; // every slot busy: a finishing turn wakes the loop again
+            };
             let claimed = match queue::claim_next(&pool).await {
                 Ok(Some(job)) => job,
                 Ok(None) => break,
@@ -64,59 +94,13 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     break;
                 }
             };
-
-            let user_id: Result<Uuid, sqlx::Error> =
-                sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
-                    .bind(claimed.sender_channel_identity_id)
-                    .fetch_one(&pool)
-                    .await;
-            let user_id = match user_id {
-                Ok(id) => id,
-                Err(e) => {
-                    tracing::error!(error = %e, job_id = %claimed.id, "worker: failed to resolve user_id for claimed job");
-                    let _ = queue::mark_failed(&pool, claimed.id, &e.to_string()).await;
-                    continue;
-                }
-            };
-
-            let provider = build_llm_provider_for_user(&pool, user_id, &settings_key, http_client.clone()).await;
-            let embedding_provider =
-                build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
-
-            let result = nomi_turn::process_turn(
-                &pool,
-                &mqtt,
-                s3.as_ref(),
-                provider.as_ref(),
-                embedding_provider.as_ref(),
-                &registry,
-                &catalog,
-                claimed.id,
-                claimed.session_id,
-                claimed.sender_channel_identity_id,
-                user_id,
-                &claimed.text,
-            )
-            .await;
-
-            match result {
-                Ok(outcome) => {
-                    let _ = queue::mark_completed(&pool, claimed.id).await;
-                    let _ = mqtt
-                        .publish(
-                            claimed.session_id,
-                            &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
-                        )
-                        .await;
-                    tracing::info!(job_id = %claimed.id, reply_len = outcome.reply.len(), "worker: turn job completed");
-                }
-                Err(e) => {
-                    // process_turn already published TurnFailed and recorded the agent_events row
-                    // internally (see turn::process_turn) — this only updates the job's own status.
-                    let _ = queue::mark_failed(&pool, claimed.id, &e.to_string()).await;
-                    tracing::warn!(job_id = %claimed.id, error = %e, "worker: turn job failed");
-                }
-            }
+            let turns = turns.clone();
+            let finished = finished.clone();
+            tokio::spawn(async move {
+                let _slot = slot;
+                run_turn_job(&turns, claimed).await;
+                finished.notify_one();
+            });
         }
 
         loop {
@@ -183,6 +167,78 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     tracing::warn!(resume_id = %claimed.id, error = %e, "worker: approval resume failed");
                 }
             }
+        }
+    }
+}
+
+/// What every running turn shares.
+struct Turns {
+    pool: PgPool,
+    mqtt: MqttPublisher,
+    s3: Option<nomi_storage::S3Config>,
+    settings_key: [u8; 32],
+    http_client: reqwest::Client,
+    registry: nomi_agent_core::AgentRegistry,
+    catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
+}
+
+/// How many turns may run at once (`TURN_CONCURRENCY`, default 4).
+fn turn_concurrency() -> usize {
+    std::env::var("TURN_CONCURRENCY").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(4)
+}
+
+/// Runs one claimed turn and records how it ended.
+async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
+    let user_id: Result<Uuid, sqlx::Error> =
+        sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")
+            .bind(claimed.sender_channel_identity_id)
+            .fetch_one(&turns.pool)
+            .await;
+    let user_id = match user_id {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(error = %e, job_id = %claimed.id, "worker: failed to resolve user_id for claimed job");
+            let _ = queue::mark_failed(&turns.pool, claimed.id, &e.to_string()).await;
+            return;
+        }
+    };
+
+    let provider = build_llm_provider_for_user(&turns.pool, user_id, &turns.settings_key, turns.http_client.clone()).await;
+    let embedding_provider =
+        build_embedding_provider_from_settings_or_env(&turns.pool, &turns.settings_key, turns.http_client.clone()).await;
+
+    let result = nomi_turn::process_turn(
+        &turns.pool,
+        &turns.mqtt,
+        turns.s3.as_ref(),
+        provider.as_ref(),
+        embedding_provider.as_ref(),
+        &turns.registry,
+        &turns.catalog,
+        claimed.id,
+        claimed.session_id,
+        claimed.sender_channel_identity_id,
+        user_id,
+        &claimed.text,
+    )
+    .await;
+
+    match result {
+        Ok(outcome) => {
+            let _ = queue::mark_completed(&turns.pool, claimed.id).await;
+            let _ = turns.mqtt
+                .publish(
+                    claimed.session_id,
+                    &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
+                )
+                .await;
+            tracing::info!(job_id = %claimed.id, reply_len = outcome.reply.len(), "worker: turn job completed");
+        }
+        Err(e) => {
+            // process_turn already published TurnFailed and recorded the agent_events row
+            // internally (see turn::process_turn) — this only updates the job's own status.
+            let _ = queue::mark_failed(&turns.pool, claimed.id, &e.to_string()).await;
+            tracing::warn!(job_id = %claimed.id, error = %e, "worker: turn job failed");
         }
     }
 }

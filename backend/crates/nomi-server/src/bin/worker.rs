@@ -28,12 +28,15 @@ async fn main() {
     sqlx::migrate!("../../migrations").run(&pool).await.expect("failed to run migrations");
     tracing::info!("migrations up to date");
 
-    let http_client = reqwest::Client::new();
+    let http_client = nomi_server::http_client();
     let mqtt_client_id = format!("nomi-worker-{}", uuid::Uuid::new_v4());
     let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
     let s3 = nomi_storage::build_from_env().await;
     let project_storage = nomi_storage::build_local_fs_store();
+
+    // Memory learning, chat summaries and tidying run beside the turn worker, as they do inline.
+    tokio::spawn(nomi_server::memory_worker::run(pool.clone(), settings_key, http_client.clone()));
 
     nomi_server::worker::run(pool, mqtt, s3, settings_key, http_client, database_url, project_storage).await;
 }

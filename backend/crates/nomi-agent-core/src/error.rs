@@ -8,6 +8,9 @@ pub enum TurnError {
     ToolLoopExceeded,
     #[error("this action is no longer pending approval")]
     ApprovalNoLongerPending,
+    /// The turn ran past its time limit (a stalled model or tool) and was stopped.
+    #[error("the turn took longer than {0:?} and was stopped")]
+    TimedOut(std::time::Duration),
 }
 
 impl TurnError {
@@ -22,6 +25,7 @@ impl TurnError {
         match self {
             TurnError::LlmCallFailed(e) => e.user_message_in(locale),
             TurnError::ToolLoopExceeded => locale.t("error.tool_loop"),
+            TurnError::TimedOut(_) => locale.t("error.timed_out"),
             TurnError::ApprovalNoLongerPending => locale.t("error.approval_handled"),
             TurnError::Db(_) => locale.t("error.internal"),
         }

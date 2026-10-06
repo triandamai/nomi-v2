@@ -33,3 +33,14 @@ pub fn build_tool_catalog(project_storage: nomi_storage::LocalFsStore) -> std::s
     entries.extend(tool_catalog_adapters::coding_entries(project_storage));
     std::sync::Arc::new(nomi_agent_core::ToolCatalog::new(entries))
 }
+
+/// The HTTP client for model, embedding and other provider calls. No overall timeout (a long
+/// answer streams for minutes), but a provider that never connects, or stops sending
+/// mid-stream, fails the call instead of hanging the turn.
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .read_timeout(std::time::Duration::from_secs(180))
+        .build()
+        .expect("failed to build the HTTP client")
+}
