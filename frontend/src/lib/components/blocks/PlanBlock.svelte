@@ -106,7 +106,7 @@
 	{/snippet}
 </ChecklistBubble>
 
-<SideSheet bind:open={sheetOpen}>
+<SideSheet bind:open={sheetOpen} title={m.plan_draft({ agent: agent ?? 'Nomi' })}>
 	{#if loading}
 		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.common_loading()}</p>
 	{:else if loadError}

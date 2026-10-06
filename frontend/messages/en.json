@@ -896,5 +896,6 @@
 	"wsc_note": "Your message is kept: once you connect, I'll pick it up from here.",
 	"wsc_turn_on": "Turn on {services}",
 	"wsc_turn_on_for": "Turn on {services} for Workspace",
-	"err_save_plan_item": "Couldn't save that step. Try again."
+	"err_save_plan_item": "Couldn't save that step. Try again.",
+	"common_close": "Close"
 }

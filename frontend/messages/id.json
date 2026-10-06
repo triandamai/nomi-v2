@@ -896,5 +896,6 @@
 	"wsc_note": "Pesanmu tetap tersimpan. Begitu terhubung, aku lanjutkan dari sini.",
 	"wsc_turn_on": "Nyalakan {services}",
 	"wsc_turn_on_for": "Nyalakan {services} untuk Workspace",
-	"err_save_plan_item": "Langkah itu belum tersimpan. Coba lagi, ya."
+	"err_save_plan_item": "Langkah itu belum tersimpan. Coba lagi, ya.",
+	"common_close": "Tutup"
 }
