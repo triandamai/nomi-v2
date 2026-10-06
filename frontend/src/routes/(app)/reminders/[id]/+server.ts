@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { RequestHandler } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 // Done / Snooze from a reminder's bubble in chat (ReminderBlock).
 export const POST: RequestHandler = async ({ params, request, cookies, fetch }) => {
@@ -9,6 +10,6 @@ export const POST: RequestHandler = async ({ params, request, cookies, fetch }) 
 		method: 'POST',
 		body: JSON.stringify({ action, minutes }),
 	});
-	if (!response.ok) throw error(response.status, 'Couldn’t update that reminder.');
+	if (!response.ok) throw error(response.status, m.rem_update_failed());
 	return json({ ok: true });
 };
