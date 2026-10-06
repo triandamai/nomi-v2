@@ -899,5 +899,14 @@
 	"err_save_plan_item": "Langkah itu belum tersimpan. Coba lagi, ya.",
 	"common_close": "Tutup",
 	"home_plan_draft": "Draf",
-	"home_plans_all": "Lihat semua"
+	"home_plans_all": "Lihat semua",
+	"common_rename": "Ganti nama",
+	"chat_rename": "Ganti nama obrolan",
+	"chat_rename_label": "Nama obrolan",
+	"chat_rename_hint": "Ganti nama obrolan ini",
+	"chat_rename_empty": "Kasih nama dulu untuk obrolannya, ya.",
+	"chat_rename_failed": "Nama obrolan belum berubah. Coba lagi, ya.",
+	"chat_empty_title": "Lagi kepikiran apa?",
+	"chat_empty_lede": "Tanya soal rencana, keuangan, atau pengingat, atau sekadar cerita.",
+	"chat_empty_unsaved": "Belum ada yang tersimpan sampai kamu mengirim pesan pertama."
 }

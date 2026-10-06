@@ -71,23 +71,34 @@ async fn register_and_login(router: axum::Router, email: &str) -> String {
     login_body["access_token"].as_str().unwrap().to_string()
 }
 
+/// Starts a chat the way the app does: create it, then send its first message.
+async fn start_chat(router: axum::Router, token: &str) -> String {
+    let (_, created) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(token)).await;
+    let session_id = created["session_id"].as_str().unwrap().to_string();
+    let (status, _) = json_request(router, "POST", &format!("/api/sessions/{session_id}/messages"), json!({ "text": "hi" }), Some(token)).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    session_id
+}
+
 #[sqlx::test(migrations = "../../migrations")]
-async fn create_session_then_appears_in_list(pool: PgPool) {
+async fn a_chat_is_listed_once_its_first_message_is_sent(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "alice@example.com").await;
 
-    let (status, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    // A new chat nobody wrote in (opened, then left) isn't listed.
+    let (status, _) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::CREATED);
-    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let (_, list_body) = json_request(router.clone(), "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    assert!(list_body["sessions"].as_array().unwrap().is_empty());
 
+    let session_id = start_chat(router.clone(), &token).await;
     let (status, list_body) = json_request(router, "GET", "/api/sessions", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     let sessions = list_body["sessions"].as_array().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0]["id"].as_str().unwrap(), session_id);
     assert_eq!(sessions[0]["channel"], "web");
-    assert!(sessions[0]["last_message"].is_null());
-    assert_eq!(sessions[0]["agent_active"], false);
+    assert_eq!(sessions[0]["last_message"]["content"], "hi");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -95,9 +106,9 @@ async fn creating_two_sessions_reuses_the_same_web_identity(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "bob@example.com").await;
 
-    let (_, first) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
-    let (_, second) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
-    assert_ne!(first["session_id"], second["session_id"]);
+    let first = start_chat(router.clone(), &token).await;
+    let second = start_chat(router.clone(), &token).await;
+    assert_ne!(first, second);
 
     let identity_count: i64 = sqlx::query_scalar("SELECT count(*) FROM channel_identities WHERE channel = 'web'")
         .fetch_one(&pool)
@@ -115,14 +126,34 @@ async fn list_sessions_only_returns_the_callers_active_org(pool: PgPool) {
     let token_a = register_and_login(router.clone(), "carol@example.com").await;
     let token_b = register_and_login(router.clone(), "dave@example.com").await;
 
-    json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token_a)).await;
-    json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token_b)).await;
+    start_chat(router.clone(), &token_a).await;
+    start_chat(router.clone(), &token_b).await;
 
     let (_, list_a) = json_request(router.clone(), "GET", "/api/sessions", Value::Null, Some(&token_a)).await;
     assert_eq!(list_a["sessions"].as_array().unwrap().len(), 1);
 
     let (_, list_b) = json_request(router, "GET", "/api/sessions", Value::Null, Some(&token_b)).await;
     assert_eq!(list_b["sessions"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_can_be_renamed_by_its_owner_only(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "rename@example.com").await;
+    let outsider = register_and_login(router.clone(), "nosy@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let path = format!("/api/sessions/{session_id}");
+
+    let (status, body) = json_request(router.clone(), "PATCH", &path, json!({ "title": "  Bali   trip\n" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["title"], "Bali trip");
+    let (_, list_body) = json_request(router.clone(), "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    assert_eq!(list_body["sessions"][0]["title"], "Bali trip");
+
+    let (status, _) = json_request(router.clone(), "PATCH", &path, json!({ "title": "   " }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = json_request(router, "PATCH", &path, json!({ "title": "Mine now" }), Some(&outsider)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

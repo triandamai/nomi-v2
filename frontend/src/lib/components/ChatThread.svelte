@@ -3,7 +3,8 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount, untrack, type Snippet } from 'svelte';
+	import { onMount, tick, untrack, type Snippet } from 'svelte';
+	import Chip from '$lib/components/m3/Chip.svelte';
 	import { mergeReloaded } from '$lib/mergeMessages';
 	import CrewPanel from '$lib/components/CrewPanel.svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
@@ -53,6 +54,7 @@
 		context,
 		extraControls,
 		thinkingLevel = null,
+		unsaved = false,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -67,7 +69,63 @@
 		extraControls?: Snippet;
 		/** The chat's thinking level; null hides the picker. The page must have a setThinking action. */
 		thinkingLevel?: ThinkingLevel | null;
+		/** A new chat not saved yet: no live connection, and the first send creates it (/chat/new). */
+		unsaved?: boolean;
 	} = $props();
+
+	// The chat's name: renamed in place by the person, or live when they ask the crew to.
+	let shownTitle = $state(untrack(() => title));
+	$effect(() => {
+		shownTitle = title;
+	});
+	let editingTitle = $state(false);
+	let titleDraft = $state('');
+	let titleInput: HTMLInputElement | undefined = $state();
+	let renameError = $state<string | null>(null);
+
+	async function startRename() {
+		titleDraft = shownTitle;
+		renameError = null;
+		editingTitle = true;
+		await tick();
+		titleInput?.select();
+	}
+
+	async function saveRename() {
+		if (!editingTitle) return;
+		editingTitle = false;
+		const next = titleDraft.trim();
+		if (!next || next === shownTitle) return;
+		const previous = shownTitle;
+		shownTitle = next;
+		const body = new FormData();
+		body.set('title', next);
+		try {
+			const response = await fetch('?/rename', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+			const result = deserialize(await response.text());
+			if (result.type !== 'success') throw new Error('rename failed');
+			shownTitle = String(result.data?.renamed ?? next);
+			invalidateAll(); // the sidebar and chat list show the new name too
+		} catch {
+			shownTitle = previous;
+			renameError = m.chat_rename_failed();
+		}
+	}
+
+	function onTitleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			saveRename();
+		} else if (event.key === 'Escape') {
+			editingTitle = false;
+		}
+	}
+
+	const SUGGESTIONS = [m.home_suggest_spending(), m.home_suggest_saturday(), m.home_suggest_website(), m.home_suggest_stretch()];
+	function useSuggestion(text: string) {
+		draft = text;
+		messageInput?.focus();
+	}
 
 	// Composer state: the typed draft, attached files, and the chat's thinking level.
 	let draft = $state('');
@@ -148,6 +206,7 @@
 	async function setThinking(next: ThinkingLevel) {
 		const previous = level;
 		level = next;
+		if (unsaved) return; // sent along with the first message, which creates the chat
 		const body = new FormData();
 		body.set('level', next);
 		try {
@@ -353,6 +412,7 @@
 
 	onMount(() => {
 		messageInput?.focus();
+		if (unsaved) return; // nothing to listen to until the first message creates the chat
 
 		let socket: WebSocket | undefined;
 		let retryDelay = INITIAL_RETRY_DELAY_MS;
@@ -377,7 +437,7 @@
 			});
 
 			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string };
+				let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string };
 				try {
 					envelope = JSON.parse(event.data);
 				} catch {
@@ -399,6 +459,9 @@
 					// The server posts why (out of credits, a rejected key, ...) as a message in the
 					// chat; the generic notice is only for a failure that came with no explanation.
 					turnError = !envelope.error;
+				} else if (envelope.kind === 'SessionRenamed') {
+					if (typeof envelope.title === 'string') shownTitle = envelope.title;
+					invalidateAll(); // the sidebar and chat list show the new name too
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
 					invalidateAll();
 				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
@@ -435,7 +498,28 @@
 <div class="chat">
 	<header class="appbar">
 		<div class="appbar__titles">
-			<h1 class="appbar__title">{title}</h1>
+			{#if editingTitle}
+				<input
+					bind:this={titleInput}
+					bind:value={titleDraft}
+					class="appbar__title appbar__title-input"
+					aria-label={m.chat_rename_label()}
+					maxlength="80"
+					onkeydown={onTitleKeydown}
+					onblur={saveRename}
+				/>
+			{:else if unsaved}
+				<h1 class="appbar__title">{shownTitle}</h1>
+			{:else}
+				<h1 class="appbar__title">
+					<button type="button" class="appbar__title-button" onclick={startRename} title={m.chat_rename_hint()}>
+						<span class="appbar__title-text">{shownTitle}</span>
+						<svg class="appbar__title-edit" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+						<span class="sr-only">{m.chat_rename()}</span>
+					</button>
+				</h1>
+			{/if}
+			{#if renameError}<span class="appbar__rename-error" role="alert">{renameError}</span>{/if}
 			<span class="appbar__meta">{metaLine}</span>
 		</div>
 		<button
@@ -464,6 +548,18 @@
 		<div class="chat__main">
 			<div bind:this={messagesContainer} class="thread">
 				<div class="thread__column">
+					{#if threadItems.length === 0 && !isWorking}
+						<div class="thread__empty">
+							<AgentShape agent="nomi" size={72} face />
+							<h2 class="thread__empty-title">{m.chat_empty_title()}</h2>
+							<p class="thread__empty-lede">{m.chat_empty_lede()}{#if unsaved}{' '}{m.chat_empty_unsaved()}{/if}</p>
+							<div class="thread__empty-chips">
+								{#each SUGGESTIONS as suggestion (suggestion)}
+									<Chip variant="suggestion" onclick={() => useSuggestion(suggestion)}>{suggestion}</Chip>
+								{/each}
+							</div>
+						</div>
+					{/if}
 					{#each threadItems as item, i (item.message.id)}
 						<MessageBubble
 							message={item.message}
@@ -586,6 +682,7 @@
 							onfocus={() => (dictationBase = draft)}
 						></textarea>
 						<input type="hidden" name="text" value={composedText} />
+						{#if unsaved}<input type="hidden" name="thinking" value={level} />{/if}
 						<MicButton ontranscript={onTranscript} />
 						{#if thinkingLevel}
 							<ThinkingMenu {level} onchange={setThinking} />
@@ -664,6 +761,93 @@
 		align-items: center;
 		gap: 8px;
 		padding: 14px clamp(12px, 3vw, 32px) 10px;
+	}
+	.appbar__title-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		max-width: 100%;
+		margin: 0;
+		padding: 0;
+		border: none;
+		border-radius: 6px;
+		background: none;
+		color: inherit;
+		font: inherit;
+		letter-spacing: inherit;
+		text-align: start;
+		cursor: text;
+	}
+	.appbar__title-button:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	.appbar__title-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.appbar__title-edit {
+		flex: none;
+		opacity: 0;
+		color: var(--md-sys-color-on-surface-variant);
+		transition: opacity var(--nomi-motion-effects-fast);
+	}
+	.appbar__title-button:hover .appbar__title-edit,
+	.appbar__title-button:focus-visible .appbar__title-edit {
+		opacity: 1;
+	}
+	@media (hover: none) {
+		.appbar__title-edit {
+			opacity: 0.7;
+		}
+	}
+	.appbar__title-input {
+		width: 100%;
+		box-sizing: border-box;
+		margin: 0;
+		padding: 0 4px;
+		border: none;
+		border-radius: 6px;
+		outline: 2px solid var(--md-sys-color-primary);
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+	}
+	.appbar__rename-error {
+		font-size: 0.75rem;
+		color: var(--md-sys-color-error);
+	}
+	.thread__empty {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+		margin: auto 0;
+		padding: 48px 8px 24px;
+		text-align: center;
+	}
+	.thread__empty-title {
+		margin: 8px 0 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.75rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		color: var(--md-sys-color-on-surface);
+	}
+	.thread__empty-lede {
+		max-width: 44ch;
+		margin: 0;
+		font-size: 0.9375rem;
+		line-height: 1.5;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.thread__empty-chips {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 8px;
+		margin-top: 8px;
 	}
 	.appbar__titles {
 		flex: 1;

@@ -899,5 +899,14 @@
 	"err_save_plan_item": "Couldn't save that step. Try again.",
 	"common_close": "Close",
 	"home_plan_draft": "Draft",
-	"home_plans_all": "Show all"
+	"home_plans_all": "Show all",
+	"common_rename": "Rename",
+	"chat_rename": "Rename chat",
+	"chat_rename_label": "Chat name",
+	"chat_rename_hint": "Rename this chat",
+	"chat_rename_empty": "Give the chat a name.",
+	"chat_rename_failed": "Couldn't rename the chat. Try again.",
+	"chat_empty_title": "What's on your mind?",
+	"chat_empty_lede": "Ask about plans, money or reminders, or just think out loud.",
+	"chat_empty_unsaved": "Nothing is saved until you send your first message."
 }

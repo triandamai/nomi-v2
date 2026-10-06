@@ -69,6 +69,8 @@ pub struct ListSessionsResponse {
     pub sessions: Vec<SessionListItem>,
 }
 
+/// The person's chats, latest first. A chat nobody has written in yet isn't listed: a new chat
+/// only counts once its first message is sent (a project's chat is listed from the start).
 pub async fn list_sessions(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -90,6 +92,7 @@ pub async fn list_sessions(
              SELECT id FROM projects pr WHERE pr.session_id = s.id ORDER BY pr.created_at DESC LIMIT 1 \
          ) p ON true \
          WHERE s.org_id = $1 AND s.user_id = $2 \
+           AND (lm.created_at IS NOT NULL OR p.id IS NOT NULL) \
          ORDER BY COALESCE(lm.created_at, s.created_at) DESC",
     )
     .bind(claims.active_org_id)
@@ -452,6 +455,32 @@ pub async fn set_agent_plan_item(
         _ => unreachable!("loaded above"),
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct RenameSessionRequest {
+    pub title: String,
+}
+
+#[derive(Serialize)]
+pub struct RenameSessionResponse {
+    pub title: String,
+}
+
+/// The person renames a chat.
+pub async fn rename_session(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    Json(req): Json<RenameSessionRequest>,
+) -> Result<Json<RenameSessionResponse>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to rename chat"))?;
+    match nomi_agent_core::chat_title::rename(&mut conn, session_id, &req.title).await {
+        Ok(Some(title)) => Ok(Json(RenameSessionResponse { title })),
+        Ok(None) => Err((StatusCode::BAD_REQUEST, "title must not be empty")),
+        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to rename chat")),
+    }
 }
 
 #[derive(Deserialize)]
