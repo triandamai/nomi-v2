@@ -1,4 +1,5 @@
 import { fail } from '@sveltejs/kit';
+import { isThemeName } from '$lib/appearance';
 import { apiFetch } from '$lib/server/api';
 import type { Preferences } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
@@ -7,7 +8,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/preferences');
 	const preferences: Preferences = response.ok
 		? ((await response.json()) as Preferences)
-		: { theme: 'system', accent_color: 'green', timezone: 'UTC', has_stored_timezone: false };
+		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', has_stored_timezone: false };
 	return { preferences };
 };
 
@@ -31,11 +32,8 @@ export const actions: Actions = {
 	updateAccentColor: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const accentColor = data.get('accent_color');
-		if (
-			typeof accentColor !== 'string' ||
-			!['green', 'blue', 'purple', 'pink', 'orange', 'teal'].includes(accentColor)
-		) {
-			return fail(400, { error: 'Invalid color.' });
+		if (!isThemeName(accentColor)) {
+			return fail(400, { error: 'Pick one of the themes.' });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/preferences', {
 			method: 'PUT',

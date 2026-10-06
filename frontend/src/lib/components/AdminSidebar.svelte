@@ -13,6 +13,7 @@
 	import IconDashboard from '$lib/components/icons/IconDashboard.svelte';
 	import IconLogout from '$lib/components/icons/IconLogout.svelte';
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
+	import IconPalette from '$lib/components/icons/IconPalette.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
@@ -23,7 +24,8 @@
 		canManageSystemConfig,
 		canViewUsers,
 		mobileOpen = $bindable(false),
-	}: { canManageSystemConfig: boolean; canViewUsers: boolean; mobileOpen?: boolean } = $props();
+		onappearance,
+	}: { canManageSystemConfig: boolean; canViewUsers: boolean; mobileOpen?: boolean; onappearance: () => void } = $props();
 
 	const STORAGE_KEY = 'nomi:admin-sidebar-collapsed';
 	let collapsed = $state(false);
@@ -94,6 +96,7 @@
 	{#if rail}
 		<div class="hidden flex-col items-center gap-1 pb-4 md:flex">
 			<IconButton onclick={toggleCollapsed} aria-label="Expand sidebar"><IconChevronRight /></IconButton>
+			<IconButton onclick={onappearance} aria-label="Appearance"><IconPalette /></IconButton>
 			<IconButton href="/" aria-label="Back to Nomi"><IconArrowBack /></IconButton>
 			<form method="POST" action="/logout?redirect_to=/login">
 				<IconButton type="submit" aria-label="Log out"><IconLogout /></IconButton>
@@ -101,6 +104,16 @@
 		</div>
 	{:else}
 		<div class="footer">
+			<button
+				type="button"
+				class="footer__item"
+				onclick={() => {
+					mobileOpen = false;
+					onappearance();
+				}}
+			>
+				<IconPalette size={20} /> Appearance
+			</button>
 			<a href="/" class="footer__item" onclick={() => (mobileOpen = false)}>
 				<IconArrowBack size={20} /> Back to Nomi
 			</a>

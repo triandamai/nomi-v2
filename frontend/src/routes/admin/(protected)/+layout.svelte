@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import AdminSidebar from '$lib/components/AdminSidebar.svelte';
+	import AppearancePicker from '$lib/components/AppearancePicker.svelte';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
@@ -9,6 +11,7 @@
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	let mobileNavOpen = $state(false);
+	let appearanceOpen = $state(false);
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
@@ -17,7 +20,7 @@
 </script>
 
 <div class="app-shell flex" style="background: var(--md-sys-color-surface)">
-	<AdminSidebar canManageSystemConfig={data.canManageSystemConfig} canViewUsers={data.canViewUsers} bind:mobileOpen={mobileNavOpen} />
+	<AdminSidebar canManageSystemConfig={data.canManageSystemConfig} canViewUsers={data.canViewUsers} bind:mobileOpen={mobileNavOpen} onappearance={() => (appearanceOpen = true)} />
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
 			<IconButton onclick={() => (mobileNavOpen = true)} aria-label="Open menu"><IconMenu /></IconButton>
@@ -34,6 +37,12 @@
 		</main>
 	</div>
 </div>
+
+<BottomSheet bind:open={appearanceOpen}>
+	<h2 class="sheet-title">Appearance</h2>
+	<p class="sheet-lede">The theme follows you between the admin console and Nomi.</p>
+	<AppearancePicker preferences={data.preferences} />
+</BottomSheet>
 
 <style>
 	.mobile-brand {
@@ -58,6 +67,17 @@
 		font-size: 0.625rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
+	}
+	.sheet-title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+	.sheet-lede {
+		margin: 4px 0 20px;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.admin-main {
 		flex: 1;

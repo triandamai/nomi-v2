@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import AppearancePicker from '$lib/components/AppearancePicker.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -33,28 +34,10 @@
 			submitTimezone(tz);
 		}
 	});
-
-	const THEME_OPTIONS = [
-		{ value: 'light', label: 'Light' },
-		{ value: 'dark', label: 'Dark' },
-		{ value: 'system', label: 'System' },
-	];
-
-	// Swatch previews use each option's own light-scheme primary color directly, not the active
-	// CSS variables — the point is to show what every option looks like, including the ones not
-	// currently selected.
-	const ACCENT_COLOR_OPTIONS = [
-		{ value: 'green', label: 'Green', swatch: '#0b6b4a' },
-		{ value: 'blue', label: 'Blue', swatch: '#0052dc' },
-		{ value: 'purple', label: 'Purple', swatch: '#6920ff' },
-		{ value: 'pink', label: 'Pink', swatch: '#ba005b' },
-		{ value: 'orange', label: 'Orange', swatch: '#9f4200' },
-		{ value: 'teal', label: 'Teal', swatch: '#006b5c' },
-	];
 </script>
 
 <div class="h-full overflow-y-auto px-4 py-8 md:px-10">
-	<div class="max-w-lg">
+	<div class="max-w-3xl">
 		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Preferences</h1>
 
 		{#if form?.error}
@@ -62,46 +45,11 @@
 		{/if}
 
 		<section class="mt-6">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Theme</h2>
-			<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
-				Choose how Nomi looks. "System" follows your device's setting.
+			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Appearance</h2>
+			<p class="md-body-medium mt-1 mb-4" style="color: var(--md-sys-color-on-surface-variant)">
+				Pick a theme for Nomi and the admin console. Your agents keep their own colours.
 			</p>
-			<form method="POST" action="?/updateTheme" use:enhance class="mt-3 flex gap-[2px]">
-				{#each THEME_OPTIONS as option (option.value)}
-					<button
-						type="submit"
-						name="theme"
-						value={option.value}
-						class="m3-theme-option"
-						class:m3-theme-option--active={data.preferences.theme === option.value}
-					>
-						{option.label}
-					</button>
-				{/each}
-			</form>
-		</section>
-
-		<section class="mt-8">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Color</h2>
-			<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
-				Pick an accent color for Nomi.
-			</p>
-			<form method="POST" action="?/updateAccentColor" use:enhance class="mt-3 flex flex-wrap gap-3">
-				{#each ACCENT_COLOR_OPTIONS as option (option.value)}
-					<button
-						type="submit"
-						name="accent_color"
-						value={option.value}
-						class="m3-color-option"
-						class:m3-color-option--active={data.preferences.accent_color === option.value}
-						aria-label={option.label}
-						aria-pressed={data.preferences.accent_color === option.value}
-					>
-						<span class="m3-color-option__swatch" style="background: {option.swatch}"></span>
-						<span class="md-label-medium">{option.label}</span>
-					</button>
-				{/each}
-			</form>
+			<AppearancePicker preferences={data.preferences} />
 		</section>
 
 		<section class="mt-8">
@@ -137,69 +85,6 @@
 </div>
 
 <style>
-	/* Rendered as an M3 Expressive connected button group (see m3/ButtonGroup.svelte) — kept as
-	   real submit buttons here so each choice still saves without JavaScript. */
-	.m3-theme-option {
-		height: 48px;
-		padding: 0 22px;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-small);
-		background: var(--md-sys-color-surface-container-high);
-		color: var(--md-sys-color-on-surface);
-		cursor: pointer;
-		font-family: var(--md-sys-typescale-label-large-font);
-		font-size: 0.9375rem;
-		font-weight: 600;
-		transition:
-			border-radius var(--nomi-motion-spatial-fast),
-			background-color var(--nomi-motion-effects-fast);
-	}
-	.m3-theme-option:first-child {
-		border-radius: var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small)
-			var(--md-sys-shape-corner-full);
-	}
-	.m3-theme-option:last-child {
-		border-radius: var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full)
-			var(--md-sys-shape-corner-small);
-	}
-	.m3-theme-option.m3-theme-option--active {
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-primary);
-		color: var(--md-sys-color-on-primary);
-	}
-
-	.m3-color-option {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 6px;
-		padding: 8px;
-		border-radius: var(--md-sys-shape-corner-large);
-		border: 2px solid transparent;
-		background: transparent;
-		color: var(--md-sys-color-on-surface-variant);
-		cursor: pointer;
-	}
-	.m3-color-option:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-	}
-	.m3-color-option--active {
-		border-color: var(--md-sys-color-primary);
-		color: var(--md-sys-color-on-surface);
-	}
-	.m3-color-option__swatch {
-		display: block;
-		width: 44px;
-		height: 44px;
-		border-radius: var(--md-sys-shape-corner-full);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, black 15%, transparent);
-		transition: border-radius var(--nomi-motion-spatial-fast);
-	}
-	/* Selected swatch morphs circle → rounded square: shape, not just a ring, marks the pick. */
-	.m3-color-option--active .m3-color-option__swatch {
-		border-radius: var(--md-sys-shape-corner-medium);
-	}
-
 	.m3-timezone-select {
 		height: 52px;
 		padding: 0 16px;

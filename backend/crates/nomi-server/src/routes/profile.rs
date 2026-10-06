@@ -180,7 +180,7 @@ pub async fn get_preferences(
     let (theme, accent_color, timezone) = row.unwrap_or((None, None, None));
     Ok(Json(PreferencesResponse {
         theme: theme.unwrap_or_else(|| "system".to_string()),
-        accent_color: accent_color.unwrap_or_else(|| "green".to_string()),
+        accent_color: accent_color.unwrap_or_else(|| "canopy".to_string()),
         has_stored_timezone: timezone.is_some(),
         timezone: timezone.unwrap_or_else(|| "UTC".to_string()),
     }))
@@ -197,7 +197,8 @@ pub struct UpdatePreferencesRequest {
 }
 
 const ALLOWED_THEMES: [&str; 3] = ["light", "dark", "system"];
-const ALLOWED_ACCENT_COLORS: [&str; 6] = ["green", "blue", "purple", "pink", "orange", "teal"];
+/// Appearance themes (Preferences → Appearance); the column keeps its accent_color name.
+const ALLOWED_ACCENT_COLORS: [&str; 5] = ["canopy", "coral-reef", "borneo-dusk", "phantom", "senja-jakarta"];
 
 #[tracing::instrument(skip(state, claims, req))]
 pub async fn put_preferences(
@@ -212,7 +213,7 @@ pub async fn put_preferences(
     }
     if let Some(accent_color) = &req.accent_color {
         if !ALLOWED_ACCENT_COLORS.contains(&accent_color.as_str()) {
-            return Err((StatusCode::BAD_REQUEST, "accent_color must be one of green/blue/purple/pink/orange/teal"));
+            return Err((StatusCode::BAD_REQUEST, "accent_color must be one of canopy/coral-reef/borneo-dusk/phantom/senja-jakarta"));
         }
     }
     if let Some(timezone) = &req.timezone {
@@ -256,7 +257,7 @@ pub async fn put_preferences(
         Some(row) => row,
         None => sqlx::query_as(
             "INSERT INTO user_preferences (user_id, theme, accent_color, timezone) \
-             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'green'), COALESCE($4, 'UTC')) \
+             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC')) \
              RETURNING theme, accent_color, timezone",
         )
         .bind(claims.sub)

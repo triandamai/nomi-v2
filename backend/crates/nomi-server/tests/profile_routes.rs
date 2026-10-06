@@ -146,7 +146,7 @@ async fn preferences_default_to_system_theme(pool: PgPool) {
     let (status, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["theme"], "system");
-    assert_eq!(body["accent_color"], "green");
+    assert_eq!(body["accent_color"], "canopy");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -157,17 +157,17 @@ async fn setting_accent_color_does_not_clobber_theme_and_vice_versa(pool: PgPool
     let (status, put_body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(put_body["theme"], "dark");
-    assert_eq!(put_body["accent_color"], "green");
+    assert_eq!(put_body["accent_color"], "canopy");
 
     let (status, put_body) =
-        json_request(router.clone(), "PUT", "/api/preferences", json!({ "accent_color": "purple" }), Some(&token)).await;
+        json_request(router.clone(), "PUT", "/api/preferences", json!({ "accent_color": "phantom" }), Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(put_body["theme"], "dark");
-    assert_eq!(put_body["accent_color"], "purple");
+    assert_eq!(put_body["accent_color"], "phantom");
 
     let (_, get_body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(get_body["theme"], "dark");
-    assert_eq!(get_body["accent_color"], "purple");
+    assert_eq!(get_body["accent_color"], "phantom");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
