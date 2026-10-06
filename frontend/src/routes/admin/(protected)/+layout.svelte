@@ -1,30 +1,14 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import AdminSidebar from '$lib/components/AdminSidebar.svelte';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
-	import IconAgents from '$lib/components/icons/IconAgents.svelte';
-	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
-	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
-	import IconDashboard from '$lib/components/icons/IconDashboard.svelte';
-	import IconLogout from '$lib/components/icons/IconLogout.svelte';
-	import IconPerson from '$lib/components/icons/IconPerson.svelte';
-	import IconSettings from '$lib/components/icons/IconSettings.svelte';
-	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
+	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-	const STORAGE_KEY = 'nomi:admin-sidebar-collapsed';
-	let collapsed = $state(false);
-
-	onMount(() => {
-		collapsed = readInitialCollapsed(STORAGE_KEY);
-	});
-
-	function toggleCollapsed() {
-		collapsed = !collapsed;
-		persistCollapsed(STORAGE_KEY, collapsed);
-	}
+	let mobileNavOpen = $state(false);
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
@@ -33,98 +17,58 @@
 </script>
 
 <div class="app-shell flex" style="background: var(--md-sys-color-surface)">
-	<aside
-		class="flex flex-col p-4 transition-[width] duration-200"
-		class:w-56={!collapsed}
-		class:w-20={collapsed}
-		class:items-center={collapsed}
-		style="background: var(--md-sys-color-surface-container); border-right: 1px solid var(--md-sys-color-outline-variant)"
-	>
-		<div class="mb-4 flex w-full items-center" class:justify-center={collapsed} class:justify-between={!collapsed}>
-			{#if !collapsed}
-				<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface)">Admin</h2>
-			{/if}
-			<IconButton onclick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-				{#if collapsed}
-					<IconChevronRight />
-				{:else}
-					<IconChevronLeft />
-				{/if}
-			</IconButton>
-		</div>
-
-		<nav class="flex flex-col gap-1" class:items-center={collapsed}>
-			{#if collapsed}
-				{#if data.canManageSystemConfig}
-					<IconButton href="/admin" aria-label="Dashboard">
-						<IconDashboard />
-					</IconButton>
-					<IconButton href="/admin/settings/llm" aria-label="LLM Settings">
-						<IconSettings />
-					</IconButton>
-					<IconButton href="/admin/settings/embedding" aria-label="Embedding Settings">
-						<IconSettings />
-					</IconButton>
-					<IconButton href="/admin/agents" aria-label="Agents">
-						<IconAgents />
-					</IconButton>
-					<IconButton href="/admin/dynamic-agents" aria-label="Dynamic Agents">
-						<IconAgents />
-					</IconButton>
-				{/if}
-				{#if data.canViewUsers}
-					<IconButton href="/admin/users" aria-label="Users">
-						<IconPerson />
-					</IconButton>
-				{/if}
-			{:else}
-				{#if data.canManageSystemConfig}
-					<a href="/admin" class="m3-nav-link">Dashboard</a>
-					<a href="/admin/settings/llm" class="m3-nav-link">LLM Settings</a>
-					<a href="/admin/settings/embedding" class="m3-nav-link">Embedding Settings</a>
-					<a href="/admin/agents" class="m3-nav-link">Agents</a>
-					<a href="/admin/dynamic-agents" class="m3-nav-link">Dynamic Agents</a>
-				{/if}
-				{#if data.canViewUsers}
-					<a href="/admin/users" class="m3-nav-link">Users</a>
-				{/if}
-			{/if}
-		</nav>
-
-		<form method="POST" action="/logout?redirect_to=/login" class="mt-auto">
-			{#if collapsed}
-				<IconButton type="submit" style="color: var(--md-sys-color-outline)" aria-label="Log out">
-					<IconLogout />
-				</IconButton>
-			{:else}
-				<button type="submit" class="m3-nav-link m3-nav-link--muted w-full text-left">Log out</button>
-			{/if}
-		</form>
-	</aside>
-	<main class="flex-1 overflow-y-auto p-8">
-		{@render children()}
-	</main>
+	<AdminSidebar canManageSystemConfig={data.canManageSystemConfig} canViewUsers={data.canViewUsers} bind:mobileOpen={mobileNavOpen} />
+	<div class="flex flex-1 flex-col overflow-hidden">
+		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
+			<IconButton onclick={() => (mobileNavOpen = true)} aria-label="Open menu"><IconMenu /></IconButton>
+			<a href="/admin" class="mobile-brand">
+				<AgentShape size={28} face />
+				<span class="mobile-brand__word">nomi</span>
+				<span class="mobile-brand__tag">Admin</span>
+			</a>
+		</header>
+		<main class="admin-main">
+			<div class="admin-main__inner">
+				{@render children()}
+			</div>
+		</main>
+	</div>
 </div>
 
 <style>
-	.m3-nav-link {
-		display: block;
-		padding: 8px 12px;
-		border-radius: var(--md-sys-shape-corner-full);
-		font-family: var(--md-sys-typescale-label-large-font);
-		font-weight: var(--md-sys-typescale-label-large-weight);
-		font-size: var(--md-sys-typescale-label-large-size);
-		letter-spacing: var(--md-sys-typescale-label-large-tracking);
-		color: var(--md-sys-color-on-surface-variant);
+	.mobile-brand {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--md-sys-color-on-surface);
 		text-decoration: none;
-		border: none;
-		background: transparent;
-		cursor: pointer;
 	}
-	.m3-nav-link:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	.mobile-brand__word {
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 800;
+		letter-spacing: -0.045em;
 	}
-	.m3-nav-link--muted {
-		color: var(--md-sys-color-outline);
+	.mobile-brand__tag {
+		padding: 2px 8px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.625rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.admin-main {
+		flex: 1;
+		overflow-y: auto;
+		padding: 32px clamp(16px, 4vw, 56px) 56px;
+	}
+	.admin-main__inner {
+		display: flex;
+		flex-direction: column;
+		gap: 28px;
+		max-width: 1180px;
+		margin: 0 auto;
 	}
 </style>

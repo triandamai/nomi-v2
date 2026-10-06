@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SideSheet from '$lib/components/m3/SideSheet.svelte';
 	import { agentTypeFallbackLabel, eventFeedLine, phaseLabel as sharedPhaseLabel, shortSessionId } from '$lib/agentLabels';
 	import type { AdminStreamFrame, AgentEventItem } from '$lib/types';
@@ -58,7 +60,7 @@
 		{ key: 'channel', label: 'Channel', sortable: true },
 		{ key: 'current_phase', label: 'Status', sortable: true },
 		{ key: 'started_at', label: 'Started', sortable: true },
-		{ key: 'last_activity_at', label: 'Last Activity', sortable: true },
+		{ key: 'last_activity_at', label: 'Last activity', sortable: true },
 	];
 
 	let sortKey = $state<string | undefined>('user_label');
@@ -214,44 +216,53 @@
 	}
 </script>
 
-<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Command center</h1>
-<p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
-	Every active agent, live.
-</p>
+<PageHeader title="Live agents" lede="Every agent at work right now, as it happens. Open one to see each step it took." agent="supervisor" />
 
-<div class="mt-6">
+<section aria-labelledby="running-title">
+	<h2 id="running-title" class="section-label">Working now · {sortedRows.length}</h2>
 	{#if sortedRows.length === 0}
-		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">
-			No agents are currently running.
-		</p>
+		<div class="quiet">
+			<AgentShape agent="nomi" face size={56} />
+			<p class="quiet__text"><strong>All quiet.</strong> No agent is working right now; new ones appear here the moment they start.</p>
+		</div>
 	{:else}
-		<DataTable {columns} bind:sortKey bind:sortDirection>
+		<DataTable card {columns} bind:sortKey bind:sortDirection>
 			{#each sortedRows as row (row.agent_session_id)}
 				<tr onclick={() => openDrillDown(row)} style="cursor: pointer;">
 					<td>{row.user_label}</td>
-					<td>{row.agent_display_name}</td>
-					<td title={row.session_id}>{shortSessionId(row.session_id)}</td>
+					<td>
+						<span class="agent">
+							<AgentShape agent={row.agent_type} size={28} working={row.current_phase !== 'waiting'} />
+							{row.agent_display_name}
+						</span>
+					</td>
+					<td class="mono" title={row.session_id}>{shortSessionId(row.session_id)}</td>
 					<td>{row.channel}</td>
-					<td>{rowPhaseLabel(row)}</td>
-					<td>{new Date(row.started_at).toLocaleString()}</td>
-					<td>{new Date(row.last_activity_at).toLocaleString()}</td>
+					<td><span class="phase" data-phase={row.current_phase}>{rowPhaseLabel(row)}</span></td>
+					<td class="mono">{new Date(row.started_at).toLocaleString()}</td>
+					<td class="mono">{new Date(row.last_activity_at).toLocaleString()}</td>
 				</tr>
 			{/each}
 		</DataTable>
 	{/if}
-</div>
+</section>
 
-<div class="mt-8">
-	<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface)">Activity</h2>
-	<div class="mt-2 flex flex-col gap-1 max-h-96 overflow-y-auto">
-		{#each feed as item (item.id)}
-			<div class="md-body-medium flex items-center justify-between px-2 py-1" style="border-bottom: 1px solid var(--md-sys-color-outline-variant)">
-				<span style="color: var(--md-sys-color-on-surface)">{feedLine(item)}</span>
-				<span class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{new Date(item.created_at).toLocaleTimeString()}</span>
-			</div>
-		{/each}
-	</div>
-</div>
+<section aria-labelledby="activity-title">
+	<h2 id="activity-title" class="section-label">Activity</h2>
+	{#if feed.length === 0}
+		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Nothing has happened yet.</p>
+	{:else}
+		<ol class="feed">
+			{#each feed as item (item.id)}
+				<li class="feed__row">
+					<AgentShape agent={item.agent_type ?? item.agent_display_name ?? 'nomi'} size={22} />
+					<span class="feed__text">{feedLine(item)}</span>
+					<time class="feed__time" datetime={item.created_at}>{new Date(item.created_at).toLocaleTimeString()}</time>
+				</li>
+			{/each}
+		</ol>
+	{/if}
+</section>
 
 <SideSheet bind:open={drillDownOpen}>
 	{#snippet children()}
@@ -277,3 +288,86 @@
 		{/if}
 	{/snippet}
 </SideSheet>
+
+<style>
+	.section-label {
+		margin: 0 4px 12px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		font-weight: 400;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.quiet {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 20px 24px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.quiet__text {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+		line-height: 1.5;
+	}
+	.quiet__text strong {
+		color: var(--md-sys-color-on-surface);
+	}
+	.agent {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		font-weight: 600;
+	}
+	.mono {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.8125rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.phase {
+		display: inline-flex;
+		padding: 3px 12px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+		font-size: 0.8125rem;
+		font-weight: 650;
+	}
+	.phase[data-phase='waiting'] {
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.feed {
+		display: flex;
+		flex-direction: column;
+		max-height: 28rem;
+		margin: 0;
+		padding: 6px 0;
+		overflow-y: auto;
+		list-style: none;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.feed__row {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 20px;
+	}
+	.feed__row + .feed__row {
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.feed__text {
+		color: var(--md-sys-color-on-surface);
+		overflow-wrap: anywhere;
+	}
+	.feed__time {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+		font-variant-numeric: tabular-nums;
+	}
+</style>

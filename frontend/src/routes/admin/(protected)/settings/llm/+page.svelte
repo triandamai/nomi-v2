@@ -3,7 +3,9 @@
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import Card from '$lib/components/m3/Card.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import IconChip from '$lib/components/icons/IconChip.svelte';
+	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -18,6 +20,8 @@
 		{ value: 'deepseek', label: 'DeepSeek' },
 		{ value: 'fake', label: 'Fake (testing)' },
 	];
+
+	const providerName = (value: string) => PROVIDER_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
 	let sheetOpen = $state(false);
 	let editingId = $state<string | null>(null);
@@ -96,54 +100,53 @@
 	}
 </script>
 
-<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">LLM models</h1>
+<PageHeader title="Models" lede="The language models Nomi's agents think with. The default answers every chat unless a person picks another." agent="coding">
+	{#snippet actions()}
+		<Button type="button" variant="filled" onclick={openCreate}><IconPlus size={18} /> Add model</Button>
+	{/snippet}
+</PageHeader>
 
-<div class="mt-6 space-y-3">
-	{#each data.models as model (model.id)}
-		<Card variant="outlined" class="p-4">
-			<div class="flex items-center justify-between">
-				<div>
-					<p class="md-title-medium" style="color: var(--md-sys-color-on-surface)">
-						{model.label}
-						{#if model.is_default}
-							<span
-								class="md-label-medium ml-2 rounded-full px-2 py-0.5"
-								style="background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary)"
-							>
-								Default
-							</span>
-						{/if}
-					</p>
-					<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">
-						{model.provider} · {model.model_id} · {model.api_key_masked}
-					</p>
+{#if data.models.length === 0}
+	<div class="empty">
+		<span class="model__icon"><IconChip size={26} /></span>
+		<p class="empty__text"><strong>No models yet.</strong> Add one with its provider and API key; the first becomes the default.</p>
+	</div>
+{:else}
+	<ul class="models">
+		{#each data.models as model (model.id)}
+			<li class="model" class:model--default={model.is_default}>
+				<div class="model__top">
+					<span class="model__icon"><IconChip size={24} /></span>
+					<div class="model__text">
+						<h3 class="model__name">{model.label}</h3>
+						<p class="model__provider">{providerName(model.provider)}</p>
+					</div>
+					{#if model.is_default}<span class="chip">Default</span>{/if}
 				</div>
-				<div class="flex items-center gap-2">
-					<Button type="button" variant="text" onclick={() => openEdit(model)}>Edit</Button>
+				<dl class="model__facts">
+					<div><dt>Model</dt><dd>{model.model_id}</dd></div>
+					<div><dt>Key</dt><dd>{model.api_key_masked || "None"}</dd></div>
+				</dl>
+				<div class="model__actions">
+					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(model)}>Edit</Button>
 					{#if !model.is_default}
 						<form method="POST" action="?/setDefault" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
-							<Button type="submit" variant="text">Set default</Button>
+							<Button type="submit" variant="text" size="xs">Make default</Button>
 						</form>
 						<form method="POST" action="?/delete" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
-							<Button type="submit" variant="text" style="color: var(--md-sys-color-error)">Delete</Button>
+							<Button type="submit" variant="text" size="xs" class="danger">Delete</Button>
 						</form>
 					{/if}
 				</div>
-			</div>
-		</Card>
-	{/each}
-</div>
-
-<div class="mt-6">
-	<Button type="button" variant="outlined" onclick={openCreate}>+ Add model</Button>
-</div>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <BottomSheet bind:open={sheetOpen}>
-	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">
-		{editingId ? 'Edit model' : 'Add model'}
-	</h2>
+	<h2 class="sheet-title">{editingId ? `Edit ${label || 'model'}` : 'Add model'}</h2>
 
 	{#if form?.error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -225,3 +228,125 @@
 		</div>
 	</form>
 </BottomSheet>
+
+<style>
+	.empty {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 20px 24px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.empty__text {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.empty__text strong {
+		color: var(--md-sys-color-on-surface);
+	}
+	.models {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+		gap: 12px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.model {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		padding: 20px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+	}
+	.model--default {
+		box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+	}
+	.model__top {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+	.model__icon {
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 48px;
+		height: 48px;
+		border-radius: 16px;
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.model__text {
+		flex: 1;
+		min-width: 0;
+	}
+	.model__name {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.25rem;
+		font-weight: 700;
+		overflow-wrap: anywhere;
+	}
+	.model__provider {
+		margin: 2px 0 0;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.chip {
+		flex: none;
+		padding: 3px 12px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-primary);
+		color: var(--md-sys-color-on-primary);
+		font-size: 0.8125rem;
+		font-weight: 650;
+	}
+	.model__facts {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin: 0;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+	}
+	.model__facts div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.model__facts dt {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.model__facts dd {
+		margin: 0;
+		min-width: 0;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.8125rem;
+		text-align: right;
+		overflow-wrap: anywhere;
+	}
+	.model__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+	.model__actions :global(.danger) {
+		color: var(--md-sys-color-error);
+	}
+	.sheet-title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+</style>

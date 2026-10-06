@@ -14,6 +14,12 @@ const ROUTE_TITLES: Record<string, string> = {
 	'/(app)/projects': 'Projects',
 	'/(app)/projects/session/[sessionId]': 'Project',
 	'/(app)/reminders': 'Reminders',
+	'/admin/(protected)': 'Overview · Admin',
+	'/admin/(protected)/agents': 'Live agents · Admin',
+	'/admin/(protected)/dynamic-agents': 'Custom agents · Admin',
+	'/admin/(protected)/settings/llm': 'Models · Admin',
+	'/admin/(protected)/settings/embedding': 'Embeddings · Admin',
+	'/admin/(protected)/users': 'Users · Admin',
 	'/login': 'Log in',
 	'/register': 'Sign up',
 };
@@ -23,8 +29,6 @@ export function pageTitle(routeId: string | null, dataTitle?: unknown): string {
 	const name =
 		typeof dataTitle === 'string' && dataTitle.trim()
 			? dataTitle.trim()
-			: routeId?.startsWith('/admin')
-				? 'Admin'
-				: ROUTE_TITLES[routeId ?? ''];
+			: (ROUTE_TITLES[routeId ?? ''] ?? (routeId?.startsWith('/admin') ? 'Admin' : undefined));
 	return name ? `${name} · Nomi` : 'Nomi';
 }

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { deserialize, enhance } from '$app/forms';
+	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
@@ -21,11 +23,15 @@
 	let { data }: { data: PageData } = $props();
 
 	const columns = [
-		{ key: 'email', label: 'Email' },
-		{ key: 'staff', label: 'Staff' },
-		{ key: 'orgs', label: 'Organizations' },
+		{ key: 'email', label: 'Person' },
+		{ key: 'staff', label: 'Role' },
+		{ key: 'orgs', label: 'Spaces' },
 		{ key: 'actions', label: '' },
 	];
+
+	function role(user: { is_platform_admin: boolean; is_staff: boolean }): string {
+		return user.is_platform_admin ? 'Owner' : user.is_staff ? 'Staff' : 'Member';
+	}
 
 	function handleSearch(query: string) {
 		goto(`?query=${encodeURIComponent(query)}&page=1`, { keepFocus: true });
@@ -89,13 +95,11 @@
 	});
 </script>
 
-<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Users</h1>
-<p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
-	Manage user access: promote to staff and grant permissions.
-</p>
+<PageHeader title="Users" lede="Everyone with a Nomi account. Make people staff and choose what they can see and change." agent="personality" />
 
-<div class="mt-6">
+<div>
 	<DataTable
+		card
 		{columns}
 		page={data.page}
 		pageSize={data.pageSize}
@@ -103,13 +107,18 @@
 		onPageChange={handlePageChange}
 		searchQuery={data.query}
 		onSearch={handleSearch}
-		searchPlaceholder="Search by email..."
+		searchPlaceholder="Search by email"
 	>
 		{#each data.users as user (user.id)}
 			<tr>
-				<td>{user.email}</td>
-				<td>{user.is_staff ? 'Yes' : 'No'}</td>
-				<td>{user.org_count}</td>
+				<td>
+					<span class="person">
+						<Avatar name={user.email} size={32} />
+						<span class="person__email">{user.email}</span>
+					</span>
+				</td>
+				<td><span class="role" data-role={role(user).toLowerCase()}>{role(user)}</span></td>
+				<td class="spaces">{user.org_count}</td>
 				<td>
 					<Menu>
 						{#snippet trigger({ toggle })}
@@ -131,7 +140,9 @@
 		{/each}
 	</DataTable>
 	{#if data.users.length === 0}
-		<p class="md-body-medium mt-4" style="color: var(--md-sys-color-on-surface-variant)">No users found.</p>
+		<p class="md-body-medium mt-4" style="color: var(--md-sys-color-on-surface-variant)">
+			{data.query ? `Nobody matches “${data.query}”.` : 'No one has signed up yet.'}
+		</p>
 	{/if}
 </div>
 
@@ -267,6 +278,37 @@
 </BottomSheet>
 
 <style>
+	.person {
+		display: inline-flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+	}
+	.person__email {
+		font-weight: 600;
+		overflow-wrap: anywhere;
+	}
+	.role {
+		display: inline-flex;
+		padding: 3px 12px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+		font-weight: 650;
+	}
+	.role[data-role='staff'] {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.role[data-role='owner'] {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.spaces {
+		font-family: var(--md-ref-typeface-mono);
+		font-variant-numeric: tabular-nums;
+	}
 	.m3-resource-row {
 		display: flex;
 		flex-direction: column;
