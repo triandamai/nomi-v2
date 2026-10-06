@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import ChatThread from '$lib/components/ChatThread.svelte';
@@ -122,7 +123,7 @@
 						{#each data.personality.versions as version (version.version)}
 							<ListItem
 								headline={version.description}
-								supportingText={`v${version.version} · ${new Date(version.created_at).toLocaleString()}`}
+								supportingText={`v${version.version} · ${new Date(version.created_at).toLocaleString(getLocale())}`}
 								selected={version.is_current}
 							>
 								{#snippet trailing()}

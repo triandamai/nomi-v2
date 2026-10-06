@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { deserialize } from '$app/forms';
 	import AgentShape from './m3/AgentShape.svelte';
 	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
@@ -44,7 +45,7 @@
 	const look = $derived(agentLook(message.agent_display_name));
 	const isCrewMember = $derived(message.sender === 'assistant' && look.tone !== 'glow');
 	const senderTint = $derived(GRADIENT_STOPS[look.tone].at(-1));
-	const formattedTime = new Date(message.created_at).toLocaleString(undefined, {
+	const formattedTime = new Date(message.created_at).toLocaleString(getLocale(), {
 		dateStyle: 'medium',
 		timeStyle: 'short',
 	});

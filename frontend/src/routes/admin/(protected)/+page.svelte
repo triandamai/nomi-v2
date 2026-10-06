@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLocale } from '$lib/paraglide/runtime';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import IconAgents from '$lib/components/icons/IconAgents.svelte';
@@ -10,7 +11,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+	const compact = new Intl.NumberFormat(getLocale(), { notation: 'compact', maximumFractionDigits: 1 });
 	const full = new Intl.NumberFormat();
 
 	const stats = $derived([

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLocale } from '$lib/paraglide/runtime';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import type { ContentBlock } from '$lib/types';
@@ -11,7 +12,7 @@
 	let busy = $state(false);
 
 	const when = $derived(
-		new Date(block.due_at).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
+		new Date(block.due_at).toLocaleString(getLocale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
 	);
 
 	async function act(action: 'done' | 'snooze', minutes?: number) {

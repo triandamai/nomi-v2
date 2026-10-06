@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { onMount } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
@@ -239,8 +240,8 @@
 					<td class="mono" title={row.session_id}>{shortSessionId(row.session_id)}</td>
 					<td>{row.channel}</td>
 					<td><span class="phase" data-phase={row.current_phase}>{rowPhaseLabel(row)}</span></td>
-					<td class="mono">{new Date(row.started_at).toLocaleString()}</td>
-					<td class="mono">{new Date(row.last_activity_at).toLocaleString()}</td>
+					<td class="mono">{new Date(row.started_at).toLocaleString(getLocale())}</td>
+					<td class="mono">{new Date(row.last_activity_at).toLocaleString(getLocale())}</td>
 				</tr>
 			{/each}
 		</DataTable>
@@ -257,7 +258,7 @@
 				<li class="feed__row">
 					<AgentShape agent={item.agent_type ?? item.agent_display_name ?? 'nomi'} size={22} />
 					<span class="feed__text">{feedLine(item)}</span>
-					<time class="feed__time" datetime={item.created_at}>{new Date(item.created_at).toLocaleTimeString()}</time>
+					<time class="feed__time" datetime={item.created_at}>{new Date(item.created_at).toLocaleTimeString(getLocale())}</time>
 				</li>
 			{/each}
 		</ol>
@@ -281,7 +282,7 @@
 				{#each drillDownEvents as item (item.id)}
 					<div style="padding: 8px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);">
 						<p class="md-body-large" style="color: var(--md-sys-color-on-surface)">{feedLine(item)}</p>
-						<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{new Date(item.created_at).toLocaleString()}</p>
+						<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{new Date(item.created_at).toLocaleString(getLocale())}</p>
 					</div>
 				{/each}
 			{/if}

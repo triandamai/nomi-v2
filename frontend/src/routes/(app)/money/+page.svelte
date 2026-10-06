@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -15,7 +16,8 @@
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
-	import { budgetState, categoryLook, compareMonths, fillDays, formatAmount, monthLabel, niceScale, shiftMonth } from '$lib/money';
+	import { budgetState, categoryLook, compareMonths, fillDays, formatAmount, monthLabel, monthName, niceScale, shiftMonth } from '$lib/money';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -59,7 +61,7 @@
 	const money = $derived(data.money);
 	const thisMonth = $derived(money?.months[0] ?? money?.month ?? '');
 	const comparison = $derived(
-		money ? compareMonths(money.total_cents, money.previous_total_cents, monthLabel(shiftMonth(money.month, -1), 'long').split(' ')[0]) : null,
+		money ? compareMonths(money.total_cents, money.previous_total_cents, monthName(shiftMonth(money.month, -1))) : null,
 	);
 	const days = $derived(money ? fillDays(money.month, money.by_day) : []);
 	const daysWithSpending = $derived(days.filter((d) => d.cents > 0).length);
@@ -83,14 +85,14 @@
 	});
 
 	function dayLabel(date: string): string {
-		const [y, m, d] = date.split('-').map(Number);
-		return new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
-			new Date(Date.UTC(y, m - 1, d)),
+		const [y, mo, d] = date.split('-').map(Number);
+		return new Intl.DateTimeFormat(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+			new Date(Date.UTC(y, mo - 1, d)),
 		);
 	}
 	function txDate(iso: string): string {
 		try {
-			return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', timeZone: money?.timezone }).format(new Date(iso));
+			return new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', timeZone: money?.timezone }).format(new Date(iso));
 		} catch {
 			return iso.slice(0, 10);
 		}
@@ -123,30 +125,30 @@
 	<div class="money__inner">
 		<header class="money__head">
 			<div class="money__titles">
-				<h1 class="md-display-small money__title">Money</h1>
-				<p class="md-body-large money__lede">What you spent, where it went, and how this month compares. Money keeps an eye on it with you.</p>
+				<h1 class="md-display-small money__title">{m.money_title()}</h1>
+				<p class="md-body-large money__lede">{m.money_lede()}</p>
 			</div>
 			<div class="money__actions">
 				<AgentShape agent="money" size={64} class="money__mark" />
-				<Button variant="tonal" size="m" onclick={() => openBudget()}>Set a budget</Button>
+				<Button variant="tonal" size="m" onclick={() => openBudget()}>{m.money_set_budget()}</Button>
 				<Button variant="gradient" size="m" onclick={() => (expenseOpen = true)}>
 					<IconPlus size={20} />
-					Add expense
+					{m.money_add_expense()}
 				</Button>
 			</div>
 		</header>
 
 		{#if !money}
-			<p class="money__notice" role="alert">Couldn't load your spending just now. Reload the page to try again.</p>
+			<p class="money__notice" role="alert">{m.money_load_failed()}</p>
 		{:else}
-			<nav class="months" aria-label="Month">
-				<IconButton variant="filled-tonal" href="?month={shiftMonth(money.month, -1)}" aria-label="Previous month"><IconChevronLeft /></IconButton>
+			<nav class="months" aria-label={m.money_month()}>
+				<IconButton variant="filled-tonal" href="?month={shiftMonth(money.month, -1)}" aria-label={m.money_prev_month()}><IconChevronLeft /></IconButton>
 				<span class="months__current">{monthLabel(money.month)}</span>
 				<IconButton
 					variant="filled-tonal"
 					href={money.month < thisMonth ? `?month=${shiftMonth(money.month, 1)}` : undefined}
 					disabled={money.month >= thisMonth}
-					aria-label="Next month"
+					aria-label={m.money_next_month()}
 				>
 					<IconChevronRight />
 				</IconButton>
@@ -156,14 +158,14 @@
 				<section class="empty">
 					<AgentShape agent="money" size={96} />
 					<div>
-						<h2 class="md-headline-small">No spending in {monthLabel(money.month)}</h2>
-						<p class="md-body-large empty__body">When transactions come in, Money totals them here and spots where your money goes.</p>
+						<h2 class="md-headline-small">{m.money_empty_title({ month: monthLabel(money.month) })}</h2>
+						<p class="md-body-large empty__body">{m.money_empty_body()}</p>
 					</div>
 				</section>
 			{:else}
-				<section class="summary" aria-label="This month">
+				<section class="summary" aria-label={m.money_this_month()}>
 					<div class="hero">
-						<span class="nomi-meta hero__label">Spent in {monthLabel(money.month, 'long').split(' ')[0]}</span>
+						<span class="nomi-meta hero__label">{m.money_spent_in({ month: monthName(money.month) })}</span>
 						<span class="hero__value">{formatAmount(money.total_cents)}</span>
 						{#if comparison}
 							<span class="hero__delta" data-direction={comparison.direction}>
@@ -176,16 +178,16 @@
 					</div>
 					<dl class="tiles">
 						<div class="tile">
-							<dt>Transactions</dt>
+							<dt>{m.money_transactions()}</dt>
 							<dd>{money.transaction_count}</dd>
 						</div>
 						<div class="tile">
-							<dt>Per spending day</dt>
+							<dt>{m.money_per_day()}</dt>
 							<dd>{formatAmount(daysWithSpending ? money.total_cents / daysWithSpending : 0)}</dd>
 						</div>
 						{#if topCategory}
 							<div class="tile">
-								<dt>Biggest category</dt>
+								<dt>{m.money_biggest()}</dt>
 								<dd class="tile__text">{topCategory.category}</dd>
 							</div>
 						{/if}
@@ -194,11 +196,11 @@
 
 				<section class="panel" aria-labelledby="budget-heading">
 					<div class="panel__head">
-						<h2 id="budget-heading" class="panel__title">Budgets</h2>
-						<Button variant="text" onclick={() => openBudget()}>Add</Button>
+						<h2 id="budget-heading" class="panel__title">{m.money_budgets()}</h2>
+						<Button variant="text" onclick={() => openBudget()}>{m.common_add()}</Button>
 					</div>
 					{#if money.budgets.length === 0}
-						<p class="panel__hint">Give a category a monthly limit and Money tracks it here, and warns you before you go over.</p>
+						<p class="panel__hint">{m.money_budgets_hint()}</p>
 					{:else}
 						<ul class="budgets">
 							{#each money.budgets as b (b.category)}
@@ -208,7 +210,7 @@
 									<div class="budget__top">
 										<AgentShape shape={look.shape} tone={look.tone} size={36} />
 										<span class="budget__name">{b.category}</span>
-										<IconButton aria-label="Edit the {b.category} budget" onclick={() => openBudget(b.category, b.limit_cents)}>
+										<IconButton aria-label={m.money_edit_budget({ category: b.category })} onclick={() => openBudget(b.category, b.limit_cents)}>
 											<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
 										</IconButton>
 										<form
@@ -216,27 +218,27 @@
 											action="?/deleteBudget"
 											use:enhance={() => async ({ result, update }) => {
 												await update();
-												if (result.type === 'success') notify(`Removed the ${b.category} budget.`);
+												if (result.type === 'success') notify(m.money_budget_removed({ category: b.category }));
 											}}
 										>
 											<input type="hidden" name="category" value={b.category} />
-											<IconButton type="submit" aria-label="Remove the {b.category} budget"><IconClose size={18} /></IconButton>
+											<IconButton type="submit" aria-label={m.money_remove_budget({ category: b.category })}><IconClose size={18} /></IconButton>
 										</form>
 									</div>
 									<div class="budget__row">
-										<span class="budget__figures">{formatAmount(b.spent_cents)} <span class="budget__of">of {formatAmount(b.limit_cents)}</span></span>
+										<span class="budget__figures">{formatAmount(b.spent_cents)} <span class="budget__of">{m.money_of({ amount: formatAmount(b.limit_cents) })}</span></span>
 										{#if state.over}
 											<span class="budget__flag">
 												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>
-												Over by {formatAmount(b.spent_cents - b.limit_cents)}
+												{m.money_over_by({ amount: formatAmount(b.spent_cents - b.limit_cents) })}
 											</span>
 										{:else if state.nearly}
-											<span class="budget__flag budget__flag--near">{formatAmount(b.limit_cents - b.spent_cents)} left</span>
+											<span class="budget__flag budget__flag--near">{m.money_left({ amount: formatAmount(b.limit_cents - b.spent_cents) })}</span>
 										{:else}
-											<span class="budget__left">{Math.round(state.ratio * 100)}% used</span>
+											<span class="budget__left">{m.money_used({ percent: Math.round(state.ratio * 100) })}</span>
 										{/if}
 									</div>
-									<WavyProgress value={Math.min(1, state.ratio)} tone={look.tone} label="{b.category}: {Math.round(state.ratio * 100)}% of the budget used" />
+									<WavyProgress value={Math.min(1, state.ratio)} tone={look.tone} label={m.money_budget_progress({ category: b.category, percent: Math.round(state.ratio * 100) })} />
 								</li>
 							{/each}
 						</ul>
@@ -246,14 +248,14 @@
 				<div class="charts">
 					<section class="panel" aria-labelledby="cat-heading">
 						<div class="panel__head">
-							<h2 id="cat-heading" class="panel__title">By category</h2>
-							<IconButton selected={showCategoryTable} aria-label="Show as a table" onclick={() => (showCategoryTable = !showCategoryTable)}>
+							<h2 id="cat-heading" class="panel__title">{m.money_by_category()}</h2>
+							<IconButton selected={showCategoryTable} aria-label={m.common_show_table()} onclick={() => (showCategoryTable = !showCategoryTable)}>
 								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M9 10v10" /></svg>
 							</IconButton>
 						</div>
 						{#if showCategoryTable}
 							<table class="table">
-								<thead><tr><th scope="col">Category</th><th scope="col">Transactions</th><th scope="col">Amount</th><th scope="col">Share</th></tr></thead>
+								<thead><tr><th scope="col">{m.common_category()}</th><th scope="col">{m.money_transactions()}</th><th scope="col">{m.common_amount()}</th><th scope="col">{m.money_share()}</th></tr></thead>
 								<tbody>
 									{#each money.by_category as c (c.category)}
 										<tr><td>{c.category}</td><td class="num">{c.count}</td><td class="num">{formatAmount(c.cents)}</td><td class="num">{share(c.cents)}</td></tr>
@@ -269,7 +271,7 @@
 											class="bars__row"
 											class:bars__row--active={category === c.category}
 											aria-pressed={category === c.category}
-											aria-label="{c.category}: {formatAmount(c.cents)}, {share(c.cents)} of the month. Filter transactions"
+											aria-label={m.money_bar_label({ category: c.category, amount: formatAmount(c.cents), share: share(c.cents) })}
 											onclick={() => (category = category === c.category ? null : c.category)}
 											onpointerenter={() => (hoverCategory = c.category)}
 											onpointerleave={() => (hoverCategory = null)}
@@ -280,27 +282,27 @@
 												<span class="bars__value">{formatAmount(c.cents, { compact: true })}</span>
 											</span>
 											{#if hoverCategory === c.category}
-												<span class="tooltip tooltip--bar" role="presentation">{c.count} {c.count === 1 ? 'transaction' : 'transactions'} · {share(c.cents)} of the month</span>
+												<span class="tooltip tooltip--bar" role="presentation">{c.count === 1 ? m.money_tx_one() : m.money_tx_many({ count: c.count })} · {m.money_of_month({ share: share(c.cents) })}</span>
 											{/if}
 										</button>
 									</li>
 								{/each}
 							</ul>
-							<p class="panel__hint">Tap a category to filter the list below.</p>
+							<p class="panel__hint">{m.money_tap_category()}</p>
 						{/if}
 					</section>
 
 					<section class="panel" aria-labelledby="day-heading">
 						<div class="panel__head">
-							<h2 id="day-heading" class="panel__title">Day by day</h2>
-							<IconButton selected={showDayTable} aria-label="Show as a table" onclick={() => (showDayTable = !showDayTable)}>
+							<h2 id="day-heading" class="panel__title">{m.money_day_by_day()}</h2>
+							<IconButton selected={showDayTable} aria-label={m.common_show_table()} onclick={() => (showDayTable = !showDayTable)}>
 								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M9 10v10" /></svg>
 							</IconButton>
 						</div>
 						{#if showDayTable}
 							<div class="table-scroll">
 								<table class="table">
-									<thead><tr><th scope="col">Day</th><th scope="col">Amount</th></tr></thead>
+									<thead><tr><th scope="col">{m.money_day()}</th><th scope="col">{m.common_amount()}</th></tr></thead>
 									<tbody>
 										{#each days.filter((d) => d.cents > 0) as d (d.date)}
 											<tr><td>{dayLabel(d.date)}</td><td class="num">{formatAmount(d.cents)}</td></tr>
@@ -310,11 +312,11 @@
 							</div>
 						{:else}
 							<div class="daychart">
-								<svg viewBox="0 0 {CHART_W} {CHART_H}" class="daychart__svg" role="img" aria-label="Spending per day in {monthLabel(money.month)}; the table view lists each day">
+								<svg viewBox="0 0 {CHART_W} {CHART_H}" class="daychart__svg" role="img" aria-label={m.money_day_chart({ month: monthLabel(money.month) })}>
 									{#each dayScale.ticks as tick (tick)}
 										<line x1={AXIS_W} x2={CHART_W} y1={y(tick)} y2={y(tick)} class="daychart__grid" />
 										<text x={AXIS_W - 8} y={y(tick) + 4} class="daychart__tick" text-anchor="end">
-											{new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(tick)}
+											{new Intl.NumberFormat(getLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(tick)}
 										</text>
 									{/each}
 									{#each days as d (d.date)}
@@ -343,7 +345,7 @@
 										style="left: {((AXIS_W + (hovered.day - 0.5) * slot) / CHART_W) * 100}%; top: {(y(hovered.cents / 100) / CHART_H) * 100}%"
 									>
 										<span class="tooltip__title">{dayLabel(hovered.date)}</span>
-										<span>{hovered.cents > 0 ? formatAmount(hovered.cents) : 'No spending'}</span>
+										<span>{hovered.cents > 0 ? formatAmount(hovered.cents) : m.money_no_spending()}</span>
 									</div>
 								{/if}
 							</div>
@@ -353,17 +355,17 @@
 
 				<section class="panel" aria-labelledby="tx-heading">
 					<div class="panel__head">
-						<h2 id="tx-heading" class="panel__title">Transactions</h2>
-						<span class="nomi-meta">{visibleTransactions.length} shown</span>
+						<h2 id="tx-heading" class="panel__title">{m.money_transactions()}</h2>
+						<span class="nomi-meta">{m.money_shown({ count: visibleTransactions.length })}</span>
 					</div>
 					<div class="filters">
 						<label class="search">
 							<IconSearch />
-							<span class="sr-only">Search transactions</span>
-							<input type="search" bind:value={query} placeholder="Search descriptions" class="search__input" />
+							<span class="sr-only">{m.money_search()}</span>
+							<input type="search" bind:value={query} placeholder={m.money_search_placeholder()} class="search__input" />
 						</label>
 						<div class="filters__chips">
-							<Chip variant="filter" selected={category === null} onclick={() => (category = null)}>All</Chip>
+							<Chip variant="filter" selected={category === null} onclick={() => (category = null)}>{m.common_all()}</Chip>
 							{#each money.by_category as c (c.category)}
 								<Chip variant="filter" selected={category === c.category} onclick={() => (category = category === c.category ? null : c.category)}>
 									{c.category}
@@ -372,7 +374,7 @@
 						</div>
 					</div>
 					{#if visibleTransactions.length === 0}
-						<p class="money__notice">No transactions match.</p>
+						<p class="money__notice">{m.money_no_match()}</p>
 					{:else}
 						<List class="tx">
 							{#each visibleTransactions as t (t.id)}
@@ -395,37 +397,37 @@
 </div>
 
 <BottomSheet bind:open={expenseOpen}>
-	<form method="POST" action="?/addExpense" class="sheet" use:enhance={sheetSubmit(() => (expenseOpen = false), 'Expense added.')}>
+	<form method="POST" action="?/addExpense" class="sheet" use:enhance={sheetSubmit(() => (expenseOpen = false), m.money_expense_added())}>
 		<div class="sheet__head">
 			<AgentShape agent="money" size={36} />
-			<h2 class="md-headline-small-emphasized sheet__title">Add an expense</h2>
+			<h2 class="md-headline-small-emphasized sheet__title">{m.money_add_expense_title()}</h2>
 		</div>
-		<TextField id="expense-amount" name="amount" label="Amount" type="number" inputmode="decimal" min="0.01" step="0.01" required />
-		<TextField id="expense-description" name="description" label="What was it for?" required maxlength={200} />
-		<TextField id="expense-category" name="category" label="Category" required maxlength={40} list="money-categories" />
+		<TextField id="expense-amount" name="amount" label={m.common_amount()} type="number" inputmode="decimal" min="0.01" step="0.01" required />
+		<TextField id="expense-description" name="description" label={m.money_what_for()} required maxlength={200} />
+		<TextField id="expense-category" name="category" label={m.common_category()} required maxlength={40} list="money-categories" />
 		<datalist id="money-categories">
 			{#each knownCategories as c (c)}<option value={c}></option>{/each}
 		</datalist>
 		<label class="sheet__field">
-			<span class="sheet__label">Date</span>
+			<span class="sheet__label">{m.common_date()}</span>
 			<input type="date" name="occurred_at" value={today} max={today} class="sheet__date" />
 		</label>
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
-			<Button type="button" variant="text" onclick={() => (expenseOpen = false)}>Cancel</Button>
-			<Button type="submit" variant="filled" size="m" disabled={saving}>Add expense</Button>
+			<Button type="button" variant="text" onclick={() => (expenseOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving}>{m.money_add_expense()}</Button>
 		</div>
 	</form>
 </BottomSheet>
 
 <BottomSheet bind:open={budgetOpen}>
-	<form method="POST" action="?/setBudget" class="sheet" use:enhance={sheetSubmit(() => (budgetOpen = false), 'Budget saved.')}>
+	<form method="POST" action="?/setBudget" class="sheet" use:enhance={sheetSubmit(() => (budgetOpen = false), m.money_budget_saved())}>
 		<div class="sheet__head">
 			<AgentShape agent="money" size={36} />
-			<h2 class="md-headline-small-emphasized sheet__title">Monthly budget</h2>
+			<h2 class="md-headline-small-emphasized sheet__title">{m.money_monthly_budget()}</h2>
 		</div>
-		<TextField id="budget-category" name="category" label="Category" bind:value={budgetCategory} required maxlength={40} list="money-categories" />
-		<TextField id="budget-limit" name="monthly_limit" label="Limit per month" type="number" inputmode="decimal" min="0.01" step="0.01" bind:value={budgetLimit} required />
+		<TextField id="budget-category" name="category" label={m.common_category()} bind:value={budgetCategory} required maxlength={40} list="money-categories" />
+		<TextField id="budget-limit" name="monthly_limit" label={m.money_limit()} type="number" inputmode="decimal" min="0.01" step="0.01" bind:value={budgetLimit} required />
 		<div class="sheet__chips">
 			{#each knownCategories as c (c)}
 				<Chip variant="filter" type="button" selected={budgetCategory === c} onclick={() => (budgetCategory = c)}>{c}</Chip>
@@ -433,8 +435,8 @@
 		</div>
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
-			<Button type="button" variant="text" onclick={() => (budgetOpen = false)}>Cancel</Button>
-			<Button type="submit" variant="filled" size="m" disabled={saving}>Save budget</Button>
+			<Button type="button" variant="text" onclick={() => (budgetOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving}>{m.money_save_budget()}</Button>
 		</div>
 	</form>
 </BottomSheet>

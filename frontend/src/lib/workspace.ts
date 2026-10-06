@@ -1,30 +1,49 @@
+import { m } from '$lib/paraglide/messages';
 import type { WorkspaceService } from '$lib/types';
 
-/** How each Google service is named, explained and drawn (a 24px stroke icon's paths). */
+/** How each Google service is named, explained and drawn (a 24px stroke icon's paths). Getters, so the text follows the language of whoever is reading. */
 export const WORKSPACE_SERVICES: Record<WorkspaceService, { label: string; detail: string; icon: string }> = {
 	gmail: {
 		label: 'Gmail',
-		detail: 'Read, search and draft replies. Sends only after you approve.',
+		get detail() {
+			return m.ws_gmail_detail();
+		},
 		icon: 'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7l9 6 9-6',
 	},
 	sheets: {
-		label: 'Sheets',
-		detail: 'Read and update your spreadsheets.',
+		get label() {
+			return m.ws_sheets_label();
+		},
+		get detail() {
+			return m.ws_sheets_detail();
+		},
 		icon: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM3 9h18M3 15h18M9 3v18',
 	},
 	docs: {
-		label: 'Docs',
-		detail: 'Read, write and edit your documents.',
+		get label() {
+			return m.ws_docs_label();
+		},
+		get detail() {
+			return m.ws_docs_detail();
+		},
 		icon: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5',
 	},
 	drive: {
-		label: 'Drive',
-		detail: 'Find files and folders to work with.',
+		get label() {
+			return m.ws_drive_label();
+		},
+		get detail() {
+			return m.ws_drive_detail();
+		},
 		icon: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
 	},
 	calendar: {
-		label: 'Calendar',
-		detail: 'See your schedule and add events. Invites wait for your OK.',
+		get label() {
+			return m.ws_calendar_label();
+		},
+		get detail() {
+			return m.ws_calendar_detail();
+		},
 		icon: 'M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM3 10h18M8 3v4M16 3v4',
 	},
 };

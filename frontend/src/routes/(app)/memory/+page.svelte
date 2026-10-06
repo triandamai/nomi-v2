@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -11,7 +12,7 @@
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import { GRADIENT_STOPS } from '$lib/components/m3/shapes';
-	import { fitPoints, STRENGTH_LABELS, strengthPips, timeAgo } from '$lib/memory';
+	import { fitPoints, strengthLabel, strengthPips, timeAgo } from '$lib/memory';
 	import { clampPage, pageCount, pageSlice } from '$lib/pagination';
 	import { projectTo3D } from '$lib/pca';
 	import type { MemoryItem } from '$lib/types';
@@ -21,9 +22,9 @@
 
 	type Sort = 'recent' | 'strongest' | 'used';
 	const SORTS: { value: Sort; label: string }[] = [
-		{ value: 'recent', label: 'Recent' },
-		{ value: 'strongest', label: 'Strongest' },
-		{ value: 'used', label: 'Most used' },
+		{ value: 'recent', label: m.mem_sort_recent() },
+		{ value: 'strongest', label: m.mem_sort_strongest() },
+		{ value: 'used', label: m.mem_sort_used() },
 	];
 
 	let sort = $state<Sort>('recent');
@@ -128,17 +129,16 @@
 	<div class="memory__inner">
 		<header class="memory__head">
 			<div class="memory__titles">
-				<h1 class="md-display-small memory__title">Memory</h1>
+				<h1 class="md-display-small memory__title">{m.mem_title()}</h1>
 				<p class="md-body-large memory__lede">
-					What Nomi has learned about you while you chat. It recalls these when they're relevant, and you can make it
-					forget anything.
+					{m.mem_lede()}
 				</p>
 			</div>
 			<AgentShape agent="memory" size={72} working={forgetting} class="memory__mark" />
 		</header>
 
 		{#if data.loadFailed}
-			<p class="memory__notice" role="alert">Couldn't load your memories just now. Reload the page to try again.</p>
+			<p class="memory__notice" role="alert">{m.mem_load_failed()}</p>
 		{:else if memories.length === 0}
 			<section class="empty" aria-labelledby="empty-heading">
 				<div class="empty__art" aria-hidden="true">
@@ -148,12 +148,11 @@
 					<span class="empty__orbit empty__orbit--c"><AgentShape agent="money" size={24} /></span>
 				</div>
 				<div class="empty__text">
-					<h2 id="empty-heading" class="md-headline-small empty__title">Nothing remembered yet</h2>
+					<h2 id="empty-heading" class="md-headline-small empty__title">{m.mem_empty_title()}</h2>
 					<p class="md-body-large empty__body">
-						As you talk with Nomi, it keeps lasting facts — what you like, the people in your life, your routines — so
-						you don't have to repeat yourself. They'll collect here.
+						{m.mem_empty_body()}
 					</p>
-					<Button variant="gradient" size="m" href="/">Start a chat</Button>
+					<Button variant="gradient" size="m" href="/">{m.mem_start_chat()}</Button>
 				</div>
 			</section>
 		{:else}
@@ -161,24 +160,24 @@
 				<div class="stage__summary">
 					<h2 id="stage-heading" class="stage__count">
 						<span class="stage__number">{memories.length}</span>
-						<span class="stage__count-label">{memories.length === 1 ? 'thing' : 'things'} Nomi remembers</span>
+						<span class="stage__count-label">{memories.length === 1 ? m.mem_count_one() : m.mem_count_many()}</span>
 					</h2>
 					<dl class="stage__stats">
 						{#if newest}
 							<div>
-								<dt class="nomi-meta">Newest</dt>
+								<dt class="nomi-meta">{m.mem_newest()}</dt>
 								<dd>{clip(newest.content, 64)} <span class="stage__when">{timeAgo(newest.created_at)}</span></dd>
 							</div>
 						{/if}
 						<div>
-							<dt class="nomi-meta">Recalled</dt>
+							<dt class="nomi-meta">{m.mem_recalled()}</dt>
 							<dd>
-								{totalUses === 0 ? 'Not used in a reply yet' : `${totalUses} ${totalUses === 1 ? 'time' : 'times'} in Nomi's replies`}
+								{totalUses === 0 ? m.mem_not_used_reply() : totalUses === 1 ? m.mem_times_one() : m.mem_times_many({ count: totalUses })}
 							</dd>
 						</div>
 						{#if mostUsed && mostUsed.uses > 0}
 							<div>
-								<dt class="nomi-meta">Most used</dt>
+								<dt class="nomi-meta">{m.mem_most_used()}</dt>
 								<dd>{clip(mostUsed.content, 64)}</dd>
 							</div>
 						{/if}
@@ -186,7 +185,7 @@
 				</div>
 
 				<figure class="map">
-					<svg viewBox="0 0 {MAP_SIZE} {MAP_SIZE}" class="map__svg" role="group" aria-label="Memory map: similar memories sit closer together">
+					<svg viewBox="0 0 {MAP_SIZE} {MAP_SIZE}" class="map__svg" role="group" aria-label={m.mem_map_label()}>
 						<defs>
 							<radialGradient id="{uid}-dot" cx="35%" cy="30%" r="80%">
 								{#each GRADIENT_STOPS.bloom as stop, i (i)}
@@ -226,7 +225,7 @@
 						{#if selected}
 							<span class="map__selected">{selected.content}</span>
 						{:else}
-							Similar memories sit close together. Bigger dots are stronger. Tap one to find it.
+							{m.mem_map_caption()}
 						{/if}
 					</figcaption>
 				</figure>
@@ -235,14 +234,14 @@
 			<div class="toolbar">
 				<label class="search">
 					<IconSearch />
-					<span class="sr-only">Search memories</span>
-					<input type="search" bind:value={query} placeholder="Search what Nomi remembers" class="search__input" />
+					<span class="sr-only">{m.mem_search()}</span>
+					<input type="search" bind:value={query} placeholder={m.mem_search_placeholder()} class="search__input" />
 				</label>
-				<ButtonGroup options={SORTS} bind:value={sort} aria-label="Sort memories" />
+				<ButtonGroup options={SORTS} bind:value={sort} aria-label={m.mem_sort_label()} />
 			</div>
 
 			{#if visible.length === 0}
-				<p class="memory__notice">Nothing matches “{query.trim()}”.</p>
+				<p class="memory__notice">{m.mem_no_match({ query: query.trim() })}</p>
 			{:else}
 				<ul class="cards">
 					{#each shown as memory (memory.id)}
@@ -253,62 +252,62 @@
 							class:card--selected={selectedId === memory.id}
 						>
 							<div class="card__top">
-								<span class="nomi-meta">Learned {timeAgo(memory.created_at)}</span>
-								<IconButton aria-label="Forget this memory" title="Forget" onclick={() => askToForget(memory)}>
+								<span class="nomi-meta">{m.mem_learned({ when: timeAgo(memory.created_at) })}</span>
+								<IconButton aria-label={m.mem_forget_this()} title={m.mem_forget()} onclick={() => askToForget(memory)}>
 									<IconClose />
 								</IconButton>
 							</div>
 							<div class="card__body">
 								<p class="card__content" use:clamped>{memory.content}</p>
-								<Button variant="text" size="xs" class="card__more" onclick={() => showDetail(memory)}>Show more</Button>
+								<Button variant="text" size="xs" class="card__more" onclick={() => showDetail(memory)}>{m.mem_show_more()}</Button>
 							</div>
 							<div class="card__foot">
-								<span class="strength" title="Weight {memory.weight.toFixed(2)}">
+								<span class="strength" title={m.mem_weight({ weight: memory.weight.toFixed(2) })}>
 									<span class="strength__pips" aria-hidden="true">
 										{#each [1, 2, 3, 4, 5] as pip (pip)}
 											<span class="strength__pip" class:strength__pip--on={pip <= pips}></span>
 										{/each}
 									</span>
-									<span class="strength__label">{STRENGTH_LABELS[pips - 1]}<span class="sr-only"> strength</span></span>
+									<span class="strength__label">{strengthLabel(pips)}<span class="sr-only">{m.mem_strength_sr()}</span></span>
 								</span>
 								<span class="card__uses">
-									{memory.uses === 0 ? 'Not used yet' : `Used in ${memory.uses} ${memory.uses === 1 ? 'reply' : 'replies'}`}
+									{memory.uses === 0 ? m.mem_not_used() : memory.uses === 1 ? m.mem_used_one() : m.mem_used_many({ count: memory.uses })}
 								</span>
 							</div>
 						</li>
 					{/each}
 				</ul>
-				<Pagination page={clampPage(page, pages)} {pages} onselect={goToPage} label="Memory pages" />
+				<Pagination page={clampPage(page, pages)} {pages} onselect={goToPage} label={m.mem_pages()} />
 			{/if}
 		{/if}
 
 		<section class="how" aria-labelledby="how-heading">
-			<h2 id="how-heading" class="md-title-large how__title">How memory works</h2>
+			<h2 id="how-heading" class="md-title-large how__title">{m.mem_how()}</h2>
 			<ol class="how__steps">
 				<li>
 					<AgentShape agent="nomi" size={40} />
-					<span><strong>Learns as you chat.</strong> After a reply, Nomi keeps at most one lasting fact from the exchange.</span>
+					<span><strong>{m.mem_how1_title()}</strong> {m.mem_how1()}</span>
 				</li>
 				<li>
 					<AgentShape agent="memory" size={40} />
-					<span><strong>Recalls what's relevant.</strong> The memories closest to your message are given to Nomi before it answers.</span>
+					<span><strong>{m.mem_how2_title()}</strong> {m.mem_how2()}</span>
 				</li>
 				<li>
 					<AgentShape agent="planning" size={40} />
-					<span><strong>Your feedback shapes it.</strong> A thumbs-up on a reply strengthens the memories it used; a thumbs-down weakens them.</span>
+					<span><strong>{m.mem_how3_title()}</strong> {m.mem_how3()}</span>
 				</li>
 			</ol>
 		</section>
 	</div>
 </div>
 
-<Dialog bind:open={confirmOpen} headline="Forget this memory?">
+<Dialog bind:open={confirmOpen} headline={m.mem_forget_title()}>
 	{#snippet children()}
 		<p class="md-body-medium dialog__quote">“{pendingForget?.content}”</p>
-		<p class="md-body-medium">Nomi won't recall it in future replies. This can't be undone.</p>
+		<p class="md-body-medium">{m.mem_forget_body()}</p>
 	{/snippet}
 	{#snippet actions()}
-		<Button variant="text" onclick={() => (confirmOpen = false)}>Keep it</Button>
+		<Button variant="text" onclick={() => (confirmOpen = false)}>{m.mem_keep()}</Button>
 		<form
 			method="POST"
 			action="?/forget"
@@ -326,7 +325,7 @@
 			}}
 		>
 			<input type="hidden" name="id" value={pendingForget?.id ?? ''} />
-			<Button variant="filled" type="submit">Forget</Button>
+			<Button variant="filled" type="submit">{m.mem_forget()}</Button>
 		</form>
 	{/snippet}
 </Dialog>
@@ -336,20 +335,20 @@
 		{#if detail}
 			{@const pips = strengthPips(detail.weight)}
 			<article class="detail" aria-labelledby="memory-detail-title">
-				<span class="nomi-meta">Learned {timeAgo(detail.created_at)}</span>
-				<h2 id="memory-detail-title" class="sr-only">Memory</h2>
+				<span class="nomi-meta">{m.mem_learned({ when: timeAgo(detail.created_at) })}</span>
+				<h2 id="memory-detail-title" class="sr-only">{m.mem_title()}</h2>
 				<p class="detail__content">{detail.content}</p>
 				<dl class="detail__facts">
 					<div>
-						<dt class="nomi-meta">Strength</dt>
-						<dd>{STRENGTH_LABELS[pips - 1]}</dd>
+						<dt class="nomi-meta">{m.mem_strength()}</dt>
+						<dd>{strengthLabel(pips)}</dd>
 					</div>
 					<div>
-						<dt class="nomi-meta">Recalled</dt>
-						<dd>{detail.uses === 0 ? 'Not used yet' : `In ${detail.uses} ${detail.uses === 1 ? 'reply' : 'replies'}`}</dd>
+						<dt class="nomi-meta">{m.mem_recalled()}</dt>
+						<dd>{detail.uses === 0 ? m.mem_not_used() : detail.uses === 1 ? m.mem_in_one() : m.mem_in_many({ count: detail.uses })}</dd>
 					</div>
 					<div>
-						<dt class="nomi-meta">Updated</dt>
+						<dt class="nomi-meta">{m.mem_updated()}</dt>
 						<dd>{timeAgo(detail.updated_at)}</dd>
 					</div>
 				</dl>
@@ -360,16 +359,16 @@
 							const memory = detail;
 							detailOpen = false;
 							if (memory) askToForget(memory);
-						}}>Forget</Button
+						}}>{m.mem_forget()}</Button
 					>
-					<Button variant="filled" onclick={() => (detailOpen = false)}>Done</Button>
+					<Button variant="filled" onclick={() => (detailOpen = false)}>{m.common_done()}</Button>
 				</div>
 			</article>
 		{/if}
 	{/snippet}
 </BottomSheet>
 
-<Snackbar bind:open={snackbarOpen} message={form?.error ?? 'Forgotten. Nomi won’t bring that up again.'} />
+<Snackbar bind:open={snackbarOpen} message={form?.error ?? m.mem_forgotten()} />
 
 <style>
 	.memory {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { enhance } from '$app/forms';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -80,13 +81,13 @@
 		const key = dayKey(iso);
 		if (key === dayKey(new Date().toISOString())) return 'Today';
 		if (key === dayKey(new Date(Date.now() + 86_400_000).toISOString())) return 'Tomorrow';
-		return new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long', timeZone: timezone }).format(new Date(iso));
+		return new Intl.DateTimeFormat(getLocale(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: timezone }).format(new Date(iso));
 	}
 	function time(iso: string): string {
-		return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(new Date(iso));
+		return new Intl.DateTimeFormat(getLocale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(new Date(iso));
 	}
 	function shortWhen(iso: string): string {
-		return new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(
+		return new Intl.DateTimeFormat(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone }).format(
 			new Date(iso),
 		);
 	}
@@ -303,7 +304,7 @@
 				saving = false;
 				if (result.type === 'success') {
 					sheetOpen = false;
-					notify(`Reminder set for ${new Date(dueAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.`);
+					notify(`Reminder set for ${new Date(dueAt).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })}.`);
 				}
 			};
 		}}

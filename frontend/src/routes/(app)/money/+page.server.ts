@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { MoneySummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 	const month = url.searchParams.get('month');
@@ -26,24 +27,24 @@ export const actions: Actions = {
 			occurred_at: String(data.get('occurred_at') ?? '') || undefined,
 		};
 		if (!body.description || !body.category || !(body.amount > 0)) {
-			return fail(400, { error: 'Add an amount, what it was for, and a category.' });
+			return fail(400, { error: m.money_expense_missing() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/money/transactions', { method: 'POST', body: JSON.stringify(body) });
-		if (!response.ok) return failWith(response, 'Couldn’t add that expense.');
+		if (!response.ok) return failWith(response, m.money_expense_failed());
 		return { saved: 'expense' };
 	},
 	setBudget: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const body = { category: String(data.get('category') ?? '').trim(), monthly_limit: Number(data.get('monthly_limit')) };
-		if (!body.category || !(body.monthly_limit > 0)) return fail(400, { error: 'Pick a category and a monthly limit above zero.' });
+		if (!body.category || !(body.monthly_limit > 0)) return fail(400, { error: m.money_budget_missing() });
 		const response = await apiFetch(fetch, cookies, '/api/money/budgets', { method: 'PUT', body: JSON.stringify(body) });
-		if (!response.ok) return failWith(response, 'Couldn’t save that budget.');
+		if (!response.ok) return failWith(response, m.money_budget_failed());
 		return { saved: 'budget' };
 	},
 	deleteBudget: async ({ request, cookies, fetch }) => {
 		const category = String((await request.formData()).get('category') ?? '');
 		const response = await apiFetch(fetch, cookies, `/api/money/budgets/${encodeURIComponent(category)}`, { method: 'DELETE' });
-		if (!response.ok && response.status !== 404) return failWith(response, 'Couldn’t remove that budget.');
+		if (!response.ok && response.status !== 404) return failWith(response, m.money_budget_remove_failed());
 		return { saved: 'budget-removed' };
 	},
 };

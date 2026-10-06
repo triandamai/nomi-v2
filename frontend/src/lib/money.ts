@@ -1,13 +1,15 @@
 // Helpers for the Money page (amounts arrive as integer cents).
 
 import type { GradientTone, ShapeName } from './components/m3/shapes';
+import { m } from '$lib/paraglide/messages';
+import { getLocale } from '$lib/paraglide/runtime';
 
 export function formatAmount(cents: number, options: { compact?: boolean } = {}): string {
 	const value = cents / 100;
 	if (options.compact && Math.abs(value) >= 10_000) {
-		return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+		return new Intl.NumberFormat(getLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 	}
-	return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+	return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
 /** Every day of `month` (YYYY-MM), with zero for days without spending. */
@@ -38,21 +40,27 @@ export function compareMonths(current: number, previous: number, previousLabel: 
 	if (previous <= 0) return null;
 	const change = (current - previous) / previous;
 	const percent = Math.round(Math.abs(change) * 100);
-	if (percent === 0) return { text: `About the same as ${previousLabel}`, direction: 'same' };
+	if (percent === 0) return { text: m.money_compare_same({ month: previousLabel }), direction: 'same' };
 	return change > 0
-		? { text: `${percent}% more than ${previousLabel}`, direction: 'up' }
-		: { text: `${percent}% less than ${previousLabel}`, direction: 'down' };
+		? { text: m.money_compare_more({ percent, month: previousLabel }), direction: 'up' }
+		: { text: m.money_compare_less({ percent, month: previousLabel }), direction: 'down' };
 }
 
 export function shiftMonth(month: string, by: number): string {
-	const [year, m] = month.split('-').map(Number);
-	const index = year * 12 + (m - 1) + by;
+	const [year, monthNumber] = month.split('-').map(Number);
+	const index = year * 12 + (monthNumber - 1) + by;
 	return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
 }
 
 export function monthLabel(month: string, style: 'long' | 'short' = 'long'): string {
-	const [year, m] = month.split('-').map(Number);
-	return new Intl.DateTimeFormat(undefined, { month: style, year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, m - 1, 1)));
+	const [year, monthNumber] = month.split('-').map(Number);
+	return new Intl.DateTimeFormat(getLocale(), { month: style, year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
+}
+
+/** Just the month's name ("September"), in the person's language. */
+export function monthName(month: string): string {
+	const [year, monthNumber] = month.split('-').map(Number);
+	return new Intl.DateTimeFormat(getLocale(), { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
 }
 
 const CATEGORY_LOOKS: Record<string, { shape: ShapeName; tone: GradientTone }> = {

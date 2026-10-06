@@ -1,5 +1,6 @@
 import { agentLook, GRADIENT_STOPS, TONE_ACCENT } from '$lib/components/m3/shapes';
 import type { HomeSummary } from '$lib/types';
+import { getLocale } from '$lib/paraglide/runtime';
 
 export type OutItem = HomeSummary['while_you_were_out'][number];
 export type TodayItem = HomeSummary['today'][number];
@@ -20,7 +21,7 @@ export function isHomeSection(value: string): value is HomeSection {
 /** "14:05" in the user's timezone. */
 export function clockTime(iso: string, timeZone: string): string {
 	try {
-		return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(new Date(iso));
+		return new Intl.DateTimeFormat(getLocale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(new Date(iso));
 	} catch {
 		return new Date(iso).toTimeString().slice(0, 5);
 	}
