@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import Pagination from '$lib/components/m3/Pagination.svelte';
@@ -16,29 +17,29 @@
 	const pages = $derived(result ? pageCount(result.total, result.per_page) : 1);
 
 	const EMPTY: Record<typeof data.section, string> = {
-		updates: 'All quiet. Nothing new from the crew since you last looked.',
-		today: 'Nothing scheduled for today. Ask Nomi to remind you of something, or add it on Reminders.',
-		plans: 'No plans on the go. Ask Planning to draft one and its progress shows up here.',
+		updates: m.home_out_empty(),
+		today: m.home_today_empty(),
+		plans: m.home_plans_empty(),
 	};
 </script>
 
 <div class="section-page">
 	<div class="section-page__inner">
 		<header class="section-page__head">
-			<IconButton href="/" aria-label="Back to Home"><IconChevronLeft /></IconButton>
+			<IconButton href="/" aria-label={m.home_back()}><IconChevronLeft /></IconButton>
 			<div>
 				<h1 class="md-display-small section-page__title">{data.title}</h1>
 				<p class="md-body-large section-page__lede">
 					{data.lede}
-					{#if result && result.total > 0}<span class="nomi-meta section-page__count">{result.total} in all</span>{/if}
+					{#if result && result.total > 0}<span class="nomi-meta section-page__count">{m.home_in_all({ count: result.total })}</span>{/if}
 				</p>
 			</div>
 		</header>
 
 		{#if !result}
-			<p class="section-page__empty" role="alert">Couldn't load this just now. Reload the page to try again.</p>
+			<p class="section-page__empty" role="alert">{m.home_load_failed()}</p>
 		{:else if result.items.length === 0}
-			<p class="section-page__empty">{result.total > 0 ? 'No more here.' : EMPTY[data.section]}</p>
+			<p class="section-page__empty">{result.total > 0 ? m.home_no_more() : EMPTY[data.section]}</p>
 			{#if result.total > 0}<Pagination page={result.page} {pages} href={(p) => `?page=${p}`} />{/if}
 		{:else}
 			<section class="section-page__card">
@@ -50,7 +51,7 @@
 					<PlanList items={result.items as PlanItem[]} />
 				{/if}
 			</section>
-			<Pagination page={result.page} {pages} href={(p) => `?page=${p}`} label="{data.title} pages" />
+			<Pagination page={result.page} {pages} href={(p) => `?page=${p}`} label={m.home_pages({ title: data.title })} />
 		{/if}
 	</div>
 </div>

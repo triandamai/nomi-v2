@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
@@ -47,7 +48,7 @@
 		agentActivity,
 		agentStatus = null,
 		sendError = null,
-		title = 'Chat',
+		title = m.chat_title(),
 		context,
 		extraControls,
 		thinkingLevel = null,
@@ -83,7 +84,7 @@
 	function saveVoiceNote(transcript: string, seconds: number) {
 		recordingVoice = false;
 		if (attachments.length >= MAX_ATTACHMENTS) {
-			attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
+			attachError = m.chat_max_files({ count: MAX_ATTACHMENTS });
 			return;
 		}
 		attachments = [...attachments, { name: voiceNoteName(seconds), text: transcript, kind: 'voice', size: new Blob([transcript]).size }];
@@ -107,7 +108,7 @@
 		const audio: string[] = [];
 		for (const file of files) {
 			if (attachments.length >= MAX_ATTACHMENTS) {
-				attachError = `Up to ${MAX_ATTACHMENTS} files per message.`;
+				attachError = m.chat_max_files({ count: MAX_ATTACHMENTS });
 				break;
 			}
 			if (isAudioFile(file.name, file.type)) {
@@ -120,16 +121,16 @@
 			}
 			const total = attachments.reduce((sum, a) => sum + a.size, 0);
 			if (file.size > MAX_FILE_BYTES || total + file.size > MAX_TOTAL_BYTES) {
-				attachError = `${file.name} is too big (files up to ${formatBytes(MAX_FILE_BYTES)}, ${formatBytes(MAX_TOTAL_BYTES)} per message).`;
+				attachError = m.chat_too_big({ name: file.name, file: formatBytes(MAX_FILE_BYTES), total: formatBytes(MAX_TOTAL_BYTES) });
 				continue;
 			}
 			attachments = [...attachments, { name: file.name, text: await file.text(), kind: 'file', size: file.size }];
 		}
 		if (audio.length > 0) {
-			attachError = `${audio.join(', ')}: audio files can't be read yet. Record a voice note instead, from the attach menu.`;
+			attachError = m.chat_audio_refused({ names: audio.join(', ') });
 		}
 		if (refused.length > 0) {
-			attachError = `${refused.join(', ')}: only text files (notes, CSV, JSON, code) can be attached for now, not images or PDFs.`;
+			attachError = m.chat_type_refused({ names: refused.join(', ') });
 		}
 	}
 
@@ -179,11 +180,15 @@
 		agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null,
 	);
 
+	/** What Nomi is doing, fit to follow "Nomi is": "thinking", "checking your transactions". */
+	function phaseActivity(phase: string, detail: string | null): string {
+		if (phase === 'thinking') return m.phase_thinking();
+		if (phase === 'writing_reply') return m.chat_finalizing_reply();
+		if (phase === 'calling_tool') return detail ? toolActivityLabel(detail) : m.tool_using_a_tool();
+		return m.chat_working();
+	}
 	function phaseText(phase: string, detail: string | null): string {
-		if (phase === 'thinking') return 'Nomi is thinking…';
-		if (phase === 'writing_reply') return 'Nomi is finalizing a reply…';
-		if (phase === 'calling_tool') return detail ? `Nomi is ${toolActivityLabel(detail)}…` : 'Nomi is using a tool…';
-		return 'Nomi is working…';
+		return m.chat_nomi_is({ activity: phaseActivity(phase, detail) });
 	}
 
 	// Resync whenever the page's own `messages` prop changes — navigating to a different
@@ -297,9 +302,9 @@
 			nomiWorking: isWorking,
 			roster: page.data.crew ?? [],
 			nomiStatus: currentPhase
-				? phaseText(currentPhase.phase, currentPhase.detail).replace(/^Nomi is /, '')
+				? `${phaseActivity(currentPhase.phase, currentPhase.detail)}…`
 				: isWorking
-					? 'working…'
+					? `${m.chat_working()}…`
 					: null,
 		}),
 	);
@@ -425,7 +430,7 @@
 		<button
 			type="button"
 			class="appbar__crew"
-			aria-label="Your crew: {workingCrew.length > 0 ? `${workingCrew.length} working` : 'all idle'}"
+			aria-label={workingCrew.length > 0 ? m.chat_crew_label_working({ count: workingCrew.length }) : m.chat_crew_label_idle()}
 			onclick={() => (activitySheetOpen = true)}
 		>
 			<span class="appbar__stack">
@@ -434,7 +439,7 @@
 				{/each}
 			</span>
 			{#if workingCrew.length > 0}
-				<span class="appbar__crew-label">{workingCrew.length} working</span>
+				<span class="appbar__crew-label">{m.home_working_count({ count: workingCrew.length })}</span>
 			{/if}
 		</button>
 		{#if extraControls}
@@ -460,18 +465,18 @@
 					{/each}
 					{#if isWorking}
 						<div class="thread__status" role="status">
-							<LoadingIndicator size={28} label="Nomi is working" />
-							<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : 'Nomi is working…'}</span>
+							<LoadingIndicator size={28} label={m.chat_nomi_working()} />
+							<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })}</span>
 						</div>
 					{/if}
 					{#if turnError}
-						<p class="thread__notice" role="alert">Something went wrong — try sending again.</p>
+						<p class="thread__notice" role="alert">{m.chat_turn_error()}</p>
 					{/if}
 					{#if sendError}
 						<p class="thread__notice" role="alert">{sendError}</p>
 					{/if}
 					{#if connectionLost}
-						<p class="thread__notice" role="alert">Couldn't connect to this chat — try reloading the page.</p>
+						<p class="thread__notice" role="alert">{m.chat_connection_lost()}</p>
 					{/if}
 				</div>
 			</div>
@@ -508,7 +513,7 @@
 									{/if}
 									<span class="file-chip__name">{file.name}</span>
 									<span class="file-chip__size">{formatBytes(file.size)}</span>
-									<button type="button" class="file-chip__remove" aria-label="Remove {file.name}" onclick={() => removeAttachment(i)}>
+									<button type="button" class="file-chip__remove" aria-label={m.chat_remove_file({ name: file.name })} onclick={() => removeAttachment(i)}>
 										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
 									</button>
 								</span>
@@ -524,7 +529,7 @@
 					<div class="composer__row">
 						<Menu bind:open={attachMenuOpen}>
 							{#snippet trigger({ toggle })}
-								<button type="button" class="composer__attach" aria-label="Attach" title="Attach files or a voice note" onclick={toggle}>
+								<button type="button" class="composer__attach" aria-label={m.chat_attach()} title={m.chat_attach_title()} onclick={toggle}>
 									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" /></svg>
 								</button>
 							{/snippet}
@@ -536,8 +541,8 @@
 								}}
 							>
 								<span class="attach-option">
-									<span class="attach-option__label">Attach files</span>
-									<span class="attach-option__hint">Notes, CSV, JSON or code</span>
+									<span class="attach-option__label">{m.chat_attach_files()}</span>
+									<span class="attach-option__hint">{m.chat_attach_files_hint()}</span>
 								</span>
 							</MenuItem>
 							{#if speechSupported}
@@ -551,20 +556,20 @@
 									}}
 								>
 									<span class="attach-option">
-										<span class="attach-option__label">Record a voice note</span>
-										<span class="attach-option__hint">Say it; Nomi works out what to do</span>
+										<span class="attach-option__label">{m.chat_record_voice()}</span>
+										<span class="attach-option__hint">{m.chat_record_voice_hint()}</span>
 									</span>
 								</MenuItem>
 							{/if}
 						</Menu>
 						<input bind:this={fileInput} type="file" multiple hidden onchange={addFiles} />
-						<label for="chat-message" class="sr-only">Message</label>
+						<label for="chat-message" class="sr-only">{m.chat_message()}</label>
 						<textarea
 							id="chat-message"
 							bind:this={messageInput}
 							bind:value={draft}
 							rows="1"
-							placeholder="Message Nomi"
+							placeholder={m.chat_placeholder()}
 							class="composer__input"
 							onkeydown={onComposerKeydown}
 							onfocus={() => (dictationBase = draft)}
@@ -601,7 +606,7 @@
 			</div>
 		</div>
 
-		<aside class="chat__crew" aria-label="Crew">
+		<aside class="chat__crew" aria-label={m.chat_crew()}>
 			<CrewPanel members={crew} />
 		</aside>
 	</div>
@@ -610,9 +615,9 @@
 <BottomSheet bind:open={activitySheetOpen}>
 	{#snippet children()}
 		<CrewPanel members={crew} surface />
-		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 20px 0 12px;">Recent hand-offs</h2>
+		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 20px 0 12px;">{m.chat_handoffs()}</h2>
 		{#if agentActivity.length === 0}
-			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No background activity yet.</p>
+			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.chat_no_activity()}</p>
 		{:else}
 			{#each agentActivity as item (item.id)}
 				<div style="padding: 8px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant);">

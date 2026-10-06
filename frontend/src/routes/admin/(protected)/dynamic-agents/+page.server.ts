@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { DynamicAgent } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/admin/dynamic-agents');
@@ -53,12 +54,12 @@ export const actions: Actions = {
 	create: async ({ request, cookies, fetch }) => {
 		const fields = readForm(await request.formData());
 		if (!fields.name || !fields.systemPrompt || !fields.intentLabel || !fields.intentDescription) {
-			return fail(400, { error: 'Name, system prompt, intent label, and intent description are required.' });
+			return fail(400, { error: m.err_agent_required() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/admin/dynamic-agents', { method: 'POST', body: toBody(fields) });
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to create agent.' });
+			return fail(response.status, { error: message || m.err_create_agent() });
 		}
 		return { success: true };
 	},
@@ -68,12 +69,12 @@ export const actions: Actions = {
 		const id = data.get('id');
 		const fields = readForm(data);
 		if (typeof id !== 'string' || !fields.name || !fields.systemPrompt || !fields.intentLabel || !fields.intentDescription) {
-			return fail(400, { error: 'Name, system prompt, intent label, and intent description are required.' });
+			return fail(400, { error: m.err_agent_required() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/dynamic-agents/${id}`, { method: 'PUT', body: toBody(fields) });
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to update agent.' });
+			return fail(response.status, { error: message || m.err_update_agent() });
 		}
 		return { success: true };
 	},
@@ -82,11 +83,11 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const id = data.get('id');
 		if (typeof id !== 'string') {
-			return fail(400, { error: 'Invalid agent.' });
+			return fail(400, { error: m.err_invalid_agent() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/dynamic-agents/${id}/toggle-active`, { method: 'POST' });
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to toggle agent.' });
+			return fail(response.status, { error: m.err_toggle_agent() });
 		}
 		return { success: true };
 	},

@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { Profile } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/profile');
@@ -26,7 +27,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to save profile.' });
+			return fail(response.status, { error: message || m.err_save_profile() });
 		}
 		return { success: true };
 	},
@@ -35,7 +36,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const contentType = data.get('content_type');
 		if (typeof contentType !== 'string' || !contentType) {
-			return fail(400, { error: 'Missing content type.' });
+			return fail(400, { error: m.err_missing_content_type() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/profile/avatar/upload-url', {
 			method: 'POST',
@@ -43,7 +44,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to prepare avatar upload.' });
+			return fail(response.status, { error: message || m.err_avatar_upload() });
 		}
 		const result = (await response.json()) as { upload_url: string; public_url: string };
 		return { uploadUrl: result.upload_url, publicUrl: result.public_url };

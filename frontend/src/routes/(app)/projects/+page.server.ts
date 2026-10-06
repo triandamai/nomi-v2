@@ -2,11 +2,12 @@ import { error, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { ProjectSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/projects');
 	if (!response.ok) {
-		throw error(500, 'Failed to load projects.');
+		throw error(500, m.err_load_projects());
 	}
 	const projects: ProjectSummary[] = await response.json();
 	return { projects };
@@ -20,7 +21,7 @@ export const actions: Actions = {
 	createProject: async ({ cookies, fetch }) => {
 		const response = await apiFetch(fetch, cookies, '/api/projects', { method: 'POST' });
 		if (!response.ok) {
-			throw error(500, 'Could not start a new project.');
+			throw error(500, m.err_new_project());
 		}
 		const { session_id } = (await response.json()) as { session_id: string; project_id: string };
 		throw redirect(303, `/projects/session/${session_id}`);

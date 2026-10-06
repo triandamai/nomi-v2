@@ -2,13 +2,14 @@ import { fail, redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
 import { settleLanguageAfterSignIn } from '$lib/server/locale';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ fetch, url }) => {
 	const response = await fetch(apiUrl('/api/auth/google/available')).catch(() => null);
 	const google = response?.ok ? ((await response.json()) as { available: boolean }).available : false;
 	const error = url.searchParams.get('google_error');
 	const googleError =
-		error === 'cancelled' ? 'Google sign-in was cancelled.' : error === 'unavailable' ? 'Google sign-in isn’t available right now.' : error;
+		error === 'cancelled' ? m.err_google_cancelled() : error === 'unavailable' ? m.err_google_unavailable() : error;
 	return { google, googleError };
 };
 
@@ -19,7 +20,7 @@ export const actions: Actions = {
 		const password = data.get('password');
 
 		if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-			return fail(400, { error: 'Email and password are required.' });
+			return fail(400, { error: m.err_email_password_required() });
 		}
 
 		const response = await fetch(apiUrl('/api/auth/login'), {
@@ -29,10 +30,10 @@ export const actions: Actions = {
 		});
 
 		if (response.status === 401) {
-			return fail(401, { error: 'Invalid email or password.' });
+			return fail(401, { error: m.err_invalid_login() });
 		}
 		if (!response.ok) {
-			return fail(response.status, { error: 'Login failed. Please try again.' });
+			return fail(response.status, { error: m.err_login_failed() });
 		}
 
 		const { access_token, refresh_token } = (await response.json()) as {

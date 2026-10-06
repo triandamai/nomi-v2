@@ -4,6 +4,7 @@ import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
 import { planChecklist, planExcerpt, type ChecklistItem } from '$lib/planChecklist';
 import type { AgentPlansResponse } from '$lib/types';
+import { m } from '$lib/paraglide/messages';
 
 /** Fetches every plan version for one agent_session and server-renders each version's markdown
  * body — mirrors fetchRenderedMessage.ts's pattern (raw content from the backend, HTML rendered
@@ -29,7 +30,7 @@ export async function fetchAgentPlans(
 > {
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}`);
 	if (!response.ok) {
-		throw error(response.status, 'Could not load this plan.');
+		throw error(response.status, m.err_load_plan());
 	}
 	const { plans } = (await response.json()) as AgentPlansResponse;
 	return Promise.all(

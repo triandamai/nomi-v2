@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { deserialize } from '$app/forms';
 	import AgentShape from './m3/AgentShape.svelte';
@@ -39,7 +40,7 @@
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
 
-	const senderLabel = message.sender === 'user' ? 'You' : (message.agent_display_name ?? 'Nomi');
+	const senderLabel = message.sender === 'user' ? m.msg_you() : (message.agent_display_name ?? 'Nomi');
 	// Crew members other than Nomi get their name as a chip tinted with their gradient, so a
 	// hand-off reads at a glance (matches the agent's avatar shape).
 	const look = $derived(agentLook(message.agent_display_name));
@@ -91,28 +92,28 @@
 			const copyBtn = document.createElement('button');
 			copyBtn.type = 'button';
 			copyBtn.className = 'code-block__btn';
-			copyBtn.setAttribute('aria-label', 'Copy code');
+			copyBtn.setAttribute('aria-label', m.msg_copy_code());
 			copyBtn.innerHTML = COPY_SVG;
 			copyBtn.addEventListener('click', () => {
 				navigator.clipboard.writeText(pre.textContent ?? '');
 				copyBtn.innerHTML = CHECK_SVG;
-				copyBtn.setAttribute('aria-label', 'Copied');
+				copyBtn.setAttribute('aria-label', m.msg_copied());
 				setTimeout(() => {
 					copyBtn.innerHTML = COPY_SVG;
-					copyBtn.setAttribute('aria-label', 'Copy code');
+					copyBtn.setAttribute('aria-label', m.msg_copy_code());
 				}, 1500);
 			});
 
 			const collapseBtn = document.createElement('button');
 			collapseBtn.type = 'button';
 			collapseBtn.className = 'code-block__btn';
-			collapseBtn.setAttribute('aria-label', 'Collapse code');
+			collapseBtn.setAttribute('aria-label', m.msg_collapse_code());
 			collapseBtn.setAttribute('aria-expanded', 'true');
 			collapseBtn.innerHTML = CHEVRON_UP_SVG;
 			collapseBtn.addEventListener('click', () => {
 				const collapsed = wrapper.classList.toggle('code-block--collapsed');
 				collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-				collapseBtn.setAttribute('aria-label', collapsed ? 'Expand code' : 'Collapse code');
+				collapseBtn.setAttribute('aria-label', collapsed ? m.msg_expand_code() : m.msg_collapse_code());
 				collapseBtn.innerHTML = collapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG;
 			});
 
@@ -259,7 +260,7 @@
 			<button
 				type="button"
 				class="message-action-btn"
-				aria-label={messageCopied ? 'Copied' : 'Copy message'}
+				aria-label={messageCopied ? m.msg_copied() : m.msg_copy()}
 				onclick={copyMessage}
 			>
 				{#if messageCopied}
@@ -271,7 +272,7 @@
 			<button
 				type="button"
 				class="message-action-btn"
-				aria-label={shareCopied ? 'Copied' : 'Share message'}
+				aria-label={shareCopied ? m.msg_copied() : m.msg_share()}
 				onclick={shareMessage}
 			>
 				{#if shareCopied}
@@ -285,7 +286,7 @@
 					type="button"
 					class="message-action-btn"
 					class:message-action-btn--active={feedback === 'up'}
-					aria-label="Good response"
+					aria-label={m.msg_good()}
 					aria-pressed={feedback === 'up'}
 					onclick={() => setFeedback('up')}
 				>
@@ -295,7 +296,7 @@
 					type="button"
 					class="message-action-btn"
 					class:message-action-btn--active={feedback === 'down'}
-					aria-label="Bad response"
+					aria-label={m.msg_bad()}
 					aria-pressed={feedback === 'down'}
 					onclick={() => setFeedback('down')}
 				>

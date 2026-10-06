@@ -3,6 +3,7 @@ import { apiFetch } from '$lib/server/api';
 import { CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
 import type { AdminUserDetail, AdminUserListResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 const PAGE_SIZE = 20;
 
@@ -31,7 +32,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const userId = requireUserId(data);
 		if (!userId) {
-			return fail(400, { error: 'Invalid user.' });
+			return fail(400, { error: m.err_invalid_user() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/permissions`, {
 			method: 'POST',
@@ -39,7 +40,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to promote user.' });
+			return fail(response.status, { error: message || m.err_promote_user() });
 		}
 		return { success: true };
 	},
@@ -48,12 +49,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const userId = requireUserId(data);
 		if (!userId) {
-			return fail(400, { error: 'Invalid user.' });
+			return fail(400, { error: m.err_invalid_user() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}`);
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to load user.' });
+			return fail(response.status, { error: message || m.err_load_user() });
 		}
 		const user: AdminUserDetail = await response.json();
 		return { success: true, user };
@@ -63,7 +64,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const userId = requireUserId(data);
 		if (!userId) {
-			return fail(400, { error: 'Invalid user.' });
+			return fail(400, { error: m.err_invalid_user() });
 		}
 		const displayName = data.get('display_name');
 		const username = data.get('username');
@@ -77,7 +78,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to update user.' });
+			return fail(response.status, { error: message || m.err_update_user() });
 		}
 		const user: AdminUserDetail = await response.json();
 		return { success: true, user };
@@ -91,15 +92,15 @@ export const actions: Actions = {
 		const actions = data.getAll('actions').filter((a): a is string => typeof a === 'string');
 
 		if (!userId || typeof resourceField !== 'string' || !resourceField) {
-			return fail(400, { error: 'Resource is required.' });
+			return fail(400, { error: m.err_resource_required() });
 		}
 		const resource =
 			resourceField === CUSTOM_PERMISSION_RESOURCE ? (typeof customResource === 'string' ? customResource : '') : resourceField;
 		if (!resource) {
-			return fail(400, { error: 'Resource is required.' });
+			return fail(400, { error: m.err_resource_required() });
 		}
 		if (actions.length === 0) {
-			return fail(400, { error: 'Select at least one action.' });
+			return fail(400, { error: m.err_select_action() });
 		}
 
 		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/permissions`, {
@@ -108,7 +109,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to grant permission.' });
+			return fail(response.status, { error: message || m.err_grant_permission() });
 		}
 		const permissions = await response.json();
 		return { success: true, permissions };
@@ -119,14 +120,14 @@ export const actions: Actions = {
 		const userId = requireUserId(data);
 		const permissionId = data.get('permissionId');
 		if (!userId || typeof permissionId !== 'string') {
-			return fail(400, { error: 'Invalid permission.' });
+			return fail(400, { error: m.err_invalid_permission() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/permissions/${permissionId}`, {
 			method: 'DELETE',
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to revoke permission.' });
+			return fail(response.status, { error: message || m.err_revoke_permission() });
 		}
 		const permissions = await response.json();
 		return { success: true, permissions };

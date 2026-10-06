@@ -4,6 +4,7 @@
 
 import { agentTypeFallbackLabel } from './agentLabels';
 import { agentLook } from './components/m3/shapes';
+import { m } from '$lib/paraglide/messages';
 
 export interface CrewActivity {
 	id: string;
@@ -26,12 +27,12 @@ export interface CrewMember {
 	involved: boolean;
 }
 
-const CORE: { key: string; name: string; role: string }[] = [
-	{ key: 'nomi', name: 'Nomi', role: 'Talks with you and routes the work' },
-	{ key: 'money', name: 'Money', role: 'Transactions, budgets, subscriptions' },
-	{ key: 'coding', name: 'Coding', role: 'Builds and edits project files' },
-	{ key: 'planning', name: 'Planning', role: 'Plans, to-dos and reminders' },
-	{ key: 'personality', name: 'Personality', role: 'Keeps Nomi sounding how you like' },
+const core = (): { key: string; name: string; role: string }[] => [
+	{ key: 'nomi', name: 'Nomi', role: m.crew_role_nomi() },
+	{ key: 'money', name: 'Money', role: m.crew_role_money() },
+	{ key: 'coding', name: 'Coding', role: m.crew_role_coding() },
+	{ key: 'planning', name: 'Planning', role: m.crew_role_planning() },
+	{ key: 'personality', name: 'Personality', role: m.crew_role_personality() },
 ];
 
 /** One agent from /api/agents. */
@@ -60,8 +61,8 @@ function memberKey(agent: string, roster: CrewRosterMember[]): string {
 	const known = roster.find((m) => m.agent_type.toLowerCase() === lower || m.name.toLowerCase() === lower);
 	if (known) return rosterKey(known.agent_type);
 	if (lower === 'chitchat' || lower === 'nomi' || lower === 'supervisor') return 'nomi';
-	const core = CORE.find((m) => m.key !== 'nomi' && agentLook(lower).shape === agentLook(m.key).shape);
-	return core ? core.key : lower;
+	const match = core().find((c) => c.key !== 'nomi' && agentLook(lower).shape === agentLook(c.key).shape);
+	return match ? match.key : lower;
 }
 
 function clip(text: string, max = 64): string {
@@ -87,9 +88,9 @@ export function buildCrew({
 	roster?: CrewRosterMember[];
 }): CrewMember[] {
 	const members = new Map<string, CrewMember>();
-	const seed = roster.length > 0 ? roster.map((m) => ({ key: rosterKey(m.agent_type), name: m.name, role: m.role })) : CORE;
+	const seed = roster.length > 0 ? roster.map((m) => ({ key: rosterKey(m.agent_type), name: m.name, role: m.role })) : core();
 	for (const member of seed) {
-		members.set(member.key, { ...member, working: false, status: 'Standing by', involved: false });
+		members.set(member.key, { ...member, working: false, status: m.crew_standing_by(), involved: false });
 	}
 
 	const ensure = (agent: string): CrewMember => {
@@ -97,7 +98,7 @@ export function buildCrew({
 		let member = members.get(key);
 		if (!member) {
 			// A dynamic agent this chat has met — joins the crew after the core members.
-			member = { key, name: agentTypeFallbackLabel(agent).replace(/_/g, ' '), role: 'Custom agent', working: false, status: 'Standing by', involved: false };
+			member = { key, name: agentTypeFallbackLabel(agent).replace(/_/g, ' '), role: m.crew_role_custom(), working: false, status: m.crew_standing_by(), involved: false };
 			members.set(key, member);
 		}
 		return member;
@@ -107,7 +108,7 @@ export function buildCrew({
 		const member = author ? ensure(author) : members.get('nomi')!;
 		if (!member.involved) {
 			member.involved = true;
-			member.status = 'Replied in this chat';
+			member.status = m.crew_replied();
 		}
 	}
 
@@ -121,10 +122,10 @@ export function buildCrew({
 		} else if (!member.working) {
 			member.status =
 				item.status === 'failed'
-					? `Couldn't finish: ${clip(item.task, 48)}`
+					? m.crew_couldnt_finish({ task: clip(item.task, 48) })
 					: item.status === 'cancelled'
-						? `Stopped: ${clip(item.task, 51)}`
-						: `Done: ${clip(item.task, 54)}`;
+						? m.crew_stopped({ task: clip(item.task, 51) })
+						: m.crew_done({ task: clip(item.task, 54) });
 		}
 	}
 
@@ -132,9 +133,9 @@ export function buildCrew({
 	nomi.involved = true;
 	if (nomiWorking) {
 		nomi.working = true;
-		nomi.status = nomiStatus ?? 'Working…';
-	} else if (nomi.status === 'Standing by') {
-		nomi.status = 'Ready when you are';
+		nomi.status = nomiStatus ?? m.status_working();
+	} else if (nomi.status === m.crew_standing_by()) {
+		nomi.status = m.crew_ready();
 	}
 
 	return [...members.values()];

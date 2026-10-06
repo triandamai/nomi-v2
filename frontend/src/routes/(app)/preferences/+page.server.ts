@@ -4,6 +4,7 @@ import { apiFetch } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
 import type { Preferences } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/preferences');
@@ -18,14 +19,14 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const theme = data.get('theme');
 		if (typeof theme !== 'string' || !['light', 'dark', 'system'].includes(theme)) {
-			return fail(400, { error: 'Invalid theme.' });
+			return fail(400, { error: m.err_invalid_theme() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/preferences', {
 			method: 'PUT',
 			body: JSON.stringify({ theme }),
 		});
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to save preference.' });
+			return fail(response.status, { error: m.err_save_preference() });
 		}
 		return { success: true };
 	},
@@ -34,14 +35,14 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const accentColor = data.get('accent_color');
 		if (!isThemeName(accentColor)) {
-			return fail(400, { error: 'Pick one of the themes.' });
+			return fail(400, { error: m.err_pick_theme() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/preferences', {
 			method: 'PUT',
 			body: JSON.stringify({ accent_color: accentColor }),
 		});
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to save preference.' });
+			return fail(response.status, { error: m.err_save_preference() });
 		}
 		return { success: true };
 	},
@@ -50,14 +51,14 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const timezone = data.get('timezone');
 		if (typeof timezone !== 'string' || timezone.length === 0) {
-			return fail(400, { error: 'Invalid timezone.' });
+			return fail(400, { error: m.err_invalid_timezone() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/preferences', {
 			method: 'PUT',
 			body: JSON.stringify({ timezone }),
 		});
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to save preference.' });
+			return fail(response.status, { error: m.err_save_preference() });
 		}
 		return { success: true };
 	},

@@ -1,21 +1,27 @@
 import { agentLook, GRADIENT_STOPS, TONE_ACCENT } from '$lib/components/m3/shapes';
 import type { HomeSummary } from '$lib/types';
 import { getLocale } from '$lib/paraglide/runtime';
+import { m } from '$lib/paraglide/messages';
 
 export type OutItem = HomeSummary['while_you_were_out'][number];
 export type TodayItem = HomeSummary['today'][number];
 export type PlanItem = HomeSummary['plans'][number];
 
 /** Home's three sections, by the path of their own page (/home/<section>). */
-export const HOME_SECTIONS = {
-	updates: { title: 'While you were out', lede: 'Everything the crew did since you last looked.' },
-	today: { title: 'Today', lede: 'Everything scheduled for today.' },
-	plans: { title: 'Plans in progress', lede: 'Every plan and to-do list with steps still open.' },
-} as const;
+const HOME_SECTIONS = {
+	updates: () => ({ title: m.home_out_title(), lede: m.home_out_lede() }),
+	today: () => ({ title: m.home_today_title(), lede: m.home_today_lede() }),
+	plans: () => ({ title: m.home_plans_title(), lede: m.home_plans_lede() }),
+};
 export type HomeSection = keyof typeof HOME_SECTIONS;
 
 export function isHomeSection(value: string): value is HomeSection {
 	return Object.hasOwn(HOME_SECTIONS, value);
+}
+
+/** A section's title and lede, in the reader's language. */
+export function homeSectionCopy(section: HomeSection): { title: string; lede: string } {
+	return HOME_SECTIONS[section]();
 }
 
 /** "14:05" in the user's timezone. */
@@ -32,7 +38,10 @@ export function agentName(agent: string): string {
 	return agent.charAt(0).toUpperCase() + agent.slice(1);
 }
 
-export const RECURRENCE: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
+export function recurrenceLabel(recurrence: string): string {
+	const labels: Record<string, () => string> = { daily: m.rem_daily, weekly: m.rem_weekly, monthly: m.rem_monthly };
+	return labels[recurrence]?.() ?? recurrence;
+}
 
 export function agentTint(agent: string): string {
 	return GRADIENT_STOPS[agentLook(agent).tone].at(-1) ?? '#5be08f';

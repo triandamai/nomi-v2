@@ -4,6 +4,7 @@ import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
 import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const messagesResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages`);
@@ -11,7 +12,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		throw redirect(303, '/projects');
 	}
 	if (!messagesResponse.ok) {
-		throw error(messagesResponse.status, 'Could not load this project.');
+		throw error(messagesResponse.status, m.err_load_project());
 	}
 	const { messages: rawMessages } = (await messagesResponse.json()) as { messages: MessageItem[] };
 	const messages: RenderedMessage[] = await Promise.all(
@@ -41,7 +42,7 @@ export const actions: Actions = {
 		const text = data.get('text');
 
 		if (typeof text !== 'string' || !text.trim()) {
-			return fail(400, { error: 'Message cannot be empty.' });
+			return fail(400, { error: m.err_empty_message() });
 		}
 
 		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages`, {
@@ -53,7 +54,7 @@ export const actions: Actions = {
 			throw redirect(303, '/projects');
 		}
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to send message.' });
+			return fail(response.status, { error: m.err_send_message() });
 		}
 
 		const { user_message, supervisor_reply } = (await response.json()) as {
@@ -71,7 +72,7 @@ export const actions: Actions = {
 		const rating = data.get('rating');
 
 		if (typeof messageId !== 'string' || !messageId) {
-			return fail(400, { error: 'Invalid message.' });
+			return fail(400, { error: m.err_invalid_message() });
 		}
 
 		const path = `/api/sessions/${params.sessionId}/messages/${messageId}/feedback`;
@@ -81,7 +82,7 @@ export const actions: Actions = {
 				: await apiFetch(fetch, cookies, path, { method: 'DELETE' });
 
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to save feedback.' });
+			return fail(response.status, { error: m.err_save_feedback() });
 		}
 		return { success: true };
 	},
@@ -93,7 +94,7 @@ export const actions: Actions = {
 		const remember = data.get('remember') === 'true';
 
 		if (typeof messageId !== 'string' || (decision !== 'approve' && decision !== 'deny')) {
-			return fail(400, { error: 'Invalid approval decision.' });
+			return fail(400, { error: m.err_invalid_approval() });
 		}
 
 		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages/${messageId}/approval`, {
@@ -103,7 +104,7 @@ export const actions: Actions = {
 
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to record your decision.' });
+			return fail(response.status, { error: message || m.err_record_decision() });
 		}
 
 		return { success: true };
@@ -114,11 +115,11 @@ export const actions: Actions = {
 		const projectId = data.get('projectId');
 		const path = data.get('path');
 		if (typeof projectId !== 'string' || !projectId || typeof path !== 'string' || !path) {
-			return fail(400, { error: 'Invalid path.' });
+			return fail(400, { error: m.err_invalid_path() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}/files/${path}`);
 		if (!response.ok) {
-			return fail(response.status, { error: 'Failed to load file.' });
+			return fail(response.status, { error: m.err_load_file() });
 		}
 		const content = await response.text();
 		return { success: true, path, content };
@@ -136,7 +137,7 @@ export const actions: Actions = {
 			!path ||
 			typeof content !== 'string'
 		) {
-			return fail(400, { error: 'Invalid file.' });
+			return fail(400, { error: m.err_invalid_file() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}/files/${path}`, {
 			method: 'PUT',
@@ -144,7 +145,7 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			const message = await response.text();
-			return fail(response.status, { error: message || 'Failed to save file.' });
+			return fail(response.status, { error: message || m.err_save_file() });
 		}
 		return { success: true };
 	},
