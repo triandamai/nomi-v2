@@ -327,6 +327,30 @@ fn describe_pending_action(tool_name: &str, input: &serde_json::Value, locale: L
     }
 }
 
+/// After an agent answers in chat (a reply, or the summary it finished with), saves anything
+/// lasting the person said. Best-effort: never changes the turn's outcome.
+async fn learn_from_turn(
+    conn: &mut PoolConnection<Postgres>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    user_id: Uuid,
+    session_id: Uuid,
+    messages: &[LlmMessage],
+    answer: &str,
+) {
+    // Fallback only: the extractor reads the person's latest chat message itself.
+    let last_user_text = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == LlmRole::User)
+        .and_then(|m| m.content.iter().find_map(|b| match b {
+            ContentBlock::Text { text } => Some(text.clone()),
+            _ => None,
+        }))
+        .unwrap_or_default();
+    memory::extract_and_store_memory_in(conn, provider, embedding_provider, user_id, Some(session_id), &last_user_text, answer).await;
+}
+
 /// Runs one agent turn to completion: retrieves memory first if `agent.uses_memory()`,
 /// then drives the tool-calling loop with every LLM call streamed (deltas published over
 /// `mqtt` when provided — this now happens for every agent, not just a hardcoded chitchat
@@ -562,18 +586,7 @@ pub async fn run_agent_turn(
             let reply_text = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, reply_text).await;
 
             if agent.uses_memory() {
-                let last_user_text = messages
-                    .iter()
-                    .rev()
-                    .find(|m| m.role == LlmRole::User)
-                    .and_then(|m| m.content.iter().find_map(|b| match b {
-                        ContentBlock::Text { text } => Some(text.clone()),
-                        _ => None,
-                    }))
-                    .unwrap_or_default();
-                // Best-effort: never changes the turn's outcome. See the equivalent
-                // note that used to live in turn/chitchat.rs before this generalization.
-                memory::extract_and_store_memory_in(conn, provider, embedding_provider, user_id, Some(session_id), &last_user_text, &reply_text).await;
+                learn_from_turn(conn, provider, embedding_provider, user_id, session_id, &messages, &reply_text).await;
             }
 
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
@@ -608,6 +621,10 @@ pub async fn run_agent_turn(
             ToolBatchOutcome::Completed { status, summary } => {
                 let summary = if written.is_empty() { summary } else { written };
                 let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, summary).await;
+                // The summary is this agent's answer in chat, so it's a turn to learn from too.
+                if agent.uses_memory() {
+                    learn_from_turn(conn, provider, embedding_provider, user_id, session_id, &messages, &summary).await;
+                }
                 return Ok(LoopOutcome::Completed { status, summary });
             }
             ToolBatchOutcome::HandOff { target_agent, task } => {

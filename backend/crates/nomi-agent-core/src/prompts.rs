@@ -70,13 +70,14 @@ assistant's own words.
 Reply with JSON only, exactly one of:
 {\"action\":\"none\"}
 {\"action\":\"add\",\"kind\":K,\"text\":T}
-{\"action\":\"update\",\"target\":N,\"kind\":K,\"text\":T}   (known memory N changed or was corrected)
+{\"action\":\"update\",\"target\":N,\"kind\":K,\"text\":T}   (known memory N is the same fact and it changed or was corrected)
 {\"action\":\"delete\",\"target\":N}   (the person says known memory N is no longer true)
 
 K is one of preference, person, routine, goal, fact. T is the memory itself, at most 15 words, \
 written as a note rather than a sentence about \"the user\": \"Vegetarian\", \"Partner Rina, birthday \
 12 May\", \"Runs three mornings a week\". Write T in the language the person writes in. If a known \
-memory already says it, answer none.";
+memory already says it, answer none. Something new, even on a known memory's topic (another sibling, a \
+second hobby), is an add, never an update.";
 
 /// System prompt for generating a chat session's title from its first message
 /// (`nomi-server::routes::sessions::generate_session_title`).
