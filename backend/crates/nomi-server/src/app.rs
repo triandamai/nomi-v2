@@ -11,6 +11,7 @@ use crate::routes::llm_models as llm_models_routes;
 use crate::routes::agents as agents_routes;
 use crate::routes::home as home_routes;
 use crate::routes::money as money_routes;
+use crate::routes::usage as usage_routes;
 use crate::routes::connections as connections_routes;
 use crate::routes::google_auth as google_auth_routes;
 use crate::routes::reminders as reminders_routes;
@@ -111,6 +112,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/home/updates", get(home_routes::updates_page))
         .route("/api/home/today", get(home_routes::today_page))
         .route("/api/home/plans", get(home_routes::plans_page))
+        .route("/api/usage", get(usage_routes::usage_month))
+        .route("/api/usage/brief", get(usage_routes::usage_brief))
         .route("/api/money", get(money_routes::money_summary))
         .route("/api/money/transactions", post(money_routes::add_transaction))
         .route("/api/money/budgets", put(money_routes::set_budget))

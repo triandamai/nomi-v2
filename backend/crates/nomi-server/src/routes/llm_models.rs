@@ -20,6 +20,8 @@ pub struct AdminLlmModelResponse {
     pub base_url: Option<String>,
     pub is_default: bool,
     pub api_key_masked: String,
+    pub input_usd_per_mtok: Option<f64>,
+    pub output_usd_per_mtok: Option<f64>,
 }
 
 fn to_response(
@@ -36,6 +38,8 @@ fn to_response(
         base_url: model.base_url,
         is_default: model.is_default,
         api_key_masked: settings::mask_api_key(&api_key),
+        input_usd_per_mtok: model.input_usd_per_mtok,
+        output_usd_per_mtok: model.output_usd_per_mtok,
     })
 }
 
@@ -58,6 +62,9 @@ pub struct CreateAdminModelRequest {
     pub model_id: String,
     pub api_key: String,
     pub base_url: Option<String>,
+    /// USD per million tokens, for showing people what they spend.
+    pub input_usd_per_mtok: Option<f64>,
+    pub output_usd_per_mtok: Option<f64>,
 }
 
 pub async fn create_admin_model(
@@ -79,6 +86,9 @@ pub async fn create_admin_model(
     if req.label.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "label is required"));
     }
+    if [req.input_usd_per_mtok, req.output_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
+        return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
+    }
 
     let model = llm_models::create_admin_llm_model(
         &state.pool,
@@ -88,6 +98,8 @@ pub async fn create_admin_model(
             model_id: &req.model_id,
             api_key_encrypted: settings::crypto::encrypt(&state.settings_key, &req.api_key),
             base_url: req.base_url.as_deref(),
+            input_usd_per_mtok: req.input_usd_per_mtok,
+            output_usd_per_mtok: req.output_usd_per_mtok,
             updated_by: claims.sub,
         },
     )
@@ -104,6 +116,8 @@ pub struct UpdateAdminModelRequest {
     pub model_id: String,
     pub api_key: Option<String>,
     pub base_url: Option<String>,
+    pub input_usd_per_mtok: Option<f64>,
+    pub output_usd_per_mtok: Option<f64>,
 }
 
 pub async fn update_admin_model(
@@ -123,6 +137,9 @@ pub async fn update_admin_model(
     if req.label.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "label is required"));
     }
+    if [req.input_usd_per_mtok, req.output_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
+        return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
+    }
 
     let api_key_encrypted = match req.api_key.as_deref() {
         Some(key) if !key.is_empty() => Some(settings::crypto::encrypt(&state.settings_key, key)),
@@ -138,6 +155,8 @@ pub async fn update_admin_model(
             model_id: &req.model_id,
             api_key_encrypted,
             base_url: req.base_url.as_deref(),
+            input_usd_per_mtok: req.input_usd_per_mtok,
+            output_usd_per_mtok: req.output_usd_per_mtok,
             updated_by: claims.sub,
         },
     )

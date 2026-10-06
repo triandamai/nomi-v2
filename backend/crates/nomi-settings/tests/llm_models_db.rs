@@ -18,6 +18,8 @@ fn new_model_input(label: &str, updated_by: Uuid) -> NewAdminLlmModel<'_> {
         model_id: "claude-haiku-4-5",
         api_key_encrypted: vec![1, 2, 3],
         base_url: None,
+        input_usd_per_mtok: None,
+        output_usd_per_mtok: None,
         updated_by,
     }
 }
@@ -68,6 +70,8 @@ async fn update_changes_fields_and_keeps_existing_key_when_none_given(pool: PgPo
             model_id: "gpt-4o",
             api_key_encrypted: None,
             base_url: None,
+            input_usd_per_mtok: None,
+            output_usd_per_mtok: None,
             updated_by: user_id,
         },
     )
@@ -95,6 +99,8 @@ async fn update_replaces_the_key_when_one_is_given(pool: PgPool) {
             model_id: "claude-haiku-4-5",
             api_key_encrypted: Some(vec![9, 9, 9]),
             base_url: None,
+            input_usd_per_mtok: None,
+            output_usd_per_mtok: None,
             updated_by: user_id,
         },
     )
@@ -117,6 +123,8 @@ async fn update_of_a_nonexistent_model_returns_none(pool: PgPool) {
             model_id: "x",
             api_key_encrypted: None,
             base_url: None,
+            input_usd_per_mtok: None,
+            output_usd_per_mtok: None,
             updated_by: user_id,
         },
     )
@@ -192,6 +200,8 @@ async fn create_admin_llm_model_accepts_every_supported_provider(pool: PgPool) {
                 model_id: "some-model",
                 api_key_encrypted: vec![1, 2, 3],
                 base_url: None,
+                input_usd_per_mtok: None,
+                output_usd_per_mtok: None,
                 updated_by: user_id,
             },
         )
