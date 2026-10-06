@@ -19,7 +19,8 @@ use nomi_llm::ContentBlock as LlmContentBlock;
 use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
-const SUBAGENT_HISTORY_LIMIT: i64 = 20;
+/// A chat's latest messages, sent in full; older ones reach agents as the chat's running summary.
+const SUBAGENT_HISTORY_LIMIT: i64 = nomi_agent_core::working_memory::RECENT_MESSAGES;
 /// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
 /// plans, drafts and tables need far more than a chat line.
 const SUBAGENT_MAX_TOKENS: u32 = 8192;
@@ -382,6 +383,7 @@ async fn finish_agent_turn(
                     .execute(&mut *tx)
                     .await?;
             }
+            nomi_agent_core::memory::mark_used(&mut *tx, &memory_ids_used).await?;
             // The default agent (chitchat) has no real agent_sessions row — run_locked_turn
             // reuses session_id as agent_session_id for it as a sentinel (see its call site).
             // agent_events.agent_session_id has a foreign key into agent_sessions, so binding
@@ -615,15 +617,14 @@ async fn fetch_recent_messages(
 ) -> Result<Vec<LlmMessage>, TurnError> {
     // Only what was actually said: shown thinking (🧠) and progress notes (💭) are a window
     // into the work, not replies, and fed back as replies they confuse the next agent.
-    let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(
+    let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(&format!(
         "SELECT sender_channel_identity_id, content, id FROM ( \
              SELECT id, sender_channel_identity_id, content, created_at FROM messages \
-             WHERE session_id = $1 \
-               AND NOT (sender_channel_identity_id IS NULL AND (content LIKE '🧠%' OR content LIKE '💭%' \
-                        OR COALESCE(content_blocks->0->>'kind', '') = 'reasoning')) \
+             WHERE session_id = $1 AND {} \
              ORDER BY created_at DESC, id DESC LIMIT $2 \
          ) recent ORDER BY created_at ASC, id ASC",
-    )
+        nomi_agent_core::working_memory::SAID_IN_CHAT
+    ))
     .bind(session_id)
     .bind(SUBAGENT_HISTORY_LIMIT)
     .fetch_all(&mut **conn)

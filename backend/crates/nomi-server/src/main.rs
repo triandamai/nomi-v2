@@ -87,6 +87,11 @@ async fn main() {
         tokio::spawn(async move {
             nomi_server::reminders_worker::run(reminders_pool, reminders_mqtt).await;
         });
+        let memory_pool = pool.clone();
+        let memory_http_client = http_client.clone();
+        tokio::spawn(async move {
+            nomi_server::memory_worker::run(memory_pool, settings_key, memory_http_client).await;
+        });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {
         tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");

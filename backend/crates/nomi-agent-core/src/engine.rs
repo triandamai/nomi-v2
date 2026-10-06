@@ -391,11 +391,26 @@ pub async fn run_agent_turn(
     let system_prompt = if memories.is_empty() {
         agent.system_prompt().to_string()
     } else {
-        let mut prompt = format!("{}\n\nRelevant things you know about this user:\n", agent.system_prompt());
+        let mut prompt = format!(
+            "{}\n\nWhat you remember about this person that matters here (use it only where it helps):\n",
+            agent.system_prompt()
+        );
         for m in &memories {
-            prompt.push_str(&format!("- {}\n", m.content));
+            prompt.push_str(&format!("- ({}) {}\n", m.kind, m.content));
         }
         prompt
+    };
+
+    // Working memory: the older part of this chat, folded into a running summary by the memory
+    // worker (only the latest messages are sent in full).
+    let summary: Option<String> = sqlx::query_scalar("SELECT summary FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await?
+        .flatten();
+    let system_prompt = match summary.filter(|s| !s.trim().is_empty()) {
+        Some(summary) => format!("{system_prompt}\n\nEarlier in this chat (summary):\n{}", summary.trim()),
+        None => system_prompt,
     };
 
     // Every agent answers in the person's language.
@@ -560,7 +575,7 @@ pub async fn run_agent_turn(
                     .unwrap_or_default();
                 // Best-effort: never changes the turn's outcome. See the equivalent
                 // note that used to live in turn/chitchat.rs before this generalization.
-                memory::extract_and_store_memory(conn, provider, embedding_provider, user_id, &last_user_text, &reply_text).await;
+                memory::extract_and_store_memory_in(conn, provider, embedding_provider, user_id, Some(session_id), &last_user_text, &reply_text).await;
             }
 
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;

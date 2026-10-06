@@ -216,6 +216,8 @@ pub struct MessageItem {
     pub created_at: DateTime<Utc>,
     pub my_feedback: Option<String>,
     pub agent_display_name: Option<String>,
+    /// How many memories this reply drew on.
+    pub memory_count: i64,
 }
 
 #[derive(Serialize)]
@@ -223,16 +225,10 @@ pub struct ListMessagesResponse {
     pub messages: Vec<MessageItem>,
 }
 
+type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64);
+
 fn to_message_item(
-    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name): (
-        Uuid,
-        Option<Uuid>,
-        String,
-        DateTime<Utc>,
-        Option<serde_json::Value>,
-        Option<String>,
-        Option<String>,
-    ),
+    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count): MessageRow,
 ) -> MessageItem {
     MessageItem {
         id,
@@ -242,6 +238,7 @@ fn to_message_item(
         created_at,
         my_feedback,
         agent_display_name,
+        memory_count,
     }
 }
 
@@ -255,9 +252,10 @@ pub async fn list_messages(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
-    let rows: Vec<(Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>)> = match query.before {
+    let rows: Vec<MessageRow> = match query.before {
         Some(before_id) => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name \
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
+                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
              FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $4 \
              WHERE m.session_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2) \
@@ -271,7 +269,8 @@ pub async fn list_messages(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
         None => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name \
+            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
+                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
              FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
              WHERE m.session_id = $1 \
@@ -298,8 +297,9 @@ pub async fn get_message(
 ) -> Result<Json<MessageItem>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
 
-    let row: (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name \
+    let row: MessageRow = sqlx::query_as(
+        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
+                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
          FROM messages m \
          LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
          WHERE m.id = $1 AND m.session_id = $2",
@@ -450,6 +450,7 @@ pub async fn send_message(
         created_at,
         my_feedback: None,
         agent_display_name: None,
+        memory_count: 0,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -515,6 +516,7 @@ async fn try_stop_command(
         created_at: fetch_message_created_at(&state.pool, outcome.user_message_id).await?,
         my_feedback: None,
         agent_display_name: None,
+        memory_count: 0,
     };
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
@@ -524,6 +526,7 @@ async fn try_stop_command(
         created_at: fetch_message_created_at(&state.pool, outcome.reply_message_id).await?,
         my_feedback: None,
         agent_display_name: Some("Supervisor".to_string()),
+        memory_count: 0,
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }
@@ -608,6 +611,31 @@ async fn generate_session_title(
 #[derive(Deserialize)]
 pub struct FeedbackRequest {
     pub rating: String,
+    /// Why a reply missed, when the person says (thumbs-down only).
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+const ALLOWED_REASONS: [&str; 4] = ["wrong_memory", "not_relevant", "too_long", "other"];
+
+async fn previous_rating(pool: &sqlx::PgPool, message_id: Uuid, user_id: Uuid) -> Result<Option<String>, (StatusCode, &'static str)> {
+    sqlx::query_scalar("SELECT rating FROM message_feedback WHERE message_id = $1 AND user_id = $2")
+        .bind(message_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save feedback"))
+}
+
+/// The memories a reply drew on get stronger with a thumbs-up and weaker with a thumbs-down;
+/// changing or removing the rating takes its effect back. Best-effort: the rating itself is saved.
+async fn reinforce_memories(pool: &sqlx::PgPool, message_id: Uuid, previous: Option<&str>, current: Option<&str>) {
+    use nomi_agent_core::memory::{reinforce_change, ReinforcementSignal};
+    let previous = previous.and_then(ReinforcementSignal::from_rating);
+    let current = current.and_then(ReinforcementSignal::from_rating);
+    if let Err(e) = reinforce_change(pool, message_id, previous, current).await {
+        tracing::warn!(error = %e, %message_id, "failed to reinforce memories from feedback");
+    }
 }
 
 const ALLOWED_RATINGS: [&str; 2] = ["up", "down"];
@@ -642,20 +670,27 @@ pub async fn put_message_feedback(
     if !ALLOWED_RATINGS.contains(&req.rating.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "rating must be 'up' or 'down'"));
     }
+    let reason = req.reason.as_deref().filter(|_| req.rating == "down");
+    if reason.is_some_and(|r| !ALLOWED_REASONS.contains(&r)) {
+        return Err((StatusCode::BAD_REQUEST, "reason must be wrong_memory, not_relevant, too_long or other"));
+    }
+    let previous = previous_rating(&state.pool, message_id, claims.sub).await?;
 
     sqlx::query(
-        "INSERT INTO message_feedback (message_id, user_id, rating) VALUES ($1, $2, $3) \
-         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating",
+        "INSERT INTO message_feedback (message_id, user_id, rating, reason) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason",
     )
     .bind(message_id)
     .bind(claims.sub)
     .bind(&req.rating)
+    .bind(reason)
     .execute(&state.pool)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "failed to save message feedback");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save feedback")
     })?;
+    reinforce_memories(&state.pool, message_id, previous.as_deref(), Some(&req.rating)).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -709,6 +744,7 @@ pub async fn delete_message_feedback(
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
     authorize_message_in_session(&state.pool, session_id, message_id).await?;
 
+    let previous = previous_rating(&state.pool, message_id, claims.sub).await?;
     sqlx::query("DELETE FROM message_feedback WHERE message_id = $1 AND user_id = $2")
         .bind(message_id)
         .bind(claims.sub)
@@ -718,6 +754,7 @@ pub async fn delete_message_feedback(
             tracing::error!(error = %e, "failed to delete message feedback");
             (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete feedback")
         })?;
+    reinforce_memories(&state.pool, message_id, previous.as_deref(), None).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -879,4 +916,41 @@ pub async fn set_thinking_level(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save thinking level"))?;
     Ok(Json(req))
+}
+
+#[derive(Serialize)]
+pub struct UsedMemory {
+    pub id: Uuid,
+    pub content: String,
+    pub kind: String,
+    /// Replaced, merged or faded since the reply: no longer recalled.
+    pub archived: bool,
+}
+
+#[derive(Serialize)]
+pub struct UsedMemoriesResponse {
+    pub memories: Vec<UsedMemory>,
+}
+
+/// The memories a reply drew on, so the person can see why Nomi said it, and forget or fix one.
+pub async fn list_message_memories(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<UsedMemoriesResponse>, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    authorize_message_in_session(&state.pool, session_id, message_id).await?;
+    let rows: Vec<(Uuid, String, String, bool)> = sqlx::query_as(
+        "SELECT mi.id, mi.content, mi.kind, mi.archived_at IS NOT NULL FROM message_memory_usage u \
+         JOIN memory_items mi ON mi.id = u.memory_id \
+         WHERE u.message_id = $1 AND mi.user_id = $2 ORDER BY mi.weight DESC",
+    )
+    .bind(message_id)
+    .bind(claims.sub)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load memories"))?;
+    Ok(Json(UsedMemoriesResponse {
+        memories: rows.into_iter().map(|(id, content, kind, archived)| UsedMemory { id, content, kind, archived }).collect(),
+    }))
 }

@@ -331,7 +331,10 @@ async fn chitchat_turn_maps_sender_presence_to_role_correctly(pool: PgPool) {
 // LoopOutcome::Reply::memory_ids_used instead of writing the link itself.
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replied_event(pool: PgPool) {
-    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    // Any real direction: memories are recalled by similarity, and an all-zero vector has none.
+    let mut unit = vec![0.0f32; 1536];
+    unit[0] = 1.0;
+    let embedder = FakeEmbeddingProvider::success(unit.clone());
     let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
     let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
 
@@ -353,7 +356,7 @@ async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replie
     .await
     .unwrap();
 
-    let literal = format!("[{}]", vec!["0"; 1536].join(","));
+    let literal = format!("[{}]", unit.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
     let memory_id: Uuid = sqlx::query_scalar(
         "INSERT INTO memory_items (user_id, content, embedding, embedding_provider, embedding_model) \
          VALUES ($1, $2, $3::vector, 'fake', 'fake-model') RETURNING id",
@@ -384,6 +387,13 @@ async fn a_chitchat_replys_used_memory_is_linked_and_recorded_as_an_agent_replie
     .await
     .unwrap();
     assert_eq!(linked_memory_id, memory_id);
+    // Being used counts: a little stronger, and recently useful (so it won't fade).
+    let (weight, used): (f64, bool) = sqlx::query_as("SELECT weight, last_used_at IS NOT NULL FROM memory_items WHERE id = $1")
+        .bind(memory_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!((weight - 1.02).abs() < 1e-9 && used, "{weight} {used}");
 
     let (event_type, payload): (String, serde_json::Value) = sqlx::query_as(
         "SELECT event_type, payload FROM agent_events WHERE session_id = $1 AND event_type = 'AgentReplied'",

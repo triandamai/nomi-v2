@@ -182,8 +182,8 @@ async fn retrieved_memories_are_folded_into_the_system_prompt_and_reported_as_us
 
     let requests = provider.received_requests.lock().unwrap();
     let system = requests[0].system.as_ref().unwrap();
-    assert!(system.contains("Relevant things you know about this user"));
-    assert!(system.contains("User is vegetarian"));
+    assert!(system.contains("What you remember about this person"));
+    assert!(system.contains("(fact) User is vegetarian"));
 }
 
 // Direct port of `a_failing_embedding_provider_does_not_prevent_a_normal_reply`: an embedding

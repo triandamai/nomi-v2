@@ -84,6 +84,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages/:message_id/feedback",
             put(sessions_routes::put_message_feedback).delete(sessions_routes::delete_message_feedback),
         )
+        .route("/api/sessions/:id/messages/:message_id/memories", get(sessions_routes::list_message_memories))
         .route(
             "/api/sessions/:id/messages/:message_id/approval",
             put(sessions_routes::resolve_approval),
@@ -125,7 +126,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/reminders/:id", post(reminders_routes::reminder_action))
         .route("/api/scheduled-tasks/:id/cancel", post(reminders_routes::cancel_scheduled_task))
         .route("/api/memory", get(memory_routes::list_my_memories))
-        .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory))
+        .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory).put(memory_routes::edit_my_memory))
+        .route("/api/memory/:memory_id/confirm", post(memory_routes::confirm_my_memory))
         .route(
             "/api/personality/history",
             get(personality_routes::get_personality_history),
