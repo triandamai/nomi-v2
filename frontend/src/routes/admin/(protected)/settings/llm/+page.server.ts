@@ -19,7 +19,16 @@ function readForm(data: FormData) {
 	const modelId = data.get('model_id');
 	const apiKey = data.get('api_key');
 	const baseUrl = data.get('base_url');
+	// A price left blank stays unset; anything else must be a number of dollars, zero or more.
+	const price = (name: string) => {
+		const raw = data.get(name);
+		if (typeof raw !== 'string' || raw.trim() === '') return null;
+		const value = Number(raw);
+		return Number.isFinite(value) && value >= 0 ? value : NaN;
+	};
 	return {
+		inputPrice: price('input_usd_per_mtok'),
+		outputPrice: price('output_usd_per_mtok'),
 		label: typeof label === 'string' ? label : '',
 		provider: typeof provider === 'string' ? provider : '',
 		modelId: typeof modelId === 'string' ? modelId : '',
@@ -30,13 +39,16 @@ function readForm(data: FormData) {
 
 export const actions: Actions = {
 	create: async ({ request, cookies, fetch }) => {
-		const { label, provider, modelId, apiKey, baseUrl } = readForm(await request.formData());
+		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice } = readForm(await request.formData());
 		if (!label || !provider) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
+		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice)) {
+			return fail(400, { error: m.err_price() });
+		}
 		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models', {
 			method: 'POST',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl }),
+			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice }),
 		});
 		if (!response.ok) {
 			const message = await response.text();
@@ -48,13 +60,16 @@ export const actions: Actions = {
 	update: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const id = data.get('id');
-		const { label, provider, modelId, apiKey, baseUrl } = readForm(data);
+		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice } = readForm(data);
 		if (typeof id !== 'string' || !label || !provider) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
+		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice)) {
+			return fail(400, { error: m.err_price() });
+		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}`, {
 			method: 'PUT',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl }),
+			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice }),
 		});
 		if (!response.ok) {
 			const message = await response.text();

@@ -2544,6 +2544,7 @@ dependencies = [
  "nomi-storage",
  "nomi-test-support",
  "nomi-turn",
+ "nomi-usage",
  "rand 0.8.7",
  "reqwest",
  "rumqttc",
@@ -2616,6 +2617,23 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-usage"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "futures-util",
+ "nomi-llm",
+ "nomi-test-support",
+ "serde",
+ "sqlx",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 

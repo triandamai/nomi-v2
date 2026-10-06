@@ -9,6 +9,7 @@ pub mod home;
 pub mod llm_models;
 pub mod memory;
 pub mod money;
+pub mod usage;
 pub mod personality;
 pub mod projects;
 pub mod profile;

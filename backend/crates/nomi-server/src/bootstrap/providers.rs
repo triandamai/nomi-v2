@@ -6,6 +6,7 @@ use sqlx::PgPool;
 use nomi_embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvider, EmbeddingProviderKind};
 use nomi_llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
 use nomi_settings as settings;
+use nomi_usage::{MeteredProvider, ModelTag};
 
 fn llm_provider_kind_from_str(s: &str) -> ProviderKind {
     match s {
@@ -35,8 +36,25 @@ pub async fn build_llm_provider_for_user(
     settings_key: &[u8; 32],
     http_client: reqwest::Client,
 ) -> Arc<dyn LlmProvider> {
-    let model_config = resolve_llm_model_config(pool, user_id, settings_key).await;
-    Arc::from(build_provider(model_config, http_client))
+    let (model_config, tag) = resolve_llm_model(pool, user_id, settings_key).await;
+    let provider: Arc<dyn LlmProvider> = Arc::from(build_provider(model_config, http_client));
+    // Every call made for this person counts toward their usage (Billing & usage).
+    Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag))
+}
+
+fn provider_name(kind: &ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::Anthropic => "anthropic",
+        ProviderKind::OpenAi => "openai",
+        ProviderKind::OpenRouter => "openrouter",
+        ProviderKind::Gemini => "gemini",
+        ProviderKind::DeepSeek => "deepseek",
+        ProviderKind::Fake => "fake",
+    }
+}
+
+fn tag_for(config: &ModelConfig, admin_model_id: Option<uuid::Uuid>, own_key: bool, label: String) -> ModelTag {
+    ModelTag { admin_model_id, own_key, label, provider: provider_name(&config.provider).to_string(), model_id: config.model_id.clone() }
 }
 
 fn model_config_from_admin_model(
@@ -62,6 +80,11 @@ fn model_config_from_admin_model(
 }
 
 pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> ModelConfig {
+    resolve_llm_model(pool, user_id, settings_key).await.0
+}
+
+/// The person's model, and how its usage is recorded.
+pub async fn resolve_llm_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> (ModelConfig, ModelTag) {
     let selection = settings::llm_models::get_user_llm_selection(pool, user_id)
         .await
         .expect("failed to query user_llm_selections");
@@ -72,8 +95,10 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
                 .await
                 .expect("failed to query admin_llm_models")
             {
+                let (id, label) = (admin_model.id, admin_model.label.clone());
                 if let Some(config) = model_config_from_admin_model(settings_key, admin_model) {
-                    return config;
+                    let tag = tag_for(&config, Some(id), false, label);
+                    return (config, tag);
                 }
                 // Decryption failed (e.g. a rotated/mismatched SETTINGS_ENCRYPTION_KEY) —
                 // fall through to the admin default below.
@@ -86,12 +111,14 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
             );
             match decrypted {
                 Ok(api_key) => {
-                    return ModelConfig {
+                    let config = ModelConfig {
                         provider: llm_provider_kind_from_str(&provider),
                         model_id: row.custom_model_id.expect("custom selection always carries a model_id"),
                         api_key,
                         base_url: row.custom_base_url,
                     };
+                    let tag = tag_for(&config, None, true, row.custom_label.clone().unwrap_or_else(|| config.model_id.clone()));
+                    return (config, tag);
                 }
                 Err(e) => {
                     tracing::error!(
@@ -109,8 +136,10 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
         .await
         .expect("failed to query admin_llm_models")
     {
+        let (id, label) = (default_model.id, default_model.label.clone());
         if let Some(config) = model_config_from_admin_model(settings_key, default_model) {
-            return config;
+            let tag = tag_for(&config, Some(id), false, label);
+            return (config, tag);
         }
         // Decryption failed — fall through to the env-var fallback below.
     }
@@ -125,7 +154,9 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
             var("LLM_API_KEY").expect("LLM_API_KEY must be set"),
         ),
     };
-    ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok() }
+    let config = ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok() };
+    let tag = tag_for(&config, None, false, if config.model_id.is_empty() { provider_name(&config.provider).to_string() } else { config.model_id.clone() });
+    (config, tag)
 }
 
 pub async fn build_embedding_provider_from_settings_or_env(

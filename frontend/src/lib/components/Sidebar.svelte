@@ -21,13 +21,20 @@
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import NavList from '$lib/components/NavList.svelte';
-	import type { Profile } from '$lib/types';
+	import ProSheet from '$lib/components/ProSheet.svelte';
+	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
+	import { formatShare, formatTokens, usageShare } from '$lib/usage';
+	import type { Profile, UsageBrief } from '$lib/types';
 
 	let {
 		userEmail,
 		profile,
+		usage = null,
 		mobileOpen = $bindable(false),
-	}: { userEmail: string; profile: Profile; mobileOpen?: boolean } = $props();
+	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; mobileOpen?: boolean } = $props();
+
+	let proOpen = $state(false);
+	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
 
 	const STORAGE_KEY = 'nomi:user-sidebar-collapsed';
 	let collapsed = $state(false);
@@ -135,6 +142,22 @@
 	{/if}
 
 	<div class="w-full px-3 pb-4">
+		{#if usage && !effectiveCollapsed}
+			<div class="usage" class:usage--over={share >= 1}>
+				<a href="/billing" class="usage__meter" onclick={() => (mobileOpen = false)} aria-label={m.usage_meter_label({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}>
+					<span class="usage__top">
+						<span class="usage__plan">{m.usage_plan_free()}</span>
+						<span class="usage__share">{formatShare(share)}</span>
+					</span>
+					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'glow'} label={m.usage_progress_label({ share: formatShare(share) })} />
+					<span class="usage__detail">{m.usage_of_tokens({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}</span>
+				</a>
+				<button type="button" class="usage__upgrade" onclick={() => (proOpen = true)}>
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
+					{m.usage_upgrade()}
+				</button>
+			</div>
+		{/if}
 		<Menu bind:open={accountMenuOpen} class="w-full">
 			{#snippet trigger({ toggle })}
 				<button
@@ -155,6 +178,7 @@
 			<div class="w-full">
 				<MenuItem onclick={() => goToAccountPage('/preferences')}>{m.nav_preferences()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/profile')}>{m.nav_profile()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/billing')}>{m.nav_billing()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/account')}>{m.nav_account()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/connections')}>{m.nav_connections()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/models')}>{m.nav_model()}</MenuItem>
@@ -166,6 +190,8 @@
 		</Menu>
 	</div>
 </aside>
+
+<ProSheet bind:open={proOpen} />
 
 <style>
 	.nomi-brand {
@@ -217,6 +243,76 @@
 		border-radius: var(--md-sys-shape-corner-large);
 	}
 
+	.usage {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-bottom: 8px;
+		padding: 12px;
+		border-radius: 20px;
+		background: var(--md-sys-color-surface-container);
+	}
+	.usage__meter {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		color: inherit;
+		text-decoration: none;
+		border-radius: 12px;
+	}
+	.usage__meter:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 4px;
+	}
+	.usage__top {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.usage__plan {
+		font-family: var(--md-ref-typeface-title);
+		font-size: 0.875rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+	.usage__share {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.usage--over .usage__share {
+		color: var(--md-sys-color-error);
+		font-weight: 700;
+	}
+	.usage__detail {
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.usage__upgrade {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		min-height: 40px;
+		padding: 0 16px;
+		border: none;
+		border-radius: 999px;
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+		font-family: var(--md-ref-typeface-title);
+		font-size: 0.875rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: filter 150ms;
+	}
+	.usage__upgrade:hover {
+		filter: brightness(0.96);
+	}
+	.usage__upgrade:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
 	.m3-account-trigger {
 		display: flex;
 		align-items: center;
