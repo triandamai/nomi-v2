@@ -63,7 +63,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions",
             post(sessions_routes::create_session).get(sessions_routes::list_sessions),
         )
-        .route("/api/sessions/:id", delete(sessions_routes::delete_session))
+        .route("/api/sessions/:id", delete(sessions_routes::delete_session).patch(sessions_routes::rename_session))
         .route(
             "/api/sessions/:id/messages",
             get(sessions_routes::list_messages).post(sessions_routes::send_message),

@@ -1606,3 +1606,29 @@ async fn a_reply_goes_out_without_waiting_on_memory(pool: PgPool) {
     let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM memory_jobs WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
     assert_eq!(queued, 1);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn any_agent_can_rename_the_chat_when_asked(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", nomi_agent_core::engine::RENAME_CHAT_TOOL_NAME, serde_json::json!({"title": "Bali trip, March"})),
+        text_response("Done, it's called Bali trip, March.", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }), "{outcome:?}");
+    let title: Option<String> = sqlx::query_scalar("SELECT title FROM sessions WHERE id = $1").bind(session_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(title.as_deref(), Some("Bali trip, March"));
+    // Every agent is offered the tool, and it never waits for approval.
+    let first_request = &provider.received_requests.lock().unwrap()[0];
+    assert!(first_request.tools.iter().any(|t| t.name == nomi_agent_core::engine::RENAME_CHAT_TOOL_NAME));
+}

@@ -30,6 +30,7 @@ pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
+pub const RENAME_CHAT_TOOL_NAME: &str = "rename_chat";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
 pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
@@ -195,6 +196,18 @@ fn show_table_tool_definition() -> ToolDefinition {
     }
 }
 
+fn rename_chat_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: RENAME_CHAT_TOOL_NAME.to_string(),
+        description: "Rename this chat. Use it when the person asks you to name or rename the chat; pick a short title (a few words) in their language if they don't give one.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {"title": {"type": "string", "description": "The chat's new name, a few words."}},
+            "required": ["title"]
+        }),
+    }
+}
+
 fn update_todos_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: UPDATE_TODOS_TOOL_NAME.to_string(),
@@ -309,6 +322,7 @@ fn is_gateable(tool_name: &str) -> bool {
     tool_name != COMPLETE_TASK_TOOL_NAME
         && tool_name != DELEGATE_TOOL_NAME
         && tool_name != SHOW_TABLE_TOOL_NAME
+        && tool_name != RENAME_CHAT_TOOL_NAME
         && tool_name != UPDATE_TODOS_TOOL_NAME
         && tool_name != WRITE_PLAN_TOOL_NAME
         && tool_name != CREATE_REMINDER_TOOL_NAME
@@ -372,6 +386,7 @@ pub async fn run_agent_turn(
         }
     }
     tools.push(show_table_tool_definition());
+    tools.push(rename_chat_tool_definition());
     if agent.supports_todos() {
         tools.push(update_todos_tool_definition());
     }
@@ -799,6 +814,16 @@ pub async fn resolve_tool_batch(
                         let text = table_display_text(&variant, rows.len(), locale);
                         let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
                         (text, false, Some(block))
+                    }
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == RENAME_CHAT_TOOL_NAME {
+                match crate::chat_title::rename_from_tool(conn, session_id, input).await {
+                    Ok(title) => {
+                        if let Some((publisher, _)) = mqtt {
+                            let _ = publisher.publish(session_id, &StreamEnvelope::SessionRenamed { title: title.clone() }).await;
+                        }
+                        (format!("Renamed the chat to \"{title}\"."), false, None)
                     }
                     Err(err) => (err, true, None),
                 }

@@ -7,6 +7,7 @@
 	import IconButton from './m3/IconButton.svelte';
 	import Menu from './m3/Menu.svelte';
 	import MenuItem from './m3/MenuItem.svelte';
+	import TextField from './m3/TextField.svelte';
 	import IconFolder from './icons/IconFolder.svelte';
 	import IconMore from './icons/IconMore.svelte';
 	import { timeAgo } from '$lib/i18n';
@@ -17,6 +18,10 @@
 	let menuOpen = $state(false);
 	let confirmOpen = $state(false);
 	let deleting = $state(false);
+	let renameOpen = $state(false);
+	let renameValue = $state('');
+	let renaming = $state(false);
+	let renameError = $state<string | null>(null);
 
 	const href = $derived(session.project_id ? `/projects/session/${session.id}` : `/chat/${session.id}`);
 	const title = $derived(session.title ?? m.nav_new_chat());
@@ -39,6 +44,35 @@
 		event.stopPropagation();
 		menuOpen = false;
 		confirmOpen = true;
+	}
+
+	function openRename(event: MouseEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		menuOpen = false;
+		renameValue = session.title ?? '';
+		renameError = null;
+		renameOpen = true;
+	}
+
+	async function saveRename(event: SubmitEvent) {
+		event.preventDefault();
+		if (!renameValue.trim()) {
+			renameError = m.chat_rename_empty();
+			return;
+		}
+		renaming = true;
+		const body = new FormData();
+		body.set('sessionId', session.id);
+		body.set('title', renameValue);
+		const result = deserialize(await (await fetch('?/renameSession', { method: 'POST', body })).text());
+		renaming = false;
+		if (result.type === 'success') {
+			renameOpen = false;
+			await invalidateAll();
+		} else {
+			renameError = m.chat_rename_failed();
+		}
 	}
 
 	function suppressMenuNavigation(event: MouseEvent) {
@@ -91,11 +125,25 @@
 				</IconButton>
 			{/snippet}
 			<div class="w-full">
+				<MenuItem onclick={openRename}>{m.common_rename()}</MenuItem>
 				<MenuItem onclick={openDeleteConfirm}>{m.common_delete()}</MenuItem>
 			</div>
 		</Menu>
 	</div>
 </div>
+
+<BottomSheet bind:open={renameOpen}>
+	{#snippet children()}
+		<form onsubmit={saveRename}>
+			<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 16px;">{m.chat_rename()}</h2>
+			<TextField label={m.chat_rename_label()} bind:value={renameValue} maxlength={80} error={!!renameError} supportingText={renameError ?? undefined} />
+			<div class="flex justify-end gap-2" style="margin-top: 20px;">
+				<Button variant="text" type="button" onclick={() => (renameOpen = false)} disabled={renaming}>{m.common_cancel()}</Button>
+				<Button variant="filled" type="submit" disabled={renaming}>{m.common_save()}</Button>
+			</div>
+		</form>
+	{/snippet}
+</BottomSheet>
 
 <BottomSheet bind:open={confirmOpen}>
 	{#snippet children()}
