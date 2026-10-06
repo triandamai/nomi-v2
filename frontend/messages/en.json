@@ -350,7 +350,7 @@
 	"home_pages": "{title} pages",
 	"home_placeholder": "Ask Nomi, or hand something to the crew…",
 	"home_plans_empty": "No plans on the go. Ask Planning to draft one and its progress shows up here.",
-	"home_plans_lede": "Every plan and to-do list with steps still open.",
+	"home_plans_lede": "Every plan, and every to-do list with steps still open.",
 	"home_plans_title": "Plans in progress",
 	"home_recent": "Recent",
 	"home_recent_empty": "Nothing yet — your chats will show up here.",
@@ -897,5 +897,7 @@
 	"wsc_turn_on": "Turn on {services}",
 	"wsc_turn_on_for": "Turn on {services} for Workspace",
 	"err_save_plan_item": "Couldn't save that step. Try again.",
-	"common_close": "Close"
+	"common_close": "Close",
+	"home_plan_draft": "Draft",
+	"home_plans_all": "Show all"
 }

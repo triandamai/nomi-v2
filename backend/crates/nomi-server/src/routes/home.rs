@@ -462,8 +462,8 @@ async fn plans(
     user_id: Uuid,
     org_id: Uuid,
 ) -> Result<Vec<PlanItem>, sqlx::Error> {
-    // Plans in progress: the latest to-do list in each chat, and each written plan's latest
-    // version, while they still have open items.
+    // Plans in progress: the latest to-do list in each chat while it has open items, and each
+    // written plan's latest version while it has open steps or no checklist at all.
     let mut plans: Vec<PlanItem> = Vec::new();
     let locale = locale_of(pool, user_id).await?;
     let todos: Vec<TodoRow> = sqlx::query_as(
@@ -510,7 +510,8 @@ async fn plans(
             _ => None,
         };
         let (done, total) = checklist_progress(content.as_deref().unwrap_or_default());
-        if total > 0 && done < total {
+        // A plan with no checklist has nothing to tick off, so it stays listed as a draft.
+        if total == 0 || done < total {
             plans.push(PlanItem {
                 kind: "plan".into(),
                 title,
