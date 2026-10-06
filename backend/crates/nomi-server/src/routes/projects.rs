@@ -6,7 +6,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::web_identity::ensure_web_channel_identity;
+use nomi_turn::bootstrap::ensure_web_channel_identity;
 use nomi_agent_coding::{guess_content_type, project_file_key, validate_path};
 use nomi_auth::extractor::AuthClaims;
 use nomi_turn::bootstrap::bootstrap_identity_and_session;

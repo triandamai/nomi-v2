@@ -12,7 +12,7 @@ pub mod personality;
 pub mod prompts;
 pub mod records;
 pub mod registry;
-pub mod reminders;
+pub mod scheduled_jobs;
 pub mod stop;
 pub mod subagent;
 pub mod tool_catalog;

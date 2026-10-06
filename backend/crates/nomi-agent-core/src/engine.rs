@@ -410,7 +410,7 @@ pub async fn run_agent_turn(
     };
 
     let system_prompt = if agent.supports_reminders() || agent.wants_current_time() {
-        let timezone_name = crate::reminders::get_user_timezone(conn, user_id).await;
+        let timezone_name = crate::scheduled_jobs::get_user_timezone(conn, user_id).await;
         let tz: chrono_tz::Tz = timezone_name.parse().unwrap_or(chrono_tz::UTC);
         let now = chrono::Utc::now().with_timezone(&tz);
         format!(
@@ -797,17 +797,17 @@ pub async fn resolve_tool_batch(
                     None => (format!("unknown tool: {name}"), true, None),
                 }
             } else if name.as_str() == CREATE_REMINDER_TOOL_NAME && agent.supports_reminders() {
-                match crate::reminders::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
+                match crate::scheduled_jobs::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == LIST_REMINDERS_TOOL_NAME && agent.supports_reminders() {
-                match crate::reminders::list_reminders(conn, user_id).await {
+                match crate::scheduled_jobs::list_reminders(conn, user_id).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == CANCEL_REMINDER_TOOL_NAME && agent.supports_reminders() {
-                match crate::reminders::cancel_reminder(conn, user_id, input).await {
+                match crate::scheduled_jobs::cancel_reminder(conn, user_id, input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }

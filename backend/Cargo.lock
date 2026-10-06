@@ -2446,6 +2446,7 @@ dependencies = [
  "jsonwebtoken",
  "nomi-test-support",
  "rand 0.8.7",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2453,7 +2454,9 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tower 0.4.13",
+ "tracing",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

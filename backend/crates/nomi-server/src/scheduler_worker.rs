@@ -65,7 +65,7 @@ pub async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error
     ))
 }
 
-pub(crate) use nomi_agent_core::reminders::next_occurrence;
+pub(crate) use nomi_agent_core::scheduled_jobs::next_occurrence;
 
 async fn finish_one_time_or_advance_recurring(pool: &PgPool, job: &ClaimedJob) {
     match &job.recurrence {

@@ -13,7 +13,7 @@ use crate::app::AppState;
 use crate::bootstrap::build_llm_provider_for_user;
 use nomi_auth::extractor::AuthClaims;
 use nomi_turn::bootstrap::bootstrap_identity_and_session;
-use crate::web_identity::ensure_web_channel_identity;
+use nomi_turn::bootstrap::ensure_web_channel_identity;
 
 #[derive(Serialize)]
 pub struct CreateSessionResponse {

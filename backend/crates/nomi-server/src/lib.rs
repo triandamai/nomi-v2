@@ -1,12 +1,10 @@
 pub mod app;
 pub mod bootstrap;
 pub mod delegation_worker;
-pub mod google_sign_in;
 pub mod routes;
 pub mod reminders_worker;
 pub mod scheduler_worker;
 mod tool_catalog_adapters;
-pub mod web_identity;
 pub mod worker;
 
 /// The one place a new agent gets wired in. Adding an agent: implement `SubAgent` in its

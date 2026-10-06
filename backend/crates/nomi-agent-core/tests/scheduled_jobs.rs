@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_agent_core::reminders::{cancel_reminder, create_reminder, get_user_timezone, list_reminders};
+use nomi_agent_core::scheduled_jobs::{cancel_reminder, create_reminder, get_user_timezone, list_reminders};
 
 async fn seed_session_and_user(pool: &PgPool) -> (Uuid, Uuid) {
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id")

@@ -4,8 +4,19 @@ use uuid::Uuid;
 use wiremock::matchers::{body_string_contains, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use nomi_agent_workspace::connection::GoogleConfig;
-use nomi_server::google_sign_in::{self, Finished, Purpose, SignInError};
+use nomi_auth::google::{self as google_sign_in, Finished, GoogleSignInConfig, Purpose, SignInError};
+
+/// Every Google endpoint on the mock server.
+fn config_at(base: &str) -> GoogleSignInConfig {
+    GoogleSignInConfig {
+        client_id: "client-id".into(),
+        client_secret: "client-secret".into(),
+        redirect_uri: "http://app.test/auth/google/callback".into(),
+        auth_url: format!("{base}/o/oauth2/v2/auth"),
+        token_url: format!("{base}/token"),
+        userinfo_url: format!("{base}/v1/userinfo"),
+    }
+}
 
 /// Google answers a code with this person: `sub`, `email`, and whether the email is verified.
 async fn google_person(server: &MockServer, code: &str, sub: &str, email: &str, verified: bool) {
@@ -28,7 +39,7 @@ async fn google_person(server: &MockServer, code: &str, sub: &str, email: &str, 
 }
 
 async fn sign_in(pool: &PgPool, server: &MockServer, purpose: Purpose, code: &str) -> Result<Finished, SignInError> {
-    let config = GoogleConfig::all_at(&server.uri());
+    let config = config_at(&server.uri());
     let url = google_sign_in::start(pool, &config, purpose).await.unwrap();
     let url = reqwest::Url::parse(&url).unwrap();
     assert!(url.query_pairs().any(|(k, v)| k == "scope" && v == "openid email profile"), "sign-in only asks who you are");
@@ -128,7 +139,7 @@ async fn google_can_only_be_unlinked_when_a_password_still_signs_in(pool: PgPool
 #[sqlx::test(migrations = "../../migrations")]
 async fn an_unknown_or_reused_state_is_refused(pool: PgPool) {
     let server = MockServer::start().await;
-    let config = GoogleConfig::all_at(&server.uri());
+    let config = config_at(&server.uri());
     let result = google_sign_in::finish(&pool, &reqwest::Client::new(), &config, "code", "made-up").await;
     assert_eq!(result, Err(SignInError::Expired));
 }
