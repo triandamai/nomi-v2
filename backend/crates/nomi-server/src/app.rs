@@ -73,6 +73,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/agent-plans/:agent_session_id",
             get(sessions_routes::list_agent_plans),
         )
+        .route(
+            "/api/sessions/:id/agent-plans/:agent_session_id/:plan_id/items/:index",
+            put(sessions_routes::set_agent_plan_item),
+        )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
         .route("/api/sessions/:id/agent-status", get(sessions_routes::get_agent_status))

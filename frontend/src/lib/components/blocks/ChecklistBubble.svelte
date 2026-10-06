@@ -16,6 +16,7 @@
 		maxItems,
 		children,
 		footer,
+		ontoggle,
 	}: {
 		/** Who posted it (display name or type); picks the shape and the tint. */
 		agent: string | null;
@@ -26,6 +27,8 @@
 		/** Anything between the progress line and the list (a plan's title or excerpt). */
 		children?: Snippet;
 		footer?: Snippet;
+		/** Makes each item a checkbox the person can tick; gets the item's index and new state. */
+		ontoggle?: (index: number, done: boolean) => void;
 	} = $props();
 
 
@@ -36,6 +39,17 @@
 	const shown = $derived(maxItems !== undefined ? items.slice(0, maxItems) : items);
 	const hidden = $derived(items.length - shown.length);
 </script>
+
+{#snippet row(item: ChecklistItem)}
+	<span class="checklist__mark" aria-hidden="true">
+		{#if item.status === 'done'}
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10" /></svg>
+		{/if}
+	</span>
+	<span>{item.text}</span>
+	{#if item.status === 'in_progress'}<span class="sr-only">{m.checklist_current()}</span>{/if}
+	{#if item.status === 'done' && !ontoggle}<span class="sr-only">{m.checklist_done()}</span>{/if}
+{/snippet}
 
 <section class="checklist" aria-label={heading} style="--tint: {tint}; --accent: {TONE_ACCENT[look.tone]}">
 	<div class="checklist__head">
@@ -56,14 +70,19 @@
 		<ul class="checklist__items">
 			{#each shown as item, i (i)}
 				<li class="checklist__item checklist__item--{item.status}">
-					<span class="checklist__mark" aria-hidden="true">
-						{#if item.status === 'done'}
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10" /></svg>
-						{/if}
-					</span>
-					<span>{item.text}</span>
-					{#if item.status === 'in_progress'}<span class="sr-only">{m.checklist_current()}</span>{/if}
-					{#if item.status === 'done'}<span class="sr-only">{m.checklist_done()}</span>{/if}
+					{#if ontoggle}
+						<button
+							type="button"
+							role="checkbox"
+							class="checklist__check"
+							aria-checked={item.status === 'done'}
+							onclick={() => ontoggle(i, item.status !== 'done')}
+						>
+							{@render row(item)}
+						</button>
+					{:else}
+						{@render row(item)}
+					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -145,6 +164,34 @@
 		border-color: var(--accent);
 		background: var(--accent);
 		color: #ffffff;
+	}
+	/* Tickable items: the whole row is the hit target. */
+	.checklist__check {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: calc(100% + 16px);
+		min-height: 38px;
+		margin: 0 -8px;
+		padding: 0 8px;
+		border: none;
+		border-radius: 10px;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: start;
+		cursor: pointer;
+	}
+	.checklist__check:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+	}
+	.checklist__check:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.checklist__item--done .checklist__check > span:not(.checklist__mark) {
+		text-decoration: line-through;
+		text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
 	}
 	.checklist__more {
 		text-transform: none;

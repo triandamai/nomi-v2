@@ -55,14 +55,50 @@
 	const shownVersion = $derived(versions.find((v) => v.version === block.version) ?? null);
 
 	const active = $derived(versions.find((v) => v.version === activeVersion) ?? null);
+
+	// Ticking a step saves it into this version's plan; the bubble updates straight away and
+	// takes it back if the save fails.
+	let saveError = $state<string | null>(null);
+	async function toggleItem(index: number, done: boolean) {
+		const plan = shownVersion;
+		if (!plan) return;
+		const before = versions;
+		versions = versions.map((v) => (v.id === plan.id ? { ...v, checklist: withItem(v.checklist, index, done) } : v));
+		saveError = null;
+		try {
+			const response = await fetch(buildAgentPlansFetchUrl(page.url.pathname, block.agent_session_id), {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ planId: plan.id, index, done }),
+			});
+			if (!response.ok) throw new Error('failed to save');
+			versions = ((await response.json()) as { plans: PlanVersion[] }).plans;
+		} catch {
+			versions = before;
+			saveError = m.err_save_plan_item();
+		}
+	}
+
+	/** The checklist with one item ticked or unticked; the first open step stays the current one. */
+	function withItem(items: ChecklistItem[], index: number, done: boolean): ChecklistItem[] {
+		let currentFound = false;
+		return items.map((item, i) => {
+			const isDone = i === index ? done : item.status === 'done';
+			if (isDone) return { ...item, status: 'done' };
+			const status = currentFound ? 'pending' : 'in_progress';
+			currentFound = true;
+			return { ...item, status };
+		});
+	}
 </script>
 
-<ChecklistBubble {agent} heading={m.plan_draft({ agent: agent ?? 'Nomi' })} items={shownVersion?.checklist ?? []} maxItems={6}>
+<ChecklistBubble {agent} heading={m.plan_draft({ agent: agent ?? 'Nomi' })} items={shownVersion?.checklist ?? []} maxItems={6} ontoggle={toggleItem}>
 	<p class="m3-plan-title">{block.title}</p>
 	{#if shownVersion && shownVersion.checklist.length === 0 && shownVersion.excerpt}
 		<p class="m3-plan-excerpt">{shownVersion.excerpt}</p>
 	{/if}
 	{#snippet footer()}
+		{#if saveError}<p class="m3-plan-error" role="alert">{saveError}</p>{/if}
 		<button type="button" class="m3-plan-open" onclick={openSheet}>
 			{m.plan_open()}
 			<span class="nomi-meta">v{block.version}</span>
@@ -110,6 +146,11 @@
 		font-size: 0.9375rem;
 		line-height: 1.5;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-plan-error {
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-error);
 	}
 	.m3-plan-open {
 		align-self: flex-start;

@@ -895,5 +895,6 @@
 	"wsc_need_account": "Untuk ini, aku butuh akun Google-mu",
 	"wsc_note": "Pesanmu tetap tersimpan. Begitu terhubung, aku lanjutkan dari sini.",
 	"wsc_turn_on": "Nyalakan {services}",
-	"wsc_turn_on_for": "Nyalakan {services} untuk Workspace"
+	"wsc_turn_on_for": "Nyalakan {services} untuk Workspace",
+	"err_save_plan_item": "Langkah itu belum tersimpan. Coba lagi, ya."
 }

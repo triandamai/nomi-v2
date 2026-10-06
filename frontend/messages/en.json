@@ -895,5 +895,6 @@
 	"wsc_need_account": "I need your Google account to do this",
 	"wsc_note": "Your message is kept: once you connect, I'll pick it up from here.",
 	"wsc_turn_on": "Turn on {services}",
-	"wsc_turn_on_for": "Turn on {services} for Workspace"
+	"wsc_turn_on_for": "Turn on {services} for Workspace",
+	"err_save_plan_item": "Couldn't save that step. Try again."
 }

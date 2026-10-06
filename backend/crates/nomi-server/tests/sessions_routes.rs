@@ -675,6 +675,47 @@ async fn list_agent_plans_returns_every_version_ordered_oldest_first(pool: PgPoo
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn ticking_a_plan_step_saves_it_into_that_version(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "tick@example.com").await;
+    let outsider = register_and_login(router.clone(), "not-mine@example.com").await;
+
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap();
+    let session_uuid = uuid::Uuid::parse_str(session_id).unwrap();
+    let agent_session_id = uuid::Uuid::new_v4();
+    let user_id: uuid::Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'tick@example.com'").fetch_one(&pool).await.unwrap();
+    let plan_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version) \
+         VALUES ($1, $2, $3, 'Bali', '# Bali\n- [ ] Pick dates\n- [ ] Book flights', 1) RETURNING id",
+    )
+    .bind(session_uuid)
+    .bind(agent_session_id)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let item = |index: usize| format!("/api/sessions/{session_id}/agent-plans/{agent_session_id}/{plan_id}/items/{index}");
+    let content = || async {
+        sqlx::query_scalar::<_, String>("SELECT content FROM agent_plans WHERE id = $1").bind(plan_id).fetch_one(&pool).await.unwrap()
+    };
+
+    let (status, _) = json_request(router.clone(), "PUT", &item(1), json!({"done": true}), Some(&token)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(content().await, "# Bali\n- [ ] Pick dates\n- [x] Book flights");
+
+    let (status, _) = json_request(router.clone(), "PUT", &item(1), json!({"done": false}), Some(&token)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(content().await, "# Bali\n- [ ] Pick dates\n- [ ] Book flights");
+
+    let (status, _) = json_request(router.clone(), "PUT", &item(5), json!({"done": true}), Some(&token)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = json_request(router, "PUT", &item(0), json!({"done": true}), Some(&outsider)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(content().await, "# Bali\n- [ ] Pick dates\n- [ ] Book flights");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_agent_plans_rejects_access_from_a_user_outside_the_session_org(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let owner_token = register_and_login(router.clone(), "owner@example.com").await;

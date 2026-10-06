@@ -362,6 +362,98 @@ pub async fn list_agent_plans(
     Ok(Json(ListAgentPlansResponse { plans }))
 }
 
+/// Ticks or unticks the `index`-th task-list item (`- [ ]` / `- [x]`) in a plan's markdown,
+/// counting items the way the chat's checklist does. `None` when there's no such item.
+pub fn set_plan_item_done(markdown: &str, index: usize, done: bool) -> Option<String> {
+    let mut seen = 0;
+    let mut changed = false;
+    let lines: Vec<String> = markdown
+        .split('\n')
+        .map(|line| {
+            let indent = line.len() - line.trim_start().len();
+            let rest = &line[indent..];
+            let is_task = rest.starts_with(['-', '*', '+'])
+                && rest[1..].starts_with(char::is_whitespace)
+                && {
+                    let after = rest[1..].trim_start();
+                    (after.starts_with("[ ]") || after.starts_with("[x]") || after.starts_with("[X]"))
+                        && after[3..].starts_with(char::is_whitespace)
+                        && !after[3..].trim().is_empty()
+                };
+            if !is_task {
+                return line.to_string();
+            }
+            let this = seen;
+            seen += 1;
+            if this != index {
+                return line.to_string();
+            }
+            changed = true;
+            let box_at = indent + 1 + (rest[1..].len() - rest[1..].trim_start().len());
+            let mark = if done { "[x]" } else { "[ ]" };
+            format!("{}{}{}", &line[..box_at], mark, &line[box_at + 3..])
+        })
+        .collect();
+    changed.then(|| lines.join("\n"))
+}
+
+#[derive(Deserialize)]
+pub struct PlanItemRequest {
+    pub done: bool,
+}
+
+/// The person ticks a step off (or back on) in a plan's checklist. Saved into that version's
+/// markdown in place, so the agent sees the progress the next time it reads the plan.
+pub async fn set_agent_plan_item(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, agent_session_id, plan_id, index)): Path<(Uuid, Uuid, Uuid, usize)>,
+    Json(req): Json<PlanItemRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+
+    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT content, content_s3_key FROM agent_plans WHERE id = $1 AND session_id = $2 AND agent_session_id = $3",
+    )
+    .bind(plan_id)
+    .bind(session_id)
+    .bind(agent_session_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update plan"))?;
+    let (content, s3_key) = row.ok_or((StatusCode::NOT_FOUND, "plan not found"))?;
+
+    let current = match (&content, &s3_key, &state.s3) {
+        (Some(inline), _, _) => inline.clone(),
+        (None, Some(key), Some(s3)) => s3
+            .get_object(key)
+            .await
+            .ok()
+            .flatten()
+            .ok_or((StatusCode::BAD_GATEWAY, "failed to load plan"))?,
+        _ => return Err((StatusCode::BAD_GATEWAY, "failed to load plan")),
+    };
+    let updated = set_plan_item_done(&current, index, req.done).ok_or((StatusCode::NOT_FOUND, "no such checklist item"))?;
+
+    match (content, s3_key, &state.s3) {
+        (Some(_), _, _) => {
+            sqlx::query("UPDATE agent_plans SET content = $1 WHERE id = $2")
+                .bind(&updated)
+                .bind(plan_id)
+                .execute(&state.pool)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update plan"))?;
+        }
+        (None, Some(key), Some(s3)) => {
+            s3.put_object(&key, &updated, "text/markdown")
+                .await
+                .map_err(|_| (StatusCode::BAD_GATEWAY, "failed to save plan"))?;
+        }
+        _ => unreachable!("loaded above"),
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub text: String,
@@ -953,4 +1045,30 @@ pub async fn list_message_memories(
     Ok(Json(UsedMemoriesResponse {
         memories: rows.into_iter().map(|(id, content, kind, archived)| UsedMemory { id, content, kind, archived }).collect(),
     }))
+}
+
+#[cfg(test)]
+mod plan_item_tests {
+    use super::set_plan_item_done;
+
+    const PLAN: &str = "# Bali\n\n- [x] Pick dates\n- [ ] Book flights\n  * [ ] Compare airlines\n- not a task\n- [ ]\n+ [X] Budget";
+
+    #[test]
+    fn ticks_the_nth_item_and_leaves_the_rest() {
+        let updated = set_plan_item_done(PLAN, 1, true).unwrap();
+        assert_eq!(updated, PLAN.replace("- [ ] Book flights", "- [x] Book flights"));
+    }
+
+    #[test]
+    fn unticks_and_counts_nested_and_other_bullets() {
+        assert_eq!(set_plan_item_done(PLAN, 2, true).unwrap(), PLAN.replace("* [ ] Compare", "* [x] Compare"));
+        assert_eq!(set_plan_item_done(PLAN, 3, false).unwrap(), PLAN.replace("+ [X] Budget", "+ [ ] Budget"));
+        assert_eq!(set_plan_item_done(PLAN, 0, false).unwrap(), PLAN.replace("- [x] Pick", "- [ ] Pick"));
+    }
+
+    #[test]
+    fn no_such_item_is_none() {
+        assert_eq!(set_plan_item_done(PLAN, 4, true), None);
+        assert_eq!(set_plan_item_done("no tasks", 0, true), None);
+    }
 }
