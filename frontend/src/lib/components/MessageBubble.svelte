@@ -12,7 +12,8 @@
 	import IconShare from './icons/IconShare.svelte';
 	import IconThumbDown from './icons/IconThumbDown.svelte';
 	import IconThumbUp from './icons/IconThumbUp.svelte';
-	import type { RenderedMessage } from '$lib/types';
+	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
+	import type { FeedbackReason, RenderedMessage } from '$lib/types';
 
 	let {
 		message,
@@ -177,20 +178,36 @@
 		setTimeout(() => (shareCopied = false), 1500);
 	}
 
+	// The memories this reply drew on, and "What was off?" after a thumbs-down.
+	let memoriesOpen = $state(false);
+	let askReason = $state(false);
+
+	async function sendFeedback(rating: 'up' | 'down' | null, reason?: FeedbackReason): Promise<boolean> {
+		const body = new FormData();
+		body.set('messageId', message.id);
+		if (rating) body.set('rating', rating);
+		if (reason) body.set('reason', reason);
+		const response = await fetch('?/feedback', { method: 'POST', body });
+		return deserialize(await response.text()).type === 'success';
+	}
+
 	async function setFeedback(rating: 'up' | 'down') {
 		const next = feedback === rating ? null : rating; // clicking the active one again retracts it
 		const previous = feedback;
 		feedback = next;
-
-		const body = new FormData();
-		body.set('messageId', message.id);
-		if (next) body.set('rating', next);
-
-		const response = await fetch('?/feedback', { method: 'POST', body });
-		const result = deserialize(await response.text());
-		if (result.type !== 'success') {
+		if (!(await sendFeedback(next))) {
 			feedback = previous;
+			return;
 		}
+		if (next === 'down') {
+			askReason = true;
+			memoriesOpen = true;
+		}
+	}
+
+	function showMemories() {
+		askReason = false;
+		memoriesOpen = true;
 	}
 </script>
 
@@ -307,11 +324,53 @@
 				<span class="message__time">{formattedTime}</span>
 			{/if}
 		</div>
+		{#if message.sender === 'assistant' && message.memory_count > 0}
+			<button type="button" class="message-memories" onclick={showMemories} aria-label={m.used_chip_label({ count: message.memory_count })}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="8" r="3" /><circle cx="10" cy="18" r="3" /><path d="M8.5 7.5 15 8M7.5 8.5l1.7 7M16.4 10.4l-4.6 5.4" /></svg>
+				{message.memory_count === 1 ? m.used_chip_one() : m.used_chip_many({ count: message.memory_count })}
+			</button>
+		{/if}
 		{/if}
 	</div>
 </div>
 
+{#if message.sender === 'assistant'}
+	<MessageMemoriesSheet
+		bind:open={memoriesOpen}
+		messageId={message.id}
+		memoryCount={message.memory_count ?? 0}
+		{askReason}
+		onreason={(reason) => sendFeedback('down', reason)}
+	/>
+{/if}
+
 <style>
+	/* Always visible (unlike the hover actions): which memories shaped a reply is worth seeing. */
+	.message-memories {
+		align-self: flex-start;
+		margin-top: 2px;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-height: 32px;
+		padding: 0 10px;
+		border: none;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		font: inherit;
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.message-memories:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+		color: var(--md-sys-color-on-surface);
+	}
+	.message-memories:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
 	/* Assistant turns are editorial — no bubble, the agent's shape as the avatar — so long
 	   answers read like a page. The user's own turns are compact bubbles whose tight corner
 	   points back at them. */

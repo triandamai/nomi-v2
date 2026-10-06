@@ -13,6 +13,7 @@ function msg(partial: Partial<RenderedMessage>): RenderedMessage {
     created_at: new Date(Date.UTC(2026, 9, 5, 10, 0, clock)).toISOString(),
     my_feedback: null,
     agent_display_name: null,
+    memory_count: 0,
     content_html: "",
     ...partial,
   };
