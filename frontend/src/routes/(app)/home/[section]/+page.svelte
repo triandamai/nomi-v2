@@ -22,10 +22,6 @@
 	};
 </script>
 
-<svelte:head>
-	<title>{data.title} · Nomi</title>
-</svelte:head>
-
 <div class="section-page">
 	<div class="section-page__inner">
 		<header class="section-page__head">
