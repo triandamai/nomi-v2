@@ -95,3 +95,27 @@ export function budgetState(spent: number, limit: number): { ratio: number; over
 	const ratio = limit > 0 ? spent / limit : 0;
 	return { ratio, over: ratio > 1, nearly: ratio >= 0.8 && ratio <= 1 };
 }
+
+/** A piece of text with an amount's cents (decimal mark and two digits) set apart. */
+export interface MoneyPiece {
+	text: string;
+	cents: boolean;
+}
+
+// A digit, then a decimal mark and exactly two digits that end the number: "1,234.56", "Rp 120.000,00".
+// "1.000" (thousands), "12,5 rb" (compact) and "$0.0012" have no two-digit cents to raise.
+const CENTS = /(?<=\d)([.,]\d{2})(?!\d)/g;
+
+/** Splits text so every amount's cents can be shown raised ("$12" + ".50"). */
+export function moneyPieces(text: string): MoneyPiece[] {
+	const pieces: MoneyPiece[] = [];
+	let at = 0;
+	for (const match of text.matchAll(CENTS)) {
+		const start = match.index ?? 0;
+		if (start > at) pieces.push({ text: text.slice(at, start), cents: false });
+		pieces.push({ text: match[0], cents: true });
+		at = start + match[0].length;
+	}
+	if (at < text.length) pieces.push({ text: text.slice(at), cents: false });
+	return pieces;
+}

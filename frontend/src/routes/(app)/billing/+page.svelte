@@ -8,6 +8,7 @@
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import ProSheet from '$lib/components/ProSheet.svelte';
+	import Money from '$lib/components/Money.svelte';
 	import { monthLabel, niceScale, shiftMonth } from '$lib/money';
 	import { formatShare, formatTokens, formatTokensFull, formatUsd, usageShare } from '$lib/usage';
 	import type { PageData } from './$types';
@@ -112,7 +113,7 @@
 				<dl class="tiles">
 					<div class="tile">
 						<dt>{m.billing_spend()}</dt>
-						<dd>{formatUsd(usage.spend_usd)}</dd>
+						<dd><Money value={formatUsd(usage.spend_usd)} /></dd>
 					</div>
 					<div class="tile">
 						<dt>{m.billing_input()}</dt>
@@ -158,7 +159,7 @@
 									<thead><tr><th scope="col">{m.money_day()}</th><th scope="col">{m.billing_tokens()}</th><th scope="col">{m.billing_spend()}</th></tr></thead>
 									<tbody>
 										{#each days.filter((d) => d.tokens > 0) as d (d.date)}
-											<tr><td>{dayLabel(d.date)}</td><td class="num">{formatTokensFull(d.tokens)}</td><td class="num">{formatUsd(d.spend)}</td></tr>
+											<tr><td>{dayLabel(d.date)}</td><td class="num">{formatTokensFull(d.tokens)}</td><td class="num"><Money value={formatUsd(d.spend)} /></td></tr>
 										{/each}
 									</tbody>
 								</table>
@@ -196,7 +197,7 @@
 										style="left: {((AXIS_W + (hovered.day - 0.5) * slot) / CHART_W) * 100}%; top: {(y(hovered.tokens) / CHART_H) * 100}%"
 									>
 										<span class="tooltip__title">{dayLabel(hovered.date)}</span>
-										<span>{hovered.tokens > 0 ? m.billing_day_tip({ tokens: formatTokensFull(hovered.tokens), spend: formatUsd(hovered.spend) }) : m.billing_no_use()}</span>
+										<span>{#if hovered.tokens > 0}<Money value={m.billing_day_tip({ tokens: formatTokensFull(hovered.tokens), spend: formatUsd(hovered.spend) })} />{:else}{m.billing_no_use()}{/if}</span>
 									</div>
 								{/if}
 							</div>
@@ -213,7 +214,7 @@
 									<div class="model__top">
 										<span class="bars__label">{row.label}</span>
 										{#if row.source === 'own_key'}<span class="key-chip">{m.billing_your_key()}</span>{/if}
-										<span class="model__spend">{row.source === 'own_key' ? m.billing_not_billed() : formatUsd(row.spend_usd)}</span>
+										<span class="model__spend">{#if row.source === 'own_key'}{m.billing_not_billed()}{:else}<Money value={formatUsd(row.spend_usd)} />{/if}</span>
 									</div>
 									<span class="bars__track">
 										<span class="bars__fill" style="width: {Math.max(1.5, (row.tokens / modelMax) * 100)}%"></span>

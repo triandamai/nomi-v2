@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
 import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
@@ -35,6 +36,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 };
 
 export const actions: Actions = {
+	rename: async ({ request, params, cookies, fetch }) => renameSession(fetch, cookies, params.sessionId, await request.formData()),
 	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
 
 	sendMessage: async ({ request, params, cookies, fetch }) => {

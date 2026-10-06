@@ -17,6 +17,8 @@ pub enum StreamEnvelope {
     /// A brand-new message landed — the frontend fetches it and appends it to the conversation
     /// instead of refetching the whole thing.
     MessageCreated { message_id: Uuid },
+    /// The chat got a new name (the person renamed it, or asked the crew to).
+    SessionRenamed { title: String },
     /// An existing message's content_blocks changed in place (a todo list step flipped, an
     /// approval was decided) — the frontend fetches it and replaces its existing entry.
     MessageUpdated { message_id: Uuid },

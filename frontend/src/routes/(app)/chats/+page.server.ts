@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { renameSession } from '$lib/server/renameSession';
 import type { SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
@@ -14,6 +15,14 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 };
 
 export const actions: Actions = {
+	renameSession: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const sessionId = data.get('sessionId');
+		if (typeof sessionId !== 'string' || !sessionId) {
+			return fail(400, { error: m.err_invalid_chat() });
+		}
+		return renameSession(fetch, cookies, sessionId, data);
+	},
 	deleteSession: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const sessionId = data.get('sessionId');

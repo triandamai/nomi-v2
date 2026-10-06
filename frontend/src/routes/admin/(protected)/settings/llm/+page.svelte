@@ -9,6 +9,7 @@
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import Money from '$lib/components/Money.svelte';
 	import { formatUsd } from '$lib/usage';
 	import type { ActionData, PageData } from './$types';
 
@@ -133,7 +134,7 @@
 				</div>
 				<dl class="model__facts">
 					<div><dt>{m.key_model()}</dt><dd>{model.model_id}</dd></div>
-					<div><dt>{m.llm_price()}</dt><dd>{model.input_usd_per_mtok != null || model.output_usd_per_mtok != null ? m.llm_price_value({ input: formatUsd(model.input_usd_per_mtok ?? 0), output: formatUsd(model.output_usd_per_mtok ?? 0) }) : m.llm_price_unset()}</dd></div>
+					<div><dt>{m.llm_price()}</dt><dd>{#if model.input_usd_per_mtok != null || model.output_usd_per_mtok != null}<Money value={m.llm_price_value({ input: formatUsd(model.input_usd_per_mtok ?? 0), output: formatUsd(model.output_usd_per_mtok ?? 0) })} />{:else}{m.llm_price_unset()}{/if}</dd></div>
 					<div><dt>{m.llm_key()}</dt><dd>{model.api_key_masked || m.llm_none()}</dd></div>
 				</dl>
 				<div class="model__actions">

@@ -5,8 +5,12 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
 
 	// The app's language, and the language the crew replies in. Saved to the account, then the
-	// page reloads in the new language.
-	let current = $state<Locale>(getLocale());
+	// page reloads in the new language straight away.
+	// The language this page was drawn in. The save's response already switches the locale
+	// cookie, so by the time it returns getLocale() reads the new language and setLocale() alone
+	// would see nothing to change and skip the reload.
+	const renderedIn = getLocale();
+	let current = $state<Locale>(renderedIn);
 	let saving = $state(false);
 </script>
 
@@ -19,7 +23,10 @@
 		return async ({ result, update }) => {
 			saving = false;
 			if (result.type === 'success') {
-				setLocale(current);
+				if (current !== renderedIn) {
+					setLocale(current, { reload: false });
+					window.location.reload();
+				}
 			} else {
 				current = getLocale();
 				await update({ reset: false });

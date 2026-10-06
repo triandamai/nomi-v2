@@ -2,7 +2,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
@@ -122,12 +121,13 @@
 		</div>
 	</div>
 
-	<form method="POST" action="/?/newChat" use:enhance class={effectiveCollapsed ? 'pt-2' : 'px-4 pt-2'} onsubmit={() => (mobileOpen = false)}>
-		<button type="submit" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label={m.nav_new_chat()}>
+	<div class={effectiveCollapsed ? 'pt-2' : 'px-4 pt-2'}>
+		<!-- Opens an empty chat; nothing is saved until its first message is sent. -->
+		<a href="/chat/new" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label={m.nav_new_chat()} onclick={() => (mobileOpen = false)}>
 			<IconPlus size={24} />
 			{#if !effectiveCollapsed}<span>{m.nav_new_chat()}</span>{/if}
-		</button>
-	</form>
+		</a>
+	</div>
 
 	<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} onnavigate={() => (mobileOpen = false)} />
 
@@ -225,6 +225,8 @@
 		font-size: 1rem;
 		font-weight: 650;
 		cursor: pointer;
+		text-decoration: none;
+		box-sizing: border-box;
 		box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--md-sys-color-primary) 60%, transparent);
 		transition:
 			border-radius var(--nomi-motion-spatial-fast),

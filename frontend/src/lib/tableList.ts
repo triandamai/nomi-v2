@@ -17,6 +17,11 @@ const CATEGORY = /^(category|kategori|type)$/i;
 const NUMBER = /^[^\d-]{0,4}-?[\d.,\s]+[^\d]{0,4}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}|^\d{1,2}[/ -]\w{1,9}[/ -]\d{2,4}|^(mon|tue|wed|thu|fri|sat|sun)/i;
 
+/** A money column (amount, total, price, harga…): its amounts are shown with raised cents. */
+export function isAmountColumn(column: TableColumn): boolean {
+	return AMOUNT.test(`${column.key} ${column.label}`);
+}
+
 function text(value: unknown): string {
 	return value === null || value === undefined ? '' : String(value).trim();
 }

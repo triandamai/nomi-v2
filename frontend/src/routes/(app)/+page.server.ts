@@ -25,6 +25,10 @@ export const actions: Actions = {
 	newChat: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const text = data.get('text');
+		// Nothing to say yet: open an empty chat, which is only saved once something is sent.
+		if (typeof text !== 'string' || !text.trim()) {
+			throw redirect(303, '/chat/new');
+		}
 
 		const response = await apiFetch(fetch, cookies, '/api/sessions', { method: 'POST' });
 		if (!response.ok) {
@@ -32,15 +36,13 @@ export const actions: Actions = {
 		}
 		const { session_id } = (await response.json()) as { session_id: string };
 
-		if (typeof text === 'string' && text.trim()) {
-			const sent = await apiFetch(fetch, cookies, `/api/sessions/${session_id}/messages`, {
-				method: 'POST',
-				body: JSON.stringify({ text }),
-			});
-			if (!sent.ok) {
-				// The chat exists; land there so the text can simply be resent.
-				throw redirect(303, `/chat/${session_id}`);
-			}
+		const sent = await apiFetch(fetch, cookies, `/api/sessions/${session_id}/messages`, {
+			method: 'POST',
+			body: JSON.stringify({ text }),
+		});
+		if (!sent.ok) {
+			// The chat exists; land there so the text can simply be resent.
+			throw redirect(303, `/chat/${session_id}`);
 		}
 		throw redirect(303, `/chat/${session_id}`);
 	},
