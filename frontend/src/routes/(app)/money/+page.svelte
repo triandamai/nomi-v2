@@ -16,6 +16,7 @@
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
+	import Money from '$lib/components/Money.svelte';
 	import { budgetState, categoryLook, compareMonths, fillDays, formatAmount, monthLabel, monthName, niceScale, shiftMonth } from '$lib/money';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import type { ActionData, PageData } from './$types';
@@ -166,7 +167,7 @@
 				<section class="summary" aria-label={m.money_this_month()}>
 					<div class="hero">
 						<span class="nomi-meta hero__label">{m.money_spent_in({ month: monthName(money.month) })}</span>
-						<span class="hero__value">{formatAmount(money.total_cents)}</span>
+						<span class="hero__value"><Money value={formatAmount(money.total_cents)} /></span>
 						{#if comparison}
 							<span class="hero__delta" data-direction={comparison.direction}>
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -183,7 +184,7 @@
 						</div>
 						<div class="tile">
 							<dt>{m.money_per_day()}</dt>
-							<dd>{formatAmount(daysWithSpending ? money.total_cents / daysWithSpending : 0)}</dd>
+							<dd><Money value={formatAmount(daysWithSpending ? money.total_cents / daysWithSpending : 0)} /></dd>
 						</div>
 						{#if topCategory}
 							<div class="tile">
@@ -226,14 +227,14 @@
 										</form>
 									</div>
 									<div class="budget__row">
-										<span class="budget__figures">{formatAmount(b.spent_cents)} <span class="budget__of">{m.money_of({ amount: formatAmount(b.limit_cents) })}</span></span>
+										<span class="budget__figures"><Money value={formatAmount(b.spent_cents)} /> <span class="budget__of"><Money value={m.money_of({ amount: formatAmount(b.limit_cents) })} /></span></span>
 										{#if state.over}
 											<span class="budget__flag">
 												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>
-												{m.money_over_by({ amount: formatAmount(b.spent_cents - b.limit_cents) })}
+												<Money value={m.money_over_by({ amount: formatAmount(b.spent_cents - b.limit_cents) })} />
 											</span>
 										{:else if state.nearly}
-											<span class="budget__flag budget__flag--near">{m.money_left({ amount: formatAmount(b.limit_cents - b.spent_cents) })}</span>
+											<span class="budget__flag budget__flag--near"><Money value={m.money_left({ amount: formatAmount(b.limit_cents - b.spent_cents) })} /></span>
 										{:else}
 											<span class="budget__left">{m.money_used({ percent: Math.round(state.ratio * 100) })}</span>
 										{/if}
@@ -258,7 +259,7 @@
 								<thead><tr><th scope="col">{m.common_category()}</th><th scope="col">{m.money_transactions()}</th><th scope="col">{m.common_amount()}</th><th scope="col">{m.money_share()}</th></tr></thead>
 								<tbody>
 									{#each money.by_category as c (c.category)}
-										<tr><td>{c.category}</td><td class="num">{c.count}</td><td class="num">{formatAmount(c.cents)}</td><td class="num">{share(c.cents)}</td></tr>
+										<tr><td>{c.category}</td><td class="num">{c.count}</td><td class="num"><Money value={formatAmount(c.cents)} /></td><td class="num">{share(c.cents)}</td></tr>
 									{/each}
 								</tbody>
 							</table>
@@ -279,7 +280,7 @@
 											<span class="bars__label">{c.category}</span>
 											<span class="bars__track">
 												<span class="bars__fill" style="width: {Math.max(1.5, (c.cents / categoryMax) * 100)}%"></span>
-												<span class="bars__value">{formatAmount(c.cents, { compact: true })}</span>
+												<span class="bars__value"><Money value={formatAmount(c.cents, { compact: true })} /></span>
 											</span>
 											{#if hoverCategory === c.category}
 												<span class="tooltip tooltip--bar" role="presentation">{c.count === 1 ? m.money_tx_one() : m.money_tx_many({ count: c.count })} · {m.money_of_month({ share: share(c.cents) })}</span>
@@ -305,7 +306,7 @@
 									<thead><tr><th scope="col">{m.money_day()}</th><th scope="col">{m.common_amount()}</th></tr></thead>
 									<tbody>
 										{#each days.filter((d) => d.cents > 0) as d (d.date)}
-											<tr><td>{dayLabel(d.date)}</td><td class="num">{formatAmount(d.cents)}</td></tr>
+											<tr><td>{dayLabel(d.date)}</td><td class="num"><Money value={formatAmount(d.cents)} /></td></tr>
 										{/each}
 									</tbody>
 								</table>
@@ -345,7 +346,7 @@
 										style="left: {((AXIS_W + (hovered.day - 0.5) * slot) / CHART_W) * 100}%; top: {(y(hovered.cents / 100) / CHART_H) * 100}%"
 									>
 										<span class="tooltip__title">{dayLabel(hovered.date)}</span>
-										<span>{hovered.cents > 0 ? formatAmount(hovered.cents) : m.money_no_spending()}</span>
+										<span>{#if hovered.cents > 0}<Money value={formatAmount(hovered.cents)} />{:else}{m.money_no_spending()}{/if}</span>
 									</div>
 								{/if}
 							</div>
@@ -384,7 +385,7 @@
 										<AgentShape shape={look.shape} tone={look.tone} size={36} />
 									{/snippet}
 									{#snippet trailing()}
-										<span class="tx__amount">{formatAmount(t.amount_cents)}</span>
+										<span class="tx__amount"><Money value={formatAmount(t.amount_cents)} /></span>
 									{/snippet}
 								</ListItem>
 							{/each}

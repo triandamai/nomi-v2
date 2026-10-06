@@ -4,12 +4,14 @@
 	import Card from '$lib/components/m3/Card.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import { categoryLook } from '$lib/money';
-	import { tableListColumns, tableListItem } from '$lib/tableList';
+	import Money from '$lib/components/Money.svelte';
+	import { isAmountColumn, tableListColumns, tableListItem } from '$lib/tableList';
 	import type { ContentBlock } from '$lib/types';
 
 	let { block }: { block: Extract<ContentBlock, { kind: 'table' }> } = $props();
 
 	const listColumns = $derived(tableListColumns(block.columns, block.rows));
+	const amountKeys = $derived(new Set(block.columns.filter(isAmountColumn).map((c) => c.key)));
 </script>
 
 {#if block.variant === 'data'}
@@ -20,7 +22,7 @@
 				{#each block.rows as row, i (i)}
 					<tr>
 						{#each block.columns as column (column.key)}
-							<td>{row[column.key] ?? ''}</td>
+							<td>{#if amountKeys.has(column.key)}<Money value={String(row[column.key] ?? '')} />{:else}{row[column.key] ?? ''}{/if}</td>
 						{/each}
 					</tr>
 				{/each}
@@ -41,7 +43,7 @@
 						{/if}
 					</div>
 					{#if item.trailing}
-						<span class="table-row__trailing">{item.trailing}</span>
+						<span class="table-row__trailing">{#if listColumns.trailing && amountKeys.has(listColumns.trailing.key)}<Money value={item.trailing} />{:else}{item.trailing}{/if}</span>
 					{/if}
 				</li>
 			{/each}
@@ -54,7 +56,7 @@
 				{#each block.columns as column (column.key)}
 					<div class="m3-comparison-field">
 						<span class="md-label-small" style="color: var(--md-sys-color-on-surface-variant)">{column.label}</span>
-						<span class="md-body-medium">{row[column.key] ?? ''}</span>
+						<span class="md-body-medium">{#if amountKeys.has(column.key)}<Money value={String(row[column.key] ?? '')} />{:else}{row[column.key] ?? ''}{/if}</span>
 					</div>
 				{/each}
 			</Card>

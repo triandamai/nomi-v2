@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budgetState, categoryLook, compareMonths, fillDays, niceScale, shiftMonth } from './money';
+import { budgetState, categoryLook, compareMonths, fillDays, moneyPieces, niceScale, shiftMonth } from './money';
 
 describe('money helpers', () => {
 	it('fills every day of the month', () => {
@@ -32,5 +32,28 @@ describe('categories and budgets', () => {
 		expect(budgetState(85, 100)).toMatchObject({ nearly: true, over: false });
 		expect(budgetState(120, 100)).toMatchObject({ over: true });
 		expect(budgetState(10, 100)).toMatchObject({ nearly: false, over: false });
+	});
+});
+
+describe('moneyPieces', () => {
+	const raised = (text: string) =>
+		moneyPieces(text)
+			.map((p) => (p.cents ? `^${p.text}` : p.text))
+			.join('');
+
+	it('raises the two-digit cents of an amount, in either decimal style', () => {
+		expect(raised('$1,234.56')).toBe('$1,234^.56');
+		expect(raised('Rp 120.000,00')).toBe('Rp 120.000^,00');
+		expect(raised('12,50 €')).toBe('12^,50 €');
+	});
+
+	it('raises every amount in a sentence', () => {
+		expect(raised('Rp 50.000,00 over of Rp 1.000.000,00')).toBe('Rp 50.000^,00 over of Rp 1.000.000^,00');
+	});
+
+	it('leaves numbers without two-digit cents alone', () => {
+		for (const text of ['Rp 1.000', '12,5 rb', '$0.0012', '18%', '3 transactions']) {
+			expect(raised(text)).toBe(text);
+		}
 	});
 });
