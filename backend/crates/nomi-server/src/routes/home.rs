@@ -361,7 +361,7 @@ async fn while_you_were_out(
     let replies: Vec<ReplyRow> = sqlx::query_as(
         "SELECT DISTINCT ON (m.session_id) m.session_id, s.title, m.agent_display_name, m.content, m.created_at \
          FROM messages m JOIN sessions s ON s.id = m.session_id \
-         WHERE s.org_id = $1 AND m.sender_channel_identity_id IS NULL AND m.created_at > $2 \
+         WHERE s.org_id = $1 AND s.user_id = $3 AND m.sender_channel_identity_id IS NULL AND m.created_at > $2 \
            AND m.content_blocks IS NULL AND m.content NOT LIKE '🧠%' \
            AND NOT EXISTS (SELECT 1 FROM messages u WHERE u.session_id = m.session_id \
                            AND u.sender_channel_identity_id IS NOT NULL AND u.created_at > m.created_at) \
@@ -369,6 +369,7 @@ async fn while_you_were_out(
     )
     .bind(org_id)
     .bind(since)
+    .bind(user_id)
     .fetch_all(pool)
     .await
     ?;
@@ -459,10 +460,11 @@ async fn plans(
     let todos: Vec<TodoRow> = sqlx::query_as(
         "SELECT DISTINCT ON (m.session_id) m.session_id, s.title, m.agent_display_name, m.content_blocks->0->'items', m.created_at \
          FROM messages m JOIN sessions s ON s.id = m.session_id \
-         WHERE s.org_id = $1 AND m.content_blocks->0->>'kind' = 'todo_list' \
+         WHERE s.org_id = $1 AND s.user_id = $2 AND m.content_blocks->0->>'kind' = 'todo_list' \
          ORDER BY m.session_id, m.created_at DESC",
     )
     .bind(org_id)
+    .bind(user_id)
     .fetch_all(pool)
     .await
     ?;

@@ -89,10 +89,11 @@ pub async fn list_sessions(
          LEFT JOIN LATERAL ( \
              SELECT id FROM projects pr WHERE pr.session_id = s.id ORDER BY pr.created_at DESC LIMIT 1 \
          ) p ON true \
-         WHERE s.org_id = $1 \
+         WHERE s.org_id = $1 AND s.user_id = $2 \
          ORDER BY COALESCE(lm.created_at, s.created_at) DESC",
     )
     .bind(claims.active_org_id)
+    .bind(claims.sub)
     .fetch_all(&state.pool)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?;
@@ -111,13 +112,17 @@ pub async fn list_sessions(
     Ok(Json(ListSessionsResponse { sessions }))
 }
 
+/// A chat is private to the person who started it: sharing an organization with them doesn't let
+/// anyone else read it, post into it or see its memories. Someone else's chat answers exactly like
+/// one that doesn't exist.
 async fn authorize_session_access(
     pool: &sqlx::PgPool,
     user_id: Uuid,
     session_id: Uuid,
 ) -> Result<(), (StatusCode, &'static str)> {
-    let org_id: Option<Uuid> = sqlx::query_scalar("SELECT org_id FROM sessions WHERE id = $1")
+    let org_id: Option<Uuid> = sqlx::query_scalar("SELECT org_id FROM sessions WHERE id = $1 AND user_id = $2")
         .bind(session_id)
+        .bind(user_id)
         .fetch_optional(pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up session"))?;
