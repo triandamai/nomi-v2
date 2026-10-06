@@ -221,6 +221,26 @@ pub async fn extract_and_store_memory_in(
     user_text: &str,
     assistant_text: &str,
 ) {
+    // The person's own latest message in the chat. The caller's `user_text` is the agent's last
+    // user turn, which after a tool call is a tool result (no text at all) and for a delegated
+    // agent is its task brief, so the chat itself is the reliable source.
+    let latest: Option<(Uuid, String)> = match session_id {
+        Some(session_id) => sqlx::query_as(
+            "SELECT id, content FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NOT NULL \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await
+        .ok()
+        .flatten(),
+        None => None,
+    };
+    let source_message_id = latest.as_ref().map(|(id, _)| *id);
+    let user_text = match &latest {
+        Some((_, content)) if !content.trim().is_empty() => content.as_str(),
+        _ => user_text,
+    };
     if user_text.trim().is_empty() {
         return;
     }
@@ -278,19 +298,10 @@ pub async fn extract_and_store_memory_in(
         ContentBlock::Text { text } => Some(text),
         _ => None,
     });
+    if answer.as_deref().is_none_or(|a| a.trim().is_empty()) {
+        tracing::warn!(stop_reason = ?response.stop_reason, "memory: the extractor gave no answer");
+    }
     let change = answer.as_deref().map(parse_memory_change).unwrap_or(MemoryChange::None);
-
-    let source_message_id: Option<Uuid> = match session_id {
-        Some(session_id) => sqlx::query_scalar(
-            "SELECT id FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(session_id)
-        .fetch_optional(&mut **conn)
-        .await
-        .ok()
-        .flatten(),
-        None => None,
-    };
 
     let result = match change {
         MemoryChange::None => Ok(()),
