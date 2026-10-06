@@ -3,7 +3,8 @@
 	import { enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import Card from '$lib/components/m3/Card.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -73,31 +74,29 @@
 	}
 </script>
 
-<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Embedding provider</h1>
-<p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
-	Used by the personality memory feature's semantic search. Changing the provider stops older
-	memories from being retrieved until new ones are stored under the new provider — they aren't
-	deleted, just no longer comparable to new queries.
-</p>
+<PageHeader
+	title="Embeddings"
+	lede="The provider that turns memories into vectors so Nomi can recall the right ones. Switching it leaves older memories in place, but they stop being found until new ones are stored."
+	agent="memory"
+/>
 
-<div class="mt-6 max-w-lg">
-	<Card variant="outlined" class="p-6">
+<section class="provider" aria-label="Current provider">
+	<span class="provider__icon"><IconMemory size={26} /></span>
+	<div class="provider__text">
 		{#if data.settings}
-			<p class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{data.settings.provider}</p>
-			<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
-				{data.settings.model_id} · {data.settings.api_key_masked}
-			</p>
+			<span class="nomi-meta">In use</span>
+			<h2 class="provider__name">{PROVIDER_OPTIONS.find((o) => o.value === data.settings?.provider)?.label ?? data.settings.provider}</h2>
+			<p class="provider__facts">{data.settings.model_id} · {data.settings.api_key_masked}</p>
 		{:else}
-			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">No embedding provider configured yet.</p>
+			<h2 class="provider__name">Not set up</h2>
+			<p class="provider__facts">Memories can't be recalled until a provider is chosen.</p>
 		{/if}
-		<Button type="button" variant="outlined" class="mt-4" onclick={openEdit}>
-			{data.settings ? 'Edit' : 'Configure'}
-		</Button>
-	</Card>
-</div>
+	</div>
+	<Button type="button" variant={data.settings ? 'tonal' : 'filled'} onclick={openEdit}>{data.settings ? 'Change' : 'Set up'}</Button>
+</section>
 
 <BottomSheet bind:open={sheetOpen}>
-	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Embedding provider</h2>
+	<h2 class="sheet-title">Embedding provider</h2>
 
 	{#if form?.error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -173,3 +172,54 @@
 		</div>
 	</form>
 </BottomSheet>
+
+<style>
+	.provider {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 16px 20px;
+		max-width: 720px;
+		padding: 22px 24px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+	}
+	.provider__icon {
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 56px;
+		height: 56px;
+		border-radius: 18px;
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.provider__text {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 200px;
+	}
+	.provider__name {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.375rem;
+		font-weight: 700;
+	}
+	.provider__facts {
+		margin: 0;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+		overflow-wrap: anywhere;
+	}
+	.sheet-title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+</style>

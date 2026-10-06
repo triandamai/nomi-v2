@@ -5,7 +5,8 @@ describe('pageTitle', () => {
 	it('names pages by route, and Home is just Nomi', () => {
 		expect(pageTitle('/(app)/money')).toBe('Money · Nomi');
 		expect(pageTitle('/(app)')).toBe('Nomi');
-		expect(pageTitle('/admin/(protected)/users')).toBe('Admin · Nomi');
+		expect(pageTitle('/admin/(protected)/users')).toBe('Users · Admin · Nomi');
+		expect(pageTitle('/admin/login')).toBe('Admin · Nomi');
 		expect(pageTitle(null)).toBe('Nomi');
 	});
 

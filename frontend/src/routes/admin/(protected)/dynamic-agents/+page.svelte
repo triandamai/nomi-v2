@@ -3,7 +3,9 @@
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
-	import Card from '$lib/components/m3/Card.svelte';
+	import Checkbox from '$lib/components/m3/Checkbox.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import ShapePicker from '$lib/components/m3/ShapePicker.svelte';
 	import {
 		isGradientTone,
@@ -103,56 +105,54 @@
 	}
 </script>
 
-<h1 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Dynamic agents</h1>
-<p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
-	Agents defined here run through the same engine as built-in agents, with a curated set of tools.
-</p>
+<PageHeader
+	title="Custom agents"
+	lede="Crew members you define: their own prompt, a picked set of tools and a shape. They run on the same engine as the built-in agents."
+>
+	{#snippet actions()}
+		<Button type="button" variant="filled" onclick={openCreate}><IconPlus size={18} /> Add agent</Button>
+	{/snippet}
+</PageHeader>
 
-<div class="mt-6 space-y-3">
-	{#each data.agents as agent (agent.id)}
-		<Card variant="outlined" class="p-4">
-			<div class="flex items-center justify-between gap-3">
-				<AgentShape
-					shape={isShapeName(agent.shape) ? agent.shape : 'cookie9'}
-					tone={isGradientTone(agent.tone) ? agent.tone : 'glow'}
-					size={40}
-				/>
-				<div class="min-w-0 flex-1">
-					<p class="md-title-medium" style="color: var(--md-sys-color-on-surface)">
-						{agent.name}
-						{#if !agent.is_active}
-							<span
-								class="md-label-medium ml-2 rounded-full px-2 py-0.5"
-								style="background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container)"
-							>
-								Disabled
-							</span>
-						{/if}
-					</p>
-					<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">
-						{agent.intent_label} · {agent.granted_tools.length} tool(s)
-					</p>
+{#if data.agents.length === 0}
+	<div class="empty">
+		<AgentShape shape="flower5" tone="dusk" size={64} />
+		<p class="empty__text"><strong>No custom agents yet.</strong> Add one to give the crew a new specialist.</p>
+	</div>
+{:else}
+	<ul class="grid">
+		{#each data.agents as agent (agent.id)}
+			<li class="card" class:card--off={!agent.is_active}>
+				<div class="card__top">
+					<AgentShape
+						shape={isShapeName(agent.shape) ? agent.shape : 'cookie9'}
+						tone={isGradientTone(agent.tone) ? agent.tone : 'glow'}
+						size={52}
+					/>
+					<div class="card__text">
+						<h3 class="card__name">{agent.name}</h3>
+						<p class="card__meta">
+							<span class="chip">{agent.intent_label}</span>
+							<span>{agent.granted_tools.length} {agent.granted_tools.length === 1 ? 'tool' : 'tools'}</span>
+							{#if !agent.is_active}<span class="chip chip--off">Off</span>{/if}
+						</p>
+					</div>
 				</div>
-				<div class="flex items-center gap-2">
-					<Button type="button" variant="text" onclick={() => openEdit(agent)}>Edit</Button>
+				<p class="card__intent">{agent.intent_description}</p>
+				<div class="card__actions">
+					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(agent)}>Edit</Button>
 					<form method="POST" action="?/toggleActive" use:enhance>
 						<input type="hidden" name="id" value={agent.id} />
-						<Button type="submit" variant="text">{agent.is_active ? 'Disable' : 'Enable'}</Button>
+						<Button type="submit" variant="text" size="xs">{agent.is_active ? 'Turn off' : 'Turn on'}</Button>
 					</form>
 				</div>
-			</div>
-		</Card>
-	{/each}
-</div>
-
-<div class="mt-6">
-	<Button type="button" variant="outlined" onclick={openCreate}>+ Add agent</Button>
-</div>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <BottomSheet bind:open={sheetOpen}>
-	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">
-		{editingId ? 'Edit agent' : 'Add agent'}
-	</h2>
+	<h2 class="sheet-title">{editingId ? `Edit ${name || 'agent'}` : 'Add agent'}</h2>
 
 	{#if form?.error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
@@ -182,49 +182,37 @@
 			bind:value={intentDescription}
 			required
 		/>
-		<label class="md-body-medium flex flex-col gap-1" style="color: var(--md-sys-color-on-surface)">
-			System prompt
-			<textarea
-				name="system_prompt"
-				bind:value={systemPrompt}
-				required
-				rows="6"
-				class="rounded-2xl border px-3 py-2"
-				style="border-color: var(--md-sys-color-outline); background: var(--md-sys-color-surface)"
-			></textarea>
+		<label class="prompt">
+			<span class="prompt__label">System prompt</span>
+			<textarea name="system_prompt" bind:value={systemPrompt} required rows="6" class="prompt__field"></textarea>
 		</label>
 
-		<p class="md-label-medium mt-2" style="color: var(--md-sys-color-on-surface-variant)">Granted tools</p>
-		{#each TOOL_GROUPS as group (group.label)}
-			<p class="md-label-medium mt-1" style="color: var(--md-sys-color-on-surface)">{group.label}</p>
-			{#each group.tools as tool (tool.name)}
-				<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-					<input
-						type="checkbox"
-						name="granted_tools"
-						value={tool.name}
-						checked={grantedTools.includes(tool.name)}
-						onchange={(e) => toggleTool(tool.name, (e.target as HTMLInputElement).checked)}
-					/>
-					{tool.name} — {tool.description}
-				</label>
+		<fieldset class="tools">
+			<legend class="section-label">Tools it can use</legend>
+			{#each TOOL_GROUPS as group (group.label)}
+				<div class="tools__group">
+					<p class="tools__owner"><AgentShape agent={group.label} size={18} /> {group.label}</p>
+					{#each group.tools as tool (tool.name)}
+						<Checkbox
+							name="granted_tools"
+							value={tool.name}
+							checked={grantedTools.includes(tool.name)}
+							onchange={(e) => toggleTool(tool.name, (e.currentTarget as HTMLInputElement).checked)}
+							label={tool.description}
+						/>
+					{/each}
+				</div>
 			{/each}
-		{/each}
+		</fieldset>
 
-		<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-			<input type="checkbox" bind:checked={supportsTodos} />
-			Supports a live to-do checklist
-		</label>
+		<fieldset class="tools">
+			<legend class="section-label">Abilities</legend>
+			<Checkbox bind:checked={supportsTodos} label="Keeps a live to-do checklist" />
+			<Checkbox bind:checked={supportsPlans} label="Writes versioned plans" />
+			<Checkbox bind:checked={canDelegate} label="Hands work to other agents" />
+		</fieldset>
 		<input type="hidden" name="supports_todos" value={supportsTodos} />
-		<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-			<input type="checkbox" bind:checked={supportsPlans} />
-			Supports writing versioned plans
-		</label>
 		<input type="hidden" name="supports_plans" value={supportsPlans} />
-		<label class="md-body-medium flex items-center gap-2" style="color: var(--md-sys-color-on-surface)">
-			<input type="checkbox" bind:checked={canDelegate} />
-			Can delegate to other agents
-		</label>
 		<input type="hidden" name="can_delegate" value={canDelegate} />
 
 		<div class="flex gap-2 pt-2">
@@ -233,3 +221,161 @@
 		</div>
 	</form>
 </BottomSheet>
+
+<style>
+	.empty {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 20px 24px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.empty__text {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.empty__text strong {
+		color: var(--md-sys-color-on-surface);
+	}
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+		gap: 12px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.card {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 20px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+	}
+	.card--off {
+		background: var(--md-sys-color-surface-container);
+	}
+	.card--off :global(.agent-shape) {
+		filter: grayscale(0.8);
+		opacity: 0.6;
+	}
+	.card__top {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+	.card__text {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+	.card__name {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.25rem;
+		font-weight: 700;
+	}
+	.card__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.chip {
+		padding: 2px 10px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+	}
+	.chip--off {
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.card__intent {
+		margin: 0;
+		font-size: 0.875rem;
+		line-height: 1.5;
+		color: var(--md-sys-color-on-surface-variant);
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		overflow: hidden;
+	}
+	.card__actions {
+		display: flex;
+		gap: 4px;
+		margin-top: auto;
+	}
+	.sheet-title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+	.section-label {
+		padding: 0 4px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.prompt {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.prompt__label {
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.prompt__field {
+		padding: 12px 16px;
+		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-large);
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		font: inherit;
+		line-height: 1.5;
+		resize: vertical;
+	}
+	.prompt__field:focus {
+		outline: none;
+		border: 2px solid var(--md-sys-color-primary);
+		padding: 11px 15px;
+	}
+	.tools {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		margin: 4px 0 0;
+		padding: 16px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+	}
+	.tools__group {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.tools__owner {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 4px 0 0;
+		font-weight: 650;
+		color: var(--md-sys-color-on-surface);
+	}
+</style>

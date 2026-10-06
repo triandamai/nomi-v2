@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AgentShape from './AgentShape.svelte';
+	import Checkbox from './Checkbox.svelte';
 	import {
 		GRADIENT_STOPS,
 		GRADIENT_TONES,
@@ -41,10 +42,7 @@
 	<div class="picker__preview">
 		<AgentShape {shape} {tone} {motion} size={96} working={previewWorking} label="{name}'s look" />
 		<span class="picker__name">{name || 'Agent'}</span>
-		<label class="picker__toggle">
-			<input type="checkbox" bind:checked={previewWorking} />
-			<span>Show working</span>
-		</label>
+		<Checkbox bind:checked={previewWorking} label="Show working" class="picker__toggle" />
 	</div>
 
 	<div class="picker__controls">
@@ -122,12 +120,8 @@
 		text-align: center;
 		overflow-wrap: anywhere;
 	}
-	.picker__toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
+	.picker :global(.picker__toggle) {
 		font-size: 0.8125rem;
-		opacity: 0.85;
 	}
 	.picker__controls {
 		display: flex;
