@@ -29,7 +29,7 @@ async fn main() {
     sqlx::migrate!("../../migrations").run(&pool).await.expect("failed to run migrations");
     tracing::info!("migrations up to date");
 
-    let http_client = reqwest::Client::new();
+    let http_client = nomi_server::http_client();
 
     let s3 = nomi_storage::build_from_env().await;
     if s3.is_some() {

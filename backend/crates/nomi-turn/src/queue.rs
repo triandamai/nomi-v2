@@ -37,11 +37,14 @@ pub async fn enqueue(
     Ok(id)
 }
 
+/// The oldest pending job, marked 'processing'. A chat with a turn still running is skipped, so
+/// workers can run different chats at once while each chat's messages are answered in order.
 pub async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedJob>, TurnError> {
     let row: Option<(Uuid, Uuid, Uuid, String, Option<Uuid>)> = sqlx::query_as(
         "WITH claimed AS ( \
-             SELECT id FROM turn_jobs \
+             SELECT id FROM turn_jobs j \
              WHERE status = 'pending' \
+               AND NOT EXISTS (SELECT 1 FROM turn_jobs r WHERE r.session_id = j.session_id AND r.status = 'processing') \
              ORDER BY created_at \
              FOR UPDATE SKIP LOCKED \
              LIMIT 1 \
@@ -77,4 +80,18 @@ pub async fn mark_failed(pool: &PgPool, job_id: Uuid, error: &str) -> Result<(),
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Fails jobs left 'processing' longer than `older_than`: their worker crashed or restarted
+/// mid-turn, so nothing will ever finish them, and the chat would otherwise show "working"
+/// forever. Returns how many were failed.
+pub async fn fail_abandoned(pool: &PgPool, older_than: std::time::Duration) -> Result<u64, TurnError> {
+    let result = sqlx::query(
+        "UPDATE turn_jobs SET status = 'failed', completed_at = now(), error = 'abandoned: no worker finished this turn' \
+         WHERE status = 'processing' AND claimed_at < now() - make_interval(secs => $1)",
+    )
+    .bind(older_than.as_secs_f64())
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }

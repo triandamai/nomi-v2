@@ -189,6 +189,8 @@ async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
     )
     .await
     .unwrap();
+    // As the worker does: a chat's next turn is only claimed once this one is marked done.
+    queue::mark_completed(pool, claimed.id).await.unwrap();
 
     mqtt.publish(
         claimed.session_id,
