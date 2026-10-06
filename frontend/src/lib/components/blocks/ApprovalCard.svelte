@@ -125,7 +125,7 @@
 	.m3-approval-btn {
 		height: 48px;
 		padding: 0 24px;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 24px;
 		font-family: var(--md-sys-typescale-label-large-font);
 		font-size: 0.9375rem;
 		font-weight: 600;

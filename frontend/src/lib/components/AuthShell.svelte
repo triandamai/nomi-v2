@@ -342,7 +342,7 @@
 		align-items: center;
 		height: 44px;
 		padding: 0 20px;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 22px;
 		background: var(--md-sys-color-secondary-container);
 		color: var(--md-sys-color-on-secondary-container);
 		font-weight: 600;

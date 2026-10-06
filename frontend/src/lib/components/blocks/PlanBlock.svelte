@@ -118,7 +118,7 @@
 		height: 40px;
 		padding: 0 16px;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 20px;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
 		font: inherit;

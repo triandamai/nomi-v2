@@ -34,7 +34,8 @@
 
 <style>
 	/* M3 Expressive button: fully round at rest, corners tighten on press (shape morph on a
-	   spring), so a press reads through shape — not just a color change. */
+	   spring), so a press reads through shape — not just a color change. Each size rests at
+	   half its height rather than corner-full, so the morph animates (see material3.css). */
 	.m3-button {
 		display: inline-flex;
 		align-items: center;
@@ -62,10 +63,12 @@
 	   size — text buttons keep tighter horizontal padding regardless of size, matching MD3. */
 	.m3-button--size-xs {
 		height: 32px;
+		border-radius: 16px;
 		padding: 0 14px;
 	}
 	.m3-button--size-s {
 		height: 40px;
+		border-radius: 20px;
 		padding: 0 18px;
 	}
 	.m3-button--size-s:not(:disabled):active {
@@ -73,6 +76,7 @@
 	}
 	.m3-button--size-m {
 		height: 56px;
+		border-radius: 28px;
 		padding: 0 24px;
 		font-size: 1rem;
 	}
@@ -81,6 +85,7 @@
 	}
 	.m3-button--size-l {
 		height: 96px;
+		border-radius: 48px;
 		padding: 0 40px;
 		font-family: var(--md-ref-typeface-brand);
 		font-size: 1.625rem;
@@ -91,6 +96,7 @@
 	}
 	.m3-button--size-xl {
 		height: 136px;
+		border-radius: 68px;
 		padding: 0 56px;
 		font-family: var(--md-ref-typeface-brand);
 		font-size: 2.25rem;

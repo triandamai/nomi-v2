@@ -88,7 +88,7 @@
 		padding: 0 8px;
 		box-sizing: border-box;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 20px;
 		background: transparent;
 		color: var(--md-sys-color-on-surface-variant);
 		font: inherit;

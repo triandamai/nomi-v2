@@ -253,6 +253,9 @@
 	--md-sys-shape-corner-extra-large: 28px;
 	--md-sys-shape-corner-extra-large-increased: 32px;
 	--md-sys-shape-corner-extra-extra-large: 48px;
+	/* For shapes that stay round. A shape that morphs on hover or press rests at half its height
+	   instead (a 40px button: 20px): animating from 9999px holds the old shape for almost the whole
+	   transition, then snaps, and the spring's overshoot flashes square corners. */
 	--md-sys-shape-corner-full: 9999px;
 	/* Asymmetric "speech" corners: the tight corner points at whoever is speaking. */
 	--nomi-shape-bubble-start: 28px 28px 28px 8px;
