@@ -5,6 +5,7 @@ import { m } from '$lib/paraglide/messages';
 const admin = (page: () => string) => () => m.title_admin_suffix({ page: page() });
 const ROUTE_TITLES: Record<string, () => string> = {
 	'/(app)/account': m.title_account,
+	'/(app)/billing': m.billing_title,
 	'/(app)/chat/[sessionId]': m.chat_title,
 	'/(app)/chats': m.chats_title,
 	'/(app)/connections': m.conn_title,

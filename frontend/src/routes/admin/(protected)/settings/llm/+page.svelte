@@ -9,6 +9,7 @@
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import { formatUsd } from '$lib/usage';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -32,6 +33,8 @@
 	let apiKey = $state('');
 	let baseUrl = $state('');
 	let modelId = $state('');
+	let inputPrice = $state('');
+	let outputPrice = $state('');
 
 	let fetching = $state(false);
 	let fetchedModels = $state<{ id: string; label: string | null }[]>([]);
@@ -52,6 +55,8 @@
 		apiKey = '';
 		baseUrl = '';
 		modelId = '';
+		inputPrice = '';
+		outputPrice = '';
 		resetSheetState();
 		sheetOpen = true;
 	}
@@ -63,6 +68,8 @@
 		apiKey = '';
 		baseUrl = model.base_url ?? '';
 		modelId = model.model_id;
+		inputPrice = model.input_usd_per_mtok?.toString() ?? '';
+		outputPrice = model.output_usd_per_mtok?.toString() ?? '';
 		resetSheetState();
 		sheetOpen = true;
 	}
@@ -126,6 +133,7 @@
 				</div>
 				<dl class="model__facts">
 					<div><dt>{m.key_model()}</dt><dd>{model.model_id}</dd></div>
+					<div><dt>{m.llm_price()}</dt><dd>{model.input_usd_per_mtok != null || model.output_usd_per_mtok != null ? m.llm_price_value({ input: formatUsd(model.input_usd_per_mtok ?? 0), output: formatUsd(model.output_usd_per_mtok ?? 0) }) : m.llm_price_unset()}</dd></div>
 					<div><dt>{m.llm_key()}</dt><dd>{model.api_key_masked || m.llm_none()}</dd></div>
 				</dl>
 				<div class="model__actions">
@@ -223,6 +231,14 @@
 			{/if}
 		{/if}
 
+		<fieldset class="prices">
+			<legend class="prices__legend">{m.llm_prices()}</legend>
+			<p class="prices__hint">{m.llm_prices_hint()}</p>
+			<div class="prices__row">
+				<TextField id="input_usd_per_mtok" name="input_usd_per_mtok" label={m.llm_price_in()} type="number" inputmode="decimal" min="0" step="0.0001" bind:value={inputPrice} />
+				<TextField id="output_usd_per_mtok" name="output_usd_per_mtok" label={m.llm_price_out()} type="number" inputmode="decimal" min="0" step="0.0001" bind:value={outputPrice} />
+			</div>
+		</fieldset>
 		<div class="flex gap-2 pt-2">
 			<Button type="submit" variant="filled">{editingId ? m.common_save() : m.llm_add()}</Button>
 			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>{m.common_cancel()}</Button>
@@ -231,6 +247,29 @@
 </BottomSheet>
 
 <style>
+	.prices {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin: 4px 0 0;
+		padding: 0;
+		border: none;
+	}
+	.prices__legend {
+		padding: 0;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+	.prices__hint {
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.prices__row {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+		gap: 12px;
+	}
 	.empty {
 		display: flex;
 		align-items: center;

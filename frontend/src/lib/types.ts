@@ -94,6 +94,9 @@ export interface AdminLlmModel {
 	base_url: string | null;
 	is_default: boolean;
 	api_key_masked: string;
+	/** USD per million tokens; null until set. */
+	input_usd_per_mtok: number | null;
+	output_usd_per_mtok: number | null;
 }
 
 export interface PersonalityVersion {
@@ -371,4 +374,36 @@ export interface GoogleConnection {
 	connection: { email: string; services: WorkspaceService[]; connected_at: string } | null;
 	activity: { service: WorkspaceService; summary: string; link: string | null; created_at: string }[];
 	services: WorkspaceService[];
+}
+
+/** The plan someone is on (everyone is on Free until Pro launches). */
+export interface UsagePlan {
+	id: 'free' | 'pro';
+	/** Tokens of Nomi's own models included each month. */
+	monthly_tokens: number;
+}
+
+/** This month's allowance and how much of it is used (GET /api/usage/brief). */
+export interface UsageBrief {
+	plan: UsagePlan;
+	month: string;
+	tokens_used: number;
+}
+
+/** One month of usage and spend (GET /api/usage). */
+export interface UsageMonth {
+	plan: UsagePlan;
+	month: string;
+	current_month: string;
+	timezone: string;
+	/** Tokens of Nomi's own models: what the allowance counts. */
+	tokens_used: number;
+	input_tokens: number;
+	output_tokens: number;
+	/** Tokens sent with the person's own API key (never billed). */
+	own_key_tokens: number;
+	calls: number;
+	spend_usd: number;
+	by_day: { date: string; tokens: number; spend_usd: number }[];
+	by_model: { label: string; provider: string; model_id: string; source: 'nomi' | 'own_key'; tokens: number; calls: number; spend_usd: number }[];
 }
