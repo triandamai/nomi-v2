@@ -1455,3 +1455,88 @@ async fn a_reply_cut_off_after_thinking_says_so_instead_of_coming_back_empty(poo
         LoopOutcome::Reply { text: nomi_agent_core::Locale::En.t("engine.cut_off"), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
     );
 }
+
+/// TestAgent, but it remembers things about the person.
+struct RememberingTestAgent;
+
+#[async_trait::async_trait]
+impl SubAgent for RememberingTestAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        TestAgent.tools()
+    }
+    async fn execute_tool(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        session_id: Uuid,
+        agent_session_id: Uuid,
+        user_id: Uuid,
+        name: &str,
+        input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        TestAgent.execute_tool(conn, session_id, agent_session_id, user_id, name, input).await
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn uses_memory(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reply_after_a_tool_call_still_learns_from_what_the_person_said(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'echo', 'allow')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let identity: Uuid = sqlx::query_scalar("SELECT id FROM channel_identities WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, $2, 'Remind me to call my sister Rina on Sunday')")
+        .bind(session_id)
+        .bind(identity)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    // The agent calls a tool before replying, so its last user turn is a tool result, not text.
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "echo", serde_json::json!({"x": 1})),
+        text_response("Done, I'll remind you Sunday.", StopReason::EndTurn),
+        text_response(r#"{"action":"add","kind":"person","text":"Sister Rina"}"#, StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.5; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(RememberingTestAgent)]);
+    let history = vec![nomi_llm::LlmMessage {
+        role: nomi_llm::LlmRole::User,
+        content: vec![ContentBlock::Text { text: "Remind me to call my sister Rina on Sunday".to_string() }],
+    }];
+
+    run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &RememberingTestAgent, session_id, agent_session_id, user_id,
+        history, 100,
+    )
+    .await
+    .unwrap();
+
+    let stored: Vec<String> = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1").bind(user_id).fetch_all(&pool).await.unwrap();
+    assert_eq!(stored, vec!["Sister Rina".to_string()]);
+    let requests = provider.received_requests.lock().unwrap();
+    let extraction = requests.last().unwrap();
+    let ContentBlock::Text { text } = &extraction.messages[0].content[0] else { panic!("extraction prompt is text") };
+    assert!(text.contains("Remind me to call my sister Rina on Sunday"), "{text}");
+}

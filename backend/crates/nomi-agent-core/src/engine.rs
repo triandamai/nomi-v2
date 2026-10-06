@@ -23,11 +23,9 @@ const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to 
 // answered with `engine.plan_draft`. All three in the person's language (nomi-i18n).
 
 /// How agents should think when reasoning is on. Users read the thinking in chat.
-pub const REASONING_STYLE: &str = "Your thinking is shown to the person, so keep it brief and on point: at \
-     most 3 short bullet points, about 60 words in all, covering what they need, what you'll do, and any \
-     catch. Think in the same language you reply in. Don't restate their message, weigh every option, \
-     repeat yourself, or draft the reply in your thinking; once you know the next step, stop thinking \
-     and act.";
+pub const REASONING_STYLE: &str = "Before each reply or tool call, think it through briefly: 2-3 short \
+     points (about 60 words) on what the person needs, what you'll do, and any catch, in the language you \
+     reply in. In your thinking, don't restate their message, weigh every option, or draft the reply.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";

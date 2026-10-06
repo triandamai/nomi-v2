@@ -1,13 +1,19 @@
 <!-- frontend/src/lib/components/m3/SideSheet.svelte -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { m } from '$lib/paraglide/messages';
+	import IconButton from './IconButton.svelte';
+	import IconClose from '$lib/components/icons/IconClose.svelte';
 
 	let {
 		open = $bindable(false),
+		title = '',
 		children,
 		class: extraClass = '',
 	}: {
 		open?: boolean;
+		/** Shown in the sheet's header, beside the close button. */
+		title?: string;
 		children: Snippet;
 		class?: string;
 	} = $props();
@@ -68,6 +74,11 @@
 	onclick={handleDialogClick}
 >
 	<div class="m3-side-sheet__panel">
+		<!-- Always a visible way out: on a phone the sheet fills the screen, leaving no backdrop to tap. -->
+		<div class="m3-side-sheet__header">
+			<span class="m3-side-sheet__title">{title}</span>
+			<IconButton onclick={() => (open = false)} aria-label={m.common_close()}><IconClose /></IconButton>
+		</div>
 		<div class="m3-side-sheet__body">
 			{@render children()}
 		</div>
@@ -134,9 +145,27 @@
 		transform: translateX(100%);
 	}
 
+	.m3-side-sheet__header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 12px 12px 0 24px;
+	}
+
+	.m3-side-sheet__title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+
 	.m3-side-sheet__body {
 		overflow-y: auto;
-		padding: 24px;
+		padding: 8px 24px 24px;
 		flex: 1;
 	}
 </style>
