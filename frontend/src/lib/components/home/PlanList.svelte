@@ -2,6 +2,7 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
 	import { agentLook } from '$lib/components/m3/shapes';
+	import { m } from '$lib/paraglide/messages';
 	import type { PlanItem } from '$lib/home';
 
 	let { items }: { items: PlanItem[] } = $props();
@@ -14,9 +15,11 @@
 				<span class="plans__row">
 					<AgentShape agent={plan.agent} size={20} />
 					<span class="plans__name">{plan.title}</span>
-					<span class="plans__count">{plan.done} / {plan.total}</span>
+					<span class="plans__count">{plan.total > 0 ? `${plan.done} / ${plan.total}` : m.home_plan_draft()}</span>
 				</span>
-				<WavyProgress value={plan.done / plan.total} tone={agentLook(plan.agent).tone} label="{plan.title}: {plan.done} of {plan.total} done" />
+				{#if plan.total > 0}
+					<WavyProgress value={plan.done / plan.total} tone={agentLook(plan.agent).tone} label="{plan.title}: {plan.done} of {plan.total} done" />
+				{/if}
 			</a>
 		</li>
 	{/each}

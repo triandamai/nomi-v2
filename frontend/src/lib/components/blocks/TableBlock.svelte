@@ -32,7 +32,7 @@
 				<li class="table-row">
 					{#if item.category}
 						{@const look = categoryLook(item.category)}
-						<AgentShape shape={look.shape} tone={look.tone} size={36} />
+						<AgentShape shape={look.shape} tone={look.tone} size={36} face />
 					{/if}
 					<div class="table-row__text">
 						<span class="table-row__headline">{item.headline}</span>

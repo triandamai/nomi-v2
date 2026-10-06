@@ -435,7 +435,7 @@
 		>
 			<span class="appbar__stack">
 				{#each involvedCrew.slice(0, 4) as member (member.key)}
-					<span class="appbar__stack-item"><AgentShape agent={member.key} size={30} working={member.working} /></span>
+					<span class="appbar__stack-item"><AgentShape agent={member.key} size={30} working={member.working} face /></span>
 				{/each}
 			</span>
 			{#if workingCrew.length > 0}

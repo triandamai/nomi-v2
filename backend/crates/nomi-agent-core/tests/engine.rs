@@ -1540,3 +1540,36 @@ async fn a_reply_after_a_tool_call_still_learns_from_what_the_person_said(pool: 
     let ContentBlock::Text { text } = &extraction.messages[0].content[0] else { panic!("extraction prompt is text") };
     assert!(text.contains("Remind me to call my sister Rina on Sunday"), "{text}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agent_that_finishes_with_complete_task_still_learns_from_the_chat(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let identity: Uuid = sqlx::query_scalar("SELECT id FROM channel_identities WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, $2, 'Plan my week, I work night shifts as a nurse')")
+        .bind(session_id)
+        .bind(identity)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    // Specialists usually end a request by calling complete_task, whose summary is the reply.
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", COMPLETE_TASK_TOOL_NAME, serde_json::json!({"status": "completed", "summary": "Here's your week."})),
+        text_response(r#"{"action":"add","kind":"routine","text":"Works night shifts as a nurse"}"#, StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.5; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(RememberingTestAgent)]);
+
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &RememberingTestAgent, session_id, agent_session_id, user_id,
+        vec![], 100,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Completed { .. }), "{outcome:?}");
+    let stored: Vec<String> = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1").bind(user_id).fetch_all(&pool).await.unwrap();
+    assert_eq!(stored, vec!["Works night shifts as a nurse".to_string()]);
+}

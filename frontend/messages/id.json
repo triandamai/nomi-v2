@@ -350,7 +350,7 @@
 	"home_pages": "Halaman {title}",
 	"home_placeholder": "Tanya Nomi, atau serahkan sesuatu ke kru…",
 	"home_plans_empty": "Belum ada rencana yang berjalan. Minta Planning menyusunnya, nanti kemajuannya muncul di sini.",
-	"home_plans_lede": "Semua rencana dan daftar tugas yang langkahnya belum selesai.",
+	"home_plans_lede": "Semua rencana, dan daftar tugas yang langkahnya belum selesai.",
 	"home_plans_title": "Rencana berjalan",
 	"home_recent": "Terbaru",
 	"home_recent_empty": "Belum ada. Obrolanmu nanti akan muncul di sini.",
@@ -897,5 +897,7 @@
 	"wsc_turn_on": "Nyalakan {services}",
 	"wsc_turn_on_for": "Nyalakan {services} untuk Workspace",
 	"err_save_plan_item": "Langkah itu belum tersimpan. Coba lagi, ya.",
-	"common_close": "Tutup"
+	"common_close": "Tutup",
+	"home_plan_draft": "Draf",
+	"home_plans_all": "Lihat semua"
 }

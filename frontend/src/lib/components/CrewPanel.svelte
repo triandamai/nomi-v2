@@ -32,7 +32,7 @@
 	<ul class="crew__list">
 		{#each sorted as member (member.key)}
 			<li class="crew__item" class:crew__item--working={member.working} class:crew__item--idle={!member.involved}>
-				<AgentShape agent={member.key} size={40} working={member.working} face={member.key === 'nomi'} />
+				<AgentShape agent={member.key} size={40} working={member.working} face />
 				<span class="crew__text">
 					<span class="crew__name">
 						{member.name}

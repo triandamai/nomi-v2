@@ -44,12 +44,16 @@
 	</section>
 
 	<section class="card" aria-labelledby="plans-heading">
-		<h2 id="plans-heading" class="card__title">{m.home_plans_title()}</h2>
+		<div class="card__head">
+			<h2 id="plans-heading" class="card__title">{m.home_plans_title()}</h2>
+			{#if summary.plans.length > 0}
+				<a class="card__link" href="/home/plans" aria-label={m.home_show_all({ count: summary.plans_total, what: m.home_what_plans() })}>{m.home_plans_all()}</a>
+			{/if}
+		</div>
 		{#if summary.plans.length === 0}
 			<p class="card__empty">{m.home_plans_empty()}</p>
 		{:else}
 			<PlanList items={summary.plans} />
-			{@render more(summary.plans_total, summary.plans.length, '/home/plans', m.home_what_plans())}
 		{/if}
 	</section>
 </div>

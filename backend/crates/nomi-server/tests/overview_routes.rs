@@ -318,3 +318,38 @@ async fn connections_show_each_users_own_google_account_only(pool: PgPool) {
     let (_, body) = authed(router, "GET", "/api/connections/google", &ana_token, None).await;
     assert_eq!(body["connection"], Value::Null);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn home_lists_open_and_checklist_free_plans_but_not_finished_ones(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (token, user_id) = register_and_login(router.clone(), &pool, "plans-home@example.com").await;
+    let chat = org_session(&pool, user_id, "Trips").await;
+    for (title, content, minutes_ago) in [
+        ("Bali", "- [x] Dates\n- [ ] Flights", 3),
+        ("Bandung weekend", "Coffee in Dago, a walk at Tahura.", 2),
+        ("Done trip", "- [x] Dates\n- [x] Flights", 1),
+    ] {
+        sqlx::query(
+            "INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version, created_at) \
+             VALUES ($1, gen_random_uuid(), $2, $3, $4, 1, now() - make_interval(mins => $5))",
+        )
+        .bind(chat)
+        .bind(user_id)
+        .bind(title)
+        .bind(content)
+        .bind(minutes_ago)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let (status, home) = authed(router, "GET", "/api/home", &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let plans: Vec<(String, i64, i64)> = home["plans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["title"].as_str().unwrap().to_string(), p["done"].as_i64().unwrap(), p["total"].as_i64().unwrap()))
+        .collect();
+    assert_eq!(plans, vec![("Bandung weekend".to_string(), 0, 0), ("Bali".to_string(), 1, 2)]);
+}
