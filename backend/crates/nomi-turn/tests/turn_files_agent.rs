@@ -42,14 +42,15 @@ async fn a_message_with_an_attachment_goes_to_the_files_agent_which_hands_work_o
     let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(FilesAgent)]);
     let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
-    // No intent-classification call: the Files agent answers first.
+    // No intent-classification call: the Files agent answers first, then hands the receipts to
+    // Money, which answers in the same turn.
     let provider = FakeLlmProvider::sequence(vec![
         tool_use_response(
             "t1",
             "delegate_to_agent",
             serde_json::json!({"target_agent": "money", "task": "Log these expenses: lunch 45000 (food), taxi 30000 (transport)"}),
         ),
-        text_response("I've passed your receipts to Money to log them."),
+        text_response("Logged lunch (45,000) and taxi (30,000)."),
     ]);
 
     let message = "log these please\n\n<attachment name=\"receipts.csv\" kind=\"file\">\nitem,amount\nlunch,45000\ntaxi,30000\n</attachment>";
@@ -57,19 +58,29 @@ async fn a_message_with_an_attachment_goes_to_the_files_agent_which_hands_work_o
         .await
         .unwrap();
 
-    assert_eq!(outcome.reply, "I've passed your receipts to Money to log them.");
+    // One answer, from the agent that did the work; nothing queued in the background.
+    assert_eq!(outcome.reply, "Logged lunch (45,000) and taxi (30,000).");
     let author: String = sqlx::query_scalar("SELECT agent_display_name FROM messages WHERE id = $1").bind(outcome.message_id).fetch_one(&pool).await.unwrap();
-    assert_eq!(author, "Files");
-    let (requester, target, task): (String, String, String) =
-        sqlx::query_as("SELECT requesting_agent_type, target_agent_type, task FROM agent_delegations").fetch_one(&pool).await.unwrap();
-    assert_eq!((requester.as_str(), target.as_str()), ("files", "money"));
-    assert!(task.contains("lunch 45000"), "the task carries the file's content: {task}");
+    assert_eq!(author, "Money");
+    let replies: i64 = sqlx::query_scalar("SELECT count(*) FROM messages WHERE sender_channel_identity_id IS NULL").fetch_one(&pool).await.unwrap();
+    assert_eq!(replies, 1, "no filler message from Files");
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_delegations").fetch_one(&pool).await.unwrap();
+    assert_eq!(queued, 0);
+    // Money keeps the conversation for follow-ups.
+    let active: String = sqlx::query_scalar("SELECT agent_type FROM agent_sessions WHERE status = 'active'").fetch_one(&pool).await.unwrap();
+    assert_eq!(active, "money");
 
+    let requests = provider.received_requests.lock().unwrap().clone();
     // The Files agent's own tool list offers the hand-off, but never back to itself.
-    let request = provider.received_requests.lock().unwrap()[0].clone();
-    let delegate = request.tools.iter().find(|t| t.name == "delegate_to_agent").expect("delegation is offered");
+    let delegate = requests[0].tools.iter().find(|t| t.name == "delegate_to_agent").expect("delegation is offered");
     let targets = delegate.input_schema["properties"]["target_agent"]["enum"].to_string();
     assert!(targets.contains("money") && !targets.contains("files"), "{targets}");
+    // Money sees the conversation and what it was handed.
+    let money_sees: String = requests[1].messages.iter().flat_map(|m| &m.content).filter_map(|b| match b {
+        ContentBlock::Text { text } => Some(text.as_str()),
+        _ => None,
+    }).collect::<Vec<_>>().join("\n");
+    assert!(money_sees.contains("log these please") && money_sees.contains("Files handed this to you: Log these expenses: lunch 45000"), "{money_sees}");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -112,4 +123,50 @@ async fn the_files_agent_can_finish_with_complete_task_without_its_own_agent_ses
     assert_eq!((agent_session, event.as_str()), (None, "AgentCompleted"));
     let logged: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_events WHERE event_type = 'ToolCalled'").fetch_one(&pool).await.unwrap();
     assert_eq!(logged, 1, "the tool call is logged too");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn agents_see_what_was_said_not_the_thinking_or_progress_notes_shown_in_chat(pool: PgPool) {
+    seed_speaker(&pool, "tg-3").await;
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(FilesAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    // Each turn: classify, reply, then the memory-extraction call.
+    let provider = FakeLlmProvider::sequence(vec![
+        text_response("chitchat"),
+        text_response("Hi!"),
+        text_response("NONE"),
+        text_response("chitchat"),
+        text_response("Sure."),
+        text_response("NONE"),
+    ]);
+
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-3", "tg-3", "hello there", None)
+        .await
+        .unwrap();
+    let session_id: Uuid = sqlx::query_scalar("SELECT id FROM sessions LIMIT 1").fetch_one(&pool).await.unwrap();
+    for shown in ["🧠 I'm a bit confused about the trip", "💭 Checking the calendar"] {
+        sqlx::query("INSERT INTO messages (session_id, content, agent_display_name) VALUES ($1, $2, 'Planning')")
+            .bind(session_id)
+            .bind(shown)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-3", "tg-3", "thanks", None)
+        .await
+        .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap().clone();
+    let texts = |r: &nomi_llm::LlmRequest| {
+        r.messages.iter().flat_map(|m| &m.content).filter_map(|b| match b {
+            ContentBlock::Text { text } => Some(text.clone()),
+            _ => None,
+        }).collect::<Vec<_>>().join("\n")
+    };
+    // The second turn's reply call: it carries the whole conversation.
+    let seen = requests.iter().map(texts).find(|t| t.contains("hello there") && t.contains("thanks")).expect("the reply call sees the history");
+    assert!(seen.contains("Hi!"), "{seen}");
+    assert!(!seen.contains("confused") && !seen.contains("Checking the calendar"), "{seen}");
 }

@@ -41,12 +41,16 @@ impl SubAgent for DelegatingAgent {
     }
 }
 
+/// A specialist that works in the background, like Coding: delegating to it queues a row.
 struct TargetAgent;
 
 #[async_trait]
 impl SubAgent for TargetAgent {
     fn agent_type(&self) -> Cow<'static, str> {
         Cow::Borrowed("target")
+    }
+    fn works_in_background(&self) -> bool {
+        true
     }
     fn system_prompt(&self) -> Cow<'static, str> {
         Cow::Borrowed("test")
@@ -203,6 +207,68 @@ async fn calling_delegate_to_agent_creates_a_pending_delegation_row(pool: PgPool
         })
         .expect("expected a tool result in the second request");
     assert!(tool_result_text.contains("Delegated to target"));
+}
+
+/// A specialist that answers right away, like Planning or Money.
+struct ForegroundAgent;
+
+#[async_trait]
+impl SubAgent for ForegroundAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("helper")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
+        Err("no tools".to_string())
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("helper")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn delegating_to_a_specialist_that_answers_right_away_hands_the_turn_over(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let user_id = seed_user(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let registry = AgentRegistry::new(vec![Box::new(DelegatingAgent), Box::new(ForegroundAgent)]);
+    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+        content: vec![
+            ContentBlock::Text { text: "I have forwarded this to our specialist.".to_string() },
+            ContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "delegate_to_agent".to_string(),
+                input: serde_json::json!({"target_agent": "helper", "task": "draft the Bogor plan"}),
+                thought_signature: None,
+            },
+        ],
+        stop_reason: StopReason::ToolUse,
+        input_tokens: 1,
+        output_tokens: 1,
+    }]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &DelegatingAgent, session_id, session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+
+    // No filler reply and no queued background job: the specialist takes it from here.
+    assert_eq!(outcome, LoopOutcome::HandOff { target_agent: "helper".to_string(), task: "draft the Bogor plan".to_string() });
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_delegations WHERE session_id = $1").bind(session_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(queued, 0);
+    let posted: i64 = sqlx::query_scalar("SELECT count(*) FROM messages WHERE session_id = $1").bind(session_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(posted, 0);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

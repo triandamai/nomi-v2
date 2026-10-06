@@ -15,6 +15,13 @@ use crate::subagent::SubAgent;
 const MAX_TOOL_TURNS: u32 = 10;
 
 /// Posted when the model hit its output limit before writing any answer.
+/// Asked once when a model ends its turn having only thought, with no answer written.
+const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to the user now.";
+/// Said when even that produced nothing, so the chat never ends on a silent turn.
+pub const NO_ANSWER_REPLY: &str = "I couldn't put an answer together that time. Could you ask again?";
+/// The reply that goes with a plan the engine moved into a draft.
+pub const PLAN_DRAFT_REPLY: &str = "Your plan is in the draft above. Tell me what you'd like to change.";
+
 pub const CUT_OFF_REPLY: &str = "I ran out of room before I could finish that. Ask me to continue, or to keep it shorter.";
 
 /// How agents should think when reasoning is on. Users read the thinking in chat.
@@ -63,6 +70,74 @@ mod reply_text_tests {
         assert_eq!(reply_text_of(&content), "Here is your plan:\n\n1. Pack\n2. Go");
         assert_eq!(reply_text_of(&[]), "");
     }
+
+    #[test]
+    fn a_written_out_itinerary_reads_as_a_plan_and_a_short_answer_does_not() {
+        let itinerary = "## Bogor day trip\n\n### Morning\n- 08:00 Arrive in Bogor\n- 08:30 Botanical Gardens, walk the paths and see the palace\n- 11:00 Coffee nearby\n### Afternoon\n- 12:30 Lunch: Nasi Timbel at a Sundanese place\n- 14:00 Zoology Museum\n- 16:00 Market walk or a tea house\n### Evening\n- 18:00 Dinner on Suryakencana Street\n- 20:00 Head home";
+        assert!(super::looks_like_plan(itinerary));
+        assert_eq!(super::plan_title(itinerary), "Bogor day trip");
+        assert!(!super::looks_like_plan("Sure! Bogor is lovely in October.\n- Bring an umbrella\n- Go early"));
+    }
+}
+
+/// Whether a reply is a plan written out in the chat: sections with steps under them, or a long
+/// list of steps.
+pub fn looks_like_plan(text: &str) -> bool {
+    let lines: Vec<&str> = text.lines().map(str::trim_start).collect();
+    let headings = lines.iter().filter(|l| l.starts_with('#')).count();
+    let steps = lines
+        .iter()
+        .filter(|l| {
+            l.starts_with("- ")
+                || l.starts_with("* ")
+                || l.split_once(". ").is_some_and(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+        })
+        .count();
+    (headings >= 2 && steps >= 4) || (steps >= 6 && text.chars().count() >= 300)
+}
+
+/// A short title for a plan written out in chat: its first heading, else its first line.
+fn plan_title(text: &str) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with('#'))
+        .or_else(|| text.lines().map(str::trim).find(|l| !l.is_empty()))
+        .unwrap_or("Plan");
+    let title = line.trim_start_matches('#').replace("**", "").trim().trim_end_matches(':').to_string();
+    let title = if title.is_empty() { "Plan".to_string() } else { title };
+    if title.chars().count() > 60 {
+        format!("{}…", title.chars().take(59).collect::<String>().trim_end())
+    } else {
+        title
+    }
+}
+
+/// For agents whose plans belong in drafts: a reply that is a plan written out in chat is saved
+/// as a plan draft instead, and the reply becomes a pointer to it. Anything else passes through.
+#[allow(clippy::too_many_arguments)]
+async fn keep_plan_in_draft(
+    conn: &mut PoolConnection<Postgres>,
+    s3: Option<&nomi_storage::S3Config>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    agent: &dyn SubAgent,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    user_id: Uuid,
+    wrote_plan: bool,
+    reply: String,
+) -> String {
+    if wrote_plan || !agent.keeps_plans_in_drafts() || !looks_like_plan(&reply) {
+        return reply;
+    }
+    let input = serde_json::json!({ "title": plan_title(&reply), "content": reply });
+    match write_agent_plan(conn, s3, mqtt.map(|(p, _)| p), session_id, agent_session_id, user_id, agent.display_name().as_ref(), &input).await {
+        Ok(_) => PLAN_DRAFT_REPLY.to_string(),
+        Err(e) => {
+            tracing::warn!(error = %e, "couldn't save a written-out plan as a draft; posting it as text");
+            reply
+        }
+    }
 }
 
 fn complete_task_tool_definition() -> ToolDefinition {
@@ -84,17 +159,17 @@ fn delegate_tool_definition(targets: &[String]) -> ToolDefinition {
     ToolDefinition {
         name: DELEGATE_TOOL_NAME.to_string(),
         description: format!(
-            "Hand off a task to a specialist agent to work on in the background, and immediately \
-             tell the user you'll follow up — do NOT wait for the result before replying. Use this \
-             only when the request genuinely needs a specialist; answer anything else yourself. \
-             Available specialists: {}.",
+            "Hand the user's request to a specialist. The specialist sees this conversation, takes \
+             it over right away and answers the user itself, so don't write a reply of your own \
+             when you hand off. Use this only when the request genuinely needs a specialist; \
+             answer anything else yourself. Available specialists: {}.",
             targets.join(", "),
         ),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "target_agent": {"type": "string", "enum": targets, "description": "Which specialist to delegate to"},
-                "task": {"type": "string", "description": "What to ask the specialist to do, in your own words"}
+                "task": {"type": "string", "description": "What the user wants from the specialist, with any details from this conversation it needs"}
             },
             "required": ["target_agent", "task"]
         }),
@@ -214,6 +289,9 @@ pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
+    /// The agent handed the conversation to `target_agent`, which answers the user in this same
+    /// turn. Nothing of this agent's is posted: the specialist speaks for itself.
+    HandOff { target_agent: String, task: String },
     /// The user stopped this agent mid-turn (see `crate::stop`). Nothing more is posted; whoever
     /// asked for the stop has already told the user.
     Cancelled,
@@ -362,6 +440,10 @@ pub async fn run_agent_turn(
     };
     let agent_type = agent.agent_type();
 
+    // Whether this run already saved a plan draft, and already asked once for a missing answer.
+    let mut wrote_plan = false;
+    let mut asked_for_answer = false;
+
     for _ in 0..MAX_TOOL_TURNS {
         if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
@@ -443,9 +525,23 @@ pub async fn run_agent_turn(
             let output_tokens = response.output_tokens;
             let cut_off = response.stop_reason == StopReason::MaxTokens;
             let reply_text = reply_text_of(&response.content);
+            // Only thinking, no answer: ask once for the answer itself before giving up.
+            if reply_text.is_empty() && !cut_off && !asked_for_answer {
+                asked_for_answer = true;
+                if response.content.is_empty() {
+                    messages.pop();
+                }
+                messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: ANSWER_NOW.to_string() }] });
+                continue;
+            }
             // The model ran out of room before answering (a half-written plan or tool call is
             // dropped): say so instead of leaving only the thinking in chat.
-            let reply_text = if reply_text.is_empty() && cut_off { CUT_OFF_REPLY.to_string() } else { reply_text };
+            let reply_text = match (reply_text.is_empty(), cut_off) {
+                (true, true) => CUT_OFF_REPLY.to_string(),
+                (true, false) => NO_ANSWER_REPLY.to_string(),
+                _ => reply_text,
+            };
+            let reply_text = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, wrote_plan, reply_text).await;
 
             if agent.uses_memory() {
                 let last_user_text = messages
@@ -478,18 +574,27 @@ pub async fn run_agent_turn(
         // Text written alongside complete_task is the agent's answer, not commentary: it becomes
         // the reply instead of a "💭" line (or, for quieter agents, being dropped).
         let written = reply_text_of(&response.content);
-        let finishing = pending_tool_use_blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == COMPLETE_TASK_TOOL_NAME));
+        let finishing = pending_tool_use_blocks.iter().any(
+            |b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == COMPLETE_TASK_TOOL_NAME || name.as_str() == DELEGATE_TOOL_NAME),
+        );
         if agent.surfaces_activity() && !finishing && !written.is_empty() {
             post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("💭 {written}"), None).await;
         }
+
+        wrote_plan |= pending_tool_use_blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == WRITE_PLAN_TOOL_NAME));
 
         match resolve_tool_batch(conn, mqtt, s3, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => {
                 let summary = if written.is_empty() { summary } else { written };
+                let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, wrote_plan, summary).await;
                 return Ok(LoopOutcome::Completed { status, summary });
+            }
+            ToolBatchOutcome::HandOff { target_agent, task } => {
+                update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+                return Ok(LoopOutcome::HandOff { target_agent, task });
             }
             ToolBatchOutcome::Resolved(tool_results) => {
                 messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
@@ -506,6 +611,7 @@ pub enum ToolBatchOutcome {
     Resolved(Vec<ContentBlock>),
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
+    HandOff { target_agent: String, task: String },
 }
 
 /// Resolves every ToolUse block in `tool_use_blocks`, in order. `already_decided` is the
@@ -636,7 +742,20 @@ pub async fn resolve_tool_batch(
             } else if name.as_str() == DELEGATE_TOOL_NAME {
                 let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
                 let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
-                let rejection = registry.find(target_agent).and_then(|t| t.validate_delegation_task(task).err());
+                let target = registry.find(target_agent);
+                let rejection = target.as_ref().and_then(|t| t.validate_delegation_task(task).err());
+                // A specialist that answers right away takes the conversation over in this turn.
+                // Work split across several specialists at once still runs in the background.
+                let hand_offs_in_batch = tool_use_blocks
+                    .iter()
+                    .filter(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == DELEGATE_TOOL_NAME))
+                    .count();
+                if let (Some(target), None, 1) = (&target, &rejection, hand_offs_in_batch) {
+                    if !target.works_in_background() {
+                        log_tool_call(conn, session_id, agent_session_id, agent.agent_type().as_ref(), name, input, "handed off", false).await;
+                        return Ok(ToolBatchOutcome::HandOff { target_agent: target_agent.to_string(), task: task.to_string() });
+                    }
+                }
                 let (text, err) = match rejection {
                     Some(reason) => (reason, true),
                     None => match crate::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type().as_ref(), target_agent, task, user_id).await {

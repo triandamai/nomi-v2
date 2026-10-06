@@ -200,6 +200,28 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
                     tracing::info!(delegation_id = %claimed.id, "delegation worker: delegation completed");
                 }
+                // Nobody is waiting in a live turn here: the specialist it handed to is queued
+                // as its own background delegation, and this one is done.
+                Ok(LoopOutcome::HandOff { target_agent, task }) => {
+                    let _ = nomi_agent_core::delegation::create_delegation(
+                        &mut conn,
+                        Some((&mqtt, claimed.id)),
+                        claimed.session_id,
+                        &claimed.target_agent_type,
+                        &target_agent,
+                        &task,
+                        claimed.user_id,
+                    )
+                    .await;
+                    let _ = sqlx::query(
+                        "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1 AND status = 'processing'",
+                    )
+                    .bind(claimed.id)
+                    .bind(format!("Handed to {target_agent}"))
+                    .execute(&pool)
+                    .await;
+                    let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
+                }
                 // The engine parked the paused turn in its own agent_sessions row; the approval
                 // worker resumes it from there (nomi_turn::resume_paused_turn). Tag that row with
                 // this delegation so the resume can mark the delegation completed once the
