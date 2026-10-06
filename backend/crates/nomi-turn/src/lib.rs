@@ -180,7 +180,7 @@ async fn run_locked_turn(
     // carries on afterwards.
     if nomi_agent_core::attachments::has_attachments(text) {
         if let Some(files) = registry.find(nomi_agent_core::attachments::FILES_AGENT_TYPE) {
-            return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, files.as_ref(), session_id, session_id, user_id).await;
+            return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, files, session_id, session_id, sender_channel_identity_id, user_id).await;
         }
     }
 
@@ -212,7 +212,7 @@ async fn run_locked_turn(
 
     match routing_outcome {
         RoutingOutcome::Continue { agent, agent_session_id } => {
-            run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id).await
+            run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, agent, session_id, agent_session_id, sender_channel_identity_id, user_id).await
         }
         RoutingOutcome::NeedsClassification => {
             let agent = routing::classify_intent(conn, provider, registry, catalog, text).await;
@@ -222,11 +222,11 @@ async fn run_locked_turn(
                 // matching today's behavior, where chitchat has no agent_session_id at all.
                 // agent_session_id == session_id here purely as a stand-in for logging
                 // (see nomi-agent-chitchat's own comment on this at its call site's origin).
-                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, session_id, user_id).await
+                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, agent, session_id, session_id, sender_channel_identity_id, user_id).await
             } else {
                 let agent_session_id =
                     routing::spawn_agent_session(conn, mqtt, session_id, sender_channel_identity_id, agent.agent_type().as_ref(), agent.display_name().as_ref()).await?;
-                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id).await
+                run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, agent, session_id, agent_session_id, sender_channel_identity_id, user_id).await
             }
         }
     }
@@ -240,19 +240,112 @@ async fn run_subagent_turn(
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     registry: &AgentRegistry,
-    agent: &dyn nomi_agent_core::SubAgent,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
+    agent: Arc<dyn nomi_agent_core::SubAgent>,
     session_id: Uuid,
     agent_session_id: Uuid,
+    sender_channel_identity_id: Uuid,
     user_id: Uuid,
 ) -> Result<(String, Option<Uuid>), TurnError> {
     let messages = fetch_recent_messages(conn, session_id).await?;
 
     let outcome = nomi_agent_core::run_agent_turn(
-        conn, mqtt, s3, provider, embedding_provider, registry, agent, session_id, agent_session_id, user_id, messages, SUBAGENT_MAX_TOKENS,
+        conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id, messages, SUBAGENT_MAX_TOKENS,
     )
     .await?;
 
-    finish_agent_turn(conn, mqtt, session_id, agent_session_id, agent, outcome).await
+    let handoff = HandOffContext { provider, embedding_provider, registry, catalog, s3, sender_channel_identity_id, user_id };
+    follow_hand_offs(conn, mqtt, &handoff, session_id, agent, agent_session_id, outcome).await
+}
+
+/// What running a handed-off specialist needs, beyond the chat it runs in.
+struct HandOffContext<'a> {
+    provider: &'a dyn LlmProvider,
+    embedding_provider: &'a dyn EmbeddingProvider,
+    registry: &'a AgentRegistry,
+    catalog: &'a Arc<nomi_agent_core::ToolCatalog>,
+    s3: Option<&'a nomi_storage::S3Config>,
+    sender_channel_identity_id: Uuid,
+    user_id: Uuid,
+}
+
+/// How many times one turn may pass the conversation on. A hand-off past this is queued as a
+/// background delegation instead, so agents can't bounce a request between them forever.
+const MAX_HAND_OFFS: usize = 2;
+
+/// When an agent hands the conversation to a specialist, the specialist runs now, in this turn,
+/// with the conversation so far, and its answer is the turn's reply: one request, one answer, in
+/// the voice of whoever did the work. The specialist keeps the conversation for follow-ups.
+#[allow(clippy::too_many_arguments)]
+async fn follow_hand_offs(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    ctx: &HandOffContext<'_>,
+    session_id: Uuid,
+    mut agent: Arc<dyn nomi_agent_core::SubAgent>,
+    mut agent_session_id: Uuid,
+    mut outcome: nomi_agent_core::LoopOutcome,
+) -> Result<(String, Option<Uuid>), TurnError> {
+    let mut hand_offs = 0;
+    while let nomi_agent_core::LoopOutcome::HandOff { target_agent, task } = outcome.clone() {
+        let target = if hand_offs < MAX_HAND_OFFS { resolve_agent(conn, ctx.registry, ctx.catalog, &target_agent).await } else { None };
+        let Some(target) = target else {
+            let ack = nomi_agent_core::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type().as_ref(), &target_agent, &task, ctx.user_id)
+                .await
+                .map(|_| format!("I've passed this to {}. It'll reply here when it's done.", capitalize(&target_agent)))
+                .unwrap_or_else(|_| nomi_agent_core::NO_ANSWER_REPLY.to_string());
+            outcome = nomi_agent_core::LoopOutcome::Reply { text: ack, memory_ids_used: vec![], input_tokens: 0, output_tokens: 0 };
+            break;
+        };
+
+        // The agent that handed off is done with this conversation; the default agent has no
+        // session of its own to close.
+        if agent_session_id != session_id {
+            routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, agent.agent_type().as_ref(), "completed", &format!("Handed to {target_agent}"))
+                .await?;
+        }
+        agent_session_id = if target.is_default() {
+            session_id
+        } else {
+            routing::spawn_agent_session(conn, mqtt, session_id, ctx.sender_channel_identity_id, target.agent_type().as_ref(), target.display_name().as_ref()).await?
+        };
+
+        let mut messages = fetch_recent_messages(conn, session_id).await?;
+        add_hand_off_note(&mut messages, agent.display_name().as_ref(), &task);
+        outcome = nomi_agent_core::run_agent_turn(
+            conn,
+            mqtt,
+            ctx.s3,
+            ctx.provider,
+            ctx.embedding_provider,
+            ctx.registry,
+            target.as_ref(),
+            session_id,
+            agent_session_id,
+            ctx.user_id,
+            messages,
+            SUBAGENT_MAX_TOKENS,
+        )
+        .await?;
+        agent = target;
+        hand_offs += 1;
+    }
+
+    finish_agent_turn(conn, mqtt, session_id, agent_session_id, agent.as_ref(), outcome).await
+}
+
+/// Tells the specialist what it was handed, on the user's latest message.
+fn add_hand_off_note(messages: &mut Vec<LlmMessage>, from: &str, task: &str) {
+    let note = format!("({from} handed this to you: {task})");
+    match messages.last_mut() {
+        Some(last) if last.role == LlmRole::User => last.content.push(ContentBlock::Text { text: note }),
+        _ => messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: note }] }),
+    }
+}
+
+fn capitalize(agent_type: &str) -> String {
+    let mut chars = agent_type.chars();
+    chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
 /// Persists a `LoopOutcome` (insert the final reply / completion message, record bookkeeping
@@ -326,6 +419,8 @@ async fn finish_agent_turn(
             Ok((summary, Some(message_id)))
         }
         nomi_agent_core::LoopOutcome::AwaitingApproval { .. } => Ok(("Waiting for approval.".to_string(), None)),
+        // follow_hand_offs runs the specialist before anything is finished.
+        nomi_agent_core::LoopOutcome::HandOff { .. } => Ok((String::new(), None)),
         // Stopped by the user mid-turn: the supervisor already replied, so nothing is posted.
         nomi_agent_core::LoopOutcome::Cancelled => Ok((String::new(), None)),
     }
@@ -473,6 +568,7 @@ async fn resume_locked(
     let outcome = match batch_outcome {
         nomi_agent_core::ToolBatchOutcome::AwaitingApproval { .. } => return Ok(("Waiting for another approval.".to_string(), None)),
         nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => nomi_agent_core::LoopOutcome::Completed { status, summary },
+        nomi_agent_core::ToolBatchOutcome::HandOff { target_agent, task } => nomi_agent_core::LoopOutcome::HandOff { target_agent, task },
         nomi_agent_core::ToolBatchOutcome::Resolved(tool_results) => {
             let mut full_messages = messages;
             full_messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
@@ -488,8 +584,8 @@ async fn resume_locked(
         return finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await;
     }
 
-    let (reply, reply_message_id) =
-        finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await?;
+    let handoff = HandOffContext { provider, embedding_provider, registry, catalog, s3, sender_channel_identity_id, user_id };
+    let (reply, reply_message_id) = follow_hand_offs(conn, Some((mqtt, Uuid::nil())), &handoff, session_id, agent, agent_session_id, outcome).await?;
 
     // A row the engine created only to hold this pause (default agent / delegated turn — see
     // resolve_tool_batch) has served its purpose once the turn finishes.
@@ -516,10 +612,15 @@ async fn fetch_recent_messages(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
 ) -> Result<Vec<LlmMessage>, TurnError> {
+    // Only what was actually said: shown thinking (🧠) and progress notes (💭) are a window
+    // into the work, not replies, and fed back as replies they confuse the next agent.
     let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(
         "SELECT sender_channel_identity_id, content, id FROM ( \
              SELECT id, sender_channel_identity_id, content, created_at FROM messages \
-             WHERE session_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 \
+             WHERE session_id = $1 \
+               AND NOT (sender_channel_identity_id IS NULL AND (content LIKE '🧠%' OR content LIKE '💭%' \
+                        OR COALESCE(content_blocks->0->>'kind', '') = 'reasoning')) \
+             ORDER BY created_at DESC, id DESC LIMIT $2 \
          ) recent ORDER BY created_at ASC, id ASC",
     )
     .bind(session_id)

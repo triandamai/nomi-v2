@@ -98,6 +98,10 @@ impl SubAgent for PlanningAgent {
     fn supports_plans(&self) -> bool {
         true
     }
+
+    fn keeps_plans_in_drafts(&self) -> bool {
+        true
+    }
 }
 
 /// A project row may already exist for this session — the "+ Add new project" entry point

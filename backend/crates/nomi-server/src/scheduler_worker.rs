@@ -155,6 +155,12 @@ pub async fn process_claimed_job(
             let _ = notification.deliver(job.user_id, &text).await;
             finish_one_time_or_advance_recurring(pool, &job).await;
         }
+        // A fired reminder whose agent hands the work to a specialist: queue it in the background.
+        Ok(LoopOutcome::HandOff { target_agent, task }) => {
+            let _ = nomi_agent_core::delegation::create_delegation(&mut conn, mqtt.map(|p| (p, job.id)), job.session_id, &job.target_agent_type, &target_agent, &task, job.user_id)
+                .await;
+            finish_one_time_or_advance_recurring(pool, &job).await;
+        }
         // The user stopped their agents while this run was in flight. Only this run ends; a
         // recurring reminder still fires next time.
         Ok(LoopOutcome::Cancelled) => {

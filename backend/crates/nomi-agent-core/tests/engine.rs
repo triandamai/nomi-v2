@@ -57,6 +57,9 @@ impl SubAgent for TestAgent {
     fn supports_plans(&self) -> bool {
         true
     }
+    fn keeps_plans_in_drafts(&self) -> bool {
+        true
+    }
 }
 
 struct PersonalityAwareTestAgent;
@@ -348,6 +351,80 @@ async fn an_answer_written_alongside_complete_task_is_the_reply(pool: PgPool) {
         outcome,
         LoopOutcome::Completed { status: "completed".to_string(), summary: "Here is the itinerary.\n\n- 08:00 Arrive".to_string() }
     );
+}
+
+async fn run_test_agent(pool: &PgPool, provider: &FakeLlmProvider) -> (Uuid, LoopOutcome) {
+    let session_id = seed_session(pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let outcome = run_agent_turn(
+        &mut conn, None, None, provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+    (session_id, outcome)
+}
+
+fn thinking_only() -> LlmResponse {
+    LlmResponse {
+        content: vec![ContentBlock::Thinking { text: "I'm a bit confused about the plan...".to_string(), signature: None }],
+        stop_reason: StopReason::EndTurn,
+        input_tokens: 1,
+        output_tokens: 1,
+    }
+}
+
+fn reply_of(outcome: &LoopOutcome) -> &str {
+    match outcome {
+        LoopOutcome::Reply { text, .. } => text,
+        other => panic!("expected a reply, got {other:?}"),
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_turn_that_only_thought_is_asked_once_for_the_answer(pool: PgPool) {
+    let provider = FakeLlmProvider::sequence(vec![thinking_only(), text_response("Here's the answer.", StopReason::EndTurn)]);
+    let (_, outcome) = run_test_agent(&pool, &provider).await;
+
+    assert_eq!(reply_of(&outcome), "Here's the answer.");
+    let requests = provider.received_requests.lock().unwrap();
+    let last = requests[1].messages.last().unwrap();
+    assert!(matches!(&last.content[0], ContentBlock::Text { text } if text.contains("Write your answer")), "{last:?}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_turn_never_ends_silent_even_when_the_model_only_thinks(pool: PgPool) {
+    let provider = FakeLlmProvider::sequence(vec![thinking_only(), thinking_only()]);
+    let (_, outcome) = run_test_agent(&pool, &provider).await;
+    assert_eq!(reply_of(&outcome), nomi_agent_core::NO_ANSWER_REPLY);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_plan_written_out_in_chat_is_saved_as_a_plan_draft(pool: PgPool) {
+    let itinerary = "## Bogor day trip\n\n### Morning\n- 08:00 Arrive in Bogor\n- 08:30 Botanical Gardens\n- 11:00 Coffee nearby\n\n### Afternoon\n- 12:30 Lunch: Nasi Timbel\n- 14:00 Zoology Museum\n- 16:00 Market walk or a tea house\n\n### Evening\n- 18:00 Dinner on Suryakencana Street\n- 20:00 Head home";
+    let provider = FakeLlmProvider::sequence(vec![text_response(itinerary, StopReason::EndTurn)]);
+    let (session_id, outcome) = run_test_agent(&pool, &provider).await;
+
+    assert_eq!(reply_of(&outcome), nomi_agent_core::PLAN_DRAFT_REPLY);
+    let (title, kind): (String, String) = sqlx::query_as(
+        "SELECT p.title, m.content_blocks->0->>'kind' FROM agent_plans p JOIN messages m ON m.session_id = p.session_id WHERE p.session_id = $1",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((title.as_str(), kind.as_str()), ("Bogor day trip", "plan"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_short_answer_stays_a_chat_reply(pool: PgPool) {
+    let provider = FakeLlmProvider::sequence(vec![text_response("Bogor is about an hour from Jakarta by train.", StopReason::EndTurn)]);
+    let (session_id, outcome) = run_test_agent(&pool, &provider).await;
+    assert_eq!(reply_of(&outcome), "Bogor is about an hour from Jakarta by train.");
+    let plans: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_plans WHERE session_id = $1").bind(session_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(plans, 0);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

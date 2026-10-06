@@ -66,8 +66,21 @@ pub trait SubAgent: Send + Sync {
     }
 
     /// When true, run_agent_turn gives this agent an extra `delegate_to_agent` tool that hands
-    /// a task to another registered specialist to run in the background.
+    /// a request to another registered specialist (see `works_in_background`).
     fn can_delegate(&self) -> bool {
+        false
+    }
+
+    /// When true, a delegation to this agent runs in the background (the delegation worker)
+    /// and it reports back when done: for long jobs like building a project. Otherwise the
+    /// agent takes the conversation over in the same turn and answers the user itself.
+    fn works_in_background(&self) -> bool {
+        false
+    }
+
+    /// When true, a reply that reads as a plan is always saved as a plan draft (`write_plan`)
+    /// rather than posted as plain markdown, even if the model forgot to call the tool.
+    fn keeps_plans_in_drafts(&self) -> bool {
         false
     }
 

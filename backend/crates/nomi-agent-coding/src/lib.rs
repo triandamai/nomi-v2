@@ -180,6 +180,11 @@ impl SubAgent for CodingAgent {
         true
     }
 
+    /// Building a project takes a while: it runs in the background and reports back.
+    fn works_in_background(&self) -> bool {
+        true
+    }
+
     fn validate_delegation_task(&self, task: &str) -> Result<(), String> {
         if has_project_prefix(task) {
             Ok(())
