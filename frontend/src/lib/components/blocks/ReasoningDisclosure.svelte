@@ -54,7 +54,7 @@
 		min-height: 36px;
 		padding: 0 12px 0 10px;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 18px;
 		background: var(--md-sys-color-surface-container);
 		color: var(--md-sys-color-on-surface-variant);
 		font: inherit;

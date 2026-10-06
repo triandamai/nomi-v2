@@ -382,7 +382,7 @@
 		min-height: 40px;
 		margin-top: 12px;
 		padding: 0 16px;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 20px;
 		background: color-mix(in srgb, var(--nomi-color-on-stage) 12%, transparent);
 		color: var(--nomi-color-on-stage);
 		font-size: 0.875rem;

@@ -30,7 +30,7 @@
 		height: 56px;
 		padding: 0 24px;
 		border: 1px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 28px;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-sys-typescale-label-large-font);

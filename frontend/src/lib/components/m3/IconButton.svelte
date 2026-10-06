@@ -45,7 +45,7 @@
 		justify-content: center;
 		width: 48px;
 		height: 48px;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 24px;
 		border: none;
 		cursor: pointer;
 		text-decoration: none;

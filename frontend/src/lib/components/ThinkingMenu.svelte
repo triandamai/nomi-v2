@@ -63,7 +63,7 @@
 		height: 40px;
 		padding: 0 12px 0 10px;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 20px;
 		background: var(--md-sys-color-secondary-container);
 		color: var(--md-sys-color-on-secondary-container);
 		font: inherit;

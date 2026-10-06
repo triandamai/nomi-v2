@@ -684,7 +684,7 @@
 		height: 44px;
 		padding: 0 12px 0 6px;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 22px;
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-sys-typescale-label-large-font);
@@ -846,7 +846,7 @@
 		width: 44px;
 		height: 44px;
 		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
+		border-radius: 22px;
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface);
 		cursor: pointer;

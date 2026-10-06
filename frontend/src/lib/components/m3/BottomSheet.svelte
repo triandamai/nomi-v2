@@ -24,7 +24,7 @@
 	let dragging = $state(false);
 	let closing = $state(false);
 	// The panel reached the top of the screen (small screens, tall content): it becomes a
-	// full-screen sheet with square top corners, and its content scrolls as one surface.
+	// full-screen sheet, and its content scrolls as one surface.
 	let expanded = $state(false);
 
 	let startY = 0;
@@ -61,6 +61,10 @@
 		if (!dialogEl) return;
 		if (open && !dialogEl.open) {
 			dialogEl.showModal();
+			// showModal() focuses the first focusable thing inside, the drag handle, which then
+			// wears a focus ring before anyone has touched the keyboard. Start on the sheet itself:
+			// Tab still reaches the handle and everything in the sheet.
+			panelEl?.focus({ preventScroll: true });
 		} else if (!open && dialogEl.open && !closing) {
 			animateClose();
 		}
@@ -93,6 +97,14 @@
 
 	function handleDialogClick(event: MouseEvent) {
 		if (event.target === dialogEl) open = false;
+	}
+
+	// The handle is announced as a button: Enter or Space dismisses the sheet.
+	function handleHandleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			open = false;
+		}
 	}
 
 	function handlePointerDown(event: PointerEvent) {
@@ -145,6 +157,7 @@
 	<div
 		bind:this={panelEl}
 		class="m3-bottom-sheet__panel"
+		tabindex="-1"
 		class:m3-bottom-sheet__panel--dragging={dragging}
 		class:m3-bottom-sheet__panel--expanded={expanded}
 	>
@@ -153,6 +166,7 @@
 			role="button"
 			tabindex="0"
 			aria-label="Drag to dismiss"
+			onkeydown={handleHandleKeydown}
 			onpointerdown={handlePointerDown}
 			onpointermove={handlePointerMove}
 			onpointerup={endDrag}
@@ -210,9 +224,9 @@
 		max-height: 80dvh;
 		display: flex;
 		flex-direction: column;
-		transition:
-			transform var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
-			border-radius var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+		/* Focused on open (see the effect above) so nothing inside starts with a focus ring. */
+		outline: none;
+		transition: transform var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
 	}
 
 	/* Small screens: tall content opens the sheet to full screen instead of trapping it in a
@@ -223,8 +237,8 @@
 		}
 	}
 
+	/* Full screen keeps the sheet's rounded top: it's still a sheet over the page. */
 	.m3-bottom-sheet__panel--expanded {
-		border-radius: 0;
 		padding-top: env(safe-area-inset-top);
 	}
 
