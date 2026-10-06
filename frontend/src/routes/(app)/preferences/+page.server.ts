@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { isThemeName } from '$lib/appearance';
 import { apiFetch } from '$lib/server/api';
+import { getLocale } from '$lib/paraglide/runtime';
 import type { Preferences } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -8,7 +9,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/preferences');
 	const preferences: Preferences = response.ok
 		? ((await response.json()) as Preferences)
-		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', has_stored_timezone: false };
+		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
 	return { preferences };
 };
 

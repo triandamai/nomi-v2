@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
+import { settleLanguageAfterSignIn } from '$lib/server/locale';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ fetch, url }) => {
@@ -50,6 +51,7 @@ export const actions: Actions = {
 		cookies.set('access_token', access_token, { httpOnly: true, path: '/', sameSite: 'lax' });
 		cookies.set('refresh_token', refresh_token, { httpOnly: true, path: '/', sameSite: 'lax' });
 		cookies.set('user_email', email, { httpOnly: false, path: '/', sameSite: 'lax' });
+		await settleLanguageAfterSignIn(fetch, cookies, true);
 
 		throw redirect(303, '/');
 	},

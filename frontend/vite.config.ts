@@ -3,10 +3,18 @@ import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { devWsProxy } from './vite-plugins/dev-ws-proxy';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
+		// English and Indonesian. The person's saved language (Account → Language) lives in the
+		// cookie; before sign-in, the browser's language decides.
+		paraglideVitePlugin({
+			project: './project.inlang',
+			outdir: './src/lib/paraglide',
+			strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
+		}),
 		devWsProxy(),
 		sveltekit({
 			compilerOptions: {
