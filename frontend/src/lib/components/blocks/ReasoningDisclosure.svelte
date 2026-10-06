@@ -13,6 +13,9 @@
 	} = $props();
 
 	let open = $state(false);
+	// Each step reads as about three lines; a longer one opens on request.
+	let expanded = $state<Record<number, boolean>>({});
+	const isLong = (step: string) => step.length > 240 || step.split('\n').length > 3;
 	const uid = $props.id();
 </script>
 
@@ -35,7 +38,13 @@
 	</button>
 	<div id="{uid}-body" class="reasoning__body" hidden={!open}>
 		{#each steps as step, i (i)}
-			<p class="reasoning__step">{step}</p>
+			{@const long = isLong(step)}
+			<p class="reasoning__step" class:reasoning__step--clamped={long && !expanded[i]}>{step}</p>
+			{#if long}
+				<button type="button" class="reasoning__more" aria-expanded={!!expanded[i]} onclick={() => (expanded[i] = !expanded[i])}>
+					{expanded[i] ? m.reasoning_show_less() : m.reasoning_show_more()}
+				</button>
+			{/if}
 		{/each}
 	</div>
 </div>
@@ -107,6 +116,30 @@
 		line-height: 1.55;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	.reasoning__step--clamped {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		overflow: hidden;
+	}
+	.reasoning__more {
+		align-self: flex-start;
+		margin-top: -6px;
+		padding: 2px 0;
+		border: none;
+		background: none;
+		color: var(--md-sys-color-primary);
+		font: inherit;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.reasoning__more:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+		border-radius: 4px;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.reasoning__toggle,

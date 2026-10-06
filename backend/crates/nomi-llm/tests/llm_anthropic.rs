@@ -144,7 +144,7 @@ async fn enabling_reasoning_sends_the_thinking_param_and_bumps_max_tokens() {
     );
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
-        .and(body_partial_json(json!({"thinking": {"type": "enabled", "budget_tokens": 2048}, "max_tokens": 2148})))
+        .and(body_partial_json(json!({"thinking": {"type": "enabled", "budget_tokens": 1536}, "max_tokens": 1636})))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;

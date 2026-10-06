@@ -80,8 +80,8 @@ impl ReasoningEffort {
     pub fn budget_tokens(self) -> u32 {
         match self {
             ReasoningEffort::Low => 1024,
-            ReasoningEffort::Medium => 2048,
-            ReasoningEffort::High => 4096,
+            ReasoningEffort::Medium => 1536,
+            ReasoningEffort::High => 3072,
         }
     }
 }

@@ -645,6 +645,8 @@
 	"projects_ready": "Ready",
 	"projects_title": "Projects",
 	"reasoning_process": "Thought process",
+	"reasoning_show_less": "Show less",
+	"reasoning_show_more": "Show more",
 	"reasoning_steps": "{count} steps",
 	"reasoning_thinking": "Thinking",
 	"register_have_account": "Have an account?",

@@ -213,7 +213,7 @@ async fn a_reasoning_model_gets_max_completion_tokens_instead_of_max_tokens() {
     );
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(body_partial_json(json!({"max_completion_tokens": 2148})))
+        .and(body_partial_json(json!({"max_completion_tokens": 1636})))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;
