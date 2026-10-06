@@ -19,10 +19,6 @@
 	};
 </script>
 
-<svelte:head>
-	<title>Your crew · Nomi</title>
-</svelte:head>
-
 {#snippet card(member: CrewRosterMember)}
 	{@const key = rosterKey(member.agent_type)}
 	<li class="card" data-state={member.state}>
