@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-use nomi_agent_core::AgentRegistry;
+use nomi_agent_core::{AgentRegistry, Locale};
 
 use crate::SUPERVISOR_AGENT_TYPE;
 
@@ -321,41 +321,43 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
     })
 }
 
-fn join_names(names: &[String]) -> String {
+fn join_names(names: &[String], locale: Locale) -> String {
     match names {
         [] => String::new(),
         [one] => one.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        [rest @ .., last] => format!("{} {} {last}", rest.join(", "), locale.t("stop.and")),
     }
 }
 
-/// The supervisor's reply to a stop, written without a model call so it lands instantly.
-pub fn describe(report: &StopReport, target: &StopTarget, target_name: Option<&str>) -> String {
+/// The supervisor's reply to a stop, written without a model call so it lands instantly, in the
+/// person's language.
+pub fn describe(report: &StopReport, target: &StopTarget, target_name: Option<&str>, locale: Locale) -> String {
     if !report.stopped_anything() {
         return match (target, target_name) {
-            (StopTarget::Agent { .. }, Some(name)) => format!("{name} isn't working on anything right now."),
-            _ => "Nothing is running right now, so there's nothing to stop.".to_string(),
+            (StopTarget::Agent { .. }, Some(name)) => locale.tf("stop.idle_agent", &[("agent", name)]),
+            _ => locale.t("stop.idle"),
         };
     }
 
-    let mut reply = if report.stopped.is_empty() {
-        "Stopped.".to_string()
-    } else {
-        format!("Stopped {}.", join_names(&report.stopped))
-    };
-    if matches!(target, StopTarget::Everything) && report.chats > 1 {
-        reply.pop();
-        reply.push_str(&format!(" across {} chats.", report.chats));
-    }
+    let names = join_names(&report.stopped, locale);
+    let chats = report.chats.to_string();
+    let across = matches!(target, StopTarget::Everything) && report.chats > 1;
+    let mut parts = vec![match (names.is_empty(), across) {
+        (true, false) => locale.t("stop.stopped"),
+        (true, true) => locale.tf("stop.across_chats_all", &[("count", &chats)]),
+        (false, false) => locale.tf("stop.stopped_names", &[("names", &names)]),
+        (false, true) => locale.tf("stop.across_chats", &[("names", &names), ("count", &chats)]),
+    }];
     if !report.cancelled_approval_message_ids.is_empty() {
-        reply.push_str(" Pending approval requests are cancelled too.");
+        parts.push(locale.t("stop.approvals_cancelled"));
     }
-    if report.dropped_messages > 0 {
-        let noun = if report.dropped_messages == 1 { "message" } else { "messages" };
-        reply.push_str(&format!(" I dropped {} queued {noun} without answering.", report.dropped_messages));
+    match report.dropped_messages {
+        0 => {}
+        1 => parts.push(locale.t("stop.dropped_one")),
+        n => parts.push(locale.tf("stop.dropped_many", &[("count", &n.to_string())])),
     }
-    reply.push_str(" Tell me when you want to pick it back up.");
-    reply
+    parts.push(locale.t("stop.pick_up"));
+    parts.join(" ")
 }
 
 pub struct StopMessageOutcome {
@@ -388,6 +390,7 @@ pub async fn handle_stop_message(
         _ => None,
     };
 
+    let locale = nomi_agent_core::user_locale(&mut conn, user_id).await;
     let mut tx = conn.begin().await?;
     let user_message_id: Uuid =
         sqlx::query_scalar("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, $2, $3) RETURNING id")
@@ -398,7 +401,7 @@ pub async fn handle_stop_message(
             .await?;
 
     let report = stop_agents(&mut tx, &StopRequest { user_id, session_id, target: target.clone(), from_supervisor_turn: false }).await?;
-    let reply = describe(&report, &target, target_name.as_deref());
+    let reply = describe(&report, &target, target_name.as_deref(), locale);
 
     // clock_timestamp() so the reply sorts after the user's message inside this transaction.
     let reply_message_id: Uuid = sqlx::query_scalar(
@@ -471,16 +474,20 @@ mod tests {
     #[test]
     fn describe_reports_what_happened() {
         let none = StopReport::default();
-        assert_eq!(describe(&none, &StopTarget::ThisChat, None), "Nothing is running right now, so there's nothing to stop.");
+        assert_eq!(describe(&none, &StopTarget::ThisChat, None, Locale::En), "Nothing is running right now, so there's nothing to stop.");
         assert_eq!(
-            describe(&none, &StopTarget::Agent { agent_type: "money".into() }, Some("Money")),
+            describe(&none, &StopTarget::Agent { agent_type: "money".into() }, Some("Money"), Locale::En),
             "Money isn't working on anything right now."
         );
 
         let report = StopReport { stopped: vec!["Money".into(), "Coding".into(), "Nomi".into()], chats: 2, dropped_messages: 1, ..Default::default() };
         assert_eq!(
-            describe(&report, &StopTarget::Everything, None),
+            describe(&report, &StopTarget::Everything, None, Locale::En),
             "Stopped Money, Coding and Nomi across 2 chats. I dropped 1 queued message without answering. Tell me when you want to pick it back up."
+        );
+        assert_eq!(
+            describe(&report, &StopTarget::Everything, None, Locale::Id),
+            "Money, Coding dan Nomi sudah kuhentikan di 2 obrolan. 1 pesan yang mengantre kubuang tanpa dijawab. Bilang saja kalau mau dilanjutkan."
         );
     }
 }

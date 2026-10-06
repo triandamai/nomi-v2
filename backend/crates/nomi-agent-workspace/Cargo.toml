@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+nomi-i18n = { path = "../nomi-i18n" }
 nomi-agent-core = { path = "../nomi-agent-core" }
 nomi-llm = { path = "../nomi-llm" }
 nomi-settings = { path = "../nomi-settings" }

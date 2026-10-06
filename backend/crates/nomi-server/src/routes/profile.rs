@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::app::AppState;
 use nomi_auth::extractor::AuthClaims;
+use nomi_i18n::Locale;
 
 #[derive(Serialize)]
 pub struct ProfileResponse {
@@ -156,6 +157,8 @@ pub struct PreferencesResponse {
     pub theme: String,
     pub accent_color: String,
     pub timezone: String,
+    /// "en" or "id": the app's language and the language the crew replies in.
+    pub language: String,
     // Distinguishes "the user explicitly saved a timezone (even 'UTC')" from "no
     // user_preferences row exists yet, so this is just the fallback default" — the frontend's
     // browser-detected-timezone auto-save only fires in the latter case.
@@ -167,8 +170,8 @@ pub async fn get_preferences(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<PreferencesResponse>, (StatusCode, &'static str)> {
-    let row: Option<(Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT theme, accent_color, timezone FROM user_preferences WHERE user_id = $1")
+    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT theme, accent_color, timezone, language FROM user_preferences WHERE user_id = $1")
             .bind(claims.sub)
             .fetch_optional(&state.pool)
             .await
@@ -177,12 +180,13 @@ pub async fn get_preferences(
                 (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences")
             })?;
 
-    let (theme, accent_color, timezone) = row.unwrap_or((None, None, None));
+    let (theme, accent_color, timezone, language) = row.unwrap_or((None, None, None, None));
     Ok(Json(PreferencesResponse {
         theme: theme.unwrap_or_else(|| "system".to_string()),
         accent_color: accent_color.unwrap_or_else(|| "canopy".to_string()),
         has_stored_timezone: timezone.is_some(),
         timezone: timezone.unwrap_or_else(|| "UTC".to_string()),
+        language: Locale::from_code_or_default(language.as_deref()).code().to_string(),
     }))
 }
 
@@ -194,6 +198,7 @@ pub struct UpdatePreferencesRequest {
     pub theme: Option<String>,
     pub accent_color: Option<String>,
     pub timezone: Option<String>,
+    pub language: Option<String>,
 }
 
 const ALLOWED_THEMES: [&str; 3] = ["light", "dark", "system"];
@@ -216,6 +221,12 @@ pub async fn put_preferences(
             return Err((StatusCode::BAD_REQUEST, "accent_color must be one of canopy/coral-reef/borneo-dusk/phantom/senja-jakarta"));
         }
     }
+    if let Some(language) = &req.language {
+        if Locale::from_code(language).is_none() {
+            return Err((StatusCode::BAD_REQUEST, "language must be 'en' or 'id'"));
+        }
+    }
+    let language = req.language.as_deref().and_then(Locale::from_code).map(Locale::code);
     if let Some(timezone) = &req.timezone {
         if timezone.parse::<chrono_tz::Tz>().is_err() {
             return Err((StatusCode::BAD_REQUEST, "timezone must be a valid IANA timezone name"));
@@ -233,19 +244,21 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    let updated: Option<(String, String, String)> = sqlx::query_as(
+    let updated: Option<(String, String, String, String)> = sqlx::query_as(
         "UPDATE user_preferences SET \
             theme = COALESCE($2, theme), \
             accent_color = COALESCE($3, accent_color), \
             timezone = COALESCE($4, timezone), \
+            language = COALESCE($5, language), \
             updated_at = now() \
          WHERE user_id = $1 \
-         RETURNING theme, accent_color, timezone",
+         RETURNING theme, accent_color, timezone, language",
     )
     .bind(claims.sub)
     .bind(&req.theme)
     .bind(&req.accent_color)
     .bind(&req.timezone)
+    .bind(language)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
@@ -253,17 +266,18 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    let (theme, accent_color, timezone) = match updated {
+    let (theme, accent_color, timezone, language) = match updated {
         Some(row) => row,
         None => sqlx::query_as(
-            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone) \
-             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC')) \
-             RETURNING theme, accent_color, timezone",
+            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language) \
+             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en')) \
+             RETURNING theme, accent_color, timezone, language",
         )
         .bind(claims.sub)
         .bind(&req.theme)
         .bind(&req.accent_color)
         .bind(&req.timezone)
+        .bind(language)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
@@ -280,5 +294,5 @@ pub async fn put_preferences(
     // A PUT always leaves a row behind (via the insert-if-missing fallback above), so a
     // timezone is always "stored" by the time this response is built — unlike GET, which can
     // observe a user with no row at all yet.
-    Ok(Json(PreferencesResponse { theme, accent_color, timezone, has_stored_timezone: true }))
+    Ok(Json(PreferencesResponse { theme, accent_color, timezone, language, has_stored_timezone: true }))
 }

@@ -2,6 +2,7 @@
 //! (status, provider JSON) stays in the logs; the user gets what happened and what to do.
 
 use crate::LlmError;
+use nomi_i18n::Locale;
 
 /// The provider's display name and HTTP status, from a `"<provider> returned <status>: <body>"`
 /// error (the format every provider module uses).
@@ -23,44 +24,47 @@ fn provider_and_status(text: &str) -> (Option<&'static str>, Option<u16>) {
 }
 
 impl LlmError {
-    /// What went wrong and what the user can do about it, in a sentence or two.
+    /// What went wrong and what the user can do about it, in a sentence or two, in English.
     pub fn user_message(&self) -> String {
+        self.user_message_in(Locale::En)
+    }
+
+    /// [`LlmError::user_message`] in the person's language.
+    pub fn user_message_in(&self, locale: Locale) -> String {
         let text = match self {
-            LlmError::Http(_) => {
-                return "I couldn't reach the AI provider. Check the server's connection, then send your message again.".to_string()
-            }
-            LlmError::ParseError(_) => {
-                return "The AI provider sent back a reply I couldn't read. Send your message again; if it keeps happening, try another model in Settings.".to_string()
-            }
+            LlmError::Http(_) => return locale.t("error.llm_unreachable"),
+            LlmError::ParseError(_) => return locale.t("error.llm_unreadable"),
             LlmError::ProviderError(text) => text,
         };
         let (provider, status) = provider_and_status(text);
-        let who = provider.unwrap_or("The AI provider");
-        let account = provider.map(|p| format!("your {p} account")).unwrap_or_else(|| "your AI provider account".to_string());
+        let who_capital = provider.map(str::to_string).unwrap_or_else(|| locale.t("error.llm_the_provider_capital"));
+        let who = provider.map(str::to_string).unwrap_or_else(|| locale.t("error.llm_the_provider"));
+        let account = match provider {
+            Some(p) => locale.tf("error.llm_account", &[("provider", p)]),
+            None => locale.t("error.llm_any_account"),
+        };
         let lower = text.to_lowercase();
 
         if status == Some(402) || lower.contains("insufficient_quota") || lower.contains("more credits") || lower.contains("billing") {
-            return format!(
-                "I couldn't reply because {account} is out of credits for this request. Add credits or raise the API key's limit with {}, then send your message again.",
-                provider.unwrap_or("your provider")
-            );
+            let your_provider = provider.map(str::to_string).unwrap_or_else(|| locale.t("error.llm_your_provider"));
+            return locale.tf("error.llm_no_credits", &[("account", &account), ("provider", &your_provider)]);
         }
         if matches!(status, Some(401) | Some(403)) || lower.contains("invalid api key") || lower.contains("invalid_api_key") {
-            return format!("I couldn't reply because {who} rejected the API key. Check the key in Settings, then try again.");
+            return locale.tf("error.llm_bad_key", &[("who", &who_capital)]);
         }
         if status == Some(429) {
-            return format!("{who} is limiting how many requests I can make right now. Wait a minute, then try again.");
+            return locale.tf("error.llm_rate_limited", &[("who", &who_capital)]);
         }
         if lower.contains("context length") || lower.contains("context_length") || lower.contains("too many tokens") || lower.contains("prompt is too long") {
-            return "This chat has grown too long for the model. Start a new chat to keep going.".to_string();
+            return locale.t("error.llm_too_long");
         }
         if status == Some(404) && lower.contains("model") {
-            return format!("{who} couldn't find the selected model. Pick another model in Settings.");
+            return locale.tf("error.llm_no_model", &[("who", &who_capital)]);
         }
         if status.is_some_and(|s| s >= 500) || lower.contains("overloaded") {
-            return format!("{who} is having trouble right now. Try again in a moment.");
+            return locale.tf("error.llm_down", &[("who", &who_capital)]);
         }
-        format!("Something went wrong talking to {}. Send your message again.", provider.unwrap_or("the AI provider"))
+        locale.tf("error.llm_other", &[("who", &who)])
     }
 }
 

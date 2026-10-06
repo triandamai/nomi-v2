@@ -8,6 +8,7 @@ name = "nomi-orchestrator"
 path = "src/main.rs"
 
 [dependencies]
+nomi-i18n = { path = "../nomi-i18n" }
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
 nomi-realtime = { path = "../nomi-realtime" }

@@ -290,10 +290,11 @@ async fn follow_hand_offs(
     while let nomi_agent_core::LoopOutcome::HandOff { target_agent, task } = outcome.clone() {
         let target = if hand_offs < MAX_HAND_OFFS { resolve_agent(conn, ctx.registry, ctx.catalog, &target_agent).await } else { None };
         let Some(target) = target else {
+            let locale = nomi_agent_core::user_locale(conn, ctx.user_id).await;
             let ack = nomi_agent_core::delegation::create_delegation(conn, mqtt, session_id, agent.agent_type().as_ref(), &target_agent, &task, ctx.user_id)
                 .await
-                .map(|_| format!("I've passed this to {}. It'll reply here when it's done.", capitalize(&target_agent)))
-                .unwrap_or_else(|_| nomi_agent_core::NO_ANSWER_REPLY.to_string());
+                .map(|_| locale.tf("turn.handed_off", &[("agent", &capitalize(&target_agent))]))
+                .unwrap_or_else(|_| locale.t("engine.no_answer"));
             outcome = nomi_agent_core::LoopOutcome::Reply { text: ack, memory_ids_used: vec![], input_tokens: 0, output_tokens: 0 };
             break;
         };
@@ -637,6 +638,20 @@ async fn fetch_recent_messages(
         .collect())
 }
 
+/// The language of the person whose chat this is (English if it has no owner).
+async fn session_owner_locale(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> nomi_agent_core::Locale {
+    let owner: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await
+        .ok()
+        .flatten();
+    match owner {
+        Some(user_id) => nomi_agent_core::user_locale(conn, user_id).await,
+        None => nomi_agent_core::Locale::En,
+    }
+}
+
 async fn release_lock_ignoring_errors(conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>, session_id: uuid::Uuid) {
     let _ = lock::release_session_lock(conn, session_id).await;
 }
@@ -644,7 +659,8 @@ async fn release_lock_ignoring_errors(conn: &mut sqlx::pool::PoolConnection<sqlx
 /// Tells the user in the chat why their message got no reply (out of credits, a rejected API
 /// key, ...) and returns that explanation. Best-effort, like the rest of the failure path.
 async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPublisher, session_id: Uuid, err: &TurnError) -> String {
-    let explanation = err.user_message();
+    let locale = session_owner_locale(conn, session_id).await;
+    let explanation = err.user_message_in(locale);
     let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
         "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, NULL) RETURNING id",
     )

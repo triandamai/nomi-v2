@@ -83,7 +83,8 @@ async fn stop_agents_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid,
         .await
         .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(stop::describe(&report, &target, target_name.as_deref()))
+    let locale = nomi_agent_core::user_locale(conn, user_id).await;
+    Ok(stop::describe(&report, &target, target_name.as_deref(), locale))
 }
 
 pub struct SupervisorAgent;
@@ -203,7 +204,8 @@ async fn personalize_system_prompt(conn: &mut PoolConnection<Postgres>, user_id:
     if let Some(p) = nomi_agent_core::personality::get_current_personality(conn, user_id).await {
         system = format!("{system}\n\nAdopt this personality in your reply: {p}");
     }
-    system
+    let locale = nomi_agent_core::user_locale(conn, user_id).await;
+    format!("{system}\n\n{}", locale.reply_instruction())
 }
 
 /// One-shot, tool-free completion that tells the user work has just begun on a delegated task, in
@@ -224,6 +226,7 @@ pub async fn phrase_delegation_started(
          What was asked: {task}"
     );
     let system = personalize_system_prompt(conn, user_id, base).await;
+    let locale = nomi_agent_core::user_locale(conn, user_id).await;
 
     let request = nomi_llm::LlmRequest {
         system: Some(system),
@@ -244,5 +247,5 @@ pub async fn phrase_delegation_started(
             nomi_llm::ContentBlock::Text { text } => Some(text),
             _ => None,
         })
-        .unwrap_or_else(|| format!("Working on it with the {target_agent_type} agent — I'll update you here.")))
+        .unwrap_or_else(|| locale.tf("turn.working_with", &[("agent", target_agent_type)])))
 }

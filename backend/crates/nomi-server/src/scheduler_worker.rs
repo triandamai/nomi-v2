@@ -180,7 +180,8 @@ pub async fn process_claimed_job(
         }
         Err(e) => {
             tracing::warn!(job_id = %job.id, error = %e, "scheduler worker: fired reminder failed");
-            let sorry = format!("I wasn't able to complete your scheduled task. {}", e.user_message());
+            let locale = nomi_agent_core::user_locale(&mut conn, job.user_id).await;
+            let sorry = locale.tf("turn.scheduled_failed", &[("reason", &e.user_message_in(locale))]);
             let _ = sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3)")
                 .bind(job.session_id)
                 .bind(&sorry)

@@ -141,9 +141,9 @@ pub trait SubAgent: Send + Sync {
         true
     }
 
-    /// What the approval card says this call will do ("Send an email to …"). `None` falls back
-    /// to the engine's generic wording.
-    fn describe_action(&self, _tool_name: &str, _input: &Value) -> Option<String> {
+    /// What the approval card says this call will do ("Send an email to …"), in the person's
+    /// language. `None` falls back to the engine's generic wording.
+    fn describe_action(&self, _tool_name: &str, _input: &Value, _locale: crate::Locale) -> Option<String> {
         None
     }
 

@@ -133,6 +133,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
             };
 
+            let locale = nomi_agent_core::user_locale(&mut conn, claimed.user_id).await;
             let started_message = nomi_agent_supervisor::phrase_delegation_started(
                 provider.as_ref(),
                 &mut conn,
@@ -141,7 +142,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 &claimed.task,
             )
             .await
-            .unwrap_or_else(|_| format!("Working on it with the {} agent — I'll update you here.", claimed.target_agent_type));
+            .unwrap_or_else(|_| locale.tf("turn.working_with", &[("agent", &claimed.target_agent_type)]));
 
             post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &started_message).await;
 
@@ -258,7 +259,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
-                    let sorry = format!("I wasn't able to get an answer from the {} agent. {}", claimed.target_agent_type, e.user_message());
+                    let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
                     post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &sorry).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }

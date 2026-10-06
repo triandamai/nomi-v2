@@ -398,7 +398,28 @@ async fn a_turn_that_only_thought_is_asked_once_for_the_answer(pool: PgPool) {
 async fn a_turn_never_ends_silent_even_when_the_model_only_thinks(pool: PgPool) {
     let provider = FakeLlmProvider::sequence(vec![thinking_only(), thinking_only()]);
     let (_, outcome) = run_test_agent(&pool, &provider).await;
-    assert_eq!(reply_of(&outcome), nomi_agent_core::NO_ANSWER_REPLY);
+    assert_eq!(reply_of(&outcome), nomi_agent_core::Locale::En.t("engine.no_answer"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_crew_answers_in_the_persons_language(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("INSERT INTO user_preferences (user_id, language) VALUES ($1, 'id')").bind(user_id).execute(&pool).await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![thinking_only(), thinking_only()]);
+    let mut conn = pool.acquire().await.unwrap();
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100,
+    )
+    .await
+    .unwrap();
+
+    // The model is told to answer in Indonesian, and Nomi's own fallback reply is Indonesian too.
+    let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+    assert!(system.contains("Indonesian (Bahasa Indonesia)"), "{system}");
+    assert_eq!(reply_of(&outcome), "Aku belum bisa menyusun jawaban barusan. Bisa tanya sekali lagi?");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -407,7 +428,7 @@ async fn a_plan_written_out_in_chat_is_saved_as_a_plan_draft(pool: PgPool) {
     let provider = FakeLlmProvider::sequence(vec![text_response(itinerary, StopReason::EndTurn)]);
     let (session_id, outcome) = run_test_agent(&pool, &provider).await;
 
-    assert_eq!(reply_of(&outcome), nomi_agent_core::PLAN_DRAFT_REPLY);
+    assert_eq!(reply_of(&outcome), nomi_agent_core::Locale::En.t("engine.plan_draft"));
     let (title, kind): (String, String) = sqlx::query_as(
         "SELECT p.title, m.content_blocks->0->>'kind' FROM agent_plans p JOIN messages m ON m.session_id = p.session_id WHERE p.session_id = $1",
     )
@@ -1413,6 +1434,6 @@ async fn a_reply_cut_off_after_thinking_says_so_instead_of_coming_back_empty(poo
 
     assert_eq!(
         outcome,
-        LoopOutcome::Reply { text: nomi_agent_core::engine::CUT_OFF_REPLY.to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+        LoopOutcome::Reply { text: nomi_agent_core::Locale::En.t("engine.cut_off"), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
     );
 }

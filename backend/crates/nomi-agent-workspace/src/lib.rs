@@ -165,20 +165,26 @@ impl SubAgent for WorkspaceAgent {
         matches!(tool_name, "gmail_send" | "calendar_add_event")
     }
 
-    fn describe_action(&self, tool_name: &str, input: &Value) -> Option<String> {
+    fn describe_action(&self, tool_name: &str, input: &Value, locale: nomi_agent_core::Locale) -> Option<String> {
         match tool_name {
             "gmail_send" => {
-                let to = str_arg(input, "to").unwrap_or("someone");
+                let someone = locale.t("workspace.someone");
+                let to = str_arg(input, "to").unwrap_or(&someone);
                 let subject = str_arg(input, "subject").map(|s| format!(" “{}”", clip(s, 60))).unwrap_or_default();
                 let body = str_arg(input, "body").map(|b| format!(": {}", clip(b, 160))).unwrap_or_default();
-                Some(format!("Send an email to {to}{subject}{body}"))
+                Some(locale.tf("workspace.approve_email", &[("to", to), ("subject", &subject), ("body", &body)]))
             }
             "calendar_add_event" => {
-                let summary = str_arg(input, "summary").unwrap_or("an event");
+                let an_event = locale.t("workspace.an_event");
+                let summary = str_arg(input, "summary").unwrap_or(&an_event);
                 let start = str_arg(input, "start").unwrap_or("");
                 let guests = input.get("attendees").and_then(|a| a.as_array()).map(|a| a.len()).unwrap_or(0);
-                let invite = if guests > 0 { format!(" and invite {guests} {}", if guests == 1 { "person" } else { "people" }) } else { String::new() };
-                Some(format!("Add “{}” to your calendar at {start}{invite}", clip(summary, 60)))
+                let invite = match guests {
+                    0 => String::new(),
+                    1 => locale.t("workspace.invite_one"),
+                    n => locale.tf("workspace.invite_many", &[("count", &n.to_string())]),
+                };
+                Some(locale.tf("workspace.approve_event", &[("title", &clip(summary, 60)), ("start", start), ("invite", &invite)]))
             }
             _ => None,
         }
@@ -264,6 +270,8 @@ impl SubAgent for WorkspaceAgent {
 }
 
 async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user_id: Uuid, name: &str, input: &Value) -> Result<Value, GoogleError> {
+    // The Connections page lists this activity back to the person, in their language.
+    let locale = nomi_agent_core::user_locale(conn, user_id).await;
     let arg = |key: &str| required(input, key).map_err(GoogleError::Failed);
     let rows = || input.get("rows").filter(|r| r.is_array()).cloned().ok_or_else(|| GoogleError::Failed("rows must be a list of rows".to_string()));
     match name {
@@ -275,9 +283,10 @@ async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user
             let reply_to = str_arg(input, "reply_to_message_id");
             let sending = name == "gmail_send";
             let result = if sending { google.gmail_send(to, subject, body, reply_to).await? } else { google.gmail_draft(to, subject, body, reply_to).await? };
-            let what = if sending { "Sent an email to" } else { "Drafted an email to" };
             let about = if subject.is_empty() { String::new() } else { format!(": {}", clip(subject, 60)) };
-            connection::record_activity(conn, user_id, "gmail", &format!("{what} {}{about}", clip(to, 60)), None).await;
+            let key = if sending { "workspace.sent_email" } else { "workspace.drafted_email" };
+            let summary = locale.tf(key, &[("to", &clip(to, 60)), ("about", &about)]);
+            connection::record_activity(conn, user_id, "gmail", &summary, None).await;
             Ok(result)
         }
         "sheets_read" => google.sheets_read(arg("spreadsheet_id")?, str_arg(input, "range")).await,
@@ -285,10 +294,11 @@ async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user
             let (id, range, rows) = (arg("spreadsheet_id")?, arg("range")?, rows()?);
             let count = rows.as_array().map(|r| r.len()).unwrap_or(0);
             let result = if name == "sheets_append" { google.sheets_append(id, range, &rows).await? } else { google.sheets_update(id, range, &rows).await? };
-            let summary = if name == "sheets_append" {
-                format!("Added {count} {} to {}", if count == 1 { "row" } else { "rows" }, clip(range, 40))
-            } else {
-                format!("Updated {}", clip(range, 40))
+            let range = clip(range, 40);
+            let summary = match (name, count) {
+                ("sheets_append", 1) => locale.tf("workspace.added_rows_one", &[("range", &range)]),
+                ("sheets_append", n) => locale.tf("workspace.added_rows_many", &[("count", &n.to_string()), ("range", &range)]),
+                _ => locale.tf("workspace.updated_range", &[("range", &range)]),
             };
             connection::record_activity(conn, user_id, "sheets", &summary, Some(&google::sheet_link(id))).await;
             Ok(result)
@@ -300,7 +310,7 @@ async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user
             if let Some(header) = input.get("header").and_then(|h| h.as_array()).filter(|h| !h.is_empty()) {
                 google.sheets_update(&id, "A1", &json!([header])).await?;
             }
-            connection::record_activity(conn, user_id, "sheets", &format!("Created “{}”", clip(title, 60)), Some(&google::sheet_link(&id))).await;
+            connection::record_activity(conn, user_id, "sheets", &locale.tf("workspace.created_sheet", &[("title", &clip(title, 60))]), Some(&google::sheet_link(&id))).await;
             Ok(result)
         }
         "docs_read" => google.docs_read(arg("document_id")?).await,
@@ -308,13 +318,13 @@ async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user
             let title = arg("title")?;
             let result = google.docs_create(title, str_arg(input, "text")).await?;
             let id = result.get("document_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            connection::record_activity(conn, user_id, "docs", &format!("Wrote “{}”", clip(title, 60)), Some(&google::doc_link(&id))).await;
+            connection::record_activity(conn, user_id, "docs", &locale.tf("workspace.wrote_doc", &[("title", &clip(title, 60))]), Some(&google::doc_link(&id))).await;
             Ok(result)
         }
         "docs_append" => {
             let id = arg("document_id")?;
             let result = google.docs_append(id, arg("text")?).await?;
-            connection::record_activity(conn, user_id, "docs", "Added text to a doc", Some(&google::doc_link(id))).await;
+            connection::record_activity(conn, user_id, "docs", &locale.t("workspace.appended_doc"), Some(&google::doc_link(id))).await;
             Ok(result)
         }
         "drive_search" => google.drive_search(arg("query")?, max_arg(input, 10)).await,
@@ -332,7 +342,7 @@ async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user
             }
             let result = google.calendar_add_event(&event).await?;
             let link = result.get("url").and_then(|v| v.as_str()).map(str::to_string);
-            connection::record_activity(conn, user_id, "calendar", &format!("Added “{}”", clip(summary, 60)), link.as_deref()).await;
+            connection::record_activity(conn, user_id, "calendar", &locale.tf("workspace.added_event", &[("title", &clip(summary, 60))]), link.as_deref()).await;
             Ok(result)
         }
         other => Err(GoogleError::Failed(format!("unknown tool {other}"))),
@@ -356,9 +366,10 @@ mod tests {
     #[test]
     fn a_send_is_described_with_its_recipient_subject_and_opening() {
         let agent = WorkspaceAgent::new(reqwest::Client::new(), None, [0; 32]);
-        let text = agent
-            .describe_action("gmail_send", &json!({"to": "stay@ubudvillas.example", "subject": "Booking", "body": "Hi, confirming 3 nights."}))
-            .unwrap();
+        let input = json!({"to": "stay@ubudvillas.example", "subject": "Booking", "body": "Hi, confirming 3 nights."});
+        let text = agent.describe_action("gmail_send", &input, nomi_agent_core::Locale::En).unwrap();
         assert_eq!(text, "Send an email to stay@ubudvillas.example “Booking”: Hi, confirming 3 nights.");
+        let text = agent.describe_action("gmail_send", &input, nomi_agent_core::Locale::Id).unwrap();
+        assert_eq!(text, "Kirim email ke stay@ubudvillas.example “Booking”: Hi, confirming 3 nights.");
     }
 }
