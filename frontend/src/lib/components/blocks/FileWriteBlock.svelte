@@ -44,7 +44,7 @@
 
 <div class="m3-block-card m3-block-card--write">
 	<div class="m3-block-card__header">
-		<AgentShape agent="coding" size={22} />
+		<AgentShape agent="coding" size={22} face />
 		<span class="md-body-medium">{block.previous_content !== null ? m.file_updated() : m.file_created()} <code>{block.path}</code></span>
 	</div>
 	<div class="m3-block-card__editor" bind:this={container}></div>

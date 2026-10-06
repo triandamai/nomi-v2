@@ -21,7 +21,7 @@
 		size?: number;
 		/** Moves (in the agent's motion) while the agent is actually doing something. */
 		working?: boolean;
-		/** Nomi's two-dot face — only for the Nomi brand mark. */
+		/** The two-dot face: Nomi's brand mark, and every crew member in chat. */
 		face?: boolean;
 		/** When set the shape is announced (role="img"); otherwise it's decorative. */
 		label?: string;

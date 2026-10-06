@@ -35,7 +35,7 @@
 
 <section class="reminder" class:reminder--settled={status === 'done' || status === 'snoozed'} aria-label={m.remblock_label({ title: block.title })}>
 	<div class="reminder__head">
-		<AgentShape agent="reminders" size={28} working={status === 'open'} />
+		<AgentShape agent="reminders" size={28} working={status === 'open'} face />
 		<span class="nomi-meta reminder__eyebrow">{m.remblock_eyebrow({ when })}</span>
 	</div>
 	<p class="reminder__title">{block.title}</p>

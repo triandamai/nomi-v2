@@ -53,7 +53,7 @@
 
 <section class="checklist" aria-label={heading} style="--tint: {tint}; --accent: {TONE_ACCENT[look.tone]}">
 	<div class="checklist__head">
-		<AgentShape {agent} size={26} {working} />
+		<AgentShape {agent} size={26} {working} face />
 		<span class="checklist__heading">{heading}</span>
 		{#if items.length > 0}
 			<span class="nomi-meta checklist__count">{done} / {items.length}</span>
