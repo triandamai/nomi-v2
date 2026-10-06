@@ -211,7 +211,8 @@ pub async fn extract_and_store_memory(
 }
 
 /// [`extract_and_store_memory`], remembering which chat the memory came from (its latest message
-/// from the person becomes the memory's source).
+/// from the person becomes the memory's source). Runs the model call inline; turns use
+/// [`queue_learning`] instead so the reply never waits on it.
 pub async fn extract_and_store_memory_in(
     conn: &mut PoolConnection<Postgres>,
     provider: &dyn LlmProvider,
@@ -221,9 +222,21 @@ pub async fn extract_and_store_memory_in(
     user_text: &str,
     assistant_text: &str,
 ) {
-    // The person's own latest message in the chat. The caller's `user_text` is the agent's last
-    // user turn, which after a tool call is a tool result (no text at all) and for a delegated
-    // agent is its task brief, so the chat itself is the reliable source.
+    let Some((source_message_id, user_text)) = what_the_person_said(conn, session_id, user_text).await else {
+        return;
+    };
+    learn(conn, provider, embedding_provider, user_id, source_message_id, &user_text, assistant_text).await
+}
+
+/// The person's own latest message in the chat, and its id. The caller's `user_text` is the
+/// agent's last user turn, which after a tool call is a tool result (no text at all) and for a
+/// delegated agent is its task brief, so the chat itself is the reliable source. `None` when
+/// there's nothing they said to learn from.
+async fn what_the_person_said(
+    conn: &mut PoolConnection<Postgres>,
+    session_id: Option<Uuid>,
+    fallback: &str,
+) -> Option<(Option<Uuid>, String)> {
     let latest: Option<(Uuid, String)> = match session_id {
         Some(session_id) => sqlx::query_as(
             "SELECT id, content FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NOT NULL \
@@ -236,14 +249,92 @@ pub async fn extract_and_store_memory_in(
         .flatten(),
         None => None,
     };
-    let source_message_id = latest.as_ref().map(|(id, _)| *id);
-    let user_text = match &latest {
-        Some((_, content)) if !content.trim().is_empty() => content.as_str(),
-        _ => user_text,
+    let (source, text) = match latest {
+        Some((id, content)) if !content.trim().is_empty() => (Some(id), content),
+        _ => (None, fallback.to_string()),
     };
-    if user_text.trim().is_empty() {
+    (!text.trim().is_empty()).then_some((source, text))
+}
+
+/// After an agent answers, queues the exchange for the memory worker to learn from. Cheap: one
+/// insert, so the reply goes out without waiting on a model call.
+pub async fn queue_learning(
+    conn: &mut PoolConnection<Postgres>,
+    user_id: Uuid,
+    session_id: Uuid,
+    fallback_user_text: &str,
+    answer: &str,
+) {
+    let Some((source_message_id, person_text)) = what_the_person_said(conn, Some(session_id), fallback_user_text).await else {
         return;
+    };
+    let queued = sqlx::query("INSERT INTO memory_jobs (user_id, source_message_id, person_text, answer) VALUES ($1, $2, $3, $4)")
+        .bind(user_id)
+        .bind(source_message_id)
+        .bind(&person_text)
+        .bind(answer)
+        .execute(&mut **conn)
+        .await;
+    if let Err(e) = queued {
+        tracing::warn!(error = %e, "memory: failed to queue the exchange to learn from");
     }
+}
+
+/// One queued exchange to learn from (see [`queue_learning`]).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct LearningJob {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub source_message_id: Option<Uuid>,
+    pub person_text: String,
+    pub answer: String,
+}
+
+/// How often a job is tried before it's dropped (a model that keeps failing or timing out).
+pub const LEARNING_ATTEMPTS: i32 = 3;
+
+/// The oldest queued exchanges, counting this as an attempt for each.
+pub async fn take_learning_jobs(pool: &sqlx::PgPool, limit: i64) -> Result<Vec<LearningJob>, sqlx::Error> {
+    sqlx::query_as(
+        "UPDATE memory_jobs SET attempts = attempts + 1 \
+         WHERE id IN (SELECT id FROM memory_jobs WHERE attempts < $2 ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED) \
+         RETURNING id, user_id, source_message_id, person_text, answer",
+    )
+    .bind(limit)
+    .bind(LEARNING_ATTEMPTS)
+    .fetch_all(pool)
+    .await
+}
+
+/// Learns from one queued exchange, then removes it from the queue.
+pub async fn run_learning_job(
+    pool: &sqlx::PgPool,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    job: &LearningJob,
+) -> Result<(), sqlx::Error> {
+    let mut conn = pool.acquire().await?;
+    learn(&mut conn, provider, embedding_provider, job.user_id, job.source_message_id, &job.person_text, &job.answer).await;
+    sqlx::query("DELETE FROM memory_jobs WHERE id = $1").bind(job.id).execute(&mut *conn).await?;
+    Ok(())
+}
+
+/// Clears jobs that ran out of attempts.
+pub async fn drop_failed_learning_jobs(pool: &sqlx::PgPool) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query("DELETE FROM memory_jobs WHERE attempts >= $1").bind(LEARNING_ATTEMPTS).execute(pool).await?.rows_affected())
+}
+
+/// Decides whether the exchange taught Nomi something lasting about the person, and adds,
+/// updates or retires one memory accordingly.
+async fn learn(
+    conn: &mut PoolConnection<Postgres>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    user_id: Uuid,
+    source_message_id: Option<Uuid>,
+    user_text: &str,
+    assistant_text: &str,
+) {
     // What's already known near this topic, so the extractor can update instead of duplicate.
     let known: Vec<(Uuid, String, String)> = match embedding_provider.embed_for_query(user_text).await {
         Ok(query) if query.len() == STORED_DIMENSIONS => sqlx::query_as(

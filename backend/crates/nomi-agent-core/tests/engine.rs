@@ -1533,6 +1533,7 @@ async fn a_reply_after_a_tool_call_still_learns_from_what_the_person_said(pool: 
     .await
     .unwrap();
 
+    learn_from_the_queue(&pool, &provider, &embedding_provider).await;
     let stored: Vec<String> = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1").bind(user_id).fetch_all(&pool).await.unwrap();
     assert_eq!(stored, vec!["Sister Rina".to_string()]);
     let requests = provider.received_requests.lock().unwrap();
@@ -1570,6 +1571,38 @@ async fn an_agent_that_finishes_with_complete_task_still_learns_from_the_chat(po
     .unwrap();
 
     assert!(matches!(outcome, LoopOutcome::Completed { .. }), "{outcome:?}");
+    learn_from_the_queue(&pool, &provider, &embedding_provider).await;
     let stored: Vec<String> = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1").bind(user_id).fetch_all(&pool).await.unwrap();
     assert_eq!(stored, vec!["Works night shifts as a nurse".to_string()]);
+}
+
+/// What the memory worker does with the exchanges turns queue.
+async fn learn_from_the_queue(pool: &PgPool, provider: &FakeLlmProvider, embedding_provider: &FakeEmbeddingProvider) {
+    let jobs = nomi_agent_core::memory::take_learning_jobs(pool, 10).await.unwrap();
+    assert_eq!(jobs.len(), 1, "the turn queued its exchange");
+    nomi_agent_core::memory::run_learning_job(pool, provider, embedding_provider, &jobs[0]).await.unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reply_goes_out_without_waiting_on_memory(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    // Only the reply is scripted: a memory call during the turn would fail it for want of a response.
+    let provider = FakeLlmProvider::sequence(vec![text_response("Sure!", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.5; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(RememberingTestAgent)]);
+    let history = vec![nomi_llm::LlmMessage { role: nomi_llm::LlmRole::User, content: vec![ContentBlock::Text { text: "I'm vegetarian".to_string() }] }];
+
+    let outcome = run_agent_turn(
+        &mut conn, None, None, &provider, &embedding_provider, &registry, &RememberingTestAgent, session_id, agent_session_id, user_id,
+        history, 100,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { ref text, .. } if text == "Sure!"), "{outcome:?}");
+    assert_eq!(provider.received_requests.lock().unwrap().len(), 1);
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM memory_jobs WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(queued, 1);
 }

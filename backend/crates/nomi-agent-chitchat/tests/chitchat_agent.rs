@@ -51,13 +51,13 @@ async fn seed_user(pool: &PgPool) -> Uuid {
 // coming back, and memory extraction firing afterward because `ChitchatAgent::uses_memory()`
 // is `true` — is asserted here directly against the engine.
 #[sqlx::test(migrations = "../../migrations")]
-async fn end_turn_returns_the_reply_and_triggers_memory_extraction_afterward(pool: PgPool) {
+async fn end_turn_returns_the_reply_and_queues_the_exchange_to_learn_from(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
 
-    // First response answers the user; the second is the memory-extraction call that
-    // `run_agent_turn` fires after a `Reply` outcome because `ChitchatAgent::uses_memory()`
-    // returns `true`.
+    // First response answers the user. The second is the memory extraction, which the memory
+    // worker runs later from the queued exchange (ChitchatAgent::uses_memory() is true), never
+    // while the reply waits.
     let provider = FakeLlmProvider::sequence(vec![text_response("Hello there!"), text_response("User said hi")]);
     let embedder = FakeEmbeddingProvider::success(make_embedding(0.5));
     let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent)]);
@@ -84,6 +84,12 @@ async fn end_turn_returns_the_reply_and_triggers_memory_extraction_afterward(poo
         outcome,
         LoopOutcome::Reply { text: "Hello there!".to_string(), memory_ids_used: vec![], input_tokens: 10, output_tokens: 5 }
     );
+    assert_eq!(provider.received_requests.lock().unwrap().len(), 1, "the reply never waits on memory");
+
+    let jobs = nomi_agent_core::memory::take_learning_jobs(&pool, 10).await.unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!((jobs[0].person_text.as_str(), jobs[0].answer.as_str()), ("hi", "Hello there!"));
+    nomi_agent_core::memory::run_learning_job(&pool, &provider, &embedder, &jobs[0]).await.unwrap();
 
     let stored: String = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1")
         .bind(user_id)
@@ -91,6 +97,8 @@ async fn end_turn_returns_the_reply_and_triggers_memory_extraction_afterward(poo
         .await
         .unwrap();
     assert_eq!(stored, "User said hi");
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM memory_jobs").fetch_one(&pool).await.unwrap();
+    assert_eq!(left, 0, "a learned exchange leaves the queue");
 }
 
 // Ported from `persists_nothing_when_the_provider_call_fails`: back then this checked that a
