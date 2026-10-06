@@ -3,7 +3,8 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
+	import { mergeReloaded } from '$lib/mergeMessages';
 	import CrewPanel from '$lib/components/CrewPanel.svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -194,8 +195,18 @@
 	// Resync whenever the page's own `messages` prop changes — navigating to a different
 	// session, or a full invalidateAll() (still used for AgentDelegationUpdated and on
 	// WS-reconnect-after-drop, see below).
+	// Reloads merge rather than replace: a turn that fails within milliseconds posts its notice
+	// while the send is still reloading, and the older snapshot must not wipe it out. Another
+	// chat starts clean.
+	let shownSession = untrack(() => sessionId);
 	$effect(() => {
-		localMessages = messages;
+		const incoming = messages;
+		if (sessionId !== untrack(() => shownSession)) {
+			shownSession = sessionId;
+			localMessages = incoming;
+			return;
+		}
+		localMessages = mergeReloaded(incoming, untrack(() => localMessages));
 	});
 
 	// Enter sends, Shift+Enter breaks the line — the textarea grows with its content.

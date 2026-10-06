@@ -69,6 +69,7 @@ pub async fn handle_inbound_message(
             .bind(serde_json::json!({"error": err.to_string()}))
             .execute(&mut *conn)
             .await;
+            settle_agent_phases(&mut conn, None, session_id).await;
 
             release_lock_ignoring_errors(&mut conn, session_id).await;
             Err(err)
@@ -144,6 +145,9 @@ pub async fn process_turn(
             .execute(&mut *conn)
             .await;
 
+            // Whatever was mid-step when it failed is idle now, or the chat and crew would show it
+            // working forever.
+            settle_agent_phases(&mut conn, Some(mqtt), session_id).await;
             // Best-effort: an MQTT publish failure never changes the turn's outcome.
             let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err).await;
             let _ = mqtt
@@ -480,6 +484,7 @@ pub async fn resume_paused_turn(
                 .bind(serde_json::json!({"error": err.to_string()}))
                 .execute(&mut *conn)
                 .await;
+            settle_agent_phases(&mut conn, Some(mqtt), session_id).await;
             let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err).await;
             let _ = mqtt.publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: explanation }).await;
             release_lock_ignoring_errors(&mut conn, session_id).await;
@@ -677,6 +682,24 @@ async fn release_lock_ignoring_errors(conn: &mut sqlx::pool::PoolConnection<sqlx
 
 /// Tells the user in the chat why their message got no reply (out of credits, a rejected API
 /// key, ...) and returns that explanation. Best-effort, like the rest of the failure path.
+/// After a turn fails: every agent in the chat that was thinking, writing or calling a tool is
+/// set back to waiting (and the chat is told), since the failure ended whatever it was doing.
+async fn settle_agent_phases(conn: &mut PoolConnection<Postgres>, mqtt: Option<&MqttPublisher>, session_id: Uuid) {
+    let settled: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE agent_sessions SET current_phase = 'waiting', current_phase_detail = NULL \
+         WHERE session_id = $1 AND current_phase <> 'waiting' RETURNING id",
+    )
+    .bind(session_id)
+    .fetch_all(&mut **conn)
+    .await
+    .unwrap_or_default();
+    let Some(mqtt) = mqtt else { return };
+    for agent_session_id in settled {
+        let envelope = StreamEnvelope::AgentPhaseChanged { agent_session_id, phase: "waiting".to_string(), detail: None };
+        let _ = mqtt.publish(session_id, &envelope).await;
+    }
+}
+
 async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPublisher, session_id: Uuid, err: &TurnError) -> String {
     let locale = session_owner_locale(conn, session_id).await;
     let explanation = err.user_message_in(locale);
