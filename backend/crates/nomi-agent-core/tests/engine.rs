@@ -419,7 +419,8 @@ async fn the_crew_answers_in_the_persons_language(pool: PgPool) {
     // The model is told to answer in Indonesian, and Nomi's own fallback reply is Indonesian too.
     let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
     assert!(system.contains("Indonesian (Bahasa Indonesia)"), "{system}");
-    assert_eq!(reply_of(&outcome), "Aku belum bisa menyusun jawaban barusan. Bisa tanya sekali lagi?");
+    assert!(system.contains("polite, warm and calm"), "the crew is told the Indonesian tone: {system}");
+    assert_eq!(reply_of(&outcome), "Maaf, aku belum berhasil menyusun jawabannya. Boleh ditanyakan sekali lagi?");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

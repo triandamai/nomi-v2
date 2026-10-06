@@ -487,7 +487,7 @@ mod tests {
         );
         assert_eq!(
             describe(&report, &StopTarget::Everything, None, Locale::Id),
-            "Money, Coding dan Nomi sudah kuhentikan di 2 obrolan. 1 pesan yang mengantre kubuang tanpa dijawab. Bilang saja kalau mau dilanjutkan."
+            "Baik, Money, Coding dan Nomi sudah aku hentikan di 2 obrolan. 1 pesan yang sedang mengantre aku lewati tanpa dijawab. Kabari aku kalau ingin dilanjutkan, ya."
         );
     }
 }

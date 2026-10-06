@@ -49,9 +49,18 @@ impl Locale {
     /// Appended to every agent's system prompt so the crew answers in the person's language.
     pub fn reply_instruction(self) -> String {
         let name = self.english_name();
+        let tone = match self {
+            Locale::En => "",
+            Locale::Id => {
+                " In Indonesian, be polite, warm and calm, with a light touch of fun: call them \"kamu\" (\"-mu\") \
+                 and yourself \"aku\", write full words (no slang, no abbreviations like \"yg\" or \"gak\"), \
+                 say \"maaf\" and \"terima kasih\" where it's natural, and use a gentle \"ya\" or \"yuk\" \
+                 now and then, never in every sentence."
+            }
+        };
         format!(
             "The person's app language is {name}. Write every reply to them in {name}, including headings, \
-             lists, plans and questions. If they write to you in a different language, answer in theirs instead."
+             lists, plans and questions. If they write to you in a different language, answer in theirs instead.{tone}"
         )
     }
 
@@ -99,7 +108,7 @@ mod tests {
     #[test]
     fn arguments_are_filled_in() {
         assert_eq!(Locale::En.tf("turn.handed_off", &[("agent", "Money")]), "I've passed this to Money. It'll reply here when it's done.");
-        assert_eq!(Locale::Id.tf("turn.handed_off", &[("agent", "Money")]), "Sudah kuteruskan ke Money. Balasannya akan muncul di sini setelah selesai.");
+        assert_eq!(Locale::Id.tf("turn.handed_off", &[("agent", "Money")]), "Sudah aku teruskan ke Money. Balasannya akan muncul di sini begitu selesai, ya.");
     }
 
     /// Flattened `a.b.c` keys of a locale file, without pulling a YAML parser into the crate.
