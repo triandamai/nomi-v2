@@ -105,10 +105,11 @@ pub async fn bootstrap_identity_and_session(
     };
 
     let inserted_session_id: Option<Uuid> = sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_type, chat_id) VALUES ($1, $2, $3, $4) \
+        "INSERT INTO sessions (org_id, user_id, channel, chat_type, chat_id) VALUES ($1, $2, $3, $4, $5) \
          ON CONFLICT (channel, chat_id) DO NOTHING RETURNING id",
     )
     .bind(org_id)
+    .bind(user_id)
     .bind(channel)
     .bind(chat_type)
     .bind(chat_id)

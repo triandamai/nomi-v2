@@ -74,8 +74,8 @@ async fn authed(router: axum::Router, method: &str, uri: &str, token: &str, body
 
 async fn org_session(pool: &PgPool, user_id: uuid::Uuid, title: &str) -> uuid::Uuid {
     sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_id, title) \
-         VALUES ((SELECT org_id FROM memberships WHERE user_id = $1 LIMIT 1), 'web', gen_random_uuid()::text, $2) RETURNING id",
+        "INSERT INTO sessions (org_id, user_id, channel, chat_id, title) \
+         VALUES ((SELECT org_id FROM memberships WHERE user_id = $1 LIMIT 1), $1, 'web', gen_random_uuid()::text, $2) RETURNING id",
     )
     .bind(user_id)
     .bind(title)

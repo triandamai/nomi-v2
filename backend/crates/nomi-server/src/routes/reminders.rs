@@ -85,7 +85,7 @@ pub struct CreateReminderRequest {
 /// The user's "Reminders" chat in their active org, created on first use.
 async fn reminders_session(state: &AppState, user_id: Uuid, org_id: Uuid) -> Result<Uuid, (StatusCode, String)> {
     let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT s.id FROM sessions s WHERE s.org_id = $1 AND s.channel = 'web' AND s.title = $2 \
+        "SELECT s.id FROM sessions s WHERE s.org_id = $1 AND s.user_id = $3 AND s.channel = 'web' AND s.title = $2 \
          AND EXISTS (SELECT 1 FROM reminders r WHERE r.session_id = s.id AND r.user_id = $3) \
          ORDER BY s.created_at LIMIT 1",
     )

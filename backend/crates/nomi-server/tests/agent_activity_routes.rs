@@ -89,7 +89,8 @@ async fn returns_empty_when_no_delegations_exist_for_the_session(pool: PgPool) {
     let org_id = org_id_for(&pool, "activity-empty@example.com").await;
 
     let session_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c1') RETURNING id",
+        "INSERT INTO sessions (org_id, user_id, channel, chat_id) \
+         VALUES ($1, (SELECT user_id FROM memberships WHERE org_id = $1 LIMIT 1), 'telegram', 'c1') RETURNING id",
     )
     .bind(org_id)
     .fetch_one(&pool)
@@ -110,7 +111,8 @@ async fn lists_delegations_for_a_session_the_caller_owns(pool: PgPool) {
     let user_id = user_id_for(&pool, "activity-owner@example.com").await;
 
     let session_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c2') RETURNING id",
+        "INSERT INTO sessions (org_id, user_id, channel, chat_id) \
+         VALUES ($1, (SELECT user_id FROM memberships WHERE org_id = $1 LIMIT 1), 'telegram', 'c2') RETURNING id",
     )
     .bind(org_id)
     .fetch_one(&pool)
@@ -164,7 +166,8 @@ async fn agent_status_returns_none_when_no_active_agent_session(pool: PgPool) {
     let org_id = org_id_for(&pool, "status-none@example.com").await;
 
     let session_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c4') RETURNING id",
+        "INSERT INTO sessions (org_id, user_id, channel, chat_id) \
+         VALUES ($1, (SELECT user_id FROM memberships WHERE org_id = $1 LIMIT 1), 'telegram', 'c4') RETURNING id",
     )
     .bind(org_id)
     .fetch_one(&pool)
@@ -184,7 +187,8 @@ async fn agent_status_returns_the_active_agent_sessions_phase(pool: PgPool) {
     let org_id = org_id_for(&pool, "status-active@example.com").await;
 
     let session_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'c5') RETURNING id",
+        "INSERT INTO sessions (org_id, user_id, channel, chat_id) \
+         VALUES ($1, (SELECT user_id FROM memberships WHERE org_id = $1 LIMIT 1), 'telegram', 'c5') RETURNING id",
     )
     .bind(org_id)
     .fetch_one(&pool)

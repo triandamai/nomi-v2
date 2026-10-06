@@ -226,7 +226,8 @@ export interface Profile {
 }
 
 export type Theme = 'light' | 'dark' | 'system';
-export type AccentColor = 'green' | 'blue' | 'purple' | 'pink' | 'orange' | 'teal';
+/** Appearance theme (stored as accent_color). */
+export type AccentColor = 'canopy' | 'coral-reef' | 'borneo-dusk' | 'phantom' | 'senja-jakarta';
 
 export interface Preferences {
 	theme: Theme;
