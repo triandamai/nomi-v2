@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -10,27 +11,27 @@
 </script>
 
 <AuthShell
-	title="Create your account"
-	subtitle="Takes a minute. Nomi and the crew are ready when you are."
-	switchPrompt="Have an account?"
-	switchLabel="Log in"
+	title={m.register_title()}
+	subtitle={m.register_subtitle()}
+	switchPrompt={m.register_have_account()}
+	switchLabel={m.login_submit()}
 	switchHref="/login"
 >
 	{#if data.googleError}
 		<p class="md-body-medium mb-4" role="alert" style="color: var(--md-sys-color-error)">{data.googleError}</p>
 	{/if}
 	{#if data.google}
-		<GoogleButton label="Sign up with Google" />
-		<div class="or" aria-hidden="true"><span>or</span></div>
+		<GoogleButton label={m.google_sign_up()} />
+		<div class="or" aria-hidden="true"><span>{m.auth_or()}</span></div>
 	{/if}
 	<form method="POST" use:enhance class="flex flex-col gap-5">
 		{#if form?.error}
 			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label="Email" autocomplete="email" required />
-		<TextField id="password" name="password" type="password" label="Password" autocomplete="new-password" required />
-		<TextField id="orgName" name="orgName" type="text" label="Organization name" required />
-		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">Register</Button>
+		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" required />
+		<TextField id="password" name="password" type="password" label={m.auth_password()} autocomplete="new-password" required />
+		<TextField id="orgName" name="orgName" type="text" label={m.register_org()} required />
+		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.register_submit()}</Button>
 	</form>
 </AuthShell>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { MODES, THEMES } from '$lib/appearance';
 	import type { AccentColor, Preferences, Theme } from '$lib/types';
@@ -27,7 +28,7 @@
 
 <div class="appearance">
 	<section aria-labelledby="mode-title">
-		<h3 id="mode-title" class="appearance__label">Mode</h3>
+		<h3 id="mode-title" class="appearance__label">{m.appearance_mode()}</h3>
 		<form method="POST" action="/preferences?/updateTheme" use:enhance={keep} class="modes">
 			{#each MODES as option (option.value)}
 				<button
@@ -46,11 +47,11 @@
 				</button>
 			{/each}
 		</form>
-		<p class="appearance__hint">System follows your device's light or dark setting.</p>
+		<p class="appearance__hint">{m.appearance_mode_hint()}</p>
 	</section>
 
 	<section aria-labelledby="theme-title">
-		<h3 id="theme-title" class="appearance__label">Theme</h3>
+		<h3 id="theme-title" class="appearance__label">{m.appearance_theme()}</h3>
 		<form method="POST" action="/preferences?/updateAccentColor" use:enhance={keep} class="themes">
 			{#each THEMES as option (option.value)}
 				{@const selected = theme === option.value}

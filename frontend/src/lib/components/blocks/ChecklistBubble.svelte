@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
@@ -61,8 +62,8 @@
 						{/if}
 					</span>
 					<span>{item.text}</span>
-					{#if item.status === 'in_progress'}<span class="sr-only">(current step)</span>{/if}
-					{#if item.status === 'done'}<span class="sr-only">(done)</span>{/if}
+					{#if item.status === 'in_progress'}<span class="sr-only">{m.checklist_current()}</span>{/if}
+					{#if item.status === 'done'}<span class="sr-only">{m.checklist_done()}</span>{/if}
 				</li>
 			{/each}
 		</ul>

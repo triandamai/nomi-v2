@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import type { ThinkingLevel } from '$lib/types';
@@ -15,10 +16,10 @@
 	} = $props();
 
 	const LEVELS: { value: ThinkingLevel; label: string; hint: string }[] = [
-		{ value: 'off', label: 'Off', hint: 'Fastest. Answers straight away' },
-		{ value: 'low', label: 'Low', hint: 'A quick think first' },
-		{ value: 'medium', label: 'Medium', hint: 'Balanced (the default)' },
-		{ value: 'high', label: 'High', hint: 'Slower, for tricky problems' },
+		{ value: 'off', label: m.think_off(), hint: m.think_off_hint() },
+		{ value: 'low', label: m.think_low(), hint: m.think_low_hint() },
+		{ value: 'medium', label: m.think_medium(), hint: m.think_medium_hint() },
+		{ value: 'high', label: m.think_high(), hint: m.think_high_hint() },
 	];
 
 	let open = $state(false);

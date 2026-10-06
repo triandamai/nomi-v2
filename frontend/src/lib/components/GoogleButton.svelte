@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	// "Continue with Google": posts to /auth/google, which sends the browser on to Google. The
 	// multicolor G is Google's required mark for sign-in buttons; the rest is an M3 outlined button.
-	let { label = 'Continue with Google', action = '/auth/google', inviteCode = null }: { label?: string; action?: string; inviteCode?: string | null } = $props();
+	let { label = m.google_continue(), action = '/auth/google', inviteCode = null }: { label?: string; action?: string; inviteCode?: string | null } = $props();
 </script>
 
 <form method="POST" {action} class="google">

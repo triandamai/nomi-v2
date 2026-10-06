@@ -1,5 +1,6 @@
 <!-- frontend/src/lib/components/blocks/ApprovalCard.svelte -->
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
 	import type { ContentBlock } from '$lib/types';
@@ -30,8 +31,8 @@
 			// lost its paused state) — retrying can't help, so say what to do instead.
 			expired = result.status === 409;
 			error = expired
-				? 'This request expired. Ask again and the agent will ask for your OK again.'
-				: ((result.data?.error as string) ?? 'Failed to record your decision.');
+				? m.approval_expired()
+				: ((result.data?.error as string) ?? m.err_record_decision());
 		}
 		// On success the card's own status flips via the MessageUpdated WS event landing shortly
 		// after (Task 12) — no local optimistic update needed here.
@@ -40,10 +41,10 @@
 
 <div class="m3-block-card m3-block-card--approval" class:m3-block-card--settled={block.status !== 'pending'}>
 	{#if block.status === 'pending'}
-		<span class="nomi-meta m3-approval-eyebrow">Needs your OK</span>
+		<span class="nomi-meta m3-approval-eyebrow">{m.approval_needs_ok()}</span>
 	{/if}
 	<p class="m3-approval-title">{block.description}</p>
-	<p class="m3-approval-tool">Tool: <code>{block.tool_name}</code></p>
+	<p class="m3-approval-tool">{m.approval_tool()} <code>{block.tool_name}</code></p>
 
 	{#if block.status === 'pending'}
 		{#if error}
@@ -52,14 +53,14 @@
 		{#if !expired}
 			<label class="m3-approval-remember">
 				<Checkbox bind:checked={remember} />
-				<span class="md-body-small">Remember this decision for next time</span>
+				<span class="md-body-small">{m.approval_remember()}</span>
 			</label>
 			<div class="m3-block-card__actions">
 				<button type="button" class="m3-approval-btn m3-approval-btn--allow" disabled={submitting} onclick={() => resolve('approve')}>
-					Approve
+					{m.approval_approve()}
 				</button>
 				<button type="button" class="m3-approval-btn m3-approval-btn--deny" disabled={submitting} onclick={() => resolve('deny')}>
-					Deny
+					{m.approval_deny()}
 				</button>
 			</div>
 		{/if}
@@ -67,13 +68,13 @@
 		<p class="m3-approval-result">
 			{#if block.status === 'approved'}
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>
-				Approved
+				{m.approval_approved()}
 			{:else if block.status === 'cancelled'}
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
-				Stopped before you decided
+				{m.approval_stopped()}
 			{:else}
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-				Denied
+				{m.approval_denied()}
 			{/if}
 		</p>
 	{/if}

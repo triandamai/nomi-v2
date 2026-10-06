@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import AppearancePicker from '$lib/components/AppearancePicker.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -38,24 +39,24 @@
 
 <div class="h-full overflow-y-auto px-4 py-8 md:px-10">
 	<div class="max-w-3xl">
-		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Preferences</h1>
+		<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">{m.prefs_title()}</h1>
 
 		{#if form?.error}
 			<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
 
 		<section class="mt-6">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Appearance</h2>
+			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.prefs_appearance()}</h2>
 			<p class="md-body-medium mt-1 mb-4" style="color: var(--md-sys-color-on-surface-variant)">
-				Pick a theme for Nomi and the admin console. Your agents keep their own colours.
+				{m.prefs_appearance_hint()}
 			</p>
 			<AppearancePicker preferences={data.preferences} />
 		</section>
 
 		<section class="mt-8">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">Timezone</h2>
+			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.prefs_timezone()}</h2>
 			<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
-				Used to schedule reminders at the right local time.
+				{m.prefs_timezone_hint()}
 			</p>
 			<form
 				bind:this={timezoneForm}

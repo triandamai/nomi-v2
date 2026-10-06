@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -32,26 +33,26 @@
 	}
 </script>
 
-<section class="reminder" class:reminder--settled={status === 'done' || status === 'snoozed'} aria-label="Reminder: {block.title}">
+<section class="reminder" class:reminder--settled={status === 'done' || status === 'snoozed'} aria-label={m.remblock_label({ title: block.title })}>
 	<div class="reminder__head">
 		<AgentShape agent="reminders" size={28} working={status === 'open'} />
-		<span class="nomi-meta reminder__eyebrow">Reminder · {when}</span>
+		<span class="nomi-meta reminder__eyebrow">{m.remblock_eyebrow({ when })}</span>
 	</div>
 	<p class="reminder__title">{block.title}</p>
 	{#if block.notes}<p class="reminder__notes">{block.notes}</p>{/if}
 
 	{#if status === 'open' || status === 'error'}
 		<div class="reminder__actions">
-			<Button variant="filled" disabled={busy} onclick={() => act('done')}>Done</Button>
-			<Button variant="tonal" disabled={busy} onclick={() => act('snooze', 10)}>Snooze 10 min</Button>
-			<Button variant="text" disabled={busy} onclick={() => act('snooze', 60)}>1 hour</Button>
+			<Button variant="filled" disabled={busy} onclick={() => act('done')}>{m.common_done()}</Button>
+			<Button variant="tonal" disabled={busy} onclick={() => act('snooze', 10)}>{m.remblock_snooze10()}</Button>
+			<Button variant="text" disabled={busy} onclick={() => act('snooze', 60)}>{m.remblock_1h()}</Button>
 		</div>
 		{#if status === 'error'}
-			<p class="reminder__error" role="alert">That reminder can't be changed any more.</p>
+			<p class="reminder__error" role="alert">{m.remblock_error()}</p>
 		{/if}
 	{:else}
 		<p class="reminder__result" role="status">
-			{status === 'done' ? 'Done. Nice one.' : 'Snoozed. It will come back shortly.'}
+			{status === 'done' ? m.remblock_done() : m.remblock_snoozed()}
 		</p>
 	{/if}
 </section>

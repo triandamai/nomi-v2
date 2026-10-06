@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { deserialize, enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -11,7 +12,7 @@
 		{ value: 'openrouter', label: 'OpenRouter' },
 		{ value: 'gemini', label: 'Gemini' },
 		{ value: 'deepseek', label: 'DeepSeek' },
-		{ value: 'fake', label: 'Fake (testing)' },
+		{ value: 'fake', label: m.key_fake() },
 	];
 
 	let {
@@ -72,7 +73,7 @@
 				modelId = fetchedModels[0].id;
 			}
 			if (fetchedModels.length === 0) {
-				fetchError = 'This provider returned no models — enter the model ID manually.';
+				fetchError = m.key_no_models();
 				modelEntryMode = 'manual';
 			}
 		} else {
@@ -80,13 +81,13 @@
 			modelEntryMode = 'manual';
 			fetchError =
 				(result.type === 'failure' && (result.data?.error as string)) ||
-				'Could not fetch models — enter the model ID manually.';
+				m.err_fetch_models();
 		}
 	}
 </script>
 
 <BottomSheet bind:open>
-	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">Use your own API key</h2>
+	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{m.key_title()}</h2>
 
 	{#if error}
 		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{error}</p>
@@ -106,10 +107,10 @@
 		}}
 		class="mt-4 flex flex-col gap-3"
 	>
-		<TextField id="label" name="label" label="Label" bind:value={label} required />
-		<Select label="Provider" name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
-		<TextField id="api_key" name="api_key" type="password" label="API key" bind:value={apiKey} />
-		<TextField id="base_url" name="base_url" label="Base URL (optional)" bind:value={baseUrl} />
+		<TextField id="label" name="label" label={m.key_label()} bind:value={label} required />
+		<Select label={m.key_provider()} name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
+		<TextField id="api_key" name="api_key" type="password" label={m.key_api_key()} bind:value={apiKey} />
+		<TextField id="base_url" name="base_url" label={m.key_base_url()} bind:value={baseUrl} />
 
 		<Button
 			type="button"
@@ -118,7 +119,7 @@
 			disabled={fetching || (provider !== 'fake' && !apiKey)}
 			onclick={fetchModels}
 		>
-			{fetching ? 'Fetching…' : 'Fetch models'}
+			{fetching ? m.key_fetching() : m.key_fetch()}
 		</Button>
 		{#if fetchError}
 			<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{fetchError}</p>
@@ -126,7 +127,7 @@
 
 		{#if modelEntryMode === 'select' && fetchedModels.length > 0}
 			<Select
-				label="Model"
+				label={m.key_model()}
 				name="model_id"
 				bind:value={modelId}
 				options={fetchedModels.map((m) => ({ value: m.id, label: m.label ? `${m.id} (${m.label})` : m.id }))}
@@ -137,10 +138,10 @@
 				style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
 				onclick={() => (modelEntryMode = 'manual')}
 			>
-				Enter model ID manually instead
+				{m.key_manual()}
 			</button>
 		{:else}
-			<TextField id="model_id" name="model_id" label="Model ID" bind:value={modelId} required />
+			<TextField id="model_id" name="model_id" label={m.key_model_id()} bind:value={modelId} required />
 			{#if fetchedModels.length > 0}
 				<button
 					type="button"
@@ -148,14 +149,14 @@
 					style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
 					onclick={() => (modelEntryMode = 'select')}
 				>
-					Choose from fetched list instead
+					{m.key_choose_list()}
 				</button>
 			{/if}
 		{/if}
 
 		<div class="flex gap-2 pt-2">
-			<Button type="submit" variant="filled">Save &amp; validate</Button>
-			<Button type="button" variant="outlined" onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" variant="filled">{m.key_save_validate()}</Button>
+			<Button type="button" variant="outlined" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 		</div>
 	</form>
 </BottomSheet>

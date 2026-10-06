@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import AgentShape from './AgentShape.svelte';
 	import Checkbox from './Checkbox.svelte';
 	import {
@@ -20,7 +21,7 @@
 		shape = $bindable('cookie9'),
 		tone = $bindable('glow'),
 		motion = $bindable('spin'),
-		name = 'Agent',
+		name = m.shape_agent(),
 	}: {
 		shape?: ShapeName;
 		tone?: GradientTone;
@@ -40,27 +41,27 @@
 
 <div class="picker">
 	<div class="picker__preview">
-		<AgentShape {shape} {tone} {motion} size={96} working={previewWorking} label="{name}'s look" />
-		<span class="picker__name">{name || 'Agent'}</span>
-		<Checkbox bind:checked={previewWorking} label="Show working" class="picker__toggle" />
+		<AgentShape {shape} {tone} {motion} size={96} working={previewWorking} label={m.shape_look({ name })} />
+		<span class="picker__name">{name || m.shape_agent()}</span>
+		<Checkbox bind:checked={previewWorking} label={m.shape_show_working()} class="picker__toggle" />
 	</div>
 
 	<div class="picker__controls">
 		<fieldset class="picker__group">
-			<legend class="nomi-meta">Shape</legend>
+			<legend class="nomi-meta">{m.shape_shape()}</legend>
 			<div class="picker__shapes">
 				{#each SHAPE_NAMES as option (option)}
-					<label class="picker__shape" title={SHAPE_LABELS[option]}>
+					<label class="picker__shape" title={SHAPE_LABELS[option]()}>
 						<input type="radio" name="shape" value={option} bind:group={shape} class="sr-only" />
 						<AgentShape shape={option} {tone} size={36} />
-						<span class="picker__shape-label">{SHAPE_LABELS[option]}</span>
+						<span class="picker__shape-label">{SHAPE_LABELS[option]()}</span>
 					</label>
 				{/each}
 			</div>
 		</fieldset>
 
 		<fieldset class="picker__group">
-			<legend class="nomi-meta">Gradient</legend>
+			<legend class="nomi-meta">{m.shape_gradient()}</legend>
 			<div class="picker__tones">
 				{#each GRADIENT_TONES as option (option)}
 					<label class="picker__tone" title={option}>
@@ -73,13 +74,13 @@
 		</fieldset>
 
 		<fieldset class="picker__group">
-			<legend class="nomi-meta">Motion while working</legend>
+			<legend class="nomi-meta">{m.shape_motion()}</legend>
 			<div class="picker__motions" id="{uid}-motions">
 				{#each SHAPE_MOTIONS as option (option)}
 					<label class="picker__motion">
 						<input type="radio" name="motion" value={option} bind:group={motion} class="sr-only" />
 						<AgentShape {shape} {tone} motion={option} size={22} working />
-						<span>{MOTION_LABELS[option]}</span>
+						<span>{MOTION_LABELS[option]()}</span>
 					</label>
 				{/each}
 			</div>

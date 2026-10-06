@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 
 	let {
@@ -165,7 +166,7 @@
 			class="m3-bottom-sheet__handle-area"
 			role="button"
 			tabindex="0"
-			aria-label="Drag to dismiss"
+			aria-label={m.sheet_drag()}
 			onkeydown={handleHandleKeydown}
 			onpointerdown={handlePointerDown}
 			onpointermove={handlePointerMove}

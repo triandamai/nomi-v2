@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import Card from '$lib/components/m3/Card.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
@@ -7,23 +8,23 @@
 	let { data }: { data: PageData } = $props();
 
 	const STATUS_LABEL: Record<string, string> = {
-		planning: 'Planning',
-		building: 'Building…',
-		ready: 'Ready',
+		planning: m.projects_planning(),
+		building: m.projects_building(),
+		ready: m.projects_ready(),
 	};
 </script>
 
 <div class="h-full overflow-y-auto px-4 py-8 md:px-10">
-	<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">Projects</h1>
+	<h1 class="md-display-small" style="color: var(--md-sys-color-on-surface)">{m.projects_title()}</h1>
 	<p class="md-body-large mt-2" style="color: var(--md-sys-color-on-surface-variant)">
-		Apps nomi has built or is building for you.
+		{m.projects_lede()}
 	</p>
 
 	<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 		<form method="POST" action="?/createProject" use:enhance>
 			<button type="submit" class="m3-add-project-tile">
 				<IconPlus size={28} />
-				<span class="md-title-medium">Add new project</span>
+				<span class="md-title-medium">{m.projects_add()}</span>
 			</button>
 		</form>
 

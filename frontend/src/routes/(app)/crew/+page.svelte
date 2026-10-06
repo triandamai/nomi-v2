@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import { crewByActivity, rosterKey, type CrewRosterMember } from '$lib/crew';
 	import type { PageData } from './$types';
@@ -12,9 +13,9 @@
 	const ready = $derived(crew.filter((m) => m.state === 'idle'));
 
 	const BADGES: Record<CrewRosterMember['state'], string | null> = {
-		working: 'Working',
-		waiting: 'Needs you',
-		done: 'Done',
+		working: m.home_working(),
+		waiting: m.home_needs_you(),
+		done: m.common_done(),
 		idle: null,
 	};
 </script>
@@ -26,7 +27,7 @@
 		<div class="card__text">
 			<div class="card__top">
 				<h3 class="card__name">{member.name}</h3>
-				{#if member.is_dynamic}<span class="card__custom">Custom</span>{/if}
+				{#if member.is_dynamic}<span class="card__custom">{m.crewpage_custom()}</span>{/if}
 				{#if BADGES[member.state]}
 					<span class="card__badge" data-state={member.state}>{BADGES[member.state]}</span>
 				{/if}
@@ -42,25 +43,25 @@
 <div class="crew-page">
 	<div class="crew-page__inner">
 		<header class="crew-page__head">
-			<h1 class="md-display-small crew-page__title">Your crew</h1>
+			<h1 class="md-display-small crew-page__title">{m.home_your_crew()}</h1>
 			<p class="md-body-large crew-page__lede">
-				Everyone who works with Nomi. Ask in any chat: Nomi hands each job to the right one.
+				{m.crewpage_lede()}
 			</p>
 		</header>
 
 		{#if crew.length === 0}
-			<p class="crew-page__empty">Couldn't load your crew just now. Reload the page to try again.</p>
+			<p class="crew-page__empty">{m.crewpage_load_failed()}</p>
 		{:else}
 			{#if busy.length > 0}
 				<section aria-labelledby="busy-title">
-					<h2 id="busy-title" class="section-label">Busy for you right now · {busy.length}</h2>
+					<h2 id="busy-title" class="section-label">{m.crewpage_busy({ count: busy.length })}</h2>
 					<ul class="grid">
 						{#each busy as member (member.agent_type)}{@render card(member)}{/each}
 					</ul>
 				</section>
 			{/if}
 			<section aria-labelledby="ready-title">
-				<h2 id="ready-title" class="section-label">Ready when you are · {ready.length}</h2>
+				<h2 id="ready-title" class="section-label">{m.crewpage_ready({ count: ready.length })}</h2>
 				<ul class="grid">
 					{#each ready as member (member.agent_type)}{@render card(member)}{/each}
 				</ul>

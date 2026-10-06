@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
@@ -22,17 +23,17 @@
 
 	const activeModelLabel = $derived.by(() => {
 		const selection = data.models.selection;
-		if (!selection) return 'Default model';
+		if (!selection) return m.models_default();
 		if (selection.kind === 'admin') {
 			const match = data.models.admin_models.find((m) => m.id === selection.admin_model_id);
-			return match?.label ?? 'Default model';
+			return match?.label ?? m.models_default();
 		}
 		return selection.label;
 	});
 
 	const currentPersonalityLabel = $derived.by(() => {
 		const current = data.personality.versions.find((v) => v.is_current);
-		return current?.description ?? 'Not set';
+		return current?.description ?? m.chatpage_not_set();
 	});
 </script>
 
@@ -48,13 +49,13 @@
 	{#snippet extraControls()}
 		<Menu bind:open={modelMenuOpen}>
 			{#snippet trigger({ toggle })}
-				<IconButton onclick={toggle} aria-label="Model: {activeModelLabel}">
+				<IconButton onclick={toggle} aria-label={m.chatpage_model_label({ model: activeModelLabel })}>
 					<IconAgents size={18} />
 				</IconButton>
 			{/snippet}
 			<div class="w-full">
 				<p class="md-label-medium px-2 pt-1 pb-2" style="color: var(--md-sys-color-on-surface-variant)">
-					Model — {activeModelLabel}
+					{m.chatpage_model_heading({ model: activeModelLabel })}
 				</p>
 				{#if form?.modelError}
 					<p class="md-body-small mb-2 px-2" style="color: var(--md-sys-color-error)">{form.modelError}</p>
@@ -82,7 +83,7 @@
 				{/each}
 
 				<p class="md-label-medium mt-3 mb-1 px-2" style="color: var(--md-sys-color-on-surface-variant)">
-					Your own key
+					{m.chatpage_own_key()}
 				</p>
 				{#if data.models.selection?.kind === 'custom'}
 					<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
@@ -96,27 +97,27 @@
 						modelSheetOpen = true;
 					}}
 				>
-					{data.models.selection?.kind === 'custom' ? 'Change your key' : '+ Use your own API key'}
+					{data.models.selection?.kind === 'custom' ? m.models_change_key() : m.chatpage_use_own_key()}
 				</MenuItem>
 			</div>
 		</Menu>
 		<ModelKeySheet bind:open={modelSheetOpen} error={form?.modelError ?? null} />
 		<Menu bind:open={personalityMenuOpen}>
 			{#snippet trigger({ toggle })}
-				<IconButton onclick={toggle} aria-label="Personality: {currentPersonalityLabel}">
+				<IconButton onclick={toggle} aria-label={m.chatpage_personality_label({ personality: currentPersonalityLabel })}>
 					<IconPerson size={18} />
 				</IconButton>
 			{/snippet}
 			<div class="w-full">
 				<p class="md-label-medium px-2 pt-1 pb-2" style="color: var(--md-sys-color-on-surface-variant)">
-					Personality — {currentPersonalityLabel}
+					{m.chatpage_personality_heading({ personality: currentPersonalityLabel })}
 				</p>
 				{#if form?.personalityError}
 					<p class="md-body-small mb-2 px-2" style="color: var(--md-sys-color-error)">{form.personalityError}</p>
 				{/if}
 				{#if data.personality.versions.length === 0}
 					<p class="md-body-medium px-2 py-1" style="color: var(--md-sys-color-on-surface-variant)">
-						You haven't set a personality yet — just ask nomi to change it.
+						{m.chatpage_no_personality()}
 					</p>
 				{:else}
 					<List>
@@ -139,7 +140,7 @@
 											}}
 										>
 											<input type="hidden" name="version" value={version.version} />
-											<Button type="submit" variant="text">Restore</Button>
+											<Button type="submit" variant="text">{m.chatpage_restore()}</Button>
 										</form>
 									{/if}
 								{/snippet}

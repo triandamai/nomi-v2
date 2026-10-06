@@ -28,3 +28,11 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
 	if (months < 12) return format.format(-months, 'month');
 	return format.format(-Math.floor(months / 12), 'year');
 }
+
+/** The language to hear dictation in: the person's chosen language, in the browser's own variant when it matches. */
+export function speechLanguage(): string {
+	const browser = typeof navigator === 'undefined' ? '' : navigator.language;
+	const locale = getLocale();
+	if (browser.toLowerCase().startsWith(locale)) return browser;
+	return locale === 'id' ? 'id-ID' : 'en-US';
+}

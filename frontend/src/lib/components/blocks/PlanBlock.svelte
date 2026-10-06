@@ -1,5 +1,6 @@
 <!-- frontend/src/lib/components/blocks/PlanBlock.svelte -->
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import SideSheet from '$lib/components/m3/SideSheet.svelte';
@@ -37,7 +38,7 @@
 			versions = data.plans;
 			activeVersion = block.version;
 		} catch {
-			loadError = 'Could not load this plan.';
+			loadError = m.err_load_plan();
 		} finally {
 			loading = false;
 		}
@@ -56,14 +57,14 @@
 	const active = $derived(versions.find((v) => v.version === activeVersion) ?? null);
 </script>
 
-<ChecklistBubble {agent} heading="{agent ?? 'Nomi'}’s draft" items={shownVersion?.checklist ?? []} maxItems={6}>
+<ChecklistBubble {agent} heading={m.plan_draft({ agent: agent ?? 'Nomi' })} items={shownVersion?.checklist ?? []} maxItems={6}>
 	<p class="m3-plan-title">{block.title}</p>
 	{#if shownVersion && shownVersion.checklist.length === 0 && shownVersion.excerpt}
 		<p class="m3-plan-excerpt">{shownVersion.excerpt}</p>
 	{/if}
 	{#snippet footer()}
 		<button type="button" class="m3-plan-open" onclick={openSheet}>
-			Open plan
+			{m.plan_open()}
 			<span class="nomi-meta">v{block.version}</span>
 		</button>
 	{/snippet}
@@ -71,7 +72,7 @@
 
 <SideSheet bind:open={sheetOpen}>
 	{#if loading}
-		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">Loading…</p>
+		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.common_loading()}</p>
 	{:else if loadError}
 		<p class="md-body-medium" style="color: var(--md-sys-color-error)">{loadError}</p>
 	{:else}
@@ -92,7 +93,7 @@
 			{#if active.content_html !== null}
 				<div class="md-body-medium">{@html active.content_html}</div>
 			{:else}
-				<p class="md-body-medium" style="color: var(--md-sys-color-error)">Could not load this version.</p>
+				<p class="md-body-medium" style="color: var(--md-sys-color-error)">{m.plan_version_failed()}</p>
 			{/if}
 		{/if}
 	{/if}
