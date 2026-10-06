@@ -458,6 +458,7 @@ async fn today(
 /// Plans still in progress, latest first.
 async fn plans(
     pool: &sqlx::PgPool,
+    s3: Option<&nomi_storage::S3Config>,
     user_id: Uuid,
     org_id: Uuid,
 ) -> Result<Vec<PlanItem>, sqlx::Error> {
@@ -492,8 +493,8 @@ async fn plans(
             });
         }
     }
-    let written: Vec<(Uuid, String, Option<String>, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT DISTINCT ON (p.agent_session_id) p.session_id, p.title, p.content, p.created_at \
+    let written: Vec<(Uuid, String, Option<String>, Option<String>, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT DISTINCT ON (p.agent_session_id) p.session_id, p.title, p.content, p.content_s3_key, p.created_at \
          FROM agent_plans p JOIN sessions s ON s.id = p.session_id \
          WHERE p.user_id = $1 AND s.org_id = $2 ORDER BY p.agent_session_id, p.version DESC",
     )
@@ -501,7 +502,13 @@ async fn plans(
     .bind(org_id)
     .fetch_all(pool)
     .await?;
-    for (session_id, title, content, updated_at) in written {
+    for (session_id, title, content, s3_key, updated_at) in written {
+        // A plan kept in S3 has no inline content; its checklist is in the stored file.
+        let content = match (content, s3_key, s3) {
+            (Some(inline), _, _) => Some(inline),
+            (None, Some(key), Some(s3)) => s3.get_object(&key).await.ok().flatten(),
+            _ => None,
+        };
         let (done, total) = checklist_progress(content.as_deref().unwrap_or_default());
         if total > 0 && done < total {
             plans.push(PlanItem {
@@ -533,7 +540,7 @@ pub async fn home_summary(
         .await
         .map_err(internal)?;
     let mut today = today(pool, user_id, tz).await.map_err(internal)?;
-    let mut plans = plans(pool, user_id, org_id).await.map_err(internal)?;
+    let mut plans = plans(pool, state.s3.as_ref(), user_id, org_id).await.map_err(internal)?;
     let (while_you_were_out_total, today_total, plans_total) =
         (out.len(), today.len(), plans.len());
     out.truncate(PREVIEW_LIMIT);
@@ -604,7 +611,7 @@ pub async fn plans_page(
     let pool = &state.pool;
     let since = peek_since(pool, claims.sub).await.map_err(internal)?;
     let (timezone, _) = user_timezone(pool, claims.sub).await.map_err(internal)?;
-    let items = plans(pool, claims.sub, claims.active_org_id)
+    let items = plans(pool, state.s3.as_ref(), claims.sub, claims.active_org_id)
         .await
         .map_err(internal)?;
     Ok(Json(section_page(since, timezone, items, &query)))
