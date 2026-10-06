@@ -23,9 +23,11 @@ const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to 
 // answered with `engine.plan_draft`. All three in the person's language (nomi-i18n).
 
 /// How agents should think when reasoning is on. Users read the thinking in chat.
-pub const REASONING_STYLE: &str = "When you think before acting, keep it short and on point: what is \
-     being asked, what you will do next, and any catch. A few plain sentences. Don't restate the \
-     request, list every option, or draft the reply in your thinking.";
+pub const REASONING_STYLE: &str = "Your thinking is shown to the person, so keep it brief and on point: at \
+     most 3 short bullet points, about 60 words in all, covering what they need, what you'll do, and any \
+     catch. Think in the same language you reply in. Don't restate their message, weigh every option, \
+     repeat yourself, or draft the reply in your thinking; once you know the next step, stop thinking \
+     and act.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
@@ -389,11 +391,26 @@ pub async fn run_agent_turn(
     let system_prompt = if memories.is_empty() {
         agent.system_prompt().to_string()
     } else {
-        let mut prompt = format!("{}\n\nRelevant things you know about this user:\n", agent.system_prompt());
+        let mut prompt = format!(
+            "{}\n\nWhat you remember about this person that matters here (use it only where it helps):\n",
+            agent.system_prompt()
+        );
         for m in &memories {
-            prompt.push_str(&format!("- {}\n", m.content));
+            prompt.push_str(&format!("- ({}) {}\n", m.kind, m.content));
         }
         prompt
+    };
+
+    // Working memory: the older part of this chat, folded into a running summary by the memory
+    // worker (only the latest messages are sent in full).
+    let summary: Option<String> = sqlx::query_scalar("SELECT summary FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await?
+        .flatten();
+    let system_prompt = match summary.filter(|s| !s.trim().is_empty()) {
+        Some(summary) => format!("{system_prompt}\n\nEarlier in this chat (summary):\n{}", summary.trim()),
+        None => system_prompt,
     };
 
     // Every agent answers in the person's language.
@@ -558,7 +575,7 @@ pub async fn run_agent_turn(
                     .unwrap_or_default();
                 // Best-effort: never changes the turn's outcome. See the equivalent
                 // note that used to live in turn/chitchat.rs before this generalization.
-                memory::extract_and_store_memory(conn, provider, embedding_provider, user_id, &last_user_text, &reply_text).await;
+                memory::extract_and_store_memory_in(conn, provider, embedding_provider, user_id, Some(session_id), &last_user_text, &reply_text).await;
             }
 
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;

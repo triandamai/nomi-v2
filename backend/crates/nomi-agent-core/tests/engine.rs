@@ -424,6 +424,23 @@ async fn the_crew_answers_in_the_persons_language(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn agents_see_the_chats_running_summary(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("UPDATE sessions SET summary = 'Planning a Bali trip in May.' WHERE id = $1").bind(session_id).execute(&pool).await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![text_response("Sure!", StopReason::EndTurn)]);
+    let mut conn = pool.acquire().await.unwrap();
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+    assert!(system.contains("Earlier in this chat (summary):\nPlanning a Bali trip in May."), "{system}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_plan_written_out_in_chat_is_saved_as_a_plan_draft(pool: PgPool) {
     let itinerary = "## Bogor day trip\n\n### Morning\n- 08:00 Arrive in Bogor\n- 08:30 Botanical Gardens\n- 11:00 Coffee nearby\n\n### Afternoon\n- 12:30 Lunch: Nasi Timbel\n- 14:00 Zoology Museum\n- 16:00 Market walk or a tea house\n\n### Evening\n- 18:00 Dinner on Suryakencana Street\n- 20:00 Head home";
     let provider = FakeLlmProvider::sequence(vec![text_response(itinerary, StopReason::EndTurn)]);

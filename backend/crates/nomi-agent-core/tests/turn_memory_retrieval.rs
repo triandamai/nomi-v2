@@ -53,7 +53,7 @@ async fn seed_memory_with_provider(
 async fn retrieves_memories_ordered_by_weighted_similarity(pool: PgPool) {
     let user_id = seed_user(&pool).await;
     seed_memory(&pool, user_id, "close match", &make_embedding(1.0, 0.0), 1.0).await;
-    seed_memory(&pool, user_id, "far match", &make_embedding(0.0, 1.0), 1.0).await;
+    seed_memory(&pool, user_id, "near match", &make_embedding(0.85, 0.3), 1.0).await;
 
     let mut conn = pool.acquire().await.unwrap();
     let query = make_embedding(0.9, 0.1);
@@ -62,7 +62,32 @@ async fn retrieves_memories_ordered_by_weighted_similarity(pool: PgPool) {
 
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].content, "close match");
-    assert_eq!(results[1].content, "far match");
+    assert_eq!(results[1].content, "near match");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn unrelated_memories_are_left_out(pool: PgPool) {
+    let user_id = seed_user(&pool).await;
+    seed_memory(&pool, user_id, "relevant", &make_embedding(1.0, 0.0), 1.0).await;
+    // Similarity about 0.1: nothing to do with the message, however strong it is.
+    seed_memory(&pool, user_id, "unrelated but strong", &make_embedding(0.0, 1.0), 5.0).await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let results = retrieve_relevant_memories(&mut conn, user_id, &make_embedding(0.9, 0.1), PROVIDER, MODEL, 5).await.unwrap();
+
+    assert_eq!(results.iter().map(|r| r.content.as_str()).collect::<Vec<_>>(), ["relevant"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn archived_memories_are_never_recalled(pool: PgPool) {
+    let user_id = seed_user(&pool).await;
+    seed_memory(&pool, user_id, "old address", &make_embedding(1.0, 0.0), 3.0).await;
+    sqlx::query("UPDATE memory_items SET archived_at = now() WHERE content = 'old address'").execute(&pool).await.unwrap();
+
+    let mut conn = pool.acquire().await.unwrap();
+    let results = retrieve_relevant_memories(&mut conn, user_id, &make_embedding(1.0, 0.0), PROVIDER, MODEL, 5).await.unwrap();
+
+    assert!(results.is_empty());
 }
 
 #[sqlx::test(migrations = "../../migrations")]

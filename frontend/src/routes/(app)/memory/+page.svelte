@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
-	import { enhance } from '$app/forms';
+	import { deserialize, enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import Chip from '$lib/components/m3/Chip.svelte';
+	import MemoryEditForm from '$lib/components/MemoryEditForm.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import ButtonGroup from '$lib/components/m3/ButtonGroup.svelte';
@@ -12,10 +15,10 @@
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import { GRADIENT_STOPS } from '$lib/components/m3/shapes';
-	import { fitPoints, strengthLabel, strengthPips, timeAgo } from '$lib/memory';
+	import { fitPoints, kindLabel, MEMORY_KINDS, strengthLabel, strengthPips, timeAgo } from '$lib/memory';
 	import { clampPage, pageCount, pageSlice } from '$lib/pagination';
 	import { projectTo3D } from '$lib/pca';
-	import type { MemoryItem } from '$lib/types';
+	import type { MemoryItem, MemoryKind } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -34,6 +37,29 @@
 	let confirmOpen = $state(false);
 	let forgetting = $state(false);
 	let snackbarOpen = $state(false);
+	let snackbarMessage = $state('');
+	function notify(message: string) {
+		snackbarMessage = message;
+		snackbarOpen = true;
+	}
+	let kindFilter = $state<MemoryKind | null>(null);
+	let editing = $state<MemoryItem | null>(null);
+	let editOpen = $state(false);
+	function startEdit(memory: MemoryItem) {
+		editing = memory;
+		editOpen = true;
+	}
+	// Strong memories nobody has confirmed in months: ask, a few at a time.
+	const toCheck = $derived(data.memories.filter((memory) => memory.needs_check).slice(0, 3));
+	async function confirmMemory(memory: MemoryItem) {
+		const body = new FormData();
+		body.set('id', memory.id);
+		const result = deserialize(await (await fetch('?/confirm', { method: 'POST', body })).text());
+		if (result.type === 'success') {
+			notify(m.mem_confirmed());
+			await invalidateAll();
+		}
+	}
 	let detail = $state<MemoryItem | null>(null);
 	let detailOpen = $state(false);
 
@@ -44,7 +70,9 @@
 
 	const visible = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
-		const filtered = needle ? memories.filter((m) => m.content.toLowerCase().includes(needle)) : memories;
+		const filtered = memories.filter(
+			(memory) => (!needle || memory.content.toLowerCase().includes(needle)) && (!kindFilter || memory.kind === kindFilter),
+		);
 		const sorted = [...filtered];
 		if (sort === 'recent') sorted.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 		if (sort === 'strongest') sorted.sort((a, b) => b.weight - a.weight);
@@ -59,6 +87,7 @@
 	$effect(() => {
 		void query;
 		void sort;
+		void kindFilter;
 		page = 1;
 	});
 
@@ -231,6 +260,26 @@
 				</figure>
 			</section>
 
+			{#if toCheck.length > 0}
+				<section class="check" aria-labelledby="check-heading">
+					<h2 id="check-heading" class="check__title">{m.mem_check_title()}</h2>
+					<p class="check__lede">{m.mem_check_lede()}</p>
+					<ul class="check__list">
+						{#each toCheck as memory (memory.id)}
+							<li class="check__item">
+								<span class="kind">{kindLabel(memory.kind)}</span>
+								<span class="check__text">{memory.content}</span>
+								<span class="check__actions">
+									<Button variant="tonal" size="xs" onclick={() => confirmMemory(memory)}>{m.mem_check_yes()}</Button>
+									<Button variant="text" size="xs" onclick={() => startEdit(memory)}>{m.mem_fix()}</Button>
+									<Button variant="text" size="xs" onclick={() => askToForget(memory)}>{m.mem_forget()}</Button>
+								</span>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
 			<div class="toolbar">
 				<label class="search">
 					<IconSearch />
@@ -238,6 +287,12 @@
 					<input type="search" bind:value={query} placeholder={m.mem_search_placeholder()} class="search__input" />
 				</label>
 				<ButtonGroup options={SORTS} bind:value={sort} aria-label={m.mem_sort_label()} />
+			</div>
+			<div class="kinds" role="group" aria-label={m.mem_kind()}>
+				<Chip variant="filter" selected={kindFilter === null} onclick={() => (kindFilter = null)}>{m.common_all()}</Chip>
+				{#each MEMORY_KINDS as kind (kind)}
+					<Chip variant="filter" selected={kindFilter === kind} onclick={() => (kindFilter = kindFilter === kind ? null : kind)}>{kindLabel(kind)}</Chip>
+				{/each}
 			</div>
 
 			{#if visible.length === 0}
@@ -252,10 +307,18 @@
 							class:card--selected={selectedId === memory.id}
 						>
 							<div class="card__top">
-								<span class="nomi-meta">{m.mem_learned({ when: timeAgo(memory.created_at) })}</span>
-								<IconButton aria-label={m.mem_forget_this()} title={m.mem_forget()} onclick={() => askToForget(memory)}>
-									<IconClose />
-								</IconButton>
+								<span class="card__meta">
+									<span class="kind">{kindLabel(memory.kind)}</span>
+									<span class="nomi-meta">{m.mem_learned({ when: timeAgo(memory.created_at) })}</span>
+								</span>
+								<span class="card__buttons">
+									<IconButton aria-label={m.mem_fix_this()} title={m.mem_fix()} onclick={() => startEdit(memory)}>
+										<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+									</IconButton>
+									<IconButton aria-label={m.mem_forget_this()} title={m.mem_forget()} onclick={() => askToForget(memory)}>
+										<IconClose />
+									</IconButton>
+								</span>
 							</div>
 							<div class="card__body">
 								<p class="card__content" use:clamped>{memory.content}</p>
@@ -296,7 +359,12 @@
 					<AgentShape agent="planning" size={40} />
 					<span><strong>{m.mem_how3_title()}</strong> {m.mem_how3()}</span>
 				</li>
+				<li>
+					<AgentShape agent="supervisor" size={40} />
+					<span><strong>{m.mem_how4_title()}</strong> {m.mem_how4()}</span>
+				</li>
 			</ol>
+			<p class="how__strength">{m.mem_strength_explained()}</p>
 		</section>
 	</div>
 </div>
@@ -319,7 +387,7 @@
 					forgetting = false;
 					if (result.type === 'success') {
 						if (selectedId === pendingForget?.id) selectedId = null;
-						snackbarOpen = true;
+						notify(m.mem_forgotten());
 					}
 				};
 			}}
@@ -339,6 +407,10 @@
 				<h2 id="memory-detail-title" class="sr-only">{m.mem_title()}</h2>
 				<p class="detail__content">{detail.content}</p>
 				<dl class="detail__facts">
+					<div>
+						<dt class="nomi-meta">{m.mem_kind()}</dt>
+						<dd>{kindLabel(detail.kind)}</dd>
+					</div>
 					<div>
 						<dt class="nomi-meta">{m.mem_strength()}</dt>
 						<dd>{strengthLabel(pips)}</dd>
@@ -361,6 +433,14 @@
 							if (memory) askToForget(memory);
 						}}>{m.mem_forget()}</Button
 					>
+					<Button
+						variant="tonal"
+						onclick={() => {
+							const memory = detail;
+							detailOpen = false;
+							if (memory) startEdit(memory);
+						}}>{m.mem_fix()}</Button
+					>
 					<Button variant="filled" onclick={() => (detailOpen = false)}>{m.common_done()}</Button>
 				</div>
 			</article>
@@ -368,9 +448,115 @@
 	{/snippet}
 </BottomSheet>
 
-<Snackbar bind:open={snackbarOpen} message={form?.error ?? m.mem_forgotten()} />
+<BottomSheet bind:open={editOpen}>
+	{#snippet children()}
+		{#if editing}
+			<h2 class="edit-title">{m.mem_fix_title()}</h2>
+			{#key editing.id}
+				<MemoryEditForm
+					id={editing.id}
+					content={editing.content}
+					kind={editing.kind}
+					oncancel={() => (editOpen = false)}
+					onsaved={async () => {
+						editOpen = false;
+						notify(m.mem_edited());
+						await invalidateAll();
+					}}
+				/>
+			{/key}
+		{/if}
+	{/snippet}
+</BottomSheet>
+
+<Snackbar bind:open={snackbarOpen} message={form?.error ?? (snackbarMessage || m.mem_forgotten())} />
 
 <style>
+	.kind {
+		padding: 2px 8px;
+		border-radius: 999px;
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		font-size: 0.6875rem;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+	.kinds {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.card__meta {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+		flex-wrap: wrap;
+	}
+	.card__buttons {
+		display: inline-flex;
+		flex: none;
+	}
+	.check {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 20px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.check__title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.25rem;
+		font-weight: 700;
+	}
+	.check__lede {
+		margin: 0;
+		font-size: 0.875rem;
+	}
+	.check__list {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.check__item {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px 10px;
+		padding: 10px 12px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+	}
+	.check__text {
+		flex: 1 1 200px;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.check__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+	.how__strength {
+		margin: 12px 0 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+		max-width: 70ch;
+	}
+	.edit-title {
+		margin: 0 0 16px;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
 	.memory {
 		height: 100%;
 		overflow-y: auto;

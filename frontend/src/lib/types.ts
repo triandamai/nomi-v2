@@ -52,6 +52,8 @@ export interface MessageItem {
 	created_at: string;
 	my_feedback: 'up' | 'down' | null;
 	agent_display_name: string | null;
+	/** How many memories this reply drew on. */
+	memory_count: number;
 }
 
 export interface AgentPlanItem {
@@ -110,10 +112,28 @@ export interface PersonalityHistoryResponse {
 	versions: PersonalityVersion[];
 }
 
+export type MemoryKind = 'preference' | 'person' | 'routine' | 'goal' | 'fact';
+
+/** Why a reply missed, given with a thumbs-down. */
+export type FeedbackReason = 'wrong_memory' | 'not_relevant' | 'too_long' | 'other';
+
+/** A memory a reply drew on (GET …/messages/:id/memories). */
+export interface UsedMemory {
+	id: string;
+	content: string;
+	kind: MemoryKind;
+	/** Replaced, merged or faded since: no longer recalled. */
+	archived: boolean;
+}
+
 export interface MemoryItem {
 	id: string;
 	content: string;
 	weight: number;
+	kind: MemoryKind;
+	last_used_at: string | null;
+	/** Strong and not confirmed in a long while: worth asking whether it's still true. */
+	needs_check: boolean;
 	created_at: string;
 	updated_at: string;
 	/** How many of Nomi's replies drew on this memory. */

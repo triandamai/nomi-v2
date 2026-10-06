@@ -22,6 +22,14 @@ export function strengthPips(weight: number): number {
 import { m } from '$lib/paraglide/messages';
 
 export { timeAgo } from '$lib/i18n';
+import type { MemoryKind } from '$lib/types';
+
+export const MEMORY_KINDS: MemoryKind[] = ['preference', 'person', 'routine', 'goal', 'fact'];
+
+/** What kind of memory it is, in the reader's language. */
+export function kindLabel(kind: MemoryKind): string {
+	return { preference: m.mem_kind_preference, person: m.mem_kind_person, routine: m.mem_kind_routine, goal: m.mem_kind_goal, fact: m.mem_kind_fact }[kind]();
+}
 
 /**
  * Fits 2D points into a `size`×`size` box with `padding` on every side, keeping their aspect

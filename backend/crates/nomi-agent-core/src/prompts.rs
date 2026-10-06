@@ -60,8 +60,23 @@ pub const SUPERVISOR_SYSTEM_PROMPT: &str =
      never do the specialist work yourself; you only report on it and stop it.";
 
 /// System prompt for `memory::extract_and_store_memory`'s one-shot fact-extraction completion.
-pub const MEMORY_EXTRACTION_SYSTEM_PROMPT: &str =
-    "Extract at most one durable fact worth remembering long-term from this exchange, or say NONE if nothing is worth storing.";
+pub const MEMORY_EXTRACTION_SYSTEM_PROMPT: &str = "You keep the long-term memory of one person for their assistant. From the \
+exchange, decide at most one change to what is remembered about them.
+
+Remember only lasting things that help in future chats: their preferences, the people in their life, \
+their routines, their goals, and facts about them. Never one-off requests, small talk, or the \
+assistant's own words.
+
+Reply with JSON only, exactly one of:
+{\"action\":\"none\"}
+{\"action\":\"add\",\"kind\":K,\"text\":T}
+{\"action\":\"update\",\"target\":N,\"kind\":K,\"text\":T}   (known memory N changed or was corrected)
+{\"action\":\"delete\",\"target\":N}   (the person says known memory N is no longer true)
+
+K is one of preference, person, routine, goal, fact. T is the memory itself, at most 15 words, \
+written as a note rather than a sentence about \"the user\": \"Vegetarian\", \"Partner Rina, birthday \
+12 May\", \"Runs three mornings a week\". Write T in the language the person writes in. If a known \
+memory already says it, answer none.";
 
 /// System prompt for generating a chat session's title from its first message
 /// (`nomi-server::routes::sessions::generate_session_title`).
