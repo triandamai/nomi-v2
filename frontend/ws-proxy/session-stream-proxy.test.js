@@ -82,6 +82,8 @@ describe('session-stream-proxy', () => {
 		const browser = connectBrowserClient(proxy.port);
 		cleanups.push(() => browser.close());
 		const headers = await connected;
+		// Let the browser leg finish its handshake too, so closing it in cleanup is clean.
+		await waitFor(browser, 'open');
 		expect(headers['x-client-version']).toBe('1.2.3');
 		expect(headers.authorization).toBe('Bearer test-token');
 	});
