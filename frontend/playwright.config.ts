@@ -19,6 +19,8 @@ export default defineConfig({
 				LLM_PROVIDER: 'fake',
 				EMBEDDING_PROVIDER: 'fake',
 				SETTINGS_ENCRYPTION_KEY: '0'.repeat(64),
+				// These flows sign in through the UI without reading email.
+				AUTH_EMAIL_CODES: 'off',
 			},
 		},
 		{

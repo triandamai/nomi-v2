@@ -36,6 +36,8 @@ pub struct AppState {
     pub s3: Option<S3Config>,
     pub project_storage: LocalFsStore,
     pub tool_catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
+    /// Whether password sign-in waits for an emailed code, and the mailer that sends it.
+    pub email_codes: crate::sign_in_codes::EmailCodes,
 }
 
 impl nomi_auth::extractor::HasJwtSecret for AppState {
@@ -50,6 +52,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/login", post(auth_routes::login_handler))
         .route("/api/auth/refresh", post(auth_routes::refresh_handler))
         .route("/api/auth/logout", post(auth_routes::logout_handler))
+        .route("/api/auth/verify", post(auth_routes::verify_handler))
+        .route("/api/auth/resend", post(auth_routes::resend_handler))
+        .route("/api/auth/challenge/:id", get(auth_routes::challenge_handler))
         .route("/api/auth/google", get(google_auth_routes::get_methods).delete(google_auth_routes::unlink))
         .route("/api/auth/google/available", get(google_auth_routes::available))
         .route("/api/auth/google/start", post(google_auth_routes::start))

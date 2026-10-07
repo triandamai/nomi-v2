@@ -5,6 +5,7 @@ pub mod routes;
 pub mod memory_worker;
 pub mod reminders_worker;
 pub mod scheduler_worker;
+pub mod sign_in_codes;
 mod tool_catalog_adapters;
 pub mod worker;
 

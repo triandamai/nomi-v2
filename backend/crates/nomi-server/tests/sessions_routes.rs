@@ -20,6 +20,7 @@ fn test_state(pool: PgPool) -> AppState {
         s3: None,
         project_storage: nomi_test_support::test_project_storage(),
         tool_catalog: std::sync::Arc::new(nomi_agent_core::ToolCatalog::empty()),
+        email_codes: nomi_server::sign_in_codes::EmailCodes::Off,
     }
 }
 
@@ -557,6 +558,7 @@ async fn delete_session_cascades_its_project_and_disk_files(pool: PgPool) {
         s3: None,
         project_storage: storage.clone(),
         tool_catalog: std::sync::Arc::new(nomi_agent_core::ToolCatalog::empty()),
+        email_codes: nomi_server::sign_in_codes::EmailCodes::Off,
     });
     let token = register_and_login(router.clone(), "heidi@example.com").await;
 
