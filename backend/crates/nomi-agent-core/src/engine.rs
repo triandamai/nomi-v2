@@ -297,6 +297,36 @@ fn cancel_reminder_tool_definition() -> ToolDefinition {
     }
 }
 
+/// A built-in agent's own tools, which Admin → Tools switches never take away from it.
+fn always_on_own_tools(agent: &dyn SubAgent) -> std::collections::HashSet<String> {
+    if agent.own_tools_switchable() {
+        Default::default()
+    } else {
+        agent.tools().into_iter().map(|t| t.name).collect()
+    }
+}
+
+/// Every tool the engine itself gives agents (as opposed to an agent's own tools), for the
+/// list in Admin → Tools. Some only go to agents that use them (plans, records, reminders).
+pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
+    let mut tools = vec![
+        complete_task_tool_definition(),
+        delegate_tool_definition(&registry.delegatable_agent_types("")),
+        show_table_tool_definition(),
+        rename_chat_tool_definition(),
+        update_todos_tool_definition(),
+        write_plan_tool_definition(),
+    ];
+    tools.extend(crate::records::record_tool_definitions());
+    let targets = registry.reminder_target_agent_types();
+    tools.push(create_reminder_tool_definition(&targets));
+    tools.push(list_reminders_tool_definition());
+    tools.push(cancel_reminder_tool_definition());
+    tools.push(crate::web::web_search_tool_definition());
+    tools.push(crate::web::read_web_page_tool_definition());
+    tools
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
@@ -328,6 +358,8 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
+        // Reading the public web changes nothing.
+        && !crate::web::is_web_tool(tool_name)
         // Record tools only touch the calling agent's own private records.
         && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
@@ -378,6 +410,7 @@ pub async fn run_agent_turn(
     max_tokens: u32,
 ) -> Result<LoopOutcome, TurnError> {
     let mut tools = agent.tools();
+    let own_tools = always_on_own_tools(agent);
     tools.push(complete_task_tool_definition());
     if agent.can_delegate() {
         let targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
@@ -402,6 +435,15 @@ pub async fn run_agent_turn(
         tools.push(list_reminders_tool_definition());
         tools.push(cancel_reminder_tool_definition());
     }
+    // The web tools, and whatever an admin switched off in Admin → Tools.
+    let switches = crate::tools::ToolSwitches::load(conn).await;
+    if switches.allows(crate::web::WEB_SEARCH_TOOL_NAME) && crate::web::search_setup(conn).await.is_some() {
+        tools.push(crate::web::web_search_tool_definition());
+    }
+    if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
+        tools.push(crate::web::read_web_page_tool_definition());
+    }
+    tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
 
     let memories = if agent.uses_memory() {
         let last_user_text = messages
@@ -776,12 +818,16 @@ pub async fn resolve_tool_batch(
         }
     }
 
+    let switches = crate::tools::ToolSwitches::load(conn).await;
+    let own_tools = always_on_own_tools(agent);
     let mut tool_results = Vec::new();
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await;
 
-            let (result_text, is_error, rich_block) = if name.as_str() == COMPLETE_TASK_TOOL_NAME {
+            let (result_text, is_error, rich_block) = if !own_tools.contains(name) && !switches.allows(name) {
+                (format!("The {name} tool is switched off. Don't call it again; do without it."), true, None)
+            } else if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                 (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false, None)
             } else if name.as_str() == DELEGATE_TOOL_NAME {
                 let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
@@ -861,6 +907,12 @@ pub async fn resolve_tool_batch(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
+            } else if crate::web::is_web_tool(name) {
+                match crate::web::execute(conn, name, input).await {
+                    Some(Ok(text)) => (text, false, None),
+                    Some(Err(err)) => (err, true, None),
+                    None => (format!("unknown tool: {name}"), true, None),
+                }
             } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
                 if *approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
@@ -896,6 +948,7 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != CREATE_REMINDER_TOOL_NAME
                     && name.as_str() != LIST_REMINDERS_TOOL_NAME
                     && name.as_str() != CANCEL_REMINDER_TOOL_NAME
+                    && !crate::web::is_web_tool(name)
                     && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
                 post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;

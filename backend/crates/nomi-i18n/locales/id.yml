@@ -99,3 +99,11 @@ workspace:
   sent_email: "Mengirim email ke %{to}%{about}"
   drafted_email: "Membuat draf email ke %{to}%{about}"
   appended_doc: "Menambahkan teks ke dokumen"
+sign_in:
+  login_subject: "Kode masuk Nomi Anda: %{code}"
+  login_intro: "Ini kode untuk masuk ke Nomi:"
+  login_warning: "Jika Anda tidak sedang mencoba masuk, mungkin ada orang lain yang tahu kata sandi Anda. Segera ganti kata sandi, dan jangan bagikan kode ini kepada siapa pun."
+  register_subject: "Konfirmasi email Anda untuk Nomi: %{code}"
+  register_intro: "Selamat datang di Nomi! Masukkan kode ini untuk mengonfirmasi email Anda:"
+  register_warning: "Jika Anda tidak membuat akun Nomi, abaikan email ini."
+  expires: "Kode berlaku selama %{minutes} menit."

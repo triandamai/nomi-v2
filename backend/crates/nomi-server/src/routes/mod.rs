@@ -16,3 +16,4 @@ pub mod profile;
 pub mod reminders;
 pub mod sessions;
 pub mod settings;
+pub mod tools;

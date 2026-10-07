@@ -109,6 +109,7 @@ async fn main() {
         s3,
         project_storage,
         tool_catalog,
+        email_codes: nomi_server::sign_in_codes::EmailCodes::from_env(),
     };
     let app = nomi_server::app::build_router(state);
 

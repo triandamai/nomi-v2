@@ -1,5 +1,6 @@
 pub mod authorize;
 pub mod claims;
+pub mod email_code;
 pub mod extractor;
 pub mod google;
 pub mod grants;

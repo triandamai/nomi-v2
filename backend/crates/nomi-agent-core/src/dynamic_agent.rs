@@ -98,6 +98,10 @@ impl DynamicAgent {
 
 #[async_trait]
 impl SubAgent for DynamicAgent {
+    fn own_tools_switchable(&self) -> bool {
+        true
+    }
+
     fn agent_type(&self) -> Cow<'static, str> {
         Cow::Owned(self.id.to_string())
     }

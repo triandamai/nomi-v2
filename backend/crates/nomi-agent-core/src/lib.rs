@@ -17,12 +17,14 @@ pub mod scheduled_jobs;
 pub mod stop;
 pub mod subagent;
 pub mod tool_catalog;
+pub mod tools;
+pub mod web;
 pub mod working_memory;
 
 pub use content_block::{ApprovalStatus, ContentBlock, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{
-    resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, CANCEL_REMINDER_TOOL_NAME,
+    crew_tool_definitions, resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, CANCEL_REMINDER_TOOL_NAME,
     COMPLETE_TASK_TOOL_NAME, CREATE_REMINDER_TOOL_NAME, DELEGATE_TOOL_NAME, LIST_REMINDERS_TOOL_NAME,
     SHOW_TABLE_TOOL_NAME, UPDATE_TODOS_TOOL_NAME, WRITE_PLAN_TOOL_NAME,
 };

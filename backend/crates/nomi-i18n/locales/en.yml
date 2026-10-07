@@ -99,3 +99,11 @@ workspace:
   sent_email: "Sent an email to %{to}%{about}"
   drafted_email: "Drafted an email to %{to}%{about}"
   appended_doc: "Added text to a doc"
+sign_in:
+  login_subject: "Your Nomi sign-in code: %{code}"
+  login_intro: "Here's your code to sign in to Nomi:"
+  login_warning: "If you didn't just try to sign in, someone may know your password. Change it soon, and don't share this code with anyone."
+  register_subject: "Confirm your email for Nomi: %{code}"
+  register_intro: "Welcome to Nomi! Enter this code to confirm your email:"
+  register_warning: "If you didn't create a Nomi account, you can ignore this email."
+  expires: "The code works for %{minutes} minutes."

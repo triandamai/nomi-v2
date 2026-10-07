@@ -19,6 +19,10 @@ chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1.44"
+nomi-settings = { path = "../nomi-settings" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+regex = "1"
+tokio = { version = "1", features = ["net", "time"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

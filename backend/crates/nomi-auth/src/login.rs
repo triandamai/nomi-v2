@@ -34,6 +34,14 @@ pub async fn login(
     password: &str,
     jwt_secret: &str,
 ) -> Result<(String, Uuid), LoginError> {
+    let user_id = check_password(pool, email, password).await?;
+    let token = issue_access_token(pool, user_id, jwt_secret).await?;
+    Ok((token, user_id))
+}
+
+/// The account `email` belongs to, when `password` is its password. Issues nothing: the caller
+/// decides what else sign-in needs (an emailed code, see `email_code`).
+pub async fn check_password(pool: &PgPool, email: &str, password: &str) -> Result<Uuid, LoginError> {
     let row: Option<(Uuid, String)> =
         sqlx::query_as("SELECT user_id, password_hash FROM web_credentials WHERE email = $1")
             .bind(email)
@@ -54,9 +62,7 @@ pub async fn login(
     if !valid {
         return Err(LoginError::InvalidCredentials);
     }
-
-    let token = issue_access_token(pool, user_id, jwt_secret).await?;
-    Ok((token, user_id))
+    Ok(user_id)
 }
 
 /// An access token for a user whose identity was already proven some other way (a password
