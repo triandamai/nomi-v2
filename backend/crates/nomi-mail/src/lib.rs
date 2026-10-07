@@ -2,19 +2,31 @@
 //! configured from the environment. With no SMTP server set, mail is written to the server log
 //! instead, so a development install still works.
 
+pub mod brand;
+pub mod layout;
+
 use std::sync::{Arc, Mutex};
 
-use lettre::message::{header::ContentType, Mailbox, MultiPart, SinglePart};
+use lettre::message::{header::ContentType, Attachment, Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
 /// One email, with a plain-text body and an optional HTML one.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Email {
     pub to: String,
     pub subject: String,
     pub text: String,
     pub html: Option<String>,
+    /// Images the HTML shows as `cid:<content_id>` (the agents' shapes), sent inside the email.
+    pub inline_images: Vec<InlineImage>,
+}
+
+/// An image carried inside the email (so it shows without loading anything from the web).
+#[derive(Debug, Clone, PartialEq)]
+pub struct InlineImage {
+    pub content_id: String,
+    pub png: Vec<u8>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -118,13 +130,23 @@ impl SmtpMailer {
 pub fn build_message(from: Mailbox, email: &Email) -> Result<Message, MailError> {
     let to = email.to.parse::<Mailbox>().map_err(|_| MailError::Address(email.to.clone()))?;
     let builder = Message::builder().from(from).to(to).subject(&email.subject);
+    let text = SinglePart::builder().header(ContentType::TEXT_PLAIN).body(email.text.clone());
     let message = match &email.html {
-        Some(html) => builder.multipart(
-            MultiPart::alternative()
-                .singlepart(SinglePart::builder().header(ContentType::TEXT_PLAIN).body(email.text.clone()))
-                .singlepart(SinglePart::builder().header(ContentType::TEXT_HTML).body(html.clone())),
-        ),
-        None => builder.header(ContentType::TEXT_PLAIN).body(email.text.clone()),
+        Some(html) => {
+            let html = SinglePart::builder().header(ContentType::TEXT_HTML).body(html.clone());
+            let alternative = MultiPart::alternative().singlepart(text);
+            if email.inline_images.is_empty() {
+                builder.multipart(alternative.singlepart(html))
+            } else {
+                // HTML plus the images it shows, together (multipart/related).
+                let png = ContentType::parse("image/png").expect("a valid content type");
+                let related = email.inline_images.iter().fold(MultiPart::related().singlepart(html), |related, image| {
+                    related.singlepart(Attachment::new_inline(image.content_id.clone()).body(image.png.clone(), png.clone()))
+                });
+                builder.multipart(alternative.multipart(related))
+            }
+        }
+        None => builder.singlepart(text),
     };
     message.map_err(|e| MailError::Build(e.to_string()))
 }
@@ -207,7 +229,7 @@ mod tests {
 
     #[test]
     fn a_message_carries_text_and_html() {
-        let email = Email { to: "ana@example.com".into(), subject: "Your code".into(), text: "123456".into(), html: Some("<b>123456</b>".into()) };
+        let email = Email { to: "ana@example.com".into(), subject: "Your code".into(), text: "123456".into(), html: Some("<b>123456</b>".into()), ..Default::default() };
         let message = build_message("Nomi <no-reply@example.com>".parse().unwrap(), &email).unwrap();
         let raw = String::from_utf8(message.formatted()).unwrap();
         assert!(raw.contains("Subject: Your code"));
@@ -216,8 +238,24 @@ mod tests {
     }
 
     #[test]
+    fn inline_images_travel_with_the_html() {
+        let email = Email {
+            to: "ana@example.com".into(),
+            subject: "Hi".into(),
+            text: "hi".into(),
+            html: Some(r#"<img src="cid:nomi">"#.into()),
+            inline_images: vec![InlineImage { content_id: "nomi".into(), png: brand::shape_png("cookie9", "glow", true, 48) }],
+        };
+        let raw = String::from_utf8(build_message("a@b.co".parse().unwrap(), &email).unwrap().formatted()).unwrap();
+        assert!(raw.contains("multipart/alternative") && raw.contains("multipart/related"));
+        assert!(raw.contains("Content-ID: <nomi>"));
+        assert!(raw.contains("Content-Disposition: inline"));
+        assert!(raw.contains("image/png"));
+    }
+
+    #[test]
     fn a_bad_address_is_refused() {
-        let email = Email { to: "not an address".into(), subject: "x".into(), text: "x".into(), html: None };
+        let email = Email { to: "not an address".into(), subject: "x".into(), text: "x".into(), ..Default::default() };
         assert!(matches!(build_message("a@b.co".parse().unwrap(), &email), Err(MailError::Address(_))));
     }
 }

@@ -100,6 +100,11 @@ workspace:
   drafted_email: "Drafted an email to %{to}%{about}"
   appended_doc: "Added text to a doc"
 sign_in:
+  login_title: "Your sign-in code"
+  register_title: "Confirm your email"
+  preheader: "Enter it in Nomi within %{minutes} minutes."
+  login_reason: "You're getting this because someone signed in to Nomi with your email and password."
+  register_reason: "You're getting this because this email was used to create a Nomi account."
   login_subject: "Your Nomi sign-in code: %{code}"
   login_intro: "Here's your code to sign in to Nomi:"
   login_warning: "If you didn't just try to sign in, someone may know your password. Change it soon, and don't share this code with anyone."
@@ -107,3 +112,6 @@ sign_in:
   register_intro: "Welcome to Nomi! Enter this code to confirm your email:"
   register_warning: "If you didn't create a Nomi account, you can ignore this email."
   expires: "The code works for %{minutes} minutes."
+email:
+  crew_label: "Nomi crew"
+  tagline: "Nomi · a small crew of agents that remembers you."

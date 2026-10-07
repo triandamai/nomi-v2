@@ -100,6 +100,11 @@ workspace:
   drafted_email: "Membuat draf email ke %{to}%{about}"
   appended_doc: "Menambahkan teks ke dokumen"
 sign_in:
+  login_title: "Kode masuk Anda"
+  register_title: "Konfirmasi email Anda"
+  preheader: "Masukkan di Nomi dalam %{minutes} menit."
+  login_reason: "Anda menerima email ini karena seseorang masuk ke Nomi dengan email dan kata sandi Anda."
+  register_reason: "Anda menerima email ini karena email ini dipakai untuk membuat akun Nomi."
   login_subject: "Kode masuk Nomi Anda: %{code}"
   login_intro: "Ini kode untuk masuk ke Nomi:"
   login_warning: "Jika Anda tidak sedang mencoba masuk, mungkin ada orang lain yang tahu kata sandi Anda. Segera ganti kata sandi, dan jangan bagikan kode ini kepada siapa pun."
@@ -107,3 +112,6 @@ sign_in:
   register_intro: "Selamat datang di Nomi! Masukkan kode ini untuk mengonfirmasi email Anda:"
   register_warning: "Jika Anda tidak membuat akun Nomi, abaikan email ini."
   expires: "Kode berlaku selama %{minutes} menit."
+email:
+  crew_label: "Kru Nomi"
+  tagline: "Nomi · kru kecil para agen yang selalu ingat Anda."
