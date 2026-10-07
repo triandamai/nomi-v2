@@ -22,6 +22,7 @@ export type ToolEntry = {
 	description: string;
 	enabled: boolean;
 	required: boolean;
+	agent_only: boolean;
 	configurable: boolean;
 	ready: boolean;
 	used_by: string[];

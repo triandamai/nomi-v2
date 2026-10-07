@@ -297,6 +297,15 @@ fn cancel_reminder_tool_definition() -> ToolDefinition {
     }
 }
 
+/// A built-in agent's own tools, which Admin → Tools switches never take away from it.
+fn always_on_own_tools(agent: &dyn SubAgent) -> std::collections::HashSet<String> {
+    if agent.own_tools_switchable() {
+        Default::default()
+    } else {
+        agent.tools().into_iter().map(|t| t.name).collect()
+    }
+}
+
 /// Every tool the engine itself gives agents (as opposed to an agent's own tools), for the
 /// list in Admin → Tools. Some only go to agents that use them (plans, records, reminders).
 pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
@@ -401,6 +410,7 @@ pub async fn run_agent_turn(
     max_tokens: u32,
 ) -> Result<LoopOutcome, TurnError> {
     let mut tools = agent.tools();
+    let own_tools = always_on_own_tools(agent);
     tools.push(complete_task_tool_definition());
     if agent.can_delegate() {
         let targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
@@ -433,7 +443,7 @@ pub async fn run_agent_turn(
     if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
         tools.push(crate::web::read_web_page_tool_definition());
     }
-    tools.retain(|t| switches.allows(&t.name));
+    tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
 
     let memories = if agent.uses_memory() {
         let last_user_text = messages
@@ -809,12 +819,13 @@ pub async fn resolve_tool_batch(
     }
 
     let switches = crate::tools::ToolSwitches::load(conn).await;
+    let own_tools = always_on_own_tools(agent);
     let mut tool_results = Vec::new();
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await;
 
-            let (result_text, is_error, rich_block) = if !switches.allows(name) {
+            let (result_text, is_error, rich_block) = if !own_tools.contains(name) && !switches.allows(name) {
                 (format!("The {name} tool is switched off. Don't call it again; do without it."), true, None)
             } else if name.as_str() == COMPLETE_TASK_TOOL_NAME {
                 (input.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(), false, None)

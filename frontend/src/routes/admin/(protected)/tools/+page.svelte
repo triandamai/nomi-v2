@@ -36,7 +36,7 @@
 	const allTools = $derived((data.groups ?? []).flatMap((g) => g.tools));
 	const webSearch = $derived(allTools.find((t) => t.name === 'web_search'));
 	const searchSettings = $derived(webSearch?.settings as WebSearchSettings | undefined);
-	const enabled = (tool: ToolEntry) => tool.required || (overrides[tool.name] ?? tool.enabled);
+	const enabled = (tool: ToolEntry) => tool.required || tool.agent_only || (overrides[tool.name] ?? tool.enabled);
 
 	async function toggle(tool: ToolEntry, on: boolean) {
 		overrides[tool.name] = on;
@@ -173,11 +173,14 @@
 			<ul class="tools">
 				{#each group.tools as tool (tool.name)}
 					{@const on = enabled(tool)}
+					{@const owner = tool.used_by[0] ?? group.label}
 					<li class="tool" class:tool--off={!on}>
 						<div class="tool__text">
 							<div class="tool__name-row">
 								<code class="tool__name">{tool.name}</code>
-								{#if tool.required}
+								{#if tool.agent_only}
+									<span class="badge badge--agent" title={m.tools_agent_only_hint({ agent: owner })}>{m.tools_agent_only({ agent: owner })}</span>
+								{:else if tool.required}
 									<span class="badge">{m.tools_required()}</span>
 								{:else if on && !tool.ready}
 									<span class="badge badge--warn">{m.tools_needs_key()}</span>
@@ -192,12 +195,14 @@
 							{#if tool.configurable}
 								<Button type="button" variant="text" onclick={() => openSettings(tool)}>{m.tools_settings()}</Button>
 							{/if}
+							{#if !tool.agent_only}
 							<Switch
 								checked={on}
 								disabled={tool.required}
 								aria-label={m.tools_toggle({ tool: tool.name })}
 								onchange={(value) => toggle(tool, value)}
 							/>
+							{/if}
 						</div>
 					</li>
 				{/each}
@@ -492,6 +497,10 @@
 		font-size: 0.6875rem;
 		font-weight: 600;
 		letter-spacing: 0.02em;
+	}
+	.badge--agent {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
 	}
 	.badge--warn {
 		background: var(--md-sys-color-error-container);

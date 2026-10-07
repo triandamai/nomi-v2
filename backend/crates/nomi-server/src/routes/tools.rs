@@ -31,6 +31,8 @@ pub struct ToolEntry {
     pub enabled: bool,
     /// Can't be switched off: the crew needs it.
     pub required: bool,
+    /// Belongs to one built-in agent and is part of how that agent works: shown, not switchable.
+    pub agent_only: bool,
     /// Has settings an admin can edit.
     pub configurable: bool,
     /// Usable as set up. Only `web_search` can be on but not ready (no key yet).
@@ -92,7 +94,7 @@ pub async fn list_tools(State(state): State<AppState>, AuthClaims(claims): AuthC
     let row = tool_settings::load_row(&mut conn, web::READ_WEB_PAGE_TOOL_NAME).await.map_err(db_error)?;
     let read_settings: ReadPageSettings = serde_json::from_value(row.config).unwrap_or_default();
 
-    let entry = |def: &nomi_llm::ToolDefinition, used_by: Vec<String>| {
+    let entry = |def: &nomi_llm::ToolDefinition, used_by: Vec<String>, agent_only: bool| {
         let name = def.name.clone();
         let required = REQUIRED_TOOLS.contains(&name.as_str());
         let (settings, ready) = match name.as_str() {
@@ -101,8 +103,9 @@ pub async fn list_tools(State(state): State<AppState>, AuthClaims(claims): AuthC
             _ => (None, true),
         };
         ToolEntry {
-            enabled: required || enabled.get(&name).copied().unwrap_or(true),
+            enabled: required || agent_only || enabled.get(&name).copied().unwrap_or(true),
             required,
+            agent_only,
             configurable: settings.is_some(),
             ready,
             used_by,
@@ -119,31 +122,27 @@ pub async fn list_tools(State(state): State<AppState>, AuthClaims(claims): AuthC
     let crew: Vec<ToolEntry> = nomi_agent_core::crew_tool_definitions(&registry)
         .iter()
         .filter(|d| listed.insert(d.name.clone()))
-        .map(|d| entry(d, Vec::new()))
+        .map(|d| entry(d, Vec::new(), false))
         .collect();
     groups.push(ToolGroup { key: "crew".into(), kind: "crew", label: "Crew".into(), tools: crew });
 
-    // Who has each agent tool, so a tool shared by agents is listed once, under its first owner.
-    let mut owners: HashMap<String, Vec<String>> = HashMap::new();
-    for agent in registry.agents() {
-        for def in agent.tools() {
-            owners.entry(def.name).or_default().push(agent.display_name().into_owned());
-        }
-    }
+    // Each built-in agent's own tools, shown under it: part of how it works, so always on.
     for agent in registry.agents() {
         let tools: Vec<ToolEntry> = agent
             .tools()
             .iter()
-            .filter(|d| listed.insert(d.name.clone()))
-            .map(|d| entry(d, owners.get(&d.name).cloned().unwrap_or_default()))
+            .filter(|d| !listed.contains(&d.name))
+            .map(|d| entry(d, vec![agent.display_name().into_owned()], true))
             .collect();
         if !tools.is_empty() {
             groups.push(ToolGroup { key: agent.agent_type().into_owned(), kind: "agent", label: agent.display_name().into_owned(), tools });
         }
     }
 
+    // The tools custom agents can be granted. Their switch decides whether custom agents may use
+    // them; a built-in agent that has the same tool keeps it.
     let custom: Vec<ToolEntry> =
-        state.tool_catalog.definitions().iter().filter(|d| listed.insert(d.name.clone())).map(|d| entry(d, Vec::new())).collect();
+        state.tool_catalog.definitions().iter().filter(|d| listed.insert(d.name.clone())).map(|d| entry(d, Vec::new(), false)).collect();
     if !custom.is_empty() {
         groups.push(ToolGroup { key: "custom".into(), kind: "custom", label: "Custom agents".into(), tools: custom });
     }
@@ -151,12 +150,24 @@ pub async fn list_tools(State(state): State<AppState>, AuthClaims(claims): AuthC
     Ok(Json(ToolsResponse { groups }))
 }
 
-/// Every tool name the page lists (switches and settings are only saved for these).
-fn known_tool(state: &AppState, name: &str) -> bool {
+enum Switchable {
+    Yes,
+    /// One built-in agent's own tool.
+    AgentOnly,
+    Unknown,
+}
+
+/// Whether the page offers a switch for `name`: crew tools and the tools custom agents can be
+/// granted do; a built-in agent's own tools are part of that agent and don't.
+fn switchable(state: &AppState, name: &str) -> Switchable {
     let registry = crate::build_agent_registry(state.project_storage.clone());
-    nomi_agent_core::crew_tool_definitions(&registry).iter().any(|d| d.name == name)
-        || registry.agents().iter().any(|a| a.tools().iter().any(|d| d.name == name))
-        || state.tool_catalog.known_tool_names().contains(&name)
+    if nomi_agent_core::crew_tool_definitions(&registry).iter().any(|d| d.name == name) || state.tool_catalog.known_tool_names().contains(&name) {
+        Switchable::Yes
+    } else if registry.agents().iter().any(|a| a.tools().iter().any(|d| d.name == name)) {
+        Switchable::AgentOnly
+    } else {
+        Switchable::Unknown
+    }
 }
 
 #[derive(Deserialize)]
@@ -172,8 +183,10 @@ pub async fn set_tool_enabled(
     Json(req): Json<SetEnabledRequest>,
 ) -> Result<StatusCode, ApiError> {
     require_system_config_permission(&claims)?;
-    if !known_tool(&state, &name) {
-        return Err((StatusCode::NOT_FOUND, "no such tool"));
+    match switchable(&state, &name) {
+        Switchable::Yes => {}
+        Switchable::AgentOnly => return Err((StatusCode::BAD_REQUEST, "this tool belongs to its agent and can't be switched off")),
+        Switchable::Unknown => return Err((StatusCode::NOT_FOUND, "no such tool")),
     }
     if REQUIRED_TOOLS.contains(&name.as_str()) && !req.enabled {
         return Err((StatusCode::BAD_REQUEST, "this tool can't be switched off"));

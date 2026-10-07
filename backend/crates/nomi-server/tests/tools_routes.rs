@@ -111,10 +111,16 @@ async fn every_tool_is_listed_once_with_its_switch(pool: PgPool) {
     let (status, body) = json_request(router.clone(), "GET", "/api/admin/tools", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["groups"][0]["key"], "crew");
-    let names: Vec<&str> =
-        body["groups"].as_array().unwrap().iter().flat_map(|g| g["tools"].as_array().unwrap().iter()).map(|t| t["name"].as_str().unwrap()).collect();
-    let unique: std::collections::HashSet<&&str> = names.iter().collect();
-    assert_eq!(unique.len(), names.len(), "each tool is listed once");
+    let switchable: Vec<&str> = body["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|g| g["tools"].as_array().unwrap().iter())
+        .filter(|t| t["agent_only"] == false)
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    let unique: std::collections::HashSet<&&str> = switchable.iter().collect();
+    assert_eq!(unique.len(), switchable.len(), "each switch is listed once");
     assert!(body["groups"].as_array().unwrap().iter().any(|g| g["kind"] == "agent"));
 
     let complete = find_tool(&body, "complete_task");
@@ -133,6 +139,26 @@ async fn every_tool_is_listed_once_with_its_switch(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST, "required tools stay on");
     let (status, _) = json_request(router, "PUT", "/api/admin/tools/no_such_tool", json!({"enabled": false}), Some(&token)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agents_own_tools_are_shown_but_not_switchable(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "tools-agent@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/admin/tools", Value::Null, Some(&token)).await;
+    let money = body["groups"].as_array().unwrap().iter().find(|g| g["key"] == "money").expect("money's tools are listed");
+    assert_eq!(money["kind"], "agent");
+    let tool = &money["tools"][0];
+    assert_eq!(tool["agent_only"], true);
+    assert_eq!(tool["enabled"], true);
+    assert_eq!(find_tool(&body, "web_search")["agent_only"], false);
+
+    let uri = format!("/api/admin/tools/{}", tool["name"].as_str().unwrap());
+    let (status, _) = json_request(router, "PUT", &uri, json!({"enabled": false}), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let off: i64 = sqlx::query_scalar("SELECT count(*) FROM tool_settings").fetch_one(&pool).await.unwrap();
+    assert_eq!(off, 0);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

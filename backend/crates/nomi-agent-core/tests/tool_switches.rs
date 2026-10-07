@@ -11,10 +11,11 @@ use nomi_agent_core::{run_agent_turn, AgentRegistry, LoopOutcome, SubAgent, Tool
 use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider, TEST_SETTINGS_KEY};
 
-struct TestAgent;
+/// `CUSTOM` makes it behave like a custom agent, whose tools come from the switchable catalog.
+struct TestAgent<const CUSTOM: bool>;
 
 #[async_trait::async_trait]
-impl SubAgent for TestAgent {
+impl<const CUSTOM: bool> SubAgent for TestAgent<CUSTOM> {
     fn agent_type(&self) -> Cow<'static, str> {
         Cow::Borrowed("test")
     }
@@ -46,6 +47,9 @@ impl SubAgent for TestAgent {
     }
     fn is_default(&self) -> bool {
         true
+    }
+    fn own_tools_switchable(&self) -> bool {
+        CUSTOM
     }
 }
 
@@ -93,11 +97,15 @@ fn call(name: &str, input: serde_json::Value) -> LlmResponse {
 }
 
 async fn run(pool: &PgPool, provider: &FakeLlmProvider) -> LoopOutcome {
+    run_as::<false>(pool, provider).await
+}
+
+async fn run_as<const CUSTOM: bool>(pool: &PgPool, provider: &FakeLlmProvider) -> LoopOutcome {
     let (session_id, user_id, agent_session_id) = seed(pool).await;
     let mut conn = pool.acquire().await.unwrap();
     let embedding = FakeEmbeddingProvider::success(vec![0.0; 1536]);
-    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
-    run_agent_turn(&mut conn, None, None, provider, &embedding, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent::<CUSTOM>)]);
+    run_agent_turn(&mut conn, None, None, provider, &embedding, &registry, &TestAgent::<CUSTOM>, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap()
 }
@@ -124,7 +132,7 @@ fn tool_result(provider: &FakeLlmProvider) -> (String, bool) {
 async fn a_switched_off_tool_is_not_offered_and_a_call_to_it_is_refused(pool: PgPool) {
     sqlx::query("INSERT INTO tool_settings (name, enabled) VALUES ('echo', false), ('complete_task', false)").execute(&pool).await.unwrap();
     let provider = FakeLlmProvider::sequence(vec![call("echo", serde_json::json!({})), text("ok")]);
-    run(&pool, &provider).await;
+    run_as::<true>(&pool, &provider).await;
 
     let tools = offered(&provider);
     assert!(!tools.contains(&"echo".to_string()));
@@ -132,6 +140,19 @@ async fn a_switched_off_tool_is_not_offered_and_a_call_to_it_is_refused(pool: Pg
     let (content, is_error) = tool_result(&provider);
     assert!(is_error);
     assert!(content.contains("switched off"), "{content}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_built_in_agent_keeps_its_own_tools_whatever_the_switches(pool: PgPool) {
+    sqlx::query("INSERT INTO tool_settings (name, enabled) VALUES ('echo', false), ('show_table', false)").execute(&pool).await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![call("echo", serde_json::json!({})), text("ok")]);
+    run(&pool, &provider).await;
+
+    let tools = offered(&provider);
+    assert!(tools.contains(&"echo".to_string()));
+    assert!(!tools.contains(&"show_table".to_string()), "crew tools still follow their switch");
+    let (content, is_error) = tool_result(&provider);
+    assert!(!is_error, "{content}");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

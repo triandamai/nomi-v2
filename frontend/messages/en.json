@@ -921,9 +921,9 @@
 	"tools_settings": "Settings",
 	"tools_group_crew": "Crew tools",
 	"tools_group_crew_lede": "Given by the engine to every agent that needs them.",
-	"tools_group_agent_lede": "{agent}'s own tools.",
+	"tools_group_agent_lede": "Built into {agent} and part of how it works, so always on.",
 	"tools_group_custom": "Custom agent tools",
-	"tools_group_custom_lede": "Tools you can grant to custom agents.",
+	"tools_group_custom_lede": "Tools you can grant to custom agents. Switching one off stops custom agents using it; built-in agents keep their own.",
 	"tools_required": "Always on",
 	"tools_needs_key": "Needs a key",
 	"tools_also_used_by": "Also used by {agents}",
@@ -955,5 +955,7 @@
 	"tools_test_hint": "Tests the saved settings: save first.",
 	"tools_saved": "Saved",
 	"tools_load_failed": "Couldn't load the tools.",
-	"err_save_tool": "Couldn't save the settings."
+	"err_save_tool": "Couldn't save the settings.",
+	"tools_agent_only": "Only {agent}",
+	"tools_agent_only_hint": "Part of how {agent} works, so it's always on."
 }

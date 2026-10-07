@@ -921,9 +921,9 @@
 	"tools_settings": "Pengaturan",
 	"tools_group_crew": "Alat kru",
 	"tools_group_crew_lede": "Diberikan mesin ke setiap agen yang membutuhkannya.",
-	"tools_group_agent_lede": "Alat milik {agent}.",
+	"tools_group_agent_lede": "Bawaan {agent} dan bagian dari cara kerjanya, jadi selalu aktif.",
 	"tools_group_custom": "Alat agen kustom",
-	"tools_group_custom_lede": "Alat yang bisa Anda berikan ke agen kustom.",
+	"tools_group_custom_lede": "Alat yang bisa Anda berikan ke agen kustom. Mematikannya menghentikan agen kustom memakainya; agen bawaan tetap memakai alatnya sendiri.",
 	"tools_required": "Selalu aktif",
 	"tools_needs_key": "Perlu kunci",
 	"tools_also_used_by": "Juga dipakai {agents}",
@@ -955,5 +955,7 @@
 	"tools_test_hint": "Menguji pengaturan yang tersimpan: simpan dulu.",
 	"tools_saved": "Tersimpan",
 	"tools_load_failed": "Tidak bisa memuat daftar alat.",
-	"err_save_tool": "Tidak bisa menyimpan pengaturan."
+	"err_save_tool": "Tidak bisa menyimpan pengaturan.",
+	"tools_agent_only": "Khusus {agent}",
+	"tools_agent_only_hint": "Bagian dari cara kerja {agent}, jadi selalu aktif."
 }

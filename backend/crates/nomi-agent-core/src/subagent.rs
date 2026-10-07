@@ -99,6 +99,13 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// Whether Admin → Tools switches apply to this agent's own `tools()`. A built-in agent's
+    /// tools are part of how it works and stay on; a custom agent's tools are granted from the
+    /// catalog, where an admin can switch them off.
+    fn own_tools_switchable(&self) -> bool {
+        false
+    }
+
     /// When true, run_agent_turn gives this agent the engine-level `update_todos` tool for
     /// maintaining a live multi-step task checklist. Off by default — most agents don't run
     /// long enough multi-step builds to need one.
