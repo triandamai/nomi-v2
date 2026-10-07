@@ -17,6 +17,7 @@
 	import IconPalette from '$lib/components/icons/IconPalette.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
+	import IconTool from '$lib/components/icons/IconTool.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 
 	// The admin console's navigation: the same drawer, rail and phone sheet as the app's sidebar,
@@ -49,6 +50,7 @@
 					{ href: '/admin', label: m.admin_overview(), icon: IconDashboard },
 					{ href: '/admin/agents', label: m.admin_live_agents(), icon: IconAgents },
 					{ href: '/admin/dynamic-agents', label: m.admin_custom_agents(), icon: IconSparkle },
+					{ href: '/admin/tools', label: m.admin_tools(), icon: IconTool },
 					{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip },
 					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
 				]

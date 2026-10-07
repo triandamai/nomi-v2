@@ -21,6 +21,7 @@ use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
+use crate::routes::tools as tools_routes;
 use nomi_storage::{LocalFsStore, S3Config};
 
 #[derive(Clone)]
@@ -175,6 +176,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/users/:id/memberships/:org_id",
             delete(admin_users_routes::remove_user_from_org),
         )
+        .route("/api/admin/tools", get(tools_routes::list_tools))
+        .route("/api/admin/tools/web_search/test", post(tools_routes::test_web_search))
+        .route("/api/admin/tools/:name", put(tools_routes::set_tool_enabled))
+        .route("/api/admin/tools/:name/settings", put(tools_routes::save_tool_settings))
         .route("/api/admin/orgs", get(admin_users_routes::list_orgs))
         .route(
             "/api/admin/settings/embedding",

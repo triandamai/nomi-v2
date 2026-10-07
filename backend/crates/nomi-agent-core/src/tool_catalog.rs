@@ -53,6 +53,13 @@ impl ToolCatalog {
     /// them) — covers a tool being retired from the Rust catalog after an agent was already
     /// granted it: that agent should degrade gracefully, not break. See the design spec's
     /// "Write-time validation, runtime tolerance" note.
+    /// Every catalog tool's definition, by name.
+    pub fn definitions(&self) -> Vec<ToolDefinition> {
+        let mut defs: Vec<ToolDefinition> = self.entries.values().map(|(def, _)| def.clone()).collect();
+        defs.sort_by(|a, b| a.name.cmp(&b.name));
+        defs
+    }
+
     pub fn definitions_for(&self, granted: &[String]) -> Vec<ToolDefinition> {
         granted.iter().filter_map(|name| self.entries.get(name.as_str())).map(|(def, _)| def.clone()).collect()
     }
