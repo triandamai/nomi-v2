@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { VERSION_LABEL } from '$lib/version';
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -186,6 +187,7 @@
 				<form method="POST" action="/logout">
 					<MenuItem type="submit">{m.nav_log_out()}</MenuItem>
 				</form>
+				<p class="app-version">Nomi {VERSION_LABEL}</p>
 			</div>
 		</Menu>
 	</div>
@@ -194,6 +196,16 @@
 <ProSheet bind:open={proOpen} />
 
 <style>
+	.app-version {
+		margin: 4px 0 0;
+		padding: 8px 16px 4px;
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.02em;
+		user-select: text;
+	}
 	.nomi-brand {
 		display: flex;
 		align-items: center;

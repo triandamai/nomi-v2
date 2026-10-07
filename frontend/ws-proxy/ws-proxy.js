@@ -67,6 +67,7 @@ const DEFAULT_MAX_TOTAL_RETRY_MS = 60000;
  * @property {number} [initialRetryDelayMs]
  * @property {number} [maxRetryDelayMs]
  * @property {number} [maxTotalRetryMs]
+ * @property {string} [clientVersion] Sent upstream as X-Client-Version; defaults to APP_VERSION.
  */
 
 /**
@@ -94,9 +95,18 @@ function toUpstreamUrl(upstreamPath, options) {
  * @returns {WebSocket}
  */
 function connectUpstream(upstreamPath, accessToken, options) {
-	return new WebSocket(toUpstreamUrl(upstreamPath, options), {
-		headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {}
-	});
+	/** @type {Record<string, string>} */
+	const headers = { 'x-client-version': resolveClientVersion(options) };
+	if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+	return new WebSocket(toUpstreamUrl(upstreamPath, options), { headers });
+}
+
+/**
+ * @param {ProxyOptions} options
+ * @returns {string}
+ */
+function resolveClientVersion(options) {
+	return options.clientVersion ?? process.env.APP_VERSION?.trim().replace(/^v(?=\d)/, '') ?? 'unknown';
 }
 
 /**
