@@ -310,6 +310,9 @@ export interface ProjectDetail {
 	description: string | null;
 	plan: string | null;
 	status: 'planning' | 'building' | 'ready';
+	/** What Koda builds it with; 'static' projects are plain HTML, previewed without WebContainer. */
+	stack: 'sveltekit' | 'svelte' | 'react' | 'vue' | 'astro' | 'static';
+	files_version: number;
 	files: ProjectFileSummary[];
 }
 

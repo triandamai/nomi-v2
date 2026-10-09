@@ -112,16 +112,20 @@ pub struct ProjectDetailResponse {
     pub description: Option<String>,
     pub plan: Option<String>,
     pub status: String,
+    /// sveltekit, react, vue, astro or static (see nomi_agent_planning::STACKS).
+    pub stack: String,
+    /// Goes up on every file change; the preview copies changes in when it moves.
+    pub files_version: i64,
     pub files: Vec<ProjectFileSummary>,
 }
 
-async fn load_owned_project(
+pub(crate) async fn load_owned_project(
     pool: &sqlx::PgPool,
     project_id: Uuid,
     user_id: Uuid,
-) -> Result<Option<(String, Option<String>, Option<String>, String)>, sqlx::Error> {
+) -> Result<Option<(String, Option<String>, Option<String>, String, String, i64)>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT name, description, plan, status FROM projects WHERE id = $1 AND user_id = $2",
+        "SELECT name, description, plan, status, stack, files_version FROM projects WHERE id = $1 AND user_id = $2",
     )
     .bind(project_id)
     .bind(user_id)
@@ -139,7 +143,7 @@ pub async fn get_project(
         tracing::error!(error = %e, "failed to load project");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
-    let (name, description, plan, status) = row.ok_or((StatusCode::NOT_FOUND, "project not found"))?;
+    let (name, description, plan, status, stack, files_version) = row.ok_or((StatusCode::NOT_FOUND, "project not found"))?;
 
     let files: Vec<ProjectFileSummary> = sqlx::query_as(
         "SELECT path, content_type, size_bytes FROM project_files WHERE project_id = $1 ORDER BY path",
@@ -152,19 +156,19 @@ pub async fn get_project(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
 
-    Ok(Json(ProjectDetailResponse { id: project_id, name, description, plan, status, files }))
+    Ok(Json(ProjectDetailResponse { id: project_id, name, description, plan, status, stack, files_version, files }))
 }
 
 async fn load_owned_project_by_session(
     pool: &sqlx::PgPool,
     session_id: Uuid,
     user_id: Uuid,
-) -> Result<Option<(Uuid, String, Option<String>, Option<String>, String)>, sqlx::Error> {
+) -> Result<Option<(Uuid, String, Option<String>, Option<String>, String, String, i64)>, sqlx::Error> {
     // A session can accumulate more than one project if the user asks to build multiple things
     // in the same chat over time — most recent wins, so the workspace page always matches what
     // the conversation most recently started building.
     sqlx::query_as(
-        "SELECT id, name, description, plan, status FROM projects \
+        "SELECT id, name, description, plan, status, stack, files_version FROM projects \
          WHERE session_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
     )
     .bind(session_id)
@@ -186,7 +190,7 @@ pub async fn get_project_by_session(
         tracing::error!(error = %e, "failed to load project by session");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
-    let (project_id, name, description, plan, status) = row.ok_or((StatusCode::NOT_FOUND, "no project for this session"))?;
+    let (project_id, name, description, plan, status, stack, files_version) = row.ok_or((StatusCode::NOT_FOUND, "no project for this session"))?;
 
     let files: Vec<ProjectFileSummary> = sqlx::query_as(
         "SELECT path, content_type, size_bytes FROM project_files WHERE project_id = $1 ORDER BY path",
@@ -199,7 +203,7 @@ pub async fn get_project_by_session(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
 
-    Ok(Json(ProjectDetailResponse { id: project_id, name, description, plan, status, files }))
+    Ok(Json(ProjectDetailResponse { id: project_id, name, description, plan, status, stack, files_version, files }))
 }
 
 #[tracing::instrument(skip(state, claims))]
@@ -247,24 +251,12 @@ pub async fn put_project_file(
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let content_type = guess_content_type(&path);
-    state.project_storage.put_object(&project_file_key(project_id, &path), &req.content, content_type).await.map_err(|e| {
-        tracing::error!(error = %e, "failed to write project file");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to save file".to_string())
-    })?;
-
-    sqlx::query(
-        "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (project_id, path) DO UPDATE SET content_type = EXCLUDED.content_type, size_bytes = EXCLUDED.size_bytes, updated_at = now()",
-    )
-    .bind(project_id)
-    .bind(&path)
-    .bind(content_type)
-    .bind(req.content.len() as i32)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "failed to save project file metadata");
+    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, &path, &req.content)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    nomi_agent_coding::files::bump_files_version(&mut conn, project_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to bump project files version");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save file".to_string())
     })?;
 
@@ -286,19 +278,15 @@ pub async fn delete_project_file(
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    state.project_storage.delete_object(&project_file_key(project_id, &path)).await.map_err(|e| {
+    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    nomi_agent_coding::files::remove_file(&mut conn, &state.project_storage, project_id, &path).await.map_err(|e| {
         tracing::error!(error = %e, "failed to delete project file");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete file".to_string())
     })?;
-    sqlx::query("DELETE FROM project_files WHERE project_id = $1 AND path = $2")
-        .bind(project_id)
-        .bind(&path)
-        .execute(&state.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to delete project file metadata");
-            (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete file".to_string())
-        })?;
+    nomi_agent_coding::files::bump_files_version(&mut conn, project_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to bump project files version");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete file".to_string())
+    })?;
 
     Ok(StatusCode::OK)
 }

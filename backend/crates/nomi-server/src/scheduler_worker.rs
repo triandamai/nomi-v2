@@ -208,7 +208,7 @@ pub async fn run(
     s3: Option<nomi_storage::S3Config>,
     settings_key: [u8; 32],
     http_client: reqwest::Client,
-    project_storage: nomi_storage::LocalFsStore,
+    project_storage: nomi_storage::ProjectStore,
     notification: Arc<dyn NotificationDelivery>,
 ) {
     tracing::info!("scheduler worker: polling for due reminders every {:?}", POLL_INTERVAL);

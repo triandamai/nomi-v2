@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use nomi_agent_core::{CatalogTool, ToolOutcome};
 use nomi_llm::ToolDefinition;
-use nomi_storage::LocalFsStore;
+use nomi_storage::ProjectStore;
 
 struct ListTransactions;
 #[async_trait]
@@ -90,8 +90,8 @@ impl CatalogTool for ListRecentAgentActivity {
     }
 }
 
-/// Every non-coding entry for `build_tool_catalog` — coding's four entries are added by that
-/// function directly (Task 4), since they need a `LocalFsStore` this function doesn't have.
+/// Every non-coding entry for `build_tool_catalog` — coding's entries are added by that
+/// function directly (Task 4), since they need a `ProjectStore` this function doesn't have.
 pub fn non_coding_entries() -> HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> {
     let mut entries: HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> = HashMap::new();
     entries.insert("list_transactions", (nomi_agent_money::list_transactions_tool_definition(), Box::new(ListTransactions)));
@@ -116,60 +116,26 @@ pub fn non_coding_entries() -> HashMap<&'static str, (ToolDefinition, Box<dyn Ca
     entries
 }
 
-struct WriteFile {
-    storage: LocalFsStore,
+/// One of Koda's tools (see nomi_agent_coding::TOOL_NAMES), needing the project store.
+struct CodingTool {
+    name: &'static str,
+    storage: ProjectStore,
 }
 #[async_trait]
-impl CatalogTool for WriteFile {
+impl CatalogTool for CodingTool {
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_coding::write_file(conn, &self.storage, user_id, input).await
+        nomi_agent_coding::execute(conn, &self.storage, user_id, self.name, input).await
     }
 }
 
-struct ReadFile {
-    storage: LocalFsStore,
-}
-#[async_trait]
-impl CatalogTool for ReadFile {
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_coding::read_file(conn, &self.storage, user_id, input).await.map(ToolOutcome::text)
-    }
-}
-
-struct ListFiles;
-#[async_trait]
-impl CatalogTool for ListFiles {
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_coding::list_files(conn, user_id, input).await.map(ToolOutcome::text)
-    }
-}
-
-struct DeleteFile {
-    storage: LocalFsStore,
-}
-#[async_trait]
-impl CatalogTool for DeleteFile {
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_coding::delete_file(conn, &self.storage, user_id, input).await
-    }
-}
-
-/// Coding's four entries, needing `project_storage` — combined with `non_coding_entries()` by
+/// Koda's tools, needing `project_storage` — combined with `non_coding_entries()` by
 /// `build_tool_catalog` in `lib.rs`.
-pub fn coding_entries(project_storage: LocalFsStore) -> HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> {
-    let mut entries: HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> = HashMap::new();
-    entries.insert(
-        "write_file",
-        (nomi_agent_coding::write_file_tool_definition(), Box::new(WriteFile { storage: project_storage.clone() })),
-    );
-    entries.insert(
-        "read_file",
-        (nomi_agent_coding::read_file_tool_definition(), Box::new(ReadFile { storage: project_storage.clone() })),
-    );
-    entries.insert("list_files", (nomi_agent_coding::list_files_tool_definition(), Box::new(ListFiles)));
-    entries.insert(
-        "delete_file",
-        (nomi_agent_coding::delete_file_tool_definition(), Box::new(DeleteFile { storage: project_storage })),
-    );
-    entries
+pub fn coding_entries(project_storage: ProjectStore) -> HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> {
+    nomi_agent_coding::TOOL_NAMES
+        .iter()
+        .filter_map(|&name| {
+            let definition = nomi_agent_coding::tool_definition(name)?;
+            Some((name, (definition, Box::new(CodingTool { name, storage: project_storage.clone() }) as Box<dyn CatalogTool>)))
+        })
+        .collect()
 }

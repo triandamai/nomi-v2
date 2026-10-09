@@ -25,7 +25,7 @@ use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
 use crate::routes::tools as tools_routes;
-use nomi_storage::{LocalFsStore, S3Config};
+use nomi_storage::{ProjectStore, S3Config};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -35,9 +35,9 @@ pub struct AppState {
     pub settings_key: [u8; 32],
     pub mqtt_broker_host: String,
     pub mqtt_broker_port: u16,
-    /// Avatar uploads only — project files live in `project_storage` (local disk), never here.
+    /// Avatars (attachments and project code share the bucket through their own stores).
     pub s3: Option<S3Config>,
-    pub project_storage: LocalFsStore,
+    pub project_storage: ProjectStore,
     pub tool_catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
     /// Whether password sign-in waits for an emailed code, and the mailer that sends it.
     pub email_codes: crate::sign_in_codes::EmailCodes,
@@ -238,6 +238,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/projects/:id/files/*path",
             get(projects_routes::get_project_file).put(projects_routes::put_project_file).delete(projects_routes::delete_project_file),
         )
+        .route("/api/projects/:id/runtime", get(crate::routes::project_runtime::check_in))
+        .route("/api/projects/:id/runtime/runs/:run_id", post(crate::routes::project_runtime::finish_run))
+        .route("/api/projects/:id/runtime/check", post(crate::routes::project_runtime::record_check))
+        .route("/api/projects/:id/manifest", get(crate::routes::project_runtime::manifest))
+        .route("/api/projects/:id/snapshot", get(crate::routes::project_runtime::snapshot))
         .route("/api/projects/:id/preview", get(projects_routes::preview_project_index))
         .route("/api/projects/:id/preview/*path", get(projects_routes::preview_project_file))
         .layer(TraceLayer::new_for_http())

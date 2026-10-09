@@ -86,7 +86,7 @@ fn extract_project_id(task: &str) -> Option<Uuid> {
 /// LISTEN/NOTIFY with a polling fallback, mirroring worker.rs's turn_jobs loop exactly), runs
 /// each through nomi_agent_core::run_agent_turn directly, and posts the agent's own answer.
 /// Deliberately does NOT take the conversational session's advisory lock (see the design spec) — this must never block a user's live conversation.
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::ProjectStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {

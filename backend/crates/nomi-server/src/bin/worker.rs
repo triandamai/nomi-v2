@@ -33,7 +33,7 @@ async fn main() {
     let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
     let s3 = nomi_storage::build_from_env().await;
-    let project_storage = nomi_storage::build_local_fs_store();
+    let project_storage = nomi_storage::build_project_store(s3.clone());
     // Turns open attached files from the same place the server stores them.
     nomi_storage::blob::init_attachment_store(s3.clone());
     // Quota notices from turns are emailed through the same SMTP settings as the server's.

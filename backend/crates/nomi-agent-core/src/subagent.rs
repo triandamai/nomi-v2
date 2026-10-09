@@ -74,6 +74,12 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// How many rounds of tool calls one run may take before it's stopped. Most agents finish
+    /// in a few; one building a project (write, install, build, fix) needs many more.
+    fn max_tool_turns(&self) -> u32 {
+        10
+    }
+
     /// When true, a reply that reads as a plan is always saved as a plan draft (`write_plan`)
     /// rather than posted as plain markdown, even if the model forgot to call the tool.
     fn keeps_plans_in_drafts(&self) -> bool {

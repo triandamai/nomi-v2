@@ -33,9 +33,9 @@ async fn main() {
 
     let s3 = nomi_storage::build_from_env().await;
     if s3.is_some() {
-        tracing::info!("S3 storage configured for avatars and attachments");
+        tracing::info!("S3 storage configured for avatars, attachments and project files");
     } else {
-        tracing::info!("S3_BUCKET not set — avatar upload disabled, attachments kept on disk");
+        tracing::info!("S3_BUCKET not set — avatar upload disabled, attachments and project files kept on disk");
     }
 
     // Notifications are emailed through the same SMTP settings as sign-in codes.
@@ -44,7 +44,7 @@ async fn main() {
     // Chat attachments go to the same bucket as avatars, or to disk without one.
     nomi_storage::blob::init_attachment_store(s3.clone());
 
-    let project_storage = nomi_storage::build_local_fs_store();
+    let project_storage = nomi_storage::build_project_store(s3.clone());
 
     // Embedded by default so a single `cargo run` (or single production instance) is enough to
     // process turns — no separate `cargo run --bin worker` process required. Set

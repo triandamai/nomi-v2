@@ -2811,10 +2811,12 @@ name = "nomi-agent-coding"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "nomi-agent-core",
  "nomi-llm",
  "nomi-storage",
  "nomi-test-support",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3151,6 +3153,7 @@ dependencies = [
  "aws-sdk-s3",
  "thiserror 1.0.69",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

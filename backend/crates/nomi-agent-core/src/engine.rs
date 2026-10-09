@@ -13,8 +13,6 @@ use crate::permissions;
 use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
-const MAX_TOOL_TURNS: u32 = 10;
-
 /// Posted when the model hit its output limit before writing any answer.
 /// Asked once when a model ends its turn having only thought, with no answer written.
 const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to the user now.";
@@ -542,7 +540,7 @@ pub async fn run_agent_turn(
     let mut wrote_plan = false;
     let mut asked_for_answer = false;
 
-    for _ in 0..MAX_TOOL_TURNS {
+    for _ in 0..agent.max_tool_turns() {
         if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
             return Ok(LoopOutcome::Cancelled);
