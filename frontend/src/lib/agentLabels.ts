@@ -1,4 +1,5 @@
 import { m } from '$lib/paraglide/messages';
+import { CREW_NAMES } from '$lib/crewNames';
 
 // Human-readable labels for the raw agent_type/tool_name/phase/status strings that flow through
 // the realtime and history APIs. Centralized here so the in-chat status line, the in-chat agent
@@ -47,7 +48,7 @@ export function toolActivityLabel(toolName: string): string {
  * call sites that haven't received that field yet (e.g. the admin table's very first paint,
  * before the initial snapshot fetch resolves). */
 export function agentTypeFallbackLabel(agentType: string): string {
-	if (agentType === 'chitchat') return 'Nomi';
+	if (CREW_NAMES[agentType]) return CREW_NAMES[agentType];
 	if (!agentType) return m.agent_an_agent();
 	return agentType.charAt(0).toUpperCase() + agentType.slice(1);
 }

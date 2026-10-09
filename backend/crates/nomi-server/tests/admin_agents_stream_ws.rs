@@ -213,7 +213,7 @@ async fn agent_session_started_and_ended_are_forwarded_live(pool: PgPool) {
     let frames = collect_frames_within(&mut admin_ws, Duration::from_secs(5)).await;
     let started = frames.iter().find(|f| f["kind"] == "AgentSessionStarted").expect("expected an AgentSessionStarted frame");
     assert_eq!(started["agent_type"], "money");
-    assert_eq!(started["agent_display_name"], "Money");
+    assert_eq!(started["agent_display_name"], "Finley");
     assert_eq!(started["session_id"], ingested.session_id.to_string());
 
     let ended = frames.iter().find(|f| f["kind"] == "AgentSessionEnded").expect("expected an AgentSessionEnded frame");

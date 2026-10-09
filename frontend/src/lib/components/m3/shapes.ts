@@ -1,3 +1,4 @@
+import { CREW_TYPE_BY_NAME } from '$lib/crewNames';
 // M3 Expressive shape library + the agent → (shape, gradient) identity mapping.
 //
 // Every shape is a "polar" outline r(θ) = R·(1 + amplitude·cos(lobes·θ)) sampled at the same
@@ -177,7 +178,9 @@ export function registerAgentLooks(
  * display name ("Money"); a registered dynamic agent wears its own pick, and anything else
  * unrecognized — chitchat included — is Nomi. */
 export function agentLook(agent: string | null | undefined): AgentLook {
-	const key = (agent ?? '').toLowerCase();
+	const lowered = (agent ?? '').toLowerCase();
+	// The crew's names ($lib/crewNames) wear their agent's look; older messages carry the type-like names.
+	const key = CREW_TYPE_BY_NAME[lowered] ?? lowered;
 	const custom = registered.get(key);
 	if (custom) return custom;
 	if (key.includes('money') || key.includes('budget')) return { shape: 'sunny8', tone: 'ember', motion: 'spin' };

@@ -73,6 +73,16 @@ pub fn is_tone(name: &str) -> bool {
 pub fn agent_look(agent: &str) -> Look {
     let key = agent.to_lowercase();
     let look = |shape, tone| Look { shape, tone };
+    // The crew's names (nomi_agent_core::crew) wear their agent's look.
+    let key = match key.as_str() {
+        "finley" => "money".to_string(),
+        "cadence" => "reminders".to_string(),
+        "paige" => "files".to_string(),
+        "miles" => "planning".to_string(),
+        "ada" => "coding".to_string(),
+        "sloane" => "workspace".to_string(),
+        _ => key,
+    };
     if key.contains("money") || key.contains("budget") {
         look("sunny8", "ember")
     } else if key.contains("cod") {
@@ -159,6 +169,8 @@ mod tests {
     fn built_in_agents_wear_their_app_looks() {
         assert_eq!(agent_look("chitchat"), NOMI_LOOK);
         assert_eq!(agent_look("Money"), Look { shape: "sunny8", tone: "ember" });
+        assert_eq!(agent_look("Finley"), Look { shape: "sunny8", tone: "ember" });
+        assert_eq!(agent_look("Paige"), agent_look("files"));
         assert_eq!(agent_look("reminders"), Look { shape: "clover3", tone: "citrus" });
         assert_eq!(agent_look("workspace"), Look { shape: "puffy7", tone: "sky" });
     }

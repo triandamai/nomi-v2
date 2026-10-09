@@ -370,8 +370,7 @@ fn add_hand_off_note(messages: &mut Vec<LlmMessage>, from: &str, task: &str) {
 }
 
 fn capitalize(agent_type: &str) -> String {
-    let mut chars = agent_type.chars();
-    chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
+    nomi_agent_core::crew::display_name_for(agent_type)
 }
 
 /// Persists a `LoopOutcome` (insert the final reply / completion message, record bookkeeping

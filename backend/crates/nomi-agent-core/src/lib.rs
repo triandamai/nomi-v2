@@ -1,6 +1,7 @@
 pub mod attachments;
 pub mod chat_title;
 pub mod content_block;
+pub mod crew;
 pub mod delegation;
 pub mod dynamic_agent;
 pub mod engine;
