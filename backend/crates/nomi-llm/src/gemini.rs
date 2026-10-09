@@ -1,3 +1,4 @@
+use base64::Engine;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use eventsource_stream::Eventsource;
@@ -17,6 +18,11 @@ pub struct GeminiProvider {
 impl GeminiProvider {
     pub fn new(client: reqwest::Client, api_key: String, model: String, base_url: String) -> Self {
         Self { client, api_key, model, base_url }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn body_for_test(&self, request: &LlmRequest) -> serde_json::Value {
+        self.build_body(request)
     }
 
     pub fn default_base_url() -> String {
@@ -107,12 +113,113 @@ fn content_block_to_part(block: &ContentBlock) -> serde_json::Value {
         ContentBlock::ToolResult { tool_use_id, content, .. } => {
             json!({ "functionResponse": { "name": tool_use_id, "response": { "content": content } } })
         }
+        // Gemini takes images, PDFs, audio and video. Big files were uploaded first (see
+        // `upload_large_media`) and are referenced by their File API uri.
+        ContentBlock::Media { media_type, data, .. } => match data.strip_prefix(UPLOADED_PREFIX) {
+            Some(uri) => json!({ "file_data": { "mime_type": media_type, "file_uri": uri } }),
+            None => json!({ "inline_data": { "mime_type": media_type, "data": data } }),
+        },
+    }
+}
+
+/// Marks a Media block's `data` as a File API uri rather than base64 bytes.
+const UPLOADED_PREFIX: &str = "gemini-file:";
+
+/// Inline files share a 20 MB cap with the rest of the request; anything bigger (in base64)
+/// goes through the File API.
+const MAX_INLINE_BASE64: usize = 14 * 1024 * 1024;
+
+impl GeminiProvider {
+    /// Uploads each file too big to send inline and points its block at the upload instead.
+    async fn upload_large_media(&self, mut request: LlmRequest) -> Result<LlmRequest, LlmError> {
+        for message in &mut request.messages {
+            for block in &mut message.content {
+                if let ContentBlock::Media { media_type, data, name } = block {
+                    if data.len() > MAX_INLINE_BASE64 && !data.starts_with(UPLOADED_PREFIX) {
+                        let bytes = base64::engine::general_purpose::STANDARD
+                            .decode(data.as_bytes())
+                            .map_err(|e| LlmError::ParseError(format!("invalid base64 file data: {e}")))?;
+                        let uri = self.upload_file(bytes, media_type, name).await?;
+                        *data = format!("{UPLOADED_PREFIX}{uri}");
+                    }
+                }
+            }
+        }
+        Ok(request)
+    }
+
+    /// The File API's resumable upload, then a wait until the file is ready to use (videos are
+    /// processed for a while after upload).
+    async fn upload_file(&self, bytes: Vec<u8>, media_type: &str, name: &str) -> Result<String, LlmError> {
+        let start = self
+            .client
+            .post(format!("{}/upload/v1beta/files?key={}", self.base_url, self.api_key))
+            .header("X-Goog-Upload-Protocol", "resumable")
+            .header("X-Goog-Upload-Command", "start")
+            .header("X-Goog-Upload-Header-Content-Length", bytes.len().to_string())
+            .header("X-Goog-Upload-Header-Content-Type", media_type)
+            .json(&json!({ "file": { "display_name": name } }))
+            .send()
+            .await?;
+        if !start.status().is_success() {
+            let status = start.status();
+            let text = start.text().await.unwrap_or_default();
+            return Err(LlmError::ProviderError(format!("gemini returned {status}: {text}")));
+        }
+        let upload_url = start
+            .headers()
+            .get("x-goog-upload-url")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| LlmError::ParseError("gemini upload gave no upload url".to_string()))?
+            .to_string();
+
+        let length = bytes.len();
+        let uploaded = self
+            .client
+            .post(upload_url)
+            .header("Content-Length", length.to_string())
+            .header("X-Goog-Upload-Offset", "0")
+            .header("X-Goog-Upload-Command", "upload, finalize")
+            .body(bytes)
+            .send()
+            .await?;
+        if !uploaded.status().is_success() {
+            let status = uploaded.status();
+            let text = uploaded.text().await.unwrap_or_default();
+            return Err(LlmError::ProviderError(format!("gemini returned {status}: {text}")));
+        }
+        let body: serde_json::Value = uploaded.json().await.map_err(|e| LlmError::ParseError(e.to_string()))?;
+        let file = body.get("file").cloned().unwrap_or_default();
+        let uri = file.get("uri").and_then(|v| v.as_str()).ok_or_else(|| LlmError::ParseError("gemini upload gave no file uri".to_string()))?.to_string();
+        let file_name = file.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let mut state = file.get("state").and_then(|v| v.as_str()).unwrap_or("ACTIVE").to_string();
+
+        // Up to about five minutes for a long video.
+        for _ in 0..150 {
+            match state.as_str() {
+                "ACTIVE" => return Ok(uri),
+                "FAILED" => return Err(LlmError::ProviderError("gemini returned 422: the uploaded file could not be processed".to_string())),
+                _ => {}
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let status: serde_json::Value = self
+                .client
+                .get(format!("{}/v1beta/{file_name}?key={}", self.base_url, self.api_key))
+                .send()
+                .await?
+                .json()
+                .await
+                .map_err(|e| LlmError::ParseError(e.to_string()))?;
+            state = status.get("state").and_then(|v| v.as_str()).unwrap_or("ACTIVE").to_string();
+        }
+        Err(LlmError::ProviderError("gemini returned 504: the uploaded file took too long to process".to_string()))
     }
 }
 
 #[async_trait]
 impl LlmProvider for GeminiProvider {
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
+        let request = self.upload_large_media(request).await?;
         let body = self.build_body(&request);
         let url = format!(
             "{}/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",

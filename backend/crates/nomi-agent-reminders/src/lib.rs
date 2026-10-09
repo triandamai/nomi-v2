@@ -17,9 +17,9 @@ use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
 pub const REMINDERS_AGENT_TYPE: &str = "reminders";
-pub const REMINDERS_DISPLAY_NAME: &str = "Reminders";
+pub const REMINDERS_DISPLAY_NAME: &str = "Kala";
 
-const SYSTEM_PROMPT: &str = "You are Nomi's Reminders agent. You keep the user's reminders: add new ones \
+const SYSTEM_PROMPT: &str = "You are Kala, the member of Nomi's crew who keeps reminders. You keep the user's reminders: add new ones \
      (add_reminder), show what's coming up (show_reminders), change, tick off or remove one \
      (edit_reminder, complete_reminder, remove_reminder). Resolve times like \"tomorrow at 4\" \
      against the current date and time you're given, in the user's timezone, and pass due_at with \

@@ -236,3 +236,41 @@ async fn fetch_models_rejects_an_unknown_provider(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admins_pick_the_coding_model_and_people_can_choose_their_own(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    let (status, created) = json_request(
+        router.clone(),
+        "POST",
+        "/api/admin/settings/llm/models",
+        json!({"label": "Coder", "provider": "fake", "model_id": "", "api_key": ""}),
+        Some(&admin),
+    )
+    .await;
+    assert!(status.is_success(), "{status} {created}");
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let (status, _) = json_request(router.clone(), "PUT", "/api/admin/settings/llm/coding-model", json!({"id": id}), Some(&admin)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, models) = json_request(router.clone(), "GET", "/api/admin/settings/llm/models", json!(null), Some(&admin)).await;
+    assert_eq!(models[0]["is_coding_model"], true);
+
+    let user = register_and_login(router.clone(), "person@example.com").await;
+    let (_, mine) = json_request(router.clone(), "GET", "/api/llm/models", json!(null), Some(&user)).await;
+    assert_eq!((mine["coding"].clone(), mine["default_coding_model_id"].clone()), (json!({"kind": "default"}), json!(id)));
+
+    for choice in [json!({"kind": "same_as_chat"}), json!({"kind": "admin", "admin_model_id": id})] {
+        let (status, _) = json_request(router.clone(), "PUT", "/api/llm/coding-selection", choice.clone(), Some(&user)).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (_, mine) = json_request(router.clone(), "GET", "/api/llm/models", json!(null), Some(&user)).await;
+        assert_eq!(mine["coding"], choice);
+    }
+    let (status, _) = json_request(router.clone(), "PUT", "/api/llm/coding-selection", json!({"kind": "admin", "admin_model_id": uuid::Uuid::new_v4()}), Some(&user)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Only admins pick Nomi's coding model.
+    let (status, _) = json_request(router.clone(), "PUT", "/api/admin/settings/llm/coding-model", json!({"id": null}), Some(&user)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

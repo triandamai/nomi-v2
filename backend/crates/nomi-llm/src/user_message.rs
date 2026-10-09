@@ -33,6 +33,7 @@ impl LlmError {
     pub fn user_message_in(&self, locale: Locale) -> String {
         let text = match self {
             LlmError::Http(_) => return locale.t("error.llm_unreachable"),
+            LlmError::QuotaExceeded => return locale.t("error.quota_used_up"),
             LlmError::ParseError(_) => return locale.t("error.llm_unreadable"),
             LlmError::ProviderError(text) => text,
         };

@@ -20,6 +20,7 @@ fn new_model_input(label: &str, updated_by: Uuid) -> NewAdminLlmModel<'_> {
         base_url: None,
         input_usd_per_mtok: None,
         output_usd_per_mtok: None,
+        media_inputs: None,
         updated_by,
     }
 }
@@ -72,6 +73,7 @@ async fn update_changes_fields_and_keeps_existing_key_when_none_given(pool: PgPo
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -101,6 +103,7 @@ async fn update_replaces_the_key_when_one_is_given(pool: PgPool) {
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -125,6 +128,7 @@ async fn update_of_a_nonexistent_model_returns_none(pool: PgPool) {
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -202,6 +206,7 @@ async fn create_admin_llm_model_accepts_every_supported_provider(pool: PgPool) {
                 base_url: None,
                 input_usd_per_mtok: None,
                 output_usd_per_mtok: None,
+                media_inputs: None,
                 updated_by: user_id,
             },
         )
@@ -273,7 +278,7 @@ async fn setting_an_admin_selection_then_a_custom_one_clears_the_admin_reference
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn setting_a_custom_selection_then_an_admin_one_clears_the_custom_fields(pool: PgPool) {
+async fn switching_to_an_admin_model_keeps_the_saved_own_key(pool: PgPool) {
     let user_id = insert_user(&pool).await;
     let model = create_admin_llm_model(&pool, new_model_input("First", user_id)).await.unwrap();
 
@@ -294,9 +299,10 @@ async fn setting_a_custom_selection_then_an_admin_one_clears_the_custom_fields(p
     set_user_llm_selection_admin(&pool, user_id, model.id).await.unwrap();
 
     let row = get_user_llm_selection(&pool, user_id).await.unwrap().unwrap();
+    // The key stays saved so Nomi can fall back to it once the plan's tokens run out.
     assert_eq!(row.admin_model_id, Some(model.id));
-    assert_eq!(row.custom_provider, None);
-    assert_eq!(row.custom_model_id, None);
+    assert_eq!(row.custom_provider, Some("openai".to_string()));
+    assert_eq!(row.custom_model_id, Some("gpt-4o".to_string()));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

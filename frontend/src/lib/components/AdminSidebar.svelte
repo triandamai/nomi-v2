@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { VERSION_LABEL } from '$lib/version';
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
@@ -15,6 +16,8 @@
 	import IconLogout from '$lib/components/icons/IconLogout.svelte';
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import IconPalette from '$lib/components/icons/IconPalette.svelte';
+	import IconWallet from '$lib/components/icons/IconWallet.svelte';
+	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
 	import IconTool from '$lib/components/icons/IconTool.svelte';
@@ -55,7 +58,13 @@
 					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
 				]
 			: []),
-		...(canViewUsers ? [{ href: '/admin/users', label: m.admin_users(), icon: IconPerson }] : []),
+		...(canViewUsers
+			? [
+					{ href: '/admin/users', label: m.admin_users(), icon: IconPerson },
+					{ href: '/admin/plans', label: m.admin_plans(), icon: IconWallet },
+					{ href: '/admin/notifications', label: m.admin_notifications(), icon: IconInbox },
+				]
+			: []),
 	]);
 
 	function isActive(href: string): boolean {
@@ -104,6 +113,7 @@
 			<form method="POST" action="/logout?redirect_to=/login">
 				<IconButton type="submit" aria-label={m.nav_log_out()}><IconLogout /></IconButton>
 			</form>
+			<span class="version version--rail" title="Nomi {VERSION_LABEL}">{VERSION_LABEL}</span>
 		</div>
 	{:else}
 		<div class="footer">
@@ -123,11 +133,28 @@
 			<form method="POST" action="/logout?redirect_to=/login">
 				<button type="submit" class="footer__item footer__item--quiet"><IconLogout size={20} /> {m.nav_log_out()}</button>
 			</form>
+			<span class="version">Nomi {VERSION_LABEL}</span>
 		</div>
 	{/if}
 </aside>
 
 <style>
+	.version {
+		display: block;
+		padding: 8px 16px 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.02em;
+	}
+	.version--rail {
+		max-width: 72px;
+		padding: 4px 0 0;
+		overflow: hidden;
+		text-align: center;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.scrim {
 		position: fixed;
 		inset: 0;

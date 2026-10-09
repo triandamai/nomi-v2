@@ -184,6 +184,7 @@
 							<a
 								class="recent__card"
 								href={session.project_id ? `/projects/session/${session.id}` : `/chat/${session.id}`}
+								data-sveltekit-reload={session.project_id ? true : undefined}
 							>
 								<span class="recent__top">
 									<AgentShape size={28} working={session.agent_active} />

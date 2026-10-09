@@ -19,6 +19,11 @@ impl AnthropicProvider {
         Self { client, api_key, model, base_url }
     }
 
+    #[cfg(test)]
+    pub(crate) fn body_for_test(&self, request: &LlmRequest) -> serde_json::Value {
+        self.build_body(request, false)
+    }
+
     pub fn default_base_url() -> String {
         "https://api.anthropic.com".to_string()
     }
@@ -119,6 +124,15 @@ fn content_block_to_json(block: &ContentBlock) -> serde_json::Value {
             }
             value
         }
+        ContentBlock::Media { media_type, data, name } => match crate::media::MediaKind::of(media_type) {
+            Some(crate::media::MediaKind::Image) => {
+                json!({ "type": "image", "source": { "type": "base64", "media_type": media_type, "data": data } })
+            }
+            Some(crate::media::MediaKind::Pdf) => {
+                json!({ "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": data } })
+            }
+            _ => json!({ "type": "text", "text": crate::media::unreadable_note(name, media_type) }),
+        },
     }
 }
 

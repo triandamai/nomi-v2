@@ -145,10 +145,10 @@ async fn an_active_agent_is_continued_without_reclassifying_intent(pool: PgPool)
     assert_eq!(agent_session_count, 1); // no new row — the existing one was reused
 
     let requests = provider.received_requests.lock().unwrap();
-    // Classification was skipped entirely: the first call is the money-agent turn ("financial
-    // assistant" only appears in its own system prompt), and no call is an intent
+    // Classification was skipped entirely: the first call is the money-agent turn ("money
+    // specialist" only appears in its own system prompt), and no call is an intent
     // classification. The only other call is the money agent saving a memory from its reply.
-    assert!(requests[0].system.as_ref().unwrap().contains("financial assistant"));
+    assert!(requests[0].system.as_ref().unwrap().contains("money specialist"));
     assert!(requests.iter().all(|r| !r.system.as_deref().unwrap_or_default().contains("Classify the user's message")));
     assert!(requests.len() <= 2);
 }

@@ -9,7 +9,7 @@ use nomi_agent_core::{AgentRegistry, LoopOutcome, NotificationDelivery};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
-use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
+use crate::bootstrap::build_embedding_provider_from_settings_or_env;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 /// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
@@ -208,7 +208,7 @@ pub async fn run(
     s3: Option<nomi_storage::S3Config>,
     settings_key: [u8; 32],
     http_client: reqwest::Client,
-    project_storage: nomi_storage::LocalFsStore,
+    project_storage: nomi_storage::ProjectStore,
     notification: Arc<dyn NotificationDelivery>,
 ) {
     tracing::info!("scheduler worker: polling for due reminders every {:?}", POLL_INTERVAL);
@@ -227,7 +227,8 @@ pub async fn run(
                 }
             };
 
-            let provider = build_llm_provider_for_user(&pool, claimed.user_id, &settings_key, http_client.clone()).await;
+            let purpose = crate::bootstrap::purpose_for_agent(&claimed.target_agent_type);
+            let provider = crate::bootstrap::build_llm_provider_for(&pool, claimed.user_id, &settings_key, http_client.clone(), purpose).await;
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
 
             process_claimed_job(&pool, Some(&mqtt), s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, notification.as_ref(), claimed).await;

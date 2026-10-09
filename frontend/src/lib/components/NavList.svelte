@@ -10,7 +10,7 @@
 		label,
 		onnavigate,
 	}: {
-		items: { href: string; label: string; icon: Component<{ size?: number }> }[];
+		items: { href: string; label: string; icon: Component<{ size?: number }>; badge?: number }[];
 		rail?: boolean;
 		isActive: (href: string) => boolean;
 		label: string;
@@ -28,8 +28,11 @@
 			aria-current={active ? 'page' : undefined}
 			onclick={() => onnavigate?.()}
 		>
-			<span class="nomi-nav__indicator"><item.icon size={22} /></span>
-			<span class="nomi-nav__label">{item.label}</span>
+			<span class="nomi-nav__indicator">
+				<item.icon size={22} />
+				{#if item.badge}<span class="nomi-nav__badge" aria-hidden="true">{item.badge > 99 ? '99+' : item.badge}</span>{/if}
+			</span>
+			<span class="nomi-nav__label">{item.label}{#if item.badge}<span class="sr-only"> ({item.badge})</span>{/if}</span>
 		</a>
 	{/each}
 </nav>
@@ -68,6 +71,25 @@
 		transition:
 			background-color var(--nomi-motion-effects-fast),
 			width var(--nomi-motion-spatial-fast);
+	}
+	.nomi-nav__indicator {
+		position: relative;
+	}
+	/* An M3 badge on the icon: the unread count. */
+	.nomi-nav__badge {
+		position: absolute;
+		top: -2px;
+		left: 32px;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-error);
+		color: var(--md-sys-color-on-error);
+		font-size: 0.6875rem;
+		font-weight: 700;
+		line-height: 16px;
+		text-align: center;
 	}
 	.nomi-nav__item--active {
 		color: var(--md-sys-color-on-surface);

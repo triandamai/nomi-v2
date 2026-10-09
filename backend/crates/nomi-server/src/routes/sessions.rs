@@ -524,6 +524,11 @@ pub async fn send_message(
         return Ok((StatusCode::OK, Json(response)));
     }
 
+    // Files the message points at must be the sender's own; their tags are rewritten from our
+    // records so what agents read about a file is what was really uploaded.
+    let (text, attachment_ids) = crate::routes::attachments::check_message_references(&state.pool, claims.sub, &req.text).await?;
+    let req = SendMessageRequest { text };
+
     tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
     let ingested = nomi_turn::ingest::ingest_inbound_message(
         &state.pool,
@@ -540,6 +545,7 @@ pub async fn send_message(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to ingest message")
     })?;
     tracing::info!(turn_job_id = %ingested.turn_job_id, "message ingested and queued");
+    crate::routes::attachments::link_to_message(&state.pool, claims.sub, &attachment_ids, session_id, ingested.user_message_id).await;
 
     // First message on this session — kick off title generation in the background so it never
     // adds latency to sending a message. Race-safe: the UPDATE only applies WHERE title IS NULL.
@@ -548,7 +554,7 @@ pub async fn send_message(
         let settings_key = state.settings_key;
         let http_client = state.http_client.clone();
         let user_id = claims.sub;
-        let first_message = req.text.clone();
+        let first_message = nomi_attachments::reference::readable(&req.text);
         tokio::spawn(async move {
             generate_session_title(pool, session_id, user_id, settings_key, http_client, first_message).await;
         });

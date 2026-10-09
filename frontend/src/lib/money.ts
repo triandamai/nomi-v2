@@ -23,6 +23,44 @@ export function fillDays(month: string, days: { date: string; cents: number }[])
 	});
 }
 
+/** Every day from `start` to `end` (YYYY-MM-DD, both included): a money month that may run
+ * from the 25th to the 24th. `day` counts from 1; `dom` is the day of the month. */
+export function fillPeriod(start: string, end: string, days: { date: string; cents: number }[]): { date: string; day: number; dom: number; cents: number }[] {
+	const byDate = new Map(days.map((d) => [d.date, d.cents]));
+	const out: { date: string; day: number; dom: number; cents: number }[] = [];
+	const at = new Date(`${start}T00:00:00Z`);
+	const last = new Date(`${end}T00:00:00Z`);
+	while (at <= last && out.length < 40) {
+		const date = at.toISOString().slice(0, 10);
+		out.push({ date, day: out.length + 1, dom: at.getUTCDate(), cents: byDate.get(date) ?? 0 });
+		at.setUTCDate(at.getUTCDate() + 1);
+	}
+	return out;
+}
+
+/** "October 2026", or "25 Oct – 24 Nov 2026" when money months don't start on the 1st. */
+export function periodLabel(month: string, start: string, end: string, startDay: number): string {
+	if (startDay === 1) return monthLabel(month);
+	const format = (date: string, withYear: boolean) =>
+		new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+	return `${format(start, false)} – ${format(end, true)}`;
+}
+
+/** A receipt line in the add-transaction sheet. */
+export interface ItemDraft {
+	name: string;
+	quantity: string;
+	price: string;
+}
+
+/** The lines worth sending (named, with a price), and what they add up to in cents. */
+export function itemsTotal(items: ItemDraft[]): { items: { name: string; quantity: number; unit_amount: number }[]; cents: number } {
+	const filled = items
+		.map((i) => ({ name: i.name.trim(), quantity: Number(i.quantity) || 1, unit_amount: Number(i.price) }))
+		.filter((i) => i.name && i.unit_amount >= 0 && Number.isFinite(i.unit_amount) && i.quantity > 0);
+	return { items: filled, cents: Math.round(filled.reduce((sum, i) => sum + i.quantity * i.unit_amount * 100, 0)) };
+}
+
 /** A clean axis maximum at or above `max` (1, 2, 2.5 or 5 × a power of ten) and its ticks. */
 export function niceScale(max: number, tickCount = 4): { max: number; ticks: number[] } {
 	if (max <= 0) return { max: 1, ticks: [0, 1] };

@@ -29,7 +29,7 @@
 		</form>
 
 		{#each data.projects as project (project.id)}
-			<a href="/projects/session/{project.session_id}" class="block">
+			<a href="/projects/session/{project.session_id}" class="block" data-sveltekit-reload>
 				<Card variant="outlined" class="h-full p-4">
 					<div class="flex items-start justify-between gap-2">
 						<div class="min-w-0">

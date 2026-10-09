@@ -31,18 +31,14 @@ pub trait SubAgent: Send + Sync {
     fn intent_label(&self) -> Cow<'static, str>;
     fn intent_description(&self) -> Cow<'static, str>;
 
-    /// Human-readable label shown on this agent's chat bubbles (e.g. "Money" for the money
-    /// agent, stored on `messages.agent_display_name` at insert time). Defaults to Title Case
-    /// of `agent_type()` — correct for every built-in specialist agent (money → "Money",
-    /// planning → "Planning", etc.). Overridden by `ChitchatAgent` (the raw type "chitchat"
-    /// would read oddly as a label; "Nomi" is the actual product name) and by `DynamicAgent`
-    /// (which uses its own admin-configured name instead of its type, a stringified UUID).
+    /// Human-readable name shown on this agent's chat bubbles (e.g. "Dana" for the money
+    /// agent, stored on `messages.agent_display_name` at insert time): the crew name from
+    /// `crate::crew`, else Title Case of `agent_type()`. Overridden by `DynamicAgent`, which
+    /// uses its own admin-configured name instead of its type (a stringified UUID).
     fn display_name(&self) -> Cow<'static, str> {
-        let type_name = self.agent_type();
-        let mut chars = type_name.chars();
-        match chars.next() {
-            Some(first) => Cow::Owned(first.to_uppercase().collect::<String>() + chars.as_str()),
-            None => Cow::Borrowed(""),
+        match crate::crew::crew_name(self.agent_type().as_ref()) {
+            Some(name) => Cow::Borrowed(name),
+            None => Cow::Owned(crate::crew::display_name_for(self.agent_type().as_ref())),
         }
     }
 
@@ -76,6 +72,12 @@ pub trait SubAgent: Send + Sync {
     /// agent takes the conversation over in the same turn and answers the user itself.
     fn works_in_background(&self) -> bool {
         false
+    }
+
+    /// How many rounds of tool calls one run may take before it's stopped. Most agents finish
+    /// in a few; one building a project (write, install, build, fix) needs many more.
+    fn max_tool_turns(&self) -> u32 {
+        10
     }
 
     /// When true, a reply that reads as a plan is always saved as a plan draft (`write_plan`)

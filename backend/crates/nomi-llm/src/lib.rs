@@ -6,6 +6,7 @@ pub mod gemini;
 pub mod deepseek;
 pub mod config;
 pub mod fake;
+pub mod media;
 mod user_message;
 
 pub use types::*;
@@ -39,9 +40,9 @@ pub fn response_to_stream(response: LlmResponse) -> LlmEventStream {
                 events.push(Ok(StreamEvent::ToolInputDelta { index, partial_json: input.to_string() }));
                 events.push(Ok(StreamEvent::ContentBlockDone { index }));
             }
-            ContentBlock::ToolResult { .. } => {
-                // A provider's own response never contains a ToolResult block (that's only ever
-                // something we send as part of a request) — nothing to emit.
+            ContentBlock::ToolResult { .. } | ContentBlock::Media { .. } => {
+                // A provider's own response never contains a ToolResult or Media block (those are
+                // only ever something we send as part of a request) — nothing to emit.
             }
             ContentBlock::Thinking { text, signature } => {
                 events.push(Ok(StreamEvent::ContentBlockStart { index, block: PartialBlock::Thinking }));

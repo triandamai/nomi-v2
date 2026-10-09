@@ -45,7 +45,7 @@ async fn a_chitchat_reply_is_tagged_nomi(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn a_specialist_agent_reply_is_tagged_with_its_title_cased_type(pool: PgPool) {
+async fn a_specialist_agent_reply_is_tagged_with_its_crew_name(pool: PgPool) {
     // First LLM call classifies intent ("money"), second is the money agent's own reply.
     let provider = FakeLlmProvider::sequence(vec![text_response("money"), text_response("You spent $12 on coffee.")]);
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
@@ -64,7 +64,7 @@ async fn a_specialist_agent_reply_is_tagged_with_its_title_cased_type(pool: PgPo
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(agent_display_name, Some("Money".to_string()));
+    assert_eq!(agent_display_name, Some("Dana".to_string()));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

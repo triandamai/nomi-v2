@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
-import type { AdminUserDetail, AdminUserListResponse } from '$lib/types';
+import type { AdminSubscription, AdminUserDetail, AdminUserListResponse, Plan } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
@@ -14,12 +14,16 @@ export const load: PageServerLoad = async ({ url, cookies, fetch }) => {
 	const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
 	if (query) params.set('query', query);
 
-	const usersResponse = await apiFetch(fetch, cookies, `/api/admin/users?${params}`);
+	const [usersResponse, plansResponse] = await Promise.all([
+		apiFetch(fetch, cookies, `/api/admin/users?${params}`),
+		apiFetch(fetch, cookies, '/api/admin/plans'),
+	]);
 	const result: AdminUserListResponse = usersResponse.ok
 		? ((await usersResponse.json()) as AdminUserListResponse)
 		: { users: [], total: 0 };
+	const plans: Plan[] = plansResponse.ok ? ((await plansResponse.json()) as Plan[]) : [];
 
-	return { users: result.users, total: result.total, page, pageSize: PAGE_SIZE, query };
+	return { users: result.users, total: result.total, page, pageSize: PAGE_SIZE, query, plans };
 };
 
 function requireUserId(data: FormData): string | null {
@@ -28,6 +32,37 @@ function requireUserId(data: FormData): string | null {
 }
 
 export const actions: Actions = {
+	loadSubscription: async ({ request, cookies, fetch }) => {
+		const userId = requireUserId(await request.formData());
+		if (!userId) return fail(400, { error: m.err_invalid_user() });
+		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/subscription`);
+		if (!response.ok) return fail(response.status, { error: (await response.text()) || m.err_load_user() });
+		return { subscription: (await response.json()) as AdminSubscription };
+	},
+
+	/** Moves someone to a plan and/or overrides its allowance; they're notified (in the app and by email). */
+	saveSubscription: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const userId = requireUserId(data);
+		const planId = data.get('plan_id');
+		if (!userId || typeof planId !== 'string' || !planId) return fail(400, { error: m.err_invalid_user() });
+		const quotaText = String(data.get('quota_override') ?? '').trim();
+		const untilText = String(data.get('override_until') ?? '').trim();
+		const quota = quotaText === '' ? null : Number(quotaText);
+		if (quota !== null && !(Number.isInteger(quota) && quota >= 0)) return fail(400, { error: m.sub_quota_invalid() });
+		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/subscription`, {
+			method: 'PUT',
+			body: JSON.stringify({
+				plan_id: planId,
+				quota_override: quota,
+				override_until: quota !== null && untilText ? new Date(`${untilText}T23:59:59`).toISOString() : null,
+				note: String(data.get('note') ?? '').trim() || null,
+			}),
+		});
+		if (!response.ok) return fail(response.status, { error: (await response.text()) || m.sub_save_failed() });
+		return { subscription: (await response.json()) as AdminSubscription, saved: true };
+	},
+
 	promote: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const userId = requireUserId(data);

@@ -20,6 +20,11 @@ impl OpenAiProvider {
         Self { client, api_key, model, base_url }
     }
 
+    #[cfg(test)]
+    pub(crate) fn body_for_test(&self, request: &LlmRequest) -> serde_json::Value {
+        self.build_body(request, false)
+    }
+
     pub fn default_base_url() -> String {
         "https://api.openai.com".to_string()
     }
@@ -32,6 +37,7 @@ impl OpenAiProvider {
 
         for m in &request.messages {
             let mut text_parts = Vec::new();
+            let mut media_parts = Vec::new();
             let mut tool_calls = Vec::new();
             let mut tool_result_messages = Vec::new();
 
@@ -42,6 +48,10 @@ impl OpenAiProvider {
                     // ever a synthetic reasoning-tokens note anyway (see complete_stream below,
                     // and `is_reasoning_model`) — nothing meaningful to replay.
                     ContentBlock::Thinking { .. } => {}
+                    ContentBlock::Media { media_type, data, name } => match crate::media::openai_style_part(media_type, data, name) {
+                        Some(part) => media_parts.push(part),
+                        None => text_parts.push(crate::media::unreadable_note(name, media_type)),
+                    },
                     ContentBlock::ToolUse { id, name, input, .. } => {
                         tool_calls.push(json!({
                             "id": id,
@@ -59,9 +69,14 @@ impl OpenAiProvider {
                 }
             }
 
-            if !text_parts.is_empty() || !tool_calls.is_empty() {
+            if !text_parts.is_empty() || !media_parts.is_empty() || !tool_calls.is_empty() {
                 let mut msg = json!({ "role": role_to_str(&m.role) });
-                msg["content"] = if !text_parts.is_empty() {
+                msg["content"] = if !media_parts.is_empty() {
+                    // Files go as content parts after the text.
+                    let mut parts = vec![json!({ "type": "text", "text": text_parts.join("") })];
+                    parts.extend(media_parts);
+                    json!(parts)
+                } else if !text_parts.is_empty() {
                     json!(text_parts.join(""))
                 } else {
                     serde_json::Value::Null

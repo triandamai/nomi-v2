@@ -3,12 +3,12 @@ use uuid::Uuid;
 
 use nomi_agent_coding::{guess_content_type, CodingAgent};
 use nomi_agent_core::SubAgent;
-use nomi_storage::LocalFsStore;
+use nomi_storage::ProjectStore;
 
 /// A fresh, isolated temp directory per test so concurrently-running tests never share files.
-fn test_storage() -> LocalFsStore {
+fn test_storage() -> ProjectStore {
     let dir = std::env::temp_dir().join(format!("nomi-agent-coding-test-{}", Uuid::new_v4()));
-    LocalFsStore::at(dir)
+    ProjectStore::at(dir)
 }
 
 async fn seed_project(pool: &PgPool) -> (Uuid, Uuid) {
@@ -107,7 +107,7 @@ async fn list_files_on_an_empty_project_says_so(pool: PgPool) {
         .execute_tool(&mut conn, Uuid::new_v4(), Uuid::new_v4(), user_id, "list_files", serde_json::json!({"project_id": project_id.to_string()}))
         .await
         .unwrap();
-    assert_eq!(result.display_text, "no files yet");
+    assert_eq!(result.display_text, "Stack: sveltekit\nno files yet");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

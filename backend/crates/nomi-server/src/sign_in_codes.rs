@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use nomi_auth::email_code::{Challenge, Purpose, CODE_TTL_SECONDS};
 use nomi_i18n::Locale;
+use nomi_mail::layout::{BrandedEmail, Sender};
 use nomi_mail::{Email, Mailer};
 
 #[derive(Clone)]
@@ -30,36 +31,32 @@ impl EmailCodes {
     }
 }
 
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-}
-
-/// The email that carries `code`, in the person's language.
+/// The email that carries `code`, in the person's language, signed by Nomi.
 pub fn code_email(challenge: &Challenge, code: &str, locale: Locale) -> Email {
-    let (subject, intro, warning) = match challenge.purpose {
-        Purpose::Login => ("sign_in.login_subject", "sign_in.login_intro", "sign_in.login_warning"),
-        Purpose::Register => ("sign_in.register_subject", "sign_in.register_intro", "sign_in.register_warning"),
+    let (subject, title, intro, warning, reason) = match challenge.purpose {
+        Purpose::Login => ("sign_in.login_subject", "sign_in.login_title", "sign_in.login_intro", "sign_in.login_warning", "sign_in.login_reason"),
+        Purpose::Register => (
+            "sign_in.register_subject",
+            "sign_in.register_title",
+            "sign_in.register_intro",
+            "sign_in.register_warning",
+            "sign_in.register_reason",
+        ),
     };
-    let subject = locale.tf(subject, &[("code", code)]);
-    let intro = locale.t(intro);
-    let warning = locale.t(warning);
-    let expires = locale.tf("sign_in.expires", &[("minutes", &(CODE_TTL_SECONDS / 60).to_string())]);
-    let text = format!("{intro}\n\n    {code}\n\n{expires}\n\n{warning}\n\n— Nomi\n");
-    let html = format!(
-        "<!doctype html><html><body style=\"margin:0;padding:24px;background:#f4f5f0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1c18\">\
-         <div style=\"max-width:440px;margin:0 auto;background:#ffffff;border-radius:24px;padding:32px\">\
-         <p style=\"margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-0.03em\">nomi</p>\
-         <p style=\"margin:20px 0 12px;font-size:16px;line-height:1.5\">{intro}</p>\
-         <p style=\"margin:0 0 16px;font-size:36px;font-weight:700;letter-spacing:0.25em;font-family:ui-monospace,Menlo,monospace\">{code}</p>\
-         <p style=\"margin:0 0 16px;font-size:14px;color:#44483f\">{expires}</p>\
-         <p style=\"margin:0;font-size:13px;line-height:1.5;color:#74796d\">{warning}</p>\
-         </div></body></html>",
-        intro = escape(&intro),
-        code = escape(code),
-        expires = escape(&expires),
-        warning = escape(&warning),
-    );
-    Email { to: challenge.email.clone(), subject, text, html: Some(html) }
+    let minutes = (CODE_TTL_SECONDS / 60).to_string();
+    BrandedEmail {
+        sender: Sender::nomi(),
+        to: challenge.email.clone(),
+        subject: locale.tf(subject, &[("code", code)]),
+        preheader: locale.tf("sign_in.preheader", &[("minutes", &minutes)]),
+        title: locale.t(title),
+        paragraphs: vec![locale.t(intro)],
+        highlight: Some(code.to_string()),
+        notes: vec![locale.tf("sign_in.expires", &[("minutes", &minutes)]), locale.t(warning)],
+        crew_label: locale.t("email.crew_label"),
+        footer: format!("{} {}", locale.t(reason), locale.t("email.tagline")),
+    }
+    .build()
 }
 
 #[cfg(test)]
@@ -86,7 +83,9 @@ mod tests {
         assert_eq!(email.to, "ana@example.com");
         assert!(email.subject.contains("042917"));
         assert!(email.text.contains("042917") && email.text.contains("10 minutes"));
-        assert!(email.html.unwrap().contains("042917"));
+        let html = email.html.unwrap();
+        assert!(html.contains("042917") && html.contains("cid:sender"), "signed with Nomi's shape");
+        assert!(!email.inline_images.is_empty());
 
         let email = code_email(&challenge(Purpose::Register), "111222", Locale::Id);
         assert!(email.subject.starts_with("Konfirmasi"));

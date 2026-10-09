@@ -47,6 +47,9 @@ jobs:
         with:
           context: frontend
           push: true
+          # The tag (e.g. v1.2.3) becomes the version the app shows and sends to the backend.
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
           tags: |
             ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend:${{ github.ref_name }}
             ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend:latest

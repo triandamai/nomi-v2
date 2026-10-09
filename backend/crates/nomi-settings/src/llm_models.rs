@@ -10,6 +10,12 @@ pub struct AdminLlmModel {
     pub api_key_encrypted: Vec<u8>,
     pub base_url: Option<String>,
     pub is_default: bool,
+    /// Reads files the person's own model can't open (at most one model is).
+    pub is_files_model: bool,
+    /// What Koda builds projects with, unless the person picked another (at most one model is).
+    pub is_coding_model: bool,
+    /// What it takes besides text ("image", "pdf", "audio", "video"); `None` = guess from the id.
+    pub media_inputs: Option<Vec<String>>,
     /// USD per million input tokens; `None` until an admin sets it.
     pub input_usd_per_mtok: Option<f64>,
     /// USD per million output tokens.
@@ -18,7 +24,7 @@ pub struct AdminLlmModel {
 
 pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
          FROM admin_llm_models ORDER BY created_at",
     )
@@ -28,7 +34,7 @@ pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, 
 
 pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
          FROM admin_llm_models WHERE id = $1",
     )
@@ -39,7 +45,7 @@ pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<Admin
 
 pub async fn get_default_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
          FROM admin_llm_models WHERE is_default = true",
     )
@@ -55,6 +61,7 @@ pub struct NewAdminLlmModel<'a> {
     pub base_url: Option<&'a str>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub media_inputs: Option<Vec<String>>,
     pub updated_by: Uuid,
 }
 
@@ -67,9 +74,9 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
 
     sqlx::query_as::<_, AdminLlmModel>(
         "INSERT INTO admin_llm_models (label, provider, model_id, api_key_encrypted, base_url, is_default, updated_by, \
-                                       input_usd_per_mtok, output_usd_per_mtok) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+                                       input_usd_per_mtok, output_usd_per_mtok, media_inputs) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok",
     )
     .bind(input.label)
@@ -81,6 +88,7 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
     .bind(input.updated_by)
     .bind(input.input_usd_per_mtok)
     .bind(input.output_usd_per_mtok)
+    .bind(input.media_inputs)
     .fetch_one(pool)
     .await
 }
@@ -93,6 +101,7 @@ pub struct UpdateAdminLlmModel<'a> {
     pub base_url: Option<&'a str>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub media_inputs: Option<Vec<String>>,
     pub updated_by: Uuid,
 }
 
@@ -106,9 +115,9 @@ pub async fn update_admin_llm_model(
          label = $2, provider = $3, model_id = $4, \
          api_key_encrypted = COALESCE($5, api_key_encrypted), \
          base_url = $6, updated_by = $7, updated_at = now(), \
-         input_usd_per_mtok = $8, output_usd_per_mtok = $9 \
+         input_usd_per_mtok = $8, output_usd_per_mtok = $9, media_inputs = $10 \
          WHERE id = $1 \
-         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok",
     )
     .bind(id)
@@ -120,6 +129,7 @@ pub async fn update_admin_llm_model(
     .bind(input.updated_by)
     .bind(input.input_usd_per_mtok)
     .bind(input.output_usd_per_mtok)
+    .bind(input.media_inputs)
     .fetch_optional(pool)
     .await
 }
@@ -173,6 +183,98 @@ pub async fn set_default_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<(), 
     Ok(())
 }
 
+/// The model that reads files people's own models can't open, if an admin picked one.
+pub async fn get_files_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
+    sqlx::query_as::<_, AdminLlmModel>(
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         FROM admin_llm_models WHERE is_files_model = true",
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Makes `id` the files model, or clears it with `None`. `Ok(false)` when `id` doesn't exist.
+pub async fn set_files_admin_llm_model(pool: &PgPool, id: Option<Uuid>) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE admin_llm_models SET is_files_model = false WHERE is_files_model").execute(&mut *tx).await?;
+    if let Some(id) = id {
+        let updated = sqlx::query("UPDATE admin_llm_models SET is_files_model = true WHERE id = $1").bind(id).execute(&mut *tx).await?;
+        if updated.rows_affected() == 0 {
+            return Ok(false);
+        }
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// The model Koda builds projects with, if an admin picked one.
+pub async fn get_coding_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
+    sqlx::query_as::<_, AdminLlmModel>(
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         FROM admin_llm_models WHERE is_coding_model = true",
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Makes `id` the coding model, or clears it with `None`. `Ok(false)` when `id` doesn't exist.
+pub async fn set_coding_admin_llm_model(pool: &PgPool, id: Option<Uuid>) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE admin_llm_models SET is_coding_model = false WHERE is_coding_model").execute(&mut *tx).await?;
+    if let Some(id) = id {
+        let updated = sqlx::query("UPDATE admin_llm_models SET is_coding_model = true WHERE id = $1").bind(id).execute(&mut *tx).await?;
+        if updated.rows_affected() == 0 {
+            return Ok(false);
+        }
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Which model a person wants Koda to build with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodingChoice {
+    /// Nomi's coding model, or their chat model when an admin hasn't picked one.
+    Default,
+    /// The same model as their chats (their own key included).
+    SameAsChat,
+    /// One of Nomi's models.
+    Admin(Uuid),
+}
+
+pub async fn get_user_coding_choice(pool: &PgPool, user_id: Uuid) -> Result<CodingChoice, sqlx::Error> {
+    let row: Option<(Option<Uuid>, bool)> =
+        sqlx::query_as("SELECT coding_admin_model_id, coding_same_as_chat FROM user_llm_selections WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(match row {
+        Some((Some(id), _)) => CodingChoice::Admin(id),
+        Some((None, true)) => CodingChoice::SameAsChat,
+        _ => CodingChoice::Default,
+    })
+}
+
+pub async fn set_user_coding_choice(pool: &PgPool, user_id: Uuid, choice: CodingChoice) -> Result<(), sqlx::Error> {
+    let (admin_model_id, same_as_chat) = match choice {
+        CodingChoice::Default => (None, false),
+        CodingChoice::SameAsChat => (None, true),
+        CodingChoice::Admin(id) => (Some(id), false),
+    };
+    sqlx::query(
+        "INSERT INTO user_llm_selections (user_id, coding_admin_model_id, coding_same_as_chat) VALUES ($1, $2, $3) \
+         ON CONFLICT (user_id) DO UPDATE SET coding_admin_model_id = $2, coding_same_as_chat = $3, updated_at = now()",
+    )
+    .bind(user_id)
+    .bind(admin_model_id)
+    .bind(same_as_chat)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct UserLlmSelectionRow {
     pub admin_model_id: Option<Uuid>,
@@ -197,9 +299,7 @@ pub async fn get_user_llm_selection(pool: &PgPool, user_id: Uuid) -> Result<Opti
 pub async fn set_user_llm_selection_admin(pool: &PgPool, user_id: Uuid, admin_model_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO user_llm_selections (user_id, admin_model_id) VALUES ($1, $2) \
-         ON CONFLICT (user_id) DO UPDATE SET \
-         admin_model_id = $2, custom_label = NULL, custom_provider = NULL, custom_model_id = NULL, \
-         custom_api_key_encrypted = NULL, custom_base_url = NULL, updated_at = now()",
+         ON CONFLICT (user_id) DO UPDATE SET admin_model_id = $2, updated_at = now()",
     )
     .bind(user_id)
     .bind(admin_model_id)

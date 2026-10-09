@@ -22,6 +22,14 @@ pub struct AdminLlmModelResponse {
     pub api_key_masked: String,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    /// Reads files people's own models can't open.
+    pub is_files_model: bool,
+    /// What Koda builds projects with, unless the person picked another.
+    pub is_coding_model: bool,
+    /// What an admin said it takes besides text; `None` when it's guessed from the model id.
+    pub media_inputs: Option<Vec<String>>,
+    /// What it takes, listed or guessed.
+    pub media_support: Vec<&'static str>,
 }
 
 fn to_response(
@@ -30,6 +38,7 @@ fn to_response(
 ) -> Result<AdminLlmModelResponse, (StatusCode, &'static str)> {
     let api_key = settings::crypto::decrypt(settings_key, &model.api_key_encrypted)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?;
+    let media_support = crate::bootstrap::media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref()).as_list();
     Ok(AdminLlmModelResponse {
         id: model.id,
         label: model.label,
@@ -40,7 +49,21 @@ fn to_response(
         api_key_masked: settings::mask_api_key(&api_key),
         input_usd_per_mtok: model.input_usd_per_mtok,
         output_usd_per_mtok: model.output_usd_per_mtok,
+        is_files_model: model.is_files_model,
+        is_coding_model: model.is_coding_model,
+        media_support,
+        media_inputs: model.media_inputs,
     })
+}
+
+/// `None` (guess from the model id) or the kinds listed, each one of image, pdf, audio, video.
+fn validate_media_inputs(kinds: &Option<Vec<String>>) -> Result<(), (StatusCode, &'static str)> {
+    match kinds {
+        Some(kinds) if kinds.iter().any(|k| nomi_llm::media::MediaKind::parse(k).is_none()) => {
+            Err((StatusCode::BAD_REQUEST, "media_inputs may only list image, pdf, audio and video"))
+        }
+        _ => Ok(()),
+    }
 }
 
 pub async fn list_admin_models(
@@ -65,6 +88,8 @@ pub struct CreateAdminModelRequest {
     /// USD per million tokens, for showing people what they spend.
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    #[serde(default)]
+    pub media_inputs: Option<Vec<String>>,
 }
 
 pub async fn create_admin_model(
@@ -89,6 +114,7 @@ pub async fn create_admin_model(
     if [req.input_usd_per_mtok, req.output_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
         return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
     }
+    validate_media_inputs(&req.media_inputs)?;
 
     let model = llm_models::create_admin_llm_model(
         &state.pool,
@@ -100,6 +126,7 @@ pub async fn create_admin_model(
             base_url: req.base_url.as_deref(),
             input_usd_per_mtok: req.input_usd_per_mtok,
             output_usd_per_mtok: req.output_usd_per_mtok,
+            media_inputs: req.media_inputs.clone(),
             updated_by: claims.sub,
         },
     )
@@ -118,6 +145,8 @@ pub struct UpdateAdminModelRequest {
     pub base_url: Option<String>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    #[serde(default)]
+    pub media_inputs: Option<Vec<String>>,
 }
 
 pub async fn update_admin_model(
@@ -140,6 +169,7 @@ pub async fn update_admin_model(
     if [req.input_usd_per_mtok, req.output_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
         return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
     }
+    validate_media_inputs(&req.media_inputs)?;
 
     let api_key_encrypted = match req.api_key.as_deref() {
         Some(key) if !key.is_empty() => Some(settings::crypto::encrypt(&state.settings_key, key)),
@@ -157,6 +187,7 @@ pub async fn update_admin_model(
             base_url: req.base_url.as_deref(),
             input_usd_per_mtok: req.input_usd_per_mtok,
             output_usd_per_mtok: req.output_usd_per_mtok,
+            media_inputs: req.media_inputs.clone(),
             updated_by: claims.sub,
         },
     )
@@ -193,6 +224,45 @@ pub async fn set_default_admin_model(
         llm_models::SetDefaultAdminLlmModelError::NotFound => (StatusCode::NOT_FOUND, "model not found"),
         llm_models::SetDefaultAdminLlmModelError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "failed to set default"),
     })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct SetFilesModelRequest {
+    /// `None` stops using a files model.
+    pub id: Option<Uuid>,
+}
+
+/// Picks the model that reads files people's own models can't open (Admin → Models).
+pub async fn set_files_admin_model(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<SetFilesModelRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    require_system_config_permission(&claims)?;
+    let found = llm_models::set_files_admin_llm_model(&state.pool, req.id)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to set the files model"))?;
+    if !found {
+        return Err((StatusCode::NOT_FOUND, "model not found"));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Picks the model Koda builds projects with (Admin → Models). `None` leaves Koda on each
+/// person's chat model.
+pub async fn set_coding_admin_model(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<SetFilesModelRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    require_system_config_permission(&claims)?;
+    let found = llm_models::set_coding_admin_llm_model(&state.pool, req.id)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to set the coding model"))?;
+    if !found {
+        return Err((StatusCode::NOT_FOUND, "model not found"));
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -311,23 +381,61 @@ pub enum UserSelectionResponse {
 pub struct UserModelsResponse {
     pub admin_models: Vec<UserModelOption>,
     pub selection: Option<UserSelectionResponse>,
+    /// The name of the API key they saved, kept while they use one of Nomi's models: Nomi falls
+    /// back to it when their monthly allowance runs out.
+    pub saved_own_key: Option<String>,
+    /// Which model Koda builds their projects with.
+    pub coding: CodingSelection,
+    /// The coding model an admin picked (what `default` means), if any.
+    pub default_coding_model_id: Option<Uuid>,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CodingSelection {
+    /// Nomi's coding model, or their chat model when there's none.
+    Default,
+    /// The same model as their chats.
+    SameAsChat,
+    /// One of Nomi's models.
+    Admin { admin_model_id: Uuid },
+}
+
+impl From<llm_models::CodingChoice> for CodingSelection {
+    fn from(choice: llm_models::CodingChoice) -> Self {
+        match choice {
+            llm_models::CodingChoice::Default => CodingSelection::Default,
+            llm_models::CodingChoice::SameAsChat => CodingSelection::SameAsChat,
+            llm_models::CodingChoice::Admin(admin_model_id) => CodingSelection::Admin { admin_model_id },
+        }
+    }
 }
 
 pub async fn get_user_models(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<UserModelsResponse>, (StatusCode, &'static str)> {
-    let admin_models = llm_models::list_admin_llm_models(&state.pool)
+    let models = llm_models::list_admin_llm_models(&state.pool)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?;
+    let default_coding_model_id = models.iter().find(|m| m.is_coding_model).map(|m| m.id);
+    let admin_models = models
         .into_iter()
         .map(|m| UserModelOption { id: m.id, label: m.label, provider: m.provider, model_id: m.model_id })
         .collect();
+    let coding = llm_models::get_user_coding_choice(&state.pool, claims.sub)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load selection"))?
+        .into();
 
     let selection_row = llm_models::get_user_llm_selection(&state.pool, claims.sub)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load selection"))?;
 
+    let saved_own_key = selection_row
+        .as_ref()
+        .filter(|row| row.custom_provider.is_some())
+        .map(|row| row.custom_label.clone().or_else(|| row.custom_model_id.clone()).unwrap_or_default());
     let selection = match selection_row {
         Some(row) => {
             if let Some(admin_model_id) = row.admin_model_id {
@@ -352,7 +460,33 @@ pub async fn get_user_models(
         None => None,
     };
 
-    Ok(Json(UserModelsResponse { admin_models, selection }))
+    Ok(Json(UserModelsResponse { admin_models, selection, saved_own_key, coding, default_coding_model_id }))
+}
+
+/// `PUT /api/llm/coding-selection`: which model Koda builds the person's projects with.
+pub async fn put_user_coding_selection(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<CodingSelection>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let choice = match req {
+        CodingSelection::Default => llm_models::CodingChoice::Default,
+        CodingSelection::SameAsChat => llm_models::CodingChoice::SameAsChat,
+        CodingSelection::Admin { admin_model_id } => {
+            let exists = llm_models::get_admin_llm_model(&state.pool, admin_model_id)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up model"))?
+                .is_some();
+            if !exists {
+                return Err((StatusCode::NOT_FOUND, "model not found"));
+            }
+            llm_models::CodingChoice::Admin(admin_model_id)
+        }
+    };
+    llm_models::set_user_coding_choice(&state.pool, claims.sub, choice)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save selection"))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

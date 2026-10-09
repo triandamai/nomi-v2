@@ -3,89 +3,92 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
+	import PlanCard from '$lib/components/PlanCard.svelte';
+	import type { PlansForUser } from '$lib/types';
 
-	// Upgrading isn't open yet: this says what Pro will bring, and that it's on its way.
+	// The plans on offer (Admin → Plans), loaded when the sheet opens, with the person's own
+	// marked. Plans are changed by the Nomi team for now; the sheet says how to ask.
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
-	const PERKS = $derived([m.pro_perk_tokens(), m.pro_perk_models(), m.pro_perk_priority()]);
+	let plans = $state<PlansForUser | null>(null);
+	let failed = $state(false);
+
+	$effect(() => {
+		if (!open || plans) return;
+		failed = false;
+		fetch('/plans')
+			.then((r) => (r.ok ? (r.json() as Promise<PlansForUser>) : Promise.reject()))
+			.then((loaded) => (plans = loaded))
+			.catch(() => (failed = true));
+	});
 </script>
 
 <BottomSheet bind:open>
-	<div class="pro">
-		<div class="pro__art" aria-hidden="true">
-			<AgentShape agent="nomi" face size={64} working />
-			<span class="pro__badge">{m.pro_coming_soon()}</span>
+	<div class="plans-sheet">
+		<div class="plans-sheet__head">
+			<AgentShape agent="nomi" face size={48} />
+			<div>
+				<h2 class="plans-sheet__title">{m.plans_title()}</h2>
+				<p class="plans-sheet__lede">{m.plans_lede()}</p>
+			</div>
 		</div>
-		<h2 class="pro__title">{m.pro_title()}</h2>
-		<p class="pro__lede">{m.pro_lede()}</p>
-		<ul class="pro__perks">
-			{#each PERKS as perk (perk)}
-				<li>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>
-					{perk}
-				</li>
-			{/each}
-		</ul>
-		<div class="pro__actions">
+		{#if plans}
+			<div class="plans-sheet__grid">
+				{#each plans.plans as plan (plan.id)}
+					<PlanCard {plan} current={plan.id === plans.current_plan_id} />
+				{/each}
+			</div>
+		{:else if failed}
+			<p class="plans-sheet__lede">{m.plans_failed()}</p>
+		{:else}
+			<div class="plans-sheet__loading"><LoadingIndicator size={36} label={m.plans_title()} /></div>
+		{/if}
+		<p class="plans-sheet__note">{m.plans_how_to_change()}</p>
+		<div class="plans-sheet__actions">
 			<Button variant="filled" size="m" onclick={() => (open = false)}>{m.pro_got_it()}</Button>
 		</div>
 	</div>
 </BottomSheet>
 
 <style>
-	.pro {
+	.plans-sheet {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 16px;
 	}
-	.pro__art {
+	.plans-sheet__head {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 14px;
 	}
-	.pro__badge {
-		padding: 4px 12px;
-		border-radius: 999px;
-		background: var(--md-sys-color-tertiary-container);
-		color: var(--md-sys-color-on-tertiary-container);
-		font-family: var(--md-ref-typeface-plain);
-		font-size: 0.75rem;
-		font-weight: 700;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-	}
-	.pro__title {
-		margin: 4px 0 0;
+	.plans-sheet__title {
+		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
 		font-size: 1.625rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
-	.pro__lede {
+	.plans-sheet__lede,
+	.plans-sheet__note {
 		margin: 0;
 		color: var(--md-sys-color-on-surface-variant);
 	}
-	.pro__perks {
+	.plans-sheet__note {
+		font-size: 0.875rem;
+	}
+	.plans-sheet__grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+		gap: 12px;
+	}
+	.plans-sheet__loading {
 		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		margin: 4px 0 0;
-		padding: 0;
-		list-style: none;
-		color: var(--md-sys-color-on-surface);
+		justify-content: center;
+		padding: 24px;
 	}
-	.pro__perks li {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-	.pro__perks svg {
-		flex: none;
-		color: var(--md-sys-color-primary);
-	}
-	.pro__actions {
+	.plans-sheet__actions {
 		display: flex;
 		justify-content: flex-end;
-		padding-top: 8px;
 	}
 </style>

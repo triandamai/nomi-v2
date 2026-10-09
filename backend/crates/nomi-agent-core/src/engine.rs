@@ -13,8 +13,6 @@ use crate::permissions;
 use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
-const MAX_TOOL_TURNS: u32 = 10;
-
 /// Posted when the model hit its output limit before writing any answer.
 /// Asked once when a model ends its turn having only thought, with no answer written.
 const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to the user now.";
@@ -324,6 +322,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     tools.push(cancel_reminder_tool_definition());
     tools.push(crate::web::web_search_tool_definition());
     tools.push(crate::web::read_web_page_tool_definition());
+    tools.push(crate::attachments::read_attachment_tool_definition());
     tools
 }
 
@@ -358,8 +357,9 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
-        // Reading the public web changes nothing.
+        // Reading the public web, or the user's own files, changes nothing.
         && !crate::web::is_web_tool(tool_name)
+        && tool_name != crate::attachments::READ_ATTACHMENT_TOOL_NAME
         // Record tools only touch the calling agent's own private records.
         && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
@@ -442,6 +442,10 @@ pub async fn run_agent_turn(
     }
     if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
         tools.push(crate::web::read_web_page_tool_definition());
+    }
+    // Reading on in a file the user attached, whenever the conversation holds one.
+    if crate::attachments::mentions_files(&messages) {
+        tools.push(crate::attachments::read_attachment_tool_definition());
     }
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
 
@@ -536,7 +540,7 @@ pub async fn run_agent_turn(
     let mut wrote_plan = false;
     let mut asked_for_answer = false;
 
-    for _ in 0..MAX_TOOL_TURNS {
+    for _ in 0..agent.max_tool_turns() {
         if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
             return Ok(LoopOutcome::Cancelled);
@@ -861,6 +865,11 @@ pub async fn resolve_tool_batch(
                         let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
                         (text, false, Some(block))
                     }
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {
+                match crate::attachments::read_attachment(conn, user_id, input).await {
+                    Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == RENAME_CHAT_TOOL_NAME {

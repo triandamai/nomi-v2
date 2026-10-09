@@ -71,6 +71,23 @@ describe('session-stream-proxy', () => {
 		expect(reply.toString()).toBe('echo:hello');
 	});
 
+	it('tells the upstream which frontend version is connecting', async () => {
+		const upstream = await startFakeUpstream();
+		cleanups.push(() => upstream.server.close());
+		const connected = new Promise((resolve) => upstream.wss.on('connection', (_ws, request) => resolve(request.headers)));
+
+		const proxy = await startProxyServer({ apiUrl: upstream.url, clientVersion: '1.2.3' });
+		cleanups.push(() => proxy.server.close());
+
+		const browser = connectBrowserClient(proxy.port);
+		cleanups.push(() => browser.close());
+		const headers = await connected;
+		// Let the browser leg finish its handshake too, so closing it in cleanup is clean.
+		await waitFor(browser, 'open');
+		expect(headers['x-client-version']).toBe('1.2.3');
+		expect(headers.authorization).toBe('Bearer test-token');
+	});
+
 	it('maps a 401 from the upstream to close code 4401', async () => {
 		const upstream = await startFakeUpstream({ rejectStatus: 401 });
 		cleanups.push(() => upstream.server.close());

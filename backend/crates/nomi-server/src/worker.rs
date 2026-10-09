@@ -20,7 +20,7 @@ const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
 /// Past the turn time limit, how long a 'processing' job may sit before it's counted as abandoned.
 const ABANDONED_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
 
-pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::LocalFsStore) {
+pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3Config>, settings_key: [u8; 32], http_client: reqwest::Client, database_url: String, project_storage: nomi_storage::ProjectStore) {
     let mut listener = match sqlx::postgres::PgListener::connect(&database_url).await {
         Ok(listener) => listener,
         Err(e) => {

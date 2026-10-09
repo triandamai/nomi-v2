@@ -8,6 +8,7 @@
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import ProSheet from '$lib/components/ProSheet.svelte';
+	import PlanCard from '$lib/components/PlanCard.svelte';
 	import Money from '$lib/components/Money.svelte';
 	import { monthLabel, niceScale, shiftMonth } from '$lib/money';
 	import { formatShare, formatTokens, formatTokensFull, formatUsd, usageShare } from '$lib/usage';
@@ -98,7 +99,7 @@
 				<div class="hero" class:hero--over={share >= 1}>
 					<div class="hero__top">
 						<span class="nomi-meta hero__label">{m.billing_used_this_month()}</span>
-						<span class="plan-chip">{m.usage_plan_free()}</span>
+						<span class="plan-chip">{usage.plan.name}</span>
 					</div>
 					<span class="hero__value">{formatShare(share)}</span>
 					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'glow'} label={m.usage_progress_label({ share: formatShare(share) })} />
@@ -230,33 +231,16 @@
 
 			<section class="plans" aria-labelledby="plans-heading">
 				<h2 id="plans-heading" class="section-label">{m.billing_plans()}</h2>
-				<div class="plans__grid">
-					<article class="plan plan--current">
-						<div class="plan__top">
-							<h3 class="plan__name">{m.usage_plan_free()}</h3>
-							<span class="plan-chip">{m.billing_current()}</span>
-						</div>
-						<p class="plan__price">{m.billing_free_price()}</p>
-						<ul class="plan__perks">
-							<li>{m.billing_free_perk_tokens({ tokens: formatTokens(usage.plan.monthly_tokens) })}</li>
-							<li>{m.billing_free_perk_crew()}</li>
-							<li>{m.billing_free_perk_key()}</li>
-						</ul>
-					</article>
-					<article class="plan plan--pro">
-						<div class="plan__top">
-							<h3 class="plan__name">{m.billing_pro()}</h3>
-							<span class="plan-chip plan-chip--soon">{m.pro_coming_soon()}</span>
-						</div>
-						<p class="plan__price">{m.billing_pro_price()}</p>
-						<ul class="plan__perks">
-							<li>{m.pro_perk_tokens()}</li>
-							<li>{m.pro_perk_models()}</li>
-							<li>{m.pro_perk_priority()}</li>
-						</ul>
-						<Button variant="gradient" size="m" onclick={() => (proOpen = true)}>{m.usage_upgrade()}</Button>
-					</article>
-				</div>
+				{#if data.plans}
+					<div class="plans__grid">
+						{#each data.plans.plans as plan (plan.id)}
+							<PlanCard {plan} current={plan.id === data.plans.current_plan_id} />
+						{/each}
+					</div>
+					{#if data.plans.custom_quota}
+						<p class="billing__note">{m.billing_custom_quota({ tokens: formatTokensFull(data.plans.monthly_tokens) })}</p>
+					{/if}
+				{/if}
 				<p class="billing__note">{m.billing_note()}</p>
 			</section>
 		{/if}
@@ -339,10 +323,6 @@
 		font-size: 0.75rem;
 		font-weight: 700;
 	}
-	.plan-chip--soon {
-		background: var(--md-sys-color-tertiary-container);
-		color: var(--md-sys-color-on-tertiary-container);
-	}
 	.charts {
 		display: grid;
 		grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
@@ -411,48 +391,6 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: 16px;
-	}
-	.plan {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		padding: 24px;
-		border-radius: var(--md-sys-shape-corner-extra-large);
-		background: var(--md-sys-color-surface-container-low);
-		color: var(--md-sys-color-on-surface);
-	}
-	.plan--current {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: -2px;
-	}
-	.plan--pro {
-		background: var(--md-sys-color-surface-container);
-	}
-	.plan--pro :global(.m3-button) {
-		align-self: flex-start;
-	}
-	.plan__top {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-	}
-	.plan__name {
-		margin: 0;
-		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.375rem;
-		font-weight: 700;
-	}
-	.plan__price {
-		margin: 0;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.plan__perks {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		margin: 0;
-		padding-left: 18px;
 	}
 	.section-label {
 		margin: 0;

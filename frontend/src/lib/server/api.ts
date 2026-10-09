@@ -4,6 +4,11 @@ import type { Cookies } from '@sveltejs/kit';
 
 const API_URL = env.API_URL ?? 'http://localhost:8080';
 
+/** Whether `url` is a call to the backend API. */
+export function isApiRequest(url: string): boolean {
+	return url.startsWith(`${API_URL}/`);
+}
+
 export function apiUrl(path: string): string {
 	return `${API_URL}${path}`;
 }

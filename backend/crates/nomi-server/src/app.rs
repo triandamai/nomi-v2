@@ -5,24 +5,27 @@ use tower_http::trace::TraceLayer;
 use nomi_auth::extractor::AuthClaims;
 use crate::routes::admin_dashboard as admin_dashboard_routes;
 use crate::routes::admin_users as admin_users_routes;
+use crate::routes::attachments as attachments_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::dynamic_agents as dynamic_agents_routes;
 use crate::routes::llm_models as llm_models_routes;
 use crate::routes::agents as agents_routes;
 use crate::routes::home as home_routes;
 use crate::routes::money as money_routes;
+use crate::routes::notifications as notifications_routes;
 use crate::routes::usage as usage_routes;
 use crate::routes::connections as connections_routes;
 use crate::routes::google_auth as google_auth_routes;
 use crate::routes::reminders as reminders_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
+use crate::routes::plans as plans_routes;
 use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
 use crate::routes::settings as settings_routes;
 use crate::routes::tools as tools_routes;
-use nomi_storage::{LocalFsStore, S3Config};
+use nomi_storage::{ProjectStore, S3Config};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -32,9 +35,9 @@ pub struct AppState {
     pub settings_key: [u8; 32],
     pub mqtt_broker_host: String,
     pub mqtt_broker_port: u16,
-    /// Avatar uploads only — project files live in `project_storage` (local disk), never here.
+    /// Avatars (attachments and project code share the bucket through their own stores).
     pub s3: Option<S3Config>,
-    pub project_storage: LocalFsStore,
+    pub project_storage: ProjectStore,
     pub tool_catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
     /// Whether password sign-in waits for an emailed code, and the mailer that sends it.
     pub email_codes: crate::sign_in_codes::EmailCodes,
@@ -111,12 +114,15 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/settings/llm/models/:id/default",
             put(llm_models_routes::set_default_admin_model),
         )
+        .route("/api/admin/settings/llm/files-model", put(llm_models_routes::set_files_admin_model))
+        .route("/api/admin/settings/llm/coding-model", put(llm_models_routes::set_coding_admin_model))
         .route(
             "/api/admin/settings/llm/models/fetch-models",
             post(llm_models_routes::fetch_provider_models),
         )
         .route("/api/llm/models", get(llm_models_routes::get_user_models))
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
+        .route("/api/llm/coding-selection", put(llm_models_routes::put_user_coding_selection))
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
         .route("/api/agents", get(agents_routes::list_crew))
         .route("/api/home", get(home_routes::home_summary))
@@ -128,6 +134,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/money", get(money_routes::money_summary))
         .route("/api/money/transactions", post(money_routes::add_transaction))
         .route("/api/money/budgets", put(money_routes::set_budget))
+        .route("/api/money/period", put(money_routes::set_period))
         .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
@@ -198,6 +205,26 @@ pub fn build_router(state: AppState) -> Router {
             "/api/profile",
             get(profile_routes::get_profile).put(profile_routes::put_profile),
         )
+        .route(
+            "/api/attachments",
+            // Uploads are streamed and limited by the handler itself (nomi_attachments::Limits).
+            post(attachments_routes::upload).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
+        .route("/api/attachments/:id/content", get(attachments_routes::get_content))
+        .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
+        .route("/api/plans", get(plans_routes::list_for_user))
+        .route("/api/admin/plans", get(plans_routes::admin_list).post(plans_routes::admin_create))
+        .route("/api/admin/plans/:id", put(plans_routes::admin_update).delete(plans_routes::admin_delete))
+        .route("/api/admin/plans/:id/default", put(plans_routes::admin_set_default))
+        .route("/api/admin/users/:id/subscription", get(plans_routes::admin_get_subscription).put(plans_routes::admin_put_subscription))
+        .route("/api/notifications", get(notifications_routes::list))
+        .route("/api/notifications/unread", get(notifications_routes::unread))
+        .route("/api/notifications/read-all", post(notifications_routes::mark_all_read))
+        .route("/api/notifications/preferences", get(notifications_routes::get_preferences).put(notifications_routes::put_preferences))
+        .route("/api/notifications/:id/read", post(notifications_routes::mark_read))
+        .route("/api/admin/notifications/broadcast", post(notifications_routes::broadcast))
+        .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))
         .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
         .route(
             "/api/preferences",
@@ -213,6 +240,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/projects/:id/files/*path",
             get(projects_routes::get_project_file).put(projects_routes::put_project_file).delete(projects_routes::delete_project_file),
         )
+        .route("/api/projects/:id/runtime", get(crate::routes::project_runtime::check_in))
+        .route("/api/projects/:id/runtime/runs/:run_id", post(crate::routes::project_runtime::finish_run))
+        .route("/api/projects/:id/runtime/check", post(crate::routes::project_runtime::record_check))
+        .route("/api/projects/:id/manifest", get(crate::routes::project_runtime::manifest))
+        .route("/api/projects/:id/snapshot", get(crate::routes::project_runtime::snapshot))
         .route("/api/projects/:id/preview", get(projects_routes::preview_project_index))
         .route("/api/projects/:id/preview/*path", get(projects_routes::preview_project_file))
         .layer(TraceLayer::new_for_http())

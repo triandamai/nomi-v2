@@ -95,7 +95,7 @@
 </script>
 
 <div class="m3-session-item">
-	<a {href} class="m3-session-item__link">
+	<a {href} class="m3-session-item__link" data-sveltekit-reload={session.project_id ? true : undefined}>
 		<span
 			class="md-label-small m3-session-item__badge"
 			class:m3-session-item__badge--project={!!session.project_id}

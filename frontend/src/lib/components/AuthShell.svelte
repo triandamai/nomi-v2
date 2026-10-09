@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { VERSION_LABEL } from '$lib/version';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
@@ -121,11 +122,17 @@
 				<svg width="14" height="14" viewBox="0 0 24 24" aria-label={m.auth_love()} role="img"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" /></svg>
 				{m.auth_by()} <a href="https://trian.space" target="_blank" rel="noopener">Trian</a>
 			</span>
+			<span aria-hidden="true">·</span>
+			<span class="panel__version">{VERSION_LABEL}</span>
 		</footer>
 	</main>
 </div>
 
 <style>
+	.panel__version {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75em;
+	}
 	.auth {
 		min-height: 100vh;
 		min-height: 100dvh;

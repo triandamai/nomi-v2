@@ -124,14 +124,7 @@ async fn locale_of(pool: &sqlx::PgPool, user_id: Uuid) -> Result<nomi_agent_core
 }
 
 fn capitalize(agent_type: &str) -> String {
-    if agent_type == "chitchat" {
-        return "Nomi".to_string();
-    }
-    let mut chars = agent_type.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
+    nomi_agent_core::crew::display_name_for(agent_type)
 }
 
 /// `(done, total)` task-list items in a plan's markdown (`- [x]` / `- [ ]`).

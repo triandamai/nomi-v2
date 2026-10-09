@@ -1,20 +1,22 @@
-//! The Money page: one month of the user's transactions, totalled and broken down.
+//! The Money page: one money month of the user's transactions (from the day their month starts,
+//! see nomi_agent_money::period), totalled and broken down.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
+use nomi_agent_money::period::{self, Period};
 use nomi_auth::extractor::AuthClaims;
 
 const TRANSACTION_LIMIT: i64 = 200;
 
 #[derive(Deserialize)]
 pub struct MoneyQuery {
-    /// `YYYY-MM`; defaults to the current month in the user's timezone.
+    /// `YYYY-MM`: the money month that starts in that month. Defaults to the current one.
     pub month: Option<String>,
 }
 
@@ -38,6 +40,20 @@ pub struct Transaction {
     pub amount_cents: i64,
     pub category: String,
     pub description: String,
+    /// "expense" or "income".
+    pub kind: String,
+    pub items: Vec<TransactionItem>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct TransactionItem {
+    #[serde(skip)]
+    pub transaction_id: Uuid,
+    pub name: String,
+    pub quantity: f64,
+    pub unit_amount_cents: Option<i64>,
+    pub amount_cents: i64,
+    pub category: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -50,9 +66,18 @@ pub struct Budget {
 
 #[derive(Serialize)]
 pub struct MoneySummary {
+    /// The money month shown, by the month it starts in (`YYYY-MM`).
     pub month: String,
+    /// The day money months start (1 = calendar months).
+    pub start_day: u32,
+    /// Its first and last day.
+    pub period_start: NaiveDate,
+    pub period_end: NaiveDate,
     pub timezone: String,
+    /// Spending (expenses) in the period.
     pub total_cents: i64,
+    /// Money in (income) in the period.
+    pub income_cents: i64,
     pub previous_total_cents: i64,
     pub transaction_count: i64,
     pub by_category: Vec<CategoryTotal>,
@@ -68,16 +93,6 @@ fn internal(e: sqlx::Error) -> (StatusCode, &'static str) {
     (StatusCode::INTERNAL_SERVER_ERROR, "failed to load money")
 }
 
-fn month_start(tz: chrono_tz::Tz, year: i32, month: u32) -> DateTime<Utc> {
-    let date = NaiveDate::from_ymd_opt(year, month, 1).unwrap_or_default();
-    tz.from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap_or_default()).earliest().map(|t| t.with_timezone(&Utc)).unwrap_or_default()
-}
-
-fn shift_month(year: i32, month: u32, by: i32) -> (i32, u32) {
-    let index = year * 12 + month as i32 - 1 + by;
-    (index.div_euclid(12), (index.rem_euclid(12) + 1) as u32)
-}
-
 pub async fn money_summary(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -85,27 +100,21 @@ pub async fn money_summary(
 ) -> Result<Json<MoneySummary>, (StatusCode, &'static str)> {
     let pool = &state.pool;
     let user_id = claims.sub;
-    let timezone: String = sqlx::query_scalar("SELECT timezone FROM user_preferences WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(internal)?
-        .unwrap_or_else(|| "UTC".to_string());
-    let tz: chrono_tz::Tz = timezone.parse().unwrap_or(chrono_tz::UTC);
+    let mut conn = pool.acquire().await.map_err(internal)?;
+    let (tz, start_day) = period::settings(&mut conn, user_id).await.map_err(internal)?;
+    let timezone = tz.name().to_string();
 
-    let now_local = Utc::now().with_timezone(&tz);
-    let (year, month) = match query.month.as_deref().and_then(|m| NaiveDate::parse_from_str(&format!("{m}-01"), "%Y-%m-%d").ok()) {
-        Some(date) => (date.year(), date.month()),
-        None => (now_local.year(), now_local.month()),
+    let current = match query.month.as_deref().and_then(|m| NaiveDate::parse_from_str(&format!("{m}-01"), "%Y-%m-%d").ok()) {
+        Some(date) => Period::starting_in(tz, start_day, date.year(), date.month()),
+        None => Period::containing(tz, start_day, Utc::now()),
     };
-    let start = month_start(tz, year, month);
-    let (next_year, next_month) = shift_month(year, month, 1);
-    let end = month_start(tz, next_year, next_month);
-    let (prev_year, prev_month) = shift_month(year, month, -1);
-    let prev_start = month_start(tz, prev_year, prev_month);
+    let (start, end) = (current.start, current.end);
+    let prev_start = current.shifted(tz, -1).start;
 
-    let (total_cents, transaction_count): (i64, i64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(amount_cents), 0)::bigint, COUNT(*) FROM money_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
+    let (total_cents, income_cents, transaction_count): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'expense'), 0)::bigint, \
+                COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'income'), 0)::bigint, COUNT(*) \
+         FROM money_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
     )
     .bind(user_id)
     .bind(start)
@@ -114,7 +123,7 @@ pub async fn money_summary(
     .await
     .map_err(internal)?;
     let previous_total_cents: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM money_transactions WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3",
+        "SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM money_transactions WHERE user_id = $1 AND kind = 'expense' AND occurred_at >= $2 AND occurred_at < $3",
     )
     .bind(user_id)
     .bind(prev_start)
@@ -125,7 +134,7 @@ pub async fn money_summary(
 
     let by_category: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT category, SUM(amount_cents)::bigint, COUNT(*) FROM money_transactions \
-         WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 GROUP BY category ORDER BY 2 DESC",
+         WHERE user_id = $1 AND kind = 'expense' AND occurred_at >= $2 AND occurred_at < $3 GROUP BY category ORDER BY 2 DESC",
     )
     .bind(user_id)
     .bind(start)
@@ -136,7 +145,7 @@ pub async fn money_summary(
 
     let by_day: Vec<(NaiveDate, i64)> = sqlx::query_as(
         "SELECT (occurred_at AT TIME ZONE $4)::date, SUM(amount_cents)::bigint FROM money_transactions \
-         WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1 ORDER BY 1",
+         WHERE user_id = $1 AND kind = 'expense' AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1 ORDER BY 1",
     )
     .bind(user_id)
     .bind(start)
@@ -146,8 +155,8 @@ pub async fn money_summary(
     .await
     .map_err(internal)?;
 
-    let transactions: Vec<(Uuid, DateTime<Utc>, i64, String, String)> = sqlx::query_as(
-        "SELECT id, occurred_at, amount_cents, category, description FROM money_transactions \
+    let transactions: Vec<(Uuid, DateTime<Utc>, i64, String, String, String)> = sqlx::query_as(
+        "SELECT id, occurred_at, amount_cents, category, description, kind FROM money_transactions \
          WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 ORDER BY occurred_at DESC LIMIT $4",
     )
     .bind(user_id)
@@ -158,17 +167,29 @@ pub async fn money_summary(
     .await
     .map_err(internal)?;
 
-    let months: Vec<String> = sqlx::query_scalar(
-        "SELECT to_char(date_trunc('month', occurred_at AT TIME ZONE $2), 'YYYY-MM') AS m FROM money_transactions \
-         WHERE user_id = $1 GROUP BY m ORDER BY m DESC LIMIT 12",
+    let ids: Vec<Uuid> = transactions.iter().map(|t| t.0).collect();
+    let mut items: Vec<TransactionItem> = sqlx::query_as(
+        "SELECT transaction_id, name, quantity::float8 AS quantity, unit_amount_cents, amount_cents, category \
+         FROM money_transaction_items WHERE transaction_id = ANY($1) ORDER BY transaction_id, position",
     )
-    .bind(user_id)
-    .bind(&timezone)
+    .bind(&ids)
     .fetch_all(pool)
     .await
     .map_err(internal)?;
 
-    let mut conn = pool.acquire().await.map_err(internal)?;
+    // Money months with transactions, by the month each starts in: shifting back by the start
+    // day lands every date in its period's starting month.
+    let months: Vec<String> = sqlx::query_scalar(
+        "SELECT to_char(date_trunc('month', (occurred_at AT TIME ZONE $2) - make_interval(days => $3 - 1)), 'YYYY-MM') AS m \
+         FROM money_transactions WHERE user_id = $1 GROUP BY m ORDER BY m DESC LIMIT 12",
+    )
+    .bind(user_id)
+    .bind(&timezone)
+    .bind(start_day as i32)
+    .fetch_all(pool)
+    .await
+    .map_err(internal)?;
+
     let budgets = nomi_agent_money::budgets_with_spending(&mut conn, user_id, start, end)
         .await
         .map_err(internal)?
@@ -177,16 +198,24 @@ pub async fn money_summary(
         .collect();
 
     Ok(Json(MoneySummary {
-        month: format!("{year:04}-{month:02}"),
+        month: current.key(),
+        start_day,
+        period_start: current.first_day(),
+        period_end: current.last_day(),
         timezone,
         total_cents,
+        income_cents,
         previous_total_cents,
         transaction_count,
         by_category: by_category.into_iter().map(|(category, cents, count)| CategoryTotal { category, cents, count }).collect(),
         by_day: by_day.into_iter().map(|(date, cents)| DayTotal { date, cents }).collect(),
         transactions: transactions
             .into_iter()
-            .map(|(id, occurred_at, amount_cents, category, description)| Transaction { id, occurred_at, amount_cents, category, description })
+            .map(|(id, occurred_at, amount_cents, category, description, kind)| {
+                let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut items).into_iter().partition(|i| i.transaction_id == id);
+                items = rest;
+                Transaction { id, occurred_at, amount_cents, category, description, kind, items: mine }
+            })
             .collect(),
         months,
         budgets,
@@ -197,7 +226,8 @@ fn bad_request(message: String) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, message)
 }
 
-/// Adds a transaction from the Money page. Body: `{amount, category, description, occurred_at?}`.
+/// Adds a transaction from the Money page. Body: `{kind?, amount?, category, description,
+/// occurred_at?, items?}` (see nomi_agent_money::log_transaction).
 pub async fn add_transaction(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -216,6 +246,22 @@ pub async fn set_budget(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     nomi_agent_money::set_budget(&mut conn, claims.sub, &input).await.map_err(bad_request)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct PeriodRequest {
+    pub start_day: i64,
+}
+
+/// `PUT /api/money/period`: the day money months start (1–28).
+pub async fn set_period(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<PeriodRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    period::set_start_day(&mut conn, claims.sub, req.start_day).await.map_err(bad_request)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -239,7 +285,7 @@ pub async fn delete_budget(
 
 #[cfg(test)]
 mod tests {
-    use super::shift_month;
+    use nomi_agent_money::period::shift_month;
 
     #[test]
     fn shifting_months_wraps_years() {

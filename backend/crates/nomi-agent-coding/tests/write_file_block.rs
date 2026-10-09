@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use nomi_agent_coding::CodingAgent;
 use nomi_agent_core::{ContentBlock, SubAgent};
-use nomi_storage::LocalFsStore;
+use nomi_storage::ProjectStore;
 
 async fn seed_project(pool: &PgPool) -> (Uuid, Uuid) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
@@ -28,9 +28,9 @@ async fn seed_project(pool: &PgPool) -> (Uuid, Uuid) {
     (user_id, project_id)
 }
 
-fn temp_storage() -> LocalFsStore {
+fn temp_storage() -> ProjectStore {
     let dir = std::env::temp_dir().join(format!("nomi-coding-test-{}", Uuid::new_v4()));
-    LocalFsStore::at(dir)
+    ProjectStore::at(dir)
 }
 
 #[sqlx::test(migrations = "../../migrations")]

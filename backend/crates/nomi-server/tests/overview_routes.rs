@@ -121,7 +121,7 @@ async fn home_reports_what_happened_whats_due_today_and_open_plans(pool: PgPool)
     let (status, home) = authed(router.clone(), "GET", "/api/home", &token, None).await;
     assert_eq!(status, StatusCode::OK);
     let out = home["while_you_were_out"].as_array().unwrap();
-    assert!(out.iter().any(|i| i["kind"] == "finished" && i["title"] == "Money finished Find idle subscriptions"), "{out:?}");
+    assert!(out.iter().any(|i| i["kind"] == "finished" && i["title"] == "Dana finished Find idle subscriptions"), "{out:?}");
     // The reminder is due later today, unless the test runs in the last minute of the UTC day.
     let today = home["today"].as_array().unwrap();
     assert!(today.is_empty() || today[0]["label"] == "Call Mum back");
@@ -161,7 +161,7 @@ async fn home_shows_four_per_card_and_each_section_pages_through_the_rest(pool: 
     assert_eq!(status, StatusCode::OK);
     assert_eq!((first["total"].as_u64(), first["page"].as_u64(), first["per_page"].as_u64()), (Some(7), Some(1), Some(5)));
     assert_eq!(first["items"].as_array().unwrap().len(), 5);
-    assert_eq!(first["items"][0]["title"], "Money finished Task 0");
+    assert_eq!(first["items"][0]["title"], "Dana finished Task 0");
     let (_, second) = authed(router.clone(), "GET", "/api/home/updates?page=2&per_page=5", &token, None).await;
     assert_eq!(second["items"].as_array().unwrap().len(), 2);
     // Reading a section doesn't count as a new visit: Home's window stays put.
@@ -286,6 +286,66 @@ async fn money_budgets_and_manual_transactions_live_in_moneys_own_tables(pool: P
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = authed(router, "DELETE", "/api/money/budgets/food", &token, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_receipt_keeps_its_items_and_income_counts_apart(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (token, _) = register_and_login(router.clone(), &pool, "items@example.com").await;
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    // No total given: it's the sum of the items.
+    let (status, _) = authed(
+        router.clone(),
+        "POST",
+        "/api/money/transactions",
+        &token,
+        Some(json!({"category": "groceries", "description": "Superindo", "occurred_at": today,
+                    "items": [{"name": "Rice 5kg", "amount": 75000}, {"name": "Eggs", "quantity": 2, "unit_amount": 28000}]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = authed(router.clone(), "POST", "/api/money/transactions", &token,
+        Some(json!({"kind": "income", "amount": 8000000, "category": "salary", "description": "October pay", "occurred_at": today}))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = authed(router.clone(), "POST", "/api/money/transactions", &token,
+        Some(json!({"category": "food", "description": "x", "items": [{"name": "?"}]}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "an item needs an amount or a unit price");
+
+    let (_, money) = authed(router.clone(), "GET", "/api/money", &token, None).await;
+    assert_eq!(money["total_cents"], 13_100_000, "spending only");
+    assert_eq!(money["income_cents"], 800_000_000);
+    let receipt = money["transactions"].as_array().unwrap().iter().find(|t| t["description"] == "Superindo").unwrap();
+    assert_eq!(receipt["amount_cents"], 13_100_000);
+    assert_eq!(receipt["kind"], "expense");
+    assert_eq!(receipt["items"][1], json!({"name": "Eggs", "quantity": 2.0, "unit_amount_cents": 2_800_000, "amount_cents": 5_600_000, "category": null}));
+    assert_eq!(money["by_category"].as_array().unwrap().len(), 1, "income isn't a spending category");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_money_month_can_run_from_payday_to_payday(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (token, user_id) = register_and_login(router.clone(), &pool, "payday@example.com").await;
+    for (when, cents) in [("2026-03-24", 100), ("2026-03-25", 1000), ("2026-04-10", 2000), ("2026-04-24", 4000), ("2026-04-25", 8000)] {
+        sqlx::query("INSERT INTO money_transactions (user_id, occurred_at, amount_cents, category, description) VALUES ($1, $2::date + time '12:00', $3, 'food', 'x')")
+            .bind(user_id)
+            .bind(when)
+            .bind(cents as i64)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let (status, _) = authed(router.clone(), "PUT", "/api/money/period", &token, Some(json!({"start_day": 31}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = authed(router.clone(), "PUT", "/api/money/period", &token, Some(json!({"start_day": 25}))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, money) = authed(router, "GET", "/api/money?month=2026-03", &token, None).await;
+    assert_eq!(money["start_day"], 25);
+    assert_eq!((money["period_start"].as_str(), money["period_end"].as_str()), (Some("2026-03-25"), Some("2026-04-24")));
+    assert_eq!(money["total_cents"], 7000);
+    assert_eq!(money["previous_total_cents"], 100);
+    assert_eq!(money["months"], json!(["2026-04", "2026-03", "2026-02"]));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

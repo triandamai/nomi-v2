@@ -5,6 +5,8 @@
 //! Spend uses the admin model's price at the time of the call. Calls made with the person's own
 //! API key count as usage but never as spend, and don't use up the plan's allowance.
 
+pub mod plans;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -88,18 +90,30 @@ pub async fn record(pool: &PgPool, user_id: Uuid, tag: &ModelTag, input_tokens: 
     Ok(())
 }
 
-/// The plan someone is on. Everyone is on Free until Pro launches.
+/// The plan someone is on, as the app shows it.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Plan {
-    pub id: &'static str,
-    /// Tokens of Nomi's own models included each month.
+    /// The plan's slug ("free", "pro"…).
+    pub id: String,
+    pub name: String,
+    pub card_tone: String,
+    /// Tokens of Nomi's own models they may use each month: an admin's override while it lasts,
+    /// else the plan's.
     pub monthly_tokens: i64,
+    /// Their allowance is an admin's override, not the plan's.
+    pub custom_quota: bool,
 }
 
-/// The Free plan's monthly allowance: `FREE_MONTHLY_TOKENS`, else one million.
-pub fn plan_for(_user_id: Uuid) -> Plan {
-    let monthly_tokens = std::env::var("FREE_MONTHLY_TOKENS").ok().and_then(|v| v.trim().parse().ok()).filter(|n: &i64| *n > 0).unwrap_or(1_000_000);
-    Plan { id: "free", monthly_tokens }
+/// The plan `user_id` is on, with their allowance (see `plans::subscription_for`).
+pub async fn plan_for(pool: &PgPool, user_id: Uuid) -> Result<Plan, sqlx::Error> {
+    let subscription = plans::subscription_for(pool, user_id).await?;
+    Ok(Plan {
+        id: subscription.plan.slug,
+        name: subscription.plan.name,
+        card_tone: subscription.plan.card_tone,
+        monthly_tokens: subscription.monthly_tokens,
+        custom_quota: subscription.quota_override.is_some(),
+    })
 }
 
 /// For the navigation drawer: this month's allowance and how much of it is used.
@@ -181,7 +195,7 @@ pub async fn brief(pool: &PgPool, user_id: Uuid) -> Result<Brief, sqlx::Error> {
     .bind(&month)
     .fetch_one(pool)
     .await?;
-    Ok(Brief { plan: plan_for(user_id), month, tokens_used })
+    Ok(Brief { plan: plan_for(pool, user_id).await?, month, tokens_used })
 }
 
 /// `month` is `YYYY-MM`; anything else (or nothing) means this month.
@@ -228,7 +242,7 @@ pub async fn month(pool: &PgPool, user_id: Uuid, month: Option<&str>) -> Result<
     .await?;
 
     Ok(MonthUsage {
-        plan: plan_for(user_id),
+        plan: plan_for(pool, user_id).await?,
         month,
         current_month,
         timezone: tz,

@@ -61,7 +61,7 @@ async fn a_message_with_an_attachment_goes_to_the_files_agent_which_hands_work_o
     // One answer, from the agent that did the work; nothing queued in the background.
     assert_eq!(outcome.reply, "Logged lunch (45,000) and taxi (30,000).");
     let author: String = sqlx::query_scalar("SELECT agent_display_name FROM messages WHERE id = $1").bind(outcome.message_id).fetch_one(&pool).await.unwrap();
-    assert_eq!(author, "Money");
+    assert_eq!(author, "Dana");
     let replies: i64 = sqlx::query_scalar("SELECT count(*) FROM messages WHERE sender_channel_identity_id IS NULL").fetch_one(&pool).await.unwrap();
     assert_eq!(replies, 1, "no filler message from Files");
     let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_delegations").fetch_one(&pool).await.unwrap();
@@ -80,7 +80,7 @@ async fn a_message_with_an_attachment_goes_to_the_files_agent_which_hands_work_o
         ContentBlock::Text { text } => Some(text.as_str()),
         _ => None,
     }).collect::<Vec<_>>().join("\n");
-    assert!(money_sees.contains("log these please") && money_sees.contains("Files handed this to you: Log these expenses: lunch 45000"), "{money_sees}");
+    assert!(money_sees.contains("log these please") && money_sees.contains("Maya handed this to you: Log these expenses: lunch 45000"), "{money_sees}");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

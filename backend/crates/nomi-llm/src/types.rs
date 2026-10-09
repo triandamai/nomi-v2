@@ -25,6 +25,10 @@ pub enum ContentBlock {
     /// OpenRouter's unified `reasoning` field) or when a provider can only report that reasoning
     /// happened without exposing its text (see `openai.rs`).
     Thinking { text: String, signature: Option<String> },
+    /// A file the model looks at itself: an image, a PDF, audio or video, base64-encoded.
+    /// Only ever sent in a user message. Providers that can't take `media_type` get a short
+    /// text note instead (see `media::MediaRouter`, which picks a model that can).
+    Media { media_type: String, data: String, name: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -110,6 +114,10 @@ pub enum LlmError {
     ProviderError(String),
     #[error("failed to parse provider response: {0}")]
     ParseError(String),
+    /// The person has used their plan's monthly allowance on Nomi's models and has no key of
+    /// their own to fall back on.
+    #[error("monthly token quota used up")]
+    QuotaExceeded,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

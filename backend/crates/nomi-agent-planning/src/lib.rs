@@ -12,6 +12,9 @@ use nomi_llm::ToolDefinition;
 
 pub const PLANNING_AGENT_TYPE: &str = "planning";
 
+/// The stacks a project can be built on (see the coding agent's guides).
+pub const STACKS: &[&str] = &["sveltekit", "react", "vue", "astro", "static"];
+
 pub fn create_project_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "create_project".to_string(),
@@ -20,7 +23,12 @@ pub fn create_project_tool_definition() -> ToolDefinition {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Short project name"},
-                "description": {"type": "string", "description": "One-sentence description of what it does"}
+                "description": {"type": "string", "description": "One-sentence description of what it does"},
+                "stack": {
+                    "type": "string",
+                    "enum": STACKS,
+                    "description": "sveltekit (default: anything with pages and a server or database), react or vue (browser-only apps, when the user asks), astro (content sites), static (a single plain HTML page)"
+                }
             },
             "required": ["name", "description"]
         }),
@@ -118,6 +126,10 @@ pub async fn create_project(
 ) -> Result<String, String> {
     let name = input.get("name").and_then(|v| v.as_str()).ok_or("name is required")?;
     let description = input.get("description").and_then(|v| v.as_str());
+    let stack = input.get("stack").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).unwrap_or("sveltekit");
+    if !STACKS.contains(&stack) {
+        return Err(format!("stack must be one of {}", STACKS.join(", ")));
+    }
 
     let existing_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM projects WHERE session_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
@@ -130,22 +142,24 @@ pub async fn create_project(
 
     let project_id = match existing_id {
         Some(id) => {
-            sqlx::query("UPDATE projects SET name = $1, description = $2, updated_at = now() WHERE id = $3")
+            sqlx::query("UPDATE projects SET name = $1, description = $2, stack = $4, updated_at = now() WHERE id = $3")
                 .bind(name)
                 .bind(description)
                 .bind(id)
+                .bind(stack)
                 .execute(&mut **conn)
                 .await
                 .map_err(|e| e.to_string())?;
             id
         }
         None => sqlx::query_scalar(
-            "INSERT INTO projects (user_id, session_id, name, description) VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO projects (user_id, session_id, name, description, stack) VALUES ($1, $2, $3, $4, $5) RETURNING id",
         )
         .bind(user_id)
         .bind(session_id)
         .bind(name)
         .bind(description)
+        .bind(stack)
         .fetch_one(&mut **conn)
         .await
         .map_err(|e| e.to_string())?,
