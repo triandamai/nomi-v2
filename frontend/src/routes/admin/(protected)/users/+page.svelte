@@ -42,15 +42,19 @@
 	}
 	const ROLE_LABELS = { owner: m.users_owner, staff: m.users_staff, member: m.users_member };
 
-	function handleSearch(query: string) {
-		goto(`?query=${encodeURIComponent(query)}&page=1`, { keepFocus: true });
+	// Search, page and page size live in the URL.
+	function show(next: { query?: string; page?: number; size?: number }) {
+		const params = new URLSearchParams({ page: String(next.page ?? data.page) });
+		const query = next.query ?? data.query;
+		if (query) params.set('query', query);
+		const size = next.size ?? data.pageSize;
+		if (size !== 20) params.set('size', String(size));
+		goto(`?${params}`, { keepFocus: true, noScroll: true });
 	}
-
-	function handlePageChange(nextPage: number) {
-		const params = new URLSearchParams({ page: String(nextPage) });
-		if (data.query) params.set('query', data.query);
-		goto(`?${params}`, { keepFocus: true });
-	}
+	const handleSearch = (query: string) => show({ query, page: 1 });
+	const handlePageChange = (page: number) => show({ page });
+	// A new page size starts from the page holding the first row shown now.
+	const handlePageSizeChange = (size: number) => show({ size, page: Math.floor(((data.page - 1) * data.pageSize) / size) + 1 });
 
 	let sheetOpen = $state(false);
 	let sheetKind = $state<'user' | 'role' | 'plan' | null>(null);
@@ -142,6 +146,25 @@
 
 <PageHeader title={m.admin_users()} lede={m.users_lede()} agent="personality" />
 
+{#snippet actions(user: (typeof data.users)[number])}
+	<Menu>
+		{#snippet trigger({ toggle })}
+			<IconButton onclick={toggle} aria-label={m.users_actions_for({ email: user.email })}>
+				<IconMore size={18} />
+			</IconButton>
+		{/snippet}
+		<MenuItem onclick={() => openSheet(user.id, 'user')}>{m.users_update_user()}</MenuItem>
+		<MenuItem onclick={() => openSheet(user.id, 'role')}>{m.users_update_role()}</MenuItem>
+		<MenuItem onclick={() => openPlanSheet(user.id)}>{m.users_plan_quota()}</MenuItem>
+		{#if !user.is_staff}
+			<form method="POST" action="?/promote" use:enhance>
+				<input type="hidden" name="userId" value={user.id} />
+				<MenuItem type="submit">{m.users_promote()}</MenuItem>
+			</form>
+		{/if}
+	</Menu>
+{/snippet}
+
 <div>
 	<DataTable
 		card
@@ -150,6 +173,8 @@
 		pageSize={data.pageSize}
 		totalItems={data.total}
 		onPageChange={handlePageChange}
+		pageSizeOptions={data.pageSizes}
+		onPageSizeChange={handlePageSizeChange}
 		searchQuery={data.query}
 		onSearch={handleSearch}
 		searchPlaceholder={m.users_search()}
@@ -159,7 +184,7 @@
 				<td>
 					<span class="person">
 						<Avatar name={user.email} size={32} />
-						<span class="person__email">{user.email}</span>
+						<span class="person__email" title={user.email}>{user.email}</span>
 					</span>
 				</td>
 				<td><span class="role" data-role={roleKey(user)}>{ROLE_LABELS[roleKey(user)]()}</span></td>
@@ -172,26 +197,30 @@
 					<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
 					<span class="usage-text">{m.usage_of_tokens({ used: formatTokens(user.tokens_used), total: formatTokens(user.monthly_tokens) })}</span>
 				</td>
-				<td>
-					<Menu>
-						{#snippet trigger({ toggle })}
-							<IconButton onclick={toggle} aria-label={m.users_actions_for({ email: user.email })}>
-								<IconMore size={18} />
-							</IconButton>
-						{/snippet}
-						<MenuItem onclick={() => openSheet(user.id, 'user')}>{m.users_update_user()}</MenuItem>
-						<MenuItem onclick={() => openSheet(user.id, 'role')}>{m.users_update_role()}</MenuItem>
-						<MenuItem onclick={() => openPlanSheet(user.id)}>{m.users_plan_quota()}</MenuItem>
-						{#if !user.is_staff}
-							<form method="POST" action="?/promote" use:enhance>
-								<input type="hidden" name="userId" value={user.id} />
-								<MenuItem type="submit">{m.users_promote()}</MenuItem>
-							</form>
-						{/if}
-					</Menu>
-				</td>
+				<td>{@render actions(user)}</td>
 			</tr>
 		{/each}
+		{#snippet list()}
+			{#each data.users as user (user.id)}
+				<div role="listitem" class="user-item">
+					<Avatar name={user.email} size={40} />
+					<div class="user-item__text">
+						<span class="user-item__email">{user.email}</span>
+						<span class="user-item__meta">
+							<span class="role" data-role={roleKey(user)}>{ROLE_LABELS[roleKey(user)]()}</span>
+							<span>{user.plan_name}</span>
+							{#if user.custom_quota}<span class="custom-chip">{m.users_custom_quota()}</span>{/if}
+							<span>· {user.org_count === 1 ? m.users_spaces_one() : m.users_spaces_count({ count: user.org_count })}</span>
+						</span>
+						<span class="user-item__usage">
+							<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
+							<span class="usage-text">{m.usage_of_tokens({ used: formatTokens(user.tokens_used), total: formatTokens(user.monthly_tokens) })}</span>
+						</span>
+					</div>
+					{@render actions(user)}
+				</div>
+			{/each}
+		{/snippet}
 	</DataTable>
 	{#if data.users.length === 0}
 		<p class="md-body-medium mt-4" style="color: var(--md-sys-color-on-surface-variant)">
@@ -384,6 +413,47 @@
 </BottomSheet>
 
 <style>
+	/* Phone: each person is a list item. */
+	.user-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		padding: 12px 8px 12px 12px;
+		border-radius: var(--md-sys-shape-corner-large);
+	}
+	.user-item + .user-item {
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: 0;
+	}
+	.user-item__text {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+	.user-item__email {
+		overflow: hidden;
+		color: var(--md-sys-color-on-surface);
+		font-size: 1rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.user-item__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+	}
+	.user-item__usage {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		max-width: 260px;
+	}
+
 	.person {
 		display: inline-flex;
 		align-items: center;
@@ -419,9 +489,14 @@
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 	}
+	/* One line; a very long address ends in "…" (its full text is the title). */
 	.person__email {
+		display: block;
+		max-width: 28ch;
+		overflow: hidden;
 		font-weight: 600;
-		overflow-wrap: anywhere;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.role {
 		display: inline-flex;

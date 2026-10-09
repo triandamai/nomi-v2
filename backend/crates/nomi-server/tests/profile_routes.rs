@@ -267,3 +267,30 @@ async fn language_defaults_to_english_and_switches_to_indonesian(pool: PgPool) {
     let (_, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(body["language"], "id");
 }
+
+async fn post_avatar(router: axum::Router, token: &str, content_type: &str, body: Vec<u8>) -> StatusCode {
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/profile/avatar")
+        .header("content-type", content_type)
+        .header("authorization", format!("Bearer {token}"))
+        .body(axum::body::Body::from(body))
+        .unwrap();
+    tower::ServiceExt::oneshot(router, request).await.unwrap().status()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_uploaded_avatar_must_be_a_real_small_image(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "ivy@example.com").await;
+    let png = b"\x89PNG\r\n\x1a\n rest of the picture".to_vec();
+
+    assert_eq!(post_avatar(router.clone(), &token, "text/plain", png.clone()).await, StatusCode::BAD_REQUEST);
+    assert_eq!(post_avatar(router.clone(), &token, "image/jpeg", png.clone()).await, StatusCode::BAD_REQUEST);
+    assert_eq!(post_avatar(router.clone(), &token, "image/png", Vec::new()).await, StatusCode::BAD_REQUEST);
+    let mut huge = png.clone();
+    huge.resize(5 * 1024 * 1024 + 10, 0);
+    assert_eq!(post_avatar(router.clone(), &token, "image/png", huge).await, StatusCode::PAYLOAD_TOO_LARGE);
+    // A real picture, but no bucket on this server.
+    assert_eq!(post_avatar(router, &token, "image/png", png).await, StatusCode::SERVICE_UNAVAILABLE);
+}

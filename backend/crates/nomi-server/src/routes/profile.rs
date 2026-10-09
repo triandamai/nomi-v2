@@ -152,6 +152,76 @@ pub async fn request_avatar_upload_url(
     Ok(Json(AvatarUploadUrlResponse { upload_url: presigned.upload_url, public_url: presigned.public_url }))
 }
 
+/// Largest profile picture accepted.
+pub const MAX_AVATAR_BYTES: usize = 5 * 1024 * 1024;
+
+#[derive(Serialize)]
+pub struct AvatarUploadResponse {
+    pub avatar_url: String,
+}
+
+/// Whether `bytes` really is the image `content_type` says, by its first bytes.
+fn looks_like(content_type: &str, bytes: &[u8]) -> bool {
+    match content_type {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(&[0xFF, 0xD8, 0xFF]),
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "image/webp" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        _ => false,
+    }
+}
+
+/// `POST /api/profile/avatar`: the picture itself as the body. Nomi puts it in the bucket and
+/// saves it on the profile, so the browser never talks to the bucket (no CORS to set up).
+#[tracing::instrument(skip(state, claims, headers, body))]
+pub async fn upload_avatar(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Json<AvatarUploadResponse>, (StatusCode, String)> {
+    let content_type = headers.get(axum::http::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let extension = match content_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => return Err((StatusCode::BAD_REQUEST, "the picture must be a PNG, JPEG, WebP or GIF".to_string())),
+    };
+    if body.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "the picture is empty".to_string()));
+    }
+    if body.len() > MAX_AVATAR_BYTES {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, format!("the picture can be at most {} MB", MAX_AVATAR_BYTES / 1024 / 1024)));
+    }
+    if !looks_like(&content_type, &body) {
+        return Err((StatusCode::BAD_REQUEST, "that file isn't the image it says it is".to_string()));
+    }
+    let Some(s3) = &state.s3 else {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "avatar upload is not configured".to_string()));
+    };
+
+    let key = format!("avatars/{}/{}.{extension}", claims.sub, Uuid::new_v4());
+    s3.put_object_bytes(&key, body.to_vec(), &content_type).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to store avatar");
+        (StatusCode::BAD_GATEWAY, "couldn't store the picture".to_string())
+    })?;
+    let avatar_url = s3.public_url(&key);
+    sqlx::query(
+        "INSERT INTO user_profiles (user_id, avatar_url) VALUES ($1, $2) \
+         ON CONFLICT (user_id) DO UPDATE SET avatar_url = $2, updated_at = now()",
+    )
+    .bind(claims.sub)
+    .bind(&avatar_url)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to save avatar url");
+        (StatusCode::INTERNAL_SERVER_ERROR, "couldn't save the picture".to_string())
+    })?;
+    Ok(Json(AvatarUploadResponse { avatar_url }))
+}
+
 #[derive(Serialize)]
 pub struct PreferencesResponse {
     pub theme: String,

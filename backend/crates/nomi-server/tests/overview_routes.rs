@@ -275,6 +275,8 @@ async fn money_budgets_and_manual_transactions_live_in_moneys_own_tables(pool: P
     let (_, money) = authed(router.clone(), "GET", &format!("/api/money?month={month}"), &token, None).await;
     assert_eq!(money["budgets"], json!([{"category": "food", "limit_cents": 30000, "spent_cents": 4550}]));
     assert_eq!(money["transactions"][0]["description"], "Lunch with Maya");
+    assert_eq!(money["transactions"][0]["source"], "manual");
+    assert!(money["transactions"][0]["created_at"].is_string());
 
     // Stored in the Money agent's table, marked as entered by hand; the old name still reads it.
     let source: String = sqlx::query_scalar("SELECT source FROM money_transactions WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();

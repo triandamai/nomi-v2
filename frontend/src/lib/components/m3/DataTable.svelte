@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
-	import Pagination from './Pagination.svelte';
 	import IconChevronDown from '../icons/IconChevronDown.svelte';
+	import IconChevronLeft from '../icons/IconChevronLeft.svelte';
+	import IconChevronRight from '../icons/IconChevronRight.svelte';
+	import IconFirstPage from '../icons/IconFirstPage.svelte';
+	import IconLastPage from '../icons/IconLastPage.svelte';
 	import IconChevronUp from '../icons/IconChevronUp.svelte';
 	import IconSearch from '../icons/IconSearch.svelte';
 
@@ -15,10 +18,13 @@
 		pageSize = 20,
 		totalItems,
 		onPageChange,
+		pageSizeOptions,
+		onPageSizeChange,
 		searchQuery = $bindable(''),
 		onSearch,
 		searchPlaceholder = m.common_search(),
 		children,
+		list,
 		card = false,
 		class: extraClass = '',
 	}: {
@@ -30,10 +36,15 @@
 		pageSize?: number;
 		totalItems?: number;
 		onPageChange?: (page: number) => void;
+		/** Offer a "Rows per page" choice (with onPageSizeChange). */
+		pageSizeOptions?: number[];
+		onPageSizeChange?: (size: number) => void;
 		searchQuery?: string;
 		onSearch?: (query: string) => void;
 		searchPlaceholder?: string;
 		children: Snippet;
+		/** What phones show instead of the table: the rows as list items (see ListItem). */
+		list?: Snippet;
 		/** Sets the table on its own rounded surface (a page's main table, not one inside a bubble). */
 		card?: boolean;
 		class?: string;
@@ -59,6 +70,10 @@
 		page = clamped;
 		onPageChange?.(page);
 	}
+
+	const firstRow = $derived(totalItems ? (page - 1) * pageSize + 1 : 0);
+	const lastRow = $derived(totalItems ? Math.min(page * pageSize, totalItems) : 0);
+	const showFooter = $derived(totalItems !== undefined && (totalPages! > 1 || (pageSizeOptions !== undefined && totalItems > Math.min(...pageSizeOptions))));
 
 	const SEARCH_DEBOUNCE_MS = 300;
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -107,7 +122,7 @@
 			/>
 		</div>
 	{/if}
-	<table class="m3-data-table" class:m3-data-table--card={card}>
+	<table class="m3-data-table" class:m3-data-table--card={card} class:m3-data-table--has-list={!!list}>
 		<thead>
 			<tr>
 				{#each columns as column (column.key)}
@@ -137,10 +152,33 @@
 			{@render children()}
 		</tbody>
 	</table>
-	{#if totalPages !== undefined && totalPages > 1}
-		<div class="m3-data-table__pagination">
-			<span class="m3-data-table__pagination-label">Page {page} of {totalPages}</span>
-			<Pagination {page} pages={totalPages} onselect={goToPage} />
+	{#if list}
+		<div role="list" class="m3-data-table__list">
+			{@render list()}
+		</div>
+	{/if}
+	{#if showFooter && totalPages !== undefined}
+		<div class="m3-data-table__footer">
+			{#if pageSizeOptions && onPageSizeChange}
+				<label class="m3-data-table__size">
+					<span>{m.page_rows()}</span>
+					<span class="m3-data-table__select">
+						<select value={pageSize} onchange={(event) => onPageSizeChange(Number(event.currentTarget.value))}>
+							{#each pageSizeOptions as option (option)}
+								<option value={option}>{option}</option>
+							{/each}
+						</select>
+						<IconChevronDown size={16} />
+					</span>
+				</label>
+			{/if}
+			<span class="m3-data-table__range" aria-live="polite">{m.page_range({ first: firstRow, last: lastRow, total: totalItems ?? 0 })}</span>
+			<nav class="m3-data-table__pager" aria-label={m.page_pages()}>
+				<button type="button" class="m3-data-table__nav" onclick={() => goToPage(1)} disabled={page <= 1} aria-label={m.page_first()}><IconFirstPage /></button>
+				<button type="button" class="m3-data-table__nav" onclick={() => goToPage(page - 1)} disabled={page <= 1} aria-label={m.page_prev()}><IconChevronLeft /></button>
+				<button type="button" class="m3-data-table__nav" onclick={() => goToPage(page + 1)} disabled={page >= totalPages} aria-label={m.page_next()}><IconChevronRight /></button>
+				<button type="button" class="m3-data-table__nav" onclick={() => goToPage(totalPages)} disabled={page >= totalPages} aria-label={m.page_last()}><IconLastPage /></button>
+			</nav>
 		</div>
 	{/if}
 </div>
@@ -225,18 +263,99 @@
 		font-size: var(--md-sys-typescale-body-medium-size);
 	}
 
-	.m3-data-table__pagination {
+	/* M3 data table footer: rows per page, the range shown, and page arrows. */
+	.m3-data-table__footer {
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 12px;
-		margin-top: 8px;
-	}
-	.m3-data-table__pagination-label {
+		flex-wrap: wrap;
+		gap: 8px 24px;
+		margin-top: 4px;
+		padding: 8px 4px 0 16px;
+		color: var(--md-sys-color-on-surface-variant);
 		font-family: var(--md-sys-typescale-body-small-font);
 		font-size: var(--md-sys-typescale-body-small-size);
-		color: var(--md-sys-color-on-surface-variant);
 	}
+	.m3-data-table--card ~ .m3-data-table__footer {
+		margin-top: 8px;
+		padding: 6px 8px 6px 20px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.m3-data-table__size {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.m3-data-table__select {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+	}
+	.m3-data-table__select select {
+		appearance: none;
+		height: 32px;
+		padding: 0 28px 0 12px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		font: inherit;
+		font-variant-numeric: tabular-nums;
+		cursor: pointer;
+	}
+	.m3-data-table__select select:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	.m3-data-table__select :global(svg) {
+		position: absolute;
+		right: 8px;
+		pointer-events: none;
+	}
+	.m3-data-table__range {
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.m3-data-table__pager {
+		display: inline-flex;
+		gap: 2px;
+	}
+	.m3-data-table__nav {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		cursor: pointer;
+		transition:
+			background-color var(--nomi-motion-effects-fast, 150ms),
+			border-radius var(--nomi-motion-spatial-fast, 200ms);
+	}
+	.m3-data-table__nav:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+	.m3-data-table__nav:active:not(:disabled) {
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+	}
+	.m3-data-table__nav:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	.m3-data-table__nav:disabled {
+		opacity: 0.38;
+		cursor: default;
+	}
+	/* The phone list is hidden until a phone shows it in place of the table. */
+	.m3-data-table__list {
+		display: none;
+	}
+
 	/* Phone: rows become cards, each cell a "Column: value" line. */
 	@media (max-width: 640px) {
 		.m3-data-table--card {
@@ -282,8 +401,25 @@
 			letter-spacing: 0.06em;
 			text-transform: uppercase;
 		}
-		.m3-data-table__pagination {
+		/* With a list to show, the table steps aside. */
+		.m3-data-table--has-list {
+			display: none;
+		}
+		.m3-data-table__list {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+			padding: 4px;
+			border-radius: var(--md-sys-shape-corner-extra-large);
+			background: var(--md-sys-color-surface-container-lowest);
+		}
+		.m3-data-table__footer,
+		.m3-data-table--card ~ .m3-data-table__footer {
 			justify-content: space-between;
+			padding: 6px 4px 6px 16px;
+		}
+		.m3-data-table__pager {
+			margin-left: auto;
 		}
 	}
 </style>

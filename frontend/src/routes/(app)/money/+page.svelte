@@ -115,6 +115,28 @@
 			return iso.slice(0, 10);
 		}
 	}
+	type Tx = NonNullable<PageData['money']>['transactions'][number];
+	let detail = $state<Tx | null>(null);
+	let detailOpen = $state(false);
+	function openDetail(t: Tx) {
+		detail = t;
+		detailOpen = true;
+	}
+	function txWhen(iso: string): string {
+		try {
+			return new Intl.DateTimeFormat(getLocale(), { dateStyle: 'full', timeStyle: 'short', timeZone: money?.timezone }).format(new Date(iso));
+		} catch {
+			return iso.slice(0, 16).replace('T', ' ');
+		}
+	}
+	function txSource(source: string): string {
+		if (source === 'agent') return m.money_source_agent();
+		if (source === 'import') return m.money_source_import();
+		return m.money_source_manual();
+	}
+	// What the items don't account for (tax, a tip, an unlisted extra): shown as its own line.
+	const detailRest = $derived(detail && detail.items.length ? detail.amount_cents - detail.items.reduce((sum, i) => sum + i.amount_cents, 0) : 0);
+
 	function txDetails(t: { category: string; occurred_at: string; items: { name: string }[] }): string {
 		const parts = [t.category, txDate(t.occurred_at)];
 		if (t.items.length) {
@@ -414,7 +436,7 @@
 						<List class="tx">
 							{#each visibleTransactions as t (t.id)}
 								{@const look = categoryLook(t.category)}
-								<ListItem headline={t.description} supportingText={txDetails(t)}>
+								<ListItem headline={t.description} supportingText={txDetails(t)} onclick={() => openDetail(t)} label={m.money_tx_open({ description: t.description })}>
 									{#snippet leading()}
 										<AgentShape shape={look.shape} tone={look.tone} size={36} />
 									{/snippet}
@@ -477,10 +499,67 @@
 		</label>
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
-			<Button type="button" variant="text" onclick={() => (expenseOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="button" variant="outlined" size="m" onclick={() => (expenseOpen = false)}>{m.common_cancel()}</Button>
 			<Button type="submit" variant="filled" size="m" disabled={saving}>{kind === 'income' ? m.money_add_income() : m.money_add_expense()}</Button>
 		</div>
 	</form>
+</BottomSheet>
+
+<BottomSheet bind:open={detailOpen}>
+	{#if detail}
+		{@const look = categoryLook(detail.category)}
+		<article class="sheet detail" aria-labelledby="tx-detail-title">
+			<div class="sheet__head">
+				<AgentShape shape={look.shape} tone={look.tone} size={44} />
+				<div class="detail__heading">
+					<h2 id="tx-detail-title" class="md-headline-small-emphasized sheet__title">{detail.description}</h2>
+					<span class="detail__kind" class:detail__kind--income={detail.kind === 'income'}>{detail.kind === 'income' ? m.money_income() : m.money_expense()}</span>
+				</div>
+			</div>
+			<p class="detail__amount" class:detail__amount--income={detail.kind === 'income'}>
+				{#if detail.kind === 'income'}<span aria-hidden="true">+</span>{/if}<Money value={formatAmount(detail.amount_cents)} />
+			</p>
+			<dl class="detail__facts">
+				<div><dt>{m.common_category()}</dt><dd>{detail.category}</dd></div>
+				<div><dt>{m.money_when()}</dt><dd>{txWhen(detail.occurred_at)}</dd></div>
+				<div><dt>{m.money_added_by()}</dt><dd>{txSource(detail.source)}</dd></div>
+				{#if detail.created_at.slice(0, 10) !== detail.occurred_at.slice(0, 10)}
+					<div><dt>{m.money_recorded()}</dt><dd>{txWhen(detail.created_at)}</dd></div>
+				{/if}
+			</dl>
+			{#if detail.items.length}
+				<section class="detail__items" aria-labelledby="tx-items-title">
+					<h3 id="tx-items-title" class="detail__subtitle">{m.money_items()} · {detail.items.length}</h3>
+					<ul>
+						{#each detail.items as item, i (i)}
+							<li class="detail__item">
+								<span class="detail__qty">{item.quantity}×</span>
+								<span class="detail__name">
+									{item.name}
+									{#if item.unit_amount_cents !== null && item.quantity !== 1}
+										<span class="detail__unit">{m.money_each({ price: formatAmount(item.unit_amount_cents) })}</span>
+									{/if}
+									{#if item.category && item.category !== detail.category}<span class="detail__unit">{item.category}</span>{/if}
+								</span>
+								<span class="detail__price"><Money value={formatAmount(item.amount_cents)} /></span>
+							</li>
+						{/each}
+						{#if detailRest !== 0}
+							<li class="detail__item detail__item--rest">
+								<span class="detail__qty"></span>
+								<span class="detail__name">{m.money_items_rest()}</span>
+								<span class="detail__price"><Money value={formatAmount(detailRest)} /></span>
+							</li>
+						{/if}
+					</ul>
+					<p class="detail__total"><span>{m.common_amount()}</span><Money value={formatAmount(detail.amount_cents)} /></p>
+				</section>
+			{/if}
+			<div class="sheet__actions">
+				<Button type="button" variant="tonal" size="m" onclick={() => (detailOpen = false)}>{m.common_close()}</Button>
+			</div>
+		</article>
+	{/if}
 </BottomSheet>
 
 <BottomSheet bind:open={periodOpen}>
@@ -499,7 +578,7 @@
 		</div>
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
-			<Button type="button" variant="text" onclick={() => (periodOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="button" variant="outlined" size="m" onclick={() => (periodOpen = false)}>{m.common_cancel()}</Button>
 			<Button type="submit" variant="filled" size="m" disabled={saving}>{m.common_save()}</Button>
 		</div>
 	</form>
@@ -520,7 +599,7 @@
 		</div>
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
-			<Button type="button" variant="text" onclick={() => (budgetOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="button" variant="outlined" size="m" onclick={() => (budgetOpen = false)}>{m.common_cancel()}</Button>
 			<Button type="submit" variant="filled" size="m" disabled={saving}>{m.money_save_budget()}</Button>
 		</div>
 	</form>
@@ -823,10 +902,138 @@
 		color: var(--md-sys-color-error);
 		font-size: 0.875rem;
 	}
+	/* Transaction details. */
+	.detail__heading {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+		min-width: 0;
+	}
+	.detail__heading .sheet__title {
+		overflow-wrap: anywhere;
+	}
+	.detail__kind {
+		padding: 2px 10px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.detail__kind--income {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.detail__amount {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: clamp(2.25rem, 9vw, 3rem);
+		font-weight: 800;
+		line-height: 1.05;
+		letter-spacing: -0.02em;
+		color: var(--md-sys-color-on-surface);
+		font-variant-numeric: tabular-nums;
+	}
+	.detail__amount--income {
+		color: var(--md-sys-color-tertiary);
+	}
+	.detail__facts {
+		display: grid;
+		gap: 2px;
+		margin: 0;
+		padding: 6px 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+	}
+	.detail__facts div {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 8px 0;
+	}
+	.detail__facts div + div {
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.detail__facts dt {
+		flex: none;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
+	.detail__facts dd {
+		margin: 0;
+		text-align: right;
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.875rem;
+		overflow-wrap: anywhere;
+	}
+	.detail__subtitle {
+		margin: 0 0 6px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.detail__items ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.detail__item {
+		display: grid;
+		grid-template-columns: 2.5em 1fr auto;
+		align-items: baseline;
+		gap: 8px;
+		padding: 8px 0;
+		border-bottom: 1px dashed var(--md-sys-color-outline-variant);
+	}
+	.detail__item--rest .detail__name {
+		color: var(--md-sys-color-on-surface-variant);
+		font-style: italic;
+	}
+	.detail__qty {
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.8125rem;
+	}
+	.detail__name {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		color: var(--md-sys-color-on-surface);
+		overflow-wrap: anywhere;
+	}
+	.detail__unit {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+	}
+	.detail__price {
+		font-variant-numeric: tabular-nums;
+		color: var(--md-sys-color-on-surface);
+	}
+	.detail__total {
+		display: flex;
+		justify-content: space-between;
+		margin: 8px 0 0;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
+	}
+
+	/* Cancel and the action are one pair: the same height, and on a phone the same width. */
 	.sheet__actions {
 		display: flex;
 		justify-content: flex-end;
 		gap: 8px;
+		padding-top: 4px;
+	}
+	@media (max-width: 640px) {
+		.sheet__actions :global(.m3-button) {
+			flex: 1 1 0;
+			min-width: 0;
+		}
 	}
 	.panel__hint {
 		margin: 0;

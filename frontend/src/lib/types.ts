@@ -403,6 +403,10 @@ export interface MoneySummary {
 		category: string;
 		description: string;
 		kind: 'expense' | 'income';
+		/** Who added it: 'manual' (the person), 'agent' (Finley, from a chat) or 'import'. */
+		source: 'manual' | 'agent' | 'import';
+		/** When it was recorded (occurred_at is when it happened). */
+		created_at: string;
 		items: { name: string; quantity: number; unit_amount_cents: number | null; amount_cents: number; category: string | null }[];
 	}[];
 	months: string[];

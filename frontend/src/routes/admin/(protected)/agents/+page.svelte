@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
+	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SideSheet from '$lib/components/m3/SideSheet.svelte';
 	import { agentTypeFallbackLabel, eventFeedLine, phaseLabel as sharedPhaseLabel, shortSessionId } from '$lib/agentLabels';
@@ -80,6 +81,20 @@
 			return 0;
 		});
 	});
+
+	// Paged here: the whole list streams in live.
+	const PAGE_SIZES = [10, 25, 50];
+	let page = $state(1);
+	let pageSize = $state(10);
+	const pageCount = $derived(Math.max(1, Math.ceil(sortedRows.length / pageSize)));
+	$effect(() => {
+		if (page > pageCount) page = pageCount;
+	});
+	const pageRows = $derived(sortedRows.slice((page - 1) * pageSize, page * pageSize));
+	function changePageSize(size: number) {
+		page = Math.floor(((page - 1) * pageSize) / size) + 1;
+		pageSize = size;
+	}
 
 	const TERMINAL_CLOSE_CODES = new Set([4401, 4404]);
 	const INITIAL_RETRY_DELAY_MS = 1000;
@@ -228,8 +243,18 @@
 			<p class="quiet__text"><strong>{m.live_quiet_title()}</strong> {m.live_quiet()}</p>
 		</div>
 	{:else}
-		<DataTable card {columns} bind:sortKey bind:sortDirection>
-			{#each sortedRows as row (row.agent_session_id)}
+		<DataTable
+			card
+			{columns}
+			bind:sortKey
+			bind:sortDirection
+			bind:page
+			{pageSize}
+			totalItems={sortedRows.length}
+			pageSizeOptions={PAGE_SIZES}
+			onPageSizeChange={changePageSize}
+		>
+			{#each pageRows as row (row.agent_session_id)}
 				<tr onclick={() => openDrillDown(row)} style="cursor: pointer;">
 					<td>{row.user_label}</td>
 					<td>
@@ -245,6 +270,22 @@
 					<td class="mono">{new Date(row.last_activity_at).toLocaleString(getLocale())}</td>
 				</tr>
 			{/each}
+			{#snippet list()}
+				{#each pageRows as row (row.agent_session_id)}
+					<ListItem
+						headline={row.agent_display_name}
+						supportingText={`${row.user_label} · ${rowPhaseLabel(row)} · ${new Date(row.last_activity_at).toLocaleTimeString(getLocale())}`}
+						onclick={() => openDrillDown(row)}
+					>
+						{#snippet leading()}
+							<AgentShape agent={row.agent_type} size={36} working={row.current_phase !== 'waiting'} />
+						{/snippet}
+						{#snippet trailing()}
+							<span class="mono">{row.channel}</span>
+						{/snippet}
+					</ListItem>
+				{/each}
+			{/snippet}
 		</DataTable>
 	{/if}
 </section>

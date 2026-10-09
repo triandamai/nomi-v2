@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
-	import { deserialize, enhance } from '$app/forms';
+	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
@@ -15,41 +16,47 @@
 	let uploadError = $state<string | null>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
 
+	const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+	function postAvatar(file: File) {
+		return fetch('/profile/avatar', { method: 'POST', body: file, headers: { 'Content-Type': file.type } });
+	}
+
+	// The picture goes to Nomi, which stores it and saves it on the profile straight away.
 	async function handleFileSelected(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
+		input.value = '';
 		if (!file) return;
+		if (file.size > MAX_AVATAR_BYTES) {
+			uploadError = m.profile_avatar_too_big();
+			return;
+		}
 
 		uploading = true;
 		uploadError = null;
-
-		const requestBody = new FormData();
-		requestBody.set('content_type', file.type);
-		const response = await fetch('?/requestAvatarUploadUrl', { method: 'POST', body: requestBody });
-		const result = deserialize(await response.text());
-
-		if (result.type !== 'success' || !result.data?.uploadUrl) {
-			uploading = false;
-			uploadError =
-				(result.type === 'failure' && (result.data?.error as string)) || m.profile_prepare_failed();
-			input.value = '';
-			return;
-		}
-
-		const uploadResponse = await fetch(result.data.uploadUrl as string, {
-			method: 'PUT',
-			body: file,
-			headers: { 'Content-Type': file.type },
-		});
-		uploading = false;
-		input.value = '';
-
-		if (!uploadResponse.ok) {
+		try {
+			let response = await postAvatar(file);
+			if (response.status === 401) {
+				const refreshed = await fetch('/attachments/session', { method: 'POST' }).catch(() => null);
+				if (refreshed?.ok) response = await postAvatar(file);
+			}
+			if (response.status === 401) {
+				window.location.href = '/login';
+				return;
+			}
+			if (!response.ok) {
+				uploadError = response.status === 503 ? m.profile_avatar_unavailable() : (await response.text()) || m.profile_upload_failed();
+				return;
+			}
+			avatarUrl = ((await response.json()) as { avatar_url: string }).avatar_url;
+			// The sidebar shows the picture too.
+			await invalidateAll();
+		} catch {
 			uploadError = m.profile_upload_failed();
-			return;
+		} finally {
+			uploading = false;
 		}
-
-		avatarUrl = result.data.publicUrl as string;
 	}
 </script>
 

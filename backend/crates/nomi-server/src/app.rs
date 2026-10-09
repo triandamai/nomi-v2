@@ -227,6 +227,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))
         .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
         .route(
+            "/api/profile/avatar",
+            post(profile_routes::upload_avatar)
+                .layer(axum::extract::DefaultBodyLimit::max(profile_routes::MAX_AVATAR_BYTES + 1024)),
+        )
+        .route(
             "/api/preferences",
             get(profile_routes::get_preferences).put(profile_routes::put_preferences),
         )

@@ -111,6 +111,17 @@ impl S3Config {
         Ok(())
     }
 
+    /// Writes raw bytes from the server (an avatar the browser sent through Nomi).
+    pub async fn put_object_bytes(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<(), S3Error> {
+        self.client.put_object().bucket(&self.bucket).key(key).content_type(content_type).body(ByteStream::from(bytes)).send().await?;
+        Ok(())
+    }
+
+    /// Where an object is publicly readable.
+    pub fn public_url(&self, key: &str) -> String {
+        format!("{}/{key}", self.public_url_base.trim_end_matches('/'))
+    }
+
     /// `Ok(None)` when the object doesn't exist (S3's `NoSuchKey`) — callers that want "not
     /// found" to be a normal, expected outcome rather than an error path get that for free.
     pub async fn get_object(&self, key: &str) -> Result<Option<String>, S3Error> {
