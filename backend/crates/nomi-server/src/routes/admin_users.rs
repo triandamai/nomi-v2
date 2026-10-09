@@ -74,6 +74,13 @@ pub struct UserSummary {
     pub is_platform_admin: bool,
     pub is_staff: bool,
     pub org_count: i64,
+    pub plan_name: String,
+    /// Their allowance is an admin's override.
+    pub custom_quota: bool,
+    /// Tokens a month on Nomi's models (the override, else the plan's).
+    pub monthly_tokens: i64,
+    /// Tokens used on Nomi's models this calendar month (UTC).
+    pub tokens_used: i64,
 }
 
 #[derive(Serialize)]
@@ -102,12 +109,21 @@ pub async fn list_users(
     let offset = (page - 1) * page_size;
     let search = q.query.filter(|s| !s.trim().is_empty());
 
-    let rows: Vec<(Uuid, String, bool, bool, i64)> = sqlx::query_as(
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(Uuid, String, bool, bool, i64, String, bool, i64, i64)> = sqlx::query_as(
         "SELECT u.id, wc.email, u.is_platform_admin, \
                 EXISTS(SELECT 1 FROM user_permissions up WHERE up.user_id = u.id AND up.scope_type = 'admin') AS has_admin_grant, \
-                (SELECT COUNT(*) FROM memberships m WHERE m.user_id = u.id AND m.status = 'active') AS org_count \
+                (SELECT COUNT(*) FROM memberships m WHERE m.user_id = u.id AND m.status = 'active') AS org_count, \
+                p.name, \
+                (s.quota_override IS NOT NULL AND (s.override_until IS NULL OR s.override_until > now())) AS custom_quota, \
+                CASE WHEN s.quota_override IS NOT NULL AND (s.override_until IS NULL OR s.override_until > now()) \
+                     THEN s.quota_override ELSE p.monthly_tokens END AS monthly_tokens, \
+                (SELECT COALESCE(SUM(l.input_tokens + l.output_tokens), 0)::bigint FROM llm_usage l \
+                  WHERE l.user_id = u.id AND l.source = 'nomi' AND l.created_at >= date_trunc('month', now())) AS tokens_used \
          FROM users u \
          JOIN web_credentials wc ON wc.user_id = u.id \
+         LEFT JOIN user_subscriptions s ON s.user_id = u.id \
+         JOIN plans p ON p.id = COALESCE(s.plan_id, (SELECT id FROM plans ORDER BY is_default DESC, sort_order LIMIT 1)) \
          WHERE $1::text IS NULL OR wc.email ILIKE '%' || $1 || '%' \
          ORDER BY wc.email ASC \
          LIMIT $2 OFFSET $3",
@@ -135,12 +151,16 @@ pub async fn list_users(
 
     let users = rows
         .into_iter()
-        .map(|(id, email, is_platform_admin, has_admin_grant, org_count)| UserSummary {
+        .map(|(id, email, is_platform_admin, has_admin_grant, org_count, plan_name, custom_quota, monthly_tokens, tokens_used)| UserSummary {
             id,
             email,
             is_platform_admin,
             is_staff: is_platform_admin || has_admin_grant,
             org_count,
+            plan_name,
+            custom_quota,
+            monthly_tokens,
+            tokens_used,
         })
         .collect();
 

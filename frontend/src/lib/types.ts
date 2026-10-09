@@ -212,6 +212,24 @@ export interface AdminUserSummary {
 	is_platform_admin: boolean;
 	is_staff: boolean;
 	org_count: number;
+	plan_name: string;
+	/** Their allowance is an admin's override. */
+	custom_quota: boolean;
+	monthly_tokens: number;
+	/** Used on Nomi's models this calendar month (UTC). */
+	tokens_used: number;
+}
+
+/** Someone's plan, allowance, use and change history (Admin → Users → Plan & quota). */
+export interface AdminSubscription {
+	plan: Plan;
+	quota_override: number | null;
+	override_until: string | null;
+	note: string | null;
+	monthly_tokens: number;
+	month: string;
+	tokens_used: number;
+	history: { plan_name: string; quota_override: number | null; override_until: string | null; note: string | null; changed_by_email: string | null; created_at: string }[];
 }
 
 export interface AdminUserListResponse {
@@ -352,14 +370,30 @@ export interface HomeSectionPage<T> {
 
 /** GET /api/money */
 export interface MoneySummary {
+	/** The money month shown, by the month it starts in. */
 	month: string;
+	/** The day money months start (1 = calendar months). */
+	start_day: number;
+	period_start: string;
+	period_end: string;
 	timezone: string;
+	/** Spending in the period. */
 	total_cents: number;
+	/** Money in (income) in the period. */
+	income_cents: number;
 	previous_total_cents: number;
 	transaction_count: number;
 	by_category: { category: string; cents: number; count: number }[];
 	by_day: { date: string; cents: number }[];
-	transactions: { id: string; occurred_at: string; amount_cents: number; category: string; description: string }[];
+	transactions: {
+		id: string;
+		occurred_at: string;
+		amount_cents: number;
+		category: string;
+		description: string;
+		kind: 'expense' | 'income';
+		items: { name: string; quantity: number; unit_amount_cents: number | null; amount_cents: number; category: string | null }[];
+	}[];
 	months: string[];
 	budgets: { category: string; limit_cents: number; spent_cents: number }[];
 }
@@ -404,11 +438,54 @@ export interface GoogleConnection {
 	services: WorkspaceService[];
 }
 
-/** The plan someone is on (everyone is on Free until Pro launches). */
+/** The plan someone is on (GET /api/usage/brief). */
 export interface UsagePlan {
-	id: 'free' | 'pro';
-	/** Tokens of Nomi's own models included each month. */
+	/** The plan's slug ("free", "pro"…). */
+	id: string;
+	name: string;
+	card_tone: string;
+	/** Tokens of Nomi's own models they may use each month: an admin's override, else the plan's. */
 	monthly_tokens: number;
+	/** Their allowance is an admin's override. */
+	custom_quota: boolean;
+}
+
+/** A plan, as Admin → Plans and the plans sheet show it (GET /api/plans). */
+export interface Plan {
+	id: string;
+	slug: string;
+	name: string;
+	description: string;
+	monthly_tokens: number;
+	price_label: string;
+	features: string[];
+	card_tone: string;
+	promo_label: string | null;
+	promo_price_label: string | null;
+	promo_ends_at: string | null;
+	is_default: boolean;
+	is_active: boolean;
+	sort_order: number;
+}
+
+export interface PlansForUser {
+	plans: Plan[];
+	current_plan_id: string;
+	monthly_tokens: number;
+	custom_quota: boolean;
+	override_until: string | null;
+}
+
+export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo';
+
+export interface NotificationItem {
+	id: string;
+	kind: NotificationKind;
+	title: string;
+	body: string;
+	link: string | null;
+	read: boolean;
+	created_at: string;
 }
 
 /** This month's allowance and how much of it is used (GET /api/usage/brief). */

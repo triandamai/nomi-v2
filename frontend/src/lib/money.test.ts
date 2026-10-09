@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budgetState, categoryLook, compareMonths, fillDays, moneyPieces, niceScale, shiftMonth } from './money';
+import { budgetState, categoryLook, compareMonths, fillDays, fillPeriod, itemsTotal, moneyPieces, niceScale, periodLabel, shiftMonth } from './money';
 
 describe('money helpers', () => {
 	it('fills every day of the month', () => {
@@ -55,5 +55,30 @@ describe('moneyPieces', () => {
 		for (const text of ['Rp 1.000', '12,5 rb', '$0.0012', '18%', '3 transactions']) {
 			expect(raised(text)).toBe(text);
 		}
+	});
+});
+
+describe('money months and receipt items', () => {
+	it('fills a payday-to-payday month across the month boundary', () => {
+		const days = fillPeriod('2026-10-25', '2026-11-24', [{ date: '2026-11-01', cents: 900 }]);
+		expect(days).toHaveLength(31);
+		expect(days[0]).toEqual({ date: '2026-10-25', day: 1, dom: 25, cents: 0 });
+		expect(days.find((d) => d.date === '2026-11-01')?.cents).toBe(900);
+		expect(days.at(-1)?.dom).toBe(24);
+	});
+
+	it('labels calendar months by name and other months by their dates', () => {
+		expect(periodLabel('2026-10', '2026-10-01', '2026-10-31', 1)).toBe('October 2026');
+		expect(periodLabel('2026-10', '2026-10-25', '2026-11-24', 25)).toBe('Oct 25 – Nov 24, 2026');
+	});
+
+	it('adds up the lines that have a name and a price', () => {
+		const total = itemsTotal([
+			{ name: 'Rice 5kg', quantity: '1', price: '75000' },
+			{ name: 'Eggs', quantity: '2', price: '28000' },
+			{ name: '', quantity: '1', price: '5' },
+		]);
+		expect(total.items).toHaveLength(2);
+		expect(total.cents).toBe(13_100_000);
 	});
 });

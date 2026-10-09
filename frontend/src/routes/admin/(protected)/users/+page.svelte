@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
+	import { monthLabel } from '$lib/money';
 	import { goto } from '$app/navigation';
 	import { deserialize, enhance } from '$app/forms';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
@@ -18,7 +19,11 @@
 	import Radio from '$lib/components/m3/Radio.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import { ADMIN_PERMISSION_RESOURCES, CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
-	import type { AdminUserDetail } from '$lib/types';
+	import Select from '$lib/components/m3/Select.svelte';
+	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
+	import { formatShare, formatTokens, formatTokensFull, usageShare } from '$lib/usage';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import type { AdminSubscription, AdminUserDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,6 +32,8 @@
 		{ key: 'email', label: m.users_person() },
 		{ key: 'staff', label: m.users_role() },
 		{ key: 'orgs', label: m.users_spaces() },
+		{ key: 'plan', label: m.users_plan() },
+		{ key: 'usage', label: m.users_usage() },
 		{ key: 'actions', label: '' },
 	];
 
@@ -46,7 +53,43 @@
 	}
 
 	let sheetOpen = $state(false);
-	let sheetKind = $state<'user' | 'role' | null>(null);
+	let sheetKind = $state<'user' | 'role' | 'plan' | null>(null);
+	let subscription = $state<AdminSubscription | null>(null);
+	let subPlan = $state('');
+	let subQuota = $state('');
+	let subUntil = $state('');
+	let subNote = $state('');
+	let subError = $state<string | null>(null);
+	let subSaved = $state(false);
+	const planOptions = $derived(data.plans.map((plan) => ({ value: plan.id, label: `${plan.name} · ${formatTokens(plan.monthly_tokens)}` })));
+
+	function fillSubscription(loaded: AdminSubscription) {
+		subscription = loaded;
+		subPlan = loaded.plan.id;
+		subQuota = loaded.quota_override?.toString() ?? '';
+		subUntil = loaded.override_until ? loaded.override_until.slice(0, 10) : '';
+		subNote = '';
+	}
+
+	async function openPlanSheet(userId: string) {
+		activeUserId = userId;
+		sheetKind = 'plan';
+		subscription = null;
+		subError = null;
+		subSaved = false;
+		detailError = null;
+		detailLoading = true;
+		sheetOpen = true;
+		const body = new FormData();
+		body.set('userId', userId);
+		const result = deserialize(await (await fetch('?/loadSubscription', { method: 'POST', body })).text());
+		detailLoading = false;
+		if (result.type === 'success' && result.data?.subscription) fillSubscription(result.data.subscription as AdminSubscription);
+		else detailError = (result.type === 'failure' && (result.data?.error as string)) || m.users_load_failed();
+	}
+
+	const shortDate = (at: string) => new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(new Date(at));
+	const activeEmail = $derived(data.users.find((u) => u.id === activeUserId)?.email ?? '');
 	let activeUserId = $state<string | null>(null);
 	let userDetail = $state<AdminUserDetail | null>(null);
 	let detailLoading = $state(false);
@@ -122,6 +165,14 @@
 				<td><span class="role" data-role={roleKey(user)}>{ROLE_LABELS[roleKey(user)]()}</span></td>
 				<td class="spaces">{user.org_count}</td>
 				<td>
+					<span class="plan-name">{user.plan_name}</span>
+					{#if user.custom_quota}<span class="custom-chip">{m.users_custom_quota()}</span>{/if}
+				</td>
+				<td class="usage-cell">
+					<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
+					<span class="usage-text">{m.usage_of_tokens({ used: formatTokens(user.tokens_used), total: formatTokens(user.monthly_tokens) })}</span>
+				</td>
+				<td>
 					<Menu>
 						{#snippet trigger({ toggle })}
 							<IconButton onclick={toggle} aria-label={m.users_actions_for({ email: user.email })}>
@@ -130,6 +181,7 @@
 						{/snippet}
 						<MenuItem onclick={() => openSheet(user.id, 'user')}>{m.users_update_user()}</MenuItem>
 						<MenuItem onclick={() => openSheet(user.id, 'role')}>{m.users_update_role()}</MenuItem>
+						<MenuItem onclick={() => openPlanSheet(user.id)}>{m.users_plan_quota()}</MenuItem>
 						{#if !user.is_staff}
 							<form method="POST" action="?/promote" use:enhance>
 								<input type="hidden" name="userId" value={user.id} />
@@ -153,6 +205,58 @@
 		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.common_loading()}</p>
 	{:else if detailError}
 		<p class="md-body-medium" style="color: var(--md-sys-color-error)">{detailError}</p>
+	{:else if subscription && sheetKind === 'plan'}
+		<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{m.users_plan_quota()}</h2>
+		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">{activeEmail}</p>
+		<div class="sub-usage mt-4">
+			<span class="sub-usage__label">{m.sub_this_month({ month: monthLabel(subscription.month) })}</span>
+			<WavyProgress value={usageShare(subscription.tokens_used, subscription.monthly_tokens)} tone={subscription.tokens_used >= subscription.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(subscription.tokens_used, subscription.monthly_tokens))} />
+			<span class="sub-usage__numbers">{m.sub_used_of({ used: formatTokensFull(subscription.tokens_used), total: formatTokensFull(subscription.monthly_tokens) })}</span>
+		</div>
+		{#if data.canManageUsers}
+			<form
+				method="POST"
+				action="?/saveSubscription"
+				class="mt-6 flex flex-col gap-3"
+				use:enhance={() => {
+					subError = null;
+					subSaved = false;
+					return async ({ result, update }) => {
+						await update({ reset: false });
+						if (result.type === 'success' && result.data?.subscription) {
+							fillSubscription(result.data.subscription as AdminSubscription);
+							subSaved = true;
+						} else if (result.type === 'failure') {
+							subError = (result.data?.error as string) ?? m.sub_save_failed();
+						}
+					};
+				}}
+			>
+				<input type="hidden" name="userId" value={activeUserId} />
+				<Select name="plan_id" label={m.users_plan()} options={planOptions} bind:value={subPlan} />
+				<TextField id="sub-quota" name="quota_override" type="number" min="0" step="1" label={m.sub_quota()} bind:value={subQuota} supportingText={m.sub_quota_hint()} />
+				{#if subQuota.trim() !== ''}
+					<TextField id="sub-until" name="override_until" type="date" label={m.sub_until()} bind:value={subUntil} supportingText={m.sub_until_hint()} />
+				{/if}
+				<TextField id="sub-note" name="note" label={m.sub_note()} bind:value={subNote} supportingText={m.sub_note_hint()} />
+				{#if subError}<p class="md-body-medium" style="color: var(--md-sys-color-error)" role="alert">{subError}</p>{/if}
+				{#if subSaved}<p class="md-body-medium" style="color: var(--md-sys-color-primary)" role="status">{m.sub_saved()}</p>{/if}
+				<Button type="submit" variant="filled" class="w-fit">{m.sub_save()}</Button>
+			</form>
+		{/if}
+		{#if subscription.history.length > 0}
+			<section class="mt-6">
+				<h3 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.sub_history()}</h3>
+				<List class="mt-2">
+					{#each subscription.history as change (change.created_at)}
+						<ListItem
+							headline={change.quota_override !== null ? `${change.plan_name} · ${formatTokensFull(change.quota_override)}` : change.plan_name}
+							supportingText={[shortDate(change.created_at), change.changed_by_email, change.note].filter(Boolean).join(' · ')}
+						/>
+					{/each}
+				</List>
+			</section>
+		{/if}
 	{:else if userDetail && sheetKind === 'user'}
 		<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{m.users_update_user()}</h2>
 		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">{userDetail.email}</p>
@@ -285,6 +389,35 @@
 		align-items: center;
 		gap: 12px;
 		min-width: 0;
+	}
+	.plan-name {
+		font-weight: 600;
+	}
+	.custom-chip {
+		margin-left: 6px;
+		padding: 2px 8px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+		font-size: 0.6875rem;
+		font-weight: 700;
+	}
+	.usage-cell {
+		min-width: 140px;
+	}
+	.usage-text,
+	.sub-usage__label,
+	.sub-usage__numbers {
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.sub-usage {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 14px 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
 	}
 	.person__email {
 		font-weight: 600;

@@ -361,6 +361,9 @@ pub enum UserSelectionResponse {
 pub struct UserModelsResponse {
     pub admin_models: Vec<UserModelOption>,
     pub selection: Option<UserSelectionResponse>,
+    /// The name of the API key they saved, kept while they use one of Nomi's models: Nomi falls
+    /// back to it when their monthly allowance runs out.
+    pub saved_own_key: Option<String>,
 }
 
 pub async fn get_user_models(
@@ -378,6 +381,10 @@ pub async fn get_user_models(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load selection"))?;
 
+    let saved_own_key = selection_row
+        .as_ref()
+        .filter(|row| row.custom_provider.is_some())
+        .map(|row| row.custom_label.clone().or_else(|| row.custom_model_id.clone()).unwrap_or_default());
     let selection = match selection_row {
         Some(row) => {
             if let Some(admin_model_id) = row.admin_model_id {
@@ -402,7 +409,7 @@ pub async fn get_user_models(
         None => None,
     };
 
-    Ok(Json(UserModelsResponse { admin_models, selection }))
+    Ok(Json(UserModelsResponse { admin_models, selection, saved_own_key }))
 }
 
 #[derive(Deserialize)]

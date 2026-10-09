@@ -230,9 +230,7 @@ pub async fn get_user_llm_selection(pool: &PgPool, user_id: Uuid) -> Result<Opti
 pub async fn set_user_llm_selection_admin(pool: &PgPool, user_id: Uuid, admin_model_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO user_llm_selections (user_id, admin_model_id) VALUES ($1, $2) \
-         ON CONFLICT (user_id) DO UPDATE SET \
-         admin_model_id = $2, custom_label = NULL, custom_provider = NULL, custom_model_id = NULL, \
-         custom_api_key_encrypted = NULL, custom_base_url = NULL, updated_at = now()",
+         ON CONFLICT (user_id) DO UPDATE SET admin_model_id = $2, updated_at = now()",
     )
     .bind(user_id)
     .bind(admin_model_id)

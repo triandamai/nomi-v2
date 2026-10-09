@@ -12,12 +12,14 @@ use crate::routes::llm_models as llm_models_routes;
 use crate::routes::agents as agents_routes;
 use crate::routes::home as home_routes;
 use crate::routes::money as money_routes;
+use crate::routes::notifications as notifications_routes;
 use crate::routes::usage as usage_routes;
 use crate::routes::connections as connections_routes;
 use crate::routes::google_auth as google_auth_routes;
 use crate::routes::reminders as reminders_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
+use crate::routes::plans as plans_routes;
 use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
 use crate::routes::sessions as sessions_routes;
@@ -130,6 +132,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/money", get(money_routes::money_summary))
         .route("/api/money/transactions", post(money_routes::add_transaction))
         .route("/api/money/budgets", put(money_routes::set_budget))
+        .route("/api/money/period", put(money_routes::set_period))
         .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
@@ -208,6 +211,18 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
+        .route("/api/plans", get(plans_routes::list_for_user))
+        .route("/api/admin/plans", get(plans_routes::admin_list).post(plans_routes::admin_create))
+        .route("/api/admin/plans/:id", put(plans_routes::admin_update).delete(plans_routes::admin_delete))
+        .route("/api/admin/plans/:id/default", put(plans_routes::admin_set_default))
+        .route("/api/admin/users/:id/subscription", get(plans_routes::admin_get_subscription).put(plans_routes::admin_put_subscription))
+        .route("/api/notifications", get(notifications_routes::list))
+        .route("/api/notifications/unread", get(notifications_routes::unread))
+        .route("/api/notifications/read-all", post(notifications_routes::mark_all_read))
+        .route("/api/notifications/preferences", get(notifications_routes::get_preferences).put(notifications_routes::put_preferences))
+        .route("/api/notifications/:id/read", post(notifications_routes::mark_read))
+        .route("/api/admin/notifications/broadcast", post(notifications_routes::broadcast))
+        .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))
         .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
         .route(
             "/api/preferences",

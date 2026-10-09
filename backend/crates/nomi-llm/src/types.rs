@@ -114,6 +114,10 @@ pub enum LlmError {
     ProviderError(String),
     #[error("failed to parse provider response: {0}")]
     ParseError(String),
+    /// The person has used their plan's monthly allowance on Nomi's models and has no key of
+    /// their own to fall back on.
+    #[error("monthly token quota used up")]
+    QuotaExceeded,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

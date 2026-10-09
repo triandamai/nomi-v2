@@ -15,6 +15,8 @@
 	import IconHome from '$lib/components/icons/IconHome.svelte';
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import IconBell from '$lib/components/icons/IconBell.svelte';
+	import IconInbox from '$lib/components/icons/IconInbox.svelte';
+	import { inbox } from '$lib/notifications.svelte';
 	import IconWallet from '$lib/components/icons/IconWallet.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
@@ -56,14 +58,15 @@
 	// fully expanded regardless of what's persisted for the desktop rail.
 	const effectiveCollapsed = $derived(collapsed && !mobileOpen);
 
-	const NAV = [
+	const NAV = $derived([
 		{ href: '/', label: m.nav_home(), icon: IconHome },
 		{ href: '/chats', label: m.nav_chats(), icon: IconChatBubble },
 		{ href: '/projects', label: m.nav_projects(), icon: IconFolder },
 		{ href: '/money', label: m.nav_money(), icon: IconWallet },
 		{ href: '/reminders', label: m.nav_reminders(), icon: IconBell },
 		{ href: '/memory', label: m.nav_memory(), icon: IconMemory },
-	];
+		{ href: '/notifications', label: m.notif_title(), icon: IconInbox, badge: inbox.unread },
+	]);
 
 	function isActive(href: string): boolean {
 		const path = page.url.pathname;
@@ -147,7 +150,7 @@
 			<div class="usage" class:usage--over={share >= 1}>
 				<a href="/billing" class="usage__meter" onclick={() => (mobileOpen = false)} aria-label={m.usage_meter_label({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}>
 					<span class="usage__top">
-						<span class="usage__plan">{m.usage_plan_free()}</span>
+						<span class="usage__plan">{usage.plan.name}</span>
 						<span class="usage__share">{formatShare(share)}</span>
 					</span>
 					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'glow'} label={m.usage_progress_label({ share: formatShare(share) })} />

@@ -18,20 +18,39 @@ async function failWith(response: Response, fallback: string) {
 }
 
 export const actions: Actions = {
-	addExpense: async ({ request, cookies, fetch }) => {
+	addTransaction: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
+		const kind = data.get('kind') === 'income' ? 'income' : 'expense';
+		let items: { name: string; quantity: number; unit_amount: number }[] = [];
+		try {
+			const parsed = JSON.parse(String(data.get('items_json') ?? '[]'));
+			if (Array.isArray(parsed)) items = parsed;
+		} catch {
+			items = [];
+		}
+		const amount = Number(data.get('amount'));
 		const body = {
-			amount: Number(data.get('amount')),
+			kind,
+			// With items, the total is theirs; an amount typed alongside is ignored.
+			amount: items.length ? undefined : amount,
+			items: items.length ? items : undefined,
 			category: String(data.get('category') ?? '').trim(),
 			description: String(data.get('description') ?? '').trim(),
 			occurred_at: String(data.get('occurred_at') ?? '') || undefined,
 		};
-		if (!body.description || !body.category || !(body.amount > 0)) {
+		if (!body.description || !body.category || (!items.length && !(amount > 0))) {
 			return fail(400, { error: m.money_expense_missing() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/money/transactions', { method: 'POST', body: JSON.stringify(body) });
 		if (!response.ok) return failWith(response, m.money_expense_failed());
-		return { saved: 'expense' };
+		return { saved: kind };
+	},
+	setPeriod: async ({ request, cookies, fetch }) => {
+		const startDay = Number((await request.formData()).get('start_day'));
+		if (!Number.isInteger(startDay) || startDay < 1 || startDay > 28) return fail(400, { error: m.money_period_invalid() });
+		const response = await apiFetch(fetch, cookies, '/api/money/period', { method: 'PUT', body: JSON.stringify({ start_day: startDay }) });
+		if (!response.ok) return failWith(response, m.money_period_failed());
+		return { saved: 'period' };
 	},
 	setBudget: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();

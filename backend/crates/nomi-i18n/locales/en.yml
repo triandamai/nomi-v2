@@ -27,6 +27,7 @@ error:
   approval_handled: "That approval was already handled."
   internal: "Something went wrong on my side. Send your message again."
   llm_unreachable: "I couldn't reach the AI provider. Check the server's connection, then send your message again."
+  quota_used_up: "You've used this month's allowance on Nomi's models. Add your own API key in Models to keep going, or ask for a bigger plan in Billing & usage."
   llm_unreadable: "The AI provider sent back a reply I couldn't read. Send your message again; if it keeps happening, try another model in Settings."
   llm_no_credits: "I couldn't reply because %{account} is out of credits for this request. Add credits or raise the API key's limit with %{provider}, then send your message again."
   llm_bad_key: "I couldn't reply because %{who} rejected the API key. Check the key in Settings, then try again."
@@ -115,3 +116,21 @@ sign_in:
 email:
   crew_label: "Nomi crew"
   tagline: "Nomi · a small crew of agents that remembers you."
+notify:
+  open_in_app: "Open Nomi and go to %{where} to see it."
+  reason_account: "You're getting this because something changed on your Nomi account. You can turn these emails off in Notifications."
+  reason_promo: "You're getting this because you allowed news and offers from Nomi. You can turn these emails off in Notifications."
+quota:
+  warning_title: "You've used %{percent}% of this month's allowance"
+  warning_body: "You've used %{used} of your %{quota} tokens on Nomi's models this month. It resets on the 1st. Adding your own API key in Models lets Nomi keep going after that."
+  used_up_title: "This month's allowance is used up"
+  used_up_body: "You've used all %{quota} tokens on Nomi's models this month, so Nomi can't answer until it resets on the 1st. Add your own API key in Models to keep going now, or ask for a bigger plan."
+  own_key_title: "Nomi switched to your own API key"
+  own_key_body: "You've used all %{quota} tokens on Nomi's models this month, so Nomi is using the API key you saved (%{model}) until it resets on the 1st. Calls on your key are billed by your provider."
+subscription:
+  plan_title: "You're on %{plan} now"
+  plan_body: "Your plan changed to %{plan}. You can use %{quota} tokens a month on Nomi's models."
+  quota_title: "Your monthly allowance is now %{quota} tokens"
+  quota_body: "Your allowance on Nomi's models changed to %{quota} tokens a month%{until}."
+  until: ", until %{date}"
+  note: "Note from the Nomi team: %{note}"

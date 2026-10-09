@@ -38,6 +38,9 @@ async fn main() {
         tracing::info!("S3_BUCKET not set — avatar upload disabled, attachments kept on disk");
     }
 
+    // Notifications are emailed through the same SMTP settings as sign-in codes.
+    nomi_server::notifications::init_mailer(nomi_mail::from_env());
+
     // Chat attachments go to the same bucket as avatars, or to disk without one.
     nomi_storage::blob::init_attachment_store(s3.clone());
 

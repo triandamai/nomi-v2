@@ -27,6 +27,7 @@ error:
   approval_handled: "Persetujuan itu sudah ditangani, kok."
   internal: "Maaf, ada yang kurang beres di sisiku. Silakan kirim pesanmu sekali lagi."
   llm_unreachable: "Maaf, aku belum bisa menghubungi penyedia AI. Silakan periksa koneksi server, lalu kirim pesanmu lagi."
+  quota_used_up: "Jatah bulan ini untuk model Nomi sudah habis. Tambahkan API key milikmu di Model agar bisa lanjut, atau minta paket yang lebih besar di Tagihan & pemakaian."
   llm_unreadable: "Maaf, penyedia AI mengirim balasan yang tidak bisa aku baca. Silakan kirim pesanmu lagi; kalau masih terjadi, coba pilih model lain di Pengaturan."
   llm_no_credits: "Maaf, aku belum bisa membalas karena kredit %{account} habis untuk permintaan ini. Silakan tambah kredit atau naikkan batas API key di %{provider}, lalu kirim pesanmu lagi."
   llm_bad_key: "Maaf, aku belum bisa membalas karena %{who} menolak API key-nya. Silakan periksa key-nya di Pengaturan, lalu coba lagi."
@@ -115,3 +116,21 @@ sign_in:
 email:
   crew_label: "Kru Nomi"
   tagline: "Nomi · kru kecil para agen yang selalu ingat Anda."
+notify:
+  open_in_app: "Buka Nomi lalu ke %{where} untuk melihatnya."
+  reason_account: "Kamu menerima email ini karena ada perubahan di akun Nomi-mu. Email seperti ini bisa dimatikan di Notifikasi."
+  reason_promo: "Kamu menerima email ini karena mengizinkan kabar dan penawaran dari Nomi. Email seperti ini bisa dimatikan di Notifikasi."
+quota:
+  warning_title: "Kamu sudah memakai %{percent}% jatah bulan ini"
+  warning_body: "Bulan ini kamu sudah memakai %{used} dari %{quota} token di model Nomi. Jatahnya kembali penuh setiap tanggal 1. Tambahkan API key milikmu di Model supaya Nomi tetap bisa lanjut setelah itu."
+  used_up_title: "Jatah bulan ini sudah habis"
+  used_up_body: "Kamu sudah memakai seluruh %{quota} token di model Nomi bulan ini, jadi Nomi belum bisa menjawab sampai jatahnya kembali tanggal 1. Tambahkan API key milikmu di Model untuk lanjut sekarang, atau minta paket yang lebih besar."
+  own_key_title: "Nomi beralih ke API key milikmu"
+  own_key_body: "Kamu sudah memakai seluruh %{quota} token di model Nomi bulan ini, jadi Nomi memakai API key yang kamu simpan (%{model}) sampai jatahnya kembali tanggal 1. Pemakaian dengan key-mu ditagih oleh penyedianya."
+subscription:
+  plan_title: "Sekarang kamu memakai paket %{plan}"
+  plan_body: "Paketmu berubah menjadi %{plan}. Kamu bisa memakai %{quota} token sebulan di model Nomi."
+  quota_title: "Jatah bulananmu sekarang %{quota} token"
+  quota_body: "Jatahmu di model Nomi berubah menjadi %{quota} token sebulan%{until}."
+  until: ", sampai %{date}"
+  note: "Catatan dari tim Nomi: %{note}"

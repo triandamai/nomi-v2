@@ -17,7 +17,7 @@
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import Money from '$lib/components/Money.svelte';
-	import { budgetState, categoryLook, compareMonths, fillDays, formatAmount, monthLabel, monthName, niceScale, shiftMonth } from '$lib/money';
+	import { budgetState, categoryLook, compareMonths, fillPeriod, formatAmount, itemsTotal, monthName, niceScale, periodLabel, shiftMonth, type ItemDraft } from '$lib/money';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import type { ActionData, PageData } from './$types';
 
@@ -25,6 +25,11 @@
 
 	// Bottom sheets for the page's two edits, and the snackbar that confirms them.
 	let expenseOpen = $state(false);
+	let kind = $state<'expense' | 'income'>('expense');
+	let items = $state<ItemDraft[]>([]);
+	const itemized = $derived(itemsTotal(items));
+	let periodOpen = $state(false);
+	let startDay = $state('1');
 	let budgetOpen = $state(false);
 	let budgetCategory = $state('');
 	let budgetLimit = $state('');
@@ -37,6 +42,15 @@
 		budgetCategory = category;
 		budgetLimit = limitCents ? String(limitCents / 100) : '';
 		budgetOpen = true;
+	}
+	function openTransaction(as: 'expense' | 'income' = 'expense') {
+		kind = as;
+		items = [];
+		expenseOpen = true;
+	}
+	function openPeriod() {
+		startDay = String(money?.start_day ?? 1);
+		periodOpen = true;
 	}
 	function notify(message: string) {
 		snackbarMessage = message;
@@ -64,7 +78,8 @@
 	const comparison = $derived(
 		money ? compareMonths(money.total_cents, money.previous_total_cents, monthName(shiftMonth(money.month, -1))) : null,
 	);
-	const days = $derived(money ? fillDays(money.month, money.by_day) : []);
+	const days = $derived(money ? fillPeriod(money.period_start, money.period_end, money.by_day) : []);
+	const period = $derived(money ? periodLabel(money.month, money.period_start, money.period_end, money.start_day) : '');
 	const daysWithSpending = $derived(days.filter((d) => d.cents > 0).length);
 	const dayScale = $derived(niceScale(Math.max(0, ...days.map((d) => d.cents)) / 100));
 	const topCategory = $derived(money?.by_category[0] ?? null);
@@ -81,7 +96,9 @@
 		if (!money) return [];
 		const needle = query.trim().toLowerCase();
 		return money.transactions.filter(
-			(t) => (!category || t.category === category) && (!needle || t.description.toLowerCase().includes(needle)),
+			(t) =>
+				(!category || t.category === category) &&
+				(!needle || t.description.toLowerCase().includes(needle) || t.items.some((i) => i.name.toLowerCase().includes(needle))),
 		);
 	});
 
@@ -97,6 +114,14 @@
 		} catch {
 			return iso.slice(0, 10);
 		}
+	}
+	function txDetails(t: { category: string; occurred_at: string; items: { name: string }[] }): string {
+		const parts = [t.category, txDate(t.occurred_at)];
+		if (t.items.length) {
+			const names = t.items.slice(0, 3).map((i) => i.name).join(', ');
+			parts.push(t.items.length > 3 ? m.money_items_more({ names, count: t.items.length - 3 }) : names);
+		}
+		return parts.join(' · ');
 	}
 	function share(cents: number): string {
 		return money && money.total_cents > 0 ? `${Math.round((cents / money.total_cents) * 100)}%` : '';
@@ -132,9 +157,9 @@
 			<div class="money__actions">
 				<AgentShape agent="money" size={64} class="money__mark" />
 				<Button variant="tonal" size="m" onclick={() => openBudget()}>{m.money_set_budget()}</Button>
-				<Button variant="gradient" size="m" onclick={() => (expenseOpen = true)}>
+				<Button variant="gradient" size="m" onclick={() => openTransaction()}>
 					<IconPlus size={20} />
-					{m.money_add_expense()}
+					{m.money_add_transaction()}
 				</Button>
 			</div>
 		</header>
@@ -144,7 +169,7 @@
 		{:else}
 			<nav class="months" aria-label={m.money_month()}>
 				<IconButton variant="filled-tonal" href="?month={shiftMonth(money.month, -1)}" aria-label={m.money_prev_month()}><IconChevronLeft /></IconButton>
-				<span class="months__current">{monthLabel(money.month)}</span>
+				<span class="months__current">{period}</span>
 				<IconButton
 					variant="filled-tonal"
 					href={money.month < thisMonth ? `?month=${shiftMonth(money.month, 1)}` : undefined}
@@ -153,13 +178,16 @@
 				>
 					<IconChevronRight />
 				</IconButton>
+				<Button variant="text" size="s" onclick={openPeriod}>
+					{money.start_day === 1 ? m.money_period_calendar() : m.money_period_starts({ day: money.start_day })}
+				</Button>
 			</nav>
 
 			{#if money.transaction_count === 0}
 				<section class="empty">
 					<AgentShape agent="money" size={96} />
 					<div>
-						<h2 class="md-headline-small">{m.money_empty_title({ month: monthLabel(money.month) })}</h2>
+						<h2 class="md-headline-small">{m.money_empty_title({ month: period })}</h2>
 						<p class="md-body-large empty__body">{m.money_empty_body()}</p>
 					</div>
 				</section>
@@ -186,6 +214,12 @@
 							<dt>{m.money_per_day()}</dt>
 							<dd><Money value={formatAmount(daysWithSpending ? money.total_cents / daysWithSpending : 0)} /></dd>
 						</div>
+						{#if money.income_cents > 0}
+							<div class="tile">
+								<dt>{m.money_income()}</dt>
+								<dd class="tile__income"><Money value={formatAmount(money.income_cents)} /></dd>
+							</div>
+						{/if}
 						{#if topCategory}
 							<div class="tile">
 								<dt>{m.money_biggest()}</dt>
@@ -313,7 +347,7 @@
 							</div>
 						{:else}
 							<div class="daychart">
-								<svg viewBox="0 0 {CHART_W} {CHART_H}" class="daychart__svg" role="img" aria-label={m.money_day_chart({ month: monthLabel(money.month) })}>
+								<svg viewBox="0 0 {CHART_W} {CHART_H}" class="daychart__svg" role="img" aria-label={m.money_day_chart({ month: period })}>
 									{#each dayScale.ticks as tick (tick)}
 										<line x1={AXIS_W} x2={CHART_W} y1={y(tick)} y2={y(tick)} class="daychart__grid" />
 										<text x={AXIS_W - 8} y={y(tick) + 4} class="daychart__tick" text-anchor="end">
@@ -326,7 +360,7 @@
 											<path d={barPath(x, barW, y(d.cents / 100))} class="daychart__bar" class:daychart__bar--dim={hoverDay !== null && hoverDay !== d.day} />
 										{/if}
 										{#if d.day === 1 || d.day % 7 === 0}
-											<text x={x + barW / 2} y={CHART_H - 4} class="daychart__tick" text-anchor="middle">{d.day}</text>
+											<text x={x + barW / 2} y={CHART_H - 4} class="daychart__tick" text-anchor="middle">{d.dom}</text>
 										{/if}
 										<rect
 											x={AXIS_W + (d.day - 1) * slot}
@@ -380,12 +414,14 @@
 						<List class="tx">
 							{#each visibleTransactions as t (t.id)}
 								{@const look = categoryLook(t.category)}
-								<ListItem headline={t.description} supportingText="{t.category} · {txDate(t.occurred_at)}">
+								<ListItem headline={t.description} supportingText={txDetails(t)}>
 									{#snippet leading()}
 										<AgentShape shape={look.shape} tone={look.tone} size={36} />
 									{/snippet}
 									{#snippet trailing()}
-										<span class="tx__amount"><Money value={formatAmount(t.amount_cents)} /></span>
+										<span class="tx__amount" class:tx__amount--income={t.kind === 'income'}>
+											{#if t.kind === 'income'}<span aria-label={m.money_income()}>+</span>{/if}<Money value={formatAmount(t.amount_cents)} />
+										</span>
 									{/snippet}
 								</ListItem>
 							{/each}
@@ -398,17 +434,43 @@
 </div>
 
 <BottomSheet bind:open={expenseOpen}>
-	<form method="POST" action="?/addExpense" class="sheet" use:enhance={sheetSubmit(() => (expenseOpen = false), m.money_expense_added())}>
+	<form method="POST" action="?/addTransaction" class="sheet" use:enhance={sheetSubmit(() => (expenseOpen = false), kind === 'income' ? m.money_income_added() : m.money_expense_added())}>
 		<div class="sheet__head">
 			<AgentShape agent="money" size={36} />
-			<h2 class="md-headline-small-emphasized sheet__title">{m.money_add_expense_title()}</h2>
+			<h2 class="md-headline-small-emphasized sheet__title">{kind === 'income' ? m.money_add_income_title() : m.money_add_expense_title()}</h2>
 		</div>
-		<TextField id="expense-amount" name="amount" label={m.common_amount()} type="number" inputmode="decimal" min="0.01" step="0.01" required />
-		<TextField id="expense-description" name="description" label={m.money_what_for()} required maxlength={200} />
+		<input type="hidden" name="kind" value={kind} />
+		<input type="hidden" name="items_json" value={JSON.stringify(itemized.items)} />
+		<div class="sheet__chips" role="radiogroup" aria-label={m.money_kind()}>
+			<Chip variant="filter" type="button" selected={kind === 'expense'} onclick={() => (kind = 'expense')}>{m.money_expense()}</Chip>
+			<Chip variant="filter" type="button" selected={kind === 'income'} onclick={() => (kind = 'income')}>{m.money_income()}</Chip>
+		</div>
+		{#if itemized.items.length}
+			<p class="sheet__total">{m.money_items_total()} <Money value={formatAmount(itemized.cents)} /></p>
+		{:else}
+			<TextField id="expense-amount" name="amount" label={m.common_amount()} type="number" inputmode="decimal" min="0.01" step="0.01" required />
+		{/if}
+		<TextField id="expense-description" name="description" label={kind === 'income' ? m.money_where_from() : m.money_what_for()} required maxlength={200} />
 		<TextField id="expense-category" name="category" label={m.common_category()} required maxlength={40} list="money-categories" />
 		<datalist id="money-categories">
 			{#each knownCategories as c (c)}<option value={c}></option>{/each}
 		</datalist>
+		<fieldset class="items">
+			<legend class="sheet__label">{m.money_items()}</legend>
+			{#if items.length === 0}<p class="items__hint">{m.money_items_hint()}</p>{/if}
+			{#each items as item, i (i)}
+				<div class="items__row">
+					<input class="items__input items__name" bind:value={item.name} placeholder={m.money_item_name()} aria-label={m.money_item_name()} maxlength="120" />
+					<input class="items__input items__qty" bind:value={item.quantity} type="number" inputmode="decimal" min="0.01" step="any" placeholder="1" aria-label={m.money_item_quantity()} />
+					<input class="items__input items__price" bind:value={item.price} type="number" inputmode="decimal" min="0" step="0.01" placeholder={m.money_item_price()} aria-label={m.money_item_price()} />
+					<IconButton type="button" variant="standard" aria-label={m.money_item_remove()} onclick={() => items.splice(i, 1)}><IconClose /></IconButton>
+				</div>
+			{/each}
+			<Button type="button" variant="text" size="s" onclick={() => items.push({ name: '', quantity: '1', price: '' })}>
+				<IconPlus size={18} />
+				{m.money_item_add()}
+			</Button>
+		</fieldset>
 		<label class="sheet__field">
 			<span class="sheet__label">{m.common_date()}</span>
 			<input type="date" name="occurred_at" value={today} max={today} class="sheet__date" />
@@ -416,7 +478,29 @@
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
 			<Button type="button" variant="text" onclick={() => (expenseOpen = false)}>{m.common_cancel()}</Button>
-			<Button type="submit" variant="filled" size="m" disabled={saving}>{m.money_add_expense()}</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving}>{kind === 'income' ? m.money_add_income() : m.money_add_expense()}</Button>
+		</div>
+	</form>
+</BottomSheet>
+
+<BottomSheet bind:open={periodOpen}>
+	<form method="POST" action="?/setPeriod" class="sheet" use:enhance={sheetSubmit(() => (periodOpen = false), m.money_period_saved())}>
+		<div class="sheet__head">
+			<AgentShape agent="money" size={36} />
+			<h2 class="md-headline-small-emphasized sheet__title">{m.money_period_title()}</h2>
+		</div>
+		<p class="items__hint">{m.money_period_hint()}</p>
+		<TextField id="period-start" name="start_day" label={m.money_period_day()} type="number" inputmode="numeric" min="1" max="28" step="1" bind:value={startDay} required />
+		<div class="sheet__chips">
+			<Chip variant="filter" type="button" selected={startDay === '1'} onclick={() => (startDay = '1')}>{m.money_period_calendar()}</Chip>
+			{#each ['25', '28'] as day (day)}
+				<Chip variant="filter" type="button" selected={startDay === day} onclick={() => (startDay = day)}>{m.money_period_starts({ day })}</Chip>
+			{/each}
+		</div>
+		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
+		<div class="sheet__actions">
+			<Button type="button" variant="text" onclick={() => (periodOpen = false)}>{m.common_cancel()}</Button>
+			<Button type="submit" variant="filled" size="m" disabled={saving}>{m.common_save()}</Button>
 		</div>
 	</form>
 </BottomSheet>
@@ -941,5 +1025,51 @@
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		text-align: right;
+	}
+	.tx__amount--income,
+	.tile__income {
+		color: var(--md-sys-color-tertiary);
+	}
+	.sheet__total {
+		margin: 0;
+		font-size: 1.125rem;
+		font-weight: 650;
+	}
+	.items {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+	.items__hint {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
+	.items__row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 4.5rem 6.5rem auto;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+	}
+	.items__input {
+		min-width: 0;
+		height: 44px;
+		padding: 0 12px;
+		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		font: inherit;
+	}
+	@media (max-width: 420px) {
+		.items__row {
+			grid-template-columns: minmax(0, 1fr) 3.5rem 5.5rem auto;
+			gap: 6px;
+		}
 	}
 </style>

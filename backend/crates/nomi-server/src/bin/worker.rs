@@ -36,6 +36,8 @@ async fn main() {
     let project_storage = nomi_storage::build_local_fs_store();
     // Turns open attached files from the same place the server stores them.
     nomi_storage::blob::init_attachment_store(s3.clone());
+    // Quota notices from turns are emailed through the same SMTP settings as the server's.
+    nomi_server::notifications::init_mailer(nomi_mail::from_env());
 
     // Memory learning, chat summaries and tidying run beside the turn worker, as they do inline.
     tokio::spawn(nomi_server::memory_worker::run(pool.clone(), settings_key, http_client.clone()));

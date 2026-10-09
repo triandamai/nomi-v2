@@ -16,6 +16,8 @@
 	import IconLogout from '$lib/components/icons/IconLogout.svelte';
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import IconPalette from '$lib/components/icons/IconPalette.svelte';
+	import IconWallet from '$lib/components/icons/IconWallet.svelte';
+	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
 	import IconTool from '$lib/components/icons/IconTool.svelte';
@@ -56,7 +58,13 @@
 					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
 				]
 			: []),
-		...(canViewUsers ? [{ href: '/admin/users', label: m.admin_users(), icon: IconPerson }] : []),
+		...(canViewUsers
+			? [
+					{ href: '/admin/users', label: m.admin_users(), icon: IconPerson },
+					{ href: '/admin/plans', label: m.admin_plans(), icon: IconWallet },
+					{ href: '/admin/notifications', label: m.admin_notifications(), icon: IconInbox },
+				]
+			: []),
 	]);
 
 	function isActive(href: string): boolean {
