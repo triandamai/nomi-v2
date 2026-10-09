@@ -57,6 +57,23 @@ describe('upload-proxy', () => {
 		expect(upload.body.equals(body)).toBe(true);
 	});
 
+	it('sends a profile picture to the backend\'s avatar route', async () => {
+		const backend = await startFakeBackend(200);
+		const proxy = await startProxy(backend.url);
+		cleanups.push(() => backend.server.close(), () => proxy.server.close());
+
+		const response = await fetch(`${proxy.url}/profile/avatar`, {
+			method: 'POST',
+			headers: { cookie: 'access_token=tok', 'content-type': 'image/jpeg' },
+			body: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+		});
+		expect(response.status).toBe(200);
+		const [upload] = backend.received;
+		expect(upload.url).toBe('/api/profile/avatar');
+		expect(upload.headers.authorization).toBe('Bearer tok');
+		expect(upload.headers['content-type']).toBe('image/jpeg');
+	});
+
 	it('refuses uploads without a session or from another site, and leaves other requests alone', async () => {
 		const backend = await startFakeBackend();
 		const proxy = await startProxy(backend.url);

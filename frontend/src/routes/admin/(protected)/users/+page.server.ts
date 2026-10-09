@@ -5,13 +5,16 @@ import type { AdminSubscription, AdminUserDetail, AdminUserListResponse, Plan } 
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZES = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async ({ url, cookies, fetch }) => {
 	const query = url.searchParams.get('query') ?? '';
-	const page = Number(url.searchParams.get('page') ?? '1') || 1;
+	const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
+	const askedSize = Number(url.searchParams.get('size'));
+	const pageSize = PAGE_SIZES.includes(askedSize) ? askedSize : DEFAULT_PAGE_SIZE;
 
-	const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
+	const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
 	if (query) params.set('query', query);
 
 	const [usersResponse, plansResponse] = await Promise.all([
@@ -23,7 +26,7 @@ export const load: PageServerLoad = async ({ url, cookies, fetch }) => {
 		: { users: [], total: 0 };
 	const plans: Plan[] = plansResponse.ok ? ((await plansResponse.json()) as Plan[]) : [];
 
-	return { users: result.users, total: result.total, page, pageSize: PAGE_SIZE, query, plans };
+	return { users: result.users, total: result.total, page, pageSize, pageSizes: PAGE_SIZES, query, plans };
 };
 
 function requireUserId(data: FormData): string | null {

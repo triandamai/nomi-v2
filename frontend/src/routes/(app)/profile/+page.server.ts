@@ -31,22 +31,4 @@ export const actions: Actions = {
 		}
 		return { success: true };
 	},
-
-	requestAvatarUploadUrl: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const contentType = data.get('content_type');
-		if (typeof contentType !== 'string' || !contentType) {
-			return fail(400, { error: m.err_missing_content_type() });
-		}
-		const response = await apiFetch(fetch, cookies, '/api/profile/avatar/upload-url', {
-			method: 'POST',
-			body: JSON.stringify({ content_type: contentType }),
-		});
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || m.err_avatar_upload() });
-		}
-		const result = (await response.json()) as { upload_url: string; public_url: string };
-		return { uploadUrl: result.upload_url, publicUrl: result.public_url };
-	},
 };

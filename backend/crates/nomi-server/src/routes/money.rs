@@ -42,6 +42,10 @@ pub struct Transaction {
     pub description: String,
     /// "expense" or "income".
     pub kind: String,
+    /// Who added it: "manual" (the person), "agent" (Finley, from a chat) or "import".
+    pub source: String,
+    /// When it was recorded (`occurred_at` is when it happened).
+    pub created_at: DateTime<Utc>,
     pub items: Vec<TransactionItem>,
 }
 
@@ -155,8 +159,9 @@ pub async fn money_summary(
     .await
     .map_err(internal)?;
 
-    let transactions: Vec<(Uuid, DateTime<Utc>, i64, String, String, String)> = sqlx::query_as(
-        "SELECT id, occurred_at, amount_cents, category, description, kind FROM money_transactions \
+    #[allow(clippy::type_complexity)]
+    let transactions: Vec<(Uuid, DateTime<Utc>, i64, String, String, String, String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT id, occurred_at, amount_cents, category, description, kind, source, created_at FROM money_transactions \
          WHERE user_id = $1 AND occurred_at >= $2 AND occurred_at < $3 ORDER BY occurred_at DESC LIMIT $4",
     )
     .bind(user_id)
@@ -211,10 +216,10 @@ pub async fn money_summary(
         by_day: by_day.into_iter().map(|(date, cents)| DayTotal { date, cents }).collect(),
         transactions: transactions
             .into_iter()
-            .map(|(id, occurred_at, amount_cents, category, description, kind)| {
+            .map(|(id, occurred_at, amount_cents, category, description, kind, source, created_at)| {
                 let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut items).into_iter().partition(|i| i.transaction_id == id);
                 items = rest;
-                Transaction { id, occurred_at, amount_cents, category, description, kind, items: mine }
+                Transaction { id, occurred_at, amount_cents, category, description, kind, source, created_at, items: mine }
             })
             .collect(),
         months,

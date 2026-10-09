@@ -2,10 +2,14 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { readCookie, resolveClientVersion } from './ws-proxy.js';
 
-// Chat attachments (up to 50 MB) stream from the browser straight to the backend here, before
-// SvelteKit's handler, whose body limit is far smaller. The same contract as
-// src/routes/(app)/attachments/+server.ts (which serves `vite dev`): POST /attachments with the
-// raw file as the body; a 401 goes back so the browser can refresh its session and retry.
+// Chat attachments (up to 50 MB) and profile pictures stream from the browser straight to the
+// backend here, before SvelteKit's handler, whose body limit is far smaller. The same contract as
+// src/routes/(app)/attachments/+server.ts and src/routes/(app)/profile/avatar/+server.ts (which
+// serve `vite dev`): POST the raw file as the body; a 401 goes back so the browser can refresh its
+// session and retry.
+
+/** Browser path → backend path. */
+const UPLOAD_ROUTES = { '/attachments': '/api/attachments', '/profile/avatar': '/api/profile/avatar' };
 
 const PASSED_HEADERS = ['content-type', 'content-length', 'x-file-name', 'x-attachment-kind', 'x-transcript'];
 
@@ -23,14 +27,15 @@ function sameOrigin(req) {
 }
 
 /**
- * Handles `POST /attachments`; returns false for every other request.
+ * Handles `POST /attachments` and `POST /profile/avatar`; returns false for every other request.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  * @param {{ apiUrl?: string, clientVersion?: string }} [options]
  */
 export function handleUpload(req, res, options = {}) {
 	const path = (req.url ?? '').split('?')[0];
-	if (req.method !== 'POST' || path !== '/attachments') return false;
+	const backendPath = Object.hasOwn(UPLOAD_ROUTES, path) ? UPLOAD_ROUTES[/** @type {keyof typeof UPLOAD_ROUTES} */ (path)] : undefined;
+	if (req.method !== 'POST' || !backendPath) return false;
 
 	// Cookies ride along on cross-site requests; an upload must come from Nomi's own pages.
 	if (!sameOrigin(req)) {
@@ -44,7 +49,7 @@ export function handleUpload(req, res, options = {}) {
 	}
 
 	const apiUrl = options.apiUrl ?? process.env.API_URL ?? 'http://localhost:8080';
-	const target = new URL('/api/attachments', apiUrl);
+	const target = new URL(backendPath, apiUrl);
 	/** @type {Record<string, string>} */
 	const headers = { authorization: `Bearer ${accessToken}`, 'x-client-version': resolveClientVersion(options) };
 	for (const name of PASSED_HEADERS) {
