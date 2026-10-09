@@ -121,7 +121,7 @@ async fn home_reports_what_happened_whats_due_today_and_open_plans(pool: PgPool)
     let (status, home) = authed(router.clone(), "GET", "/api/home", &token, None).await;
     assert_eq!(status, StatusCode::OK);
     let out = home["while_you_were_out"].as_array().unwrap();
-    assert!(out.iter().any(|i| i["kind"] == "finished" && i["title"] == "Finley finished Find idle subscriptions"), "{out:?}");
+    assert!(out.iter().any(|i| i["kind"] == "finished" && i["title"] == "Dana finished Find idle subscriptions"), "{out:?}");
     // The reminder is due later today, unless the test runs in the last minute of the UTC day.
     let today = home["today"].as_array().unwrap();
     assert!(today.is_empty() || today[0]["label"] == "Call Mum back");
@@ -161,7 +161,7 @@ async fn home_shows_four_per_card_and_each_section_pages_through_the_rest(pool: 
     assert_eq!(status, StatusCode::OK);
     assert_eq!((first["total"].as_u64(), first["page"].as_u64(), first["per_page"].as_u64()), (Some(7), Some(1), Some(5)));
     assert_eq!(first["items"].as_array().unwrap().len(), 5);
-    assert_eq!(first["items"][0]["title"], "Finley finished Task 0");
+    assert_eq!(first["items"][0]["title"], "Dana finished Task 0");
     let (_, second) = authed(router.clone(), "GET", "/api/home/updates?page=2&per_page=5", &token, None).await;
     assert_eq!(second["items"].as_array().unwrap().len(), 2);
     // Reading a section doesn't count as a new visit: Home's window stays put.

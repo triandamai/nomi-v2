@@ -6,12 +6,12 @@
 pub fn crew_name(agent_type: &str) -> Option<&'static str> {
     Some(match agent_type {
         "chitchat" => "Nomi",
-        "money" => "Finley",
-        "reminders" => "Cadence",
-        "files" => "Paige",
-        "planning" => "Miles",
-        "coding" => "Ada",
-        "workspace" => "Sloane",
+        "money" => "Dana",
+        "reminders" => "Kala",
+        "files" => "Maya",
+        "planning" => "Rena",
+        "coding" => "Koda",
+        "workspace" => "Tara",
         _ => return None,
     })
 }
@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn names_the_crew_and_title_cases_the_rest() {
-        assert_eq!(display_name_for("money"), "Finley");
+        assert_eq!(display_name_for("money"), "Dana");
         assert_eq!(display_name_for("chitchat"), "Nomi");
         assert_eq!(display_name_for("supervisor"), "Supervisor");
     }

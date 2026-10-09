@@ -31,7 +31,7 @@ pub trait SubAgent: Send + Sync {
     fn intent_label(&self) -> Cow<'static, str>;
     fn intent_description(&self) -> Cow<'static, str>;
 
-    /// Human-readable name shown on this agent's chat bubbles (e.g. "Finley" for the money
+    /// Human-readable name shown on this agent's chat bubbles (e.g. "Dana" for the money
     /// agent, stored on `messages.agent_display_name` at insert time): the crew name from
     /// `crate::crew`, else Title Case of `agent_type()`. Overridden by `DynamicAgent`, which
     /// uses its own admin-configured name instead of its type (a stringified UUID).

@@ -2,15 +2,15 @@
 // backend/crates/nomi-agent-core/src/crew.rs). Code and data keep using the agent_type.
 export const CREW_NAMES: Record<string, string> = {
 	chitchat: 'Nomi',
-	money: 'Finley',
-	reminders: 'Cadence',
-	files: 'Paige',
-	planning: 'Miles',
-	coding: 'Ada',
-	workspace: 'Sloane',
+	money: 'Dana',
+	reminders: 'Kala',
+	files: 'Maya',
+	planning: 'Rena',
+	coding: 'Koda',
+	workspace: 'Tara',
 };
 
-/** agent_type by crew name, lowercased ("finley" → "money"). */
+/** agent_type by crew name, lowercased ("dana" → "money"). */
 export const CREW_TYPE_BY_NAME: Record<string, string> = Object.fromEntries(
 	Object.entries(CREW_NAMES).map(([type, name]) => [name.toLowerCase(), type]),
 );

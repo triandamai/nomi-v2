@@ -11,14 +11,14 @@ fn main() {
         ("nomi-code", Sender::nomi(), "Your sign-in code", vec!["Here's your code to sign in to Nomi:".to_string()], Some("482913")),
         (
             "money",
-            Sender::crew("money", "Finley"),
+            Sender::crew("money", "Dana"),
             "You're close to your food budget",
             vec!["You've spent Rp1.840.000 of Rp2.000.000 on food this month, with 9 days to go.".into(), "Want me to suggest a few easy swaps for the rest of the month?".into()],
             None,
         ),
         (
             "reminders",
-            Sender::crew("reminders", "Cadence"),
+            Sender::crew("reminders", "Kala"),
             "Book flights before the fare jumps",
             vec!["You asked me to remind you today at 13:52.".into()],
             None,

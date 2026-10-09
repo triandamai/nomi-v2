@@ -64,7 +64,7 @@ async fn a_specialist_agent_reply_is_tagged_with_its_crew_name(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(agent_display_name, Some("Finley".to_string()));
+    assert_eq!(agent_display_name, Some("Dana".to_string()));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

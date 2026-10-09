@@ -26,7 +26,7 @@ use google::{Google, GoogleError};
 
 pub const WORKSPACE_AGENT_TYPE: &str = "workspace";
 
-const SYSTEM_PROMPT: &str = "You are Sloane, the crew member who works in the user's own Google \
+const SYSTEM_PROMPT: &str = "You are Tara, the crew member who works in the user's own Google \
 account: Gmail, Sheets, Docs, Drive and Calendar. You only ever see the account of the person \
 you are helping.
 

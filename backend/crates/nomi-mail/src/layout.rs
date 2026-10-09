@@ -226,10 +226,10 @@ mod tests {
 
     #[test]
     fn a_crew_member_signs_in_its_own_colours() {
-        let html = email(Sender::crew("money", "Finley")).html.unwrap();
+        let html = email(Sender::crew("money", "Dana")).html.unwrap();
         assert!(html.contains("#ffd27a") && html.contains("#b8430f"), "ember gradient and accent");
-        assert!(html.contains(">Finley</div>") && html.contains("Nomi crew"));
-        assert!(html.contains("— Finley"));
+        assert!(html.contains(">Dana</div>") && html.contains("Nomi crew"));
+        assert!(html.contains("— Dana"));
     }
 
     #[test]

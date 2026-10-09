@@ -16,7 +16,7 @@ use nomi_agent_core::attachments::FILES_AGENT_TYPE;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
-const SYSTEM_PROMPT: &str = "You are Paige, the member of Nomi's crew who handles files. The user's message carries files, each shown as an \
+const SYSTEM_PROMPT: &str = "You are Maya, the member of Nomi's crew who handles files. The user's message carries files, each shown as an \
      <attachment id=\"…\" name=\"…\" kind=\"…\" type=\"…\" size=\"…\"> section holding what Nomi read out of \
      it: a document's, spreadsheet's or slides' text, a PDF's text, a description of an image (with any text in it), \
      the transcript of audio or a voice note, or a description and transcript of a video. Images, untranscribed audio \
@@ -55,7 +55,7 @@ impl SubAgent for FilesAgent {
     }
 
     fn display_name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("Paige")
+        Cow::Borrowed("Maya")
     }
 
     fn system_prompt(&self) -> Cow<'static, str> {
