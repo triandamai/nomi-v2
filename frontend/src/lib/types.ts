@@ -83,9 +83,15 @@ export type LlmUserSelection =
 	| { kind: 'admin'; admin_model_id: string }
 	| { kind: 'custom'; label: string; provider: string; model_id: string; api_key_masked: string; base_url: string | null };
 
+/** Which model Koda builds the person's projects with. */
+export type LlmCodingSelection = { kind: 'default' } | { kind: 'same_as_chat' } | { kind: 'admin'; admin_model_id: string };
+
 export interface LlmModelsResponse {
 	admin_models: LlmAdminModelOption[];
 	selection: LlmUserSelection | null;
+	coding: LlmCodingSelection;
+	/** The coding model an admin picked (what 'default' means), if any. */
+	default_coding_model_id: string | null;
 }
 
 export interface AdminLlmModel {
@@ -101,6 +107,8 @@ export interface AdminLlmModel {
 	output_usd_per_mtok: number | null;
 	/** Reads files people's own models can't open. */
 	is_files_model: boolean;
+	/** What Koda builds projects with, unless the person picked another. */
+	is_coding_model: boolean;
 	/** What an admin said it opens besides text; null when it's worked out from the model id. */
 	media_inputs: MediaInput[] | null;
 	/** What it opens, listed or worked out. */

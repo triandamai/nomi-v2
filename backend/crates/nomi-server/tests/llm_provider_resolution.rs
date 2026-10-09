@@ -260,3 +260,58 @@ async fn falls_back_to_the_env_config_when_the_default_admin_models_key_cannot_b
 
     std::env::remove_var("LLM_PROVIDER");
 }
+
+async fn admin_model(pool: &PgPool, by: Uuid, label: &str, model_id: &str) -> Uuid {
+    create_admin_llm_model(
+        pool,
+        NewAdminLlmModel {
+            label,
+            provider: "anthropic",
+            model_id,
+            api_key_encrypted: crypto::encrypt(&SETTINGS_KEY, "sk"),
+            base_url: None,
+            input_usd_per_mtok: None,
+            output_usd_per_mtok: None,
+            media_inputs: None,
+            updated_by: by,
+        },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn koda_builds_with_the_coding_model_unless_the_person_picks_another(pool: PgPool) {
+    use nomi_server::bootstrap::{resolve_llm_model_config_for, ModelPurpose};
+    use nomi_settings::llm_models::{set_coding_admin_llm_model, set_user_coding_choice, CodingChoice};
+
+    let user_id = insert_user(&pool).await;
+    let chat = admin_model(&pool, user_id, "Chat", "claude-haiku-4-5").await;
+    let coding = admin_model(&pool, user_id, "Coding", "claude-opus-5-5").await;
+    let other = admin_model(&pool, user_id, "Other", "claude-sonnet-5-5").await;
+    set_user_llm_selection_admin(&pool, user_id, chat).await.unwrap();
+    let model_for = |purpose| {
+        let pool = pool.clone();
+        async move { resolve_llm_model_config_for(&pool, user_id, &SETTINGS_KEY, purpose).await.model_id }
+    };
+
+    // No coding model yet: Koda uses the chat model.
+    assert_eq!(model_for(ModelPurpose::Coding).await, "claude-haiku-4-5");
+
+    // An admin picks one: Koda uses it, chats don't.
+    assert!(set_coding_admin_llm_model(&pool, Some(coding)).await.unwrap());
+    assert_eq!(model_for(ModelPurpose::Coding).await, "claude-opus-5-5");
+    assert_eq!(model_for(ModelPurpose::Chat).await, "claude-haiku-4-5");
+
+    // The person picks another, or the same as their chats.
+    set_user_coding_choice(&pool, user_id, CodingChoice::Admin(other)).await.unwrap();
+    assert_eq!(model_for(ModelPurpose::Coding).await, "claude-sonnet-5-5");
+    set_user_coding_choice(&pool, user_id, CodingChoice::SameAsChat).await.unwrap();
+    assert_eq!(model_for(ModelPurpose::Coding).await, "claude-haiku-4-5");
+
+    // Their pick is deleted: back to the admin's coding model.
+    set_user_coding_choice(&pool, user_id, CodingChoice::Admin(other)).await.unwrap();
+    delete_admin_llm_model(&pool, other).await.unwrap();
+    assert_eq!(model_for(ModelPurpose::Coding).await, "claude-opus-5-5");
+}

@@ -8,7 +8,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/llm/models');
 	const models: LlmModelsResponse = response.ok
 		? ((await response.json()) as LlmModelsResponse)
-		: { admin_models: [], selection: null };
+		: { admin_models: [], selection: null, coding: { kind: 'default' }, default_coding_model_id: null };
 	return { models };
 };
 
@@ -26,6 +26,21 @@ export const actions: Actions = {
 			body: JSON.stringify({ kind: 'admin', admin_model_id: adminModelId }),
 		});
 
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || m.err_select_model() });
+		}
+		return { success: true };
+	},
+
+	/** Which model Koda builds their projects with: 'default', 'same_as_chat' or one of Nomi's models. */
+	selectCodingModel: async ({ request, cookies, fetch }) => {
+		const choice = (await request.formData()).get('coding');
+		if (typeof choice !== 'string' || !choice) {
+			return fail(400, { error: m.err_invalid_model_selection() });
+		}
+		const body = choice === 'default' || choice === 'same_as_chat' ? { kind: choice } : { kind: 'admin', admin_model_id: choice };
+		const response = await apiFetch(fetch, cookies, '/api/llm/coding-selection', { method: 'PUT', body: JSON.stringify(body) });
 		if (!response.ok) {
 			const message = await response.text();
 			return fail(response.status, { error: message || m.err_select_model() });

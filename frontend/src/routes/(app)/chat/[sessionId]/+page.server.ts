@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const modelsResponse = await apiFetch(fetch, cookies, '/api/llm/models');
 	const models: LlmModelsResponse = modelsResponse.ok
 		? ((await modelsResponse.json()) as LlmModelsResponse)
-		: { admin_models: [], selection: null };
+		: { admin_models: [], selection: null, coding: { kind: 'default' }, default_coding_model_id: null };
 
 	const personalityResponse = await apiFetch(fetch, cookies, '/api/personality/history');
 	const personality: PersonalityHistoryResponse = personalityResponse.ok

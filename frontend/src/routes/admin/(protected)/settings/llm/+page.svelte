@@ -36,6 +36,7 @@
 	const mediaList = (kinds: MediaInput[]) =>
 		kinds.length === 0 ? m.llm_media_text_only() : MEDIA_OPTIONS.filter((o) => kinds.includes(o.value)).map((o) => o.label()).join(', ');
 	const filesModel = $derived(data.models.find((model) => model.is_files_model) ?? null);
+	const codingModel = $derived(data.models.find((model) => model.is_coding_model) ?? null);
 
 	let sheetOpen = $state(false);
 	let editingId = $state<string | null>(null);
@@ -150,6 +151,23 @@
 			</form>
 		{/if}
 	</section>
+	<section class="files-model files-model--coding" aria-labelledby="coding-model-title">
+		<div class="files-model__text">
+			<h2 id="coding-model-title" class="files-model__title">{m.llm_coding_title()}</h2>
+			<p class="files-model__lede">
+				{#if codingModel}
+					{m.llm_coding_current({ label: codingModel.label })}
+				{:else}
+					{m.llm_coding_none()}
+				{/if}
+			</p>
+		</div>
+		{#if codingModel}
+			<form method="POST" action="?/setCodingModel" use:enhance>
+				<Button type="submit" variant="text" size="xs">{m.llm_coding_stop()}</Button>
+			</form>
+		{/if}
+	</section>
 {/if}
 
 {#if data.models.length === 0}
@@ -169,6 +187,7 @@
 					</div>
 					{#if model.is_default}<span class="chip">{m.llm_default()}</span>{/if}
 					{#if model.is_files_model}<span class="chip chip--files">{m.llm_files_chip()}</span>{/if}
+					{#if model.is_coding_model}<span class="chip chip--coding">{m.llm_coding_chip()}</span>{/if}
 				</div>
 				<dl class="model__facts">
 					<div><dt>{m.key_model()}</dt><dd>{model.model_id}</dd></div>
@@ -182,6 +201,12 @@
 						<form method="POST" action="?/setFilesModel" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
 							<Button type="submit" variant="text" size="xs">{m.llm_files_use()}</Button>
+						</form>
+					{/if}
+					{#if !model.is_coding_model}
+						<form method="POST" action="?/setCodingModel" use:enhance>
+							<input type="hidden" name="id" value={model.id} />
+							<Button type="submit" variant="text" size="xs">{m.llm_coding_use()}</Button>
 						</form>
 					{/if}
 					{#if !model.is_default}
@@ -327,6 +352,14 @@
 	.files-model__lede {
 		margin: 2px 0 0;
 		font-size: 0.875rem;
+	}
+	.files-model--coding {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.chip.chip--coding {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
 	}
 	.chip.chip--files {
 		background: var(--md-sys-color-tertiary-container);

@@ -31,13 +31,40 @@ fn embedding_provider_kind_from_str(s: &str) -> Result<EmbeddingProviderKind, St
     }
 }
 
+/// What a model is wanted for: most work runs on the person's chat model; Koda builds projects
+/// with the coding model (theirs, or the one an admin picked).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelPurpose {
+    Chat,
+    Coding,
+}
+
+/// The purpose an agent's runs are for.
+pub fn purpose_for_agent(agent_type: &str) -> ModelPurpose {
+    if agent_type == nomi_agent_coding::CODING_AGENT_TYPE {
+        ModelPurpose::Coding
+    } else {
+        ModelPurpose::Chat
+    }
+}
+
 pub async fn build_llm_provider_for_user(
     pool: &PgPool,
     user_id: uuid::Uuid,
     settings_key: &[u8; 32],
     http_client: reqwest::Client,
 ) -> Arc<dyn LlmProvider> {
-    let (mut model_config, mut tag, mut support) = resolve_llm_model_with_media(pool, user_id, settings_key).await;
+    build_llm_provider_for(pool, user_id, settings_key, http_client, ModelPurpose::Chat).await
+}
+
+pub async fn build_llm_provider_for(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    settings_key: &[u8; 32],
+    http_client: reqwest::Client,
+    purpose: ModelPurpose,
+) -> Arc<dyn LlmProvider> {
+    let (mut model_config, mut tag, mut support) = resolve_for_purpose(pool, user_id, settings_key, purpose).await;
 
     // Nomi's own models count toward the person's monthly allowance. Past it, the key they saved
     // answers instead; with none, nothing does.
@@ -165,6 +192,20 @@ fn model_config_from_admin_model(
     }
 }
 
+async fn resolve_for_purpose(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32], purpose: ModelPurpose) -> (ModelConfig, ModelTag, MediaSupport) {
+    if purpose == ModelPurpose::Coding {
+        if let Some(resolved) = resolve_coding_model(pool, user_id, settings_key).await {
+            return resolved;
+        }
+    }
+    resolve_llm_model_with_media(pool, user_id, settings_key).await
+}
+
+/// The model a person's work for `purpose` runs on.
+pub async fn resolve_llm_model_config_for(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32], purpose: ModelPurpose) -> ModelConfig {
+    resolve_for_purpose(pool, user_id, settings_key, purpose).await.0
+}
+
 pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> ModelConfig {
     resolve_llm_model(pool, user_id, settings_key).await.0
 }
@@ -173,6 +214,32 @@ pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settin
 pub async fn resolve_llm_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> (ModelConfig, ModelTag) {
     let (config, tag, _) = resolve_llm_model_with_media(pool, user_id, settings_key).await;
     (config, tag)
+}
+
+/// The model Koda builds with for this person, when it isn't simply their chat model: the one
+/// of Nomi's models they picked for coding, else the coding model an admin picked. `None` means
+/// use their chat model.
+async fn resolve_coding_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> Option<(ModelConfig, ModelTag, MediaSupport)> {
+    use settings::llm_models::CodingChoice;
+    let choice = settings::llm_models::get_user_coding_choice(pool, user_id).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, %user_id, "failed to load the coding model choice");
+        CodingChoice::Default
+    });
+    let picked = match choice {
+        CodingChoice::SameAsChat => return None,
+        CodingChoice::Admin(id) => settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten(),
+        CodingChoice::Default => None,
+    };
+    // Their pick was deleted, or they left it to Nomi: the admin's coding model.
+    let model = match picked {
+        Some(model) => model,
+        None => settings::llm_models::get_coding_admin_llm_model(pool).await.ok().flatten()?,
+    };
+    let (id, label) = (model.id, model.label.clone());
+    let support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
+    let config = model_config_from_admin_model(settings_key, model)?;
+    let tag = tag_for(&config, Some(id), false, label);
+    Some((config, tag, support))
 }
 
 /// [`resolve_llm_model`], plus what that model can open besides text.

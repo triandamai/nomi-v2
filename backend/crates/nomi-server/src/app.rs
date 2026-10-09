@@ -115,12 +115,14 @@ pub fn build_router(state: AppState) -> Router {
             put(llm_models_routes::set_default_admin_model),
         )
         .route("/api/admin/settings/llm/files-model", put(llm_models_routes::set_files_admin_model))
+        .route("/api/admin/settings/llm/coding-model", put(llm_models_routes::set_coding_admin_model))
         .route(
             "/api/admin/settings/llm/models/fetch-models",
             post(llm_models_routes::fetch_provider_models),
         )
         .route("/api/llm/models", get(llm_models_routes::get_user_models))
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
+        .route("/api/llm/coding-selection", put(llm_models_routes::put_user_coding_selection))
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
         .route("/api/agents", get(agents_routes::list_crew))
         .route("/api/home", get(home_routes::home_summary))

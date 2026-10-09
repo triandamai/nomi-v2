@@ -123,6 +123,20 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	/** Picks the model Koda builds projects with; no id leaves Koda on each person's chat model. */
+	setCodingModel: async ({ request, cookies, fetch }) => {
+		const id = (await request.formData()).get('id');
+		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/coding-model', {
+			method: 'PUT',
+			body: JSON.stringify({ id: typeof id === 'string' && id.length > 0 ? id : null }),
+		});
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || m.err_coding_model() });
+		}
+		return { success: true };
+	},
+
 	fetchModels: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const provider = data.get('provider');
