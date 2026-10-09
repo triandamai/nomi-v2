@@ -99,7 +99,15 @@ export interface AdminLlmModel {
 	/** USD per million tokens; null until set. */
 	input_usd_per_mtok: number | null;
 	output_usd_per_mtok: number | null;
+	/** Reads files people's own models can't open. */
+	is_files_model: boolean;
+	/** What an admin said it opens besides text; null when it's worked out from the model id. */
+	media_inputs: MediaInput[] | null;
+	/** What it opens, listed or worked out. */
+	media_support: MediaInput[];
 }
+
+export type MediaInput = 'image' | 'pdf' | 'audio' | 'video';
 
 export interface PersonalityVersion {
 	version: number;

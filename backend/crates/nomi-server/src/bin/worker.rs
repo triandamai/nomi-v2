@@ -34,9 +34,13 @@ async fn main() {
 
     let s3 = nomi_storage::build_from_env().await;
     let project_storage = nomi_storage::build_local_fs_store();
+    // Turns open attached files from the same place the server stores them.
+    nomi_storage::blob::init_attachment_store(s3.clone());
 
     // Memory learning, chat summaries and tidying run beside the turn worker, as they do inline.
     tokio::spawn(nomi_server::memory_worker::run(pool.clone(), settings_key, http_client.clone()));
+    // Attached images, audio and video are read by a model in the background.
+    tokio::spawn(nomi_server::attachment_worker::run(pool.clone(), settings_key, http_client.clone()));
 
     nomi_server::worker::run(pool, mqtt, s3, settings_key, http_client, database_url, project_storage).await;
 }

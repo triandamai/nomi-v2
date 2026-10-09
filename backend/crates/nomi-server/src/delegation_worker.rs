@@ -148,7 +148,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
             let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
-            let messages = vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: claimed.task.clone() }] }];
+            let mut messages = vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: claimed.task.clone() }] }];
+            // A task can carry the user's files (the Files agent passes their tags along).
+            nomi_agent_core::attachments::expand_messages(&mut conn, claimed.user_id, &mut messages).await;
 
             let outcome = nomi_agent_core::run_agent_turn(
                 &mut conn,

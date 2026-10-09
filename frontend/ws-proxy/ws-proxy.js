@@ -11,7 +11,7 @@ import { WebSocketServer, WebSocket } from 'ws';
  * @param {string} name
  * @returns {string | undefined}
  */
-function readCookie(cookieHeader, name) {
+export function readCookie(cookieHeader, name) {
 	if (!cookieHeader) return undefined;
 	for (const pair of cookieHeader.split(';')) {
 		const eq = pair.indexOf('=');
@@ -105,7 +105,7 @@ function connectUpstream(upstreamPath, accessToken, options) {
  * @param {ProxyOptions} options
  * @returns {string}
  */
-function resolveClientVersion(options) {
+export function resolveClientVersion(options) {
 	return options.clientVersion ?? process.env.APP_VERSION?.trim().replace(/^v(?=\d)/, '') ?? 'unknown';
 }
 

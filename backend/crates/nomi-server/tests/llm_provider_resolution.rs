@@ -35,6 +35,7 @@ async fn resolves_to_the_users_admin_selection_when_set(pool: PgPool) {
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -85,6 +86,7 @@ async fn falls_back_to_the_admin_default_when_the_user_has_no_selection(pool: Pg
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -109,6 +111,7 @@ async fn falls_back_to_the_admin_default_when_the_referenced_model_was_deleted(p
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -124,6 +127,7 @@ async fn falls_back_to_the_admin_default_when_the_referenced_model_was_deleted(p
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -162,6 +166,7 @@ async fn falls_back_to_the_admin_default_when_the_users_admin_selection_key_cann
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -177,6 +182,7 @@ async fn falls_back_to_the_admin_default_when_the_users_admin_selection_key_cann
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -202,6 +208,7 @@ async fn falls_back_to_the_admin_default_when_the_users_custom_key_cannot_be_dec
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -240,6 +247,7 @@ async fn falls_back_to_the_env_config_when_the_default_admin_models_key_cannot_b
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )

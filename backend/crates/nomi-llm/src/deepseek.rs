@@ -49,6 +49,8 @@ impl DeepSeekProvider {
                     // useful live (surfaced as it streams), not as conversational context, and
                     // Chat Completions has no message part for it anyway.
                     ContentBlock::Thinking { .. } => {}
+                    // DeepSeek takes text only.
+                    ContentBlock::Media { media_type, name, .. } => text_parts.push(crate::media::unreadable_note(name, media_type)),
                     ContentBlock::ToolUse { id, name, input, .. } => {
                         tool_calls.push(json!({
                             "id": id,

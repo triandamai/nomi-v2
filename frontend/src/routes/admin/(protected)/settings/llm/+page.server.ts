@@ -26,7 +26,10 @@ function readForm(data: FormData) {
 		const value = Number(raw);
 		return Number.isFinite(value) && value >= 0 ? value : NaN;
 	};
+	// "auto" leaves it to the backend to work out what the model opens from its id.
+	const mediaInputs = data.get('media_mode') === 'listed' ? data.getAll('media').filter((v): v is string => typeof v === 'string') : null;
 	return {
+		mediaInputs,
 		inputPrice: price('input_usd_per_mtok'),
 		outputPrice: price('output_usd_per_mtok'),
 		label: typeof label === 'string' ? label : '',
@@ -39,7 +42,7 @@ function readForm(data: FormData) {
 
 export const actions: Actions = {
 	create: async ({ request, cookies, fetch }) => {
-		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice } = readForm(await request.formData());
+		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, mediaInputs } = readForm(await request.formData());
 		if (!label || !provider) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
@@ -48,7 +51,7 @@ export const actions: Actions = {
 		}
 		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models', {
 			method: 'POST',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice }),
+			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, media_inputs: mediaInputs }),
 		});
 		if (!response.ok) {
 			const message = await response.text();
@@ -60,7 +63,7 @@ export const actions: Actions = {
 	update: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const id = data.get('id');
-		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice } = readForm(data);
+		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, mediaInputs } = readForm(data);
 		if (typeof id !== 'string' || !label || !provider) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
@@ -69,7 +72,7 @@ export const actions: Actions = {
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}`, {
 			method: 'PUT',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice }),
+			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, media_inputs: mediaInputs }),
 		});
 		if (!response.ok) {
 			const message = await response.text();
@@ -102,6 +105,20 @@ export const actions: Actions = {
 		if (!response.ok) {
 			const message = await response.text();
 			return fail(response.status, { error: message || m.err_set_default() });
+		}
+		return { success: true };
+	},
+
+	/** Picks the model that reads files people's own models can't open; no id stops using one. */
+	setFilesModel: async ({ request, cookies, fetch }) => {
+		const id = (await request.formData()).get('id');
+		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/files-model', {
+			method: 'PUT',
+			body: JSON.stringify({ id: typeof id === 'string' && id.length > 0 ? id : null }),
+		});
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || m.err_files_model() });
 		}
 		return { success: true };
 	},

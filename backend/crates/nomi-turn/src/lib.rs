@@ -270,7 +270,8 @@ async fn run_subagent_turn(
     sender_channel_identity_id: Uuid,
     user_id: Uuid,
 ) -> Result<(String, Option<Uuid>), TurnError> {
-    let messages = fetch_recent_messages(conn, session_id).await?;
+    let mut messages = fetch_recent_messages(conn, session_id).await?;
+    nomi_agent_core::attachments::expand_messages(conn, user_id, &mut messages).await;
 
     let outcome = nomi_agent_core::run_agent_turn(
         conn, mqtt, s3, provider, embedding_provider, registry, agent.as_ref(), session_id, agent_session_id, user_id, messages, SUBAGENT_MAX_TOKENS,
@@ -335,6 +336,7 @@ async fn follow_hand_offs(
         };
 
         let mut messages = fetch_recent_messages(conn, session_id).await?;
+        nomi_agent_core::attachments::expand_messages(conn, ctx.user_id, &mut messages).await;
         add_hand_off_note(&mut messages, agent.display_name().as_ref(), &task);
         outcome = nomi_agent_core::run_agent_turn(
             conn,

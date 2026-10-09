@@ -11,6 +11,7 @@
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import Money from '$lib/components/Money.svelte';
 	import { formatUsd } from '$lib/usage';
+	import type { MediaInput } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -26,6 +27,16 @@
 
 	const providerName = (value: string) => PROVIDER_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
+	const MEDIA_OPTIONS: { value: MediaInput; label: () => string }[] = [
+		{ value: 'image', label: m.llm_media_image },
+		{ value: 'pdf', label: m.llm_media_pdf },
+		{ value: 'audio', label: m.llm_media_audio },
+		{ value: 'video', label: m.llm_media_video },
+	];
+	const mediaList = (kinds: MediaInput[]) =>
+		kinds.length === 0 ? m.llm_media_text_only() : MEDIA_OPTIONS.filter((o) => kinds.includes(o.value)).map((o) => o.label()).join(', ');
+	const filesModel = $derived(data.models.find((model) => model.is_files_model) ?? null);
+
 	let sheetOpen = $state(false);
 	let editingId = $state<string | null>(null);
 
@@ -36,6 +47,8 @@
 	let modelId = $state('');
 	let inputPrice = $state('');
 	let outputPrice = $state('');
+	let mediaMode = $state<'auto' | 'listed'>('auto');
+	let media = $state<MediaInput[]>([]);
 
 	let fetching = $state(false);
 	let fetchedModels = $state<{ id: string; label: string | null }[]>([]);
@@ -58,6 +71,8 @@
 		modelId = '';
 		inputPrice = '';
 		outputPrice = '';
+		mediaMode = 'auto';
+		media = [];
 		resetSheetState();
 		sheetOpen = true;
 	}
@@ -71,6 +86,8 @@
 		modelId = model.model_id;
 		inputPrice = model.input_usd_per_mtok?.toString() ?? '';
 		outputPrice = model.output_usd_per_mtok?.toString() ?? '';
+		mediaMode = model.media_inputs ? 'listed' : 'auto';
+		media = model.media_inputs ?? model.media_support;
 		resetSheetState();
 		sheetOpen = true;
 	}
@@ -115,6 +132,26 @@
 	{/snippet}
 </PageHeader>
 
+{#if data.models.length > 0}
+	<section class="files-model" aria-labelledby="files-model-title">
+		<div class="files-model__text">
+			<h2 id="files-model-title" class="files-model__title">{m.llm_files_title()}</h2>
+			<p class="files-model__lede">
+				{#if filesModel}
+					{m.llm_files_current({ label: filesModel.label, kinds: mediaList(filesModel.media_support) })}
+				{:else}
+					{m.llm_files_none()}
+				{/if}
+			</p>
+		</div>
+		{#if filesModel}
+			<form method="POST" action="?/setFilesModel" use:enhance>
+				<Button type="submit" variant="text" size="xs">{m.llm_files_stop()}</Button>
+			</form>
+		{/if}
+	</section>
+{/if}
+
 {#if data.models.length === 0}
 	<div class="empty">
 		<span class="model__icon"><IconChip size={26} /></span>
@@ -131,14 +168,22 @@
 						<p class="model__provider">{providerName(model.provider)}</p>
 					</div>
 					{#if model.is_default}<span class="chip">{m.llm_default()}</span>{/if}
+					{#if model.is_files_model}<span class="chip chip--files">{m.llm_files_chip()}</span>{/if}
 				</div>
 				<dl class="model__facts">
 					<div><dt>{m.key_model()}</dt><dd>{model.model_id}</dd></div>
 					<div><dt>{m.llm_price()}</dt><dd>{#if model.input_usd_per_mtok != null || model.output_usd_per_mtok != null}<Money value={m.llm_price_value({ input: formatUsd(model.input_usd_per_mtok ?? 0), output: formatUsd(model.output_usd_per_mtok ?? 0) })} />{:else}{m.llm_price_unset()}{/if}</dd></div>
 					<div><dt>{m.llm_key()}</dt><dd>{model.api_key_masked || m.llm_none()}</dd></div>
+					<div><dt>{m.llm_opens()}</dt><dd>{mediaList(model.media_support)}{#if !model.media_inputs} <span class="guessed">{m.llm_media_guessed()}</span>{/if}</dd></div>
 				</dl>
 				<div class="model__actions">
 					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(model)}>{m.dyn_edit()}</Button>
+					{#if !model.is_files_model}
+						<form method="POST" action="?/setFilesModel" use:enhance>
+							<input type="hidden" name="id" value={model.id} />
+							<Button type="submit" variant="text" size="xs">{m.llm_files_use()}</Button>
+						</form>
+					{/if}
 					{#if !model.is_default}
 						<form method="POST" action="?/setDefault" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
@@ -240,6 +285,19 @@
 				<TextField id="output_usd_per_mtok" name="output_usd_per_mtok" label={m.llm_price_out()} type="number" inputmode="decimal" min="0" step="0.0001" bind:value={outputPrice} />
 			</div>
 		</fieldset>
+		<fieldset class="prices">
+			<legend class="prices__legend">{m.llm_opens_title()}</legend>
+			<p class="prices__hint">{m.llm_opens_hint()}</p>
+			<label class="choice"><input type="radio" name="media_mode" value="auto" bind:group={mediaMode} /> {m.llm_media_auto()}</label>
+			<label class="choice"><input type="radio" name="media_mode" value="listed" bind:group={mediaMode} /> {m.llm_media_listed()}</label>
+			{#if mediaMode === 'listed'}
+				<div class="media-options">
+					{#each MEDIA_OPTIONS as option (option.value)}
+						<label class="choice"><input type="checkbox" name="media" value={option.value} bind:group={media} /> {option.label()}</label>
+					{/each}
+				</div>
+			{/if}
+		</fieldset>
 		<div class="flex gap-2 pt-2">
 			<Button type="submit" variant="filled">{editingId ? m.common_save() : m.llm_add()}</Button>
 			<Button type="button" variant="outlined" onclick={() => (sheetOpen = false)}>{m.common_cancel()}</Button>
@@ -248,6 +306,54 @@
 </BottomSheet>
 
 <style>
+	.files-model {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+		margin-bottom: 16px;
+		padding: 14px 18px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.files-model__title {
+		margin: 0;
+		font-family: var(--md-sys-typescale-title-medium-font);
+		font-size: var(--md-sys-typescale-title-medium-size);
+		font-weight: 700;
+	}
+	.files-model__lede {
+		margin: 2px 0 0;
+		font-size: 0.875rem;
+	}
+	.chip.chip--files {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.guessed {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+	}
+	.choice {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 32px;
+		font-size: 0.9375rem;
+	}
+	.choice input {
+		width: 18px;
+		height: 18px;
+		accent-color: var(--md-sys-color-primary);
+	}
+	.media-options {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0 12px;
+		padding-left: 26px;
+	}
 	.prices {
 		display: flex;
 		flex-direction: column;

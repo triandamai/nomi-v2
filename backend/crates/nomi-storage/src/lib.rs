@@ -1,3 +1,5 @@
+pub mod blob;
+
 use std::time::Duration;
 
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials, Region};
@@ -9,8 +11,8 @@ const PRESIGNED_UPLOAD_TTL: Duration = Duration::from_secs(300);
 
 #[derive(Clone)]
 pub struct S3Config {
-    client: Client,
-    bucket: String,
+    pub(crate) client: Client,
+    pub(crate) bucket: String,
     public_url_base: String,
 }
 
@@ -134,8 +136,8 @@ impl S3Config {
 }
 
 /// Project file storage backed by the server's local disk — always available (no credentials, no
-/// bucket, nothing to misconfigure), unlike S3Config above which stays reserved for avatar
-/// uploads. Rooted at `PROJECT_FILES_DIR` (default `./data/projects`), created on first write.
+/// bucket, nothing to misconfigure), unlike S3Config above, which holds avatars and
+/// chat attachments (see `blob`). Rooted at `PROJECT_FILES_DIR` (default `./data/projects`), created on first write.
 #[derive(Clone)]
 pub struct LocalFsStore {
     root: std::path::PathBuf,

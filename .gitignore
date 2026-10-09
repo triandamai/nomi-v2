@@ -5,3 +5,7 @@
 .worktrees/
 
 /backend/target
+
+# Local file storage (attachments, project files)
+/backend/data/
+/backend/crates/*/data/

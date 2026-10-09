@@ -3,15 +3,15 @@
 	import { speechLanguage } from '$lib/i18n';
 	import { onMount } from 'svelte';
 
-	// Records a voice note: the browser transcribes speech as the user talks, and the transcript
-	// becomes a "voice" attachment (the Files agent reads it and decides what to do). Shown inside
-	// the composer while recording.
+	// Records a voice note: the audio itself (uploaded and transcribed by the files model), plus
+	// the browser's own live transcript where it can make one, shown while recording and kept as
+	// a fallback. Shown inside the composer while recording.
 
 	let {
 		onsave,
 		oncancel,
 	}: {
-		onsave: (transcript: string, seconds: number) => void;
+		onsave: (audio: Blob, transcript: string, seconds: number) => void;
 		oncancel: () => void;
 	} = $props();
 
@@ -27,56 +27,102 @@
 		onerror: ((event: { error: string }) => void) | null;
 	};
 
+	/** Opus in WebM (Chrome, Firefox) or Ogg, else AAC in MP4 (Safari). */
+	function audioType(): string | undefined {
+		return ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t));
+	}
+
 	let transcript = $state('');
 	let seconds = $state(0);
 	let problem = $state<string | null>(null);
+	let ready = $state(false);
 	let recognition: Recognition | null = null;
+	let recorder: MediaRecorder | null = null;
+	let stream: MediaStream | null = null;
+	let chunks: Blob[] = [];
 	let started = 0;
-	let saving = false;
+	let finished = false;
+
+	function release() {
+		stream?.getTracks().forEach((track) => track.stop());
+		stream = null;
+	}
 
 	onMount(() => {
-		const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
-		const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-		if (!Ctor) {
-			problem = m.voice_unsupported();
-			return;
-		}
-		recognition = new Ctor();
-		recognition.lang = speechLanguage();
-		recognition.continuous = true;
-		recognition.interimResults = true;
-		recognition.onresult = (event) => {
-			let text = '';
-			for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
-			transcript = text.trim();
-		};
-		recognition.onerror = (event) => {
-			problem = event.error === 'not-allowed' ? m.mic_blocked() : event.error === 'no-speech' ? null : m.voice_stopped();
-		};
-		// Browsers end recognition after a pause; keep listening until the user stops.
-		recognition.onend = () => {
-			if (!saving && !problem) recognition?.start();
-		};
-		started = Date.now();
-		recognition.start();
-		const timer = setInterval(() => (seconds = Math.round((Date.now() - started) / 1000)), 250);
+		let timer: ReturnType<typeof setInterval> | undefined;
+		(async () => {
+			if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+				problem = m.voice_unsupported();
+				return;
+			}
+			try {
+				stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			} catch {
+				problem = m.mic_blocked();
+				return;
+			}
+			if (finished) return release();
+			recorder = new MediaRecorder(stream, { mimeType: audioType() });
+			recorder.ondataavailable = (event) => {
+				if (event.data.size > 0) chunks.push(event.data);
+			};
+			recorder.start(1000);
+			started = Date.now();
+			ready = true;
+			timer = setInterval(() => (seconds = Math.round((Date.now() - started) / 1000)), 250);
+
+			// The live transcript is a bonus: recording works without it.
+			const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+			const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+			if (Ctor) {
+				recognition = new Ctor();
+				recognition.lang = speechLanguage();
+				recognition.continuous = true;
+				recognition.interimResults = true;
+				recognition.onresult = (event) => {
+					let text = '';
+					for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
+					transcript = text.trim();
+				};
+				recognition.onerror = () => {};
+				// Browsers end recognition after a pause; keep listening until the user stops.
+				recognition.onend = () => {
+					if (!finished) recognition?.start();
+				};
+				recognition.start();
+			}
+		})();
 		return () => {
 			clearInterval(timer);
-			saving = true;
+			finished = true;
 			recognition?.abort();
+			if (recorder?.state === 'recording') recorder.stop();
+			release();
 		};
 	});
 
 	function stop() {
-		saving = true;
+		if (!recorder) return;
+		finished = true;
 		recognition?.stop();
-		if (transcript) onsave(transcript, seconds);
-		else problem = m.voice_nothing();
+		const active = recorder;
+		active.onstop = () => {
+			release();
+			const audio = new Blob(chunks, { type: active.mimeType || 'audio/webm' });
+			if (audio.size === 0 || seconds < 1) {
+				problem = m.voice_nothing();
+				return;
+			}
+			onsave(audio, transcript, Math.max(1, seconds));
+		};
+		active.stop();
 	}
 
 	function discard() {
-		saving = true;
+		finished = true;
 		recognition?.abort();
+		if (recorder?.state === 'recording') recorder.stop();
+		release();
 		oncancel();
 	}
 
@@ -96,7 +142,7 @@
 		{/if}
 	</span>
 	<button type="button" class="voice__btn" onclick={discard}>{m.voice_discard()}</button>
-	<button type="button" class="voice__btn voice__btn--primary" onclick={stop} disabled={!!problem && !transcript}>{m.common_done()}</button>
+	<button type="button" class="voice__btn voice__btn--primary" onclick={stop} disabled={!ready || !!problem}>{m.common_done()}</button>
 </div>
 
 <style>

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod attachment_worker;
 pub mod bootstrap;
 pub mod delegation_worker;
 pub mod routes;

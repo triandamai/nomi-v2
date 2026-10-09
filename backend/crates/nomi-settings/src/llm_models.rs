@@ -10,6 +10,10 @@ pub struct AdminLlmModel {
     pub api_key_encrypted: Vec<u8>,
     pub base_url: Option<String>,
     pub is_default: bool,
+    /// Reads files the person's own model can't open (at most one model is).
+    pub is_files_model: bool,
+    /// What it takes besides text ("image", "pdf", "audio", "video"); `None` = guess from the id.
+    pub media_inputs: Option<Vec<String>>,
     /// USD per million input tokens; `None` until an admin sets it.
     pub input_usd_per_mtok: Option<f64>,
     /// USD per million output tokens.
@@ -18,7 +22,7 @@ pub struct AdminLlmModel {
 
 pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
          FROM admin_llm_models ORDER BY created_at",
     )
@@ -28,7 +32,7 @@ pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, 
 
 pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
          FROM admin_llm_models WHERE id = $1",
     )
@@ -39,7 +43,7 @@ pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<Admin
 
 pub async fn get_default_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
          FROM admin_llm_models WHERE is_default = true",
     )
@@ -55,6 +59,7 @@ pub struct NewAdminLlmModel<'a> {
     pub base_url: Option<&'a str>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub media_inputs: Option<Vec<String>>,
     pub updated_by: Uuid,
 }
 
@@ -67,9 +72,9 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
 
     sqlx::query_as::<_, AdminLlmModel>(
         "INSERT INTO admin_llm_models (label, provider, model_id, api_key_encrypted, base_url, is_default, updated_by, \
-                                       input_usd_per_mtok, output_usd_per_mtok) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+                                       input_usd_per_mtok, output_usd_per_mtok, media_inputs) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok",
     )
     .bind(input.label)
@@ -81,6 +86,7 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
     .bind(input.updated_by)
     .bind(input.input_usd_per_mtok)
     .bind(input.output_usd_per_mtok)
+    .bind(input.media_inputs)
     .fetch_one(pool)
     .await
 }
@@ -93,6 +99,7 @@ pub struct UpdateAdminLlmModel<'a> {
     pub base_url: Option<&'a str>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub media_inputs: Option<Vec<String>>,
     pub updated_by: Uuid,
 }
 
@@ -106,9 +113,9 @@ pub async fn update_admin_llm_model(
          label = $2, provider = $3, model_id = $4, \
          api_key_encrypted = COALESCE($5, api_key_encrypted), \
          base_url = $6, updated_by = $7, updated_at = now(), \
-         input_usd_per_mtok = $8, output_usd_per_mtok = $9 \
+         input_usd_per_mtok = $8, output_usd_per_mtok = $9, media_inputs = $10 \
          WHERE id = $1 \
-         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok",
     )
     .bind(id)
@@ -120,6 +127,7 @@ pub async fn update_admin_llm_model(
     .bind(input.updated_by)
     .bind(input.input_usd_per_mtok)
     .bind(input.output_usd_per_mtok)
+    .bind(input.media_inputs)
     .fetch_optional(pool)
     .await
 }
@@ -171,6 +179,31 @@ pub async fn set_default_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<(), 
         .await?;
     tx.commit().await?;
     Ok(())
+}
+
+/// The model that reads files people's own models can't open, if an admin picked one.
+pub async fn get_files_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
+    sqlx::query_as::<_, AdminLlmModel>(
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, media_inputs, \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         FROM admin_llm_models WHERE is_files_model = true",
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Makes `id` the files model, or clears it with `None`. `Ok(false)` when `id` doesn't exist.
+pub async fn set_files_admin_llm_model(pool: &PgPool, id: Option<Uuid>) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE admin_llm_models SET is_files_model = false WHERE is_files_model").execute(&mut *tx).await?;
+    if let Some(id) = id {
+        let updated = sqlx::query("UPDATE admin_llm_models SET is_files_model = true WHERE id = $1").bind(id).execute(&mut *tx).await?;
+        if updated.rows_affected() == 0 {
+            return Ok(false);
+        }
+    }
+    tx.commit().await?;
+    Ok(true)
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

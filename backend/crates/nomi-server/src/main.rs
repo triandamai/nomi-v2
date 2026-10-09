@@ -33,10 +33,13 @@ async fn main() {
 
     let s3 = nomi_storage::build_from_env().await;
     if s3.is_some() {
-        tracing::info!("S3 avatar storage configured");
+        tracing::info!("S3 storage configured for avatars and attachments");
     } else {
-        tracing::info!("S3_BUCKET not set — avatar upload disabled");
+        tracing::info!("S3_BUCKET not set — avatar upload disabled, attachments kept on disk");
     }
+
+    // Chat attachments go to the same bucket as avatars, or to disk without one.
+    nomi_storage::blob::init_attachment_store(s3.clone());
 
     let project_storage = nomi_storage::build_local_fs_store();
 
@@ -91,6 +94,11 @@ async fn main() {
         let memory_http_client = http_client.clone();
         tokio::spawn(async move {
             nomi_server::memory_worker::run(memory_pool, settings_key, memory_http_client).await;
+        });
+        let attachment_pool = pool.clone();
+        let attachment_http_client = http_client.clone();
+        tokio::spawn(async move {
+            nomi_server::attachment_worker::run(attachment_pool, settings_key, attachment_http_client).await;
         });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {

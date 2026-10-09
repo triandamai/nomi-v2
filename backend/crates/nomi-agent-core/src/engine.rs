@@ -324,6 +324,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     tools.push(cancel_reminder_tool_definition());
     tools.push(crate::web::web_search_tool_definition());
     tools.push(crate::web::read_web_page_tool_definition());
+    tools.push(crate::attachments::read_attachment_tool_definition());
     tools
 }
 
@@ -358,8 +359,9 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
-        // Reading the public web changes nothing.
+        // Reading the public web, or the user's own files, changes nothing.
         && !crate::web::is_web_tool(tool_name)
+        && tool_name != crate::attachments::READ_ATTACHMENT_TOOL_NAME
         // Record tools only touch the calling agent's own private records.
         && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
@@ -442,6 +444,10 @@ pub async fn run_agent_turn(
     }
     if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
         tools.push(crate::web::read_web_page_tool_definition());
+    }
+    // Reading on in a file the user attached, whenever the conversation holds one.
+    if crate::attachments::mentions_files(&messages) {
+        tools.push(crate::attachments::read_attachment_tool_definition());
     }
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
 
@@ -861,6 +867,11 @@ pub async fn resolve_tool_batch(
                         let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
                         (text, false, Some(block))
                     }
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {
+                match crate::attachments::read_attachment(conn, user_id, input).await {
+                    Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == RENAME_CHAT_TOOL_NAME {

@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod admin_dashboard;
 pub mod admin_users;
+pub mod attachments;
 pub mod auth;
 pub mod connections;
 pub mod dynamic_agents;

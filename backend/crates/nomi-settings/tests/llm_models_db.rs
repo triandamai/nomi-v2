@@ -20,6 +20,7 @@ fn new_model_input(label: &str, updated_by: Uuid) -> NewAdminLlmModel<'_> {
         base_url: None,
         input_usd_per_mtok: None,
         output_usd_per_mtok: None,
+        media_inputs: None,
         updated_by,
     }
 }
@@ -72,6 +73,7 @@ async fn update_changes_fields_and_keeps_existing_key_when_none_given(pool: PgPo
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -101,6 +103,7 @@ async fn update_replaces_the_key_when_one_is_given(pool: PgPool) {
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -125,6 +128,7 @@ async fn update_of_a_nonexistent_model_returns_none(pool: PgPool) {
             base_url: None,
             input_usd_per_mtok: None,
             output_usd_per_mtok: None,
+            media_inputs: None,
             updated_by: user_id,
         },
     )
@@ -202,6 +206,7 @@ async fn create_admin_llm_model_accepts_every_supported_provider(pool: PgPool) {
                 base_url: None,
                 input_usd_per_mtok: None,
                 output_usd_per_mtok: None,
+                media_inputs: None,
                 updated_by: user_id,
             },
         )

@@ -5,6 +5,7 @@ use tower_http::trace::TraceLayer;
 use nomi_auth::extractor::AuthClaims;
 use crate::routes::admin_dashboard as admin_dashboard_routes;
 use crate::routes::admin_users as admin_users_routes;
+use crate::routes::attachments as attachments_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::dynamic_agents as dynamic_agents_routes;
 use crate::routes::llm_models as llm_models_routes;
@@ -111,6 +112,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/settings/llm/models/:id/default",
             put(llm_models_routes::set_default_admin_model),
         )
+        .route("/api/admin/settings/llm/files-model", put(llm_models_routes::set_files_admin_model))
         .route(
             "/api/admin/settings/llm/models/fetch-models",
             post(llm_models_routes::fetch_provider_models),
@@ -198,6 +200,14 @@ pub fn build_router(state: AppState) -> Router {
             "/api/profile",
             get(profile_routes::get_profile).put(profile_routes::put_profile),
         )
+        .route(
+            "/api/attachments",
+            // Uploads are streamed and limited by the handler itself (nomi_attachments::Limits).
+            post(attachments_routes::upload).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
+        .route("/api/attachments/:id/content", get(attachments_routes::get_content))
+        .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
         .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
         .route(
             "/api/preferences",

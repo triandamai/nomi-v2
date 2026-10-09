@@ -20,15 +20,15 @@
 	import { deserialize } from '$app/forms';
 	import {
 		composeMessage,
+		discardUpload,
 		formatBytes,
-		isAudioFile,
-		isTextFile,
+		refusal,
+		uploadFile,
 		voiceNoteName,
-		MAX_ATTACHMENTS,
-		MAX_FILE_BYTES,
-		MAX_TOTAL_BYTES,
-		type Attachment,
+		type AttachmentKind,
+		type UploadedFile,
 	} from '$lib/attachments';
+	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
@@ -127,26 +127,117 @@
 		messageInput?.focus();
 	}
 
-	// Composer state: the typed draft, attached files, and the chat's thinking level.
+	// Composer state: the typed draft, attached files, and the chat's thinking level. Files
+	// upload as soon as they're picked; the message carries a reference to each (see
+	// $lib/attachments), so it can be sent once every upload is done.
+	interface ComposerFile {
+		key: string;
+		name: string;
+		size: number;
+		/** A guess until the upload says what it really is. */
+		kind: AttachmentKind;
+		progress: number;
+		uploaded: UploadedFile | null;
+		/** A local preview of an image, until the message is sent. */
+		thumb: string | null;
+		controller: AbortController;
+	}
 	let draft = $state('');
-	let attachments = $state<(Attachment & { size: number })[]>([]);
+	let attachments = $state<ComposerFile[]>([]);
 	let attachError = $state<string | null>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
 	let attachMenuOpen = $state(false);
 	let recordingVoice = $state(false);
-	let speechSupported = $state(false);
+	let recordingSupported = $state(false);
+	let dragging = $state(false);
 	onMount(() => {
-		const w = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
-		speechSupported = Boolean(w.SpeechRecognition ?? w.webkitSpeechRecognition);
+		recordingSupported = typeof MediaRecorder !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 	});
 
-	function saveVoiceNote(transcript: string, seconds: number) {
-		recordingVoice = false;
-		if (attachments.length >= MAX_ATTACHMENTS) {
-			attachError = m.chat_max_files({ count: MAX_ATTACHMENTS });
-			return;
+	function guessKind(file: Blob, name: string): AttachmentKind {
+		const type = file.type;
+		if (type.startsWith('image/')) return 'image';
+		if (type.startsWith('video/')) return 'video';
+		if (type.startsWith('audio/')) return 'audio';
+		if (type === 'application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
+		if (/\.(xlsx?|ods|csv|tsv)$/i.test(name)) return 'spreadsheet';
+		if (/\.(pptx?|odp|key)$/i.test(name)) return 'presentation';
+		if (/\.(docx?|odt|rtf|pages)$/i.test(name)) return 'document';
+		return 'text';
+	}
+
+	/** Checks and starts uploading `files` (picked, dropped or pasted). */
+	function addFiles(files: File[], options: { voice?: boolean; transcript?: string } = {}) {
+		attachError = null;
+		for (const file of files) {
+			const name = file.name || voiceNoteName(0);
+			const problem = refusal({ name, size: file.size, type: file.type }, attachments);
+			if (problem) {
+				attachError = problem;
+				continue;
+			}
+			const entry: ComposerFile = {
+				key: crypto.randomUUID(),
+				name,
+				size: file.size,
+				kind: options.voice ? 'voice' : guessKind(file, name),
+				progress: 0,
+				uploaded: null,
+				thumb: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+				controller: new AbortController(),
+			};
+			attachments = [...attachments, entry];
+			uploadFile(file, name, {
+				...options,
+				signal: entry.controller.signal,
+				onprogress: (fraction) => update(entry.key, { progress: fraction }),
+			})
+				.then((uploaded) => update(entry.key, { uploaded, kind: uploaded.kind, progress: 1 }))
+				.catch((error: unknown) => {
+					if (error instanceof DOMException && error.name === 'AbortError') return;
+					dropFile(entry.key);
+					attachError = error instanceof Error ? error.message : String(error);
+				});
 		}
-		attachments = [...attachments, { name: voiceNoteName(seconds), text: transcript, kind: 'voice', size: new Blob([transcript]).size }];
+	}
+
+	function update(key: string, changes: Partial<ComposerFile>) {
+		attachments = attachments.map((f) => (f.key === key ? { ...f, ...changes } : f));
+	}
+
+	function dropFile(key: string) {
+		const file = attachments.find((f) => f.key === key);
+		if (file?.thumb) URL.revokeObjectURL(file.thumb);
+		attachments = attachments.filter((f) => f.key !== key);
+	}
+
+	function onFilesPicked(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const files = [...(input.files ?? [])];
+		input.value = '';
+		addFiles(files);
+	}
+
+	function onDrop(event: DragEvent) {
+		dragging = false;
+		const files = [...(event.dataTransfer?.files ?? [])];
+		if (files.length === 0) return;
+		event.preventDefault();
+		addFiles(files);
+	}
+
+	function onPaste(event: ClipboardEvent) {
+		const files = [...(event.clipboardData?.files ?? [])];
+		if (files.length === 0) return;
+		event.preventDefault();
+		addFiles(files);
+	}
+
+	function saveVoiceNote(audio: Blob, transcript: string, seconds: number) {
+		recordingVoice = false;
+		// The backend tells the format from the bytes; the name is what the chat shows.
+		const file = new File([audio], voiceNoteName(seconds), { type: audio.type });
+		addFiles([file], { voice: true, transcript });
 		messageInput?.focus();
 	}
 	let dictationBase = '';
@@ -155,46 +246,23 @@
 		if (thinkingLevel) level = thinkingLevel;
 	});
 
-	const canSend = $derived(draft.trim().length > 0 || attachments.length > 0);
-	const composedText = $derived(composeMessage(draft, attachments));
+	const uploading = $derived(attachments.some((f) => !f.uploaded));
+	const canSend = $derived((draft.trim().length > 0 || attachments.length > 0) && !uploading);
+	const composedText = $derived(composeMessage(draft, attachments.flatMap((f) => (f.uploaded ? [f.uploaded.reference] : []))));
 
-	async function addFiles(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const files = [...(input.files ?? [])];
-		input.value = '';
+	function removeAttachment(key: string) {
+		const file = attachments.find((f) => f.key === key);
+		if (!file) return;
+		if (file.uploaded) discardUpload(file.uploaded.id);
+		else file.controller.abort();
+		dropFile(key);
 		attachError = null;
-		const refused: string[] = [];
-		const audio: string[] = [];
-		for (const file of files) {
-			if (attachments.length >= MAX_ATTACHMENTS) {
-				attachError = m.chat_max_files({ count: MAX_ATTACHMENTS });
-				break;
-			}
-			if (isAudioFile(file.name, file.type)) {
-				audio.push(file.name);
-				continue;
-			}
-			if (!isTextFile(file.name, file.type)) {
-				refused.push(file.name);
-				continue;
-			}
-			const total = attachments.reduce((sum, a) => sum + a.size, 0);
-			if (file.size > MAX_FILE_BYTES || total + file.size > MAX_TOTAL_BYTES) {
-				attachError = m.chat_too_big({ name: file.name, file: formatBytes(MAX_FILE_BYTES), total: formatBytes(MAX_TOTAL_BYTES) });
-				continue;
-			}
-			attachments = [...attachments, { name: file.name, text: await file.text(), kind: 'file', size: file.size }];
-		}
-		if (audio.length > 0) {
-			attachError = m.chat_audio_refused({ names: audio.join(', ') });
-		}
-		if (refused.length > 0) {
-			attachError = m.chat_type_refused({ names: refused.join(', ') });
-		}
 	}
 
-	function removeAttachment(index: number) {
-		attachments = attachments.filter((_, i) => i !== index);
+	/** After sending: the files belong to the message now. */
+	function clearAttachments() {
+		for (const file of attachments) if (file.thumb) URL.revokeObjectURL(file.thumb);
+		attachments = [];
 		attachError = null;
 	}
 
@@ -593,6 +661,16 @@
 					method="POST"
 					action="?/sendMessage"
 					class="composer"
+					class:composer--drop={dragging}
+					ondragover={(event) => {
+						if (!event.dataTransfer?.types.includes('Files')) return;
+						event.preventDefault();
+						dragging = true;
+					}}
+					ondragleave={(event) => {
+						if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) dragging = false;
+					}}
+					ondrop={onDrop}
 					use:enhance={() => {
 						submitting = true;
 						stopRequested = false;
@@ -601,8 +679,7 @@
 							if (result.type === 'success') {
 								draft = '';
 								dictationBase = '';
-								attachments = [];
-								attachError = null;
+								clearAttachments();
 								if (result.data?.stopped) settleAfterStop();
 							}
 							messageInput?.focus();
@@ -611,16 +688,25 @@
 				>
 					{#if attachments.length > 0 || attachError || recordingVoice}
 						<div class="composer__files">
-							{#each attachments as file, i (file.name + i)}
-								<span class="file-chip" class:file-chip--voice={file.kind === 'voice'} title={file.kind === 'voice' ? file.text : undefined}>
-									{#if file.kind === 'voice'}
-										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+							{#each attachments as file (file.key)}
+								<span class="file-chip" class:file-chip--voice={file.kind === 'voice'} class:file-chip--busy={!file.uploaded}>
+									{#if file.thumb}
+										<img class="file-chip__thumb" src={file.thumb} alt="" />
 									{:else}
-										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+										<AttachmentIcon kind={file.kind} size={16} />
 									{/if}
 									<span class="file-chip__name">{file.name}</span>
-									<span class="file-chip__size">{formatBytes(file.size)}</span>
-									<button type="button" class="file-chip__remove" aria-label={m.chat_remove_file({ name: file.name })} onclick={() => removeAttachment(i)}>
+									<span class="file-chip__size">
+										{#if file.uploaded}
+											{formatBytes(file.size)}
+										{:else}
+											<span class="sr-only">{m.chat_uploading()}</span>{Math.round(file.progress * 100)}%
+										{/if}
+									</span>
+									{#if !file.uploaded}
+										<span class="file-chip__progress" style:--progress={file.progress} aria-hidden="true"></span>
+									{/if}
+									<button type="button" class="file-chip__remove" aria-label={m.chat_remove_file({ name: file.name })} onclick={() => removeAttachment(file.key)}>
 										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
 									</button>
 								</span>
@@ -652,7 +738,7 @@
 									<span class="attach-option__hint">{m.chat_attach_files_hint()}</span>
 								</span>
 							</MenuItem>
-							{#if speechSupported}
+							{#if recordingSupported}
 								<MenuItem
 									type="button"
 									disabled={recordingVoice}
@@ -669,7 +755,7 @@
 								</MenuItem>
 							{/if}
 						</Menu>
-						<input bind:this={fileInput} type="file" multiple hidden onchange={addFiles} />
+						<input bind:this={fileInput} type="file" multiple hidden onchange={onFilesPicked} />
 						<label for="chat-message" class="sr-only">{m.chat_message()}</label>
 						<textarea
 							id="chat-message"
@@ -679,6 +765,7 @@
 							placeholder={m.chat_placeholder()}
 							class="composer__input"
 							onkeydown={onComposerKeydown}
+							onpaste={onPaste}
 							onfocus={() => (dictationBase = draft)}
 						></textarea>
 						<input type="hidden" name="text" value={composedText} />
@@ -1083,9 +1170,38 @@
 		color: var(--md-sys-color-on-surface);
 		font-size: 0.8125rem;
 	}
+	.file-chip {
+		position: relative;
+		overflow: hidden;
+	}
 	.file-chip--voice {
 		background: var(--md-sys-color-tertiary-container);
 		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.file-chip--busy .file-chip__name {
+		opacity: 0.75;
+	}
+	.file-chip__thumb {
+		flex: none;
+		width: 26px;
+		height: 26px;
+		margin-left: -4px;
+		border-radius: var(--md-sys-shape-corner-small);
+		object-fit: cover;
+	}
+	/* Upload progress: a bar along the chip's bottom edge. */
+	.file-chip__progress {
+		position: absolute;
+		left: 0;
+		bottom: 0;
+		height: 3px;
+		width: calc(var(--progress) * 100%);
+		background: var(--md-sys-color-primary);
+		transition: width 160ms linear;
+	}
+	.composer--drop {
+		outline: 2px dashed var(--md-sys-color-primary);
+		outline-offset: 2px;
 	}
 	.attach-option {
 		display: flex;
