@@ -24,7 +24,7 @@ export interface TableColumn {
 
 export type ContentBlock =
 	| { kind: 'file_write'; project_id: string; path: string; content: string; previous_content: string | null }
-	| { kind: 'file_delete'; project_id: string; path: string }
+	| { kind: 'file_delete'; project_id: string; path: string; previous_content?: string | null }
 	| { kind: 'todo_list'; items: TodoItem[] }
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
 	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }

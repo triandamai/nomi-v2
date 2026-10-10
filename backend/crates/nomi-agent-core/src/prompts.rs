@@ -41,7 +41,8 @@ pub const CODING_SYSTEM_PROMPT: &str =
      and the database guide before adding a database. Follow their versions, config files and design rules exactly: \
      your memory of these frameworks is out of date.\n\
      3. Write the project: write_files for many files at once, edit_file to change part of a file (read it first), \
-     write_file for one whole file. Relative paths with no leading slash. Never write node_modules or lock files.\n\
+     write_file for one whole file. Your output per response is limited, so keep each call to a few files (about 300 lines \
+     in all) and write a big project over several calls. Relative paths with no leading slash. Never write node_modules or lock files.\n\
      4. Check it: run_command 'npm install', then 'npm run check', then 'npm run build'. Read the errors, fix them, and run \
      again until they pass. If run_command says the project isn't open, don't wait: finish, and say so in your summary.\n\
      5. Make it look designed, not generated, even for a tiny app: pick one direction from the design guide, define its \

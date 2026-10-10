@@ -43,6 +43,8 @@
 		handoffFrom?: string | null;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
+	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
+	const fresh = Date.now() - Date.parse(message.created_at) < 30_000;
 	const sources = $derived(message.sources ?? []);
 	const continues = $derived(thread === 'start' || thread === 'middle');
 	const inThread = $derived(thread !== 'solo');
@@ -267,7 +269,7 @@
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} />
 					{/each}
 				</div>
 			{:else if attached && attached.files.length > 0}

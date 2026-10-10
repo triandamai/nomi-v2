@@ -122,6 +122,9 @@ enum PendingBlock {
 pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, LlmError> {
     let mut pending: BTreeMap<usize, PendingBlock> = BTreeMap::new();
     let mut finished: BTreeMap<usize, ContentBlock> = BTreeMap::new();
+    // A tool call whose input isn't valid JSON. Expected when the response hit max_tokens mid
+    // call (the call is dropped and the response reported as cut off); an error otherwise.
+    let mut broken_tool_input: Option<String> = None;
 
     while let Some(event) = stream.next().await {
         match event? {
@@ -164,8 +167,13 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
                             let input = if input_json.is_empty() {
                                 serde_json::json!({})
                             } else {
-                                serde_json::from_str(&input_json)
-                                    .map_err(|e| LlmError::ParseError(format!("invalid tool input json: {e}")))?
+                                match serde_json::from_str(&input_json) {
+                                    Ok(input) => input,
+                                    Err(e) => {
+                                        broken_tool_input = Some(format!("invalid tool input json: {e}"));
+                                        continue;
+                                    }
+                                }
                             };
                             ContentBlock::ToolUse { id, name, input, thought_signature }
                         }
@@ -174,6 +182,11 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
                 }
             }
             StreamEvent::Done { stop_reason, input_tokens, output_tokens } => {
+                if let Some(error) = broken_tool_input {
+                    if stop_reason != StopReason::MaxTokens {
+                        return Err(LlmError::ParseError(error));
+                    }
+                }
                 let content = finished.into_values().collect();
                 return Ok(LlmResponse { content, stop_reason, input_tokens, output_tokens });
             }
@@ -186,6 +199,24 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tool_call_stream(partial_json: &str, stop_reason: StopReason) -> LlmEventStream {
+        let events = vec![
+            Ok(StreamEvent::ContentBlockStart { index: 0, block: PartialBlock::ToolUse { id: "t1".into(), name: "write_files".into(), thought_signature: None } }),
+            Ok(StreamEvent::ToolInputDelta { index: 0, partial_json: partial_json.to_string() }),
+            Ok(StreamEvent::ContentBlockDone { index: 0 }),
+            Ok(StreamEvent::Done { stop_reason, input_tokens: 1, output_tokens: 1 }),
+        ];
+        Box::pin(futures_util::stream::iter(events))
+    }
+
+    #[tokio::test]
+    async fn a_tool_call_cut_off_by_max_tokens_is_dropped_not_an_error() {
+        let response = collect_stream(tool_call_stream(r#"{"files": [{"path": "a.ts", "cont"#, StopReason::MaxTokens)).await.unwrap();
+        assert_eq!(response.stop_reason, StopReason::MaxTokens);
+        assert!(response.content.is_empty());
+        assert!(collect_stream(tool_call_stream(r#"{"files": "#, StopReason::ToolUse)).await.is_err());
+    }
 
     #[tokio::test]
     async fn validate_model_config_succeeds_against_the_fake_provider() {

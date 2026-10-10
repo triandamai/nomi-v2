@@ -58,6 +58,9 @@ pub enum ContentBlock {
     FileDelete {
         project_id: Uuid,
         path: String,
+        /// The file's content before it was deleted (absent on older messages).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_content: Option<String>,
     },
     TodoList {
         items: Vec<TodoItem>,
