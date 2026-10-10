@@ -1049,3 +1049,54 @@ body {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* Page transitions (see $lib/pageTransitions): the page area moves, the rest of the app holds
+   still. Forward: the old page eases back and fades, the new one rises in on the expressive
+   spatial curve. Back: the reverse direction. */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation: none;
+}
+::view-transition-old(page) {
+	animation: 160ms cubic-bezier(0.3, 0, 0.8, 0.15) both nomi-page-out;
+}
+::view-transition-new(page) {
+	animation: 420ms cubic-bezier(0.05, 0.7, 0.1, 1) 60ms both nomi-page-in;
+}
+:root[data-nav-direction='back']::view-transition-old(page) {
+	animation-name: nomi-page-out-back;
+}
+:root[data-nav-direction='back']::view-transition-new(page) {
+	animation-name: nomi-page-in-back;
+}
+@keyframes nomi-page-out {
+	to {
+		opacity: 0;
+		transform: translateY(-8px) scale(0.99);
+	}
+}
+@keyframes nomi-page-in {
+	from {
+		opacity: 0;
+		transform: translateY(16px);
+	}
+}
+@keyframes nomi-page-out-back {
+	to {
+		opacity: 0;
+		transform: translateY(8px) scale(0.99);
+	}
+}
+@keyframes nomi-page-in-back {
+	from {
+		opacity: 0;
+		transform: translateY(-12px);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
+}

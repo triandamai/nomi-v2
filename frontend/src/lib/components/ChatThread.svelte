@@ -431,6 +431,25 @@
 		return index === list.length - 1 || !isChained(list, index + 1);
 	}
 
+	// The crew's replies between two of the person's messages read as one thread (see
+	// MessageBubble): where each sits in it, and who handed over when the speaker changes.
+	function threadPosition(list: RenderedMessage[], index: number): 'solo' | 'start' | 'middle' | 'end' {
+		if (list[index].sender !== 'assistant') return 'solo';
+		const before = index > 0 && list[index - 1].sender === 'assistant';
+		const after = index < list.length - 1 && list[index + 1].sender === 'assistant';
+		if (before && after) return 'middle';
+		if (after) return 'start';
+		if (before) return 'end';
+		return 'solo';
+	}
+	function handoffFrom(list: RenderedMessage[], index: number): string | null {
+		const previous = list[index - 1];
+		const current = list[index];
+		if (!previous || current.sender !== 'assistant' || previous.sender !== 'assistant') return null;
+		const from = previous.agent_display_name ?? 'Nomi';
+		return from === (current.agent_display_name ?? 'Nomi') ? null : from;
+	}
+
 
 	// `submitting` covers the gap between hitting Send and the first streamed token arriving —
 	// `pendingReply` alone only flips once a WS "Delta" event lands, which leaves a brief window
@@ -663,6 +682,8 @@
 							chained={isChained(threadMessages, i)}
 							first={i === 0}
 							showTimestamp={isLastInChain(threadMessages, i)}
+							thread={threadPosition(threadMessages, i)}
+							handoffFrom={handoffFrom(threadMessages, i)}
 						/>
 					{/each}
 					{#if isWorking}

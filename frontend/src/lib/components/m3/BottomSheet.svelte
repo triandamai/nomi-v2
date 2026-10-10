@@ -191,7 +191,10 @@
 		/* Undo the UA dialog inset (max-height: calc(100% - 2em - 6px)) so a sheet can reach
 		   the top of the screen. */
 		max-height: 100dvh;
-		overflow: hidden;
+		/* clip, not hidden: a hidden box can still be scrolled by focus, and opening the sheet
+		   focuses into it while the panel is still below the screen, which scrolled the content
+		   up and then slid it back down: the sheet looked like it opened top to bottom. */
+		overflow: clip;
 		background: transparent;
 		/* showModal() moves initial focus onto the <dialog> itself (nothing inside asks for
 		   autofocus), and the UA default focus ring shows on it — a plain blue rectangle around

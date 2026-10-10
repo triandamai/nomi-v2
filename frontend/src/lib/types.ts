@@ -55,6 +55,22 @@ export interface MessageItem {
 	agent_display_name: string | null;
 	/** How many memories this reply drew on. */
 	memory_count: number;
+	/** What the crew did on the way to this reply (tools used), oldest first. */
+	steps?: ReplyStep[];
+	/** Pages the crew read or found for this reply. */
+	sources?: ReplySource[];
+}
+
+export interface ReplyStep {
+	tool: string;
+	/** What it was used on: the search, page, file, command, or who it went to. */
+	detail: string | null;
+	ok: boolean;
+}
+
+export interface ReplySource {
+	title: string | null;
+	url: string;
 }
 
 export interface AgentPlanItem {

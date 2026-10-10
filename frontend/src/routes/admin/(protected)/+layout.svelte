@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { enablePageTransitions } from '$lib/pageTransitions';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import AdminSidebar from '$lib/components/AdminSidebar.svelte';
@@ -11,6 +12,8 @@
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
+
+	enablePageTransitions();
 
 	let mobileNavOpen = $state(false);
 	let appearanceOpen = $state(false);
@@ -39,7 +42,7 @@
 				<span class="mobile-brand__tag">{m.admin_tag()}</span>
 			</a>
 		</header>
-		<main class="admin-main">
+		<main class="admin-main" style="view-transition-name: page">
 			<div class="admin-main__inner">
 				{@render children()}
 			</div>

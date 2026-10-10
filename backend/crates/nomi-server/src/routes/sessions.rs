@@ -221,6 +221,9 @@ pub struct MessageItem {
     pub agent_display_name: Option<String>,
     /// How many memories this reply drew on.
     pub memory_count: i64,
+    /// What the crew did on the way to this reply, and the pages they read (see message_steps).
+    pub steps: Vec<super::message_steps::Step>,
+    pub sources: Vec<super::message_steps::Source>,
 }
 
 #[derive(Serialize)]
@@ -242,6 +245,8 @@ fn to_message_item(
         my_feedback,
         agent_display_name,
         memory_count,
+        steps: Vec::new(),
+        sources: Vec::new(),
     }
 }
 
@@ -289,6 +294,9 @@ pub async fn list_messages(
 
     let mut messages: Vec<MessageItem> = rows.into_iter().map(to_message_item).collect();
     messages.reverse();
+    if let Err(e) = super::message_steps::attach_steps(&state.pool, session_id, &mut messages).await {
+        tracing::warn!(error = %e, "failed to load reply steps");
+    }
 
     Ok(Json(ListMessagesResponse { messages }))
 }
@@ -315,7 +323,12 @@ pub async fn get_message(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch message"))?
     .ok_or((StatusCode::NOT_FOUND, "message not found"))?;
 
-    Ok(Json(to_message_item(row)))
+    let mut items = [to_message_item(row)];
+    if let Err(e) = super::message_steps::attach_steps(&state.pool, session_id, &mut items).await {
+        tracing::warn!(error = %e, "failed to load reply steps");
+    }
+    let [item] = items;
+    Ok(Json(item))
 }
 
 #[derive(Serialize)]
@@ -578,6 +591,8 @@ pub async fn send_message(
         my_feedback: None,
         agent_display_name: None,
         memory_count: 0,
+        steps: Vec::new(),
+        sources: Vec::new(),
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -644,6 +659,8 @@ async fn try_stop_command(
         my_feedback: None,
         agent_display_name: None,
         memory_count: 0,
+        steps: Vec::new(),
+        sources: Vec::new(),
     };
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
@@ -654,6 +671,8 @@ async fn try_stop_command(
         my_feedback: None,
         agent_display_name: Some("Supervisor".to_string()),
         memory_count: 0,
+        steps: Vec::new(),
+        sources: Vec::new(),
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }

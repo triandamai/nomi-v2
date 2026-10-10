@@ -141,12 +141,14 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 &mut conn,
                 claimed.user_id,
                 &claimed.target_agent_type,
+                agent.display_name().as_ref(),
                 &claimed.task,
             )
             .await
             .unwrap_or_else(|_| locale.tf("turn.working_with", &[("agent", &claimed.target_agent_type)]));
 
-            post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &started_message).await;
+            // Posted by the agent picking the work up: the chat reads as the crew handing it along.
+            post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &started_message).await;
 
             let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
@@ -246,7 +248,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         "The {} agent is waiting on your approval for a tool call before it can continue.",
                         claimed.target_agent_type
                     );
-                    post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &notice).await;
+                    post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &notice).await;
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
                 }
                 // Stopped by the user (nomi-agent-supervisor's stop). The supervisor already marked
@@ -264,7 +266,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
                     let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
-                    post(&mut conn, &mqtt, claimed.session_id, "Supervisor", &sorry).await;
+                    post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }
             }

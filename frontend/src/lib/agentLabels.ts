@@ -127,3 +127,39 @@ export function eventFeedLine(
 			return `${agentLabel}: ${eventType}${where}`;
 	}
 }
+
+/** Past-tense phrases for a reply's steps, e.g. "Searched the web". */
+const STEP_LABELS: Record<string, () => string> = {
+	web_search: m.step_web_search,
+	read_web_page: m.step_read_web_page,
+	read_attachment: m.step_read_attachment,
+	delegate_to_agent: m.step_delegate,
+	create_project: m.step_create_project,
+	write_file: m.step_write_file,
+	write_files: m.step_write_files,
+	edit_file: m.step_edit_file,
+	delete_file: m.step_delete_file,
+	read_file: m.step_read_file,
+	search_files: m.step_search_files,
+	run_command: m.step_run_command,
+	create_reminder: m.step_create_reminder,
+	list_reminders: m.step_list_reminders,
+	cancel_reminder: m.step_cancel_reminder,
+	list_transactions: m.step_list_transactions,
+	summarize_budget: m.step_summarize_budget,
+};
+
+/** What a step did, in the past tense; a hand-off names who it went to. */
+export function stepLabel(tool: string, detail: string | null): string {
+	if (tool === 'delegate_to_agent' && detail) return m.step_delegate_to({ name: agentTypeFallbackLabel(detail) });
+	return STEP_LABELS[tool]?.() ?? m.step_used({ tool: humanize(tool) });
+}
+
+/** A source's site, for its chip: "kopinako.id". */
+export function sourceSite(url: string): string {
+	try {
+		return new URL(url).hostname.replace(/^www\./, '');
+	} catch {
+		return url;
+	}
+}

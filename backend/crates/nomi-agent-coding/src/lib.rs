@@ -141,6 +141,12 @@ impl SubAgent for CodingAgent {
         true
     }
 
+    /// Koda's tools only touch the project's own files and run commands in the person's own
+    /// browser preview: building shouldn't stop for an approval at every file.
+    fn tool_needs_approval(&self, tool_name: &str) -> bool {
+        !TOOL_NAMES.contains(&tool_name)
+    }
+
     fn supports_plans(&self) -> bool {
         true
     }

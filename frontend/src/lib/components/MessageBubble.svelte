@@ -5,7 +5,7 @@
 	import AgentShape from './m3/AgentShape.svelte';
 	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
-	import ReasoningDisclosure from './blocks/ReasoningDisclosure.svelte';
+	import ActivityDisclosure from './blocks/ActivityDisclosure.svelte';
 	import { splitAttachments } from '$lib/attachments';
 	import MessageAttachments from './MessageAttachments.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
@@ -23,6 +23,8 @@
 		showTimestamp = true,
 		reasoning = [],
 		thinkingOnly = false,
+		thread = 'solo',
+		handoffFrom = null,
 	}: {
 		message: RenderedMessage;
 		chained?: boolean;
@@ -32,7 +34,18 @@
 		reasoning?: string[];
 		/** The message is only thinking so far: show the collapsed thinking and nothing else. */
 		thinkingOnly?: boolean;
+		/**
+		 * Where this reply sits among the crew's replies to one message: they read as one thread,
+		 * joined by a line through their avatars ('start' and 'middle' continue to the next).
+		 */
+		thread?: 'solo' | 'start' | 'middle' | 'end';
+		/** The crew member who passed the conversation to this one, in the same thread. */
+		handoffFrom?: string | null;
 	} = $props();
+	const steps = $derived(message.steps ?? []);
+	const sources = $derived(message.sources ?? []);
+	const continues = $derived(thread === 'start' || thread === 'middle');
+	const inThread = $derived(thread !== 'solo');
 
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	// The files a user attached are referenced in the message text (see $lib/attachments).
@@ -214,7 +227,11 @@
 <div
 	class="message"
 	class:message--user={message.sender === 'user'}
-	style="margin-top: {first ? '0' : chained ? '2px' : '14px'}"
+	class:message--threaded={inThread}
+	class:message--continues={continues}
+	class:message--chained={chained}
+	class:message--start={thread === 'start'}
+	style="margin-top: {first ? '0' : chained ? '2px' : inThread && thread !== 'start' ? '6px' : '14px'}"
 >
 	{#if message.sender !== 'user'}
 		<div class="message__avatar">
@@ -226,15 +243,23 @@
 
 	<div class="message__body">
 		{#if !chained && message.sender !== 'user'}
-			{#if isCrewMember}
-				<span class="message__sender message__sender--chip" style="--tint: {senderTint}">{senderLabel}</span>
-			{:else}
-				<span class="message__sender">{senderLabel}</span>
-			{/if}
+			<span class="message__who">
+				{#if isCrewMember}
+					<span class="message__sender message__sender--chip" style="--tint: {senderTint}">{senderLabel}</span>
+				{:else}
+					<span class="message__sender">{senderLabel}</span>
+				{/if}
+				{#if handoffFrom}
+					<span class="message__handoff">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v7a4 4 0 0 0 4 4h12" /><path d="m15 10 5 5-5 5" /></svg>
+						{m.thread_handoff({ name: handoffFrom })}
+					</span>
+				{/if}
+			</span>
 		{/if}
 
-		{#if reasoning.length > 0}
-			<ReasoningDisclosure steps={reasoning} live={thinkingOnly} />
+		{#if reasoning.length > 0 || steps.length > 0 || sources.length > 0}
+			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
 		{/if}
 
 		{#if !thinkingOnly}
@@ -363,8 +388,66 @@
 		justify-content: flex-end;
 	}
 	.message__avatar {
+		position: relative;
 		flex: none;
+		align-self: stretch;
 		width: 36px;
+	}
+	/* The crew's replies to one message read as one thread: a line runs through the avatars from
+	   each reply to the next, so a hand-off looks like the crew passing the work along. */
+	.message--threaded .message__avatar::before,
+	.message--continues .message__avatar::after {
+		content: '';
+		position: absolute;
+		left: 17px;
+		width: 2px;
+		border-radius: 1px;
+		background: color-mix(in srgb, var(--md-sys-color-primary) 28%, var(--md-sys-color-outline-variant));
+	}
+	/* Joining from the reply above (not on the first one). */
+	.message--threaded:not(.message--start) .message__avatar::before {
+		top: -8px;
+		height: 8px;
+	}
+	.message--start .message__avatar::before {
+		display: none;
+	}
+	/* On to the next reply: from under the avatar, or the whole height where there's none. */
+	.message--continues .message__avatar::after {
+		top: 40px;
+		bottom: -8px;
+	}
+	.message--continues.message--chained .message__avatar::after,
+	.message--chained.message--threaded:not(.message--start) .message__avatar::before {
+		top: -8px;
+	}
+	.message--chained.message--threaded:not(.message--continues) .message__avatar::before {
+		height: 26px;
+	}
+	.message__who {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+	}
+	.message__handoff {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+		animation: handoff-in var(--nomi-motion-spatial-default, 350ms) both;
+	}
+	@keyframes handoff-in {
+		from {
+			opacity: 0;
+			transform: translateX(-6px);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.message__handoff {
+			animation: none;
+		}
 	}
 	.message__plain {
 		margin: 0;

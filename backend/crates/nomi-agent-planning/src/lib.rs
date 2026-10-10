@@ -103,6 +103,11 @@ impl SubAgent for PlanningAgent {
         true
     }
 
+    /// Rena only names and describes the chat's own project: nothing to approve.
+    fn tool_needs_approval(&self, tool_name: &str) -> bool {
+        tool_name != "create_project"
+    }
+
     fn supports_plans(&self) -> bool {
         true
     }

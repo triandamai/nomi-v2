@@ -216,13 +216,16 @@ pub async fn phrase_delegation_started(
     conn: &mut PoolConnection<Postgres>,
     user_id: Uuid,
     target_agent_type: &str,
+    target_display_name: &str,
     task: &str,
 ) -> Result<String, String> {
+    // Said by the crew member picking the work up, so a hand-off reads as the crew passing it
+    // along in one thread rather than a supervisor stepping in between them.
     let base = format!(
-        "{SUPERVISOR_SYSTEM_PROMPT}\n\nYou've just handed a task off to the {target_agent_type} agent. Tell the \
-         user, in one short sentence, that you're on it and will update them here once it's done. Don't invent \
-         details about what the agent will find — just that work has started. Keep it to one sentence no matter \
-         how expressive your personality is; save the personality for the follow-up report.\n\n\
+        "{SUPERVISOR_SYSTEM_PROMPT}\n\nRight now you speak as {target_display_name}, the crew member ({target_agent_type}) \
+         who has just picked this task up from a teammate. Tell the user, in one short first-person sentence, \
+         what you're starting on and that you'll report back here when it's done. Don't invent details about the \
+         result. One sentence, no matter how expressive the personality is.\n\n\
          What was asked: {task}"
     );
     let system = personalize_system_prompt(conn, user_id, base).await;
