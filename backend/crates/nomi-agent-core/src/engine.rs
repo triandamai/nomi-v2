@@ -20,6 +20,15 @@ const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to 
 // model ran out of room), so the chat never ends on a silent turn; a plan moved into a draft is
 // answered with `engine.plan_draft`. All three in the person's language (nomi-i18n).
 
+/// Sent when a response hit the output limit before it finished, usually in the middle of a big
+/// tool call (Koda writing many files at once). The cut-off call is dropped, so the agent tries
+/// again in smaller pieces instead of the turn ending on "I ran out of room".
+const CUT_OFF_RETRY: &str = "Your last response hit the output limit before it finished, so it was discarded and \
+     nothing in it ran. Continue from where you were, in smaller steps: at most a few files or a few hundred lines per \
+     tool call, and split long files across write_file then edit_file calls.";
+/// How many times one run retries after being cut off before telling the person.
+const MAX_CUT_OFF_RETRIES: u32 = 3;
+
 /// How agents should think when reasoning is on. Users read the thinking in chat.
 pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point: 2-3 short points (about \
      60 words) on what the person needs, what you'll do, and any catch, in the language you reply in. Don't \
@@ -539,6 +548,7 @@ pub async fn run_agent_turn(
     // Whether this run already saved a plan draft, and already asked once for a missing answer.
     let mut wrote_plan = false;
     let mut asked_for_answer = false;
+    let mut cut_off_retries = 0;
 
     for _ in 0..agent.max_tool_turns() {
         if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
@@ -628,6 +638,14 @@ pub async fn run_agent_turn(
                     messages.pop();
                 }
                 messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: ANSWER_NOW.to_string() }] });
+                continue;
+            }
+            // Cut off before writing an answer, often mid tool call: drop it and ask for smaller steps.
+            let was_calling_tools = response.content.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }));
+            if cut_off && (reply_text.is_empty() || was_calling_tools) && cut_off_retries < MAX_CUT_OFF_RETRIES {
+                cut_off_retries += 1;
+                messages.pop();
+                messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: CUT_OFF_RETRY.to_string() }] });
                 continue;
             }
             // The model ran out of room before answering (a half-written plan or tool call is

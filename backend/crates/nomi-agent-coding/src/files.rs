@@ -385,11 +385,13 @@ pub async fn delete_file(
 ) -> Result<ToolOutcome, String> {
     let project_id = owned_project_id(conn, user_id, &input).await?;
     let path = str_field(&input, "path")?;
+    // What was removed, so the chat card can show it (best effort: the delete doesn't depend on it).
+    let previous_content = storage.get_object(&project_file_key(project_id, path)).await.ok().flatten();
     remove_file(conn, storage, project_id, path).await?;
     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
     Ok(ToolOutcome {
         display_text: format!("🗑️ Deleted `{path}`"),
-        block: Some(ContentBlock::FileDelete { project_id, path: path.to_string() }),
+        block: Some(ContentBlock::FileDelete { project_id, path: path.to_string(), previous_content }),
     })
 }
 

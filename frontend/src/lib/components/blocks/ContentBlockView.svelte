@@ -1,7 +1,6 @@
 <!-- frontend/src/lib/components/blocks/ContentBlockView.svelte -->
 <script lang="ts">
-	import FileWriteBlock from './FileWriteBlock.svelte';
-	import FileDeleteBlock from './FileDeleteBlock.svelte';
+	import FileChangeBlock from './FileChangeBlock.svelte';
 	import TodoListBlock from './TodoListBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import ApprovalCard from './ApprovalCard.svelte';
@@ -13,13 +12,22 @@
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import type { ContentBlock } from '$lib/types';
 
-	let { block, messageId, agent = null }: { block: ContentBlock; messageId: string; agent?: string | null } = $props();
+	let {
+		block,
+		messageId,
+		agent = null,
+		fresh = false
+	}: {
+		block: ContentBlock;
+		messageId: string;
+		agent?: string | null;
+		/** The message arrived just now rather than loading from history. */
+		fresh?: boolean;
+	} = $props();
 </script>
 
-{#if block.kind === 'file_write'}
-	<FileWriteBlock {block} />
-{:else if block.kind === 'file_delete'}
-	<FileDeleteBlock {block} />
+{#if block.kind === 'file_write' || block.kind === 'file_delete'}
+	<FileChangeBlock {block} {fresh} />
 {:else if block.kind === 'todo_list'}
 	<TodoListBlock {block} {agent} />
 {:else if block.kind === 'table'}

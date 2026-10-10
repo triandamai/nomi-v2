@@ -1437,12 +1437,14 @@ async fn a_reply_cut_off_after_thinking_says_so_instead_of_coming_back_empty(poo
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
-    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+    // Cut off every time: after the retries it says so.
+    let cut_off = LlmResponse {
         content: vec![ContentBlock::Thinking { text: "Plan the trip day by day.".to_string(), signature: None }],
         stop_reason: StopReason::MaxTokens,
         input_tokens: 1,
         output_tokens: 1,
-    }]);
+    };
+    let provider = FakeLlmProvider::sequence(vec![cut_off.clone(), cut_off.clone(), cut_off.clone(), cut_off]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
@@ -1454,6 +1456,40 @@ async fn a_reply_cut_off_after_thinking_says_so_instead_of_coming_back_empty(poo
         outcome,
         LoopOutcome::Reply { text: nomi_agent_core::Locale::En.t("engine.cut_off"), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
     );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_tool_call_cut_off_by_the_output_limit_is_retried_in_smaller_steps(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![
+        LlmResponse {
+            content: vec![ContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "complete_task".to_string(),
+                input: serde_json::json!({ "summary": "half" }),
+                thought_signature: None,
+            }],
+            stop_reason: StopReason::MaxTokens,
+            input_tokens: 1,
+            output_tokens: 1,
+        },
+        LlmResponse { content: vec![ContentBlock::Text { text: "Done in pieces.".to_string() }], stop_reason: StopReason::EndTurn, input_tokens: 2, output_tokens: 2 },
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, LoopOutcome::Reply { text: "Done in pieces.".to_string(), memory_ids_used: vec![], input_tokens: 2, output_tokens: 2 });
+    let requests = provider.received_requests.lock().unwrap();
+    let retry = &requests[1].messages;
+    // The cut-off call isn't replayed (it has no result); the agent is told to go smaller instead.
+    assert!(!retry.iter().any(|m| m.content.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }))));
+    assert!(matches!(&retry.last().unwrap().content[0], ContentBlock::Text { text } if text.contains("smaller steps")));
 }
 
 /// TestAgent, but it remembers things about the person.
