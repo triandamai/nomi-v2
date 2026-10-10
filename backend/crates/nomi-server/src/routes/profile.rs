@@ -233,6 +233,8 @@ pub struct PreferencesResponse {
     // user_preferences row exists yet, so this is just the fallback default" — the frontend's
     // browser-detected-timezone auto-save only fires in the latter case.
     pub has_stored_timezone: bool,
+    /// Features pinned to the navigation drawer, in order; null until the person customises it.
+    pub drawer_pins: Option<Vec<String>>,
 }
 
 #[tracing::instrument(skip(state, claims))]
@@ -240,8 +242,9 @@ pub async fn get_preferences(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<PreferencesResponse>, (StatusCode, &'static str)> {
-    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT theme, accent_color, timezone, language FROM user_preferences WHERE user_id = $1")
+    #[allow(clippy::type_complexity)]
+    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<Vec<String>>)> =
+        sqlx::query_as("SELECT theme, accent_color, timezone, language, drawer_pins FROM user_preferences WHERE user_id = $1")
             .bind(claims.sub)
             .fetch_optional(&state.pool)
             .await
@@ -250,13 +253,14 @@ pub async fn get_preferences(
                 (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences")
             })?;
 
-    let (theme, accent_color, timezone, language) = row.unwrap_or((None, None, None, None));
+    let (theme, accent_color, timezone, language, drawer_pins) = row.unwrap_or((None, None, None, None, None));
     Ok(Json(PreferencesResponse {
         theme: theme.unwrap_or_else(|| "system".to_string()),
         accent_color: accent_color.unwrap_or_else(|| "canopy".to_string()),
         has_stored_timezone: timezone.is_some(),
         timezone: timezone.unwrap_or_else(|| "UTC".to_string()),
         language: Locale::from_code_or_default(language.as_deref()).code().to_string(),
+        drawer_pins,
     }))
 }
 
@@ -269,7 +273,11 @@ pub struct UpdatePreferencesRequest {
     pub accent_color: Option<String>,
     pub timezone: Option<String>,
     pub language: Option<String>,
+    pub drawer_pins: Option<Vec<String>>,
 }
+
+/// Features that can be pinned to the drawer (Home, Chats and Projects are always there).
+const PINNABLE_FEATURES: [&str; 8] = ["money", "reminders", "memory", "notifications", "crew", "connections", "models", "billing"];
 
 const ALLOWED_THEMES: [&str; 3] = ["light", "dark", "system"];
 /// Appearance themes (Preferences → Appearance); the column keeps its accent_color name.
@@ -302,6 +310,14 @@ pub async fn put_preferences(
             return Err((StatusCode::BAD_REQUEST, "timezone must be a valid IANA timezone name"));
         }
     }
+    if let Some(pins) = &req.drawer_pins {
+        if pins.iter().any(|pin| !PINNABLE_FEATURES.contains(&pin.as_str())) {
+            return Err((StatusCode::BAD_REQUEST, "drawer_pins may only name pinnable features"));
+        }
+        if pins.iter().enumerate().any(|(i, pin)| pins[..i].contains(pin)) {
+            return Err((StatusCode::BAD_REQUEST, "drawer_pins can't list a feature twice"));
+        }
+    }
 
     // An UPDATE's SET clause can COALESCE against the row's own current columns directly, unlike
     // an INSERT .. ON CONFLICT's EXCLUDED, which holds the VALUES clause's already-defaulted
@@ -314,21 +330,24 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    let updated: Option<(String, String, String, String)> = sqlx::query_as(
+    #[allow(clippy::type_complexity)]
+    let updated: Option<(String, String, String, String, Option<Vec<String>>)> = sqlx::query_as(
         "UPDATE user_preferences SET \
             theme = COALESCE($2, theme), \
             accent_color = COALESCE($3, accent_color), \
             timezone = COALESCE($4, timezone), \
             language = COALESCE($5, language), \
+            drawer_pins = COALESCE($6, drawer_pins), \
             updated_at = now() \
          WHERE user_id = $1 \
-         RETURNING theme, accent_color, timezone, language",
+         RETURNING theme, accent_color, timezone, language, drawer_pins",
     )
     .bind(claims.sub)
     .bind(&req.theme)
     .bind(&req.accent_color)
     .bind(&req.timezone)
     .bind(language)
+    .bind(&req.drawer_pins)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
@@ -336,18 +355,19 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    let (theme, accent_color, timezone, language) = match updated {
+    let (theme, accent_color, timezone, language, drawer_pins) = match updated {
         Some(row) => row,
         None => sqlx::query_as(
-            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language) \
-             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en')) \
-             RETURNING theme, accent_color, timezone, language",
+            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language, drawer_pins) \
+             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6) \
+             RETURNING theme, accent_color, timezone, language, drawer_pins",
         )
         .bind(claims.sub)
         .bind(&req.theme)
         .bind(&req.accent_color)
         .bind(&req.timezone)
         .bind(language)
+        .bind(&req.drawer_pins)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
@@ -364,5 +384,5 @@ pub async fn put_preferences(
     // A PUT always leaves a row behind (via the insert-if-missing fallback above), so a
     // timezone is always "stored" by the time this response is built — unlike GET, which can
     // observe a user with no row at all yet.
-    Ok(Json(PreferencesResponse { theme, accent_color, timezone, language, has_stored_timezone: true }))
+    Ok(Json(PreferencesResponse { theme, accent_color, timezone, language, has_stored_timezone: true, drawer_pins }))
 }

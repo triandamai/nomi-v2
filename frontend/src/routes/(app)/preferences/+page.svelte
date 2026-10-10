@@ -2,6 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import AppearancePicker from '$lib/components/AppearancePicker.svelte';
+	import DrawerCustomizer from '$lib/components/DrawerCustomizer.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -51,6 +52,12 @@
 				{m.prefs_appearance_hint()}
 			</p>
 			<AppearancePicker preferences={data.preferences} />
+		</section>
+
+		<section id="drawer" class="mt-8">
+			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.drawer_title()}</h2>
+			<p class="md-body-medium mt-1 mb-2" style="color: var(--md-sys-color-on-surface-variant)">{m.drawer_hint()}</p>
+			<DrawerCustomizer savedPins={data.preferences.drawer_pins} />
 		</section>
 
 		<section class="mt-8">

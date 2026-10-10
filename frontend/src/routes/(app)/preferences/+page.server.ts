@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { isThemeName } from '$lib/appearance';
+import { isPinnable } from '$lib/drawerPins';
 import { apiFetch } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
 import type { Preferences } from '$lib/types';
@@ -59,6 +60,27 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			return fail(response.status, { error: m.err_save_preference() });
+		}
+		return { success: true };
+	},
+
+	updateDrawer: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		let pins: unknown;
+		try {
+			pins = JSON.parse(String(data.get('pins') ?? ''));
+		} catch {
+			pins = null;
+		}
+		if (!Array.isArray(pins) || !pins.every(isPinnable)) {
+			return fail(400, { error: m.drawer_save_failed() });
+		}
+		const response = await apiFetch(fetch, cookies, '/api/preferences', {
+			method: 'PUT',
+			body: JSON.stringify({ drawer_pins: pins }),
+		});
+		if (!response.ok) {
+			return fail(response.status, { error: m.drawer_save_failed() });
 		}
 		return { success: true };
 	},

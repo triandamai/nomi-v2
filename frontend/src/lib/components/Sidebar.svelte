@@ -7,17 +7,13 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
-	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
-	import IconFolder from '$lib/components/icons/IconFolder.svelte';
-	import IconHome from '$lib/components/icons/IconHome.svelte';
-	import IconMemory from '$lib/components/icons/IconMemory.svelte';
-	import IconBell from '$lib/components/icons/IconBell.svelte';
-	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import { inbox } from '$lib/notifications.svelte';
-	import IconWallet from '$lib/components/icons/IconWallet.svelte';
+	import IconApps from '$lib/components/icons/IconApps.svelte';
+	import { FEATURES, PERMANENT } from '$lib/features';
+	import { currentPins } from '$lib/drawerStore.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
@@ -33,7 +29,8 @@
 		profile,
 		usage = null,
 		mobileOpen = $bindable(false),
-	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; mobileOpen?: boolean } = $props();
+		savedPins = null,
+	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; mobileOpen?: boolean; savedPins?: string[] | null } = $props();
 
 	let proOpen = $state(false);
 	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
@@ -58,14 +55,13 @@
 	// fully expanded regardless of what's persisted for the desktop rail.
 	const effectiveCollapsed = $derived(collapsed && !mobileOpen);
 
+	// Home, Chats and Projects, then the person's pins in their order, then More (everything).
 	const NAV = $derived([
-		{ href: '/', label: m.nav_home(), icon: IconHome },
-		{ href: '/chats', label: m.nav_chats(), icon: IconChatBubble },
-		{ href: '/projects', label: m.nav_projects(), icon: IconFolder },
-		{ href: '/money', label: m.nav_money(), icon: IconWallet },
-		{ href: '/reminders', label: m.nav_reminders(), icon: IconBell },
-		{ href: '/memory', label: m.nav_memory(), icon: IconMemory },
-		{ href: '/notifications', label: m.notif_title(), icon: IconInbox, badge: inbox.unread },
+		...[...PERMANENT, ...currentPins(savedPins)].map((id) => {
+			const feature = FEATURES[id];
+			return { href: feature.href, label: feature.label(), icon: feature.icon, badge: id === 'notifications' ? inbox.unread : undefined };
+		}),
+		{ href: '/more', label: m.nav_more(), icon: IconApps },
 	]);
 
 	function isActive(href: string): boolean {
@@ -133,9 +129,11 @@
 		</a>
 	</div>
 
-	<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} onnavigate={() => (mobileOpen = false)} />
-
-	<div class="flex-1"></div>
+	<!-- Scrolls on its own when the screen is shorter than the drawer, keeping the brand,
+	     New chat and the account row in place. -->
+	<div class="drawer-scroll">
+		<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} onnavigate={() => (mobileOpen = false)} />
+	</div>
 
 	{#if effectiveCollapsed}
 		<div class="hidden pb-2 md:block">
@@ -199,6 +197,14 @@
 <ProSheet bind:open={proOpen} />
 
 <style>
+	.drawer-scroll {
+		flex: 1;
+		min-height: 0;
+		width: 100%;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-width: thin;
+	}
 	.app-version {
 		margin: 4px 0 0;
 		padding: 8px 16px 4px;

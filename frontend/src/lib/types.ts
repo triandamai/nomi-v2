@@ -314,6 +314,8 @@ export interface Preferences {
 	/** "en" or "id": the app's language and the crew's. */
 	language: Locale;
 	has_stored_timezone: boolean;
+	/** Features pinned to the drawer, in order; null until customised (see $lib/drawerPins). */
+	drawer_pins?: string[] | null;
 }
 
 export interface ProjectSummary {
