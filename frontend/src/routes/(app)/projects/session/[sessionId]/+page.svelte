@@ -5,11 +5,9 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import ChatThread from '$lib/components/ChatThread.svelte';
-	import CodeEditor from '$lib/components/CodeEditor.svelte';
+	import CodeWorkbench from '$lib/components/CodeWorkbench.svelte';
 	import ProjectPreview from '$lib/components/ProjectPreview.svelte';
 	import { ProjectRuntime } from '$lib/projectRuntime.svelte';
-	import List from '$lib/components/m3/List.svelte';
-	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconSidePanel from '$lib/components/icons/IconSidePanel.svelte';
@@ -265,39 +263,15 @@
 				{:else if view === 'terminal' && runtime}
 					<pre class="terminal">{runtime.log || m.project_terminal_empty()}</pre>
 				{:else}
-					<div class="flex h-full">
-						<aside class="w-56 shrink-0 overflow-y-auto p-3" style="border-right: 1px solid var(--md-sys-color-outline-variant)">
-							<List>
-								{#each project.files as file (file.path)}
-									<button
-										type="button"
-										class="w-full text-left"
-										style="background: none; border: none; padding: 0; cursor: pointer"
-										onclick={() => openFile(project.id, file.path)}
-									>
-										<ListItem headline={file.path} selected={activePath === file.path} />
-									</button>
-								{/each}
-							</List>
-							{#if project.files.length === 0}
-								<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{m.project_no_files()}</p>
-							{/if}
-						</aside>
-						<div class="min-w-0 flex-1">
-							{#if saveError}
-								<p class="md-body-medium p-2" style="color: var(--md-sys-color-error)">{saveError}</p>
-							{/if}
-							{#if activePath}
-								{#key activePath}
-									<CodeEditor path={activePath} value={activeContent} onSave={(content) => saveFile(project.id, content)} />
-								{/key}
-							{:else}
-								<div class="flex h-full items-center justify-center">
-									<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.project_select_file()}</p>
-								</div>
-							{/if}
-						</div>
-					</div>
+					<CodeWorkbench
+						projectName={project.name}
+						files={project.files.map((f) => f.path)}
+						{activePath}
+						content={activeContent}
+						{saveError}
+						onOpen={(path) => openFile(project.id, path)}
+						onSave={(content) => saveFile(project.id, content)}
+					/>
 				{/if}
 			</div>
 		{/if}

@@ -1238,5 +1238,9 @@
 	"picker_minute": "Menit",
 	"picker_period": "AM atau PM",
 	"rem_date": "Tanggal",
-	"rem_time": "Jam"
+	"rem_time": "Jam",
+	"code_explorer": "Penjelajah",
+	"code_ln_col": "Brs {line}, Kol {column}",
+	"code_toggle_explorer": "Tampilkan atau sembunyikan file",
+	"code_unsaved": "Ada perubahan yang belum disimpan"
 }

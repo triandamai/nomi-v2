@@ -7,9 +7,7 @@
 	import { EditorState, type Extension } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightSpecialChars, drawSelection } from '@codemirror/view';
 	import { unifiedMergeView } from '@codemirror/merge';
-	import { css } from '@codemirror/lang-css';
-	import { html } from '@codemirror/lang-html';
-	import { javascript } from '@codemirror/lang-javascript';
+	import { languageFor } from '$lib/code/language';
 	import { vscodeDark } from '$lib/code/vscodeTheme';
 	import { diffStats, fileBadge } from '$lib/code/diffStats';
 	import type { ContentBlock } from '$lib/types';
@@ -38,17 +36,6 @@
 	// A delete with no saved content (older messages) has nothing to open.
 	const hasBody = $derived(!deleted || before !== null);
 
-	function language(path: string): Extension[] {
-		const ext = path.split('.').pop()?.toLowerCase();
-		if (ext === 'html' || ext === 'htm' || ext === 'svelte' || ext === 'vue' || ext === 'astro') return [html()];
-		if (ext === 'css') return [css()];
-		if (ext === 'ts' || ext === 'mts' || ext === 'cts') return [javascript({ typescript: true })];
-		if (ext === 'tsx') return [javascript({ typescript: true, jsx: true })];
-		if (ext === 'jsx') return [javascript({ jsx: true })];
-		if (ext === 'js' || ext === 'mjs' || ext === 'cjs' || ext === 'json') return [javascript()];
-		return [];
-	}
-
 	$effect(() => {
 		if (!open || !container) return;
 		const base: Extension[] = [
@@ -58,7 +45,7 @@
 			EditorState.readOnly.of(true),
 			EditorView.editable.of(false),
 			vscodeDark,
-			...language(block.path)
+			...languageFor(block.path)
 		];
 		const diff =
 			block.kind === 'file_write' && before !== null
