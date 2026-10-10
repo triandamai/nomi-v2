@@ -75,6 +75,31 @@ fn escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+/// Escaped body text with the cents of each amount raised ("Rp 12.500,50" → "Rp 12.500<sup>,50</sup>"),
+/// the way the app shows money: a separator and exactly two digits, right after a digit.
+fn body_text(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let is_cents = matches!(chars[i], '.' | ',')
+            && i > 0
+            && chars[i - 1].is_ascii_digit()
+            && chars.get(i + 1).is_some_and(char::is_ascii_digit)
+            && chars.get(i + 2).is_some_and(char::is_ascii_digit)
+            && !chars.get(i + 3).is_some_and(char::is_ascii_digit);
+        if is_cents {
+            let cents: String = chars[i..i + 3].iter().collect();
+            out.push_str(&format!(r#"<sup style="font-size:0.6em;line-height:0;vertical-align:0.5em">{}</sup>"#, escape(&cents)));
+            i += 3;
+        } else {
+            out.push_str(&escape(&chars[i].to_string()));
+            i += 1;
+        }
+    }
+    out
+}
+
 fn image(content_id: &str, shape: &str, tone: &str, px: u32) -> InlineImage {
     InlineImage { content_id: content_id.into(), png: brand::shape_png(shape, tone, true, px) }
 }
@@ -114,7 +139,7 @@ impl BrandedEmail {
         let paragraphs: String = self
             .paragraphs
             .iter()
-            .map(|p| format!(r#"<p style="margin:0 0 14px;font-family:{FONT_PLAIN};font-size:16px;line-height:1.55;color:{INK}" class="ink">{}</p>"#, escape(p)))
+            .map(|p| format!(r#"<p style="margin:0 0 14px;font-family:{FONT_PLAIN};font-size:16px;line-height:1.55;color:{INK}" class="ink">{}</p>"#, body_text(p)))
             .collect();
         let highlight = self
             .highlight
@@ -130,7 +155,7 @@ impl BrandedEmail {
         let notes: String = self
             .notes
             .iter()
-            .map(|n| format!(r#"<p style="margin:0 0 10px;font-family:{FONT_PLAIN};font-size:14px;line-height:1.5;color:{INK_SOFT}" class="soft">{}</p>"#, escape(n)))
+            .map(|n| format!(r#"<p style="margin:0 0 10px;font-family:{FONT_PLAIN};font-size:14px;line-height:1.5;color:{INK_SOFT}" class="soft">{}</p>"#, body_text(n)))
             .collect();
 
         let html = format!(
@@ -169,7 +194,7 @@ impl BrandedEmail {
 </body></html>"#,
             subject = escape(&self.subject),
             preheader = escape(&self.preheader),
-            title = escape(&self.title),
+            title = body_text(&self.title),
             footer = escape(&self.footer),
             dark_accent = brand::lighten(tone.accent, 0.45),
         );
@@ -208,6 +233,13 @@ mod tests {
             footer: "You got this because someone signed in.".into(),
         }
         .build()
+    }
+
+    #[test]
+    fn cents_are_raised_in_amounts_only() {
+        assert_eq!(body_text("Rp 12.500,50 & $3.99"), r#"Rp 12.500<sup style="font-size:0.6em;line-height:0;vertical-align:0.5em">,50</sup> &amp; $3<sup style="font-size:0.6em;line-height:0;vertical-align:0.5em">.99</sup>"#);
+        assert_eq!(body_text("Rp 2.850.000 at 1.5x, room 12.345"), "Rp 2.850.000 at 1.5x, room 12.345");
+        assert_eq!(body_text("<b>"), "&lt;b&gt;");
     }
 
     #[test]

@@ -13,7 +13,9 @@ use super::sessions::MessageItem;
 
 /// Engine bookkeeping that isn't a step anyone would want to see.
 const HIDDEN_TOOLS: &[&str] = &["complete_task", "update_todos", "write_plan", "show_table", "list_files", "read_guide"];
-const MAX_STEPS: usize = 40;
+const MAX_STEPS: usize = 80;
+/// How much of a command's output a step keeps (its end, where errors are).
+const MAX_OUTPUT: usize = 4000;
 const MAX_SOURCES: usize = 8;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -23,6 +25,9 @@ pub struct Step {
     /// What it was used on: the search, the page, the file, the command, who it went to.
     pub detail: Option<String>,
     pub ok: bool,
+    /// What a command printed (its end), to read under the step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -55,6 +60,19 @@ pub fn step_detail(tool: &str, input: &Value) -> Option<String> {
         _ => ["query", "url", "path", "command", "title", "name", "description", "category"].iter().find_map(|k| field(k)).map(str::to_string),
     };
     detail.filter(|d| !d.is_empty()).map(|d| clip(&d, 90))
+}
+
+/// The end of what a command printed, without the "$ command" line the tool puts first.
+pub fn step_output(tool: &str, result: &str) -> Option<String> {
+    if tool != "run_command" {
+        return None;
+    }
+    let body = result.strip_prefix('$').and_then(|r| r.split_once('\n')).map_or(result, |(_, rest)| rest).trim();
+    if body.is_empty() {
+        return None;
+    }
+    let chars = body.chars().count();
+    Some(if chars > MAX_OUTPUT { format!("…{}", body.chars().skip(chars - MAX_OUTPUT).collect::<String>()) } else { body.to_string() })
 }
 
 /// The pages a step looked at: the page it read, or the results a search came back with.
@@ -116,7 +134,7 @@ pub async fn attach_steps(pool: &PgPool, session_id: Uuid, messages: &mut [Messa
         let result = payload.get("result").and_then(|v| v.as_str()).unwrap_or_default();
         let ok = !payload.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
         if message.steps.len() < MAX_STEPS {
-            message.steps.push(Step { tool: tool.to_string(), detail: step_detail(tool, &input), ok });
+            message.steps.push(Step { tool: tool.to_string(), detail: step_detail(tool, &input), ok, output: step_output(tool, result) });
         }
         if ok {
             for source in step_sources(tool, &input, result) {
@@ -144,6 +162,15 @@ mod tests {
             Some("a.ts +2")
         );
         assert_eq!(step_detail("whatever", &json!({})), None);
+    }
+
+    #[test]
+    fn commands_keep_the_end_of_their_output() {
+        assert_eq!(step_output("run_command", "$ npm run check\nexit code 1\nsrc/a.ts:3 error").as_deref(), Some("exit code 1\nsrc/a.ts:3 error"));
+        assert_eq!(step_output("web_search", "anything"), None);
+        let long = format!("$ npm install\n{}", "x".repeat(MAX_OUTPUT + 50));
+        let out = step_output("run_command", &long).unwrap();
+        assert!(out.starts_with('…') && out.chars().count() == MAX_OUTPUT + 1);
     }
 
     #[test]

@@ -44,7 +44,17 @@
 		stopped: m.project_phase_stopped,
 	};
 
-	const lastLines = $derived(runtime ? runtime.log.trimEnd().split('\n').slice(-6).join('\n') : '');
+	// What the dev server is printing (installing, starting), as a terminal that follows along.
+	const logText = $derived(runtime ? runtime.log.trimEnd().split('\n').slice(-500).join('\n') : '');
+	let logBox = $state<HTMLPreElement | null>(null);
+	let following = $state(true);
+	$effect(() => {
+		void logText;
+		if (logBox && following) logBox.scrollTop = logBox.scrollHeight;
+	});
+	function onLogScroll() {
+		if (logBox) following = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 24;
+	}
 
 	function reload() {
 		if (frame && runtime?.previewUrl) frame.src = runtime.previewUrl;
@@ -86,23 +96,31 @@
 		<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write"></iframe>
 	</div>
 {:else}
-	<div class="preview preview--status">
-		{#if runtime.phase === 'failed'}
-			<AgentShape agent="coding" size={72} />
-		{:else if runtime.phase === 'waiting'}
-			<AgentShape agent="coding" size={72} working />
-		{:else}
-			<LoadingIndicator size={64} label={PHASE_LABEL[runtime.phase]()} />
+	<div class="preview preview--working">
+		<div class="preview__head">
+			{#if runtime.phase === 'failed'}
+				<AgentShape agent="coding" size={40} />
+			{:else if runtime.phase === 'waiting'}
+				<AgentShape agent="coding" size={40} working />
+			{:else}
+				<LoadingIndicator size={40} label={PHASE_LABEL[runtime.phase]()} />
+			{/if}
+			<div class="preview__head-text">
+				<h3 class="preview__title">{PHASE_LABEL[runtime.phase]()}</h3>
+				{#if runtime.phase === 'waiting'}
+					<p class="preview__note">{m.project_waiting_body()}</p>
+				{:else if runtime.phase === 'failed'}
+					<p class="preview__note">{runtime.error}</p>
+					{#if runtime.handedToKoda}<p class="preview__note">{m.project_check_failed_koda()}</p>{/if}
+				{:else if runtime.running}
+					<p class="preview__note preview__running">{m.project_koda_running({ command: runtime.running })}</p>
+				{/if}
+			</div>
+			{#if runtime.phase === 'failed'}<Button variant="tonal" size="s" onclick={() => runtime.restart()}>{m.project_restart()}</Button>{/if}
+		</div>
+		{#if logText}
+			<pre class="preview__log" bind:this={logBox} onscroll={onLogScroll} aria-live="off" aria-label={m.project_log_label()}>{logText}</pre>
 		{/if}
-		<h3 class="preview__title">{PHASE_LABEL[runtime.phase]()}</h3>
-		{#if runtime.phase === 'waiting'}
-			<p class="preview__note">{m.project_waiting_body()}</p>
-		{:else if runtime.phase === 'failed'}
-			<p class="preview__note">{runtime.error}</p>
-			{#if runtime.handedToKoda}<p class="preview__note">{m.project_check_failed_koda()}</p>{/if}
-			<Button variant="tonal" size="s" onclick={() => runtime.restart()}>{m.project_restart()}</Button>
-		{/if}
-		{#if lastLines}<pre class="preview__log">{lastLines}</pre>{/if}
 	</div>
 {/if}
 
@@ -177,18 +195,39 @@
 		justify-content: center;
 		gap: 8px;
 	}
+	.preview--working {
+		gap: 12px;
+		padding: 16px;
+	}
+	.preview__head {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+	.preview__head-text {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+	.preview__head .preview__note {
+		max-width: none;
+		padding: 0;
+	}
+	/* The terminal: the rest of the pane, following the newest line unless scrolled up. */
 	.preview__log {
-		width: min(100%, 640px);
-		max-height: 9.5em;
-		margin: 8px 0 0;
-		padding: 10px 12px;
-		overflow: hidden;
-		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface-container-highest);
-		color: var(--md-sys-color-on-surface-variant);
+		flex: 1;
+		min-height: 160px;
+		margin: 0;
+		padding: 14px 16px;
+		overflow: auto;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: #0f1a14;
+		color: #d7e6dc;
 		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		line-height: 1.5;
+		font-size: 0.8125rem;
+		line-height: 1.55;
 		text-align: left;
 		white-space: pre-wrap;
 		word-break: break-word;

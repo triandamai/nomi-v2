@@ -733,10 +733,11 @@ async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPub
     let locale = session_owner_locale(conn, session_id).await;
     let explanation = err.user_message_in(locale);
     let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, NULL) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, NULL) RETURNING id",
     )
     .bind(session_id)
     .bind(&explanation)
+    .bind(err.notice_blocks())
     .fetch_one(&mut **conn)
     .await;
     if let Ok(message_id) = inserted {

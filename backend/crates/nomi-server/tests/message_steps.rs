@@ -53,12 +53,12 @@ async fn each_reply_gets_the_steps_and_sources_that_led_to_it(pool: PgPool) {
     assert_eq!(
         messages[1].steps,
         vec![
-            Step { tool: "web_search".into(), detail: Some("cafes in Bandung".into()), ok: true },
-            Step { tool: "read_web_page".into(), detail: Some("https://kopinako.id".into()), ok: true },
+            Step { tool: "web_search".into(), detail: Some("cafes in Bandung".into()), ok: true, output: None },
+            Step { tool: "read_web_page".into(), detail: Some("https://kopinako.id".into()), ok: true, output: None },
         ]
     );
     // Found by the search and read again: listed once.
     assert_eq!(messages[1].sources, vec![Source { title: Some("Kopi Nako".into()), url: "https://kopinako.id".into() }]);
-    assert_eq!(messages[3].steps, vec![Step { tool: "run_command".into(), detail: Some("npm run check".into()), ok: false }]);
+    assert_eq!(messages[3].steps, vec![Step { tool: "run_command".into(), detail: Some("npm run check".into()), ok: false, output: Some("exit code 1".into()) }]);
     assert!(messages[3].sources.is_empty() && messages[0].steps.is_empty() && messages[2].steps.is_empty());
 }

@@ -29,6 +29,7 @@ export type ContentBlock =
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
 	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
+	| { kind: 'quota_notice'; reason: string }
 	| {
 			kind: 'approval_request';
 			id: string;
@@ -66,6 +67,8 @@ export interface ReplyStep {
 	/** What it was used on: the search, page, file, command, or who it went to. */
 	detail: string | null;
 	ok: boolean;
+	/** What a command printed (its end). */
+	output?: string;
 }
 
 export interface ReplySource {

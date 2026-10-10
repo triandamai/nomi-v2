@@ -68,11 +68,26 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
 #[derive(Serialize)]
 pub struct UnreadCount {
     pub unread: i64,
+    /// The newest unread one, for the app to pop up when it arrives.
+    pub latest: Option<LatestNotification>,
 }
 
-/// `GET /api/notifications/unread`: the number on the bell.
+#[derive(Serialize, sqlx::FromRow)]
+pub struct LatestNotification {
+    pub id: Uuid,
+    pub title: String,
+    pub link: Option<String>,
+}
+
+/// `GET /api/notifications/unread`: the number on the bell, and the newest unread notification.
 pub async fn unread(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<UnreadCount>, ApiError> {
-    Ok(Json(UnreadCount { unread: unread_count(&state, claims.sub).await? }))
+    let latest: Option<LatestNotification> =
+        sqlx::query_as("SELECT id, title, link FROM notifications WHERE user_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 1")
+            .bind(claims.sub)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load notifications"))?;
+    Ok(Json(UnreadCount { unread: unread_count(&state, claims.sub).await?, latest }))
 }
 
 /// `POST /api/notifications/:id/read`.

@@ -5,6 +5,8 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import DatePicker from '$lib/components/m3/DatePicker.svelte';
+	import { todayISO } from '$lib/dates';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PlanCard from '$lib/components/PlanCard.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
@@ -168,7 +170,7 @@
 					<TextField id="plan-promo" name="promo_label" label={m.plans_admin_promo_label()} value={draft.promo_label ?? ''} oninput={(e) => (draft.promo_label = (e.currentTarget as HTMLInputElement).value || null)} />
 					<TextField id="plan-promo-price" name="promo_price_label" label={m.plans_admin_promo_price()} value={draft.promo_price_label ?? ''} oninput={(e) => (draft.promo_price_label = (e.currentTarget as HTMLInputElement).value || null)} />
 				</div>
-				<TextField id="plan-promo-ends" name="promo_ends_at" type="date" label={m.plans_admin_promo_ends()} bind:value={promoEnds} />
+				<DatePicker id="plan-promo-ends" name="promo_ends_at" label={m.plans_admin_promo_ends()} bind:value={promoEnds} min={todayISO()} />
 			</fieldset>
 			<div class="row row--end">
 				<TextField id="plan-order" name="sort_order" type="number" label={m.plans_admin_order()} bind:value={orderText} />

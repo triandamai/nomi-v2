@@ -22,6 +22,7 @@
 
 	let open = $state(false);
 	let expanded = $state<Record<number, boolean>>({});
+	let outputs = $state<Record<number, boolean>>({});
 	const isLong = (text: string) => text.length > 240 || text.split('\n').length > 3;
 	const uid = $props.id();
 
@@ -69,7 +70,15 @@
 						<span class="activity__step">{stepLabel(step.tool, step.detail)}</span>
 						{#if step.detail && step.tool !== 'delegate_to_agent'}<code class="activity__detail">{step.detail}</code>{/if}
 						{#if !step.ok}<span class="activity__failed">{m.activity_failed()}</span>{/if}
+						{#if step.output}
+							<button type="button" class="activity__more" aria-expanded={!!outputs[i]} aria-controls="{uid}-out-{i}" onclick={() => (outputs[i] = !outputs[i])}>
+								{outputs[i] ? m.activity_hide_output() : m.activity_show_output()}
+							</button>
+						{/if}
 					</div>
+					{#if step.output && outputs[i]}
+						<pre id="{uid}-out-{i}" class="activity__output">{step.output}</pre>
+					{/if}
 				</li>
 			{/each}
 		</ol>
@@ -240,6 +249,20 @@
 		font-size: 0.75rem;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.activity__output {
+		max-height: 260px;
+		margin: 6px 0 0;
+		padding: 10px 12px;
+		overflow: auto;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: #0f1a14;
+		color: #d7e6dc;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 	.activity__failed {
 		color: var(--md-sys-color-error);
