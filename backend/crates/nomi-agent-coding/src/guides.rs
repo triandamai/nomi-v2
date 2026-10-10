@@ -9,6 +9,7 @@ use nomi_llm::ToolDefinition;
 /// (topic, what it covers, content).
 pub const GUIDES: &[(&str, &str, &str)] = &[
     ("sveltekit", "SvelteKit 3 + Svelte 5: full-stack apps (the default)", include_str!("../guides/sveltekit.md")),
+    ("design", "How every project should look: a deliberate modern style, and the generic AI look to avoid", include_str!("../guides/design.md")),
     ("database", "Drizzle with Postgres or SQLite, and how the preview runs them", include_str!("../guides/database.md")),
     ("preview", "How Nomi runs the project in the browser, and what can't run there", include_str!("../guides/preview.md")),
     ("react", "React 19 + Vite single-page apps", include_str!("../guides/react.md")),
@@ -33,7 +34,7 @@ pub fn read_guide_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "read_guide".to_string(),
         description: format!(
-            "Read one of your coding guides: exact package versions, config files and conventions that are known to work in Nomi. Read the stack's guide before writing a project's first files, and the database guide before adding a database. Guides: {listing}."
+            "Read one of your coding guides: exact package versions, config files and conventions that are known to work in Nomi. Read the stack's guide before writing a project's first files, the design guide before writing any UI, and the database guide before adding a database. Guides: {listing}."
         ),
         input_schema: json!({
             "type": "object",
@@ -64,6 +65,12 @@ mod tests {
         }
         assert!(guide_for_stack("static").is_none());
         assert!(read_guide(&json!({ "topic": "cobol" })).is_err());
+    }
+
+    #[test]
+    fn the_design_guide_names_the_generic_look_to_avoid() {
+        let guide = read_guide(&json!({ "topic": "design" })).unwrap();
+        assert!(guide.contains("AI slop") && guide.contains("@theme") && guide.contains("complete_task"));
     }
 
     #[test]
