@@ -28,6 +28,7 @@ export type ContentBlock =
 	| { kind: 'todo_list'; items: TodoItem[] }
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
 	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
+	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| {
 			kind: 'approval_request';
 			id: string;

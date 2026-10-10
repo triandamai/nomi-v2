@@ -88,12 +88,12 @@
 		<ChatThread
 			sessionId={page.params.sessionId as string}
 			title={data.project?.name ?? m.project_new()}
-			context={m.project_context()}
 			messages={data.messages}
 			agentActivity={data.agentActivity}
 			agentStatus={data.agentStatus}
 			sendError={form?.error ?? null}
 			thinkingLevel={data.thinkingLevel}
+			project={{ status: data.project?.status ?? 'planning' }}
 		/>
 	</div>
 

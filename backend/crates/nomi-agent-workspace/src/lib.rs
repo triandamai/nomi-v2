@@ -136,7 +136,7 @@ impl SubAgent for WorkspaceAgent {
     }
 
     fn intent_description(&self) -> Cow<'static, str> {
-        Cow::Borrowed("anything in the user's Google account: reading, searching, drafting or sending Gmail; reading or editing Google Sheets or Docs; finding Drive files; checking or adding Google Calendar events")
+        Cow::Borrowed("only when the user's own Google account is involved: reading, searching, drafting or sending Gmail; reading or editing their Google Sheets or Docs; finding their Drive files; checking or adding Google Calendar events. Never for building an app or website")
     }
 
     fn uses_memory(&self) -> bool {

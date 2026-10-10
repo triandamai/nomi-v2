@@ -2,6 +2,7 @@ pub mod approval;
 pub mod bootstrap;
 pub mod ingest;
 pub mod lock;
+pub mod projects;
 pub mod queue;
 pub mod routing;
 
@@ -207,7 +208,24 @@ async fn run_locked_turn(
         }
     }
 
-    let active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
+    // Building something is a project's job (Rena plans it, Koda builds it), whoever was talking.
+    let planning = registry.find(projects::PLANNING_AGENT_TYPE);
+    let in_project = projects::session_project(conn, session_id).await?.is_some();
+    let build_request = projects::wants_to_build(text);
+    if let (Some(planning), true) = (&planning, build_request) {
+        if !in_project && projects::is_web_session(conn, session_id).await? {
+            return projects::move_to_new_project(conn, mqtt, session_id, sender_channel_identity_id, user_id, text, planning.display_name().as_ref()).await;
+        }
+    }
+
+    let mut active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
+    if let (true, true, Some(agent_session_id)) = (planning.is_some(), build_request, active) {
+        let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
+        if details.agent_type != projects::PLANNING_AGENT_TYPE && details.agent_type != projects::CODING_AGENT_TYPE {
+            routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, &details.agent_type, "completed", "handed over to planning").await?;
+            active = None;
+        }
+    }
 
     enum RoutingOutcome {
         Continue { agent: Arc<dyn nomi_agent_core::SubAgent>, agent_session_id: Uuid },
@@ -238,7 +256,17 @@ async fn run_locked_turn(
             run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, agent, session_id, agent_session_id, sender_channel_identity_id, user_id).await
         }
         RoutingOutcome::NeedsClassification => {
-            let agent = routing::classify_intent(conn, provider, registry, catalog, text).await;
+            let agent = match &planning {
+                Some(planning) if build_request => planning.clone(),
+                _ => {
+                    let agent = routing::classify_intent(conn, provider, registry, catalog, text).await;
+                    // In a project chat, anything that isn't clearly for another agent is about the project.
+                    match &planning {
+                        Some(planning) if in_project && agent.agent_type() == registry.default_agent().agent_type() => planning.clone(),
+                        _ => agent,
+                    }
+                }
+            };
 
             if agent.agent_type() == registry.default_agent().agent_type() {
                 // The default agent (chitchat) never gets a persistent agent_sessions row —
