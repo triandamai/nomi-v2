@@ -129,11 +129,14 @@ async fn an_admin_moves_someone_to_pro_and_they_are_told(pool: PgPool) {
     let (_, inbox) = json_request(router.clone(), "GET", "/api/notifications", Value::Null, Some(&ana)).await;
     assert_eq!(inbox["unread"], 2);
     assert_eq!(inbox["items"][0]["title"], "Your monthly allowance is now 25,000,000 tokens");
+    let (_, unread) = json_request(router.clone(), "GET", "/api/notifications/unread", Value::Null, Some(&ana)).await;
+    assert_eq!(unread["latest"]["title"], "Your monthly allowance is now 25,000,000 tokens");
 
     let (status, _) = json_request(router.clone(), "POST", "/api/notifications/read-all", Value::Null, Some(&ana)).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, unread) = json_request(router.clone(), "GET", "/api/notifications/unread", Value::Null, Some(&ana)).await;
     assert_eq!(unread["unread"], 0);
+    assert!(unread["latest"].is_null());
 
     // The admin list shows the plan and allowance.
     let (_, users) = json_request(router, "GET", "/api/admin/users?query=ana", Value::Null, Some(&boss)).await;

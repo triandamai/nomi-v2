@@ -101,6 +101,12 @@ pub enum ContentBlock {
         reason: String,
         services: Vec<String>,
     },
+    /// The person's allowance on Nomi's models ran out, so this reply couldn't be written: a card
+    /// saying so, with where to go next (their own key, or a bigger plan).
+    QuotaNotice {
+        /// "used_up".
+        reason: String,
+    },
     /// A request to build something moved to its own project chat: a card linking to it.
     ProjectLink {
         project_id: Uuid,

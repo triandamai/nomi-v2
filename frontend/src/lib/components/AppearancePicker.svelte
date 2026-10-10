@@ -2,6 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { MODES, THEMES } from '$lib/appearance';
+	import { rememberAppearance } from '$lib/appearanceCookie';
 	import type { AccentColor, Preferences, Theme } from '$lib/types';
 
 	// Light/dark mode and the colour theme. Used on Preferences and in the admin console: both save
@@ -19,6 +20,7 @@
 	function show(nextMode: Theme, nextTheme: AccentColor) {
 		document.documentElement.dataset.theme = nextMode;
 		document.documentElement.dataset.color = nextTheme;
+		rememberAppearance(nextMode, nextTheme);
 	}
 
 	const keep = () => async ({ update }: { update: (opts?: { reset?: boolean }) => Promise<void> }) => {

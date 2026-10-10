@@ -4,6 +4,9 @@
 	import { untrack, type Snippet } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import Snackbar from '$lib/components/m3/Snackbar.svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import { registerAgentLooks } from '$lib/components/m3/shapes';
@@ -36,6 +39,18 @@
 	});
 	$effect(() => pollUnread());
 
+	// A notification that comes in while the person is here pops up for a moment.
+	let toastOpen = $state(false);
+	let toast = $state<{ title: string; link: string | null } | null>(null);
+	$effect(() => {
+		const arrived = inbox.arrived;
+		if (!arrived) return;
+		inbox.arrived = null;
+		if (page.url.pathname.startsWith('/notifications')) return;
+		toast = { title: arrived.title, link: arrived.link };
+		toastOpen = true;
+	});
+
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
 		document.documentElement.dataset.color = data.preferences.accent_color;
@@ -63,6 +78,10 @@
 		</main>
 	</div>
 </div>
+
+{#if toast}
+	<Snackbar bind:open={toastOpen} message={toast.title} actionLabel={m.notif_view()} timeout={6000} onaction={() => goto(toast?.link || '/notifications')} />
+{/if}
 
 <style>
 	.bell {

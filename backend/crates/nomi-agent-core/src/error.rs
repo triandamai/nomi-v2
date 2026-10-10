@@ -14,6 +14,16 @@ pub enum TurnError {
 }
 
 impl TurnError {
+    /// The person's monthly allowance ran out (see nomi-server's quota).
+    pub fn is_quota_exceeded(&self) -> bool {
+        matches!(self, TurnError::LlmCallFailed(nomi_llm::LlmError::QuotaExceeded))
+    }
+
+    /// What to post with the explanation: a card when the allowance ran out, nothing otherwise.
+    pub fn notice_blocks(&self) -> Option<serde_json::Value> {
+        self.is_quota_exceeded().then(|| serde_json::json!([crate::content_block::ContentBlock::QuotaNotice { reason: "used_up".to_string() }]))
+    }
+
     /// What went wrong, for the person in the chat: plain language and what they can do. The
     /// raw error stays in the logs and `agent_events`.
     pub fn user_message(&self) -> String {
@@ -29,5 +39,17 @@ impl TurnError {
             TurnError::ApprovalNoLongerPending => locale.t("error.approval_handled"),
             TurnError::Db(_) => locale.t("error.internal"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_used_up_allowance_gets_the_quota_card() {
+        let blocks = TurnError::LlmCallFailed(nomi_llm::LlmError::QuotaExceeded).notice_blocks().unwrap();
+        assert_eq!(blocks, serde_json::json!([{"kind": "quota_notice", "reason": "used_up"}]));
+        assert!(TurnError::ToolLoopExceeded.notice_blocks().is_none());
     }
 }

@@ -59,11 +59,17 @@ async fn fail_and_notify(pool: &PgPool, mqtt: &MqttPublisher, delegation_id: Uui
 
 /// Posts a message into the chat and tells the open chat about it right away.
 async fn post(conn: &mut sqlx::PgConnection, mqtt: &MqttPublisher, session_id: Uuid, author: &str, text: &str) {
+    post_with_blocks(conn, mqtt, session_id, author, text, None).await;
+}
+
+/// `post`, with content blocks (a card) shown in place of the text.
+async fn post_with_blocks(conn: &mut sqlx::PgConnection, mqtt: &MqttPublisher, session_id: Uuid, author: &str, text: &str, blocks: Option<serde_json::Value>) {
     let message_id: Option<Uuid> = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, $4) RETURNING id",
     )
     .bind(session_id)
     .bind(text)
+    .bind(blocks)
     .bind(author)
     .fetch_one(conn)
     .await
@@ -266,7 +272,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
                     let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
-                    post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry).await;
+                    // Out of allowance: the card says so and where to go next.
+                    post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, e.notice_blocks()).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }
             }

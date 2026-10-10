@@ -14,6 +14,9 @@
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import DatePicker from '$lib/components/m3/DatePicker.svelte';
+	import TimePicker from '$lib/components/m3/TimePicker.svelte';
+	import { todayISO } from '$lib/dates';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import type { Reminder } from '$lib/types';
@@ -44,7 +47,9 @@
 	let sheetOpen = $state(false);
 	let title = $state('');
 	let notes = $state('');
-	let when = $state(defaultWhen());
+	let whenDate = $state(defaultWhen().slice(0, 10));
+	let whenTime = $state(defaultWhen().slice(11));
+	const when = $derived(whenDate && whenTime ? `${whenDate}T${whenTime}` : '');
 	let repeat = $state<Repeat>('once');
 	let saving = $state(false);
 	let snackbar = $state(false);
@@ -73,7 +78,9 @@
 	function openSheet() {
 		title = '';
 		notes = '';
-		when = defaultWhen();
+		const next = defaultWhen();
+		whenDate = next.slice(0, 10);
+		whenTime = next.slice(11);
 		repeat = 'once';
 		sheetOpen = true;
 	}
@@ -319,10 +326,13 @@
 		</div>
 		<TextField id="reminder-title" name="title" label={m.rem_remind_me()} bind:value={title} required maxlength={200} />
 		<TextField id="reminder-notes" name="notes" label={m.rem_notes()} bind:value={notes} maxlength={500} />
-		<label class="when">
-			<span class="field-label">{m.rem_when()}</span>
-			<input type="datetime-local" bind:value={when} required class="when__input" />
-		</label>
+		<fieldset class="when">
+			<legend class="field-label">{m.rem_when()}</legend>
+			<div class="when__fields">
+				<DatePicker label={m.rem_date()} bind:value={whenDate} min={todayISO()} required />
+				<TimePicker label={m.rem_time()} bind:value={whenTime} step={5} required />
+			</div>
+		</fieldset>
 		<input type="hidden" name="due_at" value={dueAt} />
 		<div class="repeat">
 			<span class="field-label">{m.rem_repeat()}</span>
@@ -517,19 +527,16 @@
 		flex-direction: column;
 		gap: 6px;
 	}
-	.when__input {
-		height: 56px;
-		padding: 0 16px;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-small);
-		background: transparent;
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
-		color-scheme: light dark;
+	.when {
+		margin: 0;
+		padding: 0;
+		border: none;
+		min-width: 0;
 	}
-	.when__input:focus {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: -1px;
+	.when__fields {
+		display: grid;
+		grid-template-columns: 1.3fr 1fr;
+		gap: 12px;
 	}
 	.sheet__error {
 		margin: 0;

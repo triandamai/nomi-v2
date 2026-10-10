@@ -1,3 +1,4 @@
+import { APPEARANCE_COOKIE, APPEARANCE_COOKIE_OPTIONS, formatAppearance } from '$lib/appearanceCookie';
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
@@ -33,6 +34,9 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 
 	// The saved language wins on every device; the cookie makes the next render use it.
 	if (preferencesResponse.ok && preferences.language !== getLocale()) setLanguageCookie(cookies, preferences.language);
+	// Saved appearance on <html> from the first frame of the next load (see hooks.server.ts).
+	const appearance = preferencesResponse.ok ? formatAppearance(preferences.theme, preferences.accent_color) : null;
+	if (appearance && cookies.get(APPEARANCE_COOKIE) !== appearance) cookies.set(APPEARANCE_COOKIE, appearance, APPEARANCE_COOKIE_OPTIONS);
 
 	return { userEmail, profile, preferences, crew, usage, unread };
 };

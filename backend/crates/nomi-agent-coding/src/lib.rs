@@ -133,8 +133,11 @@ impl SubAgent for CodingAgent {
         Cow::Borrowed("writing or editing code for a project — not reachable directly, only via delegation from planning")
     }
 
+    /// Koda's tool results (command output, file listings, guides) aren't posted as messages:
+    /// they're steps in his reply's activity, with command output there to expand. File changes
+    /// still show as their own cards (rich blocks always post).
     fn surfaces_activity(&self) -> bool {
-        true
+        false
     }
 
     fn supports_todos(&self) -> bool {

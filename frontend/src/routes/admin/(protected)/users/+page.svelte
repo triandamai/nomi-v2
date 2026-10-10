@@ -18,6 +18,7 @@
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import Radio from '$lib/components/m3/Radio.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import DatePicker from '$lib/components/m3/DatePicker.svelte';
 	import { ADMIN_PERMISSION_RESOURCES, CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
 	import Select from '$lib/components/m3/Select.svelte';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
@@ -265,7 +266,7 @@
 				<Select name="plan_id" label={m.users_plan()} options={planOptions} bind:value={subPlan} />
 				<TextField id="sub-quota" name="quota_override" type="number" min="0" step="1" label={m.sub_quota()} bind:value={subQuota} supportingText={m.sub_quota_hint()} />
 				{#if subQuota.trim() !== ''}
-					<TextField id="sub-until" name="override_until" type="date" label={m.sub_until()} bind:value={subUntil} supportingText={m.sub_until_hint()} />
+					<DatePicker id="sub-until" name="override_until" label={m.sub_until()} bind:value={subUntil} supportingText={m.sub_until_hint()} />
 				{/if}
 				<TextField id="sub-note" name="note" label={m.sub_note()} bind:value={subNote} supportingText={m.sub_note_hint()} />
 				{#if subError}<p class="md-body-medium" style="color: var(--md-sys-color-error)" role="alert">{subError}</p>{/if}

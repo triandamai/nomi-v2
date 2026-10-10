@@ -3,13 +3,19 @@ import type { Handle, HandleFetch } from '@sveltejs/kit';
 import { isApiRequest } from '$lib/server/api';
 import { APP_VERSION, CLIENT_VERSION_HEADER } from '$lib/version';
 import { paraglideMiddleware } from '$lib/paraglide/server';
+import { APPEARANCE_COOKIE, appearanceAttributes, parseAppearance } from '$lib/appearanceCookie';
 
 /** Renders each request in the person's language and sets `<html lang>` to match. */
 const i18n: Handle = ({ event, resolve }) =>
 	paraglideMiddleware(event.request, ({ request, locale }) => {
 		event.request = request;
 		return resolve(event, {
-			transformPageChunk: ({ html }) => html.replace('%paraglide.lang%', locale),
+			// The language, and the person's theme so the first frame is already in their colours.
+			// The cookie is read as the page renders, after the layout has refreshed it.
+			transformPageChunk: ({ html }) =>
+				html
+					.replace('%paraglide.lang%', locale)
+					.replace('%nomi.appearance%', appearanceAttributes(parseAppearance(event.cookies.get(APPEARANCE_COOKIE)))),
 		});
 	});
 

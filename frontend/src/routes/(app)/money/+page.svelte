@@ -10,6 +10,8 @@
 	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import DatePicker from '$lib/components/m3/DatePicker.svelte';
+	import { todayISO } from '$lib/dates';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
@@ -36,7 +38,7 @@
 	let saving = $state(false);
 	let snackbar = $state(false);
 	let snackbarMessage = $state('');
-	const today = new Date().toISOString().slice(0, 10);
+	const today = todayISO();
 
 	function openBudget(category = '', limitCents?: number) {
 		budgetCategory = category;
@@ -493,10 +495,7 @@
 				{m.money_item_add()}
 			</Button>
 		</fieldset>
-		<label class="sheet__field">
-			<span class="sheet__label">{m.common_date()}</span>
-			<input type="date" name="occurred_at" value={today} max={today} class="sheet__date" />
-		</label>
+		<DatePicker label={m.common_date()} name="occurred_at" value={today} max={today} required />
 		{#if form?.error}<p class="sheet__error" role="alert">{form.error}</p>{/if}
 		<div class="sheet__actions">
 			<Button type="button" variant="outlined" size="m" onclick={() => (expenseOpen = false)}>{m.common_cancel()}</Button>
@@ -872,25 +871,10 @@
 		margin: 0;
 		color: var(--md-sys-color-on-surface);
 	}
-	.sheet__field {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
 	.sheet__label {
 		font-size: 0.8125rem;
 		font-weight: 600;
 		color: var(--md-sys-color-on-surface-variant);
-	}
-	.sheet__date {
-		height: 56px;
-		padding: 0 16px;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-small);
-		background: transparent;
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
-		color-scheme: light dark;
 	}
 	.sheet__chips {
 		display: flex;

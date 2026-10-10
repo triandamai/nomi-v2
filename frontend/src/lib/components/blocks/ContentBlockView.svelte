@@ -10,6 +10,7 @@
 	import ReminderBlock from './ReminderBlock.svelte';
 	import WorkspaceConnectCard from './WorkspaceConnectCard.svelte';
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
+	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import type { ContentBlock } from '$lib/types';
 
 	let { block, messageId, agent = null }: { block: ContentBlock; messageId: string; agent?: string | null } = $props();
@@ -33,6 +34,8 @@
 	<WorkspaceConnectCard {block} />
 {:else if block.kind === 'project_link'}
 	<ProjectLinkCard {block} />
+{:else if block.kind === 'quota_notice'}
+	<QuotaNoticeCard />
 {:else if block.kind === 'reasoning'}
 	<ReasoningDisclosure steps={[block.text]} />
 {/if}
