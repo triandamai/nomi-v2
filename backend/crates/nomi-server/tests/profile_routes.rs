@@ -294,3 +294,36 @@ async fn an_uploaded_avatar_must_be_a_real_small_image(pool: PgPool) {
     // A real picture, but no bucket on this server.
     assert_eq!(post_avatar(router, &token, "image/png", png).await, StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn drawer_pins_are_unset_until_saved_then_keep_their_order(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "pia@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert!(body["drawer_pins"].is_null());
+
+    let pins = json!({ "drawer_pins": ["reminders", "money", "crew"] });
+    let (status, body) = json_request(router.clone(), "PUT", "/api/preferences", pins, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["drawer_pins"], json!(["reminders", "money", "crew"]));
+
+    // Other preference saves leave the pins alone.
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
+    assert_eq!(body["drawer_pins"], json!(["reminders", "money", "crew"]));
+
+    // Nothing pinned is a valid choice.
+    let (_, body) = json_request(router, "PUT", "/api/preferences", json!({ "drawer_pins": [] }), Some(&token)).await;
+    assert_eq!(body["drawer_pins"], json!([]));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn drawer_pins_reject_unknown_and_repeated_features(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "rio@example.com").await;
+
+    for pins in [json!(["money", "admin"]), json!(["home"]), json!(["money", "money"])] {
+        let (status, _) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "drawer_pins": pins }), Some(&token)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{pins}");
+    }
+}
