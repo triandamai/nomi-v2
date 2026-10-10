@@ -8,7 +8,26 @@
 	// The project's live preview, from its dev server running in the browser (WebContainer),
 	// with what it's doing while it gets there. Static projects, and browsers WebContainer can't
 	// run in, get the plain file preview instead.
-	let { projectId, runtime }: { projectId: string; runtime: ProjectRuntime | null } = $props();
+	let {
+		projectId,
+		runtime,
+		stack = 'static',
+		files = [],
+		onShowCode,
+	}: {
+		projectId: string;
+		runtime: ProjectRuntime | null;
+		/** What the project is built with; only a static one is shown straight from its files. */
+		stack?: string;
+		/** The project's file paths. */
+		files?: string[];
+		onShowCode?: () => void;
+	} = $props();
+
+	// Showing the files as they are only works for a plain page with an index.html at the top;
+	// anything else (or nothing yet) would just be a 404 in the frame.
+	const hasIndex = $derived(files.includes('index.html'));
+	const staticStack = $derived(stack === 'static');
 
 	let frame = $state<HTMLIFrameElement | null>(null);
 
@@ -33,10 +52,28 @@
 </script>
 
 {#if !runtime || runtime.phase === 'unsupported'}
-	<div class="preview">
-		{#if runtime}<p class="preview__note">{m.project_unsupported_body()}</p>{/if}
-		<iframe title={m.project_preview_title()} src={`/projects/${projectId}/preview/`} sandbox="allow-scripts" class="preview__frame"></iframe>
-	</div>
+	{#if files.length === 0}
+		<div class="preview preview--status">
+			<AgentShape agent="coding" size={72} working />
+			<h3 class="preview__title">{m.project_nothing_yet()}</h3>
+			<p class="preview__note">{m.project_nothing_yet_body()}</p>
+		</div>
+	{:else if hasIndex && (staticStack || runtime)}
+		<div class="preview">
+			{#if runtime}<p class="preview__note">{m.project_unsupported_body()}</p>{/if}
+			<iframe title={m.project_preview_title()} src={`/projects/${projectId}/preview/`} sandbox="allow-scripts" class="preview__frame"></iframe>
+		</div>
+	{:else}
+		<div class="preview preview--status">
+			<AgentShape agent="coding" size={72} />
+			<h3 class="preview__title">{m.project_live_needed()}</h3>
+			<p class="preview__note">{staticStack ? m.project_no_index() : m.project_live_needed_body()}</p>
+			<div class="preview__actions">
+				{#if onShowCode}<Button variant="tonal" size="s" onclick={onShowCode}>{m.project_show_code()}</Button>{/if}
+				{#if !staticStack}<Button variant="text" size="s" onclick={() => location.reload()}>{m.project_try_again()}</Button>{/if}
+			</div>
+		</div>
+	{/if}
 {:else if runtime.previewUrl}
 	<div class="preview">
 		<div class="preview__bar">
@@ -133,6 +170,12 @@
 		padding: 8px 12px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 		max-width: none;
+	}
+	.preview__actions {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 8px;
 	}
 	.preview__log {
 		width: min(100%, 640px);

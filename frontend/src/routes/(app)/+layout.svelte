@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { enablePageTransitions } from '$lib/pageTransitions';
 	import { m } from '$lib/paraglide/messages';
 	import { untrack, type Snippet } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -12,6 +13,8 @@
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
+
+	enablePageTransitions();
 
 	let mobileNavOpen = $state(false);
 
@@ -55,7 +58,7 @@
 				{#if inbox.unread > 0}<span class="bell__badge" aria-hidden="true">{badgeLabel(inbox.unread)}</span>{/if}
 			</a>
 		</header>
-		<main class="flex-1 overflow-hidden">
+		<main class="flex-1 overflow-hidden" style="view-transition-name: page">
 			{@render children()}
 		</main>
 	</div>
