@@ -1238,5 +1238,9 @@
 	"picker_minute": "Minute",
 	"picker_period": "AM or PM",
 	"rem_date": "Date",
-	"rem_time": "Time"
+	"rem_time": "Time",
+	"code_explorer": "Explorer",
+	"code_ln_col": "Ln {line}, Col {column}",
+	"code_toggle_explorer": "Show or hide files",
+	"code_unsaved": "Unsaved changes"
 }

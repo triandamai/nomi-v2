@@ -191,6 +191,7 @@
 		{#if !money}
 			<p class="money__notice" role="alert">{m.money_load_failed()}</p>
 		{:else}
+			<div class="months-row">
 			<nav class="months" aria-label={m.money_month()}>
 				<IconButton variant="filled-tonal" href="?month={shiftMonth(money.month, -1)}" aria-label={m.money_prev_month()}><IconChevronLeft /></IconButton>
 				<span class="months__current">{period}</span>
@@ -202,10 +203,12 @@
 				>
 					<IconChevronRight />
 				</IconButton>
-				<Button variant="text" size="s" onclick={openPeriod}>
-					{money.start_day === 1 ? m.money_period_calendar() : m.money_period_starts({ day: money.start_day })}
-				</Button>
 			</nav>
+			<!-- Outside the pill so it wraps under the month on narrow screens. -->
+			<Button variant="text" size="s" onclick={openPeriod}>
+				{money.start_day === 1 ? m.money_period_calendar() : m.money_period_starts({ day: money.start_day })}
+			</Button>
+			</div>
 
 			{#if money.transaction_count === 0}
 				<section class="empty">
@@ -655,10 +658,18 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 
+	.months-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 8px;
+		min-width: 0;
+	}
+
 	.months {
 		display: inline-flex;
 		align-items: center;
-		align-self: flex-start;
+		max-width: 100%;
 		gap: 4px;
 		padding: 4px;
 		border-radius: var(--md-sys-shape-corner-full);
@@ -666,7 +677,12 @@
 	}
 
 	.months__current {
-		min-width: 140px;
+		min-width: 0;
+		flex: 1;
+		padding: 0 8px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		text-align: center;
 		font-weight: 650;
 	}
