@@ -55,6 +55,7 @@
 		extraControls,
 		thinkingLevel = null,
 		unsaved = false,
+		project = null,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -71,6 +72,8 @@
 		thinkingLevel?: ThinkingLevel | null;
 		/** A new chat not saved yet: no live connection, and the first send creates it (/chat/new). */
 		unsaved?: boolean;
+		/** A project's chat: built around making the project (status, crew, suggestions) rather than conversation. */
+		project?: { status: 'planning' | 'building' | 'ready' } | null;
 	} = $props();
 
 	// The chat's name: renamed in place by the person, or live when they ask the crew to.
@@ -121,7 +124,12 @@
 		}
 	}
 
-	const SUGGESTIONS = [m.home_suggest_spending(), m.home_suggest_saturday(), m.home_suggest_website(), m.home_suggest_stretch()];
+	const SUGGESTIONS = $derived(
+		project
+			? [m.project_suggest_habits(), m.project_suggest_cafe(), m.project_suggest_budget(), m.project_suggest_quiz()]
+			: [m.home_suggest_spending(), m.home_suggest_saturday(), m.home_suggest_website(), m.home_suggest_stretch()],
+	);
+	const PROJECT_STATUS = { planning: m.projects_planning, building: m.projects_building, ready: m.projects_ready };
 	function useSuggestion(text: string) {
 		draft = text;
 		messageInput?.focus();
@@ -500,6 +508,10 @@
 					// gap would otherwise stay "working"; one still running streams again.
 					openTurns = [];
 					invalidateAll();
+				} else {
+					// Whatever landed between loading the page and connecting (a quick reply, or a
+					// request moved to a new project) came with no event to show it: sync once.
+					invalidateAll();
 				}
 				hasConnectedBefore = true;
 			});
@@ -563,9 +575,15 @@
 	});
 </script>
 
-<div class="chat">
+<div class="chat" class:chat--project={!!project}>
 	<header class="appbar">
 		<div class="appbar__titles">
+			{#if project}
+				<span class="appbar__project">
+					<span class="appbar__project-label">{m.project_context()}</span>
+					<span class="appbar__project-status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span>
+				</span>
+			{/if}
 			{#if editingTitle}
 				<input
 					bind:this={titleInput}
@@ -618,9 +636,18 @@
 				<div class="thread__column">
 					{#if threadItems.length === 0 && !isWorking}
 						<div class="thread__empty">
-							<AgentShape agent="nomi" size={72} face />
-							<h2 class="thread__empty-title">{m.chat_empty_title()}</h2>
-							<p class="thread__empty-lede">{m.chat_empty_lede()}{#if unsaved}{' '}{m.chat_empty_unsaved()}{/if}</p>
+							{#if project}
+								<span class="thread__empty-crew">
+									<AgentShape agent="planning" size={64} face />
+									<AgentShape agent="coding" size={64} face />
+								</span>
+								<h2 class="thread__empty-title">{m.project_empty_title()}</h2>
+								<p class="thread__empty-lede">{m.project_empty_lede()}</p>
+							{:else}
+								<AgentShape agent="nomi" size={72} face />
+								<h2 class="thread__empty-title">{m.chat_empty_title()}</h2>
+								<p class="thread__empty-lede">{m.chat_empty_lede()}{#if unsaved}{' '}{m.chat_empty_unsaved()}{/if}</p>
+							{/if}
 							<div class="thread__empty-chips">
 								{#each SUGGESTIONS as suggestion (suggestion)}
 									<Chip variant="suggestion" onclick={() => useSuggestion(suggestion)}>{suggestion}</Chip>
@@ -762,7 +789,7 @@
 							bind:this={messageInput}
 							bind:value={draft}
 							rows="1"
-							placeholder={m.chat_placeholder()}
+							placeholder={project ? m.project_placeholder() : m.chat_placeholder()}
 							class="composer__input"
 							onkeydown={onComposerKeydown}
 							onpaste={onPaste}
@@ -914,6 +941,54 @@
 		padding: 48px 8px 24px;
 		text-align: center;
 	}
+	.thread__empty-crew {
+		display: flex;
+	}
+	.thread__empty-crew :global(> :last-child) {
+		margin-left: -14px;
+	}
+
+	/* A project's chat: a workspace for making something, with a faint blueprint grid. */
+	.chat--project {
+		background:
+			linear-gradient(color-mix(in srgb, var(--md-sys-color-primary) 5%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
+			linear-gradient(90deg, color-mix(in srgb, var(--md-sys-color-primary) 5%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
+			var(--md-sys-color-surface-container-low);
+	}
+	.chat--project .appbar {
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		background: var(--md-sys-color-surface);
+	}
+	.appbar__project {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 2px;
+	}
+	.appbar__project-label {
+		color: var(--md-sys-color-tertiary);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.appbar__project-status {
+		padding: 1px 10px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+	.appbar__project-status[data-status='building'] {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.appbar__project-status[data-status='ready'] {
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+	}
+
 	.thread__empty-title {
 		margin: 8px 0 0;
 		font-family: var(--md-ref-typeface-brand);

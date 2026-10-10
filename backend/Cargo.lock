@@ -3178,6 +3178,7 @@ dependencies = [
  "nomi-agent-files",
  "nomi-agent-money",
  "nomi-agent-personality",
+ "nomi-agent-planning",
  "nomi-embedding",
  "nomi-i18n",
  "nomi-llm",

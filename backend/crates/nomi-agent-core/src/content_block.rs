@@ -101,6 +101,12 @@ pub enum ContentBlock {
         reason: String,
         services: Vec<String>,
     },
+    /// A request to build something moved to its own project chat: a card linking to it.
+    ProjectLink {
+        project_id: Uuid,
+        session_id: Uuid,
+        name: String,
+    },
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror
