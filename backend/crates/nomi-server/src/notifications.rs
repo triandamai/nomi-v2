@@ -100,6 +100,29 @@ fn email_for(to: String, notice: &Notice, locale: Locale) -> nomi_mail::Email {
     .build()
 }
 
+/// Emails an address that may not have a Nomi account yet (a team invite), in the background.
+/// `reason` is the footer saying why they got it.
+pub fn email_address(to: String, title: String, paragraphs: Vec<String>, notes: Vec<String>, reason: String, locale: Locale) {
+    let email = BrandedEmail {
+        sender: Sender::nomi(),
+        to,
+        subject: title.clone(),
+        preheader: paragraphs.first().map(|p| p.chars().take(120).collect()).unwrap_or_default(),
+        title,
+        paragraphs,
+        highlight: None,
+        notes,
+        crew_label: locale.t("email.crew_label"),
+        footer: format!("{reason} {}", locale.t("email.tagline")),
+    }
+    .build();
+    tokio::spawn(async move {
+        if let Err(e) = mailer().send(email).await {
+            tracing::warn!(error = %e, "failed to send an email");
+        }
+    });
+}
+
 /// Puts `notice` in `user_id`'s inbox, and emails it in the background when they allow it.
 pub async fn send(pool: &PgPool, user_id: Uuid, notice: Notice) -> Result<Uuid, sqlx::Error> {
     send_with(pool, user_id, notice, None).await

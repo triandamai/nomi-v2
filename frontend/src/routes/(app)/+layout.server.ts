@@ -7,9 +7,11 @@ import type { CrewRosterMember } from '$lib/crew';
 import type { Preferences, Profile, UsageBrief } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) => {
 	if (!locals.accessToken) {
-		throw redirect(303, '/login');
+		// Signing in brings them back here (e.g. to a team invite they opened from an email).
+		const back = url.pathname === '/' ? '' : `?redirect_to=${encodeURIComponent(url.pathname + url.search)}`;
+		throw redirect(303, `/login${back}`);
 	}
 
 	const userEmail = cookies.get('user_email') ?? '';

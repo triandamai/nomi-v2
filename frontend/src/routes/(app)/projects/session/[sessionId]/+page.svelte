@@ -287,6 +287,10 @@
 						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => (view = 'terminal')}>{m.project_terminal()}</button>
 					{/if}
 				</div>
+				<a class="pane-link" href="/projects/{project.id}/issues">
+					{m.workspace_issues()}
+					{#if project.open_issues > 0}<span class="pane-link__count">{project.open_issues}</span>{/if}
+				</a>
 				<IconButton onclick={() => setPane(false)} aria-label={m.project_pane_hide()} title={m.project_pane_hide()}>
 					<IconClose size={18} />
 				</IconButton>
@@ -453,6 +457,35 @@
 		font-weight: 700;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.pane-link {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		gap: 6px;
+		height: 32px;
+		padding: 0 10px;
+		border-radius: 6px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.pane-link:hover {
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface);
+	}
+	.pane-link:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.pane-link__count {
+		min-width: 18px;
+		padding: 0 5px;
+		border-radius: 4px;
+		background: var(--md-sys-color-surface-container-highest);
+		font-variant-numeric: tabular-nums;
+		text-align: center;
 	}
 	.pane-bar__tabs {
 		display: inline-flex;

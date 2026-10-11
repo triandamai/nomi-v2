@@ -263,12 +263,16 @@
 			</span>
 		{/if}
 
+		{#if message.sender === 'user' && message.author_name}
+			<span class="message__who message__who--teammate">{message.author_name}</span>
+		{/if}
+
 		{#if reasoning.length > 0 || steps.length > 0 || sources.length > 0}
 			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
 		{/if}
 
 		{#if !thinkingOnly}
-		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'}>
+		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'} class:message-bubble--teammate={!!message.author_name}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
@@ -434,6 +438,17 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 8px;
+	}
+	/* A teammate's message in a shared project chat: their name, and a neutral bubble. */
+	.message__who--teammate {
+		align-self: flex-end;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.message-bubble--user.message-bubble--teammate {
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface);
 	}
 	.message__handoff {
 		display: inline-flex;

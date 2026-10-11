@@ -65,27 +65,34 @@ async fn user_id_by_email(pool: &PgPool, email: &str) -> Uuid {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn listing_projects_only_returns_the_caller_owns(pool: PgPool) {
+async fn projects_are_listed_per_organization_once_one_is_picked(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let token = register_and_login(router.clone(), "owner@example.com").await;
-    let user_id = user_id_by_email(&pool, "owner@example.com").await;
-    seed_project(&pool, user_id).await;
+
+    // Nothing is listed, and nothing can be started, until the person picks an organization.
+    let (status, body) = json_request(router.clone(), "GET", "/api/projects", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["org_id"], Value::Null);
+    let (status, _) = json_request(router.clone(), "POST", "/api/projects", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (_, orgs) = json_request(router.clone(), "GET", "/api/orgs", Value::Null, Some(&token)).await;
+    let org_id = orgs["orgs"][0]["id"].as_str().unwrap().to_string();
+    let (status, _) = json_request(router.clone(), "PUT", "/api/preferences/project-org", json!({"org_id": org_id}), Some(&token)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = json_request(router.clone(), "POST", "/api/projects", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::CREATED);
 
     let other_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
-    let other_org: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Other Org') RETURNING id").fetch_one(&pool).await.unwrap();
-    let other_session: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
-        .bind(other_org)
-        .bind(Uuid::new_v4().to_string())
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO projects (user_id, session_id, name) VALUES ($1, $2, 'Someone elses app')").bind(other_id).bind(other_session).execute(&pool).await.unwrap();
+    seed_project(&pool, other_id).await;
 
     let (status, body) = json_request(router, "GET", "/api/projects", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
-    let projects = body.as_array().unwrap();
+    assert_eq!(body["org_id"], org_id.as_str());
+    let projects = body["projects"].as_array().unwrap();
     assert_eq!(projects.len(), 1);
-    assert_eq!(projects[0]["name"], "Todo app");
+    assert_eq!(projects[0]["name"], "New project");
+    assert_eq!(projects[0]["created_by"], "owner");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

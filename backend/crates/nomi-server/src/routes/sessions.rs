@@ -117,26 +117,49 @@ pub async fn list_sessions(
 
 /// A chat is private to the person who started it: sharing an organization with them doesn't let
 /// anyone else read it, post into it or see its memories. Someone else's chat answers exactly like
-/// one that doesn't exist.
+/// one that doesn't exist. The exception is a project's chat: everyone in the project's
+/// organization works on the project together in it.
 async fn authorize_session_access(
     pool: &sqlx::PgPool,
     user_id: Uuid,
     session_id: Uuid,
 ) -> Result<(), (StatusCode, &'static str)> {
-    let org_id: Option<Uuid> = sqlx::query_scalar("SELECT org_id FROM sessions WHERE id = $1 AND user_id = $2")
-        .bind(session_id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up session"))?;
+    let row: Option<(Uuid, bool)> = sqlx::query_as(
+        "SELECT s.org_id, s.user_id = $2 FROM sessions s WHERE s.id = $1 \
+           AND (s.user_id = $2 OR EXISTS (SELECT 1 FROM projects p WHERE p.session_id = s.id AND can_open_project(p.id, $2)))",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up session"))?;
 
-    let org_id = org_id.ok_or((StatusCode::NOT_FOUND, "session not found"))?;
+    let (org_id, own) = row.ok_or((StatusCode::NOT_FOUND, "session not found"))?;
+    if !own {
+        return Ok(());
+    }
 
     nomi_auth::authorize::authorize_org_action(pool, user_id, org_id, &["owner", "admin", "member"])
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "session not found"))?;
 
     Ok(())
+}
+
+/// Only the person who started a chat can delete it, shared project chat or not.
+async fn authorize_session_owner(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid) -> Result<(), (StatusCode, &'static str)> {
+    authorize_session_access(pool, user_id, session_id).await?;
+    let own: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND user_id = $2)")
+        .bind(session_id)
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up session"))?;
+    if own {
+        Ok(())
+    } else {
+        Err((StatusCode::FORBIDDEN, "only the person who started this chat can delete it"))
+    }
 }
 
 async fn exec_delete_step(
@@ -161,7 +184,7 @@ pub async fn delete_session(
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
-    authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    authorize_session_owner(&state.pool, claims.sub, session_id).await?;
 
     let project_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1")
         .bind(session_id)
@@ -224,6 +247,39 @@ pub struct MessageItem {
     /// What the crew did on the way to this reply, and the pages they read (see message_steps).
     pub steps: Vec<super::message_steps::Step>,
     pub sources: Vec<super::message_steps::Source>,
+    /// Who wrote it, when it's someone else's message in a shared project chat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_name: Option<String>,
+    #[serde(skip)]
+    pub sender_identity: Option<Uuid>,
+}
+
+/// Names the people other than `me` who wrote messages in a shared project chat.
+async fn attach_authors(pool: &sqlx::PgPool, me: Uuid, messages: &mut [MessageItem]) -> Result<(), sqlx::Error> {
+    let mut identities: Vec<Uuid> = messages.iter().filter_map(|m| m.sender_identity).collect();
+    identities.sort();
+    identities.dedup();
+    if identities.is_empty() {
+        return Ok(());
+    }
+    let names: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT ci.id, COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) \
+         FROM channel_identities ci \
+         LEFT JOIN user_profiles up ON up.user_id = ci.user_id \
+         LEFT JOIN web_credentials w ON w.user_id = ci.user_id \
+         LEFT JOIN google_identities g ON g.user_id = ci.user_id \
+         WHERE ci.id = ANY($1) AND ci.user_id <> $2",
+    )
+    .bind(&identities)
+    .bind(me)
+    .fetch_all(pool)
+    .await?;
+    for message in messages.iter_mut() {
+        if let Some(identity) = message.sender_identity {
+            message.author_name = names.iter().find(|(id, _)| *id == identity).map(|(_, name)| name.clone());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -254,6 +310,8 @@ fn to_message_item(
         memory_count,
         steps: Vec::new(),
         sources: Vec::new(),
+        author_name: None,
+        sender_identity: sender,
     }
 }
 
@@ -333,6 +391,9 @@ pub async fn list_messages(
     messages.reverse();
     if let Err(e) = super::message_steps::attach_steps(&state.pool, session_id, &mut messages).await {
         tracing::warn!(error = %e, "failed to load reply steps");
+    }
+    if let Err(e) = attach_authors(&state.pool, claims.sub, &mut messages).await {
+        tracing::warn!(error = %e, "failed to name message authors");
     }
 
     Ok(Json(ListMessagesResponse { messages, has_more }))
@@ -579,6 +640,13 @@ pub async fn send_message(
     let (text, attachment_ids) = crate::routes::attachments::check_message_references(&state.pool, claims.sub, &req.text).await?;
     let req = SendMessageRequest { text };
 
+    // Someone working in a teammate's project chat may never have opened a chat of their own:
+    // without their web identity, ingesting would file the message under a brand-new person.
+    nomi_turn::bootstrap::ensure_web_channel_identity(&state.pool, claims.sub).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to resolve web identity");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to ingest message")
+    })?;
+
     tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
     let ingested = nomi_turn::ingest::ingest_inbound_message(
         &state.pool,
@@ -630,6 +698,8 @@ pub async fn send_message(
         memory_count: 0,
         steps: Vec::new(),
         sources: Vec::new(),
+        author_name: None,
+        sender_identity: None,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -698,6 +768,8 @@ async fn try_stop_command(
         memory_count: 0,
         steps: Vec::new(),
         sources: Vec::new(),
+        author_name: None,
+        sender_identity: None,
     };
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
@@ -710,6 +782,8 @@ async fn try_stop_command(
         memory_count: 0,
         steps: Vec::new(),
         sources: Vec::new(),
+        author_name: None,
+        sender_identity: None,
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }

@@ -9,9 +9,7 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::sign_in_codes::{code_email, EmailCodes};
 use nomi_auth::{
-    authorize::authorize_org_action,
     email_code::{self, Challenge, CodeError, Purpose},
-    extractor::AuthClaims,
     login::{check_password, issue_access_token, login},
     refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token},
     registration::{register_user, OrgMode},
@@ -272,24 +270,5 @@ pub async fn logout_handler(
     revoke_refresh_token(&state.pool, &req.refresh_token)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to revoke refresh token"))?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub async fn remove_member(
-    State(state): State<AppState>,
-    AuthClaims(claims): AuthClaims,
-    Path((org_id, user_id)): Path<(Uuid, Uuid)>,
-) -> Result<StatusCode, (StatusCode, &'static str)> {
-    authorize_org_action(&state.pool, claims.sub, org_id, &["owner", "admin"])
-        .await
-        .map_err(|_| (StatusCode::FORBIDDEN, "not authorized for this organization"))?;
-
-    sqlx::query("UPDATE memberships SET status = 'removed' WHERE org_id = $1 AND user_id = $2")
-        .bind(org_id)
-        .bind(user_id)
-        .execute(&state.pool)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to remove member"))?;
-
     Ok(StatusCode::NO_CONTENT)
 }

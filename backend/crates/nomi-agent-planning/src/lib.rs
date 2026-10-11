@@ -143,7 +143,7 @@ pub async fn create_project(
     }
 
     let existing_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM projects WHERE session_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
+        "SELECT id FROM projects WHERE session_id = $1 AND can_open_project(id, $2) ORDER BY created_at DESC LIMIT 1",
     )
     .bind(session_id)
     .bind(user_id)

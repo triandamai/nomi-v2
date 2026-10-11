@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
+	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -15,7 +16,7 @@
 	subtitle={m.register_subtitle()}
 	switchPrompt={m.register_have_account()}
 	switchLabel={m.login_submit()}
-	switchHref="/login"
+	switchHref={'/login' + page.url.search}
 >
 	{#if data.googleError}
 		<p class="md-body-medium mb-4" role="alert" style="color: var(--md-sys-color-error)">{data.googleError}</p>

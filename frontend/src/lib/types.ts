@@ -65,6 +65,8 @@ export interface MessageItem {
 	steps?: ReplyStep[];
 	/** Pages the crew read or found for this reply. */
 	sources?: ReplySource[];
+	/** Who wrote it, when it's a teammate's message in a shared project chat. */
+	author_name?: string;
 }
 
 export interface ReplyStep {
@@ -331,6 +333,89 @@ export interface ProjectSummary {
 	status: 'planning' | 'building' | 'ready';
 	created_at: string;
 	updated_at: string;
+	/** Who started it. */
+	created_by: string;
+	open_issues: number;
+}
+
+export interface ProjectList {
+	/** The organization shown; null until the person picks one for projects. */
+	org_id: string | null;
+	projects: ProjectSummary[];
+}
+
+export type OrgRole = 'owner' | 'admin' | 'member';
+
+export interface OrgSummary {
+	id: string;
+	name: string;
+	role: OrgRole;
+	members: number;
+	projects: number;
+}
+
+export interface OrgList {
+	orgs: OrgSummary[];
+	project_org_id: string | null;
+}
+
+export interface OrgMember {
+	user_id: string;
+	name: string;
+	email: string | null;
+	avatar_url: string | null;
+	role: OrgRole;
+	joined_at: string;
+}
+
+export interface OrgInvite {
+	code: string;
+	email: string | null;
+	role: OrgRole;
+	created_at: string;
+	expires_at: string;
+}
+
+export interface OrgDetail {
+	id: string;
+	name: string;
+	my_role: OrgRole;
+	me: string;
+	members: OrgMember[];
+	/** Only owners and admins see these. */
+	invites: OrgInvite[];
+}
+
+export interface InviteInfo {
+	org_id: string;
+	org_name: string;
+	inviter: string;
+	role: OrgRole;
+	state: 'open' | 'expired' | 'used' | 'member' | 'other_address';
+	/** The invited address, partly hidden. */
+	email: string | null;
+}
+
+export type IssueKind = 'feature' | 'enhancement' | 'bug';
+export type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface ProjectIssue {
+	number: number;
+	title: string;
+	body: string;
+	kind: IssueKind;
+	severity: IssueSeverity;
+	status: 'open' | 'closed';
+	created_by: string | null;
+	mine: boolean;
+	closed_at: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface IssueList {
+	issues: ProjectIssue[];
+	counts: { open: number; closed: number };
 }
 
 export interface ProjectFileSummary {
@@ -349,6 +434,11 @@ export interface ProjectDetail {
 	stack: 'sveltekit' | 'svelte' | 'react' | 'vue' | 'astro' | 'static';
 	files_version: number;
 	files: ProjectFileSummary[];
+	/** The project's chat. */
+	session_id: string;
+	org_id: string;
+	org_name: string;
+	open_issues: number;
 }
 
 export type AdminStreamFrame =

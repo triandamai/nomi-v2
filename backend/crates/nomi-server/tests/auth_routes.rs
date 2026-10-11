@@ -151,7 +151,8 @@ async fn remove_member_rejects_a_caller_scoped_to_a_different_org(pool: PgPool) 
         Some(&owner_a_token),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    // Someone else's organization answers like one that doesn't exist.
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

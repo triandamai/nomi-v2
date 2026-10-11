@@ -18,6 +18,8 @@ fn message(id: Uuid, sender: &str, minutes: i64) -> MessageItem {
         memory_count: 0,
         steps: Vec::new(),
         sources: Vec::new(),
+        author_name: None,
+        sender_identity: None,
     }
 }
 
