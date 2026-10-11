@@ -447,6 +447,9 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
+    /// The agent answered out loud (`speak`) and wrote nothing after it: the recording, already
+    /// posted as `message_id`, is the reply. `text` is the words it says.
+    Spoke { message_id: Uuid, text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
     /// The agent asked the person questions (`ask_user`) and waits for their answer, which comes
@@ -758,6 +761,22 @@ pub async fn run_agent_turn(
             let output_tokens = response.output_tokens;
             let cut_off = response.stop_reason == StopReason::MaxTokens;
             let reply_text = reply_text_of(&response.content);
+            // Said it out loud and wrote nothing more: the recording is the whole reply.
+            if reply_text.is_empty() && !cut_off {
+                if let Some((message_id, text)) = recording_posted_since(conn, session_id, agent.display_name().as_ref(), started_at).await {
+                    if agent.uses_memory() {
+                        learn_from_turn(conn, user_id, session_id, &messages, &text).await;
+                    }
+                    update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+                    return Ok(LoopOutcome::Spoke {
+                        message_id,
+                        text,
+                        memory_ids_used: memories.iter().map(|m| m.id).collect(),
+                        input_tokens,
+                        output_tokens,
+                    });
+                }
+            }
             // Only thinking, no answer: ask once for the answer itself before giving up.
             if reply_text.is_empty() && !cut_off && !asked_for_answer {
                 asked_for_answer = true;
@@ -1223,6 +1242,29 @@ async fn update_agent_phase(
 /// Inserts an activity message (an agent's "thought", or a description of a tool call it just
 /// made) so a user watching a long-running build sees it appear like any other chat message —
 /// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
+/// The newest recording (a voice block) `agent_display_name` posted in the chat since `since`,
+/// with the words it says.
+async fn recording_posted_since(
+    conn: &mut PoolConnection<Postgres>,
+    session_id: Uuid,
+    agent_display_name: &str,
+    since: chrono::DateTime<chrono::Utc>,
+) -> Option<(Uuid, String)> {
+    sqlx::query_as(
+        "SELECT id, content_blocks->0->>'text' FROM messages \
+         WHERE session_id = $1 AND agent_display_name = $2 AND created_at >= $3 AND content_blocks->0->>'kind' = 'voice' \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .bind(agent_display_name)
+    .bind(since)
+    .fetch_optional(&mut **conn)
+    .await
+    .ok()
+    .flatten()
+    .map(|(id, text): (Uuid, Option<String>)| (id, text.unwrap_or_default()))
+}
+
 async fn post_activity_message(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,

@@ -22,11 +22,18 @@ impl SubAgent for TestAgent {
         Cow::Borrowed("test prompt")
     }
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![ToolDefinition {
-            name: "echo".to_string(),
-            description: "Echoes back its input".to_string(),
-            input_schema: serde_json::json!({"type": "object"}),
-        }]
+        vec![
+            ToolDefinition {
+                name: "echo".to_string(),
+                description: "Echoes back its input".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+            },
+            ToolDefinition {
+                name: "say".to_string(),
+                description: "Posts a recording, like speak".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+            },
+        ]
     }
     async fn execute_tool(
         &self,
@@ -39,6 +46,13 @@ impl SubAgent for TestAgent {
     ) -> Result<ToolOutcome, String> {
         match name {
             "echo" => Ok(ToolOutcome::text(format!("echoed: {input}"))),
+            "say" => {
+                let text = input["text"].as_str().unwrap_or_default().to_string();
+                Ok(ToolOutcome {
+                    display_text: format!("Said it aloud: {text}"),
+                    block: Some(nomi_agent_core::ContentBlock::Voice { url: "/voice/u/1.mp3".to_string(), text, voice: None }),
+                })
+            }
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -1789,4 +1803,63 @@ async fn read_plan_gives_the_latest_plan_drafted_in_the_chat(pool: PgPool) {
     });
     let result = result.expect("read_plan result");
     assert!(result.contains("version 2") && result.contains("Editorial look"), "{result}");
+}
+
+async fn allow_say(pool: &PgPool, user_id: Uuid) {
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'say', 'allow')")
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_recording_with_nothing_written_after_it_is_the_whole_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    allow_say(&pool, user_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "say", serde_json::json!({"text": "Good morning!"})),
+        text_response("", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let voice_message: Uuid = sqlx::query_scalar("SELECT id FROM messages WHERE session_id = $1 AND content_blocks->0->>'kind' = 'voice'")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        LoopOutcome::Spoke { message_id: voice_message, text: "Good morning!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+    );
+    assert_eq!(provider.received_requests.lock().unwrap().len(), 2, "no nudge to write an answer as well");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn text_written_after_a_recording_is_still_the_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    allow_say(&pool, user_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "say", serde_json::json!({"text": "The recipe is below."})),
+        text_response("https://example.com/recipe", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, LoopOutcome::Reply { ref text, .. } if text == "https://example.com/recipe"), "{outcome:?}");
 }

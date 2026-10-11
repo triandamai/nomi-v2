@@ -191,11 +191,13 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 .publish(claimed.session_id, &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: Uuid::nil() })
                 .await;
 
+            let spoke = matches!(outcome, Ok(LoopOutcome::Spoke { .. }));
             match outcome {
-                Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) => {
+                Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) | Ok(LoopOutcome::Spoke { text, .. }) => {
                     // The agent's own answer, whole: rewording it through a short supervisor
-                    // completion cut long plans and lists off mid-sentence.
-                    if !text.trim().is_empty() {
+                    // completion cut long plans and lists off mid-sentence. A spoken answer is
+                    // already in the chat as its recording.
+                    if !text.trim().is_empty() && !spoke {
                         post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &text).await;
                     }
 

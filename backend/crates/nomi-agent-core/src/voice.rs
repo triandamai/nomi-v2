@@ -153,10 +153,7 @@ pub async fn is_ready(conn: &mut PgConnection) -> bool {
 pub fn speak_tool_definition() -> nomi_llm::ToolDefinition {
     nomi_llm::ToolDefinition {
         name: SPEAK_TOOL_NAME.to_string(),
-        description: "Say something out loud in Nomi's voice: posts a recording the person can play. Use it only when they ask \
-            to hear something (\"read it to me\", \"say it\", \"send a voice note\"), not for ordinary replies. Pass exactly the \
-            words to say, written for listening: no markdown, lists or links. Then reply briefly in text."
-            .to_string(),
+        description: crate::prompts::SPEAK_TOOL_DESCRIPTION.to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -327,7 +324,7 @@ pub async fn speak(conn: &mut PgConnection, user_id: Uuid, input: &Value) -> Res
         .await
         .map_err(|e| format!("couldn't keep the recording: {e}"))?;
     let block = ContentBlock::Voice { url: voice_url(user_id, &file), text: text.to_string(), voice: settings.voice_name.clone() };
-    Ok((format!("Said it aloud; the recording is in the chat. Words: {text}"), block))
+    Ok((format!("{} Words: {text}", crate::prompts::SPEAK_TOOL_DONE), block))
 }
 
 /// A voice in the admin's ElevenLabs account.

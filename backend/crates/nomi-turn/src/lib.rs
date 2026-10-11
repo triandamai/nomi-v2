@@ -416,17 +416,28 @@ async fn finish_agent_turn(
     agent: &dyn nomi_agent_core::SubAgent,
     outcome: nomi_agent_core::LoopOutcome,
 ) -> Result<(String, Option<Uuid>), TurnError> {
+    // A recording that was the whole reply is already in the chat.
+    let spoken = match &outcome {
+        nomi_agent_core::LoopOutcome::Spoke { message_id, .. } => Some(*message_id),
+        _ => None,
+    };
     match outcome {
-        nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens } => {
+        nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens }
+        | nomi_agent_core::LoopOutcome::Spoke { text: reply_text, memory_ids_used, input_tokens, output_tokens, .. } => {
             let mut tx = conn.begin().await?;
-            let reply_message_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
-            )
-            .bind(session_id)
-            .bind(&reply_text)
-            .bind(agent.display_name().as_ref())
-            .fetch_one(&mut *tx)
-            .await?;
+            let reply_message_id: Uuid = match spoken {
+                Some(message_id) => message_id,
+                None => {
+                    sqlx::query_scalar(
+                        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
+                    )
+                    .bind(session_id)
+                    .bind(&reply_text)
+                    .bind(agent.display_name().as_ref())
+                    .fetch_one(&mut *tx)
+                    .await?
+                }
+            };
             for memory_id in &memory_ids_used {
                 sqlx::query("INSERT INTO message_memory_usage (message_id, memory_id) VALUES ($1, $2)")
                     .bind(reply_message_id)

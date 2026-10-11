@@ -139,6 +139,11 @@ pub async fn process_claimed_job(
     .await;
 
     match outcome {
+        // Said out loud: the recording is already in the chat; the notification carries its words.
+        Ok(LoopOutcome::Spoke { text, .. }) => {
+            let _ = notification.deliver(job.user_id, &text).await;
+            finish_one_time_or_advance_recurring(pool, &job).await;
+        }
         Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) => {
             let message_id: Option<Uuid> = sqlx::query_scalar(
                 "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",

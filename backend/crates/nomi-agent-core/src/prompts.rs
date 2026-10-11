@@ -138,3 +138,15 @@ pub const SESSION_TITLE_SYSTEM_PROMPT: &str =
 /// `{options}` is one `"label: description"` line per non-default agent.
 pub const INTENT_CLASSIFICATION_PROMPT_TEMPLATE: &str = "Classify the user's message as exactly one of: {labels}, or \"{default_label}\" if none of the specific \
      categories apply. Reply with only that single word, nothing else.\n\nCategories:\n{options}";
+
+/// The `speak` tool's description (`voice::speak_tool_definition`).
+pub const SPEAK_TOOL_DESCRIPTION: &str = "Say something out loud in Nomi's voice: posts a recording the person can play. Use it \
+     when they ask to hear something or to be answered by voice (\"read it to me\", \"say it\", \"reply with voice\", \
+     \"send a voice note\"), not for ordinary replies. Pass exactly the words to say, written for listening: no markdown, \
+     lists or links. The recording is your reply: after it, write nothing, unless something really has to be in writing \
+     too (a link, code, an address or numbers to keep), and then write only that.";
+
+/// What `speak` tells the agent once the recording is posted; the words said follow it.
+pub const SPEAK_TOOL_DONE: &str = "Said it aloud; the recording is in the chat and is your reply. End your turn without \
+     writing anything, unless something really has to be in writing too.";
+
