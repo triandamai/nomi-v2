@@ -19,6 +19,11 @@ components, write it down as tokens in CSS, then build every screen from those t
 - Marketing filler copy: "Unlock", "Seamless", "Elevate", "Revolutionize", "Effortlessly",
   "Your all-in-one…", "Supercharge". Fake numbers ("10k+ happy users"), lorem ipsum, "John Doe".
 - Hover effects on everything (scale-105, glow, bounce); spinning or pulsing decoration.
+- Fake status chrome: "Live", "Online", "Beta", "New", "AI" pills with a pulsing or glowing dot
+  (`animate-pulse`, `animate-ping`, `shadow-[0_0_…]`, blurred coloured halos), dimmed neon or
+  translucent "glow" colours, and status dots that don't reflect anything real. A status appears
+  only when the app has a real state to show (an order's progress, a sync that failed), as plain
+  text in a solid token colour, with a static dot at most. Nothing glows; nothing blinks.
 - Dark mode as pure black with neon accents.
 
 ## What to do instead
@@ -117,6 +122,6 @@ Familjen Grotesk + Inter, DM Serif Display + DM Sans. One display face, one text
 
 ## Before you call complete_task
 Look at what you built against this list: no gradient text or purple gradients, no emoji icons,
-no card-in-card, no default indigo/slate, tokens defined in `@theme` and used everywhere, a
+no card-in-card, no "Live"/"New" badges or glowing or pulsing dots, no default indigo/slate, tokens defined in `@theme` and used everywhere, a
 display font loaded, dark mode works, it works at 375px wide, every button has a focus state,
 empty/loading/error states exist. Fix anything that fails before finishing.

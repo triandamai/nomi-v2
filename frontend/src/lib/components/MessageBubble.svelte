@@ -25,6 +25,7 @@
 		thinkingOnly = false,
 		thread = 'solo',
 		handoffFrom = null,
+		answered = false,
 	}: {
 		message: RenderedMessage;
 		chained?: boolean;
@@ -41,6 +42,8 @@
 		thread?: 'solo' | 'start' | 'middle' | 'end';
 		/** The crew member who passed the conversation to this one, in the same thread. */
 		handoffFrom?: string | null;
+		/** The person has replied since this message (a questions card shows as answered). */
+		answered?: boolean;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
@@ -269,7 +272,7 @@
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} />
 					{/each}
 				</div>
 			{:else if attached && attached.files.length > 0}

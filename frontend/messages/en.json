@@ -1290,5 +1290,14 @@
 	"notif_pages": "Notification pages",
 	"notif_empty_unread": "Nothing unread. You're all caught up.",
 	"notif_empty_read": "Nothing read yet.",
-	"notif_empty_promo": "No promos or news yet."
+	"notif_empty_promo": "No promos or news yet.",
+	"questions_title": "A few questions first",
+	"questions_pick_any": "Pick any that apply",
+	"questions_note_label": "Anything else",
+	"questions_note_placeholder": "Anything else, or your own answer…",
+	"questions_send": "Send answers",
+	"questions_answered": "Answered",
+	"chat_load_older": "Load earlier messages",
+	"chat_loading_older": "Loading earlier messages",
+	"chat_older_retry": "Couldn't load earlier messages. Try again"
 }

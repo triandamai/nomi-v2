@@ -1290,5 +1290,14 @@
 	"notif_pages": "Halaman notifikasi",
 	"notif_empty_unread": "Tidak ada yang belum dibaca. Semua sudah terbaca.",
 	"notif_empty_read": "Belum ada yang dibaca.",
-	"notif_empty_promo": "Belum ada promo atau kabar."
+	"notif_empty_promo": "Belum ada promo atau kabar.",
+	"questions_title": "Beberapa pertanyaan dulu",
+	"questions_pick_any": "Pilih yang sesuai",
+	"questions_note_label": "Lainnya",
+	"questions_note_placeholder": "Hal lain, atau jawabanmu sendiri…",
+	"questions_send": "Kirim jawaban",
+	"questions_answered": "Sudah dijawab",
+	"chat_load_older": "Muat pesan sebelumnya",
+	"chat_loading_older": "Memuat pesan sebelumnya",
+	"chat_older_retry": "Gagal memuat pesan sebelumnya. Coba lagi"
 }

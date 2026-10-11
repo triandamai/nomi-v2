@@ -31,6 +31,11 @@ export type ContentBlock =
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
 	| {
+			kind: 'questions';
+			intro: string | null;
+			questions: { question: string; options: { label: string; detail?: string | null }[]; multiple?: boolean }[];
+	  }
+	| {
 			kind: 'approval_request';
 			id: string;
 			tool_name: string;

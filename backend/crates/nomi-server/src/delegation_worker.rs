@@ -158,7 +158,14 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
             let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
-            let mut messages = vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: claimed.task.clone() }] }];
+            // The conversation so far, then the task: the specialist sees what the person said and
+            // agreed (answers to questions, feedback on the plan), not just a one-line summary.
+            let mut messages = nomi_turn::fetch_recent_messages(&mut conn, claimed.session_id).await.unwrap_or_default();
+            let task = format!("(Handed to you to do now: {})", claimed.task);
+            match messages.last_mut() {
+                Some(last) if last.role == LlmRole::User => last.content.push(ContentBlock::Text { text: task }),
+                _ => messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: task }] }),
+            }
             // A task can carry the user's files (the Files agent passes their tags along).
             nomi_agent_core::attachments::expand_messages(&mut conn, claimed.user_id, &mut messages).await;
 
@@ -255,6 +262,19 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         claimed.target_agent_type
                     );
                     post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &notice).await;
+                    let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
+                }
+                // The specialist asked the person something (the card is in the chat). Their answer
+                // goes straight to it as a normal turn, so this background run is done.
+                Ok(LoopOutcome::AwaitingAnswer { text, .. }) => {
+                    let _ = nomi_turn::hand_conversation_to(&mut conn, Some((&mqtt, claimed.id)), claimed.session_id, claimed.user_id, agent.as_ref()).await;
+                    let _ = sqlx::query(
+                        "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1 AND status = 'processing'",
+                    )
+                    .bind(claimed.id)
+                    .bind(&text)
+                    .execute(&pool)
+                    .await;
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
                 }
                 // Stopped by the user (nomi-agent-supervisor's stop). The supervisor already marked

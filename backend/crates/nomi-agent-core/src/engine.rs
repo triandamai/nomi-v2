@@ -40,6 +40,8 @@ pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
 pub const RENAME_CHAT_TOOL_NAME: &str = "rename_chat";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
+pub const ASK_USER_TOOL_NAME: &str = "ask_user";
+pub const READ_PLAN_TOOL_NAME: &str = "read_plan";
 pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
 pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
 pub const CANCEL_REMINDER_TOOL_NAME: &str = "cancel_reminder";
@@ -240,6 +242,112 @@ fn update_todos_tool_definition() -> ToolDefinition {
     }
 }
 
+fn ask_user_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: ASK_USER_TOOL_NAME.to_string(),
+        description: "Ask the person what you need to know before you go on, as a card in the chat with \
+                      answers they can tap (and room for their own). Ask everything you need at once: up to 4 \
+                      questions, each with 2-5 short options (add a one-line detail where a label alone \
+                      isn't clear, e.g. what a design direction looks like). Your turn ends here; their answer \
+                      arrives as their next message. Call it on its own, not alongside other tools, and \
+                      don't repeat the questions in your reply.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "intro": {"type": "string", "description": "One short line before the questions, optional"},
+                "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question": {"type": "string"},
+                            "options": {
+                                "type": "array",
+                                "maxItems": 5,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {"type": "string"},
+                                        "detail": {"type": "string"}
+                                    },
+                                    "required": ["label"]
+                                }
+                            },
+                            "multiple": {"type": "boolean", "description": "true when several options can be picked"}
+                        },
+                        "required": ["question", "options"]
+                    }
+                }
+            },
+            "required": ["questions"]
+        }),
+    }
+}
+
+fn read_plan_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: READ_PLAN_TOOL_NAME.to_string(),
+        description: "Read the latest plan drafted in this chat: what was agreed with the person, including \
+                      their answers on design, pages and data. Read it before you start building and \
+                      whenever you're unsure what was asked for.".to_string(),
+        input_schema: serde_json::json!({"type": "object", "properties": {}}),
+    }
+}
+
+/// The `ask_user` input as a questions block, and the same questions as plain text (the message's
+/// fallback, for channels without cards and for the conversation the agents read back).
+fn parse_questions(input: &serde_json::Value) -> Result<(crate::content_block::ContentBlock, String), String> {
+    let block = crate::content_block::ContentBlock::Questions {
+        intro: input.get("intro").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        questions: serde_json::from_value(input.get("questions").cloned().unwrap_or_default())
+            .map_err(|e| format!("questions must be a list of {{question, options}}: {e}"))?,
+    };
+    let crate::content_block::ContentBlock::Questions { intro, questions } = &block else { unreachable!() };
+    if questions.is_empty() || questions.len() > 4 {
+        return Err("ask between 1 and 4 questions".to_string());
+    }
+    let mut text = intro.clone().map(|i| format!("{i}\n\n")).unwrap_or_default();
+    for (i, q) in questions.iter().enumerate() {
+        if q.question.trim().is_empty() {
+            return Err("every question needs its text".to_string());
+        }
+        text.push_str(&format!("{}. {}\n", i + 1, q.question.trim()));
+        for option in &q.options {
+            match &option.detail {
+                Some(detail) => text.push_str(&format!("   - {}: {}\n", option.label, detail)),
+                None => text.push_str(&format!("   - {}\n", option.label)),
+            }
+        }
+    }
+    Ok((block, text.trim_end().to_string()))
+}
+
+/// The latest plan drafted in this chat, as the agent should read it.
+async fn read_latest_plan(conn: &mut PoolConnection<Postgres>, s3: Option<&nomi_storage::S3Config>, session_id: Uuid) -> String {
+    let row: Option<(String, i32, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT title, version, content, content_s3_key FROM agent_plans WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .fetch_optional(&mut **conn)
+    .await
+    .ok()
+    .flatten();
+    let Some((title, version, content, key)) = row else {
+        return "No plan has been drafted in this chat yet. Work from the conversation and the task you were given.".to_string();
+    };
+    let content = match (content, key, s3) {
+        (Some(inline), _, _) => Some(inline),
+        (None, Some(key), Some(s3)) => s3.get_object(&key).await.ok().flatten(),
+        _ => None,
+    };
+    match content {
+        Some(content) => format!("Plan \"{title}\" (version {version}):\n\n{content}"),
+        None => format!("The plan \"{title}\" (version {version}) couldn't be loaded right now."),
+    }
+}
+
 fn write_plan_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: WRITE_PLAN_TOOL_NAME.to_string(),
@@ -340,6 +448,10 @@ pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
+    /// The agent asked the person questions (`ask_user`) and waits for their answer, which comes
+    /// as their next message to the same agent. The card is already posted as `message_id`;
+    /// `text` is its plain-text version.
+    AwaitingAnswer { message_id: Uuid, text: String },
     /// The agent handed the conversation to `target_agent`, which answers the user in this same
     /// turn. Nothing of this agent's is posted: the specialist speaks for itself.
     HandOff { target_agent: String, task: String },
@@ -360,6 +472,8 @@ fn is_gateable(tool_name: &str) -> bool {
     tool_name != COMPLETE_TASK_TOOL_NAME
         && tool_name != DELEGATE_TOOL_NAME
         && tool_name != SHOW_TABLE_TOOL_NAME
+        && tool_name != ASK_USER_TOOL_NAME
+        && tool_name != READ_PLAN_TOOL_NAME
         && tool_name != RENAME_CHAT_TOOL_NAME
         && tool_name != UPDATE_TODOS_TOOL_NAME
         && tool_name != WRITE_PLAN_TOOL_NAME
@@ -434,6 +548,12 @@ pub async fn run_agent_turn(
     }
     if agent.supports_plans() {
         tools.push(write_plan_tool_definition());
+    }
+    if agent.asks_questions() {
+        tools.push(ask_user_tool_definition());
+    }
+    if agent.reads_plans() {
+        tools.push(read_plan_tool_definition());
     }
     if agent.uses_records() {
         tools.extend(crate::records::record_tool_definitions());
@@ -688,6 +808,42 @@ pub async fn run_agent_turn(
             .iter()
             .any(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == WRITE_PLAN_TOOL_NAME));
 
+        // Questions for the person end the turn: the card goes up and the agent waits for their
+        // answer, which reaches it as their next message.
+        if agent.asks_questions() {
+            let asked = pending_tool_use_blocks.iter().find_map(|b| match b {
+                ContentBlock::ToolUse { name, input, .. } if name.as_str() == ASK_USER_TOOL_NAME => Some(input),
+                _ => None,
+            });
+            if let Some(input) = asked {
+                match parse_questions(input) {
+                    Ok((block, text)) => {
+                        let message_id = post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &text, Some(&block)).await;
+                        update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+                        if let Some(message_id) = message_id {
+                            return Ok(LoopOutcome::AwaitingAnswer { message_id, text });
+                        }
+                    }
+                    Err(err) => {
+                        // Let the agent fix its question instead of failing the turn.
+                        let results = pending_tool_use_blocks
+                            .iter()
+                            .filter_map(|b| match b {
+                                ContentBlock::ToolUse { id, name, .. } => Some(ContentBlock::ToolResult {
+                                    tool_use_id: id.clone(),
+                                    content: if name.as_str() == ASK_USER_TOOL_NAME { err.clone() } else { "Not run: call ask_user on its own.".to_string() },
+                                    is_error: true,
+                                }),
+                                _ => None,
+                            })
+                            .collect();
+                        messages.push(LlmMessage { role: LlmRole::User, content: results });
+                        continue;
+                    }
+                }
+            }
+        }
+
         match resolve_tool_batch(conn, mqtt, s3, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => {
@@ -908,6 +1064,8 @@ pub async fn resolve_tool_batch(
                     },
                     Err(err) => (err, true, None),
                 }
+            } else if name.as_str() == READ_PLAN_TOOL_NAME && agent.reads_plans() {
+                (read_latest_plan(conn, s3, session_id).await, false, None)
             } else if name.as_str() == WRITE_PLAN_TOOL_NAME && agent.supports_plans() {
                 match write_agent_plan(conn, s3, mqtt.map(|(p, _)| p), session_id, agent_session_id, user_id, agent.display_name().as_ref(), input).await {
                     Ok(text) => (text, false, None),
@@ -972,6 +1130,7 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != DELEGATE_TOOL_NAME
                     && name.as_str() != UPDATE_TODOS_TOOL_NAME
                     && name.as_str() != WRITE_PLAN_TOOL_NAME
+                    && name.as_str() != READ_PLAN_TOOL_NAME
                     && name.as_str() != CREATE_REMINDER_TOOL_NAME
                     && name.as_str() != LIST_REMINDERS_TOOL_NAME
                     && name.as_str() != CANCEL_REMINDER_TOOL_NAME

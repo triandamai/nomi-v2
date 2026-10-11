@@ -1668,3 +1668,125 @@ async fn any_agent_can_rename_the_chat_when_asked(pool: PgPool) {
     let first_request = &provider.received_requests.lock().unwrap()[0];
     assert!(first_request.tools.iter().any(|t| t.name == nomi_agent_core::engine::RENAME_CHAT_TOOL_NAME));
 }
+
+/// An agent that may ask questions and read the chat's plan (like Rena and Koda).
+struct AskingAgent;
+
+#[async_trait::async_trait]
+impl SubAgent for AskingAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn asks_questions(&self) -> bool {
+        true
+    }
+    fn reads_plans(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ask_user_posts_a_questions_card_and_waits_for_the_answer(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
+        content: vec![ContentBlock::ToolUse {
+            id: "q1".to_string(),
+            name: "ask_user".to_string(),
+            input: serde_json::json!({
+                "intro": "A few things before I plan it:",
+                "questions": [
+                    {"question": "Which look?", "options": [{"label": "Editorial", "detail": "serif, warm paper"}, {"label": "Bold graphic"}]},
+                    {"question": "Which pages?", "options": [{"label": "Menu"}, {"label": "Location"}], "multiple": true}
+                ]
+            }),
+            thought_signature: None,
+        }],
+        stop_reason: StopReason::ToolUse,
+        input_tokens: 1,
+        output_tokens: 1,
+    }]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(AskingAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &AskingAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let LoopOutcome::AwaitingAnswer { message_id, text } = outcome else { panic!("expected to wait for an answer, got {outcome:?}") };
+    assert!(text.contains("1. Which look?") && text.contains("- Editorial: serif, warm paper") && text.contains("2. Which pages?"), "{text}");
+    let blocks: serde_json::Value = sqlx::query_scalar("SELECT content_blocks FROM messages WHERE id = $1").bind(message_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(blocks[0]["kind"], "questions");
+    assert_eq!(blocks[0]["questions"][1]["multiple"], true);
+    assert_eq!(blocks[0]["questions"][0]["options"][0]["detail"], "serif, warm paper");
+    // Only one model call: the turn stops at the questions.
+    assert_eq!(provider.received_requests.lock().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn read_plan_gives_the_latest_plan_drafted_in_the_chat(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    for (version, content) in [(1, "Old plan"), (2, "Editorial look, pages: Menu, Location")] {
+        sqlx::query("INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version, created_at) VALUES ($1, $2, $3, 'Cafe', $4, $5, now() - make_interval(mins => 10 - $5))")
+            .bind(session_id)
+            .bind(agent_session_id)
+            .bind(user_id)
+            .bind(content)
+            .bind(version)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![
+        LlmResponse {
+            content: vec![ContentBlock::ToolUse { id: "p1".to_string(), name: "read_plan".to_string(), input: serde_json::json!({}), thought_signature: None }],
+            stop_reason: StopReason::ToolUse,
+            input_tokens: 1,
+            output_tokens: 1,
+        },
+        LlmResponse { content: vec![ContentBlock::Text { text: "Building it.".to_string() }], stop_reason: StopReason::EndTurn, input_tokens: 1, output_tokens: 1 },
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(AskingAgent)]);
+
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &AskingAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    let result = requests[1].messages.iter().flat_map(|m| &m.content).find_map(|b| match b {
+        ContentBlock::ToolResult { content, .. } => Some(content.clone()),
+        _ => None,
+    });
+    let result = result.expect("read_plan result");
+    assert!(result.contains("version 2") && result.contains("Editorial look"), "{result}");
+}

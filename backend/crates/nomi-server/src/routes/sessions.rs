@@ -229,7 +229,14 @@ pub struct MessageItem {
 #[derive(Serialize)]
 pub struct ListMessagesResponse {
     pub messages: Vec<MessageItem>,
+    /// Older messages exist: ask again with `before` set to the first message's id.
+    pub has_more: bool,
 }
+
+/// Messages before `oldest` back to the person's message that started its turn, so a page never
+/// begins halfway through the crew's replies to one request.
+const MESSAGE_COLUMNS: &str = "m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
+     (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count";
 
 type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64);
 
@@ -292,13 +299,43 @@ pub async fn list_messages(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
     };
 
+    let mut rows = rows;
+    // A page that would begin inside a thread (the crew's replies, cut from the request that
+    // started them) reaches back to that request instead.
+    if let Some(oldest) = rows.last().filter(|row| row.1.is_none()).map(|row| row.3) {
+        let rest: Vec<MessageRow> = sqlx::query_as(&format!(
+            "SELECT {MESSAGE_COLUMNS} FROM messages m \
+             LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
+             WHERE m.session_id = $1 AND m.created_at < $2 \
+               AND m.created_at >= COALESCE((SELECT max(created_at) FROM messages \
+                   WHERE session_id = $1 AND sender_channel_identity_id IS NOT NULL AND created_at < $2), '-infinity') \
+             ORDER BY m.created_at DESC LIMIT 200"
+        ))
+        .bind(session_id)
+        .bind(oldest)
+        .bind(claims.sub)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?;
+        rows.extend(rest);
+    }
+    let has_more = match rows.last() {
+        Some(oldest) => sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM messages WHERE session_id = $1 AND created_at < $2)")
+            .bind(session_id)
+            .bind(oldest.3)
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
+        None => false,
+    };
+
     let mut messages: Vec<MessageItem> = rows.into_iter().map(to_message_item).collect();
     messages.reverse();
     if let Err(e) = super::message_steps::attach_steps(&state.pool, session_id, &mut messages).await {
         tracing::warn!(error = %e, "failed to load reply steps");
     }
 
-    Ok(Json(ListMessagesResponse { messages }))
+    Ok(Json(ListMessagesResponse { messages, has_more }))
 }
 
 pub async fn get_message(

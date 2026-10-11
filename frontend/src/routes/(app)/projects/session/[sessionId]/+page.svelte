@@ -53,9 +53,52 @@
 		cancel();
 		location.href = to.url.href;
 	});
+	// The file list follows Koda's work without a reload: from the in-browser runtime when it's
+	// running, otherwise by checking the project's file list every few seconds while it's on screen.
+	let polledFiles = $state<{ path: string; updated_at: string }[] | null>(null);
+	$effect(() => {
+		if (!projectId || runtime) return;
+		const id = projectId;
+		let stopped = false;
+		const refresh = async () => {
+			if (document.hidden) return;
+			const response = await fetch(`/projects/${id}/api/manifest`).catch(() => null);
+			if (!stopped && response?.ok) polledFiles = ((await response.json()) as { files: { path: string; updated_at: string }[] }).files;
+		};
+		const timer = setInterval(refresh, 5000);
+		return () => {
+			stopped = true;
+			clearInterval(timer);
+			polledFiles = null;
+		};
+	});
+	const liveFiles = $derived<{ path: string; updated_at?: string }[]>(
+		runtime && runtime.files.length > 0 ? runtime.files : (polledFiles ?? data.project?.files ?? []),
+	);
+	const filePaths = $derived(liveFiles.map((f) => f.path));
+
 	let activePath = $state<string | null>(null);
 	let activeContent = $state('');
+	// When Koda rewrites the open file, show the new version (unless there are unsaved edits).
+	let activeVersion = $state<string | undefined>(undefined);
+	let editorDirty = $state(false);
+	$effect(() => {
+		const path = activePath;
+		const id = projectId;
+		const current = liveFiles.find((f) => f.path === path)?.updated_at;
+		if (!path || !id || !current) return;
+		if (activeVersion === undefined) {
+			activeVersion = current;
+			return;
+		}
+		if (current !== activeVersion && !editorDirty) {
+			activeVersion = current;
+			void openFile(id, path);
+		}
+	});
 	let saveError = $state<string | null>(null);
+	/** Bumped on every load so the editor shows content reloaded for the same file. */
+	let contentKey = $state(0);
 
 	async function openFile(projectId: string, path: string) {
 		const body = new FormData();
@@ -64,7 +107,9 @@
 		const response = await fetch('?/loadFile', { method: 'POST', body });
 		const result = deserialize(await response.text());
 		activeContent = result.type === 'success' && typeof result.data?.content === 'string' ? result.data.content : '';
+		if (activePath !== path) activeVersion = undefined;
 		activePath = path;
+		contentKey += 1;
 	}
 
 	async function saveFile(projectId: string, content: string) {
@@ -195,6 +240,7 @@
 			sessionId={page.params.sessionId as string}
 			title={data.project?.name ?? m.project_new()}
 			messages={data.messages}
+			hasOlder={data.hasOlder}
 			agentActivity={data.agentActivity}
 			agentStatus={data.agentStatus}
 			sendError={form?.error ?? null}
@@ -257,7 +303,7 @@
 						projectId={project.id}
 						{runtime}
 						stack={project.stack}
-						files={project.files.map((f) => f.path)}
+						files={filePaths}
 						onShowCode={() => (view = 'code')}
 					/>
 				{:else if view === 'terminal' && runtime}
@@ -265,9 +311,11 @@
 				{:else}
 					<CodeWorkbench
 						projectName={project.name}
-						files={project.files.map((f) => f.path)}
+						files={filePaths}
 						{activePath}
 						content={activeContent}
+						{contentKey}
+						bind:dirty={editorDirty}
 						{saveError}
 						onOpen={(path) => openFile(project.id, path)}
 						onSave={(content) => saveFile(project.id, content)}

@@ -8,7 +8,7 @@
 
 import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import { m } from '$lib/paraglide/messages';
-import { capLog, cleanOutput, diffManifest, parentDir, scriptsOf, toFileTree, type ManifestEntry } from '$lib/projectRuntime';
+import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, scriptsOf, toFileTree, type ManifestEntry } from '$lib/projectRuntime';
 
 export type RuntimePhase =
 	| 'unsupported'
@@ -28,7 +28,9 @@ interface ClaimedRun {
 	args: string[];
 }
 
-const PREVIEW_ENV = { NOMI_PREVIEW: '1' };
+// NODE_NO_WARNINGS: the browser runtime's Node prints a WASI "experimental feature" warning on
+// every start, which buries the app's own output.
+const PREVIEW_ENV = { NOMI_PREVIEW: '1', NODE_NO_WARNINGS: '1' };
 const CHECK_IN_WAIT_SECS = 20;
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 const RETRY_MS = 3000;
@@ -55,6 +57,8 @@ export class ProjectRuntime {
 	phase = $state<RuntimePhase>('booting');
 	previewUrl = $state<string | null>(null);
 	log = $state('');
+	/** The project's files as last copied in, so the Code view lists them as Koda writes them. */
+	files = $state<ManifestEntry[]>([]);
 	error = $state<string | null>(null);
 	/** The install-and-check on opening failed (and whether Koda took it). */
 	checkFailed = $state(false);
@@ -143,7 +147,7 @@ export class ProjectRuntime {
 	}
 
 	#append(text: string) {
-		this.log = capLog(this.log + cleanOutput(text));
+		this.log = capLog(appendOutput(this.log, text));
 	}
 
 	async #api(path: string, init?: RequestInit): Promise<Response> {
@@ -156,6 +160,7 @@ export class ProjectRuntime {
 		const snapshot = (await response.json()) as { files_version: number; files: { path: string; content: string; updated_at: string }[] };
 		await this.#wc!.mount(toFileTree(snapshot.files));
 		this.#known = new Map(snapshot.files.map((f) => [f.path, f.updated_at]));
+		this.files = snapshot.files.map((f) => ({ path: f.path, size_bytes: f.content.length, updated_at: f.updated_at }));
 		this.#version = snapshot.files_version;
 		this.#seen = snapshot.files_version;
 	}
@@ -182,6 +187,7 @@ export class ProjectRuntime {
 			this.#known.delete(path);
 		}
 		for (const f of manifest.files) this.#known.set(f.path, f.updated_at);
+		this.files = manifest.files;
 		this.#version = manifest.files_version;
 		return [...changed, ...removed];
 	}

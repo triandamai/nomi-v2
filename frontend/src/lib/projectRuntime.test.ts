@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capLog, cleanOutput, diffManifest, parentDir, scriptsOf, toFileTree } from './projectRuntime';
+import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, scriptsOf, toFileTree } from './projectRuntime';
 
 describe('project runtime helpers', () => {
 	it('nests files into folders for mounting', () => {
@@ -50,5 +50,18 @@ describe('project runtime helpers', () => {
 		expect(scriptsOf('{"scripts":{"check":"svelte-check"}}')).toEqual({ check: 'svelte-check' });
 		expect(scriptsOf('{ not json')).toEqual({});
 		expect(scriptsOf(undefined)).toEqual({});
+	});
+});
+
+describe('appendOutput', () => {
+	it('drops the blank screenful Vite prints before clearing the screen', () => {
+		const vite = `${'\n'.repeat(40)}\u001b[1;1H\u001b[0J  VITE v8 ready\n`;
+		expect(appendOutput('200 GET /\n', vite)).toBe('200 GET /\n  VITE v8 ready\n');
+		expect(appendOutput('', `\n\n\n\u001b[2J\u001b[3J\u001b[Hready\n`)).toBe('ready\n');
+	});
+
+	it('collapses long runs of blank lines but keeps single gaps', () => {
+		expect(appendOutput('a\n', '\n\n\n\nb\n')).toBe('a\n\nb\n');
+		expect(appendOutput('a\n', '\nb\n')).toBe('a\n\nb\n');
 	});
 });

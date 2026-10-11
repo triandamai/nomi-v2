@@ -41,6 +41,7 @@
 	sessionId={page.params.sessionId as string}
 	title={data.title}
 	messages={data.messages}
+	hasOlder={data.hasOlder}
 	agentActivity={data.agentActivity}
 	agentStatus={data.agentStatus}
 	sendError={form?.error ?? null}

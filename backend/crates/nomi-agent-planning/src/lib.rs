@@ -95,7 +95,13 @@ impl SubAgent for PlanningAgent {
         true
     }
 
+    /// Rena's tool results (a project's id, a saved plan) are bookkeeping: they show as steps in
+    /// her reply's activity, not as messages of their own.
     fn surfaces_activity(&self) -> bool {
+        false
+    }
+
+    fn asks_questions(&self) -> bool {
         true
     }
 
@@ -170,5 +176,7 @@ pub async fn create_project(
         .map_err(|e| e.to_string())?,
     };
 
-    Ok(project_id.to_string())
+    Ok(format!(
+        "Project ready (id {project_id}). When you hand the build to the coding agent, start the task with 'Project {project_id}:'."
+    ))
 }

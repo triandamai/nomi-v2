@@ -1,24 +1,22 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
-import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
-	const messagesResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages`);
-	if (messagesResponse.status === 404) {
+	const firstPage = await fetchMessagePage(fetch, cookies, params.sessionId);
+	if (firstPage.status === 404) {
 		throw redirect(303, '/projects');
 	}
-	if (!messagesResponse.ok) {
-		throw error(messagesResponse.status, m.err_load_project());
+	if (!firstPage.messages) {
+		throw error(firstPage.status, m.err_load_project());
 	}
-	const { messages: rawMessages } = (await messagesResponse.json()) as { messages: MessageItem[] };
-	const messages: RenderedMessage[] = await Promise.all(
-		rawMessages.map(async (message) => ({ ...message, content_html: await renderMarkdown(message.content) })),
-	);
+	const messages: RenderedMessage[] = firstPage.messages;
+	const hasOlder = firstPage.hasOlder;
 
 	const agentActivityResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-activity`);
 	const agentActivity = agentActivityResponse.ok ? await agentActivityResponse.json() : [];
@@ -32,7 +30,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const project: ProjectDetail | null = projectResponse.ok ? await projectResponse.json() : null;
 
 	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
-	return { messages, agentActivity, agentStatus, project, thinkingLevel };
+	return { messages, hasOlder, agentActivity, agentStatus, project, thinkingLevel };
 };
 
 export const actions: Actions = {
