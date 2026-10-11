@@ -5,6 +5,9 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
+	import Chip from '$lib/components/m3/Chip.svelte';
+	import Pagination from '$lib/components/m3/Pagination.svelte';
+	import { goto } from '$app/navigation';
 	import { refreshUnread } from '$lib/notifications.svelte';
 	import type { NotificationKind } from '$lib/types';
 	import type { PageData } from './$types';
@@ -28,6 +31,24 @@
 		promo: { agent: 'reminders', label: m.notif_kind_promo },
 	};
 
+	type Filter = PageData['filter'];
+	const FILTERS: { id: Filter; label: () => string; empty: () => string }[] = [
+		{ id: 'all', label: m.notif_filter_all, empty: m.notif_empty },
+		{ id: 'unread', label: m.notif_filter_unread, empty: m.notif_empty_unread },
+		{ id: 'read', label: m.notif_filter_read, empty: m.notif_empty_read },
+		{ id: 'promo', label: m.notif_filter_promo, empty: m.notif_empty_promo },
+	];
+	const current = $derived(FILTERS.find((f) => f.id === data.filter) ?? FILTERS[0]);
+
+	/** The inbox URL for a filter and page (defaults left out). */
+	function inboxHref(filter: Filter, page = 1): string {
+		const params = new URLSearchParams();
+		if (filter !== 'all') params.set('filter', filter);
+		if (page > 1) params.set('page', String(page));
+		const query = params.toString();
+		return query ? `?${query}` : '?';
+	}
+
 	function when(at: string): string {
 		const date = new Date(at);
 		const sameDay = date.toDateString() === new Date().toDateString();
@@ -49,10 +70,22 @@
 			{/if}
 		</header>
 
+		<div class="filters" role="group" aria-label={m.notif_filters()}>
+			{#each FILTERS as filter (filter.id)}
+				<Chip
+					variant="filter"
+					selected={data.filter === filter.id}
+					onclick={() => goto(inboxHref(filter.id), { keepFocus: true, noScroll: true })}
+				>
+					{filter.label()}<span class="filters__count">{data.inbox.counts[filter.id]}</span>
+				</Chip>
+			{/each}
+		</div>
+
 		{#if items.length === 0}
 			<div class="empty">
 				<AgentShape agent="nomi" face size={64} />
-				<p>{data.older ? m.notif_no_older() : m.notif_empty()}</p>
+				<p>{current.empty()}</p>
 			</div>
 		{:else}
 			<ul class="list">
@@ -78,8 +111,10 @@
 					</li>
 				{/each}
 			</ul>
-			{#if data.inbox.next_before}
-				<a class="older" href={`?before=${encodeURIComponent(data.inbox.next_before)}`}>{m.notif_older()}</a>
+			{#if data.inbox.pages > 1}
+				<div class="inbox-pager">
+					<Pagination page={data.inbox.page} pages={data.inbox.pages} href={(page) => inboxHref(data.filter, page)} label={m.notif_pages()} />
+				</div>
 			{/if}
 		{/if}
 
@@ -216,10 +251,19 @@
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-primary);
 	}
-	.older {
-		align-self: center;
-		color: var(--md-sys-color-primary);
-		font-weight: 600;
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.filters__count {
+		margin-left: 6px;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.7;
+	}
+	.inbox-pager {
+		display: flex;
+		justify-content: center;
 	}
 	.prefs {
 		display: flex;

@@ -700,8 +700,6 @@
 	"notif_kind_quota": "Pemakaian",
 	"notif_kind_subscription": "Paket",
 	"notif_lede": "Perubahan paket, peringatan pemakaian, dan kabar dari tim Nomi.",
-	"notif_no_older": "Itu semuanya.",
-	"notif_older": "Tampilkan yang lebih lama",
 	"notif_read_all": "Tandai semua sudah dibaca",
 	"notif_title": "Notifikasi",
 	"notif_unread": "Belum dibaca",
@@ -1283,5 +1281,14 @@
 	"drawer_reset": "Kembalikan ke bawaan",
 	"drawer_saved": "Laci diperbarui",
 	"drawer_save_failed": "Laci gagal disimpan. Coba lagi.",
-	"drawer_moved": "{name} dipindah ke posisi {position}"
+	"drawer_moved": "{name} dipindah ke posisi {position}",
+	"notif_filter_all": "Semua",
+	"notif_filter_unread": "Belum dibaca",
+	"notif_filter_read": "Sudah dibaca",
+	"notif_filter_promo": "Promo",
+	"notif_filters": "Tampilkan",
+	"notif_pages": "Halaman notifikasi",
+	"notif_empty_unread": "Tidak ada yang belum dibaca. Semua sudah terbaca.",
+	"notif_empty_read": "Belum ada yang dibaca.",
+	"notif_empty_promo": "Belum ada promo atau kabar."
 }

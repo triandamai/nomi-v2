@@ -5,6 +5,7 @@ use nomi_server::app::{build_router, AppState};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
@@ -269,4 +270,52 @@ async fn past_the_allowance_nomi_uses_their_own_key_or_stops(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(switched, 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_inbox_pages_and_filters_by_read_state_and_promos(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "pat@example.com").await;
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'pat@example.com'").fetch_one(&pool).await.unwrap();
+    // 25 account notices (the 5 oldest read) and 3 promos, oldest first.
+    for i in 0..28 {
+        let kind = if i >= 25 { "promo" } else { "account" };
+        sqlx::query(
+            "INSERT INTO notifications (user_id, kind, title, body, read_at, created_at) \
+             VALUES ($1, $2, $3, '', CASE WHEN $4 < 5 THEN now() END, now() - make_interval(mins => 100 - $4))",
+        )
+        .bind(user_id)
+        .bind(kind)
+        .bind(format!("n{i}"))
+        .bind(i)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let (status, first) = json_request(router.clone(), "GET", "/api/notifications", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["counts"], json!({ "all": 28, "unread": 23, "read": 5, "promo": 3 }));
+    assert_eq!((first["page"].as_i64(), first["pages"].as_i64(), first["total"].as_i64()), (Some(1), Some(2), Some(28)));
+    assert_eq!(first["items"].as_array().unwrap().len(), 20);
+    assert_eq!(first["items"][0]["title"], "n27", "newest first");
+
+    let (_, second) = json_request(router.clone(), "GET", "/api/notifications?page=2", Value::Null, Some(&token)).await;
+    assert_eq!(second["items"].as_array().unwrap().len(), 8);
+    assert_eq!(second["items"][7]["title"], "n0");
+
+    let (_, promos) = json_request(router.clone(), "GET", "/api/notifications?filter=promo", Value::Null, Some(&token)).await;
+    let titles: Vec<&str> = promos["items"].as_array().unwrap().iter().map(|n| n["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, vec!["n27", "n26", "n25"]);
+    assert_eq!(promos["pages"], 1);
+
+    let (_, read) = json_request(router.clone(), "GET", "/api/notifications?filter=read", Value::Null, Some(&token)).await;
+    assert!(read["items"].as_array().unwrap().iter().all(|n| n["read"] == true));
+    assert_eq!(read["total"], 5);
+    let (_, unread) = json_request(router.clone(), "GET", "/api/notifications?filter=unread&page=9", Value::Null, Some(&token)).await;
+    assert_eq!(unread["page"], 2, "a page past the end shows the last one");
+    assert!(unread["items"].as_array().unwrap().iter().all(|n| n["read"] == false));
+
+    let (status, _) = json_request(router, "GET", "/api/notifications?filter=everything", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
