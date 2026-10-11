@@ -439,6 +439,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     tools.push(cancel_reminder_tool_definition());
     tools.push(crate::web::web_search_tool_definition());
     tools.push(crate::web::read_web_page_tool_definition());
+    tools.push(crate::voice::speak_tool_definition());
     tools.push(crate::attachments::read_attachment_tool_definition());
     tools
 }
@@ -483,6 +484,8 @@ fn is_gateable(tool_name: &str) -> bool {
         // Reading the public web, or the user's own files, changes nothing.
         && !crate::web::is_web_tool(tool_name)
         && tool_name != crate::attachments::READ_ATTACHMENT_TOOL_NAME
+        // Speaking only posts a recording in the chat the person asked for.
+        && tool_name != crate::voice::SPEAK_TOOL_NAME
         // Record tools only touch the calling agent's own private records.
         && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
 }
@@ -571,6 +574,10 @@ pub async fn run_agent_turn(
     }
     if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
         tools.push(crate::web::read_web_page_tool_definition());
+    }
+    // Saying things aloud, while it's on and has its ElevenLabs key.
+    if switches.allows(crate::voice::SPEAK_TOOL_NAME) && crate::voice::is_ready(conn).await {
+        tools.push(crate::voice::speak_tool_definition());
     }
     // Reading on in a file the user attached, whenever the conversation holds one.
     if crate::attachments::mentions_files(&messages) {
@@ -1090,6 +1097,11 @@ pub async fn resolve_tool_batch(
             } else if name.as_str() == CANCEL_REMINDER_TOOL_NAME && agent.supports_reminders() {
                 match crate::scheduled_jobs::cancel_reminder(conn, user_id, input).await {
                     Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::voice::SPEAK_TOOL_NAME {
+                match crate::voice::speak(conn, user_id, input).await {
+                    Ok((text, block)) => (text, false, Some(block)),
                     Err(err) => (err, true, None),
                 }
             } else if crate::web::is_web_tool(name) {

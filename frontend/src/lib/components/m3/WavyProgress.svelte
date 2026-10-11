@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { GRADIENT_STOPS, type GradientTone } from './shapes';
+	import { paintStops, type PaintTone } from './shapes';
 
 	// M3 Expressive wavy linear progress: the completed part is a sine wave in the agent's
 	// gradient (or, for `action`, the theme's action gradient), the remainder a flat track,
@@ -12,7 +12,7 @@
 	}: {
 		/** 0..1 */
 		value: number;
-		tone?: GradientTone | 'action';
+		tone?: PaintTone;
 		label: string;
 	} = $props();
 
@@ -22,8 +22,7 @@
 	const END = 292;
 	const WAVELENGTH = 15;
 
-	const ACTION = ['var(--nomi-action-1)', 'var(--nomi-action-2)', 'var(--nomi-action-3)'];
-	const stops = $derived(tone === 'action' ? ACTION : GRADIENT_STOPS[tone]);
+	const stops = $derived(paintStops(tone));
 	const clamped = $derived(Math.max(0, Math.min(1, value)));
 	const waveEnd = $derived(START + (END - START) * clamped);
 

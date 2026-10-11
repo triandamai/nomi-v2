@@ -9,8 +9,9 @@
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
+	import VoiceSheet from './VoiceSheet.svelte';
 	import type { PageData } from './$types';
-	import type { ReadPageSettings, SearchHit, ToolEntry, ToolGroup, WebSearchSettings } from './+page.server';
+	import type { ReadPageSettings, SearchHit, ToolEntry, ToolGroup, VoiceSettings, WebSearchSettings } from './+page.server';
 
 	let { data }: { data: PageData } = $props();
 
@@ -122,8 +123,13 @@
 	let maxChars = $state('12000');
 	let readError = $state<string | null>(null);
 
+	// The speak tool's sheet.
+	let voiceOpen = $state(false);
+	const voiceSettings = $derived(allTools.find((t) => t.name === 'speak')?.settings as VoiceSettings | undefined);
+
 	function openSettings(tool: ToolEntry) {
 		if (tool.name === 'web_search') return openSearch();
+		if (tool.name === 'speak') return (voiceOpen = true);
 		maxChars = String((tool.settings as ReadPageSettings | null)?.max_chars ?? 12000);
 		readError = null;
 		readOpen = true;
@@ -310,6 +316,8 @@
 		{/if}
 	</div>
 </BottomSheet>
+
+<VoiceSheet bind:open={voiceOpen} settings={voiceSettings} />
 
 <BottomSheet bind:open={readOpen}>
 	<h2 class="sheet-title">read_web_page</h2>

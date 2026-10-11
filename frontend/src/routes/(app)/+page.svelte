@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { touchScreen } from '$lib/touch';
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
@@ -94,8 +95,10 @@
 					method="POST"
 					action="?/newChat"
 					class="composer"
-					use:enhance={() => {
+					use:enhance={({ formElement }) => {
 						submitting = true;
+						// On a phone, sending puts the keyboard away.
+						if (touchScreen()) (formElement.querySelector('textarea') as HTMLTextAreaElement | null)?.blur();
 						return async ({ update }) => {
 							await update();
 							submitting = false;

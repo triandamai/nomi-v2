@@ -11,6 +11,7 @@
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import QuestionsCard from './QuestionsCard.svelte';
+	import VoiceBlock from './VoiceBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 
 	let {
@@ -50,6 +51,8 @@
 	<QuestionsCard {block} {agent} {answered} />
 {:else if block.kind === 'quota_notice'}
 	<QuotaNoticeCard />
+{:else if block.kind === 'voice'}
+	<VoiceBlock {block} />
 {:else if block.kind === 'reasoning'}
 	<ReasoningDisclosure steps={[block.text]} />
 {/if}

@@ -185,10 +185,15 @@
 						<h3 class="model__name">{model.label}</h3>
 						<p class="model__provider">{providerName(model.provider)}</p>
 					</div>
-					{#if model.is_default}<span class="chip">{m.llm_default()}</span>{/if}
-					{#if model.is_files_model}<span class="chip chip--files">{m.llm_files_chip()}</span>{/if}
-					{#if model.is_coding_model}<span class="chip chip--coding">{m.llm_coding_chip()}</span>{/if}
 				</div>
+				{#if model.is_default || model.is_files_model || model.is_coding_model}
+					<!-- Its own row: beside the name, the chips squeezed it to a letter per line. -->
+					<div class="model__chips">
+						{#if model.is_default}<span class="chip">{m.llm_default()}</span>{/if}
+						{#if model.is_files_model}<span class="chip chip--files">{m.llm_files_chip()}</span>{/if}
+						{#if model.is_coding_model}<span class="chip chip--coding">{m.llm_coding_chip()}</span>{/if}
+					</div>
+				{/if}
 				<dl class="model__facts">
 					<div><dt>{m.key_model()}</dt><dd>{model.model_id}</dd></div>
 					<div><dt>{m.llm_price()}</dt><dd>{#if model.input_usd_per_mtok != null || model.output_usd_per_mtok != null}<Money value={m.llm_price_value({ input: formatUsd(model.input_usd_per_mtok ?? 0), output: formatUsd(model.output_usd_per_mtok ?? 0) })} />{:else}{m.llm_price_unset()}{/if}</dd></div>
@@ -450,6 +455,11 @@
 		align-items: center;
 		gap: 14px;
 	}
+	.model__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
 	.model__icon {
 		display: grid;
 		flex: none;
@@ -469,7 +479,7 @@
 		font-family: var(--md-ref-typeface-brand);
 		font-size: 1.25rem;
 		font-weight: 700;
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 	.model__provider {
 		margin: 2px 0 0;

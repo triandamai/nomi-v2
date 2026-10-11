@@ -48,6 +48,8 @@ export type ContentBlock =
 	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number }
 	/** The model's thinking; shown collapsed on the agent's next reply (see $lib/reasoning). */
 	| { kind: 'reasoning'; text: string }
+	/** Something the crew read out loud (the speak tool); `url` is the recording. */
+	| { kind: 'voice'; url: string; text: string; voice: string | null }
 	/** A reminder going off, posted by the Reminders agent. */
 	| {
 			kind: 'reminder';

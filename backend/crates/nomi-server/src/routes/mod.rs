@@ -13,6 +13,7 @@ pub mod money;
 pub mod notifications;
 pub mod orgs;
 pub mod usage;
+pub mod voice;
 pub mod personality;
 pub mod plans;
 pub mod message_delete;

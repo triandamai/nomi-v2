@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -171,8 +171,9 @@ fn looks_like(content_type: &str, bytes: &[u8]) -> bool {
     }
 }
 
-/// `POST /api/profile/avatar`: the picture itself as the body. Nomi puts it in the bucket and
-/// saves it on the profile, so the browser never talks to the bucket (no CORS to set up).
+/// `POST /api/profile/avatar`: the picture itself as the body. Nomi keeps it where chat files go
+/// (the bucket, or disk without one) and serves it itself at `/avatars/<user>/<file>`, so it works
+/// whether or not the bucket is public, and without one at all.
 #[tracing::instrument(skip(state, claims, headers, body))]
 pub async fn upload_avatar(
     State(state): State<AppState>,
@@ -197,16 +198,14 @@ pub async fn upload_avatar(
     if !looks_like(&content_type, &body) {
         return Err((StatusCode::BAD_REQUEST, "that file isn't the image it says it is".to_string()));
     }
-    let Some(s3) = &state.s3 else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "avatar upload is not configured".to_string()));
-    };
 
-    let key = format!("avatars/{}/{}.{extension}", claims.sub, Uuid::new_v4());
-    s3.put_object_bytes(&key, body.to_vec(), &content_type).await.map_err(|e| {
+    let file = format!("{}.{extension}", Uuid::new_v4());
+    let key = avatar_key(claims.sub, &file);
+    nomi_storage::blob::attachment_store().put_bytes(&key, body.to_vec(), &content_type).await.map_err(|e| {
         tracing::error!(error = %e, "failed to store avatar");
         (StatusCode::BAD_GATEWAY, "couldn't store the picture".to_string())
     })?;
-    let avatar_url = s3.public_url(&key);
+    let avatar_url = format!("/avatars/{}/{file}", claims.sub);
     sqlx::query(
         "INSERT INTO user_profiles (user_id, avatar_url) VALUES ($1, $2) \
          ON CONFLICT (user_id) DO UPDATE SET avatar_url = $2, updated_at = now()",
@@ -220,6 +219,63 @@ pub async fn upload_avatar(
         (StatusCode::INTERNAL_SERVER_ERROR, "couldn't save the picture".to_string())
     })?;
     Ok(Json(AvatarUploadResponse { avatar_url }))
+}
+
+fn avatar_key(user_id: Uuid, file: &str) -> String {
+    format!("avatars/{user_id}/{file}")
+}
+
+/// The content type of an avatar file name Nomi made (`<uuid>.<ext>`), or None for anything else.
+fn avatar_content_type(file: &str) -> Option<&'static str> {
+    let (stem, extension) = file.rsplit_once('.')?;
+    stem.parse::<Uuid>().ok()?;
+    match extension {
+        "png" => Some("image/png"),
+        "jpg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        _ => None,
+    }
+}
+
+/// `GET /api/avatars/:user_id/:file`: a profile picture, for anyone signed in (teammates see
+/// each other's).
+pub async fn get_avatar(
+    AuthClaims(_claims): AuthClaims,
+    Path((user_id, file)): Path<(Uuid, String)>,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    use axum::response::IntoResponse;
+    let content_type = avatar_content_type(&file).ok_or((StatusCode::NOT_FOUND, "not found".to_string()))?;
+    let bytes = nomi_storage::blob::attachment_store()
+        .get_bytes(&avatar_key(user_id, &file))
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to read avatar");
+            (StatusCode::BAD_GATEWAY, "couldn't read the picture".to_string())
+        })?
+        .ok_or((StatusCode::NOT_FOUND, "not found".to_string()))?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, content_type),
+            // A new picture gets a new file name, so a stored one never changes.
+            (axum::http::header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+#[cfg(test)]
+mod avatar_tests {
+    use super::avatar_content_type;
+
+    #[test]
+    fn only_serves_file_names_nomi_made() {
+        assert_eq!(avatar_content_type("6f1c3f0e-6b8a-4d3c-9a77-2f1d3c4b5a69.png"), Some("image/png"));
+        assert_eq!(avatar_content_type("../secret.png"), None);
+        assert_eq!(avatar_content_type("6f1c3f0e-6b8a-4d3c-9a77-2f1d3c4b5a69.svg"), None);
+    }
 }
 
 #[derive(Serialize)]

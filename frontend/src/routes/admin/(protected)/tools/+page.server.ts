@@ -17,6 +17,35 @@ export type WebSearchSettings = {
 
 export type ReadPageSettings = { max_chars: number };
 
+export type VoiceModel = { model_id: string; name: string };
+
+export type VoiceSettings = {
+	voice_id: string;
+	voice_name: string | null;
+	model_id: string;
+	stability: number;
+	similarity_boost: number;
+	style: number;
+	use_speaker_boost: boolean;
+	speed: number;
+	output_format: string;
+	output_formats: string[];
+	max_chars: number;
+	max_chars_limit: number;
+	key_source: KeySource;
+	env_var: string;
+	models: VoiceModel[];
+};
+
+/** A voice from the ElevenLabs account (Admin → Tools → speak). */
+export type VoiceOption = {
+	voice_id: string;
+	name: string;
+	category: string | null;
+	description: string | null;
+	preview_url: string | null;
+};
+
 export type ToolEntry = {
 	name: string;
 	description: string;
@@ -26,7 +55,7 @@ export type ToolEntry = {
 	configurable: boolean;
 	ready: boolean;
 	used_by: string[];
-	settings: WebSearchSettings | ReadPageSettings | null;
+	settings: WebSearchSettings | ReadPageSettings | VoiceSettings | null;
 };
 
 export type ToolGroup = { key: string; kind: 'crew' | 'agent' | 'custom'; label: string; tools: ToolEntry[] };
@@ -86,6 +115,37 @@ export const actions: Actions = {
 		});
 		if (!response.ok) return failure(response, m.err_save_tool());
 		return { saved: 'read_web_page' };
+	},
+
+	saveVoice: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const text = (key: string) => {
+			const value = data.get(key);
+			return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+		};
+		const number = (key: string, fallback: number) => {
+			const value = Number(text(key));
+			return Number.isFinite(value) && text(key) !== null ? value : fallback;
+		};
+		const response = await apiFetch(fetch, cookies, '/api/admin/tools/speak/settings', {
+			method: 'PUT',
+			body: JSON.stringify({
+				voice_id: text('voice_id') ?? '',
+				voice_name: text('voice_name'),
+				model_id: text('model_id') ?? '',
+				stability: number('stability', 0.5),
+				similarity_boost: number('similarity_boost', 0.75),
+				style: number('style', 0),
+				use_speaker_boost: data.get('use_speaker_boost') === 'true',
+				speed: number('speed', 1),
+				output_format: text('output_format') ?? 'mp3_44100_128',
+				max_chars: Math.round(number('max_chars', 2500)),
+				api_key: text('api_key'),
+				clear_api_key: data.get('clear_api_key') === 'true',
+			}),
+		});
+		if (!response.ok) return failure(response, m.err_save_tool());
+		return { saved: 'speak' };
 	},
 
 	test: async ({ request, cookies, fetch }) => {
