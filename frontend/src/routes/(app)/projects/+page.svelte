@@ -11,6 +11,12 @@
 	import IconChevronDown from '$lib/components/icons/IconChevronDown.svelte';
 	import IconCheck from '$lib/components/icons/IconCheck.svelte';
 	import IconAgents from '$lib/components/icons/IconAgents.svelte';
+	import DataTable from '$lib/components/m3/DataTable.svelte';
+	import Pagination from '$lib/components/m3/Pagination.svelte';
+	import ListToolbar from '$lib/components/ListToolbar.svelte';
+	import { onMount } from 'svelte';
+	import { timeAgo } from '$lib/i18n';
+	import { pageCount, pageOf, searchItems, storedLayout, storeLayout, type ListLayout } from '$lib/listView';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -36,6 +42,29 @@
 		switchTo = orgId;
 		queueMicrotask(() => switchForm?.requestSubmit());
 	}
+
+	const PAGE_SIZE = 12;
+	let query = $state('');
+	let page = $state(1);
+	let layout = $state<ListLayout>('table');
+	onMount(() => (layout = storedLayout('projects', 'table')));
+	const found = $derived(searchItems(data.projects, query, (p) => `${p.name} ${p.description ?? ''} ${p.created_by}`));
+	const pages = $derived(pageCount(found.length, PAGE_SIZE));
+	const shown = $derived(pageOf(found, page, PAGE_SIZE));
+	// A new search, or another organization, starts from the first page.
+	$effect(() => {
+		void query;
+		void data.orgId;
+		page = 1;
+	});
+
+	const columns = [
+		{ key: 'name', label: m.list_col_project() },
+		{ key: 'status', label: m.list_col_status() },
+		{ key: 'by', label: m.list_col_started_by() },
+		{ key: 'issues', label: m.list_col_open_issues() },
+		{ key: 'updated', label: m.list_col_updated() },
+	];
 
 	function issuesLabel(count: number) {
 		return count === 1 ? m.projects_open_issue() : m.projects_open_issues({ count });
@@ -88,33 +117,78 @@
 			<OrgPicker orgs={data.orgs} current={data.orgId} error={orgError} />
 		</section>
 	{:else}
-		<div class="grid">
+		<div class="list-bar">
+			<ListToolbar bind:query bind:layout placeholder={m.projects_search()} onlayout={(next) => storeLayout('projects', next)} />
 			<form method="POST" action="?/createProject" use:enhance>
 				<input type="hidden" name="org_id" value={currentOrg.id} />
-				<button type="submit" class="add-tile">
-					<IconPlus size={28} />
-					<span class="md-title-medium">{m.projects_add()}</span>
-				</button>
+				<Button type="submit" variant="filled" size="m"><IconPlus size={20} />{m.projects_add()}</Button>
 			</form>
-
-			{#each data.projects as project (project.id)}
-				<a href="/projects/session/{project.session_id}" class="card" data-sveltekit-reload>
-					<div class="card__top">
-						<p class="card__name">{project.name}</p>
-						<span class="card__status card__status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
-					</div>
-					{#if project.description}
-						<p class="card__description">{project.description}</p>
-					{/if}
-					<p class="card__meta">
-						<span>{m.projects_by({ name: project.created_by })}</span>
-						{#if project.open_issues > 0}<span>{issuesLabel(project.open_issues)}</span>{/if}
-					</p>
-				</a>
-			{/each}
 		</div>
+
 		{#if data.projects.length === 0}
 			<p class="projects__empty">{m.projects_empty()}</p>
+		{:else if found.length === 0}
+			<p class="projects__empty">{m.list_no_match({ query })}</p>
+		{:else if layout === 'table'}
+			<div class="table-wrap">
+			<DataTable card {columns}>
+				{#each shown as project (project.id)}
+					<tr>
+						<td>
+							<a class="cell-name" href="/projects/session/{project.session_id}" data-sveltekit-reload>
+								<span class="cell-name__title">{project.name}</span>
+								{#if project.description}<span class="cell-name__description">{project.description}</span>{/if}
+							</a>
+						</td>
+						<td><span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span></td>
+						<td class="muted">{project.created_by}</td>
+						<td class="muted numeric">
+							{#if project.open_issues > 0}<a class="issues-link" href="/projects/{project.id}/issues">{project.open_issues}</a>{:else}0{/if}
+						</td>
+						<td class="muted numeric">{timeAgo(project.updated_at)}</td>
+					</tr>
+				{/each}
+				{#snippet list()}
+					{#each shown as project (project.id)}
+						<a role="listitem" class="row-item" href="/projects/session/{project.session_id}" data-sveltekit-reload>
+							<span class="row-item__top">
+								<span class="row-item__title">{project.name}</span>
+								<span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
+							</span>
+							<span class="row-item__meta">
+								{m.projects_by({ name: project.created_by })} · {timeAgo(project.updated_at)}{#if project.open_issues > 0} · {issuesLabel(project.open_issues)}{/if}
+							</span>
+						</a>
+					{/each}
+				{/snippet}
+			</DataTable>
+			</div>
+		{:else}
+			<ul class="grid">
+				{#each shown as project (project.id)}
+					<li class="card card--{project.status}">
+						<div class="card__top">
+							<span class="card__mark" aria-hidden="true">{project.name.trim().charAt(0).toUpperCase() || '?'}</span>
+							<span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
+						</div>
+						<a class="card__link" href="/projects/session/{project.session_id}" data-sveltekit-reload>
+							<span class="card__name">{project.name}</span>
+						</a>
+						<p class="card__description">{project.description ?? m.projects_no_description()}</p>
+						<p class="card__meta">
+							<span>{m.projects_by({ name: project.created_by })}</span>
+							<span>{timeAgo(project.updated_at)}</span>
+							{#if project.open_issues > 0}<span class="card__issues">{issuesLabel(project.open_issues)}</span>{/if}
+						</p>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		{#if pages > 1}
+			<div class="pager">
+				<Pagination {page} {pages} onselect={(next) => (page = next)} label={m.page_pages()} />
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -234,94 +308,202 @@
 		margin: 8px 0 20px;
 		color: var(--md-sys-color-on-surface-variant);
 	}
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	.list-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: 12px;
 		margin-top: 24px;
 	}
-	.add-tile {
+	.list-bar > :global(:first-child) {
+		flex: 1 1 320px;
+	}
+	.pager {
 		display: flex;
-		height: 100%;
-		width: 100%;
-		min-height: 112px;
-		flex-direction: column;
-		align-items: center;
 		justify-content: center;
-		gap: 8px;
-		border-radius: var(--md-sys-shape-corner-medium);
-		border: 1px dashed var(--md-sys-color-outline);
-		background: none;
-		color: var(--md-sys-color-on-surface-variant);
-		cursor: pointer;
+		margin-top: 20px;
 	}
-	.add-tile:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+	.table-wrap {
+		margin-top: 16px;
 	}
-	.add-tile:focus-visible,
-	.card:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.card {
+	.cell-name {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
-		padding: 16px;
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-medium);
+		gap: 2px;
+		max-width: 360px;
 		color: var(--md-sys-color-on-surface);
 		text-decoration: none;
 	}
-	.card:hover {
-		background: var(--md-sys-color-surface-container-low);
-	}
-	.card__top {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.card__name {
-		margin: 0;
-		min-width: 0;
+	.cell-name__title {
 		overflow: hidden;
-		font-weight: 700;
-		font-size: 1.0625rem;
+		font-weight: 600;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.card__status {
-		flex: none;
+	.cell-name:hover .cell-name__title {
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+	.cell-name__description {
+		overflow: hidden;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.muted {
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.numeric {
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.issues-link {
+		color: var(--md-sys-color-primary);
+		font-weight: 600;
+	}
+	.status {
+		display: inline-block;
 		padding: 2px 8px;
 		border-radius: 4px;
 		font-size: 0.75rem;
 		font-weight: 600;
+		white-space: nowrap;
 		background: var(--md-sys-color-surface-container-highest);
 		color: var(--md-sys-color-on-surface-variant);
 	}
-	.card__status--ready {
+	.status--building {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.status--ready {
 		background: var(--md-sys-color-secondary-container);
 		color: var(--md-sys-color-on-secondary-container);
 	}
-	.card__description {
-		margin: 0;
+	.row-item {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 12px 16px;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		color: var(--md-sys-color-on-surface);
+		text-decoration: none;
+	}
+	.row-item__top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.row-item__title {
+		overflow: hidden;
+		font-weight: 600;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.row-item__meta {
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+		gap: 12px;
+		margin: 16px 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.card {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		min-height: 188px;
+		padding: 16px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-surface);
+		transition: border-color 150ms ease-out, background-color 150ms ease-out;
+	}
+	.card:hover {
+		border-color: var(--md-sys-color-outline);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.card:has(.card__link:focus-visible) {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.card__top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.card__mark {
+		display: grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
+		border-radius: 8px;
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface);
+		font-size: 1.0625rem;
+		font-weight: 700;
+	}
+	.card--ready .card__mark {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.card--building .card__mark {
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.card__link {
+		color: var(--md-sys-color-on-surface);
+		text-decoration: none;
+		outline: none;
+	}
+	.card__link::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+	}
+	.card__name {
 		display: -webkit-box;
 		overflow: hidden;
+		font-size: 1.125rem;
+		font-weight: 700;
+		line-height: 1.3;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
-		font-size: 0.9375rem;
+	}
+	.card__description {
+		display: -webkit-box;
+		overflow: hidden;
+		margin: 0;
+		font-size: 0.875rem;
+		line-height: 1.45;
 		color: var(--md-sys-color-on-surface-variant);
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
 	}
 	.card__meta {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px 12px;
 		margin: auto 0 0;
-		padding-top: 6px;
+		padding-top: 10px;
+		border-top: 1px solid var(--md-sys-color-outline-variant);
 		font-size: 0.8125rem;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.card__issues {
+		margin-left: auto;
+		font-weight: 600;
+		color: var(--md-sys-color-primary);
 	}
 	.projects__empty {
 		margin: 16px 0 0;

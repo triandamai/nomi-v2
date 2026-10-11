@@ -9,6 +9,10 @@
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Came from a team invite: say so, and (from the invite email) fill in the invited address.
+	const forInvite = $derived((page.url.searchParams.get('redirect_to') ?? '').startsWith('/invite/'));
+	const invitedEmail = $derived(page.url.searchParams.get('email') ?? '');
 </script>
 
 <AuthShell
@@ -25,17 +29,29 @@
 		<GoogleButton label={m.google_continue()} />
 		<div class="or" aria-hidden="true"><span>{m.auth_or()}</span></div>
 	{/if}
+	{#if forInvite}
+		<p class="invite-note" role="note">{m.login_for_invite()}</p>
+	{/if}
 	<form method="POST" use:enhance class="flex flex-col gap-5">
 		{#if form?.error}
 			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" required />
+		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" value={invitedEmail} required />
 		<TextField id="password" name="password" type="password" label={m.auth_password()} autocomplete="current-password" required />
 		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.login_submit()}</Button>
 	</form>
 </AuthShell>
 
 <style>
+	.invite-note {
+		margin: 0 0 16px;
+		padding: 10px 12px;
+		border-left: 3px solid var(--md-sys-color-primary);
+		border-radius: 4px;
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.875rem;
+	}
 	.or {
 		display: flex;
 		align-items: center;

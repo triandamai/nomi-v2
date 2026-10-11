@@ -15,6 +15,7 @@ pub mod orgs;
 pub mod usage;
 pub mod personality;
 pub mod plans;
+pub mod message_delete;
 pub mod message_steps;
 pub mod project_issues;
 pub mod project_runtime;

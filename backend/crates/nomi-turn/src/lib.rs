@@ -691,13 +691,24 @@ pub async fn fetch_recent_messages(
     .fetch_all(&mut **conn)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|(sender, content, _id)| LlmMessage {
-            role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
-            content: vec![ContentBlock::Text { text: content }],
-        })
-        .collect())
+    Ok(merge_turns(rows.into_iter().map(|(sender, content, _id)| LlmMessage {
+        role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
+        content: vec![ContentBlock::Text { text: content }],
+    })))
+}
+
+/// Runs of messages from the same side become one turn. Turns must alternate for some providers
+/// (Gemini refuses the request otherwise), and a request whose reply failed is followed directly
+/// by the person's next message once the failure notice is left out.
+pub fn merge_turns(messages: impl IntoIterator<Item = LlmMessage>) -> Vec<LlmMessage> {
+    let mut merged: Vec<LlmMessage> = Vec::new();
+    for message in messages {
+        match merged.last_mut() {
+            Some(last) if last.role == message.role => last.content.extend(message.content),
+            _ => merged.push(message),
+        }
+    }
+    merged
 }
 
 /// The language of the person whose chat this is (English if it has no owner).
@@ -742,7 +753,7 @@ async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPub
     let locale = session_owner_locale(conn, session_id).await;
     let explanation = err.user_message_in(locale);
     let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, NULL) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name, is_notice) VALUES ($1, NULL, $2, $3, NULL, true) RETURNING id",
     )
     .bind(session_id)
     .bind(&explanation)

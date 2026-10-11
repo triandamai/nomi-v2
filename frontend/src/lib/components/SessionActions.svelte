@@ -8,11 +8,11 @@
 	import Menu from './m3/Menu.svelte';
 	import MenuItem from './m3/MenuItem.svelte';
 	import TextField from './m3/TextField.svelte';
-	import IconFolder from './icons/IconFolder.svelte';
 	import IconMore from './icons/IconMore.svelte';
-	import { timeAgo } from '$lib/i18n';
 	import type { SessionSummary } from '$lib/types';
 
+	// A chat's ⋯ menu (rename, delete) with its sheets; posts to the page's renameSession and
+	// deleteSession actions.
 	let { session }: { session: SessionSummary } = $props();
 
 	let menuOpen = $state(false);
@@ -22,22 +22,6 @@
 	let renameValue = $state('');
 	let renaming = $state(false);
 	let renameError = $state<string | null>(null);
-
-	const href = $derived(session.project_id ? `/projects/session/${session.id}` : `/chat/${session.id}`);
-	const title = $derived(session.title ?? m.nav_new_chat());
-
-	// A message that's entirely one fenced code block (the common "show me some code" reply)
-	// makes a useless, unreadable list preview — show what kind of content it is instead of
-	// dumping raw source. Anything that isn't wholly a single fence falls through unchanged.
-	function previewText(content: string | undefined | null): string {
-		if (!content) return m.session_no_messages();
-		const fenceMatch = content.trim().match(/^```(\S*)\r?\n[\s\S]*?```$/);
-		if (fenceMatch) {
-			const lang = fenceMatch[1]?.trim();
-			return lang ? m.session_lang_code({ lang }) : m.session_code();
-		}
-		return content;
-	}
 
 	function openDeleteConfirm(event: MouseEvent) {
 		event.preventDefault();
@@ -94,42 +78,24 @@
 	}
 </script>
 
-<div class="m3-session-item">
-	<a {href} class="m3-session-item__link" data-sveltekit-reload={session.project_id ? true : undefined}>
-		<span
-			class="md-label-small m3-session-item__badge"
-			class:m3-session-item__badge--project={!!session.project_id}
-		>
-			{#if session.project_id}<IconFolder size={12} />{/if}
-			{session.project_id ? m.session_project() : m.session_chat()}
-		</span>
-		<p class="md-body-large m3-session-item__title">{title}</p>
-		<div class="flex items-center gap-2">
-			<span class="md-body-small flex-1 truncate" style="color: var(--md-sys-color-on-surface-variant)">
-				{previewText(session.last_message?.content)}
-			</span>
-			<span class="md-body-small shrink-0" style="color: var(--md-sys-color-outline)">{timeAgo(session.updated_at)}</span>
+<div class="session-actions">
+	<Menu bind:open={menuOpen}>
+		{#snippet trigger({ toggle })}
+			<IconButton
+				onclick={(event) => {
+					suppressMenuNavigation(event);
+					toggle();
+				}}
+				aria-label={m.common_more_options()}
+			>
+				<IconMore size={18} />
+			</IconButton>
+		{/snippet}
+		<div class="w-full">
+			<MenuItem onclick={openRename}>{m.common_rename()}</MenuItem>
+			<MenuItem onclick={openDeleteConfirm}>{m.common_delete()}</MenuItem>
 		</div>
-	</a>
-	<div class="m3-session-item__menu">
-		<Menu bind:open={menuOpen}>
-			{#snippet trigger({ toggle })}
-				<IconButton
-					onclick={(event) => {
-						suppressMenuNavigation(event);
-						toggle();
-					}}
-					aria-label={m.common_more_options()}
-				>
-					<IconMore size={18} />
-				</IconButton>
-			{/snippet}
-			<div class="w-full">
-				<MenuItem onclick={openRename}>{m.common_rename()}</MenuItem>
-				<MenuItem onclick={openDeleteConfirm}>{m.common_delete()}</MenuItem>
-			</div>
-		</Menu>
-	</div>
+	</Menu>
 </div>
 
 <BottomSheet bind:open={renameOpen}>
@@ -163,56 +129,7 @@
 </BottomSheet>
 
 <style>
-	.m3-session-item {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		border-radius: var(--md-sys-shape-corner-extra-large);
-		padding: 4px 4px 4px 0;
-		background: var(--md-sys-color-surface-container-lowest);
-		transition:
-			border-radius var(--nomi-motion-spatial-fast),
-			background-color var(--nomi-motion-effects-fast);
-	}
-	.m3-session-item:hover {
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-primary-container);
-	}
-
-	.m3-session-item__link {
-		display: flex;
-		min-width: 0;
-		flex: 1;
-		flex-direction: column;
-		gap: 4px;
-		padding: 12px 8px 12px 18px;
-		text-decoration: none;
-	}
-
-	.m3-session-item__badge {
-		display: inline-flex;
-		width: fit-content;
-		align-items: center;
-		gap: 4px;
-		border-radius: var(--md-sys-shape-corner-full);
-		padding: 1px 8px;
-		color: var(--md-sys-color-on-surface-variant);
-		background: var(--md-sys-color-surface-container-highest);
-	}
-	.m3-session-item__badge--project {
-		color: var(--md-sys-color-on-secondary-container);
-		background: var(--md-sys-color-secondary-container);
-	}
-
-	.m3-session-item__title {
-		color: var(--md-sys-color-on-surface);
-		font-weight: 650;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.m3-session-item__menu {
+	.session-actions {
 		flex-shrink: 0;
 	}
 </style>

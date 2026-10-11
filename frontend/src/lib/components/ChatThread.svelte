@@ -773,6 +773,7 @@
 							thread={threadPosition(threadMessages, i)}
 							handoffFrom={handoffFrom(threadMessages, i)}
 							answered={i < lastUserIndex}
+							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
 						/>
 					{/each}
 					{#if isWorking}

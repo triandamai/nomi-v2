@@ -128,8 +128,13 @@ pub async fn send(pool: &PgPool, user_id: Uuid, notice: Notice) -> Result<Uuid, 
     send_with(pool, user_id, notice, None).await
 }
 
-async fn send_with(pool: &PgPool, user_id: Uuid, notice: Notice, broadcast_id: Option<Uuid>) -> Result<Uuid, sqlx::Error> {
-    let id: Uuid = sqlx::query_scalar(
+/// Puts `notice` in `user_id`'s inbox only, for something that is emailed separately anyway.
+pub async fn send_to_inbox(pool: &PgPool, user_id: Uuid, notice: Notice) -> Result<Uuid, sqlx::Error> {
+    insert(pool, user_id, &notice, None).await
+}
+
+async fn insert(pool: &PgPool, user_id: Uuid, notice: &Notice, broadcast_id: Option<Uuid>) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
         "INSERT INTO notifications (user_id, kind, title, body, link, broadcast_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(user_id)
@@ -139,7 +144,11 @@ async fn send_with(pool: &PgPool, user_id: Uuid, notice: Notice, broadcast_id: O
     .bind(&notice.link)
     .bind(broadcast_id)
     .fetch_one(pool)
-    .await?;
+    .await
+}
+
+async fn send_with(pool: &PgPool, user_id: Uuid, notice: Notice, broadcast_id: Option<Uuid>) -> Result<Uuid, sqlx::Error> {
+    let id = insert(pool, user_id, &notice, broadcast_id).await?;
 
     let pool = pool.clone();
     tokio::spawn(async move {

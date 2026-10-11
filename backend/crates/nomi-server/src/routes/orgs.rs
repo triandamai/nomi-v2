@@ -2,7 +2,9 @@
 //!
 //! Every organization has owners (who can do anything, including make other owners), admins
 //! (who invite and remove members) and members (who work on its projects). An invite goes to
-//! an email address and only works for someone signed in with that address.
+//! an email address and only works for someone signed in with that address. It's always
+//! emailed; someone who already uses Nomi also finds it in their inbox, and someone who doesn't
+//! is sent to create an account with that address first.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -280,6 +282,17 @@ pub struct InviteRequest {
     pub role: Option<String>,
 }
 
+/// Percent-encodes a query value.
+fn urlencode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 fn valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else { return false };
     !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.') && !email.contains(char::is_whitespace)
@@ -353,35 +366,40 @@ pub async fn create_invite(
         .map_err(internal("failed to invite"))?;
     let inviter = person_name(&state.pool, claims.sub).await;
     let path = format!("/invite/{code}");
-    match invitee {
-        Some(user_id) => {
-            let locale = person_locale(&state.pool, user_id).await;
-            let notice = Notice {
-                kind: Kind::Account,
-                title: locale.tf("team.invite_title", &[("inviter", &inviter), ("org", &org_name)]),
-                body: locale.tf("team.invite_body", &[("org", &org_name)]),
-                link: Some(path),
-            };
-            if let Err(e) = notifications::send(&state.pool, user_id, notice).await {
-                tracing::warn!(error = %e, "failed to notify an invited member");
-            }
-        }
-        None => {
-            let locale = person_locale(&state.pool, claims.sub).await;
-            let note = match std::env::var("APP_URL").ok().filter(|url| !url.trim().is_empty()) {
-                Some(url) => locale.tf("team.invite_link", &[("link", &format!("{}{path}", url.trim_end_matches('/')))]),
-                None => locale.tf("team.invite_in_app", &[("where", &path)]),
-            };
-            notifications::email_address(
-                email.clone(),
-                locale.tf("team.invite_title", &[("inviter", &inviter), ("org", &org_name)]),
-                vec![locale.tf("team.invite_body", &[("org", &org_name)])],
-                vec![note],
-                locale.tf("team.invite_reason", &[("inviter", &inviter)]),
-                locale,
-            );
+    // Someone without an account signs up first (with this address), then lands on the invite.
+    let open_path = match invitee {
+        Some(_) => path.clone(),
+        None => format!("/register?redirect_to={}&email={}", urlencode(&path), urlencode(&email)),
+    };
+    let locale = match invitee {
+        Some(user_id) => person_locale(&state.pool, user_id).await,
+        None => person_locale(&state.pool, claims.sub).await,
+    };
+    let title = locale.tf("team.invite_title", &[("inviter", &inviter), ("org", &org_name)]);
+    let body = locale.tf("team.invite_body", &[("org", &org_name)]);
+
+    // In their inbox when they already use Nomi; by email either way.
+    if let Some(user_id) = invitee {
+        let notice = Notice { kind: Kind::Account, title: title.clone(), body: body.clone(), link: Some(path.clone()) };
+        if let Err(e) = notifications::send_to_inbox(&state.pool, user_id, notice).await {
+            tracing::warn!(error = %e, "failed to notify an invited member");
         }
     }
+    let app_url = std::env::var("APP_URL").ok().map(|url| url.trim().trim_end_matches('/').to_string()).filter(|url| !url.is_empty());
+    let note = match (invitee.is_some(), app_url) {
+        (true, Some(url)) => locale.tf("team.invite_link", &[("link", &format!("{url}{open_path}"))]),
+        (true, None) => locale.tf("team.invite_in_app", &[("where", &path)]),
+        (false, Some(url)) => locale.tf("team.invite_signup_link", &[("link", &format!("{url}{open_path}"))]),
+        (false, None) => locale.tf("team.invite_signup_in_app", &[("where", &path)]),
+    };
+    notifications::email_address(
+        email.clone(),
+        title,
+        vec![body],
+        vec![note],
+        locale.tf("team.invite_reason", &[("inviter", &inviter)]),
+        locale,
+    );
 
     Ok((StatusCode::CREATED, Json(invite)))
 }

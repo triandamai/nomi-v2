@@ -49,7 +49,17 @@ export type ContentBlock =
 	/** The model's thinking; shown collapsed on the agent's next reply (see $lib/reasoning). */
 	| { kind: 'reasoning'; text: string }
 	/** A reminder going off, posted by the Reminders agent. */
-	| { kind: 'reminder'; reminder_id: string; title: string; notes: string | null; due_at: string; recurrence: string | null };
+	| {
+			kind: 'reminder';
+			reminder_id: string;
+			title: string;
+			notes: string | null;
+			due_at: string;
+			recurrence: string | null;
+			/** Where the reminder stands now (added when the chat loads). */
+			state?: 'open' | 'done' | 'snoozed' | 'cancelled' | 'gone';
+			snoozed_until?: string;
+	  };
 
 export interface MessageItem {
 	id: string;
@@ -394,6 +404,23 @@ export interface InviteInfo {
 	state: 'open' | 'expired' | 'used' | 'member' | 'other_address';
 	/** The invited address, partly hidden. */
 	email: string | null;
+}
+
+/** Something deleting a message also deletes (see the backend's message_delete). */
+export interface RelatedItem {
+	id: string;
+	label: string;
+	amount_cents: number | null;
+	kind: string | null;
+}
+
+export interface MessageDeletion {
+	message_ids: string[];
+	transactions: RelatedItem[];
+	reminders: RelatedItem[];
+	plans: RelatedItem[];
+	tasks: RelatedItem[];
+	files: RelatedItem[];
 }
 
 export type IssueKind = 'feature' | 'enhancement' | 'bug';

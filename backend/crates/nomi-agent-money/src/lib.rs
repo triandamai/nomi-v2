@@ -187,8 +187,15 @@ fn kind_of(input: &Value) -> Result<&'static str, String> {
 }
 
 /// Records money spent or received in the Money agent's own table, with its items. `source` is
-/// "manual" (the Money page) or "agent" (this agent's tool).
-pub async fn log_transaction(conn: &mut sqlx::PgConnection, user_id: Uuid, input: &Value, source: &str) -> Result<String, String> {
+/// "manual" (the Money page) or "agent" (this agent's tool, in chat `session_id`: the person's
+/// message it answers is kept, so deleting that message can take the transaction with it).
+pub async fn log_transaction(
+    conn: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    input: &Value,
+    source: &str,
+    session_id: Option<Uuid>,
+) -> Result<String, String> {
     let kind = kind_of(input)?;
     let items = items_of(input)?;
     let total = match input.get("amount") {
@@ -213,8 +220,9 @@ pub async fn log_transaction(conn: &mut sqlx::PgConnection, user_id: Uuid, input
     };
     let mut tx = sqlx::Connection::begin(&mut *conn).await.map_err(|e| e.to_string())?;
     let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO money_transactions (user_id, occurred_at, amount_cents, category, description, source, kind) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+        "INSERT INTO money_transactions (user_id, occurred_at, amount_cents, category, description, source, kind, source_message_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM messages WHERE session_id = $8 AND sender_channel_identity_id IS NOT NULL \
+                 ORDER BY created_at DESC, id DESC LIMIT 1)) RETURNING id",
     )
     .bind(user_id)
     .bind(occurred_at)
@@ -223,6 +231,7 @@ pub async fn log_transaction(conn: &mut sqlx::PgConnection, user_id: Uuid, input
     .bind(&description)
     .bind(source)
     .bind(kind)
+    .bind(session_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -336,7 +345,7 @@ impl SubAgent for MoneyAgent {
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
-        _session_id: Uuid,
+        session_id: Uuid,
         _agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
@@ -345,7 +354,7 @@ impl SubAgent for MoneyAgent {
         match name {
             "list_transactions" => list_transactions(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             "summarize_budget" => summarize_budget(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "log_transaction" => log_transaction(conn, user_id, &input, "agent").await.map(nomi_agent_core::ToolOutcome::text),
+            "log_transaction" => log_transaction(conn, user_id, &input, "agent", Some(session_id)).await.map(nomi_agent_core::ToolOutcome::text),
             "set_budget" => set_budget(conn, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
             "list_budgets" => list_budgets(conn, user_id).await.map(nomi_agent_core::ToolOutcome::text),
             "set_month_start" => {

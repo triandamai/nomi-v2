@@ -139,6 +139,8 @@ team:
   invite_body: "Bergabunglah dengan %{org} untuk mengerjakan proyeknya bersama kru. Undangan berlaku 7 hari."
   invite_link: "Terima di sini: %{link}"
   invite_in_app: "Masuk ke Nomi dengan alamat ini dan buka %{where} untuk menerimanya."
+  invite_signup_link: "Buat akun Nomi dengan alamat ini, lalu terima undangannya: %{link}"
+  invite_signup_in_app: "Buat akun Nomi dengan alamat ini, lalu buka %{where} untuk menerimanya."
   invite_reason: "Anda menerima email ini karena %{inviter} mengundang alamat ini ke tim di Nomi. Jika Anda tidak mengenalnya, abaikan saja."
   joined_title: "%{name} bergabung dengan %{org}"
   joined_body: "Sekarang mereka bisa membuka dan mengerjakan proyek %{org}."

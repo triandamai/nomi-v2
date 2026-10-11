@@ -119,7 +119,7 @@ pub async fn list_sessions(
 /// anyone else read it, post into it or see its memories. Someone else's chat answers exactly like
 /// one that doesn't exist. The exception is a project's chat: everyone in the project's
 /// organization works on the project together in it.
-async fn authorize_session_access(
+pub(crate) async fn authorize_session_access(
     pool: &sqlx::PgPool,
     user_id: Uuid,
     session_id: Uuid,
@@ -395,6 +395,9 @@ pub async fn list_messages(
     if let Err(e) = attach_authors(&state.pool, claims.sub, &mut messages).await {
         tracing::warn!(error = %e, "failed to name message authors");
     }
+    if let Err(e) = attach_reminder_states(&state.pool, &mut messages).await {
+        tracing::warn!(error = %e, "failed to load reminder states");
+    }
 
     Ok(Json(ListMessagesResponse { messages, has_more }))
 }
@@ -425,8 +428,56 @@ pub async fn get_message(
     if let Err(e) = super::message_steps::attach_steps(&state.pool, session_id, &mut items).await {
         tracing::warn!(error = %e, "failed to load reply steps");
     }
+    if let Err(e) = attach_reminder_states(&state.pool, &mut items).await {
+        tracing::warn!(error = %e, "failed to load reminder states");
+    }
     let [item] = items;
     Ok(Json(item))
+}
+
+/// A reminder card shows where its reminder stands now, not when it went off: `state` is
+/// "open", "done", "snoozed" (with `snoozed_until`), "cancelled" or "gone" (deleted). Without
+/// it, a card answered before a reload offers Done and Snooze again, and both fail.
+pub(crate) async fn attach_reminder_states(pool: &sqlx::PgPool, messages: &mut [MessageItem]) -> Result<(), sqlx::Error> {
+    let reminder_id = |block: &serde_json::Value| -> Option<Uuid> {
+        (block.get("kind")?.as_str()? == "reminder").then(|| block.get("reminder_id")?.as_str()?.parse().ok()).flatten()
+    };
+    let ids: Vec<Uuid> = messages
+        .iter()
+        .filter_map(|m| m.content_blocks.as_ref()?.as_array())
+        .flatten()
+        .filter_map(reminder_id)
+        .collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<(Uuid, String, DateTime<Utc>, Option<String>)> =
+        sqlx::query_as("SELECT id, status, due_at, recurrence FROM reminders WHERE id = ANY($1)").bind(&ids).fetch_all(pool).await?;
+    for message in messages.iter_mut() {
+        let Some(blocks) = message.content_blocks.as_mut().and_then(|b| b.as_array_mut()) else { continue };
+        for block in blocks.iter_mut() {
+            let Some(id) = reminder_id(block) else { continue };
+            let shown_due = block.get("due_at").and_then(|d| d.as_str()).and_then(|d| d.parse::<DateTime<Utc>>().ok());
+            let (state, until) = match rows.iter().find(|row| row.0 == id) {
+                None => ("gone", None),
+                Some((_, status, _, _)) if status == "done" => ("done", None),
+                Some((_, status, _, _)) if status == "cancelled" => ("cancelled", None),
+                // Pushed past the time this card went off: snoozed, unless it repeats (then a
+                // later due time is simply its next occurrence).
+                Some((_, status, due_at, None)) if status == "active" && shown_due.is_some_and(|shown| *due_at > shown) => {
+                    ("snoozed", Some(*due_at))
+                }
+                Some(_) => ("open", None),
+            };
+            if let Some(object) = block.as_object_mut() {
+                object.insert("state".into(), state.into());
+                if let Some(until) = until {
+                    object.insert("snoozed_until".into(), until.to_rfc3339().into());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]

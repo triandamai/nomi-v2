@@ -11,6 +11,8 @@
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
 	import IconShare from './icons/IconShare.svelte';
+	import IconDelete from './icons/IconDelete.svelte';
+	import MessageDeleteSheet from './MessageDeleteSheet.svelte';
 	import IconThumbDown from './icons/IconThumbDown.svelte';
 	import IconThumbUp from './icons/IconThumbUp.svelte';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
@@ -26,6 +28,7 @@
 		thread = 'solo',
 		handoffFrom = null,
 		answered = false,
+		ondelete,
 	}: {
 		message: RenderedMessage;
 		chained?: boolean;
@@ -44,6 +47,8 @@
 		handoffFrom?: string | null;
 		/** The person has replied since this message (a questions card shows as answered). */
 		answered?: boolean;
+		/** Offers Delete; called with the ids of the messages that went. */
+		ondelete?: (ids: string[]) => void;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
@@ -58,6 +63,7 @@
 	let feedback = $state(message.my_feedback);
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
+	let deleteOpen = $state(false);
 
 	const senderLabel = message.sender === 'user' ? m.msg_you() : (message.agent_display_name ?? 'Nomi');
 	// Crew members other than Nomi get their name as a chip tinted with their gradient, so a
@@ -334,6 +340,11 @@
 					<IconThumbDown size={16} />
 				</button>
 			{/if}
+			{#if ondelete && !message.author_name}
+				<button type="button" class="message-action-btn" aria-label={m.msg_delete()} title={m.msg_delete()} onclick={() => (deleteOpen = true)}>
+					<IconDelete size={16} />
+				</button>
+			{/if}
 			{#if showTimestamp}
 				<span class="message__time">{formattedTime}</span>
 			{/if}
@@ -347,6 +358,10 @@
 		{/if}
 	</div>
 </div>
+
+{#if ondelete}
+	<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />
+{/if}
 
 {#if message.sender === 'assistant'}
 	<MessageMemoriesSheet

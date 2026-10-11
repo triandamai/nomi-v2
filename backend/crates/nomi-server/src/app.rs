@@ -87,7 +87,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages",
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
         )
-        .route("/api/sessions/:id/messages/:message_id", get(sessions_routes::get_message))
+        .route(
+            "/api/sessions/:id/messages/:message_id",
+            get(sessions_routes::get_message).delete(crate::routes::message_delete::delete_message),
+        )
+        .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
         .route(
             "/api/sessions/:id/agent-plans/:agent_session_id",
             get(sessions_routes::list_agent_plans),
