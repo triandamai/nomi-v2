@@ -230,8 +230,9 @@ async fn voice_settings_keep_the_key_secret_and_stay_in_range(pool: PgPool) {
     assert_eq!(speak["settings"]["key_source"], "missing");
 
     // Listing voices needs a key first.
-    let (status, _) = json_request(router.clone(), "GET", "/api/admin/tools/speak/voices", Value::Null, Some(&token)).await;
+    let (status, body) = json_request(router.clone(), "GET", "/api/admin/tools/speak/voices", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"], "no_key", "a code the admin screen words in the admin's language");
 
     let settings = json!({
         "voice_id": "pNInz6obpgDQGcFmaJgB", "voice_name": "Adam", "model_id": "eleven_turbo_v2_5",

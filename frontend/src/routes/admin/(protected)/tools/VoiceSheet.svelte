@@ -92,14 +92,34 @@
 		voicesError = null;
 		try {
 			const response = await fetch('/admin/tools/speak/voices');
-			const body = await response.json();
-			if (!response.ok) throw new Error(body?.error || m.tools_voice_list_failed());
+			const body = await response.json().catch(() => null);
+			if (!response.ok) throw new Error(errorMessage(body, m.tools_voice_list_failed));
 			voices = body.voices as VoiceOption[];
 			models = (body.models as VoiceModel[]).length ? (body.models as VoiceModel[]) : null;
 		} catch (error) {
 			voicesError = error instanceof Error && error.message ? error.message : m.tools_voice_list_failed();
 		}
 		voicesLoading = false;
+	}
+
+	// The backend sends a code (and ElevenLabs' own words, which stay as ElevenLabs wrote them).
+	const ERRORS: Record<string, () => string> = {
+		no_key: m.tools_voice_err_no_key,
+		forbidden: m.tools_voice_err_forbidden,
+		unreachable: m.tools_voice_err_unreachable,
+		bad_response: m.tools_voice_err_bad_response,
+		empty_recording: m.tools_voice_err_empty_recording,
+		key_rejected: m.tools_voice_err_key_rejected,
+		missing_permission: m.tools_voice_err_missing_permission,
+		out_of_credits: m.tools_voice_err_out_of_credits,
+		unknown_voice: m.tools_voice_err_unknown_voice,
+		bad_settings: m.tools_voice_err_bad_settings,
+		rate_limited: m.tools_voice_err_rate_limited,
+		provider_down: m.tools_voice_err_provider_down,
+	};
+	function errorMessage(body: { error?: string | null; detail?: string | null } | null, fallback: () => string) {
+		const reason = (body?.error && ERRORS[body.error]?.()) || fallback();
+		return body?.detail ? `${reason} (${body.detail})` : reason;
 	}
 
 	function pick(voice: VoiceOption) {
@@ -135,7 +155,7 @@
 			});
 			if (!response.ok) {
 				const body = await response.json().catch(() => null);
-				throw new Error(body?.error || m.tools_voice_test_failed());
+				throw new Error(errorMessage(body, m.tools_voice_test_failed));
 			}
 			if (testUrl) URL.revokeObjectURL(testUrl);
 			testUrl = URL.createObjectURL(await response.blob());

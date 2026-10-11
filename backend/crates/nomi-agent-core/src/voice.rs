@@ -173,11 +173,11 @@ fn http() -> &'static reqwest::Client {
 }
 
 /// Speech for `text` from ElevenLabs, as MP3 bytes.
-pub async fn synthesize(settings: &VoiceSettings, api_key: &str, text: &str) -> Result<Vec<u8>, String> {
+pub async fn synthesize(settings: &VoiceSettings, api_key: &str, text: &str) -> Result<Vec<u8>, VoiceError> {
     synthesize_at(&base_url(), settings, api_key, text).await
 }
 
-pub async fn synthesize_at(base_url: &str, settings: &VoiceSettings, api_key: &str, text: &str) -> Result<Vec<u8>, String> {
+pub async fn synthesize_at(base_url: &str, settings: &VoiceSettings, api_key: &str, text: &str) -> Result<Vec<u8>, VoiceError> {
     let url = format!(
         "{}/v1/text-to-speech/{}?output_format={}",
         base_url.trim_end_matches('/'),
@@ -202,15 +202,15 @@ pub async fn synthesize_at(base_url: &str, settings: &VoiceSettings, api_key: &s
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("couldn't reach ElevenLabs: {e}"))?;
+        .map_err(|e| VoiceError::new(VoiceErrorCode::Unreachable, e))?;
     let status = response.status();
     if !status.is_success() {
         let detail = response.text().await.unwrap_or_default();
         return Err(describe_failure(status.as_u16(), &detail));
     }
-    let bytes = response.bytes().await.map_err(|e| format!("couldn't read the recording: {e}"))?;
+    let bytes = response.bytes().await.map_err(|e| VoiceError::new(VoiceErrorCode::BadResponse, e))?;
     if bytes.is_empty() {
-        return Err("ElevenLabs sent back an empty recording".to_string());
+        return Err(VoiceError { code: VoiceErrorCode::EmptyRecording, detail: None });
     }
     Ok(bytes.to_vec())
 }
@@ -226,30 +226,81 @@ fn urlencoding_path(value: &str) -> String {
         .collect()
 }
 
-/// What went wrong, in words an admin (or the agent, to tell the person) can act on.
-pub fn describe_failure(status: u16, body: &str) -> String {
-    let detail: String = serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| {
-            v.pointer("/detail/message")
-                .or_else(|| v.pointer("/detail"))
-                .and_then(|d| d.as_str().map(str::to_string))
-        })
-        .unwrap_or_default();
-    let reason = match status {
-        401 => "ElevenLabs rejected the API key".to_string(),
-        402 => "the ElevenLabs account is out of credits".to_string(),
-        404 => "ElevenLabs doesn't know that voice or model".to_string(),
-        422 => "ElevenLabs couldn't use these settings".to_string(),
-        429 => "ElevenLabs is limiting requests right now; try again in a moment".to_string(),
-        s if s >= 500 => "ElevenLabs is having trouble right now".to_string(),
-        s => format!("ElevenLabs returned {s}"),
-    };
-    if detail.is_empty() {
-        reason
-    } else {
-        format!("{reason} ({detail})")
+/// What went wrong talking to ElevenLabs. `code` is stable for the admin screens to show in the
+/// admin's language; `Display` says it in English for the agent and the logs. `detail` is
+/// ElevenLabs' own explanation, when it gave one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VoiceError {
+    pub code: VoiceErrorCode,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceErrorCode {
+    Unreachable,
+    BadResponse,
+    EmptyRecording,
+    KeyRejected,
+    MissingPermission,
+    OutOfCredits,
+    UnknownVoice,
+    BadSettings,
+    RateLimited,
+    ProviderDown,
+    Other,
+}
+
+impl VoiceError {
+    fn new(code: VoiceErrorCode, detail: impl std::fmt::Display) -> Self {
+        Self { code, detail: Some(detail.to_string()).filter(|d| !d.is_empty()) }
     }
+}
+
+impl std::fmt::Display for VoiceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reason = match self.code {
+            VoiceErrorCode::Unreachable => "couldn't reach ElevenLabs",
+            VoiceErrorCode::BadResponse => "couldn't read what ElevenLabs sent back",
+            VoiceErrorCode::EmptyRecording => "ElevenLabs sent back an empty recording",
+            VoiceErrorCode::KeyRejected => "ElevenLabs rejected the API key",
+            VoiceErrorCode::MissingPermission => "the ElevenLabs API key isn't allowed to do this; give it the permission in ElevenLabs → API keys",
+            VoiceErrorCode::OutOfCredits => "the ElevenLabs account is out of credits",
+            VoiceErrorCode::UnknownVoice => "ElevenLabs doesn't know that voice or model",
+            VoiceErrorCode::BadSettings => "ElevenLabs couldn't use these settings",
+            VoiceErrorCode::RateLimited => "ElevenLabs is limiting requests right now; try again in a moment",
+            VoiceErrorCode::ProviderDown => "ElevenLabs is having trouble right now",
+            VoiceErrorCode::Other => "ElevenLabs couldn't do it",
+        };
+        match &self.detail {
+            Some(detail) => write!(f, "{reason} ({detail})"),
+            None => f.write_str(reason),
+        }
+    }
+}
+
+/// Reads an ElevenLabs error response.
+pub fn describe_failure(status: u16, body: &str) -> VoiceError {
+    let parsed = serde_json::from_str::<Value>(body).ok();
+    let detail = parsed.as_ref().and_then(|v| {
+        v.pointer("/detail/message")
+            .or_else(|| v.pointer("/detail"))
+            .and_then(|d| d.as_str().map(str::to_string))
+    });
+    // A key restricted to some endpoints: valid, just not allowed this one.
+    let missing_permission = parsed.as_ref().and_then(|v| v.pointer("/detail/status")).and_then(|s| s.as_str()) == Some("missing_permissions");
+    let code = match status {
+        401 if missing_permission => VoiceErrorCode::MissingPermission,
+        401 => VoiceErrorCode::KeyRejected,
+        402 => VoiceErrorCode::OutOfCredits,
+        404 => VoiceErrorCode::UnknownVoice,
+        422 => VoiceErrorCode::BadSettings,
+        429 => VoiceErrorCode::RateLimited,
+        s if s >= 500 => VoiceErrorCode::ProviderDown,
+        _ => VoiceErrorCode::Other,
+    };
+    let detail = detail.filter(|d| !d.is_empty()).or_else(|| (code == VoiceErrorCode::Other).then(|| format!("HTTP {status}")));
+    VoiceError { code, detail }
 }
 
 /// The app path a recording is served at.
@@ -269,7 +320,7 @@ pub async fn speak(conn: &mut PgConnection, user_id: Uuid, input: &Value) -> Res
     if text.chars().count() > settings.max_chars as usize {
         return Err(format!("that's too long to say in one go (at most {} characters); say a shorter version", settings.max_chars));
     }
-    let audio = synthesize(&settings, &key, text).await?;
+    let audio = synthesize(&settings, &key, text).await.map_err(|e| e.to_string())?;
     let file = format!("{}.mp3", Uuid::new_v4());
     nomi_storage::blob::attachment_store()
         .put_bytes(&voice_key(user_id, &file), audio, "audio/mpeg")
@@ -296,23 +347,23 @@ pub struct ModelOption {
 }
 
 /// The voices and speech models the key's account can use.
-pub async fn list_options(api_key: &str) -> Result<(Vec<VoiceOption>, Vec<ModelOption>), String> {
+pub async fn list_options(api_key: &str) -> Result<(Vec<VoiceOption>, Vec<ModelOption>), VoiceError> {
     list_options_at(&base_url(), api_key).await
 }
 
-pub async fn list_options_at(base_url: &str, api_key: &str) -> Result<(Vec<VoiceOption>, Vec<ModelOption>), String> {
+pub async fn list_options_at(base_url: &str, api_key: &str) -> Result<(Vec<VoiceOption>, Vec<ModelOption>), VoiceError> {
     let base = base_url.trim_end_matches('/');
     let voices = http()
         .get(format!("{base}/v1/voices"))
         .header("xi-api-key", api_key)
         .send()
         .await
-        .map_err(|e| format!("couldn't reach ElevenLabs: {e}"))?;
+        .map_err(|e| VoiceError::new(VoiceErrorCode::Unreachable, e))?;
     if !voices.status().is_success() {
         let status = voices.status().as_u16();
         return Err(describe_failure(status, &voices.text().await.unwrap_or_default()));
     }
-    let body: Value = voices.json().await.map_err(|e| format!("couldn't read the voices: {e}"))?;
+    let body: Value = voices.json().await.map_err(|e| VoiceError::new(VoiceErrorCode::BadResponse, e))?;
     let voices: Vec<VoiceOption> = body
         .get("voices")
         .and_then(|v| v.as_array())
@@ -380,8 +431,15 @@ mod tests {
 
     #[test]
     fn failures_read_as_what_to_do() {
-        assert_eq!(describe_failure(401, r#"{"detail":{"status":"invalid_api_key","message":"Invalid API key"}}"#), "ElevenLabs rejected the API key (Invalid API key)");
-        assert_eq!(describe_failure(402, ""), "the ElevenLabs account is out of credits");
+        let rejected = describe_failure(401, r#"{"detail":{"status":"invalid_api_key","message":"Invalid API key"}}"#);
+        assert_eq!(rejected.code, VoiceErrorCode::KeyRejected);
+        assert_eq!(rejected.to_string(), "ElevenLabs rejected the API key (Invalid API key)");
+        assert_eq!(describe_failure(402, "").to_string(), "the ElevenLabs account is out of credits");
+        let scoped = describe_failure(401, r#"{"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission voices_read to execute this operation."}}"#);
+        assert_eq!(scoped.code, VoiceErrorCode::MissingPermission);
+        assert_eq!(scoped.detail.as_deref(), Some("The API key you used is missing the permission voices_read to execute this operation."));
+        assert_eq!(serde_json::to_value(&scoped).unwrap()["code"], "missing_permission");
+        assert_eq!(describe_failure(418, "").detail.as_deref(), Some("HTTP 418"));
     }
 
     /// A one-request HTTP server: answers with `status` and `body`, hands back what it was sent.
@@ -438,6 +496,7 @@ mod tests {
     async fn a_rejected_key_comes_back_as_a_readable_error() {
         let (base, _server) = one_shot("401 Unauthorized", "application/json", br#"{"detail":{"message":"Invalid API key"}}"#).await;
         let error = synthesize_at(&base, &VoiceSettings::default(), "bad", "Hi").await.unwrap_err();
-        assert!(error.contains("rejected the API key"), "{error}");
+        assert_eq!(error.code, VoiceErrorCode::KeyRejected);
+        assert!(error.to_string().contains("rejected the API key"), "{error}");
     }
 }

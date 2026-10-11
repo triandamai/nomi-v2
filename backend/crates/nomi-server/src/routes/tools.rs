@@ -358,15 +358,39 @@ pub struct VoiceOptionsResponse {
     pub models: Vec<voice::ModelOption>,
 }
 
+/// A speak route's error: `{"error": <code>, "detail": <ElevenLabs' words>?}`. The admin screen
+/// turns the code into the admin's language.
+type VoiceRouteError = (StatusCode, Json<Value>);
+
+fn voice_route_error(status: StatusCode, code: &str) -> VoiceRouteError {
+    (status, Json(json!({ "error": code })))
+}
+
+fn elevenlabs_error(e: voice::VoiceError) -> VoiceRouteError {
+    (StatusCode::BAD_GATEWAY, Json(json!({ "error": e.code, "detail": e.detail })))
+}
+
+/// The saved settings and key, or why there's no key yet.
+async fn voice_setup(state: &AppState, claims: &nomi_auth::claims::Claims) -> Result<(VoiceSettings, String), VoiceRouteError> {
+    require_system_config_permission(claims).map_err(|(s, _)| voice_route_error(s, "forbidden"))?;
+    let server_error = |e: sqlx::Error| {
+        tracing::error!(error = %e, "speak: couldn't load the settings");
+        voice_route_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error")
+    };
+    let mut conn = state.pool.acquire().await.map_err(server_error)?;
+    let (settings, secrets) = voice::voice_settings_with(&mut conn, &state.settings_key).await.map_err(server_error)?;
+    let key = voice::api_key(&secrets).ok_or_else(|| voice_route_error(StatusCode::CONFLICT, "no_key"))?;
+    Ok((settings, key))
+}
+
 /// `GET /api/admin/tools/speak/voices`: the voices and models the saved key's account can use.
 #[tracing::instrument(skip(state, claims))]
-pub async fn voice_options(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<VoiceOptionsResponse>, (StatusCode, String)> {
-    require_system_config_permission(&claims).map_err(|(s, m)| (s, m.to_string()))?;
-    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let (_, secrets) = voice::voice_settings_with(&mut conn, &state.settings_key).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    drop(conn);
-    let key = voice::api_key(&secrets).ok_or((StatusCode::CONFLICT, "save an ElevenLabs API key first".to_string()))?;
-    let (voices, models) = voice::list_options(&key).await.map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+pub async fn voice_options(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<VoiceOptionsResponse>, VoiceRouteError> {
+    let (_, key) = voice_setup(&state, &claims).await?;
+    let (voices, models) = voice::list_options(&key).await.map_err(|e| {
+        tracing::warn!(error = %e, "speak: couldn't list ElevenLabs voices");
+        elevenlabs_error(e)
+    })?;
     Ok(Json(VoiceOptionsResponse { voices, models }))
 }
 
@@ -382,16 +406,15 @@ pub async fn test_voice(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Json(req): Json<TestVoiceRequest>,
-) -> Result<axum::response::Response, (StatusCode, String)> {
+) -> Result<axum::response::Response, VoiceRouteError> {
     use axum::response::IntoResponse;
-    require_system_config_permission(&claims).map_err(|(s, m)| (s, m.to_string()))?;
-    let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let (settings, secrets) = voice::voice_settings_with(&mut conn, &state.settings_key).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    drop(conn);
-    let key = voice::api_key(&secrets).ok_or((StatusCode::CONFLICT, "save an ElevenLabs API key first".to_string()))?;
+    let (settings, key) = voice_setup(&state, &claims).await?;
     let text = req.text.map(|t| t.trim().chars().take(300).collect::<String>()).filter(|t| !t.is_empty());
     let text = text.unwrap_or_else(|| "Hi, I'm Nomi. This is how I sound when I read something out loud for you.".to_string());
-    let audio = voice::synthesize(&settings, &key, &text).await.map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+    let audio = voice::synthesize(&settings, &key, &text).await.map_err(|e| {
+        tracing::warn!(error = %e, "speak: test line failed");
+        elevenlabs_error(e)
+    })?;
     Ok(([(axum::http::header::CONTENT_TYPE, "audio/mpeg")], audio).into_response())
 }
 

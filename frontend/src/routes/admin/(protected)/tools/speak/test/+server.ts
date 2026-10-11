@@ -9,6 +9,7 @@ export const POST: RequestHandler = async ({ request, cookies, fetch }) => {
 		method: 'POST',
 		body: JSON.stringify({ text: body.text ?? null }),
 	});
-	if (!response.ok) return json({ error: (await response.text()) || null }, { status: response.status });
+	// Errors come as `{ error: <code>, detail? }`; the sheet words them in the admin's language.
+	if (!response.ok) return json(await response.json().catch(() => ({ error: null })), { status: response.status });
 	return new Response(response.body, { headers: { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' } });
 };

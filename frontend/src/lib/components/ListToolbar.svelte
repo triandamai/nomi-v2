@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Above a list: search it, and show it as a table or as cards.
+	// Above a list: search it, and (unless `layouts` is off) show it as a table or as cards.
 	import { m } from '$lib/paraglide/messages';
 	import IconSearch from './icons/IconSearch.svelte';
 	import IconTable from './icons/IconTable.svelte';
@@ -10,8 +10,9 @@
 		query = $bindable(''),
 		layout = $bindable<ListLayout>('table'),
 		placeholder,
+		layouts = true,
 		onlayout,
-	}: { query?: string; layout?: ListLayout; placeholder: string; onlayout?: (layout: ListLayout) => void } = $props();
+	}: { query?: string; layout?: ListLayout; placeholder: string; layouts?: boolean; onlayout?: (layout: ListLayout) => void } = $props();
 
 	function choose(next: ListLayout) {
 		layout = next;
@@ -24,14 +25,16 @@
 		<IconSearch size={18} />
 		<input type="search" bind:value={query} {placeholder} aria-label={placeholder} />
 	</label>
-	<div class="layout" role="radiogroup" aria-label={m.list_layout()}>
-		<button type="button" role="radio" aria-checked={layout === 'table'} class="layout__option" onclick={() => choose('table')} title={m.list_table()}>
-			<IconTable size={18} /><span class="layout__label">{m.list_table()}</span>
-		</button>
-		<button type="button" role="radio" aria-checked={layout === 'cards'} class="layout__option" onclick={() => choose('cards')} title={m.list_cards()}>
-			<IconApps size={18} /><span class="layout__label">{m.list_cards()}</span>
-		</button>
-	</div>
+	{#if layouts}
+		<div class="layout" role="radiogroup" aria-label={m.list_layout()}>
+			<button type="button" role="radio" aria-checked={layout === 'table'} class="layout__option" onclick={() => choose('table')} title={m.list_table()}>
+				<IconTable size={18} /><span class="layout__label">{m.list_table()}</span>
+			</button>
+			<button type="button" role="radio" aria-checked={layout === 'cards'} class="layout__option" onclick={() => choose('cards')} title={m.list_cards()}>
+				<IconApps size={18} /><span class="layout__label">{m.list_cards()}</span>
+			</button>
+		</div>
+	{/if}
 </div>
 
 <style>

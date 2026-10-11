@@ -8,6 +8,8 @@
 	import Switch from '$lib/components/m3/Switch.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ListToolbar from '$lib/components/ListToolbar.svelte';
+	import { searchItems } from '$lib/listView';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import VoiceSheet from './VoiceSheet.svelte';
 	import type { PageData } from './$types';
@@ -37,6 +39,16 @@
 	const allTools = $derived((data.groups ?? []).flatMap((g) => g.tools));
 	const webSearch = $derived(allTools.find((t) => t.name === 'web_search'));
 	const searchSettings = $derived(webSearch?.settings as WebSearchSettings | undefined);
+	// The search box narrows every group to the tools whose name, description or agents match.
+	let query = $state('');
+	const shownGroups = $derived(
+		(data.groups ?? [])
+			.map((group) => ({
+				...group,
+				tools: searchItems(group.tools, query, (t) => `${t.name} ${t.description} ${t.used_by.join(' ')} ${groupTitle(group)}`),
+			}))
+			.filter((group) => group.tools.length > 0),
+	);
 	const enabled = (tool: ToolEntry) => tool.required || tool.agent_only || (overrides[tool.name] ?? tool.enabled);
 
 	async function toggle(tool: ToolEntry, on: boolean) {
@@ -169,7 +181,9 @@
 		<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{toggleError}</p>
 	{/if}
 
-	{#each data.groups as group (group.key)}
+	<ListToolbar bind:query placeholder={m.tools_search()} layouts={false} />
+
+	{#each shownGroups as group (group.key)}
 		<section class="group" aria-labelledby="group-{group.key}">
 			<header class="group__head">
 				<h2 class="group__title" id="group-{group.key}">{groupTitle(group)}</h2>
@@ -214,6 +228,8 @@
 				{/each}
 			</ul>
 		</section>
+	{:else}
+		<p class="group__lede">{m.list_no_match({ query })}</p>
 	{/each}
 {/if}
 
