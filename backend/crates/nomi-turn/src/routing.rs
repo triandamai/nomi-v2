@@ -143,6 +143,14 @@ pub async fn spawn_agent_session(
     agent_type: &str,
     agent_display_name: &str,
 ) -> Result<Uuid, TurnError> {
+    // One agent has the conversation at a time. Agents that run without a session of their own
+    // (Files, the default agent) can hand a chat on while another agent's session is still
+    // active; that agent is done with it now, so close its session before opening the new one.
+    if let Some(previous) = find_active_agent_session(conn, session_id, sender_channel_identity_id).await? {
+        let details = load_active_agent_session_details(conn, previous).await?;
+        complete_agent_session(conn, mqtt, previous, session_id, &details.agent_type, "completed", &format!("Handed to {agent_type}")).await?;
+    }
+
     let agent_session_id: Uuid = sqlx::query_scalar(
         "INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status) VALUES ($1, $2, $3, 'active') RETURNING id",
     )
