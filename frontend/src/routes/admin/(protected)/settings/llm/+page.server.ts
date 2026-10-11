@@ -32,6 +32,7 @@ function readForm(data: FormData) {
 		mediaInputs,
 		inputPrice: price('input_usd_per_mtok'),
 		outputPrice: price('output_usd_per_mtok'),
+		cachedPrice: price('cached_input_usd_per_mtok'),
 		label: typeof label === 'string' ? label : '',
 		provider: typeof provider === 'string' ? provider : '',
 		modelId: typeof modelId === 'string' ? modelId : '',
@@ -42,16 +43,16 @@ function readForm(data: FormData) {
 
 export const actions: Actions = {
 	create: async ({ request, cookies, fetch }) => {
-		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, mediaInputs } = readForm(await request.formData());
+		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, cachedPrice, mediaInputs } = readForm(await request.formData());
 		if (!label || !provider) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
-		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice)) {
+		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice) || Number.isNaN(cachedPrice)) {
 			return fail(400, { error: m.err_price() });
 		}
 		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models', {
 			method: 'POST',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, media_inputs: mediaInputs }),
+			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, cached_input_usd_per_mtok: cachedPrice, media_inputs: mediaInputs }),
 		});
 		if (!response.ok) {
 			const message = await response.text();
@@ -63,16 +64,16 @@ export const actions: Actions = {
 	update: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const id = data.get('id');
-		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, mediaInputs } = readForm(data);
+		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, cachedPrice, mediaInputs } = readForm(data);
 		if (typeof id !== 'string' || !label || !provider) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
-		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice)) {
+		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice) || Number.isNaN(cachedPrice)) {
 			return fail(400, { error: m.err_price() });
 		}
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}`, {
 			method: 'PUT',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, media_inputs: mediaInputs }),
+			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, cached_input_usd_per_mtok: cachedPrice, media_inputs: mediaInputs }),
 		});
 		if (!response.ok) {
 			const message = await response.text();

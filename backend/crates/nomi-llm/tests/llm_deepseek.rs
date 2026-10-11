@@ -200,3 +200,27 @@ async fn list_models_parses_the_data_array() {
     assert_eq!(models[0].id, "deepseek-flash");
     assert_eq!(models[1].id, "deepseek-v4-pro");
 }
+
+#[tokio::test]
+async fn cache_hits_are_reported_before_done() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":5,\"prompt_cache_hit_tokens\":900}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+    let provider = DeepSeekProvider::new(reqwest::Client::new(), "test-key".to_string(), "deepseek-chat".to_string(), server.uri());
+    let mut stream = provider.complete_stream(text_request()).await.unwrap();
+    let mut events = Vec::new();
+    while let Some(event) = futures_util::StreamExt::next(&mut stream).await {
+        events.push(event.unwrap());
+    }
+    let cached = events.iter().position(|e| *e == nomi_llm::StreamEvent::CacheUsage { cached_input_tokens: 900 }).expect("cache usage reported");
+    let done = events.iter().position(|e| matches!(e, nomi_llm::StreamEvent::Done { input_tokens: 1000, .. })).expect("done");
+    assert!(cached < done);
+}

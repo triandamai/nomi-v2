@@ -177,3 +177,31 @@ async fn embeddings_are_metered_with_the_providers_count_or_an_estimate(pool: Pg
     // Embeddings never count toward a person's chat allowance.
     assert_eq!(nomi_usage::brief(&pool, ana).await.unwrap().tokens_used, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn cached_input_is_priced_at_the_cached_price(pool: PgPool) {
+    use nomi_llm::{LlmEventStream, StreamEvent};
+    let ana = person(&pool, "UTC").await;
+    let model = priced_model(&pool, ana).await;
+    sqlx::query("UPDATE admin_llm_models SET cached_input_usd_per_mtok = 0.3 WHERE id = $1").bind(model).execute(&pool).await.unwrap();
+
+    /// Streams a reply whose input was mostly served from the prompt cache.
+    struct Cached;
+    #[async_trait::async_trait]
+    impl LlmProvider for Cached {
+        async fn complete_stream(&self, _request: LlmRequest) -> Result<LlmEventStream, nomi_llm::LlmError> {
+            Ok(Box::pin(futures_util::stream::iter(vec![
+                Ok(StreamEvent::CacheUsage { cached_input_tokens: 800_000 }),
+                Ok(StreamEvent::Done { stop_reason: StopReason::EndTurn, input_tokens: 1_000_000, output_tokens: 0 }),
+            ])))
+        }
+    }
+    call(&MeteredProvider::new(Arc::new(Cached), pool.clone(), ana, tag(Some(model), false))).await;
+
+    let (cached, cost): (i32, f64) = sqlx::query_as("SELECT cached_input_tokens, cost_usd::float8 FROM llm_usage").fetch_one(&pool).await.unwrap();
+    assert_eq!(cached, 800_000);
+    // 0.2M uncached at $3 + 0.8M cached at $0.30
+    assert!((cost - 0.84).abs() < 1e-9, "{cost}");
+    // Every input token still counts toward the allowance.
+    assert_eq!(nomi_usage::brief(&pool, ana).await.unwrap().tokens_used, 1_000_000);
+}

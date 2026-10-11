@@ -1526,5 +1526,9 @@
 	"admin_usage_no_embedding": "Tidak ada embedding bulan ini.",
 	"admin_usage_in_use": "Dipakai",
 	"admin_usage_estimated": "termasuk perkiraan",
-	"admin_usage_estimated_note": "Sebagian penyedia (Gemini) tidak melaporkan token embedding; jumlahnya diperkirakan dari panjang teks (sekitar 4 karakter per token)."
+	"admin_usage_estimated_note": "Sebagian penyedia (Gemini) tidak melaporkan token embedding; jumlahnya diperkirakan dari panjang teks (sekitar 4 karakter per token).",
+	"llm_price_cached": "Input dari cache",
+	"llm_price_cached_hint": "Harga input yang dibaca dari cache prompt penyedia (biasanya sepersepuluh harga Input). Kosongkan agar dihitung seperti Input.",
+	"admin_usage_cached": "{tokens} input berasal dari cache prompt",
+	"admin_usage_cached_short": "{tokens} dari cache"
 }

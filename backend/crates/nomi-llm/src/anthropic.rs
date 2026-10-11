@@ -51,6 +51,17 @@ impl AnthropicProvider {
         let budget = request.reasoning_effort.budget_tokens();
         let max_tokens = if request.enable_reasoning { request.max_tokens + budget } else { request.max_tokens };
 
+        let mut messages = messages;
+        let mut tools = tools;
+        // Prompt caching: everything up to each marked block is cached for the next request, so
+        // a tool loop (and a chat's next turn) pays a tenth of the input price for what it
+        // already sent. Marked: the tools, the system prompt and the newest message (a rolling
+        // mark: each request reads the previous one's prefix from the cache).
+        if let Some(last) = tools.last_mut() {
+            last["cache_control"] = json!({ "type": "ephemeral" });
+        }
+        mark_newest_for_cache(&mut messages);
+
         let mut body = json!({
             "model": self.model,
             "max_tokens": max_tokens,
@@ -58,7 +69,7 @@ impl AnthropicProvider {
             "stream": stream,
         });
         if let Some(system) = &request.system {
-            body["system"] = json!(system);
+            body["system"] = json!([{ "type": "text", "text": system, "cache_control": { "type": "ephemeral" } }]);
         }
         if !tools.is_empty() {
             body["tools"] = json!(tools);
@@ -67,6 +78,16 @@ impl AnthropicProvider {
             body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
         }
         body
+    }
+}
+
+/// Marks the newest message's last cacheable block (thinking blocks can't carry the mark).
+fn mark_newest_for_cache(messages: &mut [serde_json::Value]) {
+    let Some(content) = messages.last_mut().and_then(|m| m.get_mut("content")).and_then(|c| c.as_array_mut()) else {
+        return;
+    };
+    if let Some(block) = content.iter_mut().rev().find(|b| !matches!(b.get("type").and_then(|t| t.as_str()), Some("thinking" | "redacted_thinking"))) {
+        block["cache_control"] = json!({ "type": "ephemeral" });
     }
 }
 
@@ -161,6 +182,7 @@ impl LlmProvider for AnthropicProvider {
 
         let stream = try_stream! {
             let mut input_tokens: u32 = 0;
+            let mut cached_input_tokens: u32 = 0;
 
             loop {
                 let event = match events.next().await {
@@ -172,12 +194,11 @@ impl LlmProvider for AnthropicProvider {
                     "message_start" => {
                         let data: serde_json::Value = serde_json::from_str(&event.data)
                             .map_err(|e| LlmError::ParseError(format!("invalid message_start json: {e}")))?;
-                        input_tokens = data
-                            .get("message")
-                            .and_then(|m| m.get("usage"))
-                            .and_then(|u| u.get("input_tokens"))
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0) as u32;
+                        let usage = data.get("message").and_then(|m| m.get("usage"));
+                        let count = |key: &str| usage.and_then(|u| u.get(key)).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                        // `input_tokens` leaves out what was written to or read from the cache.
+                        cached_input_tokens = count("cache_read_input_tokens");
+                        input_tokens = count("input_tokens") + count("cache_creation_input_tokens") + cached_input_tokens;
                     }
                     "content_block_start" => {
                         let data: serde_json::Value = serde_json::from_str(&event.data)
@@ -244,6 +265,9 @@ impl LlmProvider for AnthropicProvider {
                         };
                         let output_tokens =
                             data.get("usage").and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                        if cached_input_tokens > 0 {
+                            yield StreamEvent::CacheUsage { cached_input_tokens };
+                        }
                         yield StreamEvent::Done { stop_reason, input_tokens, output_tokens };
                         return;
                     }

@@ -1526,5 +1526,9 @@
 	"admin_usage_no_embedding": "Nothing was embedded this month.",
 	"admin_usage_in_use": "In use",
 	"admin_usage_estimated": "incl. estimates",
-	"admin_usage_estimated_note": "Some providers (Gemini) don't report embedding tokens; those are worked out from the text's length (about 4 characters a token)."
+	"admin_usage_estimated_note": "Some providers (Gemini) don't report embedding tokens; those are worked out from the text's length (about 4 characters a token).",
+	"llm_price_cached": "Cached input",
+	"llm_price_cached_hint": "What input read from the provider's prompt cache costs (usually a tenth of Input). Leave blank to charge it as Input.",
+	"admin_usage_cached": "{tokens} of the input came from prompt caches",
+	"admin_usage_cached_short": "{tokens} cached"
 }

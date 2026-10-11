@@ -22,6 +22,7 @@ pub struct AdminLlmModelResponse {
     pub api_key_masked: String,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub cached_input_usd_per_mtok: Option<f64>,
     /// Reads files people's own models can't open.
     pub is_files_model: bool,
     /// What Koda builds projects with, unless the person picked another.
@@ -49,6 +50,7 @@ fn to_response(
         api_key_masked: settings::mask_api_key(&api_key),
         input_usd_per_mtok: model.input_usd_per_mtok,
         output_usd_per_mtok: model.output_usd_per_mtok,
+        cached_input_usd_per_mtok: model.cached_input_usd_per_mtok,
         is_files_model: model.is_files_model,
         is_coding_model: model.is_coding_model,
         media_support,
@@ -88,6 +90,9 @@ pub struct CreateAdminModelRequest {
     /// USD per million tokens, for showing people what they spend.
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    /// USD per million cached input tokens (prompt cache reads); empty = the full input price.
+    #[serde(default)]
+    pub cached_input_usd_per_mtok: Option<f64>,
     #[serde(default)]
     pub media_inputs: Option<Vec<String>>,
 }
@@ -111,7 +116,7 @@ pub async fn create_admin_model(
     if req.label.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "label is required"));
     }
-    if [req.input_usd_per_mtok, req.output_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
+    if [req.input_usd_per_mtok, req.output_usd_per_mtok, req.cached_input_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
         return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
     }
     validate_media_inputs(&req.media_inputs)?;
@@ -126,6 +131,7 @@ pub async fn create_admin_model(
             base_url: req.base_url.as_deref(),
             input_usd_per_mtok: req.input_usd_per_mtok,
             output_usd_per_mtok: req.output_usd_per_mtok,
+            cached_input_usd_per_mtok: req.cached_input_usd_per_mtok,
             media_inputs: req.media_inputs.clone(),
             updated_by: claims.sub,
         },
@@ -145,6 +151,9 @@ pub struct UpdateAdminModelRequest {
     pub base_url: Option<String>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    /// USD per million cached input tokens (prompt cache reads); empty = the full input price.
+    #[serde(default)]
+    pub cached_input_usd_per_mtok: Option<f64>,
     #[serde(default)]
     pub media_inputs: Option<Vec<String>>,
 }
@@ -166,7 +175,7 @@ pub async fn update_admin_model(
     if req.label.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "label is required"));
     }
-    if [req.input_usd_per_mtok, req.output_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
+    if [req.input_usd_per_mtok, req.output_usd_per_mtok, req.cached_input_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
         return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
     }
     validate_media_inputs(&req.media_inputs)?;
@@ -187,6 +196,7 @@ pub async fn update_admin_model(
             base_url: req.base_url.as_deref(),
             input_usd_per_mtok: req.input_usd_per_mtok,
             output_usd_per_mtok: req.output_usd_per_mtok,
+            cached_input_usd_per_mtok: req.cached_input_usd_per_mtok,
             media_inputs: req.media_inputs.clone(),
             updated_by: claims.sub,
         },

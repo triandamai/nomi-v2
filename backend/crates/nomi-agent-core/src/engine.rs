@@ -688,6 +688,12 @@ pub async fn run_agent_turn(
 
         update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_THINKING, None).await;
 
+        // A long tool loop resends every earlier result: past the budget, older ones are trimmed.
+        let trimmed = crate::context::compact_tool_results(&mut messages, crate::context::TURN_BUDGET_CHARS, crate::context::KEEP_RECENT_ROUNDS);
+        if trimmed > 0 {
+            tracing::debug!(%session_id, trimmed, "trimmed older tool results to keep the request small");
+        }
+
         let request = LlmRequest {
             system: Some(system_prompt.clone()),
             messages: messages.clone(),
@@ -1239,9 +1245,6 @@ async fn update_agent_phase(
     }
 }
 
-/// Inserts an activity message (an agent's "thought", or a description of a tool call it just
-/// made) so a user watching a long-running build sees it appear like any other chat message —
-/// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
 /// The newest recording (a voice block) `agent_display_name` posted in the chat since `since`,
 /// with the words it says.
 async fn recording_posted_since(
@@ -1265,6 +1268,9 @@ async fn recording_posted_since(
     .map(|(id, text): (Uuid, Option<String>)| (id, text.unwrap_or_default()))
 }
 
+/// Inserts an activity message (an agent's "thought", or a description of a tool call it just
+/// made) so a user watching a long-running build sees it appear like any other chat message —
+/// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
 async fn post_activity_message(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,

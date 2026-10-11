@@ -181,6 +181,7 @@ pub async fn collect_stream(mut stream: LlmEventStream) -> Result<LlmResponse, L
                     finished.insert(index, content_block);
                 }
             }
+            StreamEvent::CacheUsage { .. } => {}
             StreamEvent::Done { stop_reason, input_tokens, output_tokens } => {
                 if let Some(error) = broken_tool_input {
                     if stop_reason != StopReason::MaxTokens {

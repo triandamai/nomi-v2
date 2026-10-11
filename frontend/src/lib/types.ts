@@ -144,6 +144,8 @@ export interface AdminLlmModel {
 	/** USD per million tokens; null until set. */
 	input_usd_per_mtok: number | null;
 	output_usd_per_mtok: number | null;
+	/** Input read from the provider's prompt cache; null charges it at the input price. */
+	cached_input_usd_per_mtok: number | null;
 	/** Reads files people's own models can't open. */
 	is_files_model: boolean;
 	/** What Koda builds projects with, unless the person picked another. */
@@ -679,7 +681,7 @@ export interface UsageMonth {
 export interface AdminUsage {
 	month: string;
 	current_month: string;
-	chat: { tokens: number; input_tokens: number; output_tokens: number; own_key_tokens: number; calls: number; people: number; spend_usd: number };
+	chat: { tokens: number; input_tokens: number; output_tokens: number; cached_input_tokens: number; own_key_tokens: number; calls: number; people: number; spend_usd: number };
 	embedding: { tokens: number; calls: number; estimated_calls: number };
 	by_day: { date: string; chat_tokens: number; embedding_tokens: number }[];
 	models: {
@@ -691,6 +693,7 @@ export interface AdminUsage {
 		source: 'nomi' | 'own_key';
 		input_tokens: number;
 		output_tokens: number;
+		cached_input_tokens: number;
 		tokens: number;
 		calls: number;
 		people: number;

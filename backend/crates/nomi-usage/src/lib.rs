@@ -54,11 +54,16 @@ impl LlmProvider for MeteredProvider {
         let mut events = self.inner.complete_stream(request).await?;
         let (pool, user_id, tag) = (self.pool.clone(), self.user_id, self.tag.clone());
         Ok(Box::pin(async_stream::stream! {
+            let mut cached_input_tokens = 0;
             while let Some(event) = events.next().await {
+                if let Ok(StreamEvent::CacheUsage { cached_input_tokens: cached }) = &event {
+                    cached_input_tokens = *cached;
+                }
                 if let Ok(StreamEvent::Done { input_tokens, output_tokens, .. }) = &event {
                     // Recorded before the caller sees the end of the stream, so a finished turn's
                     // usage is always there to read. A failed write never fails the reply.
-                    if let Err(e) = record(&pool, user_id, &tag, *input_tokens, *output_tokens).await {
+                    let tokens = Tokens { input: *input_tokens, output: *output_tokens, cached_input: cached_input_tokens };
+                    if let Err(e) = record(&pool, user_id, &tag, tokens).await {
                         tracing::warn!(error = %e, %user_id, "failed to record llm usage");
                     }
                 }
@@ -68,16 +73,29 @@ impl LlmProvider for MeteredProvider {
     }
 }
 
-/// Records one call. Spend comes from the admin model's current price.
-pub async fn record(pool: &PgPool, user_id: Uuid, tag: &ModelTag, input_tokens: u32, output_tokens: u32) -> Result<(), sqlx::Error> {
-    if input_tokens == 0 && output_tokens == 0 {
+/// One call's tokens. `input` counts every input token; `cached_input` is the part the
+/// provider served from its prompt cache.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Tokens {
+    pub input: u32,
+    pub output: u32,
+    pub cached_input: u32,
+}
+
+/// Records one call. Spend comes from the admin model's current prices: cached input at its
+/// cached-input price (the full input price when none is set).
+pub async fn record(pool: &PgPool, user_id: Uuid, tag: &ModelTag, tokens: Tokens) -> Result<(), sqlx::Error> {
+    if tokens.input == 0 && tokens.output == 0 {
         return Ok(());
     }
+    let cached = tokens.cached_input.min(tokens.input);
     sqlx::query(
-        "INSERT INTO llm_usage (user_id, admin_model_id, source, model_label, provider, model_id, input_tokens, output_tokens, cost_usd) \
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8, \
+        "INSERT INTO llm_usage (user_id, admin_model_id, source, model_label, provider, model_id, input_tokens, output_tokens, cached_input_tokens, cost_usd) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, \
                 CASE WHEN $3 = 'nomi' THEN \
-                    ($7::numeric * COALESCE(m.input_usd_per_mtok, 0) + $8::numeric * COALESCE(m.output_usd_per_mtok, 0)) / 1000000 \
+                    (($7 - $9)::numeric * COALESCE(m.input_usd_per_mtok, 0) \
+                     + $9::numeric * COALESCE(m.cached_input_usd_per_mtok, m.input_usd_per_mtok, 0) \
+                     + $8::numeric * COALESCE(m.output_usd_per_mtok, 0)) / 1000000 \
                 ELSE 0 END \
          FROM (SELECT 1) one LEFT JOIN admin_llm_models m ON m.id = $2",
     )
@@ -87,8 +105,9 @@ pub async fn record(pool: &PgPool, user_id: Uuid, tag: &ModelTag, input_tokens: 
     .bind(&tag.label)
     .bind(&tag.provider)
     .bind(&tag.model_id)
-    .bind(input_tokens as i32)
-    .bind(output_tokens as i32)
+    .bind(tokens.input as i32)
+    .bind(tokens.output as i32)
+    .bind(cached as i32)
     .execute(pool)
     .await?;
     Ok(())

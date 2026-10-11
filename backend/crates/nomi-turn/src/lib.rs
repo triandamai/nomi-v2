@@ -22,6 +22,9 @@ use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
 /// A chat's latest messages, sent in full; older ones reach agents as the chat's running summary.
 const SUBAGENT_HISTORY_LIMIT: i64 = nomi_agent_core::working_memory::RECENT_MESSAGES;
+/// Of those, the newest are sent whole; earlier ones are clipped to `OLDER_MESSAGE_CHARS`.
+const WHOLE_RECENT_MESSAGES: usize = 6;
+const OLDER_MESSAGE_CHARS: usize = 4_000;
 /// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
 /// plans, drafts and tables need far more than a chat line.
 const SUBAGENT_MAX_TOKENS: u32 = 8192;
@@ -702,9 +705,14 @@ pub async fn fetch_recent_messages(
     .fetch_all(&mut **conn)
     .await?;
 
-    Ok(merge_turns(rows.into_iter().map(|(sender, content, _id)| LlmMessage {
+    // The newest few go in whole; long ones before them are clipped (a pasted file or a long
+    // build report is still there in the chat, and the crew can be asked about it).
+    let whole_from = rows.len().saturating_sub(WHOLE_RECENT_MESSAGES);
+    Ok(merge_turns(rows.into_iter().enumerate().map(|(i, (sender, content, _id))| LlmMessage {
         role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
-        content: vec![ContentBlock::Text { text: content }],
+        content: vec![ContentBlock::Text {
+            text: if i < whole_from { nomi_agent_core::context::clip_older_message(content, OLDER_MESSAGE_CHARS) } else { content },
+        }],
     })))
 }
 
