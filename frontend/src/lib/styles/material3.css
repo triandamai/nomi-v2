@@ -282,8 +282,18 @@
 
 	/* "Stage": the dark panel the agent shapes perform on (home crew card, auth brand panel).
 	   Stays dark in both themes — in dark mode it lifts one step off the page instead. */
-	/* Money charts' single series hue (validated: dataviz lightness band + 3:1 on the surface). */
-	--nomi-chart-money: #d4521c;
+	/* Single-series charts (money, usage) are drawn in the theme's accent: primary clears 3:1 on
+	   the surface in every theme, light and dark, and changes with the theme the person picks. */
+	--nomi-chart: var(--md-sys-color-primary);
+
+	/* ---- The action gradient: the hero button (New chat, the send button, a page's one main
+	   action) in the theme's own colours. Agent gradients stay fixed; this one follows
+	   data-color. Three stops, light to deep, and an ink that clears 4.5:1 on every stop. */
+	--nomi-action-1: #e4f76a;
+	--nomi-action-2: #5be08f;
+	--nomi-action-3: #1db9a0;
+	--nomi-on-action: #062019;
+	--nomi-gradient-action: linear-gradient(135deg, var(--nomi-action-1) 0%, var(--nomi-action-2) 55%, var(--nomi-action-3) 100%);
 	--nomi-color-stage: #16231b;
 	--nomi-color-on-stage: #e3ede5;
 
@@ -335,7 +345,6 @@
    data-theme is absent or literally "system". */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']):not([data-theme='dark']) {
-		--nomi-chart-money: #e86a36;
 		--md-sys-color-primary: #7ce0a3;
 		--md-sys-color-on-primary: #00391f;
 		--md-sys-color-primary-container: #0b5236;
@@ -376,7 +385,6 @@
    file already holds the light values, and neither this selector nor the media query above
    matches when data-theme="light", so those base values simply apply unopposed.) */
 :root[data-theme='dark'] {
-	--nomi-chart-money: #e86a36;
 	--md-sys-color-primary: #7ce0a3;
 	--md-sys-color-on-primary: #00391f;
 	--md-sys-color-primary-container: #0b5236;
@@ -417,10 +425,15 @@
    standard contrast) from a primary seed, a tertiary companion and neutrals leaning slightly to
    the primary hue, then embedded as static hex; the dark stage takes the theme's own dark surfaces. Selected by
    data-color on <html>; light/dark
-   still comes from data-theme or the OS. Agent gradients never change with the theme. */
+   still comes from data-theme or the OS. Agent gradients never change with the theme; the action
+   gradient (--nomi-action-*) does. */
 
 /* ---- Coral Reef: coral #FF6F61 with reef teal #1FA7A1 ---- */
 :root[data-color='coral-reef'] {
+	--nomi-action-1: #ffd9a0;
+	--nomi-action-2: #ff9a7a;
+	--nomi-action-3: #ef6b5e;
+	--nomi-on-action: #2a0703;
 	--md-sys-color-primary: #a43b32;
 	--md-sys-color-on-primary: #ffffff;
 	--md-sys-color-primary-container: #ffdad5;
@@ -533,6 +546,10 @@
 
 /* ---- Borneo Dusk: burnt amber #C8701E with rainforest green #3F7D4E ---- */
 :root[data-color='borneo-dusk'] {
+	--nomi-action-1: #ffe7a3;
+	--nomi-action-2: #ffb86b;
+	--nomi-action-3: #f08a3c;
+	--nomi-on-action: #2b1300;
 	--md-sys-color-primary: #924c00;
 	--md-sys-color-on-primary: #ffffff;
 	--md-sys-color-primary-container: #ffdcc4;
@@ -645,6 +662,10 @@
 
 /* ---- Phantom: muted violet #7B6CB0 with mist blue #6C8CA8, near-grey neutrals ---- */
 :root[data-color='phantom'] {
+	--nomi-action-1: #e9e2ff;
+	--nomi-action-2: #b9a6ff;
+	--nomi-action-3: #8f7ae8;
+	--nomi-on-action: #170b3f;
 	--md-sys-color-primary: #625886;
 	--md-sys-color-on-primary: #ffffff;
 	--md-sys-color-primary-container: #e7deff;
@@ -757,6 +778,10 @@
 
 /* ---- Senja Jakarta: dusk magenta #C0307A with sunset orange #F28C28 ---- */
 :root[data-color='senja-jakarta'] {
+	--nomi-action-1: #ffd6a5;
+	--nomi-action-2: #ff9cb8;
+	--nomi-action-3: #e86fa4;
+	--nomi-on-action: #33061d;
 	--md-sys-color-primary: #a2346a;
 	--md-sys-color-on-primary: #ffffff;
 	--md-sys-color-primary-container: #ffd9e5;

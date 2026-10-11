@@ -195,7 +195,7 @@
 					{#if user.custom_quota}<span class="custom-chip">{m.users_custom_quota()}</span>{/if}
 				</td>
 				<td class="usage-cell">
-					<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
+					<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'action'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
 					<span class="usage-text">{m.usage_of_tokens({ used: formatTokens(user.tokens_used), total: formatTokens(user.monthly_tokens) })}</span>
 				</td>
 				<td>{@render actions(user)}</td>
@@ -214,7 +214,7 @@
 							<span>· {user.org_count === 1 ? m.users_spaces_one() : m.users_spaces_count({ count: user.org_count })}</span>
 						</span>
 						<span class="user-item__usage">
-							<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
+							<WavyProgress value={usageShare(user.tokens_used, user.monthly_tokens)} tone={user.tokens_used >= user.monthly_tokens ? 'ember' : 'action'} label={formatShare(usageShare(user.tokens_used, user.monthly_tokens))} />
 							<span class="usage-text">{m.usage_of_tokens({ used: formatTokens(user.tokens_used), total: formatTokens(user.monthly_tokens) })}</span>
 						</span>
 					</div>
@@ -240,7 +240,7 @@
 		<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">{activeEmail}</p>
 		<div class="sub-usage mt-4">
 			<span class="sub-usage__label">{m.sub_this_month({ month: monthLabel(subscription.month) })}</span>
-			<WavyProgress value={usageShare(subscription.tokens_used, subscription.monthly_tokens)} tone={subscription.tokens_used >= subscription.monthly_tokens ? 'ember' : 'glow'} label={formatShare(usageShare(subscription.tokens_used, subscription.monthly_tokens))} />
+			<WavyProgress value={usageShare(subscription.tokens_used, subscription.monthly_tokens)} tone={subscription.tokens_used >= subscription.monthly_tokens ? 'ember' : 'action'} label={formatShare(usageShare(subscription.tokens_used, subscription.monthly_tokens))} />
 			<span class="sub-usage__numbers">{m.sub_used_of({ used: formatTokensFull(subscription.tokens_used), total: formatTokensFull(subscription.monthly_tokens) })}</span>
 		</div>
 		{#if data.canManageUsers}

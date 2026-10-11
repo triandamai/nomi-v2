@@ -4,13 +4,20 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import type { ContentBlock } from '$lib/types';
+	import { untrack } from 'svelte';
 
 	// A reminder going off in chat (posted by the Reminders agent): Done, or Snooze.
 
 	let { block }: { block: Extract<ContentBlock, { kind: 'reminder' }> } = $props();
 
-	let status = $state<'open' | 'done' | 'snoozed' | 'error'>('open');
+	// Starts where the reminder stands now (the chat adds `state` when it loads), so a card
+	// answered before a reload doesn't offer Done and Snooze again.
+	type Status = 'open' | 'done' | 'snoozed' | 'cancelled' | 'gone' | 'error';
+	let status = $state<Status>(untrack(() => block.state ?? 'open'));
+	let snoozedUntil = $state<string | null>(untrack(() => block.snoozed_until ?? null));
 	let busy = $state(false);
+
+	const time = (iso: string) => new Date(iso).toLocaleString(getLocale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
 	const when = $derived(
 		new Date(block.due_at).toLocaleString(getLocale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
@@ -24,7 +31,13 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ action, minutes }),
 			});
-			status = response.ok ? (action === 'done' ? 'done' : 'snoozed') : 'error';
+			if (response.ok) {
+				status = action === 'done' ? 'done' : 'snoozed';
+				snoozedUntil = action === 'snooze' ? new Date(Date.now() + (minutes ?? 10) * 60_000).toISOString() : null;
+			} else {
+				// Already handled elsewhere (or deleted): show that, not a dead pair of buttons.
+				status = response.status === 404 ? 'gone' : 'error';
+			}
 		} catch {
 			status = 'error';
 		} finally {
@@ -33,7 +46,7 @@
 	}
 </script>
 
-<section class="reminder" class:reminder--settled={status === 'done' || status === 'snoozed'} aria-label={m.remblock_label({ title: block.title })}>
+<section class="reminder" class:reminder--settled={status !== 'open' && status !== 'error'} aria-label={m.remblock_label({ title: block.title })}>
 	<div class="reminder__head">
 		<AgentShape agent="reminders" size={28} working={status === 'open'} face />
 		<span class="nomi-meta reminder__eyebrow">{m.remblock_eyebrow({ when })}</span>
@@ -52,7 +65,10 @@
 		{/if}
 	{:else}
 		<p class="reminder__result" role="status">
-			{status === 'done' ? m.remblock_done() : m.remblock_snoozed()}
+			{#if status === 'done'}{m.remblock_done()}
+			{:else if status === 'snoozed'}{snoozedUntil ? m.remblock_snoozed_until({ when: time(snoozedUntil) }) : m.remblock_snoozed()}
+			{:else if status === 'cancelled'}{m.remblock_cancelled()}
+			{:else}{m.remblock_gone()}{/if}
 		</p>
 	{/if}
 </section>

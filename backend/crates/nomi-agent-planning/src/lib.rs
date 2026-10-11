@@ -95,7 +95,13 @@ impl SubAgent for PlanningAgent {
         true
     }
 
+    /// Rena's tool results (a project's id, a saved plan) are bookkeeping: they show as steps in
+    /// her reply's activity, not as messages of their own.
     fn surfaces_activity(&self) -> bool {
+        false
+    }
+
+    fn asks_questions(&self) -> bool {
         true
     }
 
@@ -137,7 +143,7 @@ pub async fn create_project(
     }
 
     let existing_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM projects WHERE session_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
+        "SELECT id FROM projects WHERE session_id = $1 AND can_open_project(id, $2) ORDER BY created_at DESC LIMIT 1",
     )
     .bind(session_id)
     .bind(user_id)
@@ -170,5 +176,7 @@ pub async fn create_project(
         .map_err(|e| e.to_string())?,
     };
 
-    Ok(project_id.to_string())
+    Ok(format!(
+        "Project ready (id {project_id}). When you hand the build to the coding agent, start the task with 'Project {project_id}:'."
+    ))
 }

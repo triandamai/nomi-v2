@@ -123,6 +123,18 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// When true, run_agent_turn gives this agent `ask_user`: questions with options to tap,
+    /// after which the turn pauses until the person answers.
+    fn asks_questions(&self) -> bool {
+        false
+    }
+
+    /// When true, run_agent_turn gives this agent `read_plan`: the latest plan drafted in this
+    /// chat (by any agent), with its version, so it builds what was agreed.
+    fn reads_plans(&self) -> bool {
+        false
+    }
+
     /// When true, run_agent_turn gives this agent the engine-level `create_reminder`,
     /// `list_reminders`, and `cancel_reminder` tools for scheduling deferred/recurring tasks —
     /// see docs/superpowers/specs/2026-09-20-scheduled-reminders-design.md. Off by default, same

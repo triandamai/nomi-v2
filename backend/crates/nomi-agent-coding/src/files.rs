@@ -71,7 +71,7 @@ fn str_field<'a>(input: &'a Value, name: &str) -> Result<&'a str, String> {
 }
 
 pub(crate) async fn owns_project(conn: &mut PgConnection, project_id: Uuid, user_id: Uuid) -> Result<bool, String> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND user_id = $2)")
+    sqlx::query_scalar("SELECT can_open_project($1, $2)")
         .bind(project_id)
         .bind(user_id)
         .fetch_one(&mut *conn)

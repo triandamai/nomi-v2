@@ -10,19 +10,23 @@
 	import WorkspaceConnectCard from './WorkspaceConnectCard.svelte';
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
+	import QuestionsCard from './QuestionsCard.svelte';
 	import type { ContentBlock } from '$lib/types';
 
 	let {
 		block,
 		messageId,
 		agent = null,
-		fresh = false
+		fresh = false,
+		answered = false
 	}: {
 		block: ContentBlock;
 		messageId: string;
 		agent?: string | null;
 		/** The message arrived just now rather than loading from history. */
 		fresh?: boolean;
+		/** The person has replied since this message. */
+		answered?: boolean;
 	} = $props();
 </script>
 
@@ -42,6 +46,8 @@
 	<WorkspaceConnectCard {block} />
 {:else if block.kind === 'project_link'}
 	<ProjectLinkCard {block} />
+{:else if block.kind === 'questions'}
+	<QuestionsCard {block} {agent} {answered} />
 {:else if block.kind === 'quota_notice'}
 	<QuotaNoticeCard />
 {:else if block.kind === 'reasoning'}

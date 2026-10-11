@@ -40,7 +40,7 @@ async fn create_project_succeeds_and_stamps_the_calling_session(pool: PgPool) {
         .await
         .unwrap();
 
-    let project_id: Uuid = result.display_text.parse().expect("create_project should return the new project id");
+    let project_id = project_id_in(&result.display_text);
     let stored_session_id: Uuid = sqlx::query_scalar("SELECT session_id FROM projects WHERE id = $1")
         .bind(project_id)
         .fetch_one(&pool)
@@ -79,7 +79,7 @@ async fn create_project_renames_a_pre_existing_placeholder_instead_of_duplicatin
         .await
         .unwrap();
 
-    let project_id: Uuid = result.display_text.parse().unwrap();
+    let project_id = project_id_in(&result.display_text);
     assert_eq!(project_id, placeholder_id, "should rename the existing row, not create a new one");
 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE session_id = $1")
@@ -100,4 +100,10 @@ async fn unknown_tool_name_returns_an_error(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
     let result = agent.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "delete_everything", serde_json::json!({})).await;
     assert!(result.is_err());
+}
+
+/// The project id in create_project's result ("Project ready (id <uuid>). ...").
+fn project_id_in(text: &str) -> Uuid {
+    let after = text.split("(id ").nth(1).unwrap_or_else(|| panic!("no project id in {text:?}"));
+    after[..36].parse().unwrap_or_else(|_| panic!("no project id in {text:?}"))
 }

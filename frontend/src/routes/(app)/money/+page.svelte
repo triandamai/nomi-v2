@@ -1092,7 +1092,7 @@
 	.bars__fill {
 		height: 20px;
 		border-radius: 0 4px 4px 0;
-		background: var(--nomi-chart-money);
+		background: var(--nomi-chart);
 	}
 	.bars__value {
 		flex: none;
@@ -1132,7 +1132,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.daychart__bar {
-		fill: var(--nomi-chart-money);
+		fill: var(--nomi-chart);
 		transition: opacity var(--nomi-motion-effects-fast);
 	}
 	.daychart__bar--dim {

@@ -134,3 +134,13 @@ subscription:
   quota_body: "Your allowance on Nomi's models changed to %{quota} tokens a month%{until}."
   until: ", until %{date}"
   note: "Note from the Nomi team: %{note}"
+team:
+  invite_title: "%{inviter} invited you to %{org} on Nomi"
+  invite_body: "Join %{org} to work on its projects together with the crew. The invite works for 7 days."
+  invite_link: "Accept it here: %{link}"
+  invite_in_app: "Sign in to Nomi with this address and open %{where} to accept it."
+  invite_signup_link: "Create your Nomi account with this address, then accept the invite: %{link}"
+  invite_signup_in_app: "Create a Nomi account with this address, then open %{where} to accept it."
+  invite_reason: "You're getting this because %{inviter} invited this address to a team on Nomi. If you don't know them, you can ignore it."
+  joined_title: "%{name} joined %{org}"
+  joined_body: "They can now open and work on %{org}'s projects."

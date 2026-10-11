@@ -2,7 +2,8 @@
 	import { GRADIENT_STOPS, type GradientTone } from './shapes';
 
 	// M3 Expressive wavy linear progress: the completed part is a sine wave in the agent's
-	// gradient, the remainder a flat track, ending in a stop dot.
+	// gradient (or, for `action`, the theme's action gradient), the remainder a flat track,
+	// ending in a stop dot.
 
 	let {
 		value,
@@ -11,7 +12,7 @@
 	}: {
 		/** 0..1 */
 		value: number;
-		tone?: GradientTone;
+		tone?: GradientTone | 'action';
 		label: string;
 	} = $props();
 
@@ -21,7 +22,8 @@
 	const END = 292;
 	const WAVELENGTH = 15;
 
-	const stops = $derived(GRADIENT_STOPS[tone]);
+	const ACTION = ['var(--nomi-action-1)', 'var(--nomi-action-2)', 'var(--nomi-action-3)'];
+	const stops = $derived(tone === 'action' ? ACTION : GRADIENT_STOPS[tone]);
 	const clamped = $derived(Math.max(0, Math.min(1, value)));
 	const waveEnd = $derived(START + (END - START) * clamped);
 
@@ -48,7 +50,7 @@
 	<defs>
 		<linearGradient id="{uid}-g" x1="0" y1="0" x2="1" y2="0">
 			{#each stops as stop, i (i)}
-				<stop offset={i / (stops.length - 1)} stop-color={stop} />
+				<stop offset={i / (stops.length - 1)} style="stop-color: {stop}" />
 			{/each}
 		</linearGradient>
 	</defs>

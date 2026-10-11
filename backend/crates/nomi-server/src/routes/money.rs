@@ -239,7 +239,7 @@ pub async fn add_transaction(
     Json(input): Json<serde_json::Value>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    nomi_agent_money::log_transaction(&mut conn, claims.sub, &input, "manual").await.map_err(bad_request)?;
+    nomi_agent_money::log_transaction(&mut conn, claims.sub, &input, "manual", None).await.map_err(bad_request)?;
     Ok(StatusCode::CREATED)
 }
 

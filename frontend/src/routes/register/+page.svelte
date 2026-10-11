@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
+	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -8,6 +9,10 @@
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Came from a team invite: say so, and (from the invite email) fill in the invited address.
+	const forInvite = $derived((page.url.searchParams.get('redirect_to') ?? '').startsWith('/invite/'));
+	const invitedEmail = $derived(page.url.searchParams.get('email') ?? '');
 </script>
 
 <AuthShell
@@ -15,7 +20,7 @@
 	subtitle={m.register_subtitle()}
 	switchPrompt={m.register_have_account()}
 	switchLabel={m.login_submit()}
-	switchHref="/login"
+	switchHref={'/login' + page.url.search}
 >
 	{#if data.googleError}
 		<p class="md-body-medium mb-4" role="alert" style="color: var(--md-sys-color-error)">{data.googleError}</p>
@@ -24,11 +29,14 @@
 		<GoogleButton label={m.google_sign_up()} />
 		<div class="or" aria-hidden="true"><span>{m.auth_or()}</span></div>
 	{/if}
+	{#if forInvite}
+		<p class="invite-note" role="note">{m.register_for_invite()}</p>
+	{/if}
 	<form method="POST" use:enhance class="flex flex-col gap-5">
 		{#if form?.error}
 			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" required />
+		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" value={invitedEmail} required />
 		<TextField id="password" name="password" type="password" label={m.auth_password()} autocomplete="new-password" required />
 		<TextField id="orgName" name="orgName" type="text" label={m.register_org()} required />
 		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.register_submit()}</Button>
@@ -36,6 +44,15 @@
 </AuthShell>
 
 <style>
+	.invite-note {
+		margin: 0 0 16px;
+		padding: 10px 12px;
+		border-left: 3px solid var(--md-sys-color-primary);
+		border-radius: 4px;
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.875rem;
+	}
 	.or {
 		display: flex;
 		align-items: center;

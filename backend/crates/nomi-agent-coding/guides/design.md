@@ -15,10 +15,19 @@ components, write it down as tokens in CSS, then build every screen from those t
   three identical icon cards, then fake testimonials, then a four-column footer. A tool is not a
   landing page: its first screen is the tool.
 - Everything in a `rounded-2xl shadow-lg` card, and cards inside cards. Identical card grids.
+- Coloured accent stripes on a card's edge (`border-left: 4px solid` an accent, inset shadows),
+  uppercase eyebrow labels with an icon on every card, and a big initial letter in a coloured
+  square decorating each card. A card is its title, a line or two of content and one quiet
+  meta line.
 - Default Tailwind look: Inter/system font, `slate` greys, `indigo-600` buttons, `gray-50` page.
 - Marketing filler copy: "Unlock", "Seamless", "Elevate", "Revolutionize", "Effortlessly",
   "Your all-in-one…", "Supercharge". Fake numbers ("10k+ happy users"), lorem ipsum, "John Doe".
 - Hover effects on everything (scale-105, glow, bounce); spinning or pulsing decoration.
+- Fake status chrome: "Live", "Online", "Beta", "New", "AI" pills with a pulsing or glowing dot
+  (`animate-pulse`, `animate-ping`, `shadow-[0_0_…]`, blurred coloured halos), dimmed neon or
+  translucent "glow" colours, and status dots that don't reflect anything real. A status appears
+  only when the app has a real state to show (an order's progress, a sync that failed), as plain
+  text in a solid token colour, with a static dot at most. Nothing glows; nothing blinks.
 - Dark mode as pure black with neon accents.
 
 ## What to do instead
@@ -117,6 +126,6 @@ Familjen Grotesk + Inter, DM Serif Display + DM Sans. One display face, one text
 
 ## Before you call complete_task
 Look at what you built against this list: no gradient text or purple gradients, no emoji icons,
-no card-in-card, no default indigo/slate, tokens defined in `@theme` and used everywhere, a
+no card-in-card, no accent stripes on cards, no "Live"/"New" badges or glowing or pulsing dots, no default indigo/slate, tokens defined in `@theme` and used everywhere, a
 display font loaded, dark mode works, it works at 375px wide, every button has a focus state,
 empty/loading/error states exist. Fix anything that fails before finishing.

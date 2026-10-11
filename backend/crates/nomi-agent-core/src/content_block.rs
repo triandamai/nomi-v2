@@ -41,6 +41,25 @@ pub enum ApprovalStatus {
     Cancelled,
 }
 
+/// One question an agent asks with `ask_user`, with ready answers to tap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Question {
+    pub question: String,
+    #[serde(default)]
+    pub options: Vec<QuestionOption>,
+    /// Several options can be picked together.
+    #[serde(default)]
+    pub multiple: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuestionOption {
+    pub label: String,
+    /// A line on what this option means (a design direction's look, a feature's scope).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 /// Structured widget data attached to a chat message alongside its plain-text `content` fallback
 /// (see `messages.content_blocks`). Named `ContentBlock` to match the design spec; callers that
 /// also need `nomi_llm::ContentBlock` (a different type — LLM message content, not chat-UI
@@ -77,6 +96,12 @@ pub enum ContentBlock {
         input: Value,
         status: ApprovalStatus,
         decided_at: Option<DateTime<Utc>>,
+    },
+    /// Questions an agent needs answered before it carries on, each with options to tap and room
+    /// for the person's own answer. Their reply is an ordinary message.
+    Questions {
+        intro: Option<String>,
+        questions: Vec<Question>,
     },
     Plan {
         plan_id: Uuid,

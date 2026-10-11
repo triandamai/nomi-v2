@@ -249,12 +249,14 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
     .unwrap();
 
     let base = chrono::Utc::now();
+    // Alternating between the person (odd) and the crew (even), as a real chat does: runs from
+    // one side are merged into one turn (fetch_recent_messages), which would hide the window.
     for i in 0..25 {
         sqlx::query(
             "INSERT INTO messages (session_id, sender_channel_identity_id, content, created_at) VALUES ($1, $2, $3, $4)",
         )
         .bind(bootstrap.session_id)
-        .bind(identity_id)
+        .bind((i % 2 == 1).then_some(identity_id))
         .bind(format!("seq-{i}"))
         .bind(base + chrono::Duration::milliseconds(i))
         .execute(&pool)
@@ -295,6 +297,50 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
         ContentBlock::Text { text } => assert_eq!(text, "latest"),
         _ => panic!("expected a text block"),
     }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failure_notice_is_left_out_and_the_unanswered_request_joins_the_next(pool: PgPool) {
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry = AgentRegistry::new(vec![Box::new(MoneyAgent), Box::new(ChitchatAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+
+    let bootstrap_provider = FakeLlmProvider::success(canned_response("hello back"));
+    let bootstrap = handle_inbound_message(&pool, None, &bootstrap_provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "hi", None)
+        .await
+        .unwrap();
+    let identity_id: Uuid = sqlx::query_scalar("SELECT id FROM channel_identities WHERE channel = 'telegram' AND channel_user_id = 'tg-1'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // A request whose reply failed, and the notice the chat showed for it.
+    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, $2, 'what did I spend?')")
+        .bind(bootstrap.session_id)
+        .bind(identity_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO messages (session_id, content, is_notice) VALUES ($1, 'Gemini is having trouble right now. Try again in a moment.', true)")
+        .bind(bootstrap.session_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let provider = FakeLlmProvider::success(canned_response("ok"));
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "try again", None)
+        .await
+        .unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    let sent = &requests[1];
+    let texts: Vec<Vec<&str>> = sent
+        .messages
+        .iter()
+        .map(|m| m.content.iter().filter_map(|b| match b { ContentBlock::Text { text } => Some(text.as_str()), _ => None }).collect())
+        .collect();
+    assert_eq!(texts, vec![vec!["hi"], vec!["hello back"], vec!["what did I spend?", "try again"]]);
+    assert!(sent.messages.windows(2).all(|pair| pair[0].role != pair[1].role));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -13,6 +13,8 @@
 		files,
 		activePath,
 		content,
+		contentKey = 0,
+		dirty = $bindable(false),
 		saveError = null,
 		onOpen,
 		onSave
@@ -21,6 +23,10 @@
 		files: string[];
 		activePath: string | null;
 		content: string;
+		/** Changes when `content` was (re)loaded, so the editor shows it. */
+		contentKey?: number;
+		/** Unsaved edits in the open file. */
+		dirty?: boolean;
 		saveError?: string | null;
 		onOpen: (path: string) => void;
 		onSave: (content: string) => void;
@@ -30,7 +36,6 @@
 	// Folders the person closed; everything else starts open.
 	let closed = $state(new Set<string>());
 	let explorerOpen = $state(true);
-	let dirty = $state(false);
 	let cursor = $state({ line: 1, column: 1 });
 	let editor: CodeEditor | undefined = $state();
 	let width = $state(0);
@@ -135,7 +140,7 @@
 			{/if}
 			<div class="editor-body">
 				{#if activePath}
-					{#key activePath}
+					{#key `${activePath}:${contentKey}`}
 						<CodeEditor
 							bind:this={editor}
 							path={activePath}

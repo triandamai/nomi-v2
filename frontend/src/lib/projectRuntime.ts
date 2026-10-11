@@ -56,6 +56,31 @@ export function cleanOutput(chunk: string): string {
 		.join('\n');
 }
 
+// Clearing the screen: a cursor jump to the top (ESC[H, ESC[row;colH), erase-display (ESC[J,
+// ESC[2J...) or a full reset (ESC c). Vite clears by printing a screenful of blank lines and then
+// jumping back to the top, so the blank lines have to go along with the jump.
+// eslint-disable-next-line no-control-regex
+const CLEAR = /\u001b\[(?:\d*;\d*)?[Hf]|\u001b\[[0-3]?J|\u001bc/;
+
+/** `log` with the blank lines at its end removed (keeps its final newline). */
+function dropTrailingBlankLines(log: string): string {
+	const trimmed = log.replace(/(?:\n[ \t]*)+$/, '');
+	return trimmed.length > 0 ? `${trimmed}\n` : '';
+}
+
+/**
+ * Adds a chunk of terminal output to the log. A screen clear isn't replayed (the history stays);
+ * the blank padding before it is dropped, and long runs of blank lines collapse to one.
+ */
+export function appendOutput(log: string, chunk: string): string {
+	const segments = chunk.split(CLEAR);
+	let next = log + cleanOutput(segments[0]);
+	for (const segment of segments.slice(1)) {
+		next = dropTrailingBlankLines(next) + cleanOutput(segment);
+	}
+	return next.replace(/\n(?:[ \t]*\n){2,}/g, '\n\n');
+}
+
 /** Keeps the last `max` characters of a growing log, starting on a whole line. */
 export function capLog(log: string, max = 200_000): string {
 	if (log.length <= max) return log;

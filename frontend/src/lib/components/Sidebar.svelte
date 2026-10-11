@@ -151,7 +151,7 @@
 						<span class="usage__plan">{usage.plan.name}</span>
 						<span class="usage__share">{formatShare(share)}</span>
 					</span>
-					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'glow'} label={m.usage_progress_label({ share: formatShare(share) })} />
+					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'action'} label={m.usage_progress_label({ share: formatShare(share) })} />
 					<span class="usage__detail">{m.usage_of_tokens({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}</span>
 				</a>
 				<button type="button" class="usage__upgrade" onclick={() => (proOpen = true)}>
@@ -240,8 +240,8 @@
 		padding: 0 20px 0 16px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-large-increased);
-		background: var(--nomi-gradient-glow);
-		color: var(--nomi-on-gradient-glow);
+		background: var(--nomi-gradient-action);
+		color: var(--nomi-on-action);
 		font-family: var(--md-sys-typescale-label-large-font);
 		font-size: 1rem;
 		font-weight: 650;

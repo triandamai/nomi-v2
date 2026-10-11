@@ -11,6 +11,8 @@
 	import IconCheck from './icons/IconCheck.svelte';
 	import IconCopy from './icons/IconCopy.svelte';
 	import IconShare from './icons/IconShare.svelte';
+	import IconDelete from './icons/IconDelete.svelte';
+	import MessageDeleteSheet from './MessageDeleteSheet.svelte';
 	import IconThumbDown from './icons/IconThumbDown.svelte';
 	import IconThumbUp from './icons/IconThumbUp.svelte';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
@@ -25,6 +27,8 @@
 		thinkingOnly = false,
 		thread = 'solo',
 		handoffFrom = null,
+		answered = false,
+		ondelete,
 	}: {
 		message: RenderedMessage;
 		chained?: boolean;
@@ -41,6 +45,10 @@
 		thread?: 'solo' | 'start' | 'middle' | 'end';
 		/** The crew member who passed the conversation to this one, in the same thread. */
 		handoffFrom?: string | null;
+		/** The person has replied since this message (a questions card shows as answered). */
+		answered?: boolean;
+		/** Offers Delete; called with the ids of the messages that went. */
+		ondelete?: (ids: string[]) => void;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
@@ -55,6 +63,7 @@
 	let feedback = $state(message.my_feedback);
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
+	let deleteOpen = $state(false);
 
 	const senderLabel = message.sender === 'user' ? m.msg_you() : (message.agent_display_name ?? 'Nomi');
 	// Crew members other than Nomi get their name as a chip tinted with their gradient, so a
@@ -260,16 +269,20 @@
 			</span>
 		{/if}
 
+		{#if message.sender === 'user' && message.author_name}
+			<span class="message__who message__who--teammate">{message.author_name}</span>
+		{/if}
+
 		{#if reasoning.length > 0 || steps.length > 0 || sources.length > 0}
 			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
 		{/if}
 
 		{#if !thinkingOnly}
-		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'}>
+		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'} class:message-bubble--teammate={!!message.author_name}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} />
 					{/each}
 				</div>
 			{:else if attached && attached.files.length > 0}
@@ -327,6 +340,11 @@
 					<IconThumbDown size={16} />
 				</button>
 			{/if}
+			{#if ondelete && !message.author_name}
+				<button type="button" class="message-action-btn" aria-label={m.msg_delete()} title={m.msg_delete()} onclick={() => (deleteOpen = true)}>
+					<IconDelete size={16} />
+				</button>
+			{/if}
 			{#if showTimestamp}
 				<span class="message__time">{formattedTime}</span>
 			{/if}
@@ -340,6 +358,10 @@
 		{/if}
 	</div>
 </div>
+
+{#if ondelete}
+	<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />
+{/if}
 
 {#if message.sender === 'assistant'}
 	<MessageMemoriesSheet
@@ -431,6 +453,17 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 8px;
+	}
+	/* A teammate's message in a shared project chat: their name, and a neutral bubble. */
+	.message__who--teammate {
+		align-self: flex-end;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.message-bubble--user.message-bubble--teammate {
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface);
 	}
 	.message__handoff {
 		display: inline-flex;

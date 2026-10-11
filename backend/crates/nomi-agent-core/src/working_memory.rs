@@ -23,8 +23,9 @@ const MESSAGE_CHARS: usize = 1500;
 const SUMMARY_MAX_TOKENS: u32 = 1024;
 
 /// What was actually said: shown thinking (🧠), progress notes (💭) and reasoning steps are a
-/// window into the work, not part of the conversation.
-pub const SAID_IN_CHAT: &str = "NOT (sender_channel_identity_id IS NULL AND (content LIKE '🧠%' OR content LIKE '💭%' \
+/// window into the work, and failure notices are Nomi's, not the crew's: none of them are part of
+/// the conversation (a notice fed back as an earlier reply gets copied into every later one).
+pub const SAID_IN_CHAT: &str = "NOT is_notice AND NOT (sender_channel_identity_id IS NULL AND (content LIKE '🧠%' OR content LIKE '💭%' \
      OR COALESCE(content_blocks->0->>'kind', '') = 'reasoning'))";
 
 const SUMMARY_SYSTEM_PROMPT: &str = "You keep a running summary of a chat between a person and their \

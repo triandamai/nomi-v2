@@ -473,6 +473,14 @@ async fn finish_agent_turn(
             Ok((summary, Some(message_id)))
         }
         nomi_agent_core::LoopOutcome::AwaitingApproval { .. } => Ok(("Waiting for approval.".to_string(), None)),
+        // The questions are already in the chat; the agent keeps the conversation for the answer.
+        nomi_agent_core::LoopOutcome::AwaitingAnswer { message_id, text } => {
+            sqlx::query("UPDATE agent_sessions SET last_activity_at = now() WHERE id = $1")
+                .bind(agent_session_id)
+                .execute(&mut **conn)
+                .await?;
+            Ok((text, Some(message_id)))
+        }
         // follow_hand_offs runs the specialist before anything is finished.
         nomi_agent_core::LoopOutcome::HandOff { .. } => Ok((String::new(), None)),
         // Stopped by the user mid-turn: the supervisor already replied, so nothing is posted.
@@ -635,7 +643,7 @@ async fn resume_locked(
             .await?
         }
     };
-    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. } | nomi_agent_core::LoopOutcome::Cancelled) {
+    if matches!(outcome, nomi_agent_core::LoopOutcome::AwaitingApproval { .. } | nomi_agent_core::LoopOutcome::AwaitingAnswer { .. } | nomi_agent_core::LoopOutcome::Cancelled) {
         return finish_agent_turn(conn, Some((mqtt, Uuid::nil())), session_id, agent_session_id, agent.as_ref(), outcome).await;
     }
 
@@ -663,7 +671,8 @@ async fn resume_locked(
     Ok((reply, reply_message_id))
 }
 
-async fn fetch_recent_messages(
+/// The chat so far as the agents read it (what was said, oldest first).
+pub async fn fetch_recent_messages(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
 ) -> Result<Vec<LlmMessage>, TurnError> {
@@ -682,13 +691,24 @@ async fn fetch_recent_messages(
     .fetch_all(&mut **conn)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|(sender, content, _id)| LlmMessage {
-            role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
-            content: vec![ContentBlock::Text { text: content }],
-        })
-        .collect())
+    Ok(merge_turns(rows.into_iter().map(|(sender, content, _id)| LlmMessage {
+        role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
+        content: vec![ContentBlock::Text { text: content }],
+    })))
+}
+
+/// Runs of messages from the same side become one turn. Turns must alternate for some providers
+/// (Gemini refuses the request otherwise), and a request whose reply failed is followed directly
+/// by the person's next message once the failure notice is left out.
+pub fn merge_turns(messages: impl IntoIterator<Item = LlmMessage>) -> Vec<LlmMessage> {
+    let mut merged: Vec<LlmMessage> = Vec::new();
+    for message in messages {
+        match merged.last_mut() {
+            Some(last) if last.role == message.role => last.content.extend(message.content),
+            _ => merged.push(message),
+        }
+    }
+    merged
 }
 
 /// The language of the person whose chat this is (English if it has no owner).
@@ -733,7 +753,7 @@ async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPub
     let locale = session_owner_locale(conn, session_id).await;
     let explanation = err.user_message_in(locale);
     let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, NULL) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name, is_notice) VALUES ($1, NULL, $2, $3, NULL, true) RETURNING id",
     )
     .bind(session_id)
     .bind(&explanation)
@@ -744,4 +764,27 @@ async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPub
         let _ = mqtt.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
     }
     explanation
+}
+
+/// Gives the conversation to `agent_type`, so the person's next message reaches it: used when a
+/// specialist working in the background asks them something (`ask_user`).
+pub async fn hand_conversation_to(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    session_id: Uuid,
+    user_id: Uuid,
+    agent: &dyn nomi_agent_core::SubAgent,
+) -> Result<(), TurnError> {
+    let sender: Option<Uuid> = sqlx::query_scalar("SELECT id FROM channel_identities WHERE user_id = $1 ORDER BY created_at LIMIT 1")
+        .bind(user_id)
+        .fetch_optional(&mut **conn)
+        .await?;
+    let Some(sender) = sender else { return Ok(()) };
+    if let Some(active) = routing::find_active_agent_session(conn, session_id, sender).await? {
+        if routing::load_active_agent_session_details(conn, active).await?.agent_type == agent.agent_type() {
+            return Ok(());
+        }
+    }
+    routing::spawn_agent_session(conn, mqtt, session_id, sender, agent.agent_type().as_ref(), agent.display_name().as_ref()).await?;
+    Ok(())
 }

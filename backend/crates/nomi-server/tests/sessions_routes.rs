@@ -812,3 +812,46 @@ async fn a_stop_command_is_answered_at_once_and_never_queued(pool: PgPool) {
     let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM turn_jobs").fetch_one(&pool).await.unwrap();
     assert_eq!(queued, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_page_of_messages_never_starts_inside_a_thread(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "tia@example.com").await;
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id: uuid::Uuid = create_body["session_id"].as_str().unwrap().parse().unwrap();
+    let speaker: uuid::Uuid = sqlx::query_scalar(
+        "SELECT ci.id FROM channel_identities ci JOIN web_credentials wc ON wc.user_id = ci.user_id WHERE wc.email = 'tia@example.com'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // Two threads, oldest first: a request and three replies, then a request and two replies.
+    let script: [(&str, bool); 7] = [("ask-1", true), ("r1a", false), ("r1b", false), ("r1c", false), ("ask-2", true), ("r2a", false), ("r2b", false)];
+    for (i, (text, from_user)) in script.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO messages (session_id, sender_channel_identity_id, content, created_at) VALUES ($1, $2, $3, now() - make_interval(mins => 100 - $4))",
+        )
+        .bind(session_id)
+        .bind(from_user.then_some(speaker))
+        .bind(text)
+        .bind(i as i32)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let texts = |page: &Value| page["messages"].as_array().unwrap().iter().map(|m| m["content"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+
+    // 4 newest would start at "r1c", inside the first thread: the page reaches back to "ask-1".
+    let (_, page) = json_request(router.clone(), "GET", &format!("/api/sessions/{session_id}/messages?limit=4"), Value::Null, Some(&token)).await;
+    assert_eq!(texts(&page), vec!["ask-1", "r1a", "r1b", "r1c", "ask-2", "r2a", "r2b"]);
+    assert_eq!(page["has_more"], false);
+
+    // 3 newest start exactly at "ask-2": nothing to add, and older ones remain.
+    let (_, page) = json_request(router.clone(), "GET", &format!("/api/sessions/{session_id}/messages?limit=3"), Value::Null, Some(&token)).await;
+    assert_eq!(texts(&page), vec!["ask-2", "r2a", "r2b"]);
+    assert_eq!(page["has_more"], true);
+    let before = page["messages"][0]["id"].as_str().unwrap().to_string();
+    let (_, older) = json_request(router, "GET", &format!("/api/sessions/{session_id}/messages?limit=2&before={before}"), Value::Null, Some(&token)).await;
+    assert_eq!(texts(&older), vec!["ask-1", "r1a", "r1b", "r1c"]);
+    assert_eq!(older["has_more"], false);
+}

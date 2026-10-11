@@ -1,26 +1,22 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
-import { renderMarkdown } from '$lib/server/markdown';
 import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
-	const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/messages`);
-
-	if (response.status === 404) {
+	const firstPage = await fetchMessagePage(fetch, cookies, params.sessionId);
+	if (firstPage.status === 404) {
 		throw redirect(303, '/');
 	}
-	if (!response.ok) {
-		throw error(response.status, m.err_load_chat());
+	if (!firstPage.messages) {
+		throw error(firstPage.status, m.err_load_chat());
 	}
-
-	const { messages: rawMessages } = (await response.json()) as { messages: MessageItem[] };
-	const messages: RenderedMessage[] = await Promise.all(
-		rawMessages.map(async (message) => ({ ...message, content_html: await renderMarkdown(message.content) })),
-	);
+	const messages: RenderedMessage[] = firstPage.messages;
+	const hasOlder = firstPage.hasOlder;
 
 	const modelsResponse = await apiFetch(fetch, cookies, '/api/llm/models');
 	const models: LlmModelsResponse = modelsResponse.ok
@@ -46,7 +42,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? m.nav_new_chat();
 
 	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
-	return { messages, models, personality, agentActivity, agentStatus, title, thinkingLevel };
+	return { messages, hasOlder, models, personality, agentActivity, agentStatus, title, thinkingLevel };
 };
 
 export const actions: Actions = {

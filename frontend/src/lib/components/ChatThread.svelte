@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
-	import { mergeReloaded } from '$lib/mergeMessages';
+	import { mergeReloaded, prependOlder } from '$lib/mergeMessages';
 	import CrewPanel from '$lib/components/CrewPanel.svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -28,6 +28,7 @@
 		type AttachmentKind,
 		type UploadedFile,
 	} from '$lib/attachments';
+	import { provideChatSend } from '$lib/chatSend';
 	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
@@ -56,9 +57,12 @@
 		thinkingLevel = null,
 		unsaved = false,
 		project = null,
+		hasOlder = false,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
+		/** The chat goes back further than `messages` (it opens on the newest page). */
+		hasOlder?: boolean;
 		agentActivity: AgentActivityItem[];
 		agentStatus?: AgentStatus | null;
 		sendError?: string | null;
@@ -330,6 +334,11 @@
 	let activitySheetOpen = $state(false);
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let messageInput: HTMLTextAreaElement | undefined = $state();
+	// Cards in the thread (answers to an agent's questions) reply through this composer.
+	provideChatSend((text) => {
+		draft = text;
+		void tick().then(() => messageInput?.form?.requestSubmit());
+	});
 
 	let localMessages = $state(messages);
 
@@ -362,8 +371,53 @@
 			localMessages = incoming;
 			return;
 		}
-		localMessages = mergeReloaded(incoming, untrack(() => localMessages));
+		localMessages = mergeReloaded(incoming, untrack(() => localMessages), untrack(() => hasOlder));
 	});
+
+	// Earlier messages load a page at a time when the person scrolls to the top (or taps "Load
+	// earlier"). Each page starts at a request the person made, never halfway through a thread.
+	let olderAvailable = $state(untrack(() => hasOlder));
+	let loadingOlder = $state(false);
+	let olderError = $state(false);
+	let shownOlderSession = untrack(() => sessionId);
+	$effect(() => {
+		const more = hasOlder;
+		if (sessionId !== untrack(() => shownOlderSession)) {
+			shownOlderSession = sessionId;
+			olderAvailable = more;
+		}
+	});
+	/** Set while an earlier page goes in, so the view keeps its place instead of jumping down. */
+	let prepending = false;
+
+	async function loadOlder() {
+		const first = localMessages[0];
+		if (loadingOlder || !olderAvailable || !first) return;
+		loadingOlder = true;
+		olderError = false;
+		try {
+			const response = await fetch(`${page.url.pathname}/older?before=${encodeURIComponent(first.id)}`);
+			if (!response.ok) throw new Error(String(response.status));
+			const body = (await response.json()) as { messages: RenderedMessage[]; hasOlder: boolean };
+			const container = messagesContainer;
+			const fromBottom = container ? container.scrollHeight - container.scrollTop : 0;
+			prepending = true;
+			localMessages = prependOlder(body.messages, localMessages);
+			olderAvailable = body.hasOlder;
+			await tick();
+			if (container) container.scrollTop = container.scrollHeight - fromBottom;
+			prepending = false;
+		} catch {
+			olderError = true;
+			prepending = false;
+		} finally {
+			loadingOlder = false;
+		}
+	}
+
+	function onThreadScroll() {
+		if (messagesContainer && messagesContainer.scrollTop < 240) void loadOlder();
+	}
 
 	// Enter sends, Shift+Enter breaks the line — the textarea grows with its content.
 	function onComposerKeydown(event: KeyboardEvent) {
@@ -480,6 +534,7 @@
 	// Thinking steps fold into the reply they led to (see $lib/reasoning).
 	const threadItems = $derived(groupReasoning(localMessages));
 	const threadMessages = $derived(threadItems.map((item) => item.message));
+	const lastUserIndex = $derived(threadMessages.findLastIndex((message) => message.sender === 'user'));
 
 	const crew = $derived(
 		buildCrew({
@@ -521,6 +576,7 @@
 		const currentCount = localMessages.length;
 		const grew = currentCount > lastMessageCount;
 		lastMessageCount = currentCount;
+		if (prepending) return;
 		if (grew || isWorking) {
 			messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
 		}
@@ -672,8 +728,19 @@
 
 	<div class="chat__body">
 		<div class="chat__main">
-			<div bind:this={messagesContainer} class="thread">
+			<div bind:this={messagesContainer} class="thread" onscroll={onThreadScroll}>
 				<div class="thread__column">
+					{#if olderAvailable && threadItems.length > 0}
+						<div class="thread__older">
+							{#if loadingOlder}
+								<LoadingIndicator size={24} label={m.chat_loading_older()} />
+							{:else}
+								<button type="button" class="thread__older-btn" onclick={loadOlder}>
+									{olderError ? m.chat_older_retry() : m.chat_load_older()}
+								</button>
+							{/if}
+						</div>
+					{/if}
 					{#if threadItems.length === 0 && !isWorking}
 						<div class="thread__empty">
 							{#if project}
@@ -705,6 +772,8 @@
 							showTimestamp={isLastInChain(threadMessages, i)}
 							thread={threadPosition(threadMessages, i)}
 							handoffFrom={handoffFrom(threadMessages, i)}
+							answered={i < lastUserIndex}
+							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
 						/>
 					{/each}
 					{#if isWorking}
@@ -1182,6 +1251,29 @@
 	.thread__column {
 		max-width: 780px;
 		margin: 0 auto;
+	}
+	.thread__older {
+		display: flex;
+		justify-content: center;
+		padding: 8px 0 16px;
+	}
+	.thread__older-btn {
+		min-height: 40px;
+		padding: 0 16px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-full);
+		background: none;
+		color: var(--md-sys-color-primary);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.thread__older-btn:hover {
+		background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+	}
+	.thread__older-btn:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
 	}
 	.thread__status {
 		display: flex;

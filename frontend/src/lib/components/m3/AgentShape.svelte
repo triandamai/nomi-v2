@@ -10,6 +10,7 @@
 		working = false,
 		face = false,
 		label,
+		paint,
 		class: extraClass = '',
 	}: {
 		/** agent_type or display name — picks the shape + gradient (see agentLook). */
@@ -25,6 +26,8 @@
 		face?: boolean;
 		/** When set the shape is announced (role="img"); otherwise it's decorative. */
 		label?: string;
+		/** Gradient stops (any CSS colour, var() included) in place of the tone's own. */
+		paint?: string[];
 		class?: string;
 	} = $props();
 
@@ -33,7 +36,7 @@
 	const resolvedShape = $derived(shape ?? look.shape);
 	const resolvedTone = $derived(tone ?? look.tone);
 	const resolvedMotion = $derived(motion ?? look.motion);
-	const stops = $derived(GRADIENT_STOPS[resolvedTone]);
+	const stops = $derived(paint ?? GRADIENT_STOPS[resolvedTone]);
 </script>
 
 <svg
@@ -50,7 +53,7 @@
 	<defs>
 		<linearGradient id="{uid}-g" x1="0" y1="0" x2="1" y2="1">
 			{#each stops as stop, i (i)}
-				<stop offset={stops.length === 1 ? 0 : i / (stops.length - 1)} stop-color={stop} />
+				<stop offset={stops.length === 1 ? 0 : i / (stops.length - 1)} style="stop-color: {stop}" />
 			{/each}
 		</linearGradient>
 	</defs>

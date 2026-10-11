@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
-import { completeSignIn, setPendingSignIn, type TokenPair, type Verification } from '$lib/server/signIn';
+import { completeSignIn, safeRedirect, setPendingSignIn, type TokenPair, type Verification } from '$lib/server/signIn';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
@@ -15,7 +15,9 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, cookies, fetch }) => {
+	default: async ({ request, cookies, fetch, url }) => {
+		// Where to land after signing up, e.g. back on a team invite.
+		const redirectTo = safeRedirect(url.searchParams.get('redirect_to'));
 		const data = await request.formData();
 		const email = data.get('email');
 		const password = data.get('password');
@@ -52,11 +54,11 @@ export const actions: Actions = {
 		const body = (await response.json()) as TokenPair | { verification: Verification };
 		// A new account confirms its email with a code first; sign-up finishes on /verify.
 		if ('verification' in body) {
-			setPendingSignIn(cookies, { challengeId: body.verification.challenge_id, email, isNew: true, redirectTo: '/' });
+			setPendingSignIn(cookies, { challengeId: body.verification.challenge_id, email, isNew: true, redirectTo });
 			throw redirect(303, '/verify');
 		}
 
 		await completeSignIn(fetch, cookies, body, email, true);
-		throw redirect(303, '/');
+		throw redirect(303, redirectTo);
 	},
 };

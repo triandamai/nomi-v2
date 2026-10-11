@@ -20,7 +20,7 @@ import IconPerson from '$lib/components/icons/IconPerson.svelte';
 import { type PinnableId } from '$lib/drawerPins';
 
 export { PINNABLE, DEFAULT_PINS, isPinnable, resolvePins, moveItem, type PinnableId } from '$lib/drawerPins';
-export type FeatureId = 'home' | 'chats' | 'projects' | PinnableId | 'preferences' | 'profile';
+export type FeatureId = 'home' | 'chats' | 'projects' | PinnableId | 'orgs' | 'preferences' | 'profile';
 
 /** Always in the drawer, in this order, above the pins. */
 export const PERMANENT: FeatureId[] = ['home', 'chats', 'projects'];
@@ -44,6 +44,7 @@ export const FEATURES: Record<FeatureId, Feature> = {
 	crew: { id: 'crew', href: '/crew', label: m.nav_crew, description: m.feature_crew, icon: IconAgents },
 	connections: { id: 'connections', href: '/connections', label: m.nav_connections, description: m.feature_connections, icon: IconLink },
 	models: { id: 'models', href: '/models', label: m.nav_model, description: m.feature_models, icon: IconChip },
+	orgs: { id: 'orgs', href: '/organizations', label: m.nav_orgs, description: m.feature_orgs, icon: IconAgents },
 	billing: { id: 'billing', href: '/billing', label: m.nav_billing, description: m.feature_billing, icon: IconCard },
 	preferences: { id: 'preferences', href: '/preferences', label: m.nav_preferences, description: m.feature_preferences, icon: IconSettings },
 	profile: { id: 'profile', href: '/profile', label: m.nav_profile, description: m.feature_profile, icon: IconPerson }
@@ -51,7 +52,7 @@ export const FEATURES: Record<FeatureId, Feature> = {
 
 /** The More page's sections, in order. */
 export const MORE_SECTIONS: { title: () => string; ids: FeatureId[] }[] = [
-	{ title: m.more_section_main, ids: ['home', 'chats', 'projects'] },
+	{ title: m.more_section_main, ids: ['home', 'chats', 'projects', 'orgs'] },
 	{ title: m.more_section_life, ids: ['money', 'reminders', 'memory', 'notifications'] },
 	{ title: m.more_section_crew, ids: ['crew', 'connections', 'models'] },
 	{ title: m.more_section_account, ids: ['billing', 'preferences', 'profile'] }

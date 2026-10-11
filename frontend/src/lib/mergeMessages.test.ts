@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeReloaded } from './mergeMessages';
+import { mergeReloaded, prependOlder } from './mergeMessages';
 
 const msg = (id: string, at: string) => ({ id, created_at: `2026-10-06T15:${at}Z` });
 
@@ -20,5 +20,19 @@ describe('mergeReloaded', () => {
 		const incoming = [msg('b', '53:05')];
 		const shown = [msg('a', '53:00'), msg('b', '53:05')];
 		expect(mergeReloaded(incoming, shown).map((m) => m.id)).toEqual(['b']);
+	});
+});
+
+describe('earlier pages', () => {
+	const msg = (id: string, created_at: string) => ({ id, created_at });
+
+	it('keeps earlier pages when the newest page reloads', () => {
+		const shown = [msg('a', '01'), msg('b', '02'), msg('c', '03'), msg('d', '04')];
+		const reloaded = [msg('c', '03'), msg('d', '04'), msg('e', '05')];
+		expect(mergeReloaded(reloaded, shown, true).map((m) => m.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
+	});
+
+	it('puts an earlier page in front without repeats', () => {
+		expect(prependOlder([msg('a', '01'), msg('b', '02')], [msg('b', '02'), msg('c', '03')]).map((m) => m.id)).toEqual(['a', 'b', 'c']);
 	});
 });

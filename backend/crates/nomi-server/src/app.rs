@@ -67,7 +67,17 @@ pub fn build_router(state: AppState) -> Router {
             "/api/whoami",
             get(|AuthClaims(claims): AuthClaims| async move { axum::Json(claims) }),
         )
-        .route("/api/orgs/:org_id/members/:user_id", delete(auth_routes::remove_member))
+        .route("/api/orgs", get(crate::routes::orgs::list_orgs).post(crate::routes::orgs::create_org))
+        .route("/api/orgs/:org_id", get(crate::routes::orgs::get_org).patch(crate::routes::orgs::rename_org))
+        .route("/api/orgs/:org_id/invites", post(crate::routes::orgs::create_invite))
+        .route("/api/orgs/:org_id/invites/:code", delete(crate::routes::orgs::revoke_invite))
+        .route(
+            "/api/orgs/:org_id/members/:user_id",
+            delete(crate::routes::orgs::remove_member).patch(crate::routes::orgs::set_member_role),
+        )
+        .route("/api/invites/:code", get(crate::routes::orgs::get_invite))
+        .route("/api/invites/:code/accept", post(crate::routes::orgs::accept_invite))
+        .route("/api/preferences/project-org", put(crate::routes::orgs::set_project_org))
         .route(
             "/api/sessions",
             post(sessions_routes::create_session).get(sessions_routes::list_sessions),
@@ -77,7 +87,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages",
             get(sessions_routes::list_messages).post(sessions_routes::send_message),
         )
-        .route("/api/sessions/:id/messages/:message_id", get(sessions_routes::get_message))
+        .route(
+            "/api/sessions/:id/messages/:message_id",
+            get(sessions_routes::get_message).delete(crate::routes::message_delete::delete_message),
+        )
+        .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
         .route(
             "/api/sessions/:id/agent-plans/:agent_session_id",
             get(sessions_routes::list_agent_plans),
@@ -241,6 +255,16 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/projects/by-session/:sessionId", get(projects_routes::get_project_by_session))
         .route("/api/projects/:id", get(projects_routes::get_project))
+        .route(
+            "/api/projects/:id/issues",
+            get(crate::routes::project_issues::list_issues).post(crate::routes::project_issues::create_issue),
+        )
+        .route(
+            "/api/projects/:id/issues/:number",
+            get(crate::routes::project_issues::get_issue)
+                .patch(crate::routes::project_issues::update_issue)
+                .delete(crate::routes::project_issues::delete_issue),
+        )
         .route(
             "/api/projects/:id/files/*path",
             get(projects_routes::get_project_file).put(projects_routes::put_project_file).delete(projects_routes::delete_project_file),
