@@ -267,6 +267,27 @@
 		attachError = null;
 	}
 
+	/**
+	 * Files still in the composer when the chat closes (leaving the chat, closing the tab,
+	 * reloading) were never sent, so they're removed rather than left on the server. Uploads still
+	 * running are cancelled. Not while a message carrying them is on its way.
+	 */
+	let sendingMessage = false;
+	function discardUnsent() {
+		if (sendingMessage) return;
+		for (const file of attachments) {
+			if (file.uploaded) void discardUpload(file.uploaded.id);
+			else file.controller.abort();
+		}
+	}
+	onMount(() => {
+		window.addEventListener('pagehide', discardUnsent);
+		return () => {
+			window.removeEventListener('pagehide', discardUnsent);
+			discardUnsent();
+		};
+	});
+
 	/** After sending: the files belong to the message now. */
 	function clearAttachments() {
 		for (const file of attachments) if (file.thumb) URL.revokeObjectURL(file.thumb);
@@ -721,8 +742,12 @@
 					ondrop={onDrop}
 					use:enhance={() => {
 						submitting = true;
+						sendingMessage = true;
 						stopRequested = false;
 						return async ({ result, update }) => {
+							sendingMessage = false;
+							// A new chat's first message redirects to the chat it created.
+							if (result.type === 'redirect') clearAttachments();
 							await update({ reset: true });
 							if (result.type === 'success') {
 								draft = '';

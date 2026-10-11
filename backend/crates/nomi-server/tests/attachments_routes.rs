@@ -179,3 +179,47 @@ async fn a_message_can_only_point_at_its_senders_own_files(pool: PgPool) {
     let (status, _) = json_request(router, "DELETE", &format!("/api/attachments/{id}"), Value::Null, Some(&owner)).await;
     assert_eq!(status, StatusCode::CONFLICT);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn unsent_uploads_are_swept_after_six_hours_and_sent_ones_stay(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    register_and_login(router, "sweep@example.com").await;
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'sweep@example.com'").fetch_one(&pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (org_id, channel, chat_id) SELECT org_id, 'web', 'sweep' FROM memberships WHERE user_id = $1 LIMIT 1 RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+        .await
+        .unwrap();
+    let message_id: Uuid = sqlx::query_scalar("INSERT INTO messages (session_id, content) VALUES ($1, 'here') RETURNING id")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let add = |name: &'static str, hours_old: i32, sent: bool| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO attachments (user_id, message_id, name, mime, kind, size_bytes, storage_key, status, created_at) \
+                 VALUES ($1, $2, $3, 'text/plain', 'text', 1, $3, 'ready', now() - make_interval(hours => $4))",
+            )
+            .bind(user_id)
+            .bind(sent.then_some(message_id))
+            .bind(name)
+            .bind(hours_old)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+    add("old-draft.txt", 7, false).await;
+    add("fresh-draft.txt", 1, false).await;
+    add("old-sent.txt", 30, true).await;
+
+    nomi_server::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
+
+    let mut left: Vec<String> = sqlx::query_scalar("SELECT name FROM attachments").fetch_all(&pool).await.unwrap();
+    left.sort();
+    assert_eq!(left, vec!["fresh-draft.txt".to_string(), "old-sent.txt".to_string()]);
+}

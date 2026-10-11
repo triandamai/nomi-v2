@@ -3,24 +3,34 @@ import { apiFetch } from '$lib/server/api';
 import type { NotificationItem } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
+export type InboxFilter = 'all' | 'unread' | 'read' | 'promo';
+const FILTERS: InboxFilter[] = ['all', 'unread', 'read', 'promo'];
+
 interface InboxPage {
 	items: NotificationItem[];
 	unread: number;
-	next_before: string | null;
+	page: number;
+	pages: number;
+	total: number;
+	counts: Record<InboxFilter, number>;
 }
 
+const EMPTY: InboxPage = { items: [], unread: 0, page: 1, pages: 1, total: 0, counts: { all: 0, unread: 0, read: 0, promo: 0 } };
+
 export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
-	const before = url.searchParams.get('before');
-	const query = before ? `?before=${encodeURIComponent(before)}` : '';
+	const asked = url.searchParams.get('filter');
+	const filter: InboxFilter = FILTERS.includes(asked as InboxFilter) ? (asked as InboxFilter) : 'all';
+	const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+	const query = `?filter=${filter}&page=${page}`;
 	const [inboxResponse, prefsResponse] = await Promise.all([
 		apiFetch(fetch, cookies, `/api/notifications${query}`),
 		apiFetch(fetch, cookies, '/api/notifications/preferences'),
 	]);
-	const inbox: InboxPage = inboxResponse.ok ? ((await inboxResponse.json()) as InboxPage) : { items: [], unread: 0, next_before: null };
+	const inbox: InboxPage = inboxResponse.ok ? ((await inboxResponse.json()) as InboxPage) : EMPTY;
 	const preferences = prefsResponse.ok
 		? ((await prefsResponse.json()) as { email_account: boolean; email_promos: boolean })
 		: { email_account: true, email_promos: true };
-	return { inbox, preferences, older: Boolean(before) };
+	return { inbox, preferences, filter };
 };
 
 /** Only links inside the app are followed. */

@@ -199,7 +199,11 @@ export async function uploadFile(file: Blob, name: string, options: UploadOption
 	return JSON.parse(response.body) as UploadedFile;
 }
 
-/** Removes a file taken out of the composer before it was sent. */
+/**
+ * Removes a file taken out of the composer before it was sent. `keepalive` lets the request
+ * finish while the page is closing or navigating away. A file that went out with a message is
+ * kept: the server refuses to delete it.
+ */
 export async function discardUpload(id: string): Promise<void> {
-	await fetch(`/attachments/${id}`, { method: 'DELETE' }).catch(() => undefined);
+	await fetch(`/attachments/${id}`, { method: 'DELETE', keepalive: true }).catch(() => undefined);
 }

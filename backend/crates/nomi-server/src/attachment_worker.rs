@@ -107,13 +107,14 @@ pub async fn pass(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest:
     Ok(())
 }
 
-/// Files in no message are removed once they're a day old, so they don't fill anyone's storage:
-/// uploads never sent (the tab closed mid-draft), and the files of deleted chats (deleting a
-/// message clears its files' `message_id`).
+/// Files in no message are removed once they're six hours old, so they don't fill anyone's
+/// storage. The composer deletes unsent files itself when the chat closes; this catches the rest
+/// (a crash or lost connection mid-draft), and the files of deleted chats (deleting a message
+/// clears its files' `message_id`).
 async fn remove_abandoned(pool: &PgPool) -> Result<(), sqlx::Error> {
     let abandoned: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
         "DELETE FROM attachments WHERE id IN ( \
-             SELECT id FROM attachments WHERE message_id IS NULL AND created_at < now() - interval '1 day' LIMIT 50 \
+             SELECT id FROM attachments WHERE message_id IS NULL AND created_at < now() - interval '6 hours' LIMIT 50 \
          ) RETURNING id, storage_key, preview_key",
     )
     .fetch_all(pool)

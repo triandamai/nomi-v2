@@ -14,7 +14,7 @@ use crate::notifications::{self, Audience, Kind, Notice};
 
 type ApiError = (StatusCode, &'static str);
 
-const PAGE_SIZE: i64 = 30;
+const PAGE_SIZE: i64 = 20;
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct NotificationItem {
@@ -31,13 +31,40 @@ pub struct NotificationItem {
 pub struct InboxPage {
     pub items: Vec<NotificationItem>,
     pub unread: i64,
-    /// Pass as `before` for the next, older page; `None` when there's no more.
-    pub next_before: Option<DateTime<Utc>>,
+    /// This page (from 1) and how many pages the current filter has (at least 1).
+    pub page: i64,
+    pub pages: i64,
+    pub page_size: i64,
+    /// What the current filter matches in all.
+    pub total: i64,
+    /// How many each filter chip would show.
+    pub counts: InboxCounts,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct InboxCounts {
+    pub all: i64,
+    pub unread: i64,
+    pub read: i64,
+    pub promo: i64,
 }
 
 #[derive(Deserialize)]
 pub struct InboxQuery {
-    pub before: Option<DateTime<Utc>>,
+    /// "all" (default), "unread", "read" or "promo".
+    pub filter: Option<String>,
+    pub page: Option<i64>,
+}
+
+/// The WHERE condition for a filter, after `user_id = $1`. Fixed strings only, never input.
+fn filter_condition(filter: Option<&str>) -> Result<&'static str, ApiError> {
+    match filter.unwrap_or("all") {
+        "all" => Ok("TRUE"),
+        "unread" => Ok("read_at IS NULL"),
+        "read" => Ok("read_at IS NOT NULL"),
+        "promo" => Ok("kind = 'promo'"),
+        _ => Err((StatusCode::BAD_REQUEST, "filter must be all, unread, read or promo")),
+    }
 }
 
 async fn unread_count(state: &AppState, user_id: Uuid) -> Result<i64, ApiError> {
@@ -48,21 +75,39 @@ async fn unread_count(state: &AppState, user_id: Uuid) -> Result<i64, ApiError> 
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load notifications"))
 }
 
-/// `GET /api/notifications`: newest first, a page at a time.
+/// `GET /api/notifications?filter=&page=`: newest first, a page at a time, with the count behind
+/// each filter.
 pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Query(query): Query<InboxQuery>) -> Result<Json<InboxPage>, ApiError> {
-    let items: Vec<NotificationItem> = sqlx::query_as(
-        "SELECT id, kind, title, body, link, read_at IS NOT NULL AS read, created_at FROM notifications \
-         WHERE user_id = $1 AND ($2::timestamptz IS NULL OR created_at < $2) \
-         ORDER BY created_at DESC LIMIT $3",
+    let condition = filter_condition(query.filter.as_deref())?;
+    let failed = |_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load notifications");
+    let counts: InboxCounts = sqlx::query_as(
+        "SELECT count(*) AS \"all\", count(*) FILTER (WHERE read_at IS NULL) AS unread, \
+                count(*) FILTER (WHERE read_at IS NOT NULL) AS \"read\", count(*) FILTER (WHERE kind = 'promo') AS promo \
+         FROM notifications WHERE user_id = $1",
     )
     .bind(claims.sub)
-    .bind(query.before)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(failed)?;
+    let total = match query.filter.as_deref().unwrap_or("all") {
+        "unread" => counts.unread,
+        "read" => counts.read,
+        "promo" => counts.promo,
+        _ => counts.all,
+    };
+    let pages = ((total + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
+    let page = query.page.unwrap_or(1).clamp(1, pages);
+    let items: Vec<NotificationItem> = sqlx::query_as(&format!(
+        "SELECT id, kind, title, body, link, read_at IS NOT NULL AS read, created_at FROM notifications \
+         WHERE user_id = $1 AND {condition} ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3"
+    ))
+    .bind(claims.sub)
     .bind(PAGE_SIZE)
+    .bind((page - 1) * PAGE_SIZE)
     .fetch_all(&state.pool)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load notifications"))?;
-    let next_before = if items.len() as i64 == PAGE_SIZE { items.last().map(|n| n.created_at) } else { None };
-    Ok(Json(InboxPage { items, unread: unread_count(&state, claims.sub).await?, next_before }))
+    .map_err(failed)?;
+    Ok(Json(InboxPage { items, unread: counts.unread, page, pages, page_size: PAGE_SIZE, total, counts }))
 }
 
 #[derive(Serialize)]

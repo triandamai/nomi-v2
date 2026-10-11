@@ -170,3 +170,35 @@ async fn agents_see_what_was_said_not_the_thinking_or_progress_notes_shown_in_ch
     assert!(seen.contains("Hi!"), "{seen}");
     assert!(!seen.contains("confused") && !seen.contains("Checking the calendar"), "{seen}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_handed_on_while_another_agent_has_the_chat_takes_it_over(pool: PgPool) {
+    seed_speaker(&pool, "tg-4").await;
+    let registry = AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(FilesAgent)]);
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    // First an ordinary money conversation, which leaves Money's agent session active. Then a
+    // file that the Files agent hands to Money too: opening Money's new session used to collide
+    // with the one still active ("agent_sessions_one_active_per_speaker") and fail the turn.
+    let provider = FakeLlmProvider::sequence(vec![
+        text_response("money"),
+        text_response("Your spending this month is 120,000."),
+        tool_use_response("t1", "delegate_to_agent", serde_json::json!({"target_agent": "money", "task": "Log the receipt: coffee 25000 (food)"})),
+        text_response("Logged coffee (25,000)."),
+    ]);
+
+    handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-4", "tg-4", "how much did I spend?", None)
+        .await
+        .unwrap();
+    let message = "add this\n\n<attachment name=\"receipt.csv\" kind=\"file\">\nitem,amount\ncoffee,25000\n</attachment>";
+    let outcome = handle_inbound_message(&pool, None, &provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-4", "tg-4", message, None)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.reply, "Logged coffee (25,000).");
+    // Exactly one agent has the chat afterwards; the earlier session was closed, not left dangling.
+    let active: Vec<String> = sqlx::query_scalar("SELECT agent_type FROM agent_sessions WHERE status = 'active'").fetch_all(&pool).await.unwrap();
+    assert_eq!(active, vec!["money".to_string()]);
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_sessions").fetch_one(&pool).await.unwrap();
+    assert_eq!(sessions, 2);
+}

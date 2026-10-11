@@ -700,8 +700,6 @@
 	"notif_kind_quota": "Usage",
 	"notif_kind_subscription": "Plan",
 	"notif_lede": "Changes to your plan, usage alerts, and news from the Nomi team.",
-	"notif_no_older": "That's everything.",
-	"notif_older": "Show older",
 	"notif_read_all": "Mark all as read",
 	"notif_title": "Notifications",
 	"notif_unread": "Unread",
@@ -1283,5 +1281,14 @@
 	"drawer_reset": "Reset to default",
 	"drawer_saved": "Drawer updated",
 	"drawer_save_failed": "Couldn't save the drawer. Try again.",
-	"drawer_moved": "{name} moved to position {position}"
+	"drawer_moved": "{name} moved to position {position}",
+	"notif_filter_all": "All",
+	"notif_filter_unread": "Unread",
+	"notif_filter_read": "Read",
+	"notif_filter_promo": "Promos",
+	"notif_filters": "Show",
+	"notif_pages": "Notification pages",
+	"notif_empty_unread": "Nothing unread. You're all caught up.",
+	"notif_empty_read": "Nothing read yet.",
+	"notif_empty_promo": "No promos or news yet."
 }
