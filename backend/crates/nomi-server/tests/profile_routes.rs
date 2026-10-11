@@ -291,8 +291,48 @@ async fn an_uploaded_avatar_must_be_a_real_small_image(pool: PgPool) {
     let mut huge = png.clone();
     huge.resize(5 * 1024 * 1024 + 10, 0);
     assert_eq!(post_avatar(router.clone(), &token, "image/png", huge).await, StatusCode::PAYLOAD_TOO_LARGE);
-    // A real picture, but no bucket on this server.
-    assert_eq!(post_avatar(router, &token, "image/png", png).await, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_avatar_is_stored_without_a_bucket_and_served_by_nomi(pool: PgPool) {
+    std::env::set_var("ATTACHMENTS_DIR", std::env::temp_dir().join(format!("nomi-test-avatars-{}", std::process::id())));
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "avatar-round@example.com").await;
+    let png = b"\x89PNG\r\n\x1a\n rest of the picture".to_vec();
+
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/profile/avatar")
+        .header("content-type", "image/png")
+        .header("authorization", format!("Bearer {token}"))
+        .body(axum::body::Body::from(png.clone()))
+        .unwrap();
+    let response = tower::ServiceExt::oneshot(router.clone(), request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = serde_json::from_slice(&http_body_util::BodyExt::collect(response.into_body()).await.unwrap().to_bytes()).unwrap();
+    let url = body["avatar_url"].as_str().unwrap().to_string();
+    assert!(url.starts_with("/avatars/") && url.ends_with(".png"), "a path Nomi serves, not a bucket URL: {url}");
+
+    let (_, profile) = json_request(router.clone(), "GET", "/api/profile", Value::Null, Some(&token)).await;
+    assert_eq!(profile["avatar_url"], url);
+
+    let get = |bearer: Option<String>, uri: String| {
+        let mut request = axum::http::Request::builder().uri(uri);
+        if let Some(bearer) = bearer {
+            request = request.header("authorization", format!("Bearer {bearer}"));
+        }
+        tower::ServiceExt::oneshot(router.clone(), request.body(axum::body::Body::empty()).unwrap())
+    };
+    let response = get(Some(token.clone()), format!("/api{url}")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "image/png");
+    let bytes = http_body_util::BodyExt::collect(response.into_body()).await.unwrap().to_bytes();
+    assert_eq!(bytes.to_vec(), png);
+
+    assert_eq!(get(None, format!("/api{url}")).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    let user = url.split('/').nth(2).unwrap();
+    assert_eq!(get(Some(token.clone()), format!("/api/avatars/{user}/..%2F..%2Fsecret.png")).await.unwrap().status(), StatusCode::NOT_FOUND);
+    assert_eq!(get(Some(token), format!("/api/avatars/{user}/{}.png", uuid::Uuid::new_v4())).await.unwrap().status(), StatusCode::NOT_FOUND);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

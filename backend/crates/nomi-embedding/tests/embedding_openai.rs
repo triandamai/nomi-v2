@@ -107,3 +107,19 @@ async fn embed_for_query_defaults_to_calling_embed() {
     let embedding = provider.embed_for_query("hello").await.unwrap();
     assert_eq!(embedding, vec![0.5f32, 0.6]);
 }
+
+#[tokio::test]
+async fn the_token_count_openai_reports_comes_back_with_the_vector() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/embeddings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{"embedding": [0.5], "index": 0}],
+            "usage": {"prompt_tokens": 7, "total_tokens": 7}
+        })))
+        .mount(&server)
+        .await;
+    let provider = OpenAiEmbeddingProvider::new(reqwest::Client::new(), "k".into(), "text-embedding-3-small".into(), server.uri());
+    let embedded = provider.embed_counted("seven tokens of text here", true).await.unwrap();
+    assert_eq!((embedded.vector, embedded.tokens), (vec![0.5f32], Some(7)));
+}

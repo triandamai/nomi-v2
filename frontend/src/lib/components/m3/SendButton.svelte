@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { ACTION_STOPS } from './shapes';
 	import { m } from '$lib/paraglide/messages';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 	import AgentShape from './AgentShape.svelte';
 	import LoadingIndicator from './LoadingIndicator.svelte';
 
-	// Nomi's send action: the brand cookie shape in the glow gradient, with an arrow on top.
+	// Nomi's send action: the brand cookie shape in the theme's action gradient, with an arrow on
+	// top (idle or busy, it follows the person's theme, not Nomi's own green).
 	// While a turn is in flight it becomes the morphing loading indicator instead; with `stopForm`
 	// set, that indicator carries a stop square and submits the given form (see ChatThread).
 
@@ -23,8 +25,6 @@
 	} & HTMLButtonAttributes = $props();
 
 	const stoppable = $derived(working && stopForm !== undefined);
-	// The send button wears the theme's action gradient, not Nomi's own.
-	const ACTION_PAINT = ['var(--nomi-action-1)', 'var(--nomi-action-2)', 'var(--nomi-action-3)'];
 </script>
 
 <button
@@ -44,7 +44,7 @@
 			<svg class="nomi-send__stop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3.5" /></svg>
 		{/if}
 	{:else}
-		<AgentShape shape="cookie9" paint={ACTION_PAINT} size={size} class="nomi-send__shape" />
+		<AgentShape shape="cookie9" paint={ACTION_STOPS} size={size} class="nomi-send__shape" />
 		<svg class="nomi-send__arrow" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
 	{/if}
 </button>

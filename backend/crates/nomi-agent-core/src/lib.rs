@@ -19,6 +19,7 @@ pub mod stop;
 pub mod subagent;
 pub mod tool_catalog;
 pub mod tools;
+pub mod voice;
 pub mod web;
 pub mod working_memory;
 

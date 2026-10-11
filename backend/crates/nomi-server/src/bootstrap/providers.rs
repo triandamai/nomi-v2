@@ -7,7 +7,7 @@ use nomi_embedding::{build_embedding_provider, EmbeddingConfig, EmbeddingProvide
 use nomi_llm::media::{MediaRouter, MediaSupport};
 use nomi_llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
 use nomi_settings as settings;
-use nomi_usage::{MeteredProvider, ModelTag};
+use nomi_usage::{MeteredEmbeddingProvider, MeteredProvider, ModelTag};
 
 fn llm_provider_kind_from_str(s: &str) -> ProviderKind {
     match s {
@@ -322,10 +322,12 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
     (config, tag, support)
 }
 
+/// The embedding model Nomi uses, metered for `user_id` (Admin → Usage).
 pub async fn build_embedding_provider_from_settings_or_env(
     pool: &PgPool,
     settings_key: &[u8; 32],
     http_client: reqwest::Client,
+    user_id: Option<uuid::Uuid>,
 ) -> Arc<dyn EmbeddingProvider> {
     let row = settings::get_settings(pool, "embedding").await.expect("failed to query provider_settings");
 
@@ -369,7 +371,20 @@ pub async fn build_embedding_provider_from_settings_or_env(
         }
     };
 
-    Arc::from(build_embedding_provider(embedding_config, http_client))
+    let provider: Arc<dyn EmbeddingProvider> = Arc::from(build_embedding_provider(embedding_config, http_client));
+    Arc::new(MeteredEmbeddingProvider::new(provider, pool.clone(), user_id))
+}
+
+/// The embedding provider and model Nomi uses now: Admin → Embeddings, else the environment.
+pub async fn current_embedding_model(pool: &PgPool) -> Option<(String, String)> {
+    match settings::get_settings(pool, "embedding").await {
+        Ok(Some(row)) => Some((row.provider, row.model_id)),
+        _ => {
+            let provider = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+            let model_id = if provider == "fake" { String::new() } else { std::env::var("EMBEDDING_MODEL_ID").ok()? };
+            Some((provider, model_id))
+        }
+    }
 }
 
 #[cfg(test)]

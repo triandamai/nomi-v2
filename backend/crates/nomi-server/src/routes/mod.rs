@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod admin_dashboard;
+pub mod admin_usage;
 pub mod admin_users;
 pub mod attachments;
 pub mod auth;
@@ -13,6 +14,7 @@ pub mod money;
 pub mod notifications;
 pub mod orgs;
 pub mod usage;
+pub mod voice;
 pub mod personality;
 pub mod plans;
 pub mod message_delete;

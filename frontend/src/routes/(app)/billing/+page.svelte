@@ -210,7 +210,7 @@
 							<h2 id="model-heading" class="panel__title">{m.billing_by_model()}</h2>
 						</div>
 						<ul class="bars models">
-							{#each usage.by_model as row (row.label + row.model_id + row.source)}
+							{#each usage.by_model as row ((row.admin_model_id ?? '') + row.provider + row.model_id + row.source)}
 								<li class="model">
 									<div class="model__top">
 										<span class="bars__label">{row.label}</span>

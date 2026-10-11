@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { touchScreen } from '$lib/touch';
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
@@ -583,7 +584,8 @@
 	});
 
 	onMount(() => {
-		messageInput?.focus();
+		// Not on a phone: opening a chat shouldn't throw up the keyboard over it.
+		if (!touchScreen()) messageInput?.focus();
 		if (unsaved) return; // nothing to listen to until the first message creates the chat
 
 		let socket: WebSocket | undefined;
@@ -813,6 +815,8 @@
 						submitting = true;
 						sendingMessage = true;
 						stopRequested = false;
+						// On a phone, sending puts the keyboard away.
+						if (touchScreen()) messageInput?.blur();
 						return async ({ result, update }) => {
 							sendingMessage = false;
 							// A new chat's first message redirects to the chat it created.
@@ -824,7 +828,7 @@
 								clearAttachments();
 								if (result.data?.stopped) settleAfterStop();
 							}
-							messageInput?.focus();
+							if (!touchScreen()) messageInput?.focus();
 						};
 					}}
 				>

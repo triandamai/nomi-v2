@@ -17,6 +17,7 @@
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import IconPalette from '$lib/components/icons/IconPalette.svelte';
 	import IconWallet from '$lib/components/icons/IconWallet.svelte';
+	import IconBarChart from '$lib/components/icons/IconBarChart.svelte';
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
@@ -56,6 +57,7 @@
 					{ href: '/admin/tools', label: m.admin_tools(), icon: IconTool },
 					{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip },
 					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
+					{ href: '/admin/usage', label: m.admin_usage(), icon: IconBarChart },
 				]
 			: []),
 		...(canViewUsers

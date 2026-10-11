@@ -3,7 +3,8 @@
 //! A person's message goes with the crew's replies to it (its thread) and with what the crew
 //! made while answering it: transactions logged, reminders set, plans drafted, tasks scheduled
 //! (each row remembers the message that started its turn, `source_message_id`). A reply goes on
-//! its own, with the plan or reminder its cards show. Files attached to deleted messages go too.
+//! its own, with the plan or reminder its cards show. Files attached to deleted messages go too,
+//! and so do recordings the crew read out loud in them.
 //! `GET .../delete` lists all of it so the app can ask first; `DELETE` removes it for good.
 
 use axum::extract::{Path, State};
@@ -177,6 +178,20 @@ pub async fn delete_message(
     let related = related_to(&state.pool, claims.sub, session_id, message_id).await?;
     let ids = |items: &[RelatedItem]| items.iter().map(|i| i.id).collect::<Vec<Uuid>>();
 
+    // Recordings the crew read out loud in these messages (the speak tool's `/voice/...` files).
+    let blocks: Vec<Option<serde_json::Value>> = sqlx::query_scalar("SELECT content_blocks FROM messages WHERE id = ANY($1)")
+        .bind(&related.message_ids)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(internal("failed to delete message"))?;
+    let recordings: Vec<String> = blocks
+        .iter()
+        .filter_map(|b| b.as_ref()?.as_array())
+        .flatten()
+        .filter(|block| block.get("kind").and_then(|k| k.as_str()) == Some("voice"))
+        .filter_map(|block| block.get("url")?.as_str()?.strip_prefix("/voice/").map(|rest| format!("voice/{rest}")))
+        .collect();
+
     let file_keys: Vec<(String, Option<String>)> = sqlx::query_as("SELECT storage_key, preview_key FROM attachments WHERE id = ANY($1)")
         .bind(ids(&related.files))
         .fetch_all(&state.pool)
@@ -206,6 +221,9 @@ pub async fn delete_message(
         if let Some(preview) = preview {
             let _ = store.delete(&preview).await;
         }
+    }
+    for key in recordings {
+        let _ = store.delete(&key).await;
     }
 
     Ok(Json(related))

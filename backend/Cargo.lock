@@ -3199,6 +3199,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures-util",
+ "nomi-embedding",
  "nomi-llm",
  "nomi-test-support",
  "serde",

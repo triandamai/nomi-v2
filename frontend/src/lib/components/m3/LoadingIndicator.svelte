@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import MorphingShape from './MorphingShape.svelte';
-	import type { GradientTone } from './shapes';
+	import type { PaintTone } from './shapes';
 
-	// M3 Expressive loading indicator: a morphing shape (see MorphingShape) that also rotates.
+	// M3 Expressive loading indicator: a morphing shape (see MorphingShape) that also rotates. It
+	// paints with the theme's action gradient unless given an agent's tone.
 
 	let {
 		size = 48,
-		tone = 'glow',
+		tone = 'action',
 		contained = false,
 		label = m.loading_working(),
-	}: { size?: number; tone?: GradientTone; contained?: boolean; label?: string } = $props();
+	}: { size?: number; tone?: PaintTone; contained?: boolean; label?: string } = $props();
 </script>
 
 <span

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { GRADIENT_STOPS, pointsToPath, shapePath, shapePoints, type GradientTone, type Point, type ShapeName } from './shapes';
+	import { paintStops, pointsToPath, shapePath, shapePoints, type PaintTone, type Point, type ShapeName } from './shapes';
 
 	// A gradient shape that morphs through a sequence of M3 Expressive shapes on a spring.
 	// Interpolated per animation frame in JS (every shape shares one point count — see shapes.ts)
@@ -16,7 +16,7 @@
 		class: extraClass = '',
 	}: {
 		size?: number;
-		tone?: GradientTone;
+		tone?: PaintTone;
 		sequence?: ShapeName[];
 		/** Time spent on each shape, morph included. */
 		stepMs?: number;
@@ -29,7 +29,7 @@
 	// Until the first animation frame (and always under reduced motion) show the first shape.
 	let animated = $state<string | null>(null);
 	const d = $derived(animated ?? shapePath(sequence[0]));
-	const stops = $derived(GRADIENT_STOPS[tone]);
+	const stops = $derived(paintStops(tone));
 
 	// Overshooting ease (same feel as --nomi-motion-spatial-default) — the "spring" in the morph.
 	function spring(t: number): number {
@@ -66,7 +66,7 @@
 	<defs>
 		<linearGradient id="{uid}-g" x1="0" y1="0" x2="1" y2="1">
 			{#each stops as stop, i (i)}
-				<stop offset={i / (stops.length - 1)} stop-color={stop} />
+				<stop offset={i / (stops.length - 1)} style="stop-color: {stop}" />
 			{/each}
 		</linearGradient>
 	</defs>

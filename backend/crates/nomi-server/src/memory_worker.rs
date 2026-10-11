@@ -49,9 +49,9 @@ pub async fn learn(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
     if jobs.is_empty() {
         return;
     }
-    let embedding_provider = build_embedding_provider_from_settings_or_env(pool, settings_key, http_client.clone()).await;
     for job in &jobs {
         let provider = build_llm_provider_for_user(pool, job.user_id, settings_key, http_client.clone()).await;
+        let embedding_provider = build_embedding_provider_from_settings_or_env(pool, settings_key, http_client.clone(), Some(job.user_id)).await;
         match tokio::time::timeout(LEARNING_TIME_LIMIT, memory::run_learning_job(pool, provider.as_ref(), embedding_provider.as_ref(), job)).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => tracing::warn!(error = %e, job_id = %job.id, "memory worker: learning from an exchange failed"),

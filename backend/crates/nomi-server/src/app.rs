@@ -165,6 +165,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
+        .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
         .route("/api/admin/agents/ws", get(admin_dashboard_routes::admin_agents_stream))
         .route("/api/admin/agent-events", get(admin_dashboard_routes::list_agent_events))
@@ -204,6 +205,9 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/admin/tools", get(tools_routes::list_tools))
         .route("/api/admin/tools/web_search/test", post(tools_routes::test_web_search))
+        .route("/api/admin/tools/speak/voices", get(tools_routes::voice_options))
+        .route("/api/admin/tools/speak/test", post(tools_routes::test_voice))
+        .route("/api/voice/:user_id/:file", get(crate::routes::voice::get_recording))
         .route("/api/admin/tools/:name", put(tools_routes::set_tool_enabled))
         .route("/api/admin/tools/:name/settings", put(tools_routes::save_tool_settings))
         .route("/api/admin/orgs", get(admin_users_routes::list_orgs))
@@ -240,6 +244,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/notifications/broadcast", post(notifications_routes::broadcast))
         .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))
         .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
+        .route("/api/avatars/:user_id/:file", get(profile_routes::get_avatar))
         .route(
             "/api/profile/avatar",
             post(profile_routes::upload_avatar)

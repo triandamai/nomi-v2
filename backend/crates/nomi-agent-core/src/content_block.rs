@@ -114,6 +114,13 @@ pub enum ContentBlock {
     Reasoning {
         text: String,
     },
+    /// Something the crew said out loud (the `speak` tool): a player for the recording, and its
+    /// words. `url` is the app path the audio is served at.
+    Voice {
+        url: String,
+        text: String,
+        voice: Option<String>,
+    },
     /// A reminder going off (posted by the Reminders agent's worker), with Done / Snooze.
     Reminder {
         reminder_id: Uuid,

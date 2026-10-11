@@ -216,3 +216,91 @@ async fn testing_search_without_a_key_says_what_is_missing(pool: PgPool) {
     assert_eq!(body["ok"], false);
     assert!(body["error"].as_str().unwrap().contains("API key"));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn voice_settings_keep_the_key_secret_and_stay_in_range(pool: PgPool) {
+    std::env::remove_var("ELEVENLABS_API_KEY");
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "tools-voice@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/admin/tools", Value::Null, Some(&token)).await;
+    let speak = find_tool(&body, "speak");
+    assert_eq!(speak["configurable"], true);
+    assert_eq!(speak["ready"], false, "no key, no voice");
+    assert_eq!(speak["settings"]["key_source"], "missing");
+
+    // Listing voices needs a key first.
+    let (status, _) = json_request(router.clone(), "GET", "/api/admin/tools/speak/voices", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let settings = json!({
+        "voice_id": "pNInz6obpgDQGcFmaJgB", "voice_name": "Adam", "model_id": "eleven_turbo_v2_5",
+        "stability": 4.0, "similarity_boost": 0.9, "style": 0.2, "use_speaker_boost": false, "speed": 3.0,
+        "output_format": "mp3_44100_64", "max_chars": 9000, "api_key": "eleven-secret-456"
+    });
+    let (status, _) = json_request(router.clone(), "PUT", "/api/admin/tools/speak/settings", settings.clone(), Some(&token)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/admin/tools", Value::Null, Some(&token)).await;
+    assert!(!body.to_string().contains("eleven-secret-456"), "the key never goes back to the browser");
+    let speak = find_tool(&body, "speak");
+    assert_eq!(speak["ready"], true);
+    let saved = &speak["settings"];
+    assert_eq!(saved["key_source"], "saved");
+    assert_eq!(saved["voice_name"], "Adam");
+    assert_eq!(saved["model_id"], "eleven_turbo_v2_5");
+    assert_eq!(saved["stability"], 1.0);
+    assert_eq!(saved["speed"], 1.2);
+    assert_eq!(saved["max_chars"], 5000);
+    assert_eq!(saved["use_speaker_boost"], false);
+    assert_eq!(saved["output_format"], "mp3_44100_64");
+
+    // Saving without a key keeps the saved one; clearing it takes the tool out of service.
+    let mut again = settings.clone();
+    again["api_key"] = Value::Null;
+    json_request(router.clone(), "PUT", "/api/admin/tools/speak/settings", again.clone(), Some(&token)).await;
+    let (_, body) = json_request(router.clone(), "GET", "/api/admin/tools", Value::Null, Some(&token)).await;
+    assert_eq!(find_tool(&body, "speak")["ready"], true);
+    again["clear_api_key"] = json!(true);
+    json_request(router.clone(), "PUT", "/api/admin/tools/speak/settings", again.clone(), Some(&token)).await;
+    let (_, body) = json_request(router.clone(), "GET", "/api/admin/tools", Value::Null, Some(&token)).await;
+    assert_eq!(find_tool(&body, "speak")["ready"], false);
+
+    let mut bad = settings.clone();
+    bad["voice_id"] = json!("../../v1/user");
+    let (status, _) = json_request(router.clone(), "PUT", "/api/admin/tools/speak/settings", bad, Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let mut bad = settings;
+    bad["model_id"] = json!(" ");
+    let (status, _) = json_request(router, "PUT", "/api/admin/tools/speak/settings", bad, Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_recording_is_served_to_signed_in_people_only(pool: PgPool) {
+    std::env::set_var("ATTACHMENTS_DIR", std::env::temp_dir().join(format!("nomi-test-voice-{}", std::process::id())));
+    let router = build_router(test_state(pool.clone()));
+    let token = register_admin_and_login(router.clone(), &pool, "tools-recording@example.com").await;
+    let user = uuid::Uuid::new_v4();
+    let file = format!("{}.mp3", uuid::Uuid::new_v4());
+    nomi_storage::blob::attachment_store()
+        .put_bytes(&nomi_agent_core::voice::voice_key(user, &file), b"ID3-audio".to_vec(), "audio/mpeg")
+        .await
+        .unwrap();
+
+    let get = |bearer: Option<&str>, uri: String| {
+        let mut request = Request::builder().uri(uri);
+        if let Some(bearer) = bearer {
+            request = request.header("authorization", format!("Bearer {bearer}"));
+        }
+        router.clone().oneshot(request.body(Body::empty()).unwrap())
+    };
+    let response = get(Some(&token), format!("/api/voice/{user}/{file}")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "audio/mpeg");
+    assert_eq!(response.into_body().collect().await.unwrap().to_bytes().as_ref(), b"ID3-audio");
+
+    assert_eq!(get(None, format!("/api/voice/{user}/{file}")).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(get(Some(&token), format!("/api/voice/{user}/notes.txt")).await.unwrap().status(), StatusCode::NOT_FOUND);
+    assert_eq!(get(Some(&token), format!("/api/voice/{user}/{}.mp3", uuid::Uuid::new_v4())).await.unwrap().status(), StatusCode::NOT_FOUND);
+}

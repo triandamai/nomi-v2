@@ -48,6 +48,8 @@ export type ContentBlock =
 	| { kind: 'plan'; plan_id: string; agent_session_id: string; title: string; version: number }
 	/** The model's thinking; shown collapsed on the agent's next reply (see $lib/reasoning). */
 	| { kind: 'reasoning'; text: string }
+	/** Something the crew read out loud (the speak tool); `url` is the recording. */
+	| { kind: 'voice'; url: string; text: string; voice: string | null }
 	/** A reminder going off, posted by the Reminders agent. */
 	| {
 			kind: 'reminder';
@@ -669,5 +671,30 @@ export interface UsageMonth {
 	calls: number;
 	spend_usd: number;
 	by_day: { date: string; tokens: number; spend_usd: number }[];
-	by_model: { label: string; provider: string; model_id: string; source: 'nomi' | 'own_key'; tokens: number; calls: number; spend_usd: number }[];
+	/** One row per model actually called, kept together by the admin model's id (so a renamed model keeps its history). */
+	by_model: { admin_model_id: string | null; label: string; provider: string; model_id: string; source: 'nomi' | 'own_key'; tokens: number; calls: number; spend_usd: number }[];
+}
+
+/** Admin → Usage: one month (UTC) of everyone's tokens, per chat model and embedding model. */
+export interface AdminUsage {
+	month: string;
+	current_month: string;
+	chat: { tokens: number; input_tokens: number; output_tokens: number; own_key_tokens: number; calls: number; people: number; spend_usd: number };
+	embedding: { tokens: number; calls: number; estimated_calls: number };
+	by_day: { date: string; chat_tokens: number; embedding_tokens: number }[];
+	models: {
+		admin_model_id: string | null;
+		label: string;
+		deleted: boolean;
+		provider: string;
+		model_id: string;
+		source: 'nomi' | 'own_key';
+		input_tokens: number;
+		output_tokens: number;
+		tokens: number;
+		calls: number;
+		people: number;
+		spend_usd: number;
+	}[];
+	embedding_models: { provider: string; model_id: string; tokens: number; calls: number; estimated_calls: number; people: number; current: boolean }[];
 }

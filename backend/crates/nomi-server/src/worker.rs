@@ -143,7 +143,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             let _ = session_id; // resolved above only to fail fast with a clear error if the message/session no longer exists
 
             let provider = build_llm_provider_for_user(&pool, user_id, &settings_key, http_client.clone()).await;
-            let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
+            let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
 
             let result = nomi_turn::resume_paused_turn(
                 &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, &catalog,
@@ -205,7 +205,7 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
 
     let provider = build_llm_provider_for_user(&turns.pool, user_id, &turns.settings_key, turns.http_client.clone()).await;
     let embedding_provider =
-        build_embedding_provider_from_settings_or_env(&turns.pool, &turns.settings_key, turns.http_client.clone()).await;
+        build_embedding_provider_from_settings_or_env(&turns.pool, &turns.settings_key, turns.http_client.clone(), Some(user_id)).await;
 
     let result = nomi_turn::process_turn(
         &turns.pool,

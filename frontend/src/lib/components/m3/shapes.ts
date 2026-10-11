@@ -124,6 +124,17 @@ export const GRADIENT_STOPS: Record<GradientTone, string[]> = {
 	slate: ['#dde6ec', '#7d93a3'],
 };
 
+/** The theme's action gradient (see material3.css): app chrome that should follow the person's
+ * theme — the send button, loading and working indicators, usage meters — paints with it. */
+export const ACTION_STOPS = ['var(--nomi-action-1)', 'var(--nomi-action-2)', 'var(--nomi-action-3)'];
+
+/** An agent's tone, or the theme's action gradient. */
+export type PaintTone = GradientTone | 'action';
+
+export function paintStops(tone: PaintTone): string[] {
+	return tone === 'action' ? ACTION_STOPS : GRADIENT_STOPS[tone];
+}
+
 /** A deep step of each tone for small marks (checks, dots) that need more contrast than a
  * gradient's light end gives. */
 export const TONE_ACCENT: Record<GradientTone, string> = {
