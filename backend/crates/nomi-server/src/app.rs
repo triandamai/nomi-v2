@@ -150,6 +150,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/money/budgets", put(money_routes::set_budget))
         .route("/api/money/period", put(money_routes::set_period))
         .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
+        .route("/api/connections", get(connections_routes::overview))
+        .route("/api/connections/hevy", get(connections_routes::get_hevy).put(connections_routes::connect_hevy).delete(connections_routes::disconnect_hevy))
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
         .route("/api/connections/google/callback", post(connections_routes::complete_google))

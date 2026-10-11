@@ -32,6 +32,7 @@ Nomi or another agent.
 | Reminders | `reminders` (fired by `reminders_worker`, no model call) | `add_reminder`, `show_reminders`, `edit_reminder`, `complete_reminder`, `remove_reminder` |
 | Files | none: reads attachments and voice notes in the message, then answers or delegates to the agent that owns the data | `delegate` (no tools of its own) |
 | Workspace | `workspace_connections` (per-user Google tokens, encrypted), `workspace_oauth_states`, `workspace_activity` | `gmail_search`, `gmail_read`, `gmail_draft`, `gmail_send`, `sheets_read`, `sheets_append`, `sheets_update`, `sheets_create`, `docs_read`, `docs_create`, `docs_append`, `drive_search`, `calendar_events`, `calendar_add_event` |
+| Health (Raga) | `health_connections` (per-user app keys, encrypted; Hevy first) | `hevy_workouts`, `hevy_workout`, `hevy_workout_count`, `hevy_workout_changes`, `hevy_log_workout`, `hevy_update_workout`, `hevy_routines`, `hevy_routine`, `hevy_create_routine`, `hevy_update_routine`, `hevy_routine_folders`, `hevy_create_routine_folder`, `hevy_find_exercises`, `hevy_create_exercise`, `hevy_exercise_history`, `hevy_body_measurements`, `hevy_log_body_measurement` |
 | Dynamic agents | `agent_records` (scoped per agent) | record tools + whatever the admin grants |
 
 Agent tasks scheduled for later ("every Monday, summarize my spending") remain the core

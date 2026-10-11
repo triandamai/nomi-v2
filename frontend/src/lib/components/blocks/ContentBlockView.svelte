@@ -8,6 +8,7 @@
 	import ReasoningDisclosure from './ReasoningDisclosure.svelte';
 	import ReminderBlock from './ReminderBlock.svelte';
 	import WorkspaceConnectCard from './WorkspaceConnectCard.svelte';
+	import ConnectorConnectCard from './ConnectorConnectCard.svelte';
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import QuestionsCard from './QuestionsCard.svelte';
@@ -45,6 +46,8 @@
 	<ReminderBlock {block} />
 {:else if block.kind === 'workspace_connect'}
 	<WorkspaceConnectCard {block} />
+{:else if block.kind === 'connector_connect'}
+	<ConnectorConnectCard {block} />
 {:else if block.kind === 'project_link'}
 	<ProjectLinkCard {block} />
 {:else if block.kind === 'questions'}

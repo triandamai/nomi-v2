@@ -28,6 +28,8 @@ export type ContentBlock =
 	| { kind: 'todo_list'; items: TodoItem[] }
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
 	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
+	/** A connector the request needs (Connections → its page); `reason` is not_connected or key_rejected. */
+	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
 	| {
@@ -700,4 +702,18 @@ export interface AdminUsage {
 		spend_usd: number;
 	}[];
 	embedding_models: { provider: string; model_id: string; tokens: number; calls: number; estimated_calls: number; people: number; current: boolean }[];
+}
+
+/** A connected health or fitness app (Connections → Hevy). */
+export interface HealthConnection {
+	provider: string;
+	account_name: string | null;
+	connected_at: string;
+	last_used_at: string | null;
+}
+
+/** Every connector's state for the Connections list. */
+export interface ConnectionsOverview {
+	google: { configured: boolean; email: string | null; services: string[] };
+	hevy: HealthConnection | null;
 }

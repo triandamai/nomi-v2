@@ -67,5 +67,5 @@ export function connectLink(services: string[], resumeSessionId?: string | null)
 	const known = services.filter(isWorkspaceService);
 	if (known.length) params.set('services', known.join(','));
 	if (resumeSessionId) params.set('resume', resumeSessionId);
-	return `/connections?${params}`;
+	return `/connections/google?${params}`;
 }

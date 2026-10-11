@@ -136,6 +136,13 @@ pub enum ContentBlock {
         reason: String,
         services: Vec<String>,
     },
+    /// A connector (Connections) the request needs isn't connected, or its key stopped working:
+    /// a card linking to its setup page. `connector` is its id ("hevy"); `reason` is
+    /// "not_connected" or "key_rejected".
+    ConnectorConnect {
+        connector: String,
+        reason: String,
+    },
     /// The person's allowance on Nomi's models ran out, so this reply couldn't be written: a card
     /// saying so, with where to go next (their own key, or a bigger plan).
     QuotaNotice {
