@@ -102,7 +102,7 @@
 						<span class="plan-chip">{usage.plan.name}</span>
 					</div>
 					<span class="hero__value">{formatShare(share)}</span>
-					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'glow'} label={m.usage_progress_label({ share: formatShare(share) })} />
+					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'action'} label={m.usage_progress_label({ share: formatShare(share) })} />
 					<span class="hero__delta">
 						{m.usage_of_tokens({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}
 						{#if isCurrent}· {m.billing_resets({ date: resetsOn })}{/if}
@@ -536,7 +536,7 @@
 	.bars__fill {
 		height: 20px;
 		border-radius: 0 4px 4px 0;
-		background: var(--nomi-chart-money);
+		background: var(--nomi-chart);
 	}
 	.bars__value {
 		flex: none;
@@ -564,7 +564,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.daychart__bar {
-		fill: var(--nomi-chart-money);
+		fill: var(--nomi-chart);
 		transition: opacity var(--nomi-motion-effects-fast);
 	}
 	.daychart__bar--dim {

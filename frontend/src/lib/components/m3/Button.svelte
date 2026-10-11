@@ -124,8 +124,8 @@
 
 	/* The hero action. Use at most one per screen — gradient is a material, not a fill style. */
 	.m3-button--gradient {
-		background: var(--nomi-gradient-glow);
-		color: var(--nomi-on-gradient-glow);
+		background: var(--nomi-gradient-action);
+		color: var(--nomi-on-action);
 	}
 	.m3-button--gradient:not(:disabled):hover {
 		filter: saturate(1.15) brightness(1.03);

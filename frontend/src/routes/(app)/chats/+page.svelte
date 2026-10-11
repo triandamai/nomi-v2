@@ -88,19 +88,16 @@
 		{:else}
 			<ul class="cards">
 				{#each shown as session (session.id)}
-					<li class="card" class:card--project={!!session.project_id}>
-						<div class="card__top">
-							<span class="card__kind">
-								{#if session.project_id}<IconFolder size={14} />{:else}<IconChatBubble size={14} />{/if}
-								{session.project_id ? m.session_project() : m.session_chat()}
-							</span>
-							<span class="card__time">{timeAgo(session.updated_at)}</span>
-							<SessionActions {session} />
-						</div>
+					<li class="card">
 						<a class="card__link" href={href(session)} data-sveltekit-reload={session.project_id ? true : undefined}>
 							<span class="card__title">{title(session)}</span>
 						</a>
 						<p class="card__preview">{previewText(session.last_message?.content)}</p>
+						<p class="card__meta">
+							{#if session.project_id}<span class="card__kind"><IconFolder size={14} />{m.session_project()}</span>{/if}
+							<span class="card__time">{timeAgo(session.updated_at)}</span>
+						</p>
+						<div class="card__menu"><SessionActions {session} /></div>
 					</li>
 				{/each}
 			</ul>
@@ -229,54 +226,27 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		min-height: 148px;
-		padding: 14px 8px 16px 16px;
+		gap: 6px;
+		min-height: 140px;
+		padding: 16px 16px 14px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface);
-		transition: border-color 150ms ease-out, background-color 150ms ease-out;
+		transition: background-color 150ms ease-out;
 	}
 	.card:hover {
-		border-color: var(--md-sys-color-outline);
-		background: var(--md-sys-color-surface-container-lowest);
+		background: var(--md-sys-color-surface-container-low);
 	}
 	.card:has(.card__link:focus-visible) {
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
-	}
-	/* A project gets a thin accent edge, so the two kinds read apart at a glance. */
-	.card--project {
-		box-shadow: inset 3px 0 0 var(--md-sys-color-secondary);
-	}
-	.card__top {
-		position: relative;
-		z-index: 1;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-height: 32px;
-		font-size: 0.75rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.card__kind {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		text-transform: uppercase;
-	}
-	.card__time {
-		margin-left: auto;
-		font-variant-numeric: tabular-nums;
 	}
 	.card__link {
 		color: var(--md-sys-color-on-surface);
 		text-decoration: none;
 		outline: none;
 	}
-	/* The whole card opens the chat; its menu sits above this. */
+	/* The whole card opens the chat; the menu sits above this. */
 	.card__link::after {
 		content: '';
 		position: absolute;
@@ -286,10 +256,10 @@
 	.card__title {
 		display: -webkit-box;
 		overflow: hidden;
-		padding-right: 8px;
-		font-size: 1.0625rem;
-		font-weight: 700;
-		line-height: 1.3;
+		padding-right: 36px;
+		font-size: 1rem;
+		font-weight: 650;
+		line-height: 1.35;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
@@ -297,13 +267,36 @@
 	.card__preview {
 		display: -webkit-box;
 		overflow: hidden;
-		margin: auto 0 0;
-		padding-right: 8px;
+		margin: 0;
 		font-size: 0.875rem;
 		line-height: 1.45;
 		color: var(--md-sys-color-on-surface-variant);
 		-webkit-line-clamp: 3;
 		line-clamp: 3;
 		-webkit-box-orient: vertical;
+	}
+	.card__meta {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin: auto 0 0;
+		padding-top: 6px;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.card__kind {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.card__time {
+		margin-left: auto;
+		font-variant-numeric: tabular-nums;
+	}
+	.card__menu {
+		position: absolute;
+		z-index: 1;
+		top: 8px;
+		right: 6px;
 	}
 </style>

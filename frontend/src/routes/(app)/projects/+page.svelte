@@ -166,18 +166,14 @@
 		{:else}
 			<ul class="grid">
 				{#each shown as project (project.id)}
-					<li class="card card--{project.status}">
-						<div class="card__top">
-							<span class="card__mark" aria-hidden="true">{project.name.trim().charAt(0).toUpperCase() || '?'}</span>
-							<span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
-						</div>
+					<li class="card">
 						<a class="card__link" href="/projects/session/{project.session_id}" data-sveltekit-reload>
 							<span class="card__name">{project.name}</span>
 						</a>
-						<p class="card__description">{project.description ?? m.projects_no_description()}</p>
+						<p class="card__description" class:card__description--empty={!project.description}>{project.description ?? m.projects_no_description()}</p>
 						<p class="card__meta">
-							<span>{m.projects_by({ name: project.created_by })}</span>
-							<span>{timeAgo(project.updated_at)}</span>
+							<span class="card__status card__status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
+							<span>{m.projects_by({ name: project.created_by })} · {timeAgo(project.updated_at)}</span>
 							{#if project.open_issues > 0}<span class="card__issues">{issuesLabel(project.open_issues)}</span>{/if}
 						</p>
 					</li>
@@ -417,46 +413,20 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
-		min-height: 188px;
+		gap: 6px;
+		min-height: 156px;
 		padding: 16px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface);
-		transition: border-color 150ms ease-out, background-color 150ms ease-out;
+		transition: background-color 150ms ease-out;
 	}
 	.card:hover {
-		border-color: var(--md-sys-color-outline);
-		background: var(--md-sys-color-surface-container-lowest);
+		background: var(--md-sys-color-surface-container-low);
 	}
 	.card:has(.card__link:focus-visible) {
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
-	}
-	.card__top {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.card__mark {
-		display: grid;
-		place-items: center;
-		width: 36px;
-		height: 36px;
-		border-radius: 8px;
-		background: var(--md-sys-color-surface-container-highest);
-		color: var(--md-sys-color-on-surface);
-		font-size: 1.0625rem;
-		font-weight: 700;
-	}
-	.card--ready .card__mark {
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
-	}
-	.card--building .card__mark {
-		background: var(--md-sys-color-tertiary-container);
-		color: var(--md-sys-color-on-tertiary-container);
 	}
 	.card__link {
 		color: var(--md-sys-color-on-surface);
@@ -472,8 +442,8 @@
 	.card__name {
 		display: -webkit-box;
 		overflow: hidden;
-		font-size: 1.125rem;
-		font-weight: 700;
+		font-size: 1.0625rem;
+		font-weight: 650;
 		line-height: 1.3;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
@@ -490,15 +460,26 @@
 		line-clamp: 3;
 		-webkit-box-orient: vertical;
 	}
+	.card__description--empty {
+		font-style: italic;
+	}
 	.card__meta {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 4px 12px;
 		margin: auto 0 0;
-		padding-top: 10px;
-		border-top: 1px solid var(--md-sys-color-outline-variant);
+		padding-top: 8px;
 		font-size: 0.8125rem;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	/* Status as plain text: only "Ready" takes the accent. */
+	.card__status {
+		font-weight: 600;
+		color: var(--md-sys-color-on-surface);
+	}
+	.card__status--ready {
+		color: var(--md-sys-color-primary);
 	}
 	.card__issues {
 		margin-left: auto;
