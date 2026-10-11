@@ -20,12 +20,15 @@ pub struct AdminLlmModel {
     pub input_usd_per_mtok: Option<f64>,
     /// USD per million output tokens.
     pub output_usd_per_mtok: Option<f64>,
+    /// USD per million input tokens served from the provider's prompt cache; `None` charges
+    /// them at the full input price.
+    pub cached_input_usd_per_mtok: Option<f64>,
 }
 
 pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
          FROM admin_llm_models ORDER BY created_at",
     )
     .fetch_all(pool)
@@ -35,7 +38,7 @@ pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, 
 pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
          FROM admin_llm_models WHERE id = $1",
     )
     .bind(id)
@@ -46,7 +49,7 @@ pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<Admin
 pub async fn get_default_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
          FROM admin_llm_models WHERE is_default = true",
     )
     .fetch_optional(pool)
@@ -61,6 +64,7 @@ pub struct NewAdminLlmModel<'a> {
     pub base_url: Option<&'a str>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub cached_input_usd_per_mtok: Option<f64>,
     pub media_inputs: Option<Vec<String>>,
     pub updated_by: Uuid,
 }
@@ -74,10 +78,10 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
 
     sqlx::query_as::<_, AdminLlmModel>(
         "INSERT INTO admin_llm_models (label, provider, model_id, api_key_encrypted, base_url, is_default, updated_by, \
-                                       input_usd_per_mtok, output_usd_per_mtok, media_inputs) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+                                       input_usd_per_mtok, output_usd_per_mtok, media_inputs, cached_input_usd_per_mtok) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
          RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok",
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok",
     )
     .bind(input.label)
     .bind(input.provider)
@@ -89,6 +93,7 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
     .bind(input.input_usd_per_mtok)
     .bind(input.output_usd_per_mtok)
     .bind(input.media_inputs)
+    .bind(input.cached_input_usd_per_mtok)
     .fetch_one(pool)
     .await
 }
@@ -101,6 +106,7 @@ pub struct UpdateAdminLlmModel<'a> {
     pub base_url: Option<&'a str>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
+    pub cached_input_usd_per_mtok: Option<f64>,
     pub media_inputs: Option<Vec<String>>,
     pub updated_by: Uuid,
 }
@@ -115,10 +121,10 @@ pub async fn update_admin_llm_model(
          label = $2, provider = $3, model_id = $4, \
          api_key_encrypted = COALESCE($5, api_key_encrypted), \
          base_url = $6, updated_by = $7, updated_at = now(), \
-         input_usd_per_mtok = $8, output_usd_per_mtok = $9, media_inputs = $10 \
+         input_usd_per_mtok = $8, output_usd_per_mtok = $9, media_inputs = $10, cached_input_usd_per_mtok = $11 \
          WHERE id = $1 \
          RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok",
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok",
     )
     .bind(id)
     .bind(input.label)
@@ -130,6 +136,7 @@ pub async fn update_admin_llm_model(
     .bind(input.input_usd_per_mtok)
     .bind(input.output_usd_per_mtok)
     .bind(input.media_inputs)
+    .bind(input.cached_input_usd_per_mtok)
     .fetch_optional(pool)
     .await
 }
@@ -187,7 +194,7 @@ pub async fn set_default_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<(), 
 pub async fn get_files_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
          FROM admin_llm_models WHERE is_files_model = true",
     )
     .fetch_optional(pool)
@@ -212,7 +219,7 @@ pub async fn set_files_admin_llm_model(pool: &PgPool, id: Option<Uuid>) -> Resul
 pub async fn get_coding_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
          FROM admin_llm_models WHERE is_coding_model = true",
     )
     .fetch_optional(pool)

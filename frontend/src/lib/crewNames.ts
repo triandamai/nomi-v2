@@ -8,7 +8,13 @@ export const CREW_NAMES: Record<string, string> = {
 	planning: 'Rena',
 	coding: 'Koda',
 	workspace: 'Tara',
+	health: 'Raga',
 };
+
+/** The crew name for an agent_type (its type when it has none). */
+export function crewName(agentType: string): string {
+	return CREW_NAMES[agentType] ?? agentType;
+}
 
 /** agent_type by crew name, lowercased ("dana" → "money"). */
 export const CREW_TYPE_BY_NAME: Record<string, string> = Object.fromEntries(

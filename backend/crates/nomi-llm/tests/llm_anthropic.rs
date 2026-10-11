@@ -255,3 +255,42 @@ async fn non_success_status_is_returned_before_any_stream_is_produced() {
     let result = provider.complete_stream(text_request()).await;
     assert!(matches!(result, Err(LlmError::ProviderError(_))));
 }
+
+#[tokio::test]
+async fn the_prompt_is_marked_for_caching_and_cache_reads_are_reported() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "event: message_start\n",
+        "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":100,\"cache_creation_input_tokens\":200,\"cache_read_input_tokens\":5000}}}\n\n",
+        "event: content_block_start\n",
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+        "event: content_block_delta\n",
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n",
+        "event: content_block_stop\n",
+        "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+        "event: message_delta\n",
+        "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(body_partial_json(json!({
+            "system": [{"type": "text", "text": "be helpful", "cache_control": {"type": "ephemeral"}}],
+            "tools": [{"name": "get_weather", "cache_control": {"type": "ephemeral"}}],
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}]}]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicProvider::new(reqwest::Client::new(), "test-key".to_string(), "claude-haiku-4-5".to_string(), server.uri());
+    let mut request = text_request();
+    request.tools = vec![ToolDefinition { name: "get_weather".into(), description: "weather".into(), input_schema: json!({"type": "object"}) }];
+    let mut stream = provider.complete_stream(request).await.unwrap();
+    let mut events = Vec::new();
+    while let Some(event) = futures_util::StreamExt::next(&mut stream).await {
+        events.push(event.unwrap());
+    }
+    assert!(events.contains(&nomi_llm::StreamEvent::CacheUsage { cached_input_tokens: 5000 }));
+    // Every input token counts: uncached, written to the cache and read from it.
+    assert!(events.iter().any(|e| matches!(e, nomi_llm::StreamEvent::Done { input_tokens: 5300, output_tokens: 3, .. })));
+}

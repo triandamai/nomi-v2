@@ -97,6 +97,9 @@
 			<dt>{m.admin_usage_chat_tokens()}</dt>
 			<dd title={formatTokensFull(usage.chat.tokens)}>{formatTokens(usage.chat.tokens)}</dd>
 			<span class="tile__meta">{m.admin_usage_in_out({ input: formatTokens(usage.chat.input_tokens), output: formatTokens(usage.chat.output_tokens) })}</span>
+			{#if usage.chat.cached_input_tokens > 0}
+				<span class="tile__meta">{m.admin_usage_cached({ tokens: formatTokens(usage.chat.cached_input_tokens) })}</span>
+			{/if}
 		</div>
 		<div class="tile">
 			<dt>{m.billing_spend()}</dt>
@@ -203,7 +206,12 @@
 									<span class="num" title={formatTokensFull(row.tokens)}>{formatTokens(row.tokens)}</span>
 								</div>
 							</td>
-							<td class="num" title={formatTokensFull(row.input_tokens)}>{formatTokens(row.input_tokens)}</td>
+							<td class="num" title={formatTokensFull(row.input_tokens)}>
+								<span>
+									{formatTokens(row.input_tokens)}
+									{#if row.cached_input_tokens > 0}<span class="estimate">{m.admin_usage_cached_short({ tokens: formatTokens(row.cached_input_tokens) })}</span>{/if}
+								</span>
+							</td>
 							<td class="num" title={formatTokensFull(row.output_tokens)}>{formatTokens(row.output_tokens)}</td>
 							<td class="num">{formatTokensFull(row.calls)}</td>
 							<td class="num">{formatTokensFull(row.people)}</td>

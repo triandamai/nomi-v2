@@ -202,5 +202,6 @@ export function agentLook(agent: string | null | undefined): AgentLook {
 	if (key.includes('reminder')) return { shape: 'clover3', tone: 'citrus', motion: 'pulse' };
 	if (key === 'files') return { shape: 'soft-square', tone: 'slate', motion: 'wobble' };
 	if (key === 'workspace') return { shape: 'puffy7', tone: 'sky', motion: 'bounce' };
+	if (key === 'health') return { shape: 'burst16', tone: 'bloom', motion: 'pulse' };
 	return NOMI_LOOK;
 }

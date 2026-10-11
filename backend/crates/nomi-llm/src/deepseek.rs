@@ -168,6 +168,7 @@ impl LlmProvider for DeepSeekProvider {
             let mut open_indices: Vec<usize> = Vec::new();
             let mut stop_reason = StopReason::Other("unknown".to_string());
             let mut input_tokens: u32 = 0;
+            let mut cached_input_tokens: u32 = 0;
             let mut output_tokens: u32 = 0;
 
             loop {
@@ -177,6 +178,9 @@ impl LlmProvider for DeepSeekProvider {
                 };
 
                 if event.data == "[DONE]" {
+                    if cached_input_tokens > 0 {
+                        yield StreamEvent::CacheUsage { cached_input_tokens };
+                    }
                     yield StreamEvent::Done { stop_reason, input_tokens, output_tokens };
                     return;
                 }
@@ -187,6 +191,7 @@ impl LlmProvider for DeepSeekProvider {
                 if let Some(usage) = data.get("usage") {
                     if !usage.is_null() {
                         input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                        cached_input_tokens = usage.get("prompt_cache_hit_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                     }
                 }

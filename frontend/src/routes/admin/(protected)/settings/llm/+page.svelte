@@ -48,6 +48,7 @@
 	let modelId = $state('');
 	let inputPrice = $state('');
 	let outputPrice = $state('');
+	let cachedPrice = $state('');
 	let mediaMode = $state<'auto' | 'listed'>('auto');
 	let media = $state<MediaInput[]>([]);
 
@@ -72,6 +73,7 @@
 		modelId = '';
 		inputPrice = '';
 		outputPrice = '';
+		cachedPrice = '';
 		mediaMode = 'auto';
 		media = [];
 		resetSheetState();
@@ -87,6 +89,7 @@
 		modelId = model.model_id;
 		inputPrice = model.input_usd_per_mtok?.toString() ?? '';
 		outputPrice = model.output_usd_per_mtok?.toString() ?? '';
+		cachedPrice = model.cached_input_usd_per_mtok?.toString() ?? '';
 		mediaMode = model.media_inputs ? 'listed' : 'auto';
 		media = model.media_inputs ?? model.media_support;
 		resetSheetState();
@@ -313,7 +316,9 @@
 			<div class="prices__row">
 				<TextField id="input_usd_per_mtok" name="input_usd_per_mtok" label={m.llm_price_in()} type="number" inputmode="decimal" min="0" step="0.0001" bind:value={inputPrice} />
 				<TextField id="output_usd_per_mtok" name="output_usd_per_mtok" label={m.llm_price_out()} type="number" inputmode="decimal" min="0" step="0.0001" bind:value={outputPrice} />
+				<TextField id="cached_input_usd_per_mtok" name="cached_input_usd_per_mtok" label={m.llm_price_cached()} type="number" inputmode="decimal" min="0" step="0.0001" bind:value={cachedPrice} />
 			</div>
+			<p class="prices__hint">{m.llm_price_cached_hint()}</p>
 		</fieldset>
 		<fieldset class="prices">
 			<legend class="prices__legend">{m.llm_opens_title()}</legend>

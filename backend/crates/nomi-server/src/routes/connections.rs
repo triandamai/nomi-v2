@@ -147,3 +147,94 @@ pub async fn disconnect_google(State(state): State<AppState>, AuthClaims(claims)
     connection::disconnect(&mut conn, &state.http_client, config.as_ref(), &state.settings_key, claims.sub).await.map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Every connector's state for this person (the Connections list).
+#[derive(Serialize)]
+pub struct ConnectionsOverview {
+    pub google: GoogleOverview,
+    pub hevy: Option<nomi_agent_health::connection::HealthConnection>,
+}
+
+#[derive(Serialize)]
+pub struct GoogleOverview {
+    pub configured: bool,
+    pub email: Option<String>,
+    pub services: Vec<String>,
+}
+
+/// `GET /api/connections`
+pub async fn overview(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<ConnectionsOverview>, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let google = connection::status(&mut conn, claims.sub).await.map_err(internal)?;
+    let hevy = nomi_agent_health::connection::status(&mut conn, claims.sub, nomi_agent_health::connection::HEVY).await.map_err(internal)?;
+    Ok(Json(ConnectionsOverview {
+        google: GoogleOverview {
+            configured: GoogleConfig::from_env().is_some(),
+            email: google.as_ref().map(|g| g.email.clone()),
+            services: google.map(|g| g.services).unwrap_or_default(),
+        },
+        hevy,
+    }))
+}
+
+#[derive(Serialize)]
+pub struct HevyResponse {
+    pub connection: Option<nomi_agent_health::connection::HealthConnection>,
+}
+
+/// `GET /api/connections/hevy`
+pub async fn get_hevy(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<HevyResponse>, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let connection = nomi_agent_health::connection::status(&mut conn, claims.sub, nomi_agent_health::connection::HEVY).await.map_err(internal)?;
+    Ok(Json(HevyResponse { connection }))
+}
+
+#[derive(Deserialize)]
+pub struct HevyKeyRequest {
+    pub api_key: String,
+}
+
+/// A Hevy route's error: `{"error": <code>, "detail"?}`, worded on the page in the person's language.
+type HevyRouteError = (StatusCode, Json<serde_json::Value>);
+
+fn hevy_error(status: StatusCode, code: &str, detail: Option<String>) -> HevyRouteError {
+    (status, Json(serde_json::json!({ "error": code, "detail": detail })))
+}
+
+/// `PUT /api/connections/hevy`: checks the key with Hevy, then saves it.
+pub async fn connect_hevy(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<HevyKeyRequest>,
+) -> Result<Json<HevyResponse>, HevyRouteError> {
+    use nomi_agent_health::connection::ConnectError;
+    use nomi_agent_health::hevy::HevyError;
+    let key = req.api_key.trim();
+    if key.is_empty() || key.len() > 200 {
+        return Err(hevy_error(StatusCode::BAD_REQUEST, "missing_key", None));
+    }
+    let mut conn = state.pool.acquire().await.map_err(|e| {
+        tracing::error!(error = %e, "hevy: no connection");
+        hevy_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", None)
+    })?;
+    match nomi_agent_health::connection::connect_hevy(&mut conn, &state.http_client, &nomi_agent_health::hevy::base_url(), &state.settings_key, claims.sub, key).await {
+        Ok(connection) => Ok(Json(HevyResponse { connection: Some(connection) })),
+        Err(ConnectError::Rejected(HevyError::KeyRejected)) => Err(hevy_error(StatusCode::BAD_REQUEST, "key_rejected", None)),
+        Err(ConnectError::Rejected(HevyError::Unreachable(why))) => {
+            tracing::warn!(error = %why, "hevy: couldn't check a key");
+            Err(hevy_error(StatusCode::BAD_GATEWAY, "unreachable", None))
+        }
+        Err(ConnectError::Rejected(other)) => Err(hevy_error(StatusCode::BAD_REQUEST, "rejected", Some(other.to_string()))),
+        Err(ConnectError::Db(e)) => {
+            tracing::error!(error = %e, "hevy: couldn't save the key");
+            Err(hevy_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", None))
+        }
+    }
+}
+
+/// `DELETE /api/connections/hevy`
+pub async fn disconnect_hevy(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<StatusCode, (StatusCode, String)> {
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    nomi_agent_health::connection::disconnect(&mut conn, claims.sub, nomi_agent_health::connection::HEVY).await.map_err(internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}

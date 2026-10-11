@@ -25,6 +25,8 @@ pub struct ChatTotals {
     pub tokens: i64,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    /// Input served from providers' prompt caches (in `input_tokens` too, billed for less).
+    pub cached_input_tokens: i64,
     /// Tokens sent with people's own API keys (in `tokens` too; never billed).
     pub own_key_tokens: i64,
     pub calls: i64,
@@ -63,6 +65,7 @@ pub struct AdminModelUsage {
     pub source: String,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    pub cached_input_tokens: i64,
     pub tokens: i64,
     pub calls: i64,
     pub people: i64,
@@ -95,6 +98,7 @@ pub async fn report(pool: &PgPool, month: Option<&str>, current_embedding: Optio
         "SELECT COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS tokens, \
                 COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens, \
                 COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens, \
+                COALESCE(SUM(cached_input_tokens), 0)::bigint AS cached_input_tokens, \
                 COALESCE(SUM(input_tokens + output_tokens) FILTER (WHERE source = 'own_key'), 0)::bigint AS own_key_tokens, \
                 count(*) AS calls, count(DISTINCT user_id) AS people, COALESCE(SUM(cost_usd), 0)::float8 AS spend_usd \
          FROM llm_usage WHERE {IN_MONTH}"
@@ -128,6 +132,7 @@ pub async fn report(pool: &PgPool, month: Option<&str>, current_embedding: Optio
                 (u.admin_model_id IS NOT NULL AND m.id IS NULL) AS deleted, \
                 u.provider, u.model_id, u.source, \
                 SUM(u.input_tokens)::bigint AS input_tokens, SUM(u.output_tokens)::bigint AS output_tokens, \
+                SUM(u.cached_input_tokens)::bigint AS cached_input_tokens, \
                 SUM(u.input_tokens + u.output_tokens)::bigint AS tokens, count(*) AS calls, \
                 count(DISTINCT u.user_id) AS people, SUM(u.cost_usd)::float8 AS spend_usd \
          FROM (SELECT * FROM llm_usage WHERE {IN_MONTH}) u \

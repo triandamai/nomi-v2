@@ -242,6 +242,7 @@ impl LlmProvider for GeminiProvider {
             let mut thinking_index: Option<usize> = None;
             let mut saw_function_call = false;
             let mut input_tokens: u32 = 0;
+            let mut cached_input_tokens: u32 = 0;
             let mut output_tokens: u32 = 0;
             let mut finish_reason: Option<String> = None;
 
@@ -256,6 +257,7 @@ impl LlmProvider for GeminiProvider {
 
                 if let Some(usage) = data.get("usageMetadata") {
                     input_tokens = usage.get("promptTokenCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                    cached_input_tokens = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                     output_tokens = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 }
 
@@ -338,6 +340,9 @@ impl LlmProvider for GeminiProvider {
                 }
             };
 
+            if cached_input_tokens > 0 {
+                yield StreamEvent::CacheUsage { cached_input_tokens };
+            }
             yield StreamEvent::Done { stop_reason, input_tokens, output_tokens };
         };
 

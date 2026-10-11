@@ -12,6 +12,7 @@ pub fn crew_name(agent_type: &str) -> Option<&'static str> {
         "planning" => "Rena",
         "coding" => "Koda",
         "workspace" => "Tara",
+        "health" => "Raga",
         _ => return None,
     })
 }

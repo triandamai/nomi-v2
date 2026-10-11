@@ -28,6 +28,8 @@ export type ContentBlock =
 	| { kind: 'todo_list'; items: TodoItem[] }
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
 	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
+	/** A connector the request needs (Connections → its page); `reason` is not_connected or key_rejected. */
+	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
 	| {
@@ -144,6 +146,8 @@ export interface AdminLlmModel {
 	/** USD per million tokens; null until set. */
 	input_usd_per_mtok: number | null;
 	output_usd_per_mtok: number | null;
+	/** Input read from the provider's prompt cache; null charges it at the input price. */
+	cached_input_usd_per_mtok: number | null;
 	/** Reads files people's own models can't open. */
 	is_files_model: boolean;
 	/** What Koda builds projects with, unless the person picked another. */
@@ -679,7 +683,7 @@ export interface UsageMonth {
 export interface AdminUsage {
 	month: string;
 	current_month: string;
-	chat: { tokens: number; input_tokens: number; output_tokens: number; own_key_tokens: number; calls: number; people: number; spend_usd: number };
+	chat: { tokens: number; input_tokens: number; output_tokens: number; cached_input_tokens: number; own_key_tokens: number; calls: number; people: number; spend_usd: number };
 	embedding: { tokens: number; calls: number; estimated_calls: number };
 	by_day: { date: string; chat_tokens: number; embedding_tokens: number }[];
 	models: {
@@ -691,10 +695,25 @@ export interface AdminUsage {
 		source: 'nomi' | 'own_key';
 		input_tokens: number;
 		output_tokens: number;
+		cached_input_tokens: number;
 		tokens: number;
 		calls: number;
 		people: number;
 		spend_usd: number;
 	}[];
 	embedding_models: { provider: string; model_id: string; tokens: number; calls: number; estimated_calls: number; people: number; current: boolean }[];
+}
+
+/** A connected health or fitness app (Connections → Hevy). */
+export interface HealthConnection {
+	provider: string;
+	account_name: string | null;
+	connected_at: string;
+	last_used_at: string | null;
+}
+
+/** Every connector's state for the Connections list. */
+export interface ConnectionsOverview {
+	google: { configured: boolean; email: string | null; services: string[] };
+	hevy: HealthConnection | null;
 }

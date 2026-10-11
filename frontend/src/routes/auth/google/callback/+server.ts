@@ -34,5 +34,5 @@ export const GET: RequestHandler = async ({ url, cookies, fetch }) => {
 	cookies.set('user_email', result.email, { httpOnly: false, path: '/', sameSite: 'lax' });
 	await settleLanguageAfterSignIn(fetch, cookies, result.is_new);
 	// New here: offer to let Workspace use this same Google account.
-	redirect(303, result.is_new ? '/connections?welcome=1' : '/');
+	redirect(303, result.is_new ? '/connections/google?welcome=1' : '/');
 };

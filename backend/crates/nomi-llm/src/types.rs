@@ -31,7 +31,7 @@ pub enum ContentBlock {
     Media { media_type: String, data: String, name: String },
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
     pub content: Vec<ContentBlock>,
@@ -137,6 +137,10 @@ pub enum StreamEvent {
     ThinkingSignature { index: usize, signature: String },
     ToolInputDelta { index: usize, partial_json: String },
     ContentBlockDone { index: usize },
+    /// How much of the request's input the provider served from its prompt cache (billed at a
+    /// fraction of the input price). Sent just before `Done` by providers that report it;
+    /// `Done.input_tokens` always counts every input token, cached or not.
+    CacheUsage { cached_input_tokens: u32 },
     Done { stop_reason: StopReason, input_tokens: u32, output_tokens: u32 },
 }
 
