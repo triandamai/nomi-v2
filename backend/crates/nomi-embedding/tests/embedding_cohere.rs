@@ -108,3 +108,20 @@ async fn provider_name_and_model_id_are_exposed() {
     assert_eq!(provider.provider_name(), "cohere");
     assert_eq!(provider.model_id(), "embed-v4.0");
 }
+
+#[tokio::test]
+async fn the_billed_tokens_cohere_reports_come_back_with_the_vector() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v2/embed"))
+        .and(body_partial_json(json!({ "input_type": "search_query" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "embeddings": { "float": [[0.5]] },
+            "meta": { "billed_units": { "input_tokens": 4 } }
+        })))
+        .mount(&server)
+        .await;
+    let provider = CohereEmbeddingProvider::new(reqwest::Client::new(), "k".into(), "embed-v4.0".into(), server.uri());
+    let embedded = provider.embed_counted("four tokens here", true).await.unwrap();
+    assert_eq!((embedded.vector, embedded.tokens), (vec![0.5f32], Some(4)));
+}

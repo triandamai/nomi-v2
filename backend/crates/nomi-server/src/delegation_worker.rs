@@ -131,7 +131,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             let purpose = crate::bootstrap::purpose_for_agent(&claimed.target_agent_type);
             let provider = crate::bootstrap::build_llm_provider_for(&pool, claimed.user_id, &settings_key, http_client.clone(), purpose).await;
             let embedding_provider =
-                build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone()).await;
+                build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(claimed.user_id)).await;
 
             let mut conn = match pool.acquire().await {
                 Ok(conn) => conn,

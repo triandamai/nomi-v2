@@ -63,6 +63,34 @@ async fn the_newest_messages_image_is_shown_to_the_model_and_older_files_become_
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn a_file_is_shown_only_until_the_person_writes_again(pool: PgPool) {
+    let me = user(&pool).await;
+    let photo = stored(&pool, me, "image", "image/png", "ready", Some("a receipt for 12.50"), b"\x89PNG").await;
+
+    // Within the turn (tool results after the message) the picture is still there.
+    let mut messages = vec![
+        said(format!("log this\n\n{}", tag(photo, "image", "image/png"))),
+        LlmMessage { role: LlmRole::Assistant, content: vec![ContentBlock::ToolUse { id: "t1".into(), name: "x".into(), input: json!({}), thought_signature: None }] },
+        LlmMessage { role: LlmRole::User, content: vec![ContentBlock::ToolResult { tool_use_id: "t1".into(), content: "ok".into(), is_error: false }] },
+    ];
+    let mut conn = pool.acquire().await.unwrap();
+    expand_messages(&mut conn, me, &mut messages).await;
+    assert!(messages[0].content.iter().any(|b| matches!(b, ContentBlock::Media { .. })));
+
+    // Once they've written again, it's text only, so a model that can't open pictures keeps
+    // answering instead of the files model.
+    let mut messages = vec![
+        said(format!("log this\n\n{}", tag(photo, "image", "image/png"))),
+        LlmMessage { role: LlmRole::Assistant, content: vec![ContentBlock::Text { text: "Logged".into() }] },
+        said("thanks, what's my budget left?".into()),
+    ];
+    expand_messages(&mut conn, me, &mut messages).await;
+    assert!(messages.iter().flat_map(|m| &m.content).all(|b| !matches!(b, ContentBlock::Media { .. })));
+    let ContentBlock::Text { text } = &messages[0].content[0] else { panic!() };
+    assert!(text.contains("a receipt for 12.50"), "{text}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn someone_elses_file_is_never_opened(pool: PgPool) {
     let owner = user(&pool).await;
     let other = user(&pool).await;

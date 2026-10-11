@@ -10,6 +10,18 @@ pub use types::EmbeddingError;
 
 use async_trait::async_trait;
 
+/// An embedding and the tokens the provider counted for it (`None` when its API doesn't say).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Embedded {
+    pub vector: Vec<f32>,
+    pub tokens: Option<u32>,
+}
+
+/// About how many tokens `text` is, for providers that don't report it: ~4 characters each.
+pub fn estimate_tokens(text: &str) -> u32 {
+    (text.chars().count() as u32).div_ceil(4).max(1)
+}
+
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     /// Embed text for storage — this is the "document" side of an asymmetric model.
@@ -20,6 +32,13 @@ pub trait EmbeddingProvider: Send + Sync {
     /// override this; everyone else inherits the default, which just calls `embed`.
     async fn embed_for_query(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.embed(text).await
+    }
+
+    /// [`embed`](Self::embed) or [`embed_for_query`](Self::embed_for_query), with the tokens the
+    /// provider counted. Providers whose API reports usage override this.
+    async fn embed_counted(&self, text: &str, for_query: bool) -> Result<Embedded, EmbeddingError> {
+        let vector = if for_query { self.embed_for_query(text).await? } else { self.embed(text).await? };
+        Ok(Embedded { vector, tokens: None })
     }
 
     /// A short, fixed identifier for which provider this is (e.g. "openai", "gemini") —

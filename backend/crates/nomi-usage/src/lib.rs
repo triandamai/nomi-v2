@@ -5,7 +5,11 @@
 //! Spend uses the admin model's price at the time of the call. Calls made with the person's own
 //! API key count as usage but never as spend, and don't use up the plan's allowance.
 
+pub mod admin;
+pub mod embedding;
 pub mod plans;
+
+pub use embedding::MeteredEmbeddingProvider;
 
 use std::sync::Arc;
 
@@ -155,6 +159,10 @@ pub struct DayUsage {
 
 #[derive(Debug, Clone, Serialize, PartialEq, sqlx::FromRow)]
 pub struct ModelUsage {
+    /// The admin model, for Nomi's own models: usage is kept together by it, so a renamed model
+    /// shows its whole history under its current name.
+    pub admin_model_id: Option<Uuid>,
+    /// The model's current name (or, for a deleted or own-key model, the last one it was used under).
     pub label: String,
     pub provider: String,
     pub model_id: String,
@@ -181,7 +189,7 @@ const IN_MONTH: &str = "user_id = $1 \
     AND created_at >= (($3 || '-01')::timestamp AT TIME ZONE $2) \
     AND created_at < ((($3 || '-01')::timestamp + interval '1 month') AT TIME ZONE $2)";
 
-fn valid_month(month: &str) -> bool {
+pub(crate) fn valid_month(month: &str) -> bool {
     month.len() == 7 && chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").is_ok()
 }
 
@@ -231,9 +239,11 @@ pub async fn month(pool: &PgPool, user_id: Uuid, month: Option<&str>) -> Result<
     .await?;
 
     let by_model: Vec<ModelUsage> = sqlx::query_as(&format!(
-        "SELECT model_label AS label, provider, model_id, source, \
-                SUM(input_tokens + output_tokens)::bigint AS tokens, count(*) AS calls, SUM(cost_usd)::float8 AS spend_usd \
-         FROM llm_usage WHERE {IN_MONTH} GROUP BY 1, 2, 3, 4 ORDER BY tokens DESC"
+        "SELECT u.admin_model_id, COALESCE(m.label, (array_agg(u.model_label ORDER BY u.created_at DESC))[1]) AS label, \
+                u.provider, u.model_id, u.source, \
+                SUM(u.input_tokens + u.output_tokens)::bigint AS tokens, count(*) AS calls, SUM(u.cost_usd)::float8 AS spend_usd \
+         FROM (SELECT * FROM llm_usage WHERE {IN_MONTH}) u LEFT JOIN admin_llm_models m ON m.id = u.admin_model_id \
+         GROUP BY u.admin_model_id, m.id, m.label, u.provider, u.model_id, u.source ORDER BY tokens DESC"
     ))
     .bind(user_id)
     .bind(&tz)

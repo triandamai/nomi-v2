@@ -121,7 +121,7 @@ pub async fn edit_my_memory(
     Json(req): Json<EditMemoryRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     use nomi_agent_core::memory::{edit, EditMemoryError};
-    let embedder = crate::bootstrap::build_embedding_provider_from_settings_or_env(&state.pool, &state.settings_key, state.http_client.clone()).await;
+    let embedder = crate::bootstrap::build_embedding_provider_from_settings_or_env(&state.pool, &state.settings_key, state.http_client.clone(), Some(claims.sub)).await;
     edit(&state.pool, embedder.as_ref(), claims.sub, memory_id, &req.content, req.kind.as_deref()).await.map_err(|e| match e {
         EditMemoryError::NotFound => (StatusCode::NOT_FOUND, e.to_string()),
         EditMemoryError::InvalidText | EditMemoryError::InvalidKind => (StatusCode::BAD_REQUEST, e.to_string()),

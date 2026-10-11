@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::types::EmbeddingError;
-use super::EmbeddingProvider;
+use super::{Embedded, EmbeddingProvider};
 
 /// The width of `memory_items.embedding`.
 const STORED_DIMENSIONS: u32 = 1536;
@@ -51,6 +51,10 @@ pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str
 #[async_trait]
 impl EmbeddingProvider for OpenAiEmbeddingProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        Ok(self.embed_counted(text, false).await?.vector)
+    }
+
+    async fn embed_counted(&self, text: &str, _for_query: bool) -> Result<Embedded, EmbeddingError> {
         let mut body = json!({
             "model": self.model,
             "input": text,
@@ -88,14 +92,16 @@ impl EmbeddingProvider for OpenAiEmbeddingProvider {
             .and_then(|e| e.as_array())
             .ok_or_else(|| EmbeddingError::ParseError("missing data[0].embedding".to_string()))?;
 
-        embedding
+        let vector = embedding
             .iter()
             .map(|v| {
                 v.as_f64()
                     .map(|f| f as f32)
                     .ok_or_else(|| EmbeddingError::ParseError("embedding element is not a number".to_string()))
             })
-            .collect()
+            .collect::<Result<Vec<f32>, _>>()?;
+        let tokens = body.pointer("/usage/prompt_tokens").or_else(|| body.pointer("/usage/total_tokens")).and_then(|v| v.as_u64()).map(|t| t as u32);
+        Ok(Embedded { vector, tokens })
     }
 
     fn provider_name(&self) -> &'static str {

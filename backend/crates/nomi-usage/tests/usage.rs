@@ -106,3 +106,74 @@ async fn a_failed_call_records_nothing(pool: PgPool) {
     assert!(provider.complete_stream(request()).await.is_err());
     assert_eq!(nomi_usage::month(&pool, ana, None).await.unwrap().calls, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_renamed_model_keeps_its_usage_together_under_its_new_name(pool: PgPool) {
+    let ana = person(&pool, "UTC").await;
+    let model = priced_model(&pool, ana).await;
+    let inner = Arc::new(FakeLlmProvider::sequence(vec![reply(100, 10), reply(200, 20)]));
+    let provider = MeteredProvider::new(inner, pool.clone(), ana, tag(Some(model), false));
+    call(&provider).await;
+    sqlx::query("UPDATE admin_llm_models SET label = 'Nomi Fast' WHERE id = $1").bind(model).execute(&pool).await.unwrap();
+    // The tag a later turn builds carries the new name.
+    let inner = Arc::new(FakeLlmProvider::success(reply(200, 20)));
+    let renamed = ModelTag { label: "Nomi Fast".into(), ..tag(Some(model), false) };
+    call(&MeteredProvider::new(inner, pool.clone(), ana, renamed)).await;
+
+    let usage = nomi_usage::month(&pool, ana, None).await.unwrap();
+    assert_eq!(usage.by_model.len(), 1, "{:?}", usage.by_model);
+    assert_eq!(usage.by_model[0].admin_model_id, Some(model));
+    assert_eq!(usage.by_model[0].label, "Nomi Fast");
+    assert_eq!((usage.by_model[0].tokens, usage.by_model[0].calls), (330, 2));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn switching_models_shows_each_one_and_a_deleted_model_keeps_its_rows(pool: PgPool) {
+    let ana = person(&pool, "UTC").await;
+    let gemini = priced_model(&pool, ana).await;
+    let deepseek: Uuid = sqlx::query_scalar(
+        "INSERT INTO admin_llm_models (label, provider, model_id, api_key_encrypted, is_default, updated_by) \
+         VALUES ('DeepSeek', 'deepseek', 'deepseek-chat', '\\x00', false, $1) RETURNING id",
+    )
+    .bind(ana)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    call(&MeteredProvider::new(Arc::new(FakeLlmProvider::success(reply(100, 10))), pool.clone(), ana, tag(Some(gemini), false))).await;
+    let deepseek_tag = ModelTag { admin_model_id: Some(deepseek), own_key: false, label: "DeepSeek".into(), provider: "deepseek".into(), model_id: "deepseek-chat".into() };
+    call(&MeteredProvider::new(Arc::new(FakeLlmProvider::success(reply(500, 50))), pool.clone(), ana, deepseek_tag)).await;
+
+    let usage = nomi_usage::month(&pool, ana, None).await.unwrap();
+    let labels: Vec<&str> = usage.by_model.iter().map(|m| m.label.as_str()).collect();
+    assert_eq!(labels, ["DeepSeek", "Nomi Standard"]);
+
+    sqlx::query("DELETE FROM admin_llm_models WHERE id = $1").bind(deepseek).execute(&pool).await.unwrap();
+    let report = nomi_usage::admin::report(&pool, None, None).await.unwrap();
+    let gone = report.models.iter().find(|m| m.admin_model_id == Some(deepseek)).expect("a deleted model's usage stays");
+    assert!(gone.deleted);
+    assert_eq!((gone.label.as_str(), gone.tokens, gone.people), ("DeepSeek", 550, 1));
+    assert_eq!(report.chat.tokens, 660);
+    assert_eq!(report.chat.people, 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn embeddings_are_metered_with_the_providers_count_or_an_estimate(pool: PgPool) {
+    use nomi_embedding::EmbeddingProvider;
+    let ana = person(&pool, "UTC").await;
+    let fake: Arc<dyn EmbeddingProvider> = Arc::new(nomi_embedding::fake::FakeEmbeddingProvider);
+    let metered = nomi_usage::MeteredEmbeddingProvider::new(fake, pool.clone(), Some(ana));
+    metered.embed("twelve chars").await.unwrap();
+    metered.embed_for_query("hi").await.unwrap();
+    nomi_usage::embedding::record(&pool, None, "openai", "text-embedding-3-small", 42, false).await.unwrap();
+
+    let report = nomi_usage::admin::report(&pool, None, Some(("openai", "text-embedding-3-small"))).await.unwrap();
+    // The fake provider reports no count: 12 chars ≈ 3 tokens, 2 chars ≈ 1.
+    assert_eq!((report.embedding.tokens, report.embedding.calls, report.embedding.estimated_calls), (46, 3, 2));
+    let openai = report.embedding_models.iter().find(|m| m.provider == "openai").unwrap();
+    assert!(openai.current);
+    assert_eq!((openai.tokens, openai.estimated_calls), (42, 0));
+    assert!(!report.embedding_models.iter().find(|m| m.provider == "fake").unwrap().current);
+    assert_eq!(report.by_day.iter().map(|d| d.embedding_tokens).sum::<i64>(), 46);
+    // Embeddings never count toward a person's chat allowance.
+    assert_eq!(nomi_usage::brief(&pool, ana).await.unwrap().tokens_used, 0);
+}

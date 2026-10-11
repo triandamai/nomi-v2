@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 nomi-llm = { path = "../nomi-llm" }
+nomi-embedding = { path = "../nomi-embedding" }
 async-trait = "0.1"
 async-stream = "0.3.6"
 futures-util = "0.3.33"

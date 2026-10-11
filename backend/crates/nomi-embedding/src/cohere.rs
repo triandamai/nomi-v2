@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::types::EmbeddingError;
-use super::EmbeddingProvider;
+use super::{Embedded, EmbeddingProvider};
 
 const OUTPUT_DIMENSION: u32 = 1536;
 
@@ -22,7 +22,7 @@ impl CohereEmbeddingProvider {
         "https://api.cohere.com".to_string()
     }
 
-    async fn embed_with_input_type(&self, text: &str, input_type: &str) -> Result<Vec<f32>, EmbeddingError> {
+    async fn embed_with_input_type(&self, text: &str, input_type: &str) -> Result<Embedded, EmbeddingError> {
         let body = json!({
             "model": self.model,
             "texts": [text],
@@ -58,14 +58,16 @@ impl CohereEmbeddingProvider {
             .and_then(|e| e.as_array())
             .ok_or_else(|| EmbeddingError::ParseError("missing embeddings.float[0]".to_string()))?;
 
-        embedding
+        let vector = embedding
             .iter()
             .map(|v| {
                 v.as_f64()
                     .map(|f| f as f32)
                     .ok_or_else(|| EmbeddingError::ParseError("embedding element is not a number".to_string()))
             })
-            .collect()
+            .collect::<Result<Vec<f32>, _>>()?;
+        let tokens = body.pointer("/meta/billed_units/input_tokens").and_then(|v| v.as_u64()).map(|t| t as u32);
+        Ok(Embedded { vector, tokens })
     }
 }
 
@@ -92,11 +94,15 @@ pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str
 #[async_trait]
 impl EmbeddingProvider for CohereEmbeddingProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        self.embed_with_input_type(text, "search_document").await
+        Ok(self.embed_with_input_type(text, "search_document").await?.vector)
     }
 
     async fn embed_for_query(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        self.embed_with_input_type(text, "search_query").await
+        Ok(self.embed_with_input_type(text, "search_query").await?.vector)
+    }
+
+    async fn embed_counted(&self, text: &str, for_query: bool) -> Result<Embedded, EmbeddingError> {
+        self.embed_with_input_type(text, if for_query { "search_query" } else { "search_document" }).await
     }
 
     fn provider_name(&self) -> &'static str {

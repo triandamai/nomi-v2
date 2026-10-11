@@ -242,8 +242,14 @@ pub async fn expand_messages(conn: &mut PoolConnection<Postgres>, user_id: Uuid,
         return;
     };
 
-    let latest_ids: Vec<Uuid> = referenced(&messages[latest]).iter().map(|r| r.id).collect();
-    let latest_videos: Vec<Uuid> = referenced(&messages[latest]).iter().filter(|r| r.kind == Kind::Video).map(|r| r.id).collect();
+    // Files are shown to the model only while they're in the person's newest message. Once they've
+    // written again, older files stay as their text; showing them again would send every later
+    // turn to the files model (Admin → Models) when the person's own model can't open them.
+    let newest = messages.iter().rposition(|m| m.role == LlmRole::User && m.content.iter().any(|b| matches!(b, ContentBlock::Text { .. })));
+    let show_media = newest == Some(latest);
+    let latest_ids: Vec<Uuid> = if show_media { referenced(&messages[latest]).iter().map(|r| r.id).collect() } else { Vec::new() };
+    let latest_videos: Vec<Uuid> =
+        if show_media { referenced(&messages[latest]).iter().filter(|r| r.kind == Kind::Video).map(|r| r.id).collect() } else { Vec::new() };
     if !latest_videos.is_empty() {
         wait_for_videos(conn, user_id, &latest_videos).await;
     }

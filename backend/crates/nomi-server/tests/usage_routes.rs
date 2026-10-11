@@ -91,3 +91,44 @@ async fn people_see_their_own_usage_and_plan(pool: PgPool) {
     assert_eq!(brief["tokens_used"], 1500);
     assert_eq!(brief["month"], usage["current_month"]);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admins_see_everyones_usage_per_model_and_embedding(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (status, _) = request(
+        router.clone(),
+        "POST",
+        "/api/auth/register",
+        None,
+        Some(json!({ "email": "boss@acme.test", "password": "correct-password", "org": { "mode": "create", "name": "Acme" } })),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+    let boss = user_id(&pool, "boss@acme.test").await;
+    sqlx::query(
+        "INSERT INTO llm_usage (user_id, source, model_label, provider, model_id, input_tokens, output_tokens, cost_usd) \
+         VALUES ($1, 'nomi', 'Gemini', 'gemini', 'gemini-2.5-flash', 1000, 200, 0.001)",
+    )
+    .bind(boss)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO embedding_usage (user_id, provider, model_id, tokens) VALUES ($1, 'openai', 'text-embedding-3-small', 30)")
+        .bind(boss)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let token = login(router.clone(), "boss@acme.test").await;
+    let (status, _) = request(router.clone(), "GET", "/api/admin/usage", Some(&token), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "only admins");
+
+    sqlx::query("UPDATE users SET is_platform_admin = true WHERE id = $1").bind(boss).execute(&pool).await.unwrap();
+    let token = login(router.clone(), "boss@acme.test").await;
+    let (status, usage) = request(router, "GET", "/api/admin/usage", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{usage}");
+    assert_eq!(usage["chat"]["tokens"], 1200);
+    assert_eq!(usage["models"][0]["label"], "Gemini");
+    assert_eq!(usage["embedding"]["tokens"], 30);
+    assert_eq!(usage["embedding_models"][0]["model_id"], "text-embedding-3-small");
+}
