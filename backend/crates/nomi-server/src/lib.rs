@@ -8,6 +8,7 @@ pub mod notifications;
 pub mod quota;
 pub mod reminders_worker;
 pub mod scheduler_worker;
+pub mod shipyard;
 pub mod sign_in_codes;
 mod tool_catalog_adapters;
 pub mod worker;

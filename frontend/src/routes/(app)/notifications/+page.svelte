@@ -29,6 +29,7 @@
 		subscription: { agent: 'supervisor', label: m.notif_kind_subscription },
 		quota: { agent: 'money', label: m.notif_kind_quota },
 		promo: { agent: 'reminders', label: m.notif_kind_promo },
+		deploy: { agent: 'coding', label: m.notif_kind_deploy },
 	};
 
 	type Filter = PageData['filter'];

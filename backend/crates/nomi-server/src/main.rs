@@ -110,6 +110,10 @@ async fn main() {
 
     let tool_catalog = nomi_server::build_tool_catalog(project_storage.clone());
 
+    if let Some(config) = nomi_shipyard::ShipyardConfig::from_env() {
+        tokio::spawn(nomi_server::shipyard::register_webhook_on_start(pool.clone(), http_client.clone(), config, settings_key));
+    }
+
     let state = nomi_server::app::AppState {
         pool,
         jwt_secret,
@@ -121,6 +125,7 @@ async fn main() {
         project_storage,
         tool_catalog,
         email_codes: nomi_server::sign_in_codes::EmailCodes::from_env(),
+        shipyard: nomi_shipyard::ShipyardConfig::from_env(),
     };
     let app = nomi_server::app::build_router(state);
 

@@ -19,6 +19,8 @@ pub enum Kind {
     Subscription,
     Quota,
     Promo,
+    /// A published project failed, crashed or ran hot.
+    Deploy,
 }
 
 impl Kind {
@@ -28,6 +30,7 @@ impl Kind {
             Kind::Subscription => "subscription",
             Kind::Quota => "quota",
             Kind::Promo => "promo",
+            Kind::Deploy => "deploy",
         }
     }
 

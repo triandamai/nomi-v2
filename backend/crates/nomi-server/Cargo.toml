@@ -31,6 +31,7 @@ nomi-agent-planning = { path = "../nomi-agent-planning" }
 nomi-agent-coding = { path = "../nomi-agent-coding" }
 nomi-turn = { path = "../nomi-turn" }
 nomi-storage = { path = "../nomi-storage" }
+nomi-shipyard = { path = "../nomi-shipyard" }
 nomi-attachments = { path = "../nomi-attachments" }
 base64 = "0.22"
 futures-util = "0.3.33"
@@ -56,5 +57,6 @@ nomi-test-support = { path = "../nomi-test-support" }
 tower = { version = "0.4", features = ["util"] }
 http-body-util = "0.1"
 wiremock = "0.6"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3.33"

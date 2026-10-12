@@ -30,6 +30,7 @@ fn test_state(pool: PgPool) -> AppState {
         project_storage: nomi_test_support::test_project_storage(),
         tool_catalog: Arc::new(ToolCatalog::empty()),
         email_codes: nomi_server::sign_in_codes::EmailCodes::Off,
+        shipyard: None,
     }
 }
 
