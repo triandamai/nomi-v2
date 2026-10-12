@@ -51,12 +51,22 @@
 		toastOpen = true;
 	});
 
+	// An open project is its own app (it opens in a new tab): no Nomi drawer or app bar around it.
+	const standalone = $derived(page.route.id?.startsWith('/(app)/projects/session/') ?? false);
+
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
 		document.documentElement.dataset.color = data.preferences.accent_color;
 	});
 </script>
 
+{#if standalone}
+<div class="app-shell" style="background: var(--md-sys-color-surface)">
+	<main class="h-full overflow-hidden">
+		{@render children()}
+	</main>
+</div>
+{:else}
 <div class="app-shell flex" style="background: var(--md-sys-color-surface)">
 	<Sidebar userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} bind:mobileOpen={mobileNavOpen} />
 	<div class="flex flex-1 flex-col overflow-hidden">
@@ -78,6 +88,7 @@
 		</main>
 	</div>
 </div>
+{/if}
 
 {#if toast}
 	<Snackbar bind:open={toastOpen} message={toast.title} actionLabel={m.notif_view()} timeout={6000} onaction={() => goto(toast?.link || '/notifications')} />

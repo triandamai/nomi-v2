@@ -41,6 +41,8 @@ pub struct AppState {
     pub tool_catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
     /// Whether password sign-in waits for an emailed code, and the mailer that sends it.
     pub email_codes: crate::sign_in_codes::EmailCodes,
+    /// Where projects are published; None when Shipyard isn't set up.
+    pub shipyard: Option<nomi_shipyard::ShipyardConfig>,
 }
 
 impl nomi_auth::extractor::HasJwtSecret for AppState {
@@ -168,6 +170,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
         .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
+        .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
+        .route("/api/admin/shipyard/webhook", post(crate::routes::deploy::admin_register_webhook))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
         .route("/api/admin/agents/ws", get(admin_dashboard_routes::admin_agents_stream))
         .route("/api/admin/agent-events", get(admin_dashboard_routes::list_agent_events))
@@ -261,7 +265,27 @@ pub fn build_router(state: AppState) -> Router {
             get(projects_routes::list_projects).post(projects_routes::create_project_session),
         )
         .route("/api/projects/by-session/:sessionId", get(projects_routes::get_project_by_session))
-        .route("/api/projects/:id", get(projects_routes::get_project))
+        .route("/api/projects/:id", get(projects_routes::get_project).delete(crate::routes::deploy::delete_project))
+        .route("/api/projects/:id/deploy", get(crate::routes::deploy::overview))
+        .route("/api/projects/:id/deploy/publish", post(crate::routes::deploy::publish))
+        .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish))
+        .route("/api/projects/:id/deploy/publishes/:publish_id/rollback", post(crate::routes::deploy::rollback))
+        .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
+        .route("/api/projects/:id/deploy/logs", get(crate::routes::deploy::runtime_logs))
+        .route("/api/projects/:id/deploy/usage", get(crate::routes::deploy::usage))
+        .route("/api/projects/:id/deploy/events", get(crate::routes::deploy::events))
+        .route("/api/projects/:id/deploy/environments/:env", delete(crate::routes::deploy::take_offline))
+        .route("/api/projects/:id/members", get(crate::routes::project_members::list))
+        .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))
+        .route(
+            "/api/projects/:id/members/:user_id",
+            put(crate::routes::project_members::put_member).delete(crate::routes::project_members::remove_member),
+        )
+        .route("/api/projects/:id/database", get(crate::routes::project_database::info))
+        .route("/api/projects/:id/database/credentials", post(crate::routes::project_database::credentials))
+        .route("/api/projects/:id/database/tables", get(crate::routes::project_database::tables))
+        .route("/api/projects/:id/database/query", post(crate::routes::project_database::run_query))
+        .route("/api/hooks/shipyard", post(crate::routes::deploy::webhook))
         .route(
             "/api/projects/:id/issues",
             get(crate::routes::project_issues::list_issues).post(crate::routes::project_issues::create_issue),

@@ -144,3 +144,10 @@ team:
   invite_reason: "You're getting this because %{inviter} invited this address to a team on Nomi. If you don't know them, you can ignore it."
   joined_title: "%{name} joined %{org}"
   joined_body: "They can now open and work on %{org}'s projects."
+deploy:
+  publish_failed_title: "%{name} couldn't be published"
+  publish_failed_body: "Shipyard stopped the publish: %{detail}. Open the project's deployments to see the log, or ask Koda to fix it."
+  crashed_title: "%{name} crashed"
+  crashed_body: "The published app stopped unexpectedly (exit code %{detail}). Shipyard restarts it; the runtime log shows why."
+  resource_title: "%{name} is running hot"
+  resource_body: "Shipyard reported %{detail} use. Check the monitor in the project to see whether it needs more room."

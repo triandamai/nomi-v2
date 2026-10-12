@@ -135,7 +135,7 @@
 				{#each shown as project (project.id)}
 					<tr>
 						<td>
-							<a class="cell-name" href="/projects/session/{project.session_id}" data-sveltekit-reload>
+							<a class="cell-name" href="/projects/session/{project.session_id}" target="_blank" rel="noopener">
 								<span class="cell-name__title">{project.name}</span>
 								{#if project.description}<span class="cell-name__description">{project.description}</span>{/if}
 							</a>
@@ -150,7 +150,7 @@
 				{/each}
 				{#snippet list()}
 					{#each shown as project (project.id)}
-						<a role="listitem" class="row-item" href="/projects/session/{project.session_id}" data-sveltekit-reload>
+						<a role="listitem" class="row-item" href="/projects/session/{project.session_id}" target="_blank" rel="noopener">
 							<span class="row-item__top">
 								<span class="row-item__title">{project.name}</span>
 								<span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
@@ -167,7 +167,7 @@
 			<ul class="grid">
 				{#each shown as project (project.id)}
 					<li class="card">
-						<a class="card__link" href="/projects/session/{project.session_id}" data-sveltekit-reload>
+						<a class="card__link" href="/projects/session/{project.session_id}" target="_blank" rel="noopener">
 							<span class="card__name">{project.name}</span>
 						</a>
 						<p class="card__description" class:card__description--empty={!project.description}>{project.description ?? m.projects_no_description()}</p>

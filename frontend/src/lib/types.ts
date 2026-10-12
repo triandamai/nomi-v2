@@ -641,7 +641,7 @@ export interface PlansForUser {
 	override_until: string | null;
 }
 
-export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo';
+export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo' | 'deploy';
 
 export interface NotificationItem {
 	id: string;
@@ -716,4 +716,119 @@ export interface HealthConnection {
 export interface ConnectionsOverview {
 	google: { configured: boolean; email: string | null; services: string[] };
 	hevy: HealthConnection | null;
+}
+
+/** One publish of a project to a Shipyard environment. */
+export interface ProjectPublish {
+	id: string;
+	environment: string;
+	status: 'running' | 'succeeded' | 'failed';
+	url: string | null;
+	error: string | null;
+	files_version: number;
+	/** The publish this one rolled back to. */
+	rollback_of: string | null;
+	can_roll_back: boolean;
+	created_by: string | null;
+	created_at: string;
+	finished_at: string | null;
+}
+
+export interface ShipyardService {
+	name: string;
+	service_id: string;
+	type: string;
+	status: string;
+	replicas: number;
+	running: number;
+	urls: string[];
+	last_deployment: { id: string; status: string; created_at: string } | null;
+}
+
+export interface DeployOverview {
+	/** Whether this Nomi can publish at all. */
+	available: boolean;
+	role: 'admin' | 'member';
+	app: string | null;
+	database: 'postgres' | 'sqlite' | 'none';
+	url: string | null;
+	publishes: ProjectPublish[];
+	/** What runs in production now; null when nothing does. */
+	live: { environment: string; services: ShipyardService[]; last_publish: unknown } | null;
+}
+
+export interface PublishDetail extends ProjectPublish {
+	deployments: { service: string; deployment_id: string; status: string }[];
+}
+
+export interface DeploymentDetail {
+	id: string;
+	service: string;
+	status: string;
+	image: string | null;
+	created_at: string;
+	finished_at: string | null;
+	steps: { name: string; status: string; started_at: string | null; finished_at: string | null }[];
+	logs: { level: string; message: string; at: string }[];
+}
+
+export interface ContainerUsage {
+	service: string;
+	container_id: string;
+	stats: {
+		cpu_percent: number;
+		memory_usage_bytes: number;
+		memory_limit_bytes: number;
+		memory_percent: number;
+		net_rx_bytes: number;
+		net_tx_bytes: number;
+		block_read_bytes: number;
+		block_write_bytes: number;
+		pids: number;
+		timestamp: string;
+	} | null;
+	limits: { cpu: number | null; memory_mb: number | null };
+}
+
+export interface ShipyardEvent {
+	id: string;
+	type: string;
+	environment: string | null;
+	service: string | null;
+	data: Record<string, unknown>;
+	created_at: string;
+}
+
+export interface ProjectPerson {
+	user_id: string;
+	name: string;
+	email: string | null;
+	avatar_url: string | null;
+	org_role: OrgRole;
+	project_role: 'admin' | 'member' | null;
+	is_owner: boolean;
+	added_at: string | null;
+}
+
+export interface ProjectMembers {
+	access: 'org' | 'members';
+	my_role: 'admin' | 'member';
+	me: string;
+	people: ProjectPerson[];
+}
+
+export type DatabaseSource = 'development' | 'production';
+
+export interface DatabaseTable {
+	schema: string;
+	name: string;
+	rows_estimate: number;
+}
+
+export interface QueryResult {
+	columns: string[];
+	rows: unknown[][];
+	truncated: boolean;
+	rows_affected: number | null;
+	took_ms: number;
 }

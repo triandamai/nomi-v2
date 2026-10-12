@@ -7,7 +7,7 @@
 	let { block }: { block: Extract<ContentBlock, { kind: 'project_link' }> } = $props();
 </script>
 
-<a class="project-link" href="/projects/session/{block.session_id}" data-sveltekit-reload>
+<a class="project-link" href="/projects/session/{block.session_id}" target="_blank" rel="noopener">
 	<span class="project-link__crew" aria-hidden="true">
 		<AgentShape agent="planning" size={40} working />
 		<AgentShape agent="coding" size={40} working />

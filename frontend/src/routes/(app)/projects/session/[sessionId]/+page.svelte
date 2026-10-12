@@ -11,11 +11,99 @@
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconSidePanel from '$lib/components/icons/IconSidePanel.svelte';
+	import IconRocket from '$lib/components/icons/IconRocket.svelte';
+	import IconBug from '$lib/components/icons/IconBug.svelte';
+	import IconPulse from '$lib/components/icons/IconPulse.svelte';
+	import IconDatabase from '$lib/components/icons/IconDatabase.svelte';
+	import IconGroup from '$lib/components/icons/IconGroup.svelte';
+	import IconSettings from '$lib/components/icons/IconSettings.svelte';
+	import IconHistory from '$lib/components/icons/IconHistory.svelte';
+	import IconOpenInNew from '$lib/components/icons/IconOpenInNew.svelte';
+	import AgentShape from '$lib/components/m3/AgentShape.svelte';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
+	import Button from '$lib/components/m3/Button.svelte';
+	import SheetFrame from '$lib/components/project/SheetFrame.svelte';
+	import IssuesPanel from '$lib/components/project/IssuesPanel.svelte';
+	import DeployPanel from '$lib/components/project/DeployPanel.svelte';
+	import MonitorPanel from '$lib/components/project/MonitorPanel.svelte';
+	import DatabasePanel from '$lib/components/project/DatabasePanel.svelte';
+	import MembersPanel from '$lib/components/project/MembersPanel.svelte';
+	import SettingsPanel from '$lib/components/project/SettingsPanel.svelte';
+	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
+	import { invalidateAll, replaceState } from '$app/navigation';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let view = $state<'preview' | 'code' | 'terminal'>('preview');
+
+	// The project's tools open in full-screen sheets over the project, so its chat, code and
+	// running preview stay as they are underneath (closing one never restarts the install).
+	type Sheet = 'deploy' | 'monitor' | 'database' | 'members' | 'issues' | 'settings';
+	const SHEETS: Sheet[] = ['deploy', 'monitor', 'database', 'members', 'issues', 'settings'];
+	let sheet = $state<Sheet | null>(null);
+	let sheetOpen = $state(false);
+	onMount(() => {
+		const asked = page.url.searchParams.get('sheet') as Sheet | null;
+		if (asked && SHEETS.includes(asked)) openSheet(asked);
+	});
+	function openSheet(which: Sheet) {
+		sheet = which;
+		sheetOpen = true;
+		const url = new URL(page.url);
+		url.searchParams.set('sheet', which);
+		replaceState(url, {});
+	}
+	$effect(() => {
+		if (sheetOpen) return;
+		if (!page.url.searchParams.has('sheet')) return;
+		const url = new URL(page.url);
+		url.searchParams.delete('sheet');
+		replaceState(url, {});
+	});
+
+	let deploy = $state<ProjectDeploy | null>(null);
+	$effect(() => {
+		const id = data.project?.id;
+		if (!id) return;
+		const d = new ProjectDeploy(id);
+		deploy = d;
+		void d.refresh();
+		return () => d.stop();
+	});
+
+	let openIssues = $state(0);
+	$effect(() => {
+		openIssues = data.project?.open_issues ?? 0;
+	});
+
+	// Sends a message to the project's chat (an issue handed to Koda), then shows it there.
+	async function sendToChat(text: string) {
+		const body = new FormData();
+		body.set('text', text);
+		const response = await fetch('?/sendMessage', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+		const result = deserialize(await response.text());
+		if (result.type !== 'success') throw new Error('send failed');
+		sheetOpen = false;
+		await invalidateAll();
+	}
+
+	const TOOLS: { id: Sheet; label: () => string; icon: typeof IconRocket }[] = [
+		{ id: 'deploy', label: m.pj_tab_deploy, icon: IconHistory },
+		{ id: 'monitor', label: m.pj_tab_monitor, icon: IconPulse },
+		{ id: 'database', label: m.pj_tab_database, icon: IconDatabase },
+		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
+		{ id: 'settings', label: m.pj_tab_settings, icon: IconSettings },
+	];
+	const SHEET_TITLE: Record<Sheet, () => string> = {
+		deploy: m.pj_tab_deploy,
+		monitor: m.pj_tab_monitor,
+		database: m.pj_tab_database,
+		members: m.pj_tab_members,
+		issues: m.issues_title,
+		settings: m.pj_tab_settings,
+	};
+	const published = $derived(Boolean(deploy?.overview?.app && deploy.overview.publishes.some((p) => p.status === 'succeeded')));
 	let runtime = $state<ProjectRuntime | null>(null);
 
 	// Projects with a package.json run in the browser (WebContainer); static ones don't.
@@ -227,6 +315,40 @@
 	{/if}
 {/snippet}
 
+<div class="project-app">
+{#if data.project}
+	{@const project = data.project}
+	<header class="topbar">
+		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face /></a>
+		<div class="topbar__titles">
+			<h1 class="topbar__name">{project.name}</h1>
+			<p class="topbar__meta">
+				{project.org_name}
+				{#if deploy?.overview?.url}
+					· <a class="topbar__url" href={deploy.overview.url} target="_blank" rel="noopener">{deploy.overview.url.replace(/^https?:\/\//, '')}<IconOpenInNew size={12} /></a>
+				{:else if deploy?.running}
+					· {m.pj_publishing()}
+				{/if}
+			</p>
+		</div>
+		<nav class="topbar__tools" aria-label={m.pj_tools()}>
+			<button type="button" class="tool" onclick={() => openSheet('issues')}>
+				<IconBug size={18} /><span class="tool__label">{m.workspace_issues()}</span>
+				{#if openIssues > 0}<span class="tool__count">{openIssues}</span>{/if}
+			</button>
+			{#each TOOLS as tool (tool.id)}
+				<button type="button" class="tool" onclick={() => openSheet(tool.id)} title={tool.label()}>
+					<tool.icon size={18} /><span class="tool__label">{tool.label()}</span>
+				</button>
+			{/each}
+		</nav>
+		{#if deploy?.overview?.available && deploy.isAdmin}
+			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
+				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : m.pj_publish()}</span>
+			</Button>
+		{/if}
+	</header>
+{/if}
 <div
 	bind:this={layout}
 	class="workspace"
@@ -287,10 +409,6 @@
 						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => (view = 'terminal')}>{m.project_terminal()}</button>
 					{/if}
 				</div>
-				<a class="pane-link" href="/projects/{project.id}/issues">
-					{m.workspace_issues()}
-					{#if project.open_issues > 0}<span class="pane-link__count">{project.open_issues}</span>{/if}
-				</a>
 				<IconButton onclick={() => setPane(false)} aria-label={m.project_pane_hide()} title={m.project_pane_hide()}>
 					<IconClose size={18} />
 				</IconButton>
@@ -329,8 +447,162 @@
 		{/if}
 	</section>
 </div>
+</div>
+
+{#if data.project && sheet}
+	{@const project = data.project}
+	<BottomSheet bind:open={sheetOpen} full label={SHEET_TITLE[sheet]()}>
+		<SheetFrame title={SHEET_TITLE[sheet]()} subtitle={project.name} onclose={() => (sheetOpen = false)}>
+			{#if sheet === 'issues'}
+				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
+			{:else if sheet === 'deploy' && deploy}
+				<DeployPanel {deploy} />
+			{:else if sheet === 'monitor'}
+				<MonitorPanel projectId={project.id} {published} />
+			{:else if sheet === 'database'}
+				<DatabasePanel projectId={project.id} {published} />
+			{:else if sheet === 'members'}
+				<MembersPanel projectId={project.id} orgId={project.org_id} />
+			{:else if sheet === 'settings' && deploy}
+				<SettingsPanel {deploy} projectName={project.name} />
+			{/if}
+		</SheetFrame>
+	</BottomSheet>
+{/if}
 
 <style>
+	.project-app {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		min-height: 0;
+	}
+	.project-app > .workspace {
+		flex: 1;
+		min-height: 0;
+		height: auto;
+	}
+	.topbar {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		background: var(--md-sys-color-surface);
+	}
+	.topbar__brand {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border-radius: var(--md-sys-shape-corner-full);
+	}
+	.topbar__brand:hover {
+		background: var(--md-sys-color-surface-container-high);
+	}
+	.topbar__brand:focus-visible,
+	.tool:focus-visible,
+	.topbar__url:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.topbar__titles {
+		flex: 1;
+		min-width: 0;
+	}
+	.topbar__name {
+		margin: 0;
+		overflow: hidden;
+		color: var(--md-sys-color-on-surface);
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1rem;
+		font-weight: 700;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.topbar__meta {
+		margin: 0;
+		overflow: hidden;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.topbar__url {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		color: var(--md-sys-color-primary);
+		text-decoration: none;
+	}
+	.topbar__url:hover {
+		text-decoration: underline;
+	}
+	.topbar__tools {
+		display: flex;
+		flex: none;
+		gap: 2px;
+		overflow-x: auto;
+	}
+	.tool {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		gap: 6px;
+		min-height: 40px;
+		padding: 0 10px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: none;
+		color: var(--md-sys-color-on-surface-variant);
+		font: inherit;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.tool:hover {
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface);
+	}
+	.tool__count {
+		min-width: 18px;
+		padding: 0 5px;
+		border-radius: 4px;
+		background: var(--md-sys-color-surface-container-highest);
+		font-variant-numeric: tabular-nums;
+		text-align: center;
+	}
+	@media (max-width: 1100px) {
+		.tool__label {
+			display: none;
+		}
+		.tool {
+			justify-content: center;
+			min-width: 44px;
+			padding: 0;
+		}
+	}
+	@media (max-width: 640px) {
+		.topbar {
+			flex-wrap: wrap;
+			gap: 4px 8px;
+			padding: 6px 8px;
+		}
+		.topbar__tools {
+			order: 3;
+			width: 100%;
+			justify-content: space-between;
+		}
+		.tool {
+			min-height: 44px;
+		}
+		.publish-label {
+			display: none;
+		}
+	}
+
 	.workspace {
 		display: flex;
 		height: 100%;
@@ -457,35 +729,6 @@
 		font-weight: 700;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-	.pane-link {
-		display: inline-flex;
-		flex: none;
-		align-items: center;
-		gap: 6px;
-		height: 32px;
-		padding: 0 10px;
-		border-radius: 6px;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.875rem;
-		font-weight: 600;
-		text-decoration: none;
-	}
-	.pane-link:hover {
-		background: var(--md-sys-color-surface-container-high);
-		color: var(--md-sys-color-on-surface);
-	}
-	.pane-link:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.pane-link__count {
-		min-width: 18px;
-		padding: 0 5px;
-		border-radius: 4px;
-		background: var(--md-sys-color-surface-container-highest);
-		font-variant-numeric: tabular-nums;
-		text-align: center;
 	}
 	.pane-bar__tabs {
 		display: inline-flex;

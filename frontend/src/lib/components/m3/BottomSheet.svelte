@@ -6,10 +6,16 @@
 		open = $bindable(false),
 		children,
 		class: extraClass = '',
+		full = false,
+		label,
 	}: {
 		open?: boolean;
 		children: Snippet;
 		class?: string;
+		/** Covers the whole screen (a little below the top on bigger screens): for whole tools
+		 * opened over a page that must keep running underneath. */
+		full?: boolean;
+		label?: string;
 	} = $props();
 
 	// A drag past this fraction of the sheet's own height counts as "dismiss"; anything
@@ -151,6 +157,8 @@
 	bind:this={dialogEl}
 	class="m3-bottom-sheet {extraClass}"
 	class:m3-bottom-sheet--closing={closing}
+	class:m3-bottom-sheet--full={full}
+	aria-label={label}
 	onclose={handleClose}
 	oncancel={handleCancel}
 	onclick={handleDialogClick}
@@ -283,6 +291,27 @@
 		height: 4px;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-outline-variant);
+	}
+
+	.m3-bottom-sheet--full {
+		max-width: 100%;
+	}
+	.m3-bottom-sheet--full .m3-bottom-sheet__panel {
+		height: calc(100dvh - 12px);
+		max-height: calc(100dvh - 12px);
+	}
+	.m3-bottom-sheet--full .m3-bottom-sheet__body {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		padding: 0;
+	}
+	@media (max-width: 600px) {
+		.m3-bottom-sheet--full .m3-bottom-sheet__panel {
+			height: 100dvh;
+			max-height: 100dvh;
+			padding-top: env(safe-area-inset-top);
+		}
 	}
 
 	.m3-bottom-sheet__body {

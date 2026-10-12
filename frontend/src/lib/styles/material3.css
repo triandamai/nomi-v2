@@ -971,6 +971,25 @@ body {
 	font-family: var(--md-ref-typeface-plain);
 }
 
+/* Nothing ever scrolls the page sideways (a wide child is clipped by its own container). */
+html,
+body {
+	overflow-x: clip;
+}
+
+/* iOS zooms the whole page in when a field with text under 16px gets focus, and leaves it
+   zoomed: the screen looked wider than the phone and scrolled sideways. Touch screens get
+   16px text in every field (the layout around them is unchanged). */
+@media (pointer: coarse) {
+	input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']),
+	textarea,
+	select,
+	[contenteditable='true'],
+	.cm-content {
+		font-size: max(16px, 1em) !important;
+	}
+}
+
 /* The signed-in app's frame: exactly the visible screen. 100vh on phones includes the area
    behind the browser's address bar, which made the page itself scroll on top of the content's
    own scrolling and pushed the app bar out of view; 100dvh is the height actually shown. The
