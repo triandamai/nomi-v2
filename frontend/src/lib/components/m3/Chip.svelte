@@ -42,7 +42,7 @@
 		align-items: center;
 		gap: 6px;
 		height: 36px;
-		padding: 0 14px;
+		padding: 0 12px;
 		border-radius: var(--md-sys-shape-corner-medium);
 		border: 1.5px solid var(--md-sys-color-outline-variant);
 		background: transparent;
@@ -70,7 +70,7 @@
 	}
 	.m3-chip--suggestion {
 		height: 40px;
-		padding: 0 16px;
+		padding: 0 14px;
 	}
 	.m3-chip--filter {
 		color: var(--md-sys-color-on-surface-variant);

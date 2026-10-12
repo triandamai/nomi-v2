@@ -52,7 +52,7 @@
 	.m3-button-group__item {
 		flex: 1;
 		height: 48px;
-		padding: 0 18px;
+		padding: 0 16px;
 		border: none;
 		border-radius: var(--inner);
 		background: var(--md-sys-color-surface-container-high);

@@ -63,13 +63,13 @@
 	.orgs {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.orgs__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: 20px;
 		max-width: 720px;
 		margin: 0 auto;
 	}
@@ -93,7 +93,7 @@
 	.row {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		min-height: 64px;
 		padding: 10px 8px;
 		color: var(--md-sys-color-on-surface);
@@ -137,7 +137,7 @@
 	}
 	.create__title {
 		margin: 0;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}

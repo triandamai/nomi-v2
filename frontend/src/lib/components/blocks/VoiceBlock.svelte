@@ -117,7 +117,7 @@
 		gap: 8px;
 		width: min(100%, 380px);
 		margin: 0;
-		padding: 10px 14px 10px 10px;
+		padding: 10px 12px 10px 10px;
 		border-radius: var(--nomi-shape-bubble-start);
 		background: var(--md-sys-color-surface-container);
 		color: var(--md-sys-color-on-surface);

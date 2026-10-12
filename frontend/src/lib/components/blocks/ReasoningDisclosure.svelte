@@ -102,7 +102,7 @@
 		max-width: 68ch;
 		max-height: 360px;
 		overflow-y: auto;
-		padding: 14px 16px;
+		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container-low);
 		color: var(--md-sys-color-on-surface-variant);

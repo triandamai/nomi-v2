@@ -71,7 +71,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.edit__text {
-		padding: 12px 14px;
+		padding: 12px 12px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: transparent;

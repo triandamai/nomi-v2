@@ -227,8 +227,8 @@
 	.empty {
 		display: flex;
 		align-items: center;
-		gap: 16px;
-		padding: 20px 24px;
+		gap: 14px;
+		padding: 16px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 	}
@@ -251,7 +251,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding: 20px;
+		padding: 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -266,7 +266,7 @@
 	.card__top {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 	}
 	.card__text {
 		display: flex;
@@ -277,7 +277,7 @@
 	.card__name {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 	}
 	.card__meta {
@@ -320,7 +320,7 @@
 	.sheet-title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -342,7 +342,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.prompt__field {
-		padding: 12px 16px;
+		padding: 12px 14px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-large);
 		background: transparent;
@@ -361,7 +361,7 @@
 		flex-direction: column;
 		gap: 10px;
 		margin: 4px 0 0;
-		padding: 16px;
+		padding: 14px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);

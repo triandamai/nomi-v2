@@ -245,13 +245,13 @@
 	.org {
 		height: 100%;
 		overflow-y: auto;
-		padding: 24px clamp(16px, 4vw, 56px) 56px;
+		padding: 20px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.org__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: 16px;
 		max-width: 720px;
 		margin: 0 auto;
 	}
@@ -272,7 +272,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
 	}
 	.head__mark {
 		display: grid;
@@ -283,7 +283,7 @@
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-primary);
 		color: var(--md-sys-color-on-primary);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 	}
 	.head__text {
@@ -320,18 +320,18 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.card {
-		padding: 20px;
+		padding: 16px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 	}
 	.section-title {
 		margin: 0;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
 	.section-lede {
-		margin: 4px 0 16px;
+		margin: 4px 0 14px;
 		font-size: 0.9375rem;
 		color: var(--md-sys-color-on-surface-variant);
 	}
@@ -384,7 +384,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.subhead {
-		margin: 24px 0 4px;
+		margin: 20px 0 4px;
 		font-size: 0.8125rem;
 		font-weight: 700;
 		letter-spacing: 0.04em;

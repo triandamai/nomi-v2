@@ -101,9 +101,9 @@
 <BottomSheet bind:open={renameOpen}>
 	{#snippet children()}
 		<form onsubmit={saveRename}>
-			<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 16px;">{m.chat_rename()}</h2>
+			<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 14px;">{m.chat_rename()}</h2>
 			<TextField label={m.chat_rename_label()} bind:value={renameValue} maxlength={80} error={!!renameError} supportingText={renameError ?? undefined} />
-			<div class="flex justify-end gap-2" style="margin-top: 20px;">
+			<div class="flex justify-end gap-2" style="margin-top: 16px;">
 				<Button variant="text" type="button" onclick={() => (renameOpen = false)} disabled={renaming}>{m.common_cancel()}</Button>
 				<Button variant="filled" type="submit" disabled={renaming}>{m.common_save()}</Button>
 			</div>
@@ -114,7 +114,7 @@
 <BottomSheet bind:open={confirmOpen}>
 	{#snippet children()}
 		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 0 0 8px;">{m.session_delete_title()}</h2>
-		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 20px;">
+		<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 16px;">
 			{#if session.project_id}
 				{m.session_delete_project_body()}
 			{:else}

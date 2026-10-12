@@ -92,8 +92,8 @@
 	.picker {
 		display: grid;
 		grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
-		gap: 20px;
-		padding: 16px;
+		gap: 16px;
+		padding: 14px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-low);
 	}
@@ -109,7 +109,7 @@
 		justify-content: center;
 		gap: 10px;
 		align-self: start;
-		padding: 24px 12px;
+		padding: 20px 12px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--nomi-color-stage);
 		color: var(--nomi-color-on-stage);
@@ -117,7 +117,7 @@
 	.picker__name {
 		font-family: var(--md-ref-typeface-brand);
 		font-weight: 700;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		text-align: center;
 		overflow-wrap: anywhere;
 	}
@@ -127,7 +127,7 @@
 	.picker__controls {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 12px;
 		min-width: 0;
 	}
 	.picker__group {
@@ -209,7 +209,7 @@
 		align-items: center;
 		gap: 8px;
 		height: 40px;
-		padding: 0 14px 0 10px;
+		padding: 0 12px 0 10px;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface);

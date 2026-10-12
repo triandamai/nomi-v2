@@ -405,7 +405,7 @@
 	   points back at them. */
 	.message {
 		display: flex;
-		gap: 14px;
+		gap: 12px;
 		align-items: flex-start;
 	}
 	.message--user {
@@ -522,14 +522,14 @@
 	.message-bubble {
 		align-self: stretch;
 		color: var(--md-sys-color-on-surface);
-		font-size: 1.0625rem;
+		font-size: 1rem;
 		line-height: 1.6;
 		overflow-wrap: anywhere;
 	}
 	.message-bubble--user {
 		align-self: auto;
-		padding: 16px 20px;
-		font-size: 1rem;
+		padding: 14px 16px;
+		font-size: 0.9375rem;
 		border-radius: var(--nomi-shape-bubble-end);
 		background: var(--md-sys-color-primary);
 		color: var(--md-sys-color-on-primary);
@@ -618,7 +618,7 @@
 	}
 	.message-bubble :global(blockquote) {
 		margin: 0.75em 0;
-		padding: 10px 16px;
+		padding: 10px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 	}
@@ -661,7 +661,7 @@
 	.message-bubble :global(th),
 	.message-bubble :global(td) {
 		border-top: 1px solid var(--md-sys-color-surface-container);
-		padding: 10px 16px;
+		padding: 10px 14px;
 		overflow-wrap: normal;
 	}
 	/* Wide tables scroll inside their own rounded box instead of squeezing words apart. */

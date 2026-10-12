@@ -313,7 +313,7 @@
 			<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface); margin: 0 0 4px;">
 				{drillDownRow.agent_display_name}
 			</h2>
-			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 16px;" title={drillDownRow.session_id}>
+			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant); margin: 0 0 14px;" title={drillDownRow.session_id}>
 				{m.live_session_line({ session: drillDownRow.session_id ? shortSessionId(drillDownRow.session_id) : m.live_session_unknown(), phase: rowPhaseLabel(drillDownRow) })}
 			</p>
 			{#if drillDownLoading}
@@ -345,8 +345,8 @@
 	.quiet {
 		display: flex;
 		align-items: center;
-		gap: 16px;
-		padding: 20px 24px;
+		gap: 14px;
+		padding: 16px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 	}
@@ -398,7 +398,7 @@
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 12px;
-		padding: 10px 20px;
+		padding: 10px 16px;
 	}
 	.feed__row + .feed__row {
 		border-top: 1px solid var(--md-sys-color-outline-variant);

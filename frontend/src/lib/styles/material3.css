@@ -60,50 +60,50 @@
 
 	--md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-display-large-weight: 800;
-	--md-sys-typescale-display-large-size: 3.5625rem;
-	--md-sys-typescale-display-large-line-height: 4rem;
+	--md-sys-typescale-display-large-size: 2.375rem;
+	--md-sys-typescale-display-large-line-height: 2.875rem;
 	--md-sys-typescale-display-large-tracking: -0.04em;
 
 	--md-sys-typescale-display-medium-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-display-medium-weight: 750;
-	--md-sys-typescale-display-medium-size: 2.8125rem;
-	--md-sys-typescale-display-medium-line-height: 3.25rem;
+	--md-sys-typescale-display-medium-size: 2.25rem;
+	--md-sys-typescale-display-medium-line-height: 2.75rem;
 	--md-sys-typescale-display-medium-tracking: -0.035em;
 
 	--md-sys-typescale-display-small-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-display-small-weight: 700;
-	--md-sys-typescale-display-small-size: 2.25rem;
-	--md-sys-typescale-display-small-line-height: 2.75rem;
+	--md-sys-typescale-display-small-size: 1.75rem;
+	--md-sys-typescale-display-small-line-height: 2.25rem;
 	--md-sys-typescale-display-small-tracking: -0.03em;
 
 	--md-sys-typescale-headline-large-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-headline-large-weight: 700;
-	--md-sys-typescale-headline-large-size: 2rem;
-	--md-sys-typescale-headline-large-line-height: 2.5rem;
+	--md-sys-typescale-headline-large-size: 1.625rem;
+	--md-sys-typescale-headline-large-line-height: 2.0625rem;
 	--md-sys-typescale-headline-large-tracking: -0.02em;
 
 	--md-sys-typescale-headline-medium-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-headline-medium-weight: 650;
-	--md-sys-typescale-headline-medium-size: 1.75rem;
-	--md-sys-typescale-headline-medium-line-height: 2.25rem;
+	--md-sys-typescale-headline-medium-size: 1.4375rem;
+	--md-sys-typescale-headline-medium-line-height: 1.875rem;
 	--md-sys-typescale-headline-medium-tracking: -0.02em;
 
 	--md-sys-typescale-headline-small-font: var(--md-ref-typeface-brand);
 	--md-sys-typescale-headline-small-weight: 650;
-	--md-sys-typescale-headline-small-size: 1.5rem;
-	--md-sys-typescale-headline-small-line-height: 2rem;
+	--md-sys-typescale-headline-small-size: 1.25rem;
+	--md-sys-typescale-headline-small-line-height: 1.75rem;
 	--md-sys-typescale-headline-small-tracking: -0.02em;
 
 	--md-sys-typescale-title-large-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-title-large-weight: 600;
-	--md-sys-typescale-title-large-size: 1.375rem;
-	--md-sys-typescale-title-large-line-height: 1.75rem;
+	--md-sys-typescale-title-large-size: 1.1875rem;
+	--md-sys-typescale-title-large-line-height: 1.5625rem;
 	--md-sys-typescale-title-large-tracking: 0;
 
 	--md-sys-typescale-title-medium-font: var(--md-ref-typeface-title);
 	--md-sys-typescale-title-medium-weight: 600;
-	--md-sys-typescale-title-medium-size: 1rem;
-	--md-sys-typescale-title-medium-line-height: 1.5rem;
+	--md-sys-typescale-title-medium-size: 0.9375rem;
+	--md-sys-typescale-title-medium-line-height: 1.375rem;
 	--md-sys-typescale-title-medium-tracking: 0.009375rem;
 
 	--md-sys-typescale-title-small-font: var(--md-ref-typeface-title);
@@ -114,8 +114,8 @@
 
 	--md-sys-typescale-body-large-font: var(--md-ref-typeface-plain);
 	--md-sys-typescale-body-large-weight: 400;
-	--md-sys-typescale-body-large-size: 1rem;
-	--md-sys-typescale-body-large-line-height: 1.5rem;
+	--md-sys-typescale-body-large-size: 0.9375rem;
+	--md-sys-typescale-body-large-line-height: 1.4375rem;
 	--md-sys-typescale-body-large-tracking: 0.03125rem;
 
 	--md-sys-typescale-body-medium-font: var(--md-ref-typeface-plain);
@@ -250,9 +250,9 @@
 	--md-sys-shape-corner-medium: 12px;
 	--md-sys-shape-corner-large: 16px;
 	--md-sys-shape-corner-large-increased: 20px;
-	--md-sys-shape-corner-extra-large: 28px;
-	--md-sys-shape-corner-extra-large-increased: 32px;
-	--md-sys-shape-corner-extra-extra-large: 48px;
+	--md-sys-shape-corner-extra-large: 24px;
+	--md-sys-shape-corner-extra-large-increased: 28px;
+	--md-sys-shape-corner-extra-extra-large: 40px;
 	/* For shapes that stay round. A shape that morphs on hover or press rests at half its height
 	   instead (a 40px button: 20px): animating from 9999px holds the old shape for almost the whole
 	   transition, then snaps, and the spring's overshoot flashes square corners. */
@@ -1029,7 +1029,7 @@ body {
 .md-display-large {
 	font-family: var(--md-sys-typescale-display-large-font);
 	font-weight: var(--md-sys-typescale-display-large-weight);
-	font-size: clamp(2.5rem, 5vw, 4.25rem);
+	font-size: clamp(2rem, 4vw, 2.875rem);
 	line-height: 1;
 	letter-spacing: var(--md-sys-typescale-display-large-tracking);
 }

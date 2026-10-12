@@ -152,7 +152,7 @@
 		align-items: center;
 		gap: 10px;
 		min-height: 48px;
-		padding: 4px 4px 4px 14px;
+		padding: 4px 4px 4px 12px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-error-container);
 		color: var(--md-sys-color-on-error-container);
@@ -193,7 +193,7 @@
 	.voice__btn {
 		flex: none;
 		height: 40px;
-		padding: 0 14px;
+		padding: 0 12px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: transparent;

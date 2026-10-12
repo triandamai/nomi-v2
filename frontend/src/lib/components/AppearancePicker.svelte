@@ -101,7 +101,7 @@
 	.appearance {
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: 20px;
 	}
 	.appearance__label {
 		margin: 0 4px 10px;
@@ -127,7 +127,7 @@
 	.modes__item {
 		flex: 1;
 		height: 48px;
-		padding: 0 18px;
+		padding: 0 16px;
 		border: none;
 		border-radius: 8px;
 		background: var(--md-sys-color-surface-container-high);
@@ -166,7 +166,7 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 4px;
-		padding: 10px 10px 14px;
+		padding: 10px 10px 12px;
 		border: 2px solid transparent;
 		border-radius: 24px;
 		background: var(--md-sys-color-surface-container-lowest);
@@ -254,7 +254,7 @@
 	.theme__name {
 		padding: 0 4px;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.0625rem;
+		font-size: 1rem;
 		font-weight: 700;
 	}
 	.theme__description {

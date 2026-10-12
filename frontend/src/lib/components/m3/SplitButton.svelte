@@ -61,7 +61,7 @@
 			background-color var(--nomi-motion-effects-fast);
 	}
 	.m3-split__main {
-		padding: 0 14px 0 16px;
+		padding: 0 12px 0 14px;
 		border-radius: 22px 6px 6px 22px;
 	}
 	.m3-split__trigger {

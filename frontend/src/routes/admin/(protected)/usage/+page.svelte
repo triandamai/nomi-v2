@@ -267,7 +267,7 @@
 		align-items: center;
 		align-self: flex-start;
 		gap: 4px;
-		padding: 4px 14px 4px 4px;
+		padding: 4px 12px 4px 4px;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface);
@@ -293,7 +293,7 @@
 		flex-direction: column;
 		gap: 4px;
 		min-width: 0;
-		padding: 18px 20px;
+		padding: 16px 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		container-type: inline-size;
 		background: var(--md-sys-color-surface-container-lowest);
@@ -305,7 +305,7 @@
 	}
 	.tile dd {
 		margin: 0;
-		font-size: clamp(1.125rem, 15cqi, 1.75rem);
+		font-size: clamp(1.0625rem, 14cqi, 1.5rem);
 		font-weight: 650;
 		line-height: 1.2;
 		overflow-wrap: anywhere;
@@ -317,9 +317,9 @@
 	.panel {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 12px;
 		min-width: 0;
-		padding: 22px 24px;
+		padding: 18px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -332,7 +332,7 @@
 	}
 	.panel__title {
 		margin: 0;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -349,7 +349,7 @@
 	}
 	.empty {
 		margin: 0;
-		padding: 20px 24px;
+		padding: 16px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-low);
 		color: var(--md-sys-color-on-surface-variant);
@@ -492,14 +492,14 @@
 	@media (max-width: 600px) {
 		.daychart {
 			overflow-x: auto;
-			margin-top: -64px;
-			padding-top: 64px;
+			margin-top: -48px;
+			padding-top: 48px;
 		}
 		.daychart__svg {
 			min-width: 540px;
 		}
 		.panel {
-			padding: 18px 16px;
+			padding: 16px 14px;
 		}
 	}
 </style>

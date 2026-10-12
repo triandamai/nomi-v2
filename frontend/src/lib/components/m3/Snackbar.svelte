@@ -52,7 +52,7 @@
 		min-width: min(344px, calc(100vw - 32px));
 		max-width: calc(100vw - 32px);
 		box-sizing: border-box;
-		padding: 12px 8px 12px 18px;
+		padding: 12px 8px 12px 16px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-inverse-surface);
 		color: var(--md-sys-color-inverse-on-surface);
@@ -66,7 +66,7 @@
 	}
 	.m3-snackbar__action {
 		height: 40px;
-		padding: 0 14px;
+		padding: 0 12px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: transparent;

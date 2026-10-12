@@ -613,7 +613,7 @@
 	.money {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.money__inner {
@@ -621,13 +621,13 @@
 		margin: 0 auto;
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: 20px;
 	}
 	.money__head {
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		gap: 20px;
+		gap: 16px;
 		flex-wrap: wrap;
 	}
 	.money__titles {
@@ -690,9 +690,9 @@
 	.empty {
 		display: flex;
 		align-items: center;
-		gap: 28px;
+		gap: 22px;
 		flex-wrap: wrap;
-		padding: clamp(24px, 4vw, 48px);
+		padding: clamp(20px, 4vw, 36px);
 		border-radius: var(--md-sys-shape-corner-extra-extra-large);
 		background: var(--md-sys-color-surface-container-low);
 		color: var(--md-sys-color-on-surface);
@@ -708,14 +708,14 @@
 	.summary {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-		gap: 16px;
+		gap: 14px;
 		align-items: stretch;
 	}
 	.hero {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		padding: 28px;
+		padding: 22px;
 		border-radius: 40px 40px 40px 12px;
 		background: var(--nomi-color-stage);
 		color: var(--nomi-color-on-stage);
@@ -727,7 +727,7 @@
 	/* The hero figure stays in the body sans, proportional figures (dataviz: hero figure). */
 	.hero__value {
 		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: clamp(2.75rem, 7vw, 4rem);
+		font-size: clamp(2.25rem, 6vw, 3.25rem);
 		font-weight: 650;
 		line-height: 1.05;
 		letter-spacing: -0.02em;
@@ -751,7 +751,7 @@
 		justify-content: center;
 		gap: 6px;
 		min-width: 0;
-		padding: 18px 20px;
+		padding: 16px 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		/* The value scales with the tile, so a long category or amount stays inside it. */
 		container-type: inline-size;
@@ -764,7 +764,7 @@
 	}
 	.tile dd {
 		margin: 0;
-		font-size: clamp(1.125rem, 15cqi, 1.75rem);
+		font-size: clamp(1.0625rem, 14cqi, 1.5rem);
 		font-weight: 650;
 		line-height: 1.2;
 		overflow-wrap: anywhere;
@@ -776,14 +776,14 @@
 	.charts {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-		gap: 16px;
+		gap: 14px;
 		align-items: start;
 	}
 	.panel {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
-		padding: 22px 24px;
+		gap: 12px;
+		padding: 18px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -797,7 +797,7 @@
 	}
 	.panel__title {
 		margin: 0;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 	}
 	.budgets {
@@ -812,7 +812,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		padding: 12px 8px 16px 16px;
+		padding: 12px 8px 14px 14px;
 		border-radius: var(--md-sys-shape-corner-large-increased);
 		background: var(--md-sys-color-surface-container-low);
 		transition: border-radius var(--nomi-motion-spatial-fast);
@@ -854,7 +854,7 @@
 		white-space: nowrap;
 	}
 	.budget__figures {
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 650;
 		font-variant-numeric: tabular-nums;
 	}
@@ -876,7 +876,7 @@
 	.sheet {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 14px;
 	}
 	.sheet__head {
 		display: flex;
@@ -930,7 +930,7 @@
 	.detail__amount {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: clamp(2.25rem, 9vw, 3rem);
+		font-size: clamp(1.875rem, 8vw, 2.5rem);
 		font-weight: 800;
 		line-height: 1.05;
 		letter-spacing: -0.02em;
@@ -944,14 +944,14 @@
 		display: grid;
 		gap: 2px;
 		margin: 0;
-		padding: 6px 16px;
+		padding: 6px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 	}
 	.detail__facts div {
 		display: flex;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 14px;
 		padding: 8px 0;
 	}
 	.detail__facts div + div {
@@ -1108,8 +1108,8 @@
 	@media (max-width: 600px) {
 		.daychart {
 			overflow-x: auto;
-			padding-top: 56px;
-			margin-top: -56px;
+			padding-top: 44px;
+			margin-top: -44px;
 		}
 		.daychart__svg {
 			min-width: 540px;
@@ -1210,7 +1210,7 @@
 		gap: 10px;
 		max-width: 420px;
 		height: 48px;
-		padding: 0 18px;
+		padding: 0 16px;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface-variant);
@@ -1239,7 +1239,7 @@
 	}
 	.sheet__total {
 		margin: 0;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 650;
 	}
 	.items {

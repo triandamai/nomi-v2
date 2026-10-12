@@ -143,7 +143,7 @@
 <style>
 	.version {
 		display: block;
-		padding: 8px 16px 0;
+		padding: 8px 14px 0;
 		color: var(--md-sys-color-on-surface-variant);
 		font-family: var(--md-ref-typeface-mono);
 		font-size: 0.6875rem;
@@ -175,7 +175,7 @@
 	}
 	.brand__word {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 2rem;
+		font-size: 1.75rem;
 		line-height: 1;
 		font-weight: 800;
 		letter-spacing: -0.045em;
@@ -194,15 +194,15 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		padding: 12px 12px 20px;
+		padding: 12px 12px 16px;
 	}
 	.footer__item {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		width: 100%;
 		height: 48px;
-		padding: 0 20px;
+		padding: 0 16px;
 		border: none;
 		border-radius: 24px;
 		background: transparent;

@@ -44,7 +44,7 @@
 
 <style>
 	.invite-note {
-		margin: 0 0 16px;
+		margin: 0 0 14px;
 		padding: 10px 12px;
 		border-left: 3px solid var(--md-sys-color-primary);
 		border-radius: 4px;
@@ -56,7 +56,7 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		margin: 20px 0;
+		margin: 16px 0;
 		color: var(--md-sys-color-on-surface-variant);
 		font-family: var(--md-ref-typeface-mono);
 		font-size: 0.6875rem;

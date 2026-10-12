@@ -135,7 +135,7 @@
 		align-items: center;
 		justify-content: center;
 		gap: 12px;
-		padding: 24px;
+		padding: 20px;
 		text-align: center;
 	}
 	.preview__bar {
@@ -173,7 +173,7 @@
 	.preview__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -197,12 +197,12 @@
 	}
 	.preview--working {
 		gap: 12px;
-		padding: 16px;
+		padding: 14px;
 	}
 	.preview__head {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 	}
 	.preview__head-text {
 		display: flex;
@@ -220,7 +220,7 @@
 		flex: 1;
 		min-height: 160px;
 		margin: 0;
-		padding: 14px 16px;
+		padding: 12px 14px;
 		overflow: auto;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: #0f1a14;

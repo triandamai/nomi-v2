@@ -83,7 +83,7 @@
 	.picker {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 14px;
 	}
 	.picker__options {
 		display: flex;
@@ -98,9 +98,9 @@
 	.option {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		min-height: 64px;
-		padding: 10px 16px;
+		padding: 10px 14px;
 		border-top: 1px solid var(--md-sys-color-outline-variant);
 		color: var(--md-sys-color-on-surface);
 		cursor: pointer;
@@ -159,7 +159,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.picker__new {
-		padding: 4px 16px 16px 66px;
+		padding: 4px 14px 14px 66px;
 		background: color-mix(in srgb, var(--md-sys-color-primary) 9%, transparent);
 	}
 	.picker__error {
@@ -172,7 +172,7 @@
 	}
 	@media (max-width: 480px) {
 		.picker__new {
-			padding-left: 16px;
+			padding-left: 14px;
 		}
 		.picker__actions :global(> *) {
 			width: 100%;

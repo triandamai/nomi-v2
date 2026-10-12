@@ -201,7 +201,7 @@
 	}
 	.m3-data-table thead th {
 		text-align: left;
-		padding: 12px 16px;
+		padding: 12px 14px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 		color: var(--md-sys-color-on-surface-variant);
 		font-family: var(--md-sys-typescale-label-large-font);
@@ -224,7 +224,7 @@
 	   template — Svelte's scoped-style hash only applies to markup this file renders directly,
 	   so styling externally-provided content needs :global(). */
 	.m3-data-table :global(tbody td) {
-		padding: 12px 16px;
+		padding: 12px 14px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 		color: var(--md-sys-color-on-surface);
 	}
@@ -269,16 +269,16 @@
 		align-items: center;
 		justify-content: flex-end;
 		flex-wrap: wrap;
-		gap: 8px 24px;
+		gap: 8px 20px;
 		margin-top: 4px;
-		padding: 8px 4px 0 16px;
+		padding: 8px 4px 0 14px;
 		color: var(--md-sys-color-on-surface-variant);
 		font-family: var(--md-sys-typescale-body-small-font);
 		font-size: var(--md-sys-typescale-body-small-size);
 	}
 	.m3-data-table--card ~ .m3-data-table__footer {
 		margin-top: 8px;
-		padding: 6px 8px 6px 20px;
+		padding: 6px 8px 6px 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 	}
@@ -295,7 +295,7 @@
 	.m3-data-table__select select {
 		appearance: none;
 		height: 32px;
-		padding: 0 28px 0 12px;
+		padding: 0 22px 0 12px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-small);
 		background: transparent;
@@ -374,7 +374,7 @@
 			display: flex;
 			flex-direction: column;
 			gap: 2px;
-			padding: 14px 16px;
+			padding: 12px 14px;
 			border-radius: var(--md-sys-shape-corner-large);
 			background: var(--md-sys-color-surface-container-lowest);
 		}
@@ -416,7 +416,7 @@
 		.m3-data-table__footer,
 		.m3-data-table--card ~ .m3-data-table__footer {
 			justify-content: space-between;
-			padding: 6px 4px 6px 16px;
+			padding: 6px 4px 6px 14px;
 		}
 		.m3-data-table__pager {
 			margin-left: auto;

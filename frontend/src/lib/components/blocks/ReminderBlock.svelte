@@ -80,7 +80,7 @@
 		flex-direction: column;
 		gap: 8px;
 		max-width: 480px;
-		padding: 18px 20px;
+		padding: 16px 16px;
 		border-radius: var(--nomi-shape-bubble-start);
 		background: color-mix(in srgb, #ffc23c 22%, var(--md-sys-color-surface-container-lowest));
 		color: var(--md-sys-color-on-surface);
@@ -100,7 +100,7 @@
 	.reminder__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.375rem;
+		font-size: 1.1875rem;
 		font-weight: 700;
 		line-height: 1.25;
 	}

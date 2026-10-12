@@ -36,7 +36,7 @@
 	.out__item {
 		display: flex;
 		gap: 12px;
-		padding: 14px;
+		padding: 12px;
 		border-radius: 20px;
 		background: color-mix(in srgb, var(--tint) 16%, var(--md-sys-color-surface-container-lowest));
 		color: inherit;

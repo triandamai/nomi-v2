@@ -115,10 +115,10 @@
 	.list-page {
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: 16px;
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 40px) 56px;
+		padding: 24px clamp(14px, 4vw, 32px) 44px;
 		box-sizing: border-box;
 	}
 	.list-page__title {
@@ -188,7 +188,7 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		padding: 10px 4px 10px 16px;
+		padding: 10px 4px 10px 14px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 	}
 	.row-item__link {
@@ -228,7 +228,7 @@
 		flex-direction: column;
 		gap: 6px;
 		min-height: 140px;
-		padding: 16px 16px 14px;
+		padding: 14px 14px 12px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface);
@@ -256,8 +256,8 @@
 	.card__title {
 		display: -webkit-box;
 		overflow: hidden;
-		padding-right: 36px;
-		font-size: 1rem;
+		padding-right: 28px;
+		font-size: 0.9375rem;
 		font-weight: 650;
 		line-height: 1.35;
 		-webkit-line-clamp: 2;

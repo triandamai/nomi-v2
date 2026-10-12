@@ -50,7 +50,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		padding: 22px 16px 16px;
+		padding: 18px 14px 14px;
 		border-radius: 32px 32px 32px 10px;
 		background: var(--nomi-color-stage);
 		color: var(--nomi-color-on-stage);
@@ -82,7 +82,7 @@
 	.crew__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		letter-spacing: -0.02em;
 	}

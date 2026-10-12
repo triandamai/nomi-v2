@@ -207,7 +207,7 @@
 	}
 	.app-version {
 		margin: 4px 0 0;
-		padding: 8px 16px 4px;
+		padding: 8px 14px 4px;
 		border-top: 1px solid var(--md-sys-color-outline-variant);
 		color: var(--md-sys-color-on-surface-variant);
 		font-family: var(--md-ref-typeface-mono);
@@ -224,7 +224,7 @@
 	}
 	.nomi-brand__word {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 2rem;
+		font-size: 1.75rem;
 		line-height: 1;
 		font-weight: 800;
 		letter-spacing: -0.045em;
@@ -237,13 +237,13 @@
 		gap: 12px;
 		height: 56px;
 		width: 100%;
-		padding: 0 20px 0 16px;
+		padding: 0 16px 0 14px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-large-increased);
 		background: var(--nomi-gradient-action);
 		color: var(--nomi-on-action);
 		font-family: var(--md-sys-typescale-label-large-font);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 650;
 		cursor: pointer;
 		text-decoration: none;
@@ -318,7 +318,7 @@
 		justify-content: center;
 		gap: 6px;
 		min-height: 40px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border: none;
 		border-radius: 999px;
 		background: var(--md-sys-color-primary-container);

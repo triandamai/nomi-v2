@@ -179,9 +179,9 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 16px 20px;
+		gap: 14px 16px;
 		max-width: 720px;
-		padding: 22px 24px;
+		padding: 18px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -206,7 +206,7 @@
 	.provider__name {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.375rem;
+		font-size: 1.1875rem;
 		font-weight: 700;
 	}
 	.provider__facts {
@@ -219,7 +219,7 @@
 	.sheet-title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}

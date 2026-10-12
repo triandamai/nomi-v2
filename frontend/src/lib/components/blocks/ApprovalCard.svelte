@@ -84,7 +84,7 @@
 	/* Ember (tertiary) — the one place the warm accent appears in a conversation, so a
 	   pending decision is impossible to scroll past. Settles to a neutral surface once decided. */
 	.m3-block-card--approval {
-		padding: 20px 22px;
+		padding: 16px 18px;
 		border-radius: var(--nomi-shape-bubble-start);
 		background: var(--md-sys-color-tertiary-container);
 		color: var(--md-sys-color-on-tertiary-container);
@@ -103,7 +103,7 @@
 	.m3-approval-title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		line-height: 1.3;
 		font-weight: 650;
 		letter-spacing: -0.01em;
@@ -125,7 +125,7 @@
 	}
 	.m3-approval-btn {
 		height: 48px;
-		padding: 0 24px;
+		padding: 0 20px;
 		border-radius: 24px;
 		font-family: var(--md-sys-typescale-label-large-font);
 		font-size: 0.9375rem;

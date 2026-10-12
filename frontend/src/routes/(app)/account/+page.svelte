@@ -74,13 +74,13 @@
 	.account {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.account__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 28px;
+		gap: 22px;
 		max-width: 640px;
 	}
 	.account__title {
@@ -118,9 +118,9 @@
 	.row {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		min-height: 64px;
-		padding: 10px 12px 10px 16px;
+		padding: 10px 12px 10px 14px;
 		background: var(--md-sys-color-surface-container-lowest);
 	}
 	.row__icon {
@@ -143,7 +143,7 @@
 	}
 	.row__headline {
 		color: var(--md-sys-color-on-surface);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 600;
 	}
 	.row__supporting {
@@ -153,7 +153,7 @@
 	}
 	.note {
 		margin: 0;
-		padding: 12px 16px;
+		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		font-size: 0.875rem;
 	}

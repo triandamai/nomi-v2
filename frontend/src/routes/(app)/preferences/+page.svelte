@@ -95,7 +95,7 @@
 <style>
 	.m3-timezone-select {
 		height: 52px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		border: 1.5px solid var(--md-sys-color-outline);
 		background: var(--md-sys-color-surface);

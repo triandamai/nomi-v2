@@ -149,7 +149,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 12px 12px 0 24px;
+		padding: 12px 12px 0 20px;
 	}
 
 	.m3-side-sheet__title {
@@ -158,14 +158,14 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 600;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 
 	.m3-side-sheet__body {
 		overflow-y: auto;
-		padding: 8px 24px 24px;
+		padding: 8px 20px 20px;
 		flex: 1;
 	}
 </style>

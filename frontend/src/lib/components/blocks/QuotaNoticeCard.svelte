@@ -40,7 +40,7 @@
 		flex-direction: column;
 		gap: 10px;
 		max-width: 420px;
-		padding: 18px 20px;
+		padding: 16px 16px;
 		border-radius: var(--nomi-shape-bubble-start);
 		background: var(--md-sys-color-error-container);
 		color: var(--md-sys-color-on-error-container);
@@ -64,7 +64,7 @@
 	.quota__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 650;
 		line-height: 1.35;
 	}

@@ -71,7 +71,7 @@
 		gap: 12px;
 		width: 100%;
 		height: 52px;
-		padding: 0 12px 0 16px;
+		padding: 0 12px 0 14px;
 		box-sizing: border-box;
 		border: 1.5px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-large);

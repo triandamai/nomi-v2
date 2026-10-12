@@ -436,7 +436,7 @@
 	.user-item__email {
 		overflow: hidden;
 		color: var(--md-sys-color-on-surface);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -486,7 +486,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		padding: 14px 16px;
+		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 	}

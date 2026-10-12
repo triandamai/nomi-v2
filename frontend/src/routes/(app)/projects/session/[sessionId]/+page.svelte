@@ -443,7 +443,7 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 8px 8px 8px 16px;
+		padding: 8px 8px 8px 14px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 	}
 	.pane-bar__title {
@@ -453,7 +453,7 @@
 		overflow: hidden;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 700;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -496,7 +496,7 @@
 	}
 	.pane-tab {
 		height: 32px;
-		padding: 0 14px;
+		padding: 0 12px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: transparent;
@@ -532,7 +532,7 @@
 	.terminal {
 		height: 100%;
 		margin: 0;
-		padding: 12px 16px;
+		padding: 12px 14px;
 		overflow: auto;
 		background: #0f1a14;
 		color: #d7e6dc;

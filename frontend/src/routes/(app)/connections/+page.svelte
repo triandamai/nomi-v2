@@ -92,13 +92,13 @@
 	.connections {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.connections__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: 16px;
 		max-width: 720px;
 		margin: 0 auto;
 	}
@@ -120,7 +120,7 @@
 		align-items: center;
 		gap: 10px;
 		min-height: 52px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface-variant);
@@ -174,9 +174,9 @@
 	.row {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		min-height: 72px;
-		padding: 12px 16px;
+		padding: 12px 14px;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
 		text-decoration: none;

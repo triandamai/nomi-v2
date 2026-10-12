@@ -60,13 +60,13 @@
 	.section-page {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.section-page__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: 20px;
 		max-width: 760px;
 		margin: 0 auto;
 	}
@@ -93,7 +93,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.section-page__card {
-		padding: 24px;
+		padding: 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);

@@ -208,7 +208,7 @@
 	.home {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.home__inner {
@@ -216,7 +216,7 @@
 		margin: 0 auto;
 		display: flex;
 		flex-direction: column;
-		gap: 48px;
+		gap: 36px;
 	}
 	.home__error {
 		color: var(--md-sys-color-error);
@@ -226,13 +226,13 @@
 	.home__hero {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
-		gap: 28px;
+		gap: 22px;
 		align-items: start;
 	}
 	.home__lead {
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: 20px;
 		min-width: 0;
 		grid-column: span 1;
 	}
@@ -259,7 +259,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		padding: 20px 14px 14px 24px;
+		padding: 16px 12px 12px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		box-shadow:
@@ -273,7 +273,7 @@
 		background: transparent;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		line-height: 1.5;
 		padding-right: 10px;
 	}
@@ -302,7 +302,7 @@
 	}
 
 	.crew {
-		padding: 28px;
+		padding: 22px;
 		border-radius: 40px 40px 40px 12px;
 		background: var(--nomi-color-stage);
 		color: var(--nomi-color-on-stage);
@@ -339,7 +339,7 @@
 	.crew__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.75rem;
+		font-size: 1.5rem;
 		font-weight: 700;
 		letter-spacing: -0.02em;
 	}
@@ -354,7 +354,7 @@
 	.crew__item {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		padding: 10px 0;
 	}
 	.crew__text {
@@ -364,7 +364,7 @@
 	}
 	.crew__name {
 		font-weight: 650;
-		font-size: 1rem;
+		font-size: 0.9375rem;
 	}
 	.crew__role {
 		font-size: 0.875rem;
@@ -382,7 +382,7 @@
 		gap: 8px;
 		min-height: 40px;
 		margin-top: 12px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border-radius: 20px;
 		background: color-mix(in srgb, var(--nomi-color-on-stage) 12%, transparent);
 		color: var(--nomi-color-on-stage);
@@ -408,7 +408,7 @@
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
-		margin-bottom: 16px;
+		margin-bottom: 14px;
 	}
 	.recent__head h2 {
 		margin: 0;
@@ -425,7 +425,7 @@
 		padding: 0;
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
-		gap: 16px;
+		gap: 14px;
 	}
 	.recent__card {
 		display: flex;
@@ -433,7 +433,7 @@
 		gap: 8px;
 		height: 100%;
 		box-sizing: border-box;
-		padding: 18px 20px 20px;
+		padding: 16px 16px 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -454,7 +454,7 @@
 	}
 	.recent__name {
 		font-weight: 650;
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;

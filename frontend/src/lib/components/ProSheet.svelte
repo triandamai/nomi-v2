@@ -55,17 +55,17 @@
 	.plans-sheet {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 14px;
 	}
 	.plans-sheet__head {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 	}
 	.plans-sheet__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.625rem;
+		font-size: 1.4375rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -85,7 +85,7 @@
 	.plans-sheet__loading {
 		display: flex;
 		justify-content: center;
-		padding: 24px;
+		padding: 20px;
 	}
 	.plans-sheet__actions {
 		display: flex;

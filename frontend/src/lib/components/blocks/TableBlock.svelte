@@ -111,7 +111,7 @@
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		color: var(--md-sys-color-on-surface);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		line-height: 1.375rem;
 		overflow-wrap: anywhere;
 	}

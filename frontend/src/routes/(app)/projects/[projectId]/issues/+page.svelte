@@ -248,13 +248,13 @@
 	.issues {
 		height: 100%;
 		overflow-y: auto;
-		padding: 24px clamp(16px, 4vw, 48px) 56px;
+		padding: 20px clamp(14px, 4vw, 36px) 44px;
 		box-sizing: border-box;
 	}
 	.issues__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 14px;
 		max-width: 880px;
 		margin: 0 auto;
 	}
@@ -276,7 +276,7 @@
 		flex-wrap: wrap;
 		align-items: flex-end;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 14px;
 	}
 	.head__text {
 		min-width: 0;
@@ -455,7 +455,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding: 4px 8px 16px;
+		padding: 4px 8px 14px;
 		background: var(--md-sys-color-surface-container-low);
 	}
 	.issue__body {
@@ -493,7 +493,7 @@
 	.editor {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 14px;
 		min-width: min(520px, 80vw);
 	}
 	.choice {
@@ -565,7 +565,7 @@
 		box-sizing: border-box;
 		width: 100%;
 		min-height: 140px;
-		padding: 12px 16px;
+		padding: 12px 14px;
 		border: 1.5px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface);

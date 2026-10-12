@@ -29,13 +29,13 @@
 		gap: 12px;
 		width: 100%;
 		height: 56px;
-		padding: 0 24px;
+		padding: 0 20px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: 28px;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-sys-typescale-label-large-font);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 600;
 		cursor: pointer;
 		transition:

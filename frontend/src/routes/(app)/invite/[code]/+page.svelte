@@ -62,17 +62,17 @@
 		place-items: center;
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px 16px;
+		padding: 24px 14px;
 		box-sizing: border-box;
 	}
 	.invite__card {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		gap: 16px;
+		gap: 14px;
 		width: 100%;
 		max-width: 480px;
-		padding: 28px;
+		padding: 22px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface);
