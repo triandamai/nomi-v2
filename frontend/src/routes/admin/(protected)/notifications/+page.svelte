@@ -98,7 +98,7 @@
 	.layout {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 20px;
+		gap: 16px;
 	}
 	@media (min-width: 960px) {
 		.layout {
@@ -110,12 +110,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding: 20px;
+		padding: 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-low);
 	}
 	.sent {
-		margin-top: 20px;
+		margin-top: 16px;
 	}
 	.compose__title {
 		margin: 0;
@@ -136,7 +136,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.field textarea {
-		padding: 12px 14px;
+		padding: 12px 12px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-small);
 		background: transparent;
@@ -165,8 +165,8 @@
 	}
 	.preview__item {
 		display: flex;
-		gap: 14px;
-		padding: 14px 16px;
+		gap: 12px;
+		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container-high);
 		color: var(--md-sys-color-on-surface);
@@ -209,7 +209,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-		padding: 12px 14px;
+		padding: 12px 12px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 	}

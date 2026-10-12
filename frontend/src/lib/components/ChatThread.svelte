@@ -956,7 +956,7 @@
 <BottomSheet bind:open={activitySheetOpen}>
 	{#snippet children()}
 		<CrewPanel members={crew} surface />
-		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 20px 0 12px;">{m.chat_handoffs()}</h2>
+		<h2 class="md-title-large" style="color: var(--md-sys-color-on-surface); margin: 16px 0 12px;">{m.chat_handoffs()}</h2>
 		{#if agentActivity.length === 0}
 			<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">{m.chat_no_activity()}</p>
 		{:else}
@@ -993,7 +993,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 14px clamp(12px, 3vw, 32px) 10px;
+		padding: 12px clamp(12px, 3vw, 24px) 10px;
 	}
 	.appbar__title-button {
 		display: inline-flex;
@@ -1057,14 +1057,14 @@
 		align-items: center;
 		gap: 12px;
 		margin: auto 0;
-		padding: 48px 8px 24px;
+		padding: 36px 8px 20px;
 		text-align: center;
 	}
 	.thread__empty-crew {
 		display: flex;
 	}
 	.thread__empty-crew :global(> :last-child) {
-		margin-left: -14px;
+		margin-left: -12px;
 	}
 
 	/* A project's chat: a workspace for making something, with a faint blueprint grid. */
@@ -1111,7 +1111,7 @@
 	.thread__empty-title {
 		margin: 8px 0 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.75rem;
+		font-size: 1.5rem;
 		font-weight: 700;
 		letter-spacing: -0.01em;
 		color: var(--md-sys-color-on-surface);
@@ -1139,7 +1139,7 @@
 	.appbar__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.75rem;
+		font-size: 1.5rem;
 		line-height: 1.15;
 		font-weight: 700;
 		letter-spacing: -0.025em;
@@ -1201,7 +1201,7 @@
 		flex: 1;
 		min-height: 0;
 		display: flex;
-		gap: 24px;
+		gap: 20px;
 		padding-right: 0;
 	}
 	.chat__main {
@@ -1220,7 +1220,7 @@
 			gap: 4px;
 		}
 		.appbar__title {
-			font-size: 1.375rem;
+			font-size: 1.1875rem;
 		}
 		.appbar__crew-label {
 			display: none;
@@ -1233,14 +1233,14 @@
 	/* Wide chats: the crew lives in its own column and the app-bar stack button steps aside. */
 	@container (min-width: 1100px) {
 		.chat__body {
-			padding-right: 24px;
+			padding-right: 20px;
 		}
 		.chat__crew {
 			display: block;
 			flex: none;
 			width: 300px;
 			overflow-y: auto;
-			padding-bottom: 16px;
+			padding-bottom: 14px;
 		}
 		.appbar__crew {
 			display: none;
@@ -1250,7 +1250,7 @@
 	.thread {
 		flex: 1;
 		overflow-y: auto;
-		padding: 12px clamp(16px, 3vw, 40px) 8px;
+		padding: 12px clamp(14px, 3vw, 32px) 8px;
 	}
 	.thread__column {
 		max-width: 780px;
@@ -1259,11 +1259,11 @@
 	.thread__older {
 		display: flex;
 		justify-content: center;
-		padding: 8px 0 16px;
+		padding: 8px 0 14px;
 	}
 	.thread__older-btn {
 		min-height: 40px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-full);
 		background: none;
@@ -1283,15 +1283,15 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		margin-top: 22px;
+		margin-top: 18px;
 		padding-left: 4px;
 		font-family: var(--md-sys-typescale-body-large-font);
 		font-size: 0.9375rem;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.thread__notice {
-		margin: 16px 0 0;
-		padding: 12px 16px;
+		margin: 14px 0 0;
+		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-error-container);
 		color: var(--md-sys-color-on-error-container);
@@ -1300,7 +1300,7 @@
 	}
 
 	.dock {
-		padding: 8px clamp(12px, 3vw, 40px) 16px;
+		padding: 8px clamp(12px, 3vw, 32px) 14px;
 	}
 	.composer {
 		display: flex;

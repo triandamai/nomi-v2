@@ -71,9 +71,9 @@
 	.language {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		min-height: 64px;
-		padding: 10px 16px;
+		padding: 10px 14px;
 		border: none;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -121,7 +121,7 @@
 		gap: 2px;
 	}
 	.language__name {
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 600;
 	}
 	.language__hint {

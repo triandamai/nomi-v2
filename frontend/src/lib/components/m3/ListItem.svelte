@@ -58,7 +58,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-		padding: 10px 14px;
+		padding: 10px 12px;
 		border-radius: var(--md-sys-shape-corner-large-increased);
 	}
 	.m3-list-item--action {

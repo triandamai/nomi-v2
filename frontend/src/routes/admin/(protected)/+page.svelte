@@ -77,7 +77,7 @@
 		flex-direction: column;
 		gap: 6px;
 		min-width: 0;
-		padding: 20px 22px;
+		padding: 16px 18px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -95,7 +95,7 @@
 	}
 	.stat__value {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 2.75rem;
+		font-size: 2.25rem;
 		font-weight: 800;
 		line-height: 1;
 		letter-spacing: -0.03em;
@@ -126,11 +126,11 @@
 		display: grid;
 		grid-template-columns: auto 1fr;
 		grid-template-rows: auto auto;
-		column-gap: 14px;
+		column-gap: 12px;
 		row-gap: 4px;
 		height: 100%;
 		box-sizing: border-box;
-		padding: 18px 20px;
+		padding: 16px 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -156,7 +156,7 @@
 	.area__title {
 		align-self: end;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 	}
 	.area__body {

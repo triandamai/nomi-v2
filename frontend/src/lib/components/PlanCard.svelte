@@ -78,7 +78,7 @@
 		justify-content: space-between;
 		gap: 8px;
 		min-height: 56px;
-		padding: 12px 14px;
+		padding: 12px 12px;
 	}
 	.plan__promo,
 	.plan__current {
@@ -101,12 +101,12 @@
 		flex: 1;
 		flex-direction: column;
 		gap: 8px;
-		padding: 16px 20px 20px;
+		padding: 14px 16px 16px;
 	}
 	.plan__name {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.375rem;
+		font-size: 1.1875rem;
 		font-weight: 800;
 		letter-spacing: -0.02em;
 	}
@@ -124,7 +124,7 @@
 	}
 	.plan__price-now {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 		color: var(--plan-accent);
 	}

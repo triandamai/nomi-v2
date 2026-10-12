@@ -199,7 +199,7 @@
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-		gap: 16px;
+		gap: 14px;
 	}
 	.slot {
 		display: flex;
@@ -217,14 +217,14 @@
 	.sheet-title {
 		margin: 0 0 12px;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
 	.editor {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 20px;
+		gap: 16px;
 	}
 	@media (min-width: 900px) {
 		.editor {
@@ -261,7 +261,7 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.field textarea {
-		padding: 12px 14px;
+		padding: 12px 12px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-small);
 		background: transparent;

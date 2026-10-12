@@ -63,14 +63,14 @@
 	.cards {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-		gap: 16px;
+		gap: 14px;
 		align-items: start;
 	}
 	.card {
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding: 24px;
+		padding: 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -84,7 +84,7 @@
 	}
 	.card__title {
 		margin: 0;
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 	}
 	.card__link {

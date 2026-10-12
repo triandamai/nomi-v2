@@ -400,7 +400,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-		padding: 16px 12px 12px 24px;
+		padding: 14px 12px 12px 20px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 	}
 	.dp__supporting {
@@ -418,7 +418,7 @@
 		min-width: 0;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.75rem;
+		font-size: 1.5rem;
 		font-weight: 700;
 		letter-spacing: -0.02em;
 		line-height: 1.2;
@@ -427,7 +427,7 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		padding: 8px 12px 0 16px;
+		padding: 8px 12px 0 14px;
 	}
 	.dp__month {
 		display: inline-flex;
@@ -538,7 +538,7 @@
 		grid-template-columns: repeat(3, 1fr);
 		gap: 8px 4px;
 		height: 300px;
-		padding: 8px 16px;
+		padding: 8px 14px;
 		overflow-y: auto;
 		box-sizing: border-box;
 	}
@@ -568,7 +568,7 @@
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 8px;
-		padding: 12px 16px 0;
+		padding: 12px 14px 0;
 	}
 	.dp__edge {
 		display: flex;
@@ -597,7 +597,7 @@
 	.dp__wheels {
 		display: flex;
 		gap: 4px;
-		padding: 16px;
+		padding: 14px;
 	}
 	.dp__actions {
 		display: flex;

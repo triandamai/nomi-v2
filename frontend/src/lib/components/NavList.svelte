@@ -42,14 +42,14 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		padding: 16px 12px;
+		padding: 14px 12px;
 	}
 	.nomi-nav__item {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		height: 52px;
-		padding: 0 16px 0 4px;
+		height: 44px;
+		padding: 0 14px 0 4px;
 		border-radius: var(--md-sys-shape-corner-full);
 		color: var(--md-sys-color-on-surface-variant);
 		text-decoration: none;
@@ -104,7 +104,7 @@
 	.nomi-nav--rail {
 		align-items: center;
 		gap: 12px;
-		padding: 20px 0;
+		padding: 16px 0;
 	}
 	.nomi-nav--rail .nomi-nav__item {
 		flex-direction: column;

@@ -26,7 +26,7 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 24px;
+		gap: 20px;
 	}
 	.page-header__text {
 		display: flex;

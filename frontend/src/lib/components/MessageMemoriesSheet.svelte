@@ -144,7 +144,7 @@
 	.sheet__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -176,7 +176,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 6px 10px;
-		padding: 12px 14px;
+		padding: 12px 12px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 		color: var(--md-sys-color-on-surface);

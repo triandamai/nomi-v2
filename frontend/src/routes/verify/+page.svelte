@@ -135,13 +135,13 @@
 	.code__input {
 		width: 100%;
 		box-sizing: border-box;
-		padding: 14px 16px;
+		padding: 12px 14px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-large);
 		background: transparent;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-mono);
-		font-size: 2rem;
+		font-size: 1.75rem;
 		font-weight: 600;
 		letter-spacing: 0.5em;
 		text-align: center;
@@ -165,7 +165,7 @@
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		margin-top: 20px;
+		margin-top: 16px;
 		font-size: 0.875rem;
 	}
 	.resend__note {

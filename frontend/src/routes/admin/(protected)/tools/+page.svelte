@@ -379,8 +379,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 16px 20px;
-		padding: 22px 24px;
+		gap: 14px 16px;
+		padding: 18px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -405,7 +405,7 @@
 	.hero__name {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.375rem;
+		font-size: 1.1875rem;
 		font-weight: 700;
 	}
 	.hero__status {
@@ -435,7 +435,7 @@
 	.group__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -465,8 +465,8 @@
 	.tool {
 		display: flex;
 		align-items: center;
-		gap: 12px 16px;
-		padding: 14px 18px;
+		gap: 12px 14px;
+		padding: 12px 16px;
 		background: var(--md-sys-color-surface-container-lowest);
 	}
 	.tool__text {
@@ -533,7 +533,7 @@
 	@media (max-width: 599px) {
 		.hero {
 			align-items: flex-start;
-			padding: 20px;
+			padding: 16px;
 		}
 		.hero__icon {
 			width: 48px;
@@ -542,7 +542,7 @@
 		}
 		.tool {
 			align-items: flex-start;
-			padding: 14px 16px;
+			padding: 12px 14px;
 		}
 		/* The switch stays beside the name; the settings button drops under it. */
 		.tool__actions {
@@ -554,7 +554,7 @@
 	.sheet-title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -580,8 +580,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		margin-top: 24px;
-		padding-top: 20px;
+		margin-top: 20px;
+		padding-top: 16px;
 		border-top: 1px solid var(--md-sys-color-outline-variant);
 	}
 	.test__ok {
@@ -599,7 +599,7 @@
 		flex-direction: column;
 		gap: 10px;
 		margin: 0;
-		padding-left: 20px;
+		padding-left: 16px;
 		font-size: 0.875rem;
 	}
 	.hits a {

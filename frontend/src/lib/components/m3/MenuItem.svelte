@@ -37,7 +37,7 @@
 		cursor: pointer;
 		text-align: left;
 		min-height: 44px;
-		padding: 8px 14px;
+		padding: 8px 12px;
 		border-radius: var(--md-sys-shape-corner-medium);
 		font-family: var(--md-sys-typescale-label-large-font);
 		font-size: var(--md-sys-typescale-label-large-size);

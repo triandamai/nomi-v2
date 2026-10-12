@@ -198,7 +198,7 @@
 	}
 	.drawer-config__empty {
 		margin: 0;
-		padding: 16px;
+		padding: 14px;
 		border: 1.5px dashed var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-large);
 		color: var(--md-sys-color-on-surface-variant);
@@ -338,7 +338,7 @@
 		align-self: flex-start;
 		min-height: 40px;
 		margin-top: 8px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border: 1px solid var(--md-sys-color-outline);
 		border-radius: var(--md-sys-shape-corner-full);
 		background: none;

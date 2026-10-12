@@ -216,7 +216,7 @@
 	.projects {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 40px) 56px;
+		padding: 24px clamp(14px, 4vw, 32px) 44px;
 		box-sizing: border-box;
 	}
 	.projects__head {
@@ -224,7 +224,7 @@
 		flex-wrap: wrap;
 		align-items: flex-end;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 14px;
 	}
 	.projects__title {
 		margin: 0;
@@ -281,7 +281,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 14px;
 		min-width: 200px;
 	}
 	.menu-row__name {
@@ -291,7 +291,7 @@
 	}
 	.pick {
 		max-width: 560px;
-		margin-top: 32px;
+		margin-top: 24px;
 	}
 	.pick__title {
 		margin: 0;
@@ -301,7 +301,7 @@
 		color: var(--md-sys-color-on-surface);
 	}
 	.pick__lede {
-		margin: 8px 0 20px;
+		margin: 8px 0 16px;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.list-bar {
@@ -309,7 +309,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 12px;
-		margin-top: 24px;
+		margin-top: 20px;
 	}
 	.list-bar > :global(:first-child) {
 		flex: 1 1 320px;
@@ -317,10 +317,10 @@
 	.pager {
 		display: flex;
 		justify-content: center;
-		margin-top: 20px;
+		margin-top: 16px;
 	}
 	.table-wrap {
-		margin-top: 16px;
+		margin-top: 14px;
 	}
 	.cell-name {
 		display: flex;
@@ -380,7 +380,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-		padding: 12px 16px;
+		padding: 12px 14px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 		color: var(--md-sys-color-on-surface);
 		text-decoration: none;
@@ -405,7 +405,7 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 		gap: 12px;
-		margin: 16px 0 0;
+		margin: 14px 0 0;
 		padding: 0;
 		list-style: none;
 	}
@@ -415,7 +415,7 @@
 		flex-direction: column;
 		gap: 6px;
 		min-height: 156px;
-		padding: 16px;
+		padding: 14px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface);
@@ -442,7 +442,7 @@
 	.card__name {
 		display: -webkit-box;
 		overflow: hidden;
-		font-size: 1.0625rem;
+		font-size: 1rem;
 		font-weight: 650;
 		line-height: 1.3;
 		-webkit-line-clamp: 2;
@@ -487,11 +487,11 @@
 		color: var(--md-sys-color-primary);
 	}
 	.projects__empty {
-		margin: 16px 0 0;
+		margin: 14px 0 0;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.dialog-lede {
-		margin: 0 0 16px;
+		margin: 0 0 14px;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.dialog-error {

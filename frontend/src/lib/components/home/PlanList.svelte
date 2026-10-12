@@ -34,7 +34,7 @@
 	.plans {
 		display: flex;
 		flex-direction: column;
-		gap: 18px;
+		gap: 16px;
 	}
 	.plans__item {
 		display: flex;

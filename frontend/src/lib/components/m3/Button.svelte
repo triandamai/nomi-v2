@@ -64,21 +64,21 @@
 	.m3-button--size-xs {
 		height: 32px;
 		border-radius: 16px;
-		padding: 0 14px;
+		padding: 0 12px;
 	}
 	.m3-button--size-s {
 		height: 40px;
 		border-radius: 20px;
-		padding: 0 18px;
+		padding: 0 16px;
 	}
 	.m3-button--size-s:not(:disabled):active {
 		border-radius: var(--md-sys-shape-corner-small);
 	}
 	.m3-button--size-m {
-		height: 56px;
-		border-radius: 28px;
-		padding: 0 24px;
-		font-size: 1rem;
+		height: 48px;
+		border-radius: 24px;
+		padding: 0 20px;
+		font-size: 0.9375rem;
 	}
 	.m3-button--size-m:not(:disabled):active {
 		border-radius: var(--md-sys-shape-corner-medium);
@@ -86,9 +86,9 @@
 	.m3-button--size-l {
 		height: 96px;
 		border-radius: 48px;
-		padding: 0 40px;
+		padding: 0 32px;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.625rem;
+		font-size: 1.4375rem;
 		font-weight: 650;
 	}
 	.m3-button--size-l:not(:disabled):active {
@@ -97,9 +97,9 @@
 	.m3-button--size-xl {
 		height: 136px;
 		border-radius: 68px;
-		padding: 0 56px;
+		padding: 0 44px;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 2.25rem;
+		font-size: 1.875rem;
 		font-weight: 700;
 	}
 	.m3-button--size-xl:not(:disabled):active {

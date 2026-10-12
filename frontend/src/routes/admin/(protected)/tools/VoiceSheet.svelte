@@ -357,7 +357,7 @@
 	.sheet-title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -529,7 +529,7 @@
 	.switch-row {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
 	}
 	.switch-row__text {
 		display: flex;
@@ -549,8 +549,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		margin-top: 24px;
-		padding-top: 20px;
+		margin-top: 20px;
+		padding-top: 16px;
 		border-top: 1px solid var(--md-sys-color-outline-variant);
 	}
 	.test__error {

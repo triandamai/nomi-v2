@@ -221,8 +221,8 @@
 		box-sizing: border-box;
 		display: flex;
 		flex-direction: column;
-		gap: 28px;
-		padding: clamp(28px, 4.5vw, 56px);
+		gap: 22px;
+		padding: clamp(22px, 4.5vw, 44px);
 	}
 	.stage__mark {
 		display: flex;
@@ -233,7 +233,7 @@
 	}
 	.stage__word {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 2.25rem;
+		font-size: 1.875rem;
 		line-height: 1;
 		font-weight: 800;
 		letter-spacing: -0.045em;
@@ -242,7 +242,7 @@
 		margin: 0;
 		max-width: 11ch;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: clamp(2.5rem, 4.4vw, 4.5rem);
+		font-size: clamp(2.25rem, 4vw, 3.75rem);
 		line-height: 0.98;
 		font-weight: 800;
 		letter-spacing: -0.045em;
@@ -264,7 +264,7 @@
 		gap: 12px;
 		width: 100%;
 		box-sizing: border-box;
-		padding: 14px 18px 14px 14px;
+		padding: 12px 16px 12px 12px;
 		border-radius: 24px 24px 24px 8px;
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -304,7 +304,7 @@
 		flex: 1 1 440px;
 		display: flex;
 		flex-direction: column;
-		padding: 20px clamp(16px, 4vw, 48px) 40px;
+		padding: 16px clamp(14px, 4vw, 36px) 32px;
 		box-sizing: border-box;
 	}
 	.panel__footer {
@@ -314,7 +314,7 @@
 		justify-content: center;
 		gap: 6px;
 		margin-top: auto;
-		padding-top: 32px;
+		padding-top: 24px;
 		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.8125rem;
 	}
@@ -349,7 +349,7 @@
 		display: inline-flex;
 		align-items: center;
 		height: 44px;
-		padding: 0 20px;
+		padding: 0 16px;
 		border-radius: 22px;
 		background: var(--md-sys-color-secondary-container);
 		color: var(--md-sys-color-on-secondary-container);
@@ -365,10 +365,10 @@
 		width: 100%;
 		max-width: 420px;
 		margin: auto;
-		padding: 32px 0;
+		padding: 24px 0;
 		display: flex;
 		flex-direction: column;
-		gap: 28px;
+		gap: 22px;
 	}
 	.panel__heading {
 		display: flex;
@@ -378,7 +378,7 @@
 	.panel__title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: clamp(2.5rem, 4vw, 3.25rem);
+		font-size: clamp(2.125rem, 3.6vw, 2.75rem);
 		line-height: 1;
 		font-weight: 800;
 		letter-spacing: -0.04em;
@@ -386,7 +386,7 @@
 	}
 	.panel__subtitle {
 		margin: 0;
-		font-size: 1.0625rem;
+		font-size: 1rem;
 		line-height: 1.5;
 		color: var(--md-sys-color-on-surface-variant);
 	}
@@ -416,7 +416,7 @@
 			display: none;
 		}
 		.stage__line {
-			font-size: 2rem;
+			font-size: 1.75rem;
 			max-width: 12ch;
 		}
 		.ticker {

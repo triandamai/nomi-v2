@@ -102,7 +102,7 @@
 		width: 100%;
 		max-width: 540px;
 		box-sizing: border-box;
-		padding: 20px 22px 16px;
+		padding: 16px 18px 14px;
 		border-radius: var(--nomi-shape-bubble-start);
 		background: color-mix(in srgb, var(--tint) 16%, var(--md-sys-color-surface-container-lowest));
 		color: var(--md-sys-color-on-surface);
@@ -116,7 +116,7 @@
 		flex: 1;
 		min-width: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 		letter-spacing: -0.01em;
 	}

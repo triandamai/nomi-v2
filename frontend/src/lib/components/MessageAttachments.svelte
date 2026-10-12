@@ -99,7 +99,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 16px;
+		padding: 14px;
 		font-size: 0.8125rem;
 	}
 	.files {
@@ -151,7 +151,7 @@
 		gap: 10px;
 		max-width: min(320px, 100%);
 		min-height: 48px;
-		padding: 6px 14px 6px 8px;
+		padding: 6px 12px 6px 8px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: color-mix(in srgb, currentColor 12%, transparent);

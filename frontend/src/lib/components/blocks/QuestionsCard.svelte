@@ -89,8 +89,8 @@
 	.questions {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
-		padding: 20px;
+		gap: 14px;
+		padding: 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container);
 		color: var(--md-sys-color-on-surface);
@@ -102,7 +102,7 @@
 	}
 	.questions__title {
 		font-weight: 700;
-		font-size: 1.0625rem;
+		font-size: 1rem;
 		line-height: 1.35;
 	}
 	.question {
@@ -136,7 +136,7 @@
 		gap: 2px;
 		max-width: 100%;
 		min-height: 40px;
-		padding: 8px 14px;
+		padding: 8px 12px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface-container-low);
@@ -183,7 +183,7 @@
 	.questions__note textarea {
 		box-sizing: border-box;
 		width: 100%;
-		padding: 12px 14px;
+		padding: 12px 12px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface-container-lowest);
@@ -201,7 +201,7 @@
 	}
 	.questions__send {
 		min-height: 40px;
-		padding: 0 20px;
+		padding: 0 16px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-primary);

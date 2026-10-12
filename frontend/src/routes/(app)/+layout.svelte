@@ -66,7 +66,7 @@
 			</IconButton>
 			<a href="/" class="flex items-center gap-2" style="color: var(--md-sys-color-on-surface); text-decoration: none">
 				<AgentShape size={28} face />
-				<span style="font-family: var(--md-ref-typeface-brand); font-size: 1.5rem; font-weight: 800; letter-spacing: -0.045em">nomi</span>
+				<span style="font-family: var(--md-ref-typeface-brand); font-size: 1.3125rem; font-weight: 800; letter-spacing: -0.045em">nomi</span>
 			</a>
 			<a href="/notifications" class="bell" aria-label={inbox.unread > 0 ? m.notif_bell_unread({ count: inbox.unread }) : m.notif_title()}>
 				<IconInbox size={24} />

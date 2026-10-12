@@ -24,9 +24,9 @@
 	.project-link {
 		display: grid;
 		grid-template-columns: auto 1fr;
-		gap: 14px 16px;
+		gap: 12px 14px;
 		max-width: 440px;
-		padding: 18px 20px;
+		padding: 16px 16px;
 		border-radius: var(--nomi-shape-bubble-start);
 		background: var(--md-sys-color-tertiary-container);
 		color: var(--md-sys-color-on-tertiary-container);
@@ -72,7 +72,7 @@
 	}
 	.project-link__name {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.125rem;
+		font-size: 1.0625rem;
 		font-weight: 700;
 		line-height: 1.3;
 		overflow-wrap: anywhere;
@@ -88,7 +88,7 @@
 		display: inline-flex;
 		align-items: center;
 		height: 40px;
-		padding: 0 20px;
+		padding: 0 16px;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: var(--md-sys-color-tertiary);
 		color: var(--md-sys-color-on-tertiary);

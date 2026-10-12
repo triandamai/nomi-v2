@@ -66,7 +66,7 @@
 	}
 	.mobile-brand__word {
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 800;
 		letter-spacing: -0.045em;
 	}
@@ -83,23 +83,23 @@
 	.sheet-title {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.5rem;
+		font-size: 1.3125rem;
 		font-weight: 700;
 		color: var(--md-sys-color-on-surface);
 	}
 	.sheet-lede {
-		margin: 4px 0 20px;
+		margin: 4px 0 16px;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.admin-main {
 		flex: 1;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 	}
 	.admin-main__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 28px;
+		gap: 22px;
 		max-width: 1180px;
 		margin: 0 auto;
 	}

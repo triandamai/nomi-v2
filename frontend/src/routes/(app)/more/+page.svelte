@@ -75,13 +75,13 @@
 	.more {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.more__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 28px;
+		gap: 22px;
 		max-width: 1080px;
 		margin: 0 auto;
 	}
@@ -129,9 +129,9 @@
 	.tile__link {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
 		min-height: 88px;
-		padding: 16px 56px 16px 16px;
+		padding: 14px 44px 14px 14px;
 		color: var(--md-sys-color-on-surface);
 		text-decoration: none;
 		border-radius: inherit;

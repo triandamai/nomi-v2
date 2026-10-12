@@ -280,8 +280,8 @@
 	.tp {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
-		padding: 20px 20px 12px;
+		gap: 14px;
+		padding: 16px 16px 12px;
 	}
 	.tp__supporting {
 		color: var(--md-sys-color-on-surface-variant);
@@ -302,7 +302,7 @@
 		background: var(--md-sys-color-surface-container-highest);
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 3.25rem;
+		font-size: 2.625rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		line-height: 1;
@@ -320,7 +320,7 @@
 		display: flex;
 		align-items: center;
 		color: var(--md-sys-color-on-surface);
-		font-size: 3rem;
+		font-size: 2.375rem;
 		font-weight: 600;
 	}
 	.tp__period {
@@ -387,7 +387,7 @@
 		height: 40px;
 		translate: -50% -50%;
 		color: var(--md-sys-color-on-surface);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-variant-numeric: tabular-nums;
 		pointer-events: none;
 	}

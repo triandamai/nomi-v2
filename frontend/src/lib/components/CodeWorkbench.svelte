@@ -214,14 +214,14 @@
 		box-shadow: 4px 0 16px #0008;
 	}
 	.explorer__title {
-		padding: 10px 20px 6px;
+		padding: 10px 16px 6px;
 		font-size: 11px;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
 		color: var(--vs-muted);
 	}
 	.explorer__project {
-		padding: 2px 12px 4px 20px;
+		padding: 2px 12px 4px 16px;
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
@@ -237,7 +237,7 @@
 		padding-bottom: 12px;
 	}
 	.explorer__empty {
-		padding: 8px 20px;
+		padding: 8px 16px;
 		color: var(--vs-muted);
 	}
 	.row {
@@ -268,7 +268,7 @@
 	}
 	.row--file {
 		/* Line up with folder names (past the chevron). */
-		padding-left: calc(8px + var(--depth) * 12px + 20px);
+		padding-left: calc(8px + var(--depth) * 12px + 16px);
 	}
 	.row__chevron {
 		flex: none;
@@ -387,7 +387,7 @@
 		gap: 4px;
 		height: 22px;
 		flex: none;
-		padding: 0 16px;
+		padding: 0 14px;
 		color: var(--vs-muted);
 		white-space: nowrap;
 		overflow: hidden;
@@ -400,7 +400,7 @@
 	}
 	.save-error {
 		margin: 0;
-		padding: 6px 16px;
+		padding: 6px 14px;
 		background: #5a1d1d;
 		color: #f8b4b4;
 	}
@@ -413,7 +413,7 @@
 		place-items: center;
 		height: 100%;
 		color: var(--vs-muted);
-		padding: 16px;
+		padding: 14px;
 		text-align: center;
 	}
 
@@ -434,7 +434,7 @@
 	}
 	.status__right {
 		display: flex;
-		gap: 16px;
+		gap: 14px;
 		margin-left: auto;
 	}
 	@media (prefers-reduced-motion: reduce) {

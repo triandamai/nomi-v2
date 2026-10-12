@@ -153,7 +153,7 @@
 		height: 40px;
 		scroll-snap-align: center;
 		color: var(--md-sys-color-on-surface-variant);
-		font-size: 1.0625rem;
+		font-size: 1rem;
 		font-variant-numeric: tabular-nums;
 		cursor: pointer;
 		user-select: none;

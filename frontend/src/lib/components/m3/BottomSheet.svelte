@@ -290,6 +290,6 @@
 		overflow-x: hidden;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		padding: 0 24px calc(24px + env(safe-area-inset-bottom));
+		padding: 0 20px calc(20px + env(safe-area-inset-bottom));
 	}
 </style>

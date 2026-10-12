@@ -354,7 +354,7 @@
 	.page {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.page__inner {
@@ -362,13 +362,13 @@
 		margin: 0 auto;
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: 16px;
 	}
 	.head {
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		gap: 20px;
+		gap: 16px;
 		flex-wrap: wrap;
 	}
 	.head__text {
@@ -386,7 +386,7 @@
 	.head__actions {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
 	}
 	@media (max-width: 640px) {
 		.head__actions :global(.head__mark) {
@@ -399,7 +399,7 @@
 	}
 
 	.surface {
-		padding: 20px 12px 12px;
+		padding: 16px 12px 12px;
 		border-radius: var(--md-sys-shape-corner-extra-large-increased);
 		background: var(--md-sys-color-surface-container-lowest);
 	}
@@ -444,7 +444,7 @@
 		font-weight: 600;
 	}
 	.day {
-		margin: 14px 14px 2px;
+		margin: 12px 12px 2px;
 		font-family: var(--md-ref-typeface-mono);
 		font-size: 0.75rem;
 		font-weight: 500;
@@ -490,8 +490,8 @@
 	.empty {
 		display: flex;
 		align-items: center;
-		gap: 20px;
-		padding: 16px 14px 20px;
+		gap: 16px;
+		padding: 14px 12px 16px;
 	}
 	.empty__title {
 		margin: 0;
@@ -505,7 +505,7 @@
 	.sheet {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 14px;
 	}
 	.sheet__head {
 		display: flex;

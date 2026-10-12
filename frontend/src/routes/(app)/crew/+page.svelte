@@ -74,13 +74,13 @@
 	.crew-page {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.crew-page__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 28px;
+		gap: 22px;
 		max-width: 1080px;
 		margin: 0 auto;
 	}
@@ -117,8 +117,8 @@
 	.card {
 		display: flex;
 		align-items: flex-start;
-		gap: 16px;
-		padding: 20px;
+		gap: 14px;
+		padding: 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
@@ -144,7 +144,7 @@
 	.card__name {
 		margin: 0;
 		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 	}
 	.card__custom,

@@ -139,7 +139,7 @@
 	.m3-plan-title {
 		margin: 0;
 		font-weight: 650;
-		font-size: 1rem;
+		font-size: 0.9375rem;
 	}
 	.m3-plan-excerpt {
 		margin: 0;
@@ -158,7 +158,7 @@
 		align-items: center;
 		gap: 8px;
 		height: 40px;
-		padding: 0 16px;
+		padding: 0 14px;
 		border: none;
 		border-radius: 20px;
 		background: var(--md-sys-color-surface-container-lowest);
@@ -181,7 +181,7 @@
 		display: flex;
 		gap: 6px;
 		flex-wrap: wrap;
-		margin-bottom: 16px;
+		margin-bottom: 14px;
 	}
 
 	.m3-plan-versions__chip {

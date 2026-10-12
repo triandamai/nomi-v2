@@ -169,7 +169,7 @@
 		flex-direction: column;
 		gap: 10px;
 		margin: 0;
-		padding: 0 0 0 20px;
+		padding: 0 0 0 16px;
 		list-style: none;
 	}
 	/* The line through every step. */

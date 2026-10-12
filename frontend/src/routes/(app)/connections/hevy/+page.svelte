@@ -139,13 +139,13 @@
 	.page {
 		height: 100%;
 		overflow-y: auto;
-		padding: 32px clamp(16px, 4vw, 56px) 56px;
+		padding: 24px clamp(14px, 4vw, 44px) 44px;
 		box-sizing: border-box;
 	}
 	.page__inner {
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: 16px;
 		max-width: 640px;
 		margin: 0 auto;
 	}
@@ -172,7 +172,7 @@
 	.head {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
 	}
 	.title {
 		margin: 0;
@@ -190,15 +190,15 @@
 	.card {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
-		padding: 22px 24px;
+		gap: 12px;
+		padding: 18px 20px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
 	}
 	.card__title {
 		margin: 0;
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 700;
 	}
 	.card__meta,
@@ -263,7 +263,7 @@
 	}
 	.can__title {
 		margin: 0;
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		font-weight: 650;
 		color: var(--md-sys-color-on-surface);
 	}
@@ -272,7 +272,7 @@
 		flex-direction: column;
 		gap: 6px;
 		margin: 0;
-		padding-left: 20px;
+		padding-left: 16px;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.can__soon {

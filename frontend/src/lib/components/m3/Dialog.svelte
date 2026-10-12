@@ -82,16 +82,16 @@
 	.m3-dialog__content {
 		display: flex;
 		flex-direction: column;
-		padding: 24px;
+		padding: 20px;
 	}
 
 	.m3-dialog__icon {
 		color: var(--md-sys-color-secondary);
-		margin-bottom: 16px;
+		margin-bottom: 14px;
 	}
 
 	.m3-dialog__headline {
-		margin: 0 0 16px;
+		margin: 0 0 14px;
 		color: var(--md-sys-color-on-surface);
 	}
 
@@ -106,6 +106,6 @@
 		display: flex;
 		justify-content: flex-end;
 		gap: 8px;
-		margin-top: 24px;
+		margin-top: 20px;
 	}
 </style>
