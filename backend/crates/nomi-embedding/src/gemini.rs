@@ -24,7 +24,11 @@ impl GeminiEmbeddingProvider {
 }
 
 pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::EmbeddingModelSummary>, EmbeddingError> {
-    let response = client.get(format!("{base_url}/v1beta/models?key={api_key}")).send().await?;
+    let response = client
+        .get(format!("{base_url}/v1beta/models"))
+        .header("x-goog-api-key", api_key)
+        .send()
+        .await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -62,9 +66,15 @@ impl EmbeddingProvider for GeminiEmbeddingProvider {
             "output_dimensionality": OUTPUT_DIMENSIONALITY,
         });
 
-        let url = format!("{}/v1beta/models/{}:embedContent?key={}", self.base_url, self.model, self.api_key);
+        let url = format!("{}/v1beta/models/{}:embedContent", self.base_url, self.model);
 
-        let response = self.client.post(url).json(&body).send().await?;
+        let response = self
+            .client
+            .post(url)
+            .header("x-goog-api-key", &self.api_key)
+            .json(&body)
+            .send()
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();

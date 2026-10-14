@@ -75,7 +75,11 @@ fn role_to_str(role: &LlmRole) -> &'static str {
 }
 
 pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
-    let response = client.get(format!("{base_url}/v1beta/models?key={api_key}")).send().await?;
+    let response = client
+        .get(format!("{base_url}/v1beta/models"))
+        .header("x-goog-api-key", api_key)
+        .send()
+        .await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -153,7 +157,8 @@ impl GeminiProvider {
     async fn upload_file(&self, bytes: Vec<u8>, media_type: &str, name: &str) -> Result<String, LlmError> {
         let start = self
             .client
-            .post(format!("{}/upload/v1beta/files?key={}", self.base_url, self.api_key))
+            .post(format!("{}/upload/v1beta/files", self.base_url))
+            .header("x-goog-api-key", &self.api_key)
             .header("X-Goog-Upload-Protocol", "resumable")
             .header("X-Goog-Upload-Command", "start")
             .header("X-Goog-Upload-Header-Content-Length", bytes.len().to_string())
@@ -204,7 +209,8 @@ impl GeminiProvider {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let status: serde_json::Value = self
                 .client
-                .get(format!("{}/v1beta/{file_name}?key={}", self.base_url, self.api_key))
+                .get(format!("{}/v1beta/{file_name}", self.base_url))
+                .header("x-goog-api-key", &self.api_key)
                 .send()
                 .await?
                 .json()
@@ -222,11 +228,17 @@ impl LlmProvider for GeminiProvider {
         let request = self.upload_large_media(request).await?;
         let body = self.build_body(&request);
         let url = format!(
-            "{}/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-            self.base_url, self.model, self.api_key
+            "{}/v1beta/models/{}:streamGenerateContent?alt=sse",
+            self.base_url, self.model
         );
 
-        let response = self.client.post(url).json(&body).send().await?;
+        let response = self
+            .client
+            .post(url)
+            .header("x-goog-api-key", &self.api_key)
+            .json(&body)
+            .send()
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();

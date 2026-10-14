@@ -48,10 +48,48 @@ async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedDelegation>, sqlx::Er
     }))
 }
 
+fn sanitize_error_message(err: &str) -> String {
+    let mut out = String::with_capacity(err.len());
+    let mut rest = err;
+    let sensitive_keys = ["?key=", "&key=", "?api_key=", "&api_key=", "?token=", "&token=", "?access_token=", "&access_token=", "?secret=", "&secret="];
+
+    while !rest.is_empty() {
+        // Find the earliest occurrence of any sensitive query param key (case-insensitive)
+        let mut next_match: Option<(usize, usize)> = None; // (start_idx, prefix_len)
+        let lower = rest.to_lowercase();
+        for key in sensitive_keys {
+            if let Some(pos) = lower.find(key) {
+                match next_match {
+                    None => next_match = Some((pos, key.len())),
+                    Some((min_pos, _)) if pos < min_pos => next_match = Some((pos, key.len())),
+                    _ => {}
+                }
+            }
+        }
+
+        match next_match {
+            Some((pos, key_len)) => {
+                out.push_str(&rest[..pos + key_len]);
+                out.push_str("[REDACTED]");
+                let after_key = &rest[pos + key_len..];
+                // Consume value until '&', whitespace, ')', or end of string
+                let end_val = after_key.find(|c: char| c == '&' || c == ')' || c.is_whitespace()).unwrap_or(after_key.len());
+                rest = &after_key[end_val..];
+            }
+            None => {
+                out.push_str(rest);
+                break;
+            }
+        }
+    }
+    out
+}
+
 async fn fail_and_notify(pool: &PgPool, mqtt: &MqttPublisher, delegation_id: Uuid, session_id: Uuid, error: &str) {
+    let clean_error = sanitize_error_message(error);
     let _ = sqlx::query("UPDATE agent_delegations SET status = 'failed', completed_at = now(), error = $2 WHERE id = $1 AND status <> 'cancelled'")
         .bind(delegation_id)
-        .bind(error)
+        .bind(&clean_error)
         .execute(pool)
         .await;
     let _ = mqtt.publish(session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id }).await;
@@ -300,5 +338,22 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_error_message_redacts_api_keys_and_tokens_in_urls() {
+        let raw = "llm call failed: http request failed: error sending request for url (https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-latest:streamGenerateContent?alt=sse&key=AQ.Ab8xxredactedxx)";
+        let clean = sanitize_error_message(raw);
+        assert!(!clean.contains("AQ.Ab8xxredactedxx"));
+        assert!(clean.contains("&key=[REDACTED])"));
+
+        let multi = "https://example.com/api?token=sec123&api_key=sec456&safe=true";
+        let clean_multi = sanitize_error_message(multi);
+        assert_eq!(clean_multi, "https://example.com/api?token=[REDACTED]&api_key=[REDACTED]&safe=true");
     }
 }

@@ -32,7 +32,7 @@
 	import { provideChatSend } from '$lib/chatSend';
 	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
-	import { agentTypeFallbackLabel, delegationStatusLabel, toolActivityLabel } from '$lib/agentLabels';
+	import { agentTypeFallbackLabel, delegationStatusLabel, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
 	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
@@ -970,7 +970,7 @@
 						<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{item.result}</p>
 					{/if}
 					{#if item.error}
-						<p class="md-body-small" style="color: var(--md-sys-color-error)">{item.error}</p>
+						<p class="md-body-small" style="color: var(--md-sys-color-error)">{sanitizeError(item.error)}</p>
 					{/if}
 				</div>
 			{/each}

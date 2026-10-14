@@ -253,3 +253,26 @@ async fn non_success_status_is_returned_before_any_stream_is_produced() {
     let result = provider.complete_stream(text_request()).await;
     assert!(matches!(result, Err(LlmError::ProviderError(_))));
 }
+
+#[tokio::test]
+async fn api_key_is_sent_in_header_not_query_string() {
+    let server = MockServer::start().await;
+    let sse_body = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n";
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/v1beta/models/.*:streamGenerateContent$"))
+        .and(wiremock::matchers::header("x-goog-api-key", "my-secret-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = GeminiProvider::new(
+        reqwest::Client::new(),
+        "my-secret-key".to_string(),
+        "gemini-2.0-flash".to_string(),
+        server.uri(),
+    );
+
+    let stream = provider.complete_stream(text_request()).await.unwrap();
+    let response = collect_stream(stream).await.unwrap();
+    assert_eq!(response.content, vec![ContentBlock::Text { text: "ok".to_string() }]);
+}

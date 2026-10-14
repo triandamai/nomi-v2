@@ -31,11 +31,11 @@ async fn embed_returns_the_vector_from_the_response() {
 }
 
 #[tokio::test]
-async fn api_key_is_sent_as_a_query_parameter() {
+async fn api_key_is_sent_in_header() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1beta/models/gemini-embedding-001:embedContent"))
-        .and(query_param("key", "test-key"))
+        .and(wiremock::matchers::header("x-goog-api-key", "test-key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "embedding": { "values": [0.1] }
         })))

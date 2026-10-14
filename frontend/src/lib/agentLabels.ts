@@ -163,3 +163,11 @@ export function sourceSite(url: string): string {
 		return url;
 	}
 }
+
+/** Redacts sensitive query parameters (key, token, api_key, etc.) and credentials from error messages. */
+export function sanitizeError(err: string | null | undefined): string {
+	if (!err) return '';
+	return err
+		.replace(/([?&](?:key|api_key|token|access_token|secret)=)[^&\s)]+/gi, '$1[REDACTED]')
+		.replace(/(https?:\/\/[^\s:/?#]+:[^\s/@]+@)/gi, 'http://[REDACTED]@');
+}
