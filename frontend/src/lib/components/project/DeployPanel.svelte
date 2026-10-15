@@ -36,17 +36,21 @@
 			detail = await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${publish.id}`);
 			// The web service's log is what people want first.
 			const first = detail.deployments.find((d) => d.service !== 'db') ?? detail.deployments[0];
-			if (first) await openDeployment(publish.environment, first.deployment_id);
+			if (first) await openDeployment(publish.environment, first.deployment_id, publish.status === 'running');
 		} catch (e) {
 			detailError = (e as Error).message;
 		}
 	}
 
-	async function openDeployment(environment: string, deploymentId: string) {
+	async function openDeployment(environment: string, deploymentId: string, silentFail = false) {
 		try {
-			deployment = await projectApi<DeploymentDetail>(deploy.projectId, `deploy/deployments/${deploymentId}?environment=${environment}`);
+			const res = await projectApi<DeploymentDetail>(deploy.projectId, `deploy/deployments/${deploymentId}?environment=${environment}`);
+			deployment = res;
+			detailError = null;
 		} catch (e) {
-			detailError = (e as Error).message;
+			if (!silentFail) {
+				detailError = (e as Error).message;
+			}
 		}
 	}
 
@@ -59,8 +63,9 @@
 			if (document.hidden || !detail) return;
 			const fresh = await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`).catch(() => null);
 			if (fresh) detail = fresh;
-			if (deployment) await openDeployment(fresh?.environment ?? 'production', deployment.id);
-			else if (fresh?.deployments[0]) await openDeployment(fresh.environment, fresh.deployments[0].deployment_id);
+			// While still publishing/building, ignore transient gateway/polling errors so 502 isn't flashed
+			if (deployment) await openDeployment(fresh?.environment ?? 'production', deployment.id, true);
+			else if (fresh?.deployments[0]) await openDeployment(fresh.environment, fresh.deployments[0].deployment_id, true);
 		}, 3000);
 		return () => clearInterval(timer);
 	});
