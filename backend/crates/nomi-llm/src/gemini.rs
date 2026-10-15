@@ -49,7 +49,7 @@ impl GeminiProvider {
             let declarations: Vec<serde_json::Value> = request
                 .tools
                 .iter()
-                .map(|t| json!({ "name": t.name, "description": t.description, "parameters": t.input_schema }))
+                .map(|t| json!({ "name": t.name, "description": t.description, "parameters": clean_gemini_schema(&t.input_schema) }))
                 .collect();
             body["tools"] = json!([{ "functionDeclarations": declarations }]);
         }
@@ -71,6 +71,125 @@ fn role_to_str(role: &LlmRole) -> &'static str {
     match role {
         LlmRole::User => "user",
         LlmRole::Assistant => "model",
+    }
+}
+
+/// Gemini uses a strict subset of OpenAPI 3.0 via Protocol Buffers.
+/// Its `Schema.type` field is a single enum (not repeated), so array types like
+/// `["number", "null"]` cause proto deserialization failure.
+/// Its `Schema.enum` field is `repeated string enum = 9`, so non-string enum values
+/// (or enums on non-string types) also fail validation.
+/// This normalizes tool schemas so they conform strictly to Gemini's schema specification.
+pub fn clean_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            let mut is_nullable = false;
+            let mut detected_type: Option<String> = None;
+
+            for (k, v) in map {
+                match k.as_str() {
+                    "type" => {
+                        if let serde_json::Value::Array(types) = v {
+                            if types.iter().any(|t| t.as_str() == Some("null")) {
+                                is_nullable = true;
+                            }
+                            let non_null: Vec<&str> = types
+                                .iter()
+                                .filter_map(|t| t.as_str())
+                                .filter(|t| *t != "null")
+                                .collect();
+                            let primary = non_null.first().copied().unwrap_or("string");
+                            detected_type = Some(primary.to_string());
+                            out.insert("type".to_string(), serde_json::json!(primary));
+                        } else if let Some(s) = v.as_str() {
+                            detected_type = Some(s.to_string());
+                            out.insert(k.clone(), serde_json::json!(s));
+                        } else {
+                            out.insert(k.clone(), clean_gemini_schema(v));
+                        }
+                    }
+                    "nullable" => {
+                        if v.as_bool() == Some(true) {
+                            is_nullable = true;
+                        }
+                    }
+                    "properties" => {
+                        if let serde_json::Value::Object(props) = v {
+                            let mut cleaned_props = serde_json::Map::new();
+                            for (prop_name, prop_val) in props {
+                                cleaned_props.insert(prop_name.clone(), clean_gemini_schema(prop_val));
+                            }
+                            out.insert(k.clone(), serde_json::Value::Object(cleaned_props));
+                        } else {
+                            out.insert(k.clone(), clean_gemini_schema(v));
+                        }
+                    }
+                    "items" => {
+                        out.insert(k.clone(), clean_gemini_schema(v));
+                    }
+                    "enum" => {
+                        out.insert(k.clone(), v.clone());
+                    }
+                    _ => {
+                        out.insert(k.clone(), clean_gemini_schema(v));
+                    }
+                }
+            }
+
+            if is_nullable {
+                out.insert("nullable".to_string(), serde_json::json!(true));
+            }
+
+            if let Some(enum_val) = out.get("enum").cloned() {
+                if let serde_json::Value::Array(items) = enum_val {
+                    let schema_type = detected_type.as_deref().unwrap_or("");
+                    if schema_type == "string" {
+                        let string_enums: Vec<serde_json::Value> = items
+                            .into_iter()
+                            .filter_map(|item| match item {
+                                serde_json::Value::String(s) => Some(serde_json::Value::String(s)),
+                                serde_json::Value::Number(n) => Some(serde_json::Value::String(n.to_string())),
+                                serde_json::Value::Bool(b) => Some(serde_json::Value::String(b.to_string())),
+                                _ => None,
+                            })
+                            .collect();
+                        if string_enums.is_empty() {
+                            out.remove("enum");
+                        } else {
+                            out.insert("enum".to_string(), serde_json::Value::Array(string_enums));
+                        }
+                    } else {
+                        out.remove("enum");
+                        let allowed_str = items
+                            .iter()
+                            .filter_map(|it| match it {
+                                serde_json::Value::Null => None,
+                                serde_json::Value::String(s) => Some(s.clone()),
+                                serde_json::Value::Number(n) => Some(n.to_string()),
+                                serde_json::Value::Bool(b) => Some(b.to_string()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        if !allowed_str.is_empty() {
+                            let note = format!("Allowed values: {allowed_str}.");
+                            let desc = match out.get("description").and_then(|d| d.as_str()) {
+                                Some(existing) => format!("{existing} ({note})"),
+                                None => note,
+                            };
+                            out.insert("description".to_string(), serde_json::json!(desc));
+                        }
+                    }
+                }
+            }
+
+            serde_json::Value::Object(out)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(clean_gemini_schema).collect())
+        }
+        other => other.clone(),
     }
 }
 

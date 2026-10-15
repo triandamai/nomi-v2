@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import ChatThread from '$lib/components/ChatThread.svelte';
 	import CodeWorkbench from '$lib/components/CodeWorkbench.svelte';
+	import { relocateFilePath, relocateFolderFilePath } from '$lib/code/fileOperations';
 	import ProjectPreview from '$lib/components/ProjectPreview.svelte';
 	import { ProjectRuntime } from '$lib/projectRuntime.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
@@ -255,6 +256,106 @@
 		}
 	}
 
+	async function deleteFilePath(projectId: string, path: string) {
+		const body = new FormData();
+		body.set('projectId', projectId);
+		body.set('path', path);
+		const response = await fetch('?/deleteFile', { method: 'POST', body });
+		const result = deserialize(await response.text());
+		if (result.type !== 'success') {
+			const err = (result.type === 'failure' && (result.data?.error as string)) || m.code_delete_file_failed();
+			saveError = err;
+			throw new Error(err);
+		}
+		await runtime?.removeFile(path);
+		const current = polledFiles
+			? [...polledFiles]
+			: (data.project?.files?.map((f) => ({ path: f.path, updated_at: '' })) ?? []);
+		polledFiles = current.filter((f) => f.path !== path);
+		if (data.project?.files) {
+			data.project.files = data.project.files.filter((f) => f.path !== path);
+		}
+		if (runtime) {
+			runtime.files = runtime.files.filter((f) => f.path !== path);
+		}
+	}
+
+	async function deletePath(projectId: string, path: string) {
+		saveError = null;
+		const matching = filePaths.filter((p) => p === path || p.startsWith(`${path}/`));
+		if (matching.length === 0) {
+			try {
+				await deleteFilePath(projectId, path);
+			} catch {
+				// ignore
+			}
+		} else {
+			for (const p of matching) {
+				await deleteFilePath(projectId, p);
+			}
+		}
+		if (activePath === path || (activePath && activePath.startsWith(`${path}/`))) {
+			activePath = null;
+			activeContent = '';
+			activeVersion = undefined;
+		}
+	}
+
+	async function movePath(projectId: string, sourcePath: string, targetFolder: string) {
+		saveError = null;
+		const isFolder = !filePaths.includes(sourcePath);
+		if (!isFolder) {
+			const newPath = relocateFilePath(sourcePath, targetFolder);
+			if (newPath === sourcePath) return;
+
+			let contentToMove = '';
+			if (sourcePath === activePath) {
+				contentToMove = activeContent;
+			} else {
+				const body = new FormData();
+				body.set('projectId', projectId);
+				body.set('path', sourcePath);
+				const res = await fetch('?/loadFile', { method: 'POST', body });
+				const result = deserialize(await res.text());
+				if (result.type === 'success' && typeof result.data?.content === 'string') {
+					contentToMove = result.data.content;
+				}
+			}
+
+			await saveFilePath(projectId, newPath, contentToMove);
+			await deleteFilePath(projectId, sourcePath);
+
+			if (activePath === sourcePath) {
+				activePath = newPath;
+			}
+		} else {
+			const matching = filePaths.filter((p) => p.startsWith(`${sourcePath}/`));
+			let newActive: string | null = null;
+			for (const p of matching) {
+				const newFilePath = relocateFolderFilePath(sourcePath, targetFolder, p);
+				let contentToMove = '';
+				if (p === activePath) {
+					contentToMove = activeContent;
+					newActive = newFilePath;
+				} else {
+					const body = new FormData();
+					body.set('projectId', projectId);
+					body.set('path', p);
+					const res = await fetch('?/loadFile', { method: 'POST', body });
+					const result = deserialize(await res.text());
+					if (result.type === 'success' && typeof result.data?.content === 'string') {
+						contentToMove = result.data.content;
+					}
+				}
+				await saveFilePath(projectId, newFilePath, contentToMove);
+				await deleteFilePath(projectId, p);
+			}
+			if (newActive) {
+				activePath = newActive;
+			}
+		}
+	}
+
 	// The chat and the workspace (preview, code, terminal) side by side: the chat's width is
 	// dragged on the handle between them, and the workspace can be hidden to give the chat the
 	// whole screen. On a phone the workspace opens over the chat instead. Both remembered here.
@@ -482,6 +583,8 @@
 						onSave={(content) => saveFile(project.id, content)}
 						onCreateFile={(path, content) => createFile(project.id, path, content)}
 						onUploadFiles={(items) => uploadFiles(project.id, items)}
+						onDeleteFile={(path) => deletePath(project.id, path)}
+						onMoveFile={(source, target) => movePath(project.id, source, target)}
 					/>
 				{/if}
 			</div>

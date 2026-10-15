@@ -185,13 +185,29 @@ pub struct ClaimedRun {
     pub args: Vec<String>,
 }
 
-/// The open page checking in: marks it online and hands it the commands waiting to run.
-/// Returns the files version and the claimed commands.
-pub async fn check_in(conn: &mut PgConnection, project_id: Uuid) -> Result<(i64, Vec<ClaimedRun>), sqlx::Error> {
-    let version: i64 = sqlx::query_scalar("UPDATE projects SET runner_seen_at = now() WHERE id = $1 RETURNING files_version")
+/// Updates `runner_seen_at` to mark the project page online.
+/// Throttled so it only writes if `runner_seen_at` is NULL or older than 10 seconds,
+/// avoiding excessive database writes and row lock contention during long polling.
+pub async fn touch_runner(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE projects SET runner_seen_at = now() WHERE id = $1 AND (runner_seen_at IS NULL OR runner_seen_at < now() - interval '10 seconds')",
+    )
+    .bind(project_id)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Reads the current files version of the project without locking the row.
+pub async fn files_version(conn: &mut PgConnection, project_id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1")
         .bind(project_id)
-        .fetch_one(&mut *conn)
-        .await?;
+        .fetch_one(conn)
+        .await
+}
+
+/// Claims any pending commands for the project from `project_runs`.
+pub async fn claim_runs(conn: &mut PgConnection, project_id: Uuid) -> Result<Vec<ClaimedRun>, sqlx::Error> {
     let mut rows: Vec<(Uuid, String, Value, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
         "UPDATE project_runs SET status = 'running', started_at = now() WHERE id IN ( \
              SELECT id FROM project_runs WHERE project_id = $1 AND status = 'pending' ORDER BY created_at FOR UPDATE SKIP LOCKED) \
@@ -201,15 +217,28 @@ pub async fn check_in(conn: &mut PgConnection, project_id: Uuid) -> Result<(i64,
     .fetch_all(&mut *conn)
     .await?;
     rows.sort_by_key(|r| r.3);
-    let runs = rows
+    Ok(rows
         .into_iter()
         .map(|(id, command, args, _)| ClaimedRun {
             id,
             command,
             args: args.as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default(),
         })
-        .collect();
+        .collect())
+}
+
+/// Polls for the current files version and any claimed commands without taking row locks on `projects`.
+pub async fn poll(conn: &mut PgConnection, project_id: Uuid) -> Result<(i64, Vec<ClaimedRun>), sqlx::Error> {
+    let version = files_version(conn, project_id).await?;
+    let runs = claim_runs(conn, project_id).await?;
     Ok((version, runs))
+}
+
+/// The open page checking in: marks it online (throttled) and hands it the commands waiting to run.
+/// Returns the files version and the claimed commands.
+pub async fn check_in(conn: &mut PgConnection, project_id: Uuid) -> Result<(i64, Vec<ClaimedRun>), sqlx::Error> {
+    touch_runner(conn, project_id).await?;
+    poll(conn, project_id).await
 }
 
 /// A command's result from the page. False when there was no such running command.

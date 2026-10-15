@@ -150,4 +150,21 @@ export const actions: Actions = {
 		}
 		return { success: true };
 	},
+
+	deleteFile: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const projectId = data.get('projectId');
+		const path = data.get('path');
+		if (typeof projectId !== 'string' || !projectId || typeof path !== 'string' || !path) {
+			return fail(400, { error: m.err_invalid_path() });
+		}
+		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}/files/${path}`, {
+			method: 'DELETE',
+		});
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || m.code_delete_file_failed() });
+		}
+		return { success: true, path };
+	},
 };

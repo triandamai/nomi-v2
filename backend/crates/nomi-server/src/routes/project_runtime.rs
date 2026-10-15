@@ -62,16 +62,36 @@ pub async fn check_in(
 ) -> Result<Json<CheckInResponse>, ApiError> {
     ensure_owner(&state, project_id, claims.sub).await?;
     let deadline = Instant::now() + Duration::from_secs(query.wait.unwrap_or(0).min(MAX_WAIT_SECS));
+
+    // First round: mark runner online and check for changes/commands immediately.
+    let (mut files_version, mut runs) = {
+        let mut conn = state.pool.acquire().await.map_err(internal)?;
+        runtime::check_in(&mut conn, project_id).await.map_err(internal)?
+    };
+
+    if !runs.is_empty() || query.since != Some(files_version) || Instant::now() >= deadline {
+        return Ok(Json(CheckInResponse { files_version, runs }));
+    }
+
+    let mut last_touched = Instant::now();
+
     loop {
-        // A connection per round, so a waiting page doesn't hold one.
-        let (files_version, runs) = {
+        tokio::time::sleep(CHECK_IN_EVERY).await;
+
+        let (current_version, current_runs) = {
             let mut conn = state.pool.acquire().await.map_err(internal)?;
-            runtime::check_in(&mut conn, project_id).await.map_err(internal)?
+            if last_touched.elapsed() >= Duration::from_secs(10) {
+                runtime::touch_runner(&mut conn, project_id).await.map_err(internal)?;
+                last_touched = Instant::now();
+            }
+            runtime::poll(&mut conn, project_id).await.map_err(internal)?
         };
+        files_version = current_version;
+        runs = current_runs;
+
         if !runs.is_empty() || query.since != Some(files_version) || Instant::now() >= deadline {
             return Ok(Json(CheckInResponse { files_version, runs }));
         }
-        tokio::time::sleep(CHECK_IN_EVERY).await;
     }
 }
 

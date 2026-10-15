@@ -100,16 +100,16 @@ fn page_arg(input: &Value) -> u32 {
 fn set_schema(for_routine: bool) -> Value {
     let mut properties = json!({
         "type": {"type": "string", "enum": ["warmup", "normal", "failure", "dropset"]},
-        "weight_kg": {"type": ["number", "null"]},
-        "reps": {"type": ["integer", "null"]},
-        "distance_meters": {"type": ["integer", "null"]},
-        "duration_seconds": {"type": ["integer", "null"]},
-        "custom_metric": {"type": ["number", "null"]}
+        "weight_kg": {"type": "number", "nullable": true},
+        "reps": {"type": "integer", "nullable": true},
+        "distance_meters": {"type": "integer", "nullable": true},
+        "duration_seconds": {"type": "integer", "nullable": true},
+        "custom_metric": {"type": "number", "nullable": true}
     });
     if for_routine {
-        properties["rep_range"] = json!({"type": ["object", "null"], "properties": {"start": {"type": "number"}, "end": {"type": "number"}}, "description": "A target range like 8-12 instead of fixed reps."});
+        properties["rep_range"] = json!({"type": "object", "nullable": true, "properties": {"start": {"type": "number"}, "end": {"type": "number"}}, "description": "A target range like 8-12 instead of fixed reps."});
     } else {
-        properties["rpe"] = json!({"type": ["number", "null"], "enum": [6, 7, 7.5, 8, 8.5, 9, 9.5, 10, null]});
+        properties["rpe"] = json!({"type": "number", "nullable": true, "description": "Rate of perceived exertion from 6 to 10 (e.g. 7.5, 8, 8.5, 9)."});
     }
     json!({"type": "object", "properties": properties, "required": ["type"]})
 }
@@ -117,12 +117,12 @@ fn set_schema(for_routine: bool) -> Value {
 fn exercises_schema(for_routine: bool) -> Value {
     let mut properties = json!({
         "exercise_template_id": {"type": "string", "description": "From hevy_find_exercises."},
-        "superset_id": {"type": ["integer", "null"]},
-        "notes": {"type": ["string", "null"]},
+        "superset_id": {"type": "integer", "nullable": true},
+        "notes": {"type": "string", "nullable": true},
         "sets": {"type": "array", "items": set_schema(for_routine)}
     });
     if for_routine {
-        properties["rest_seconds"] = json!({"type": ["integer", "null"]});
+        properties["rest_seconds"] = json!({"type": "integer", "nullable": true});
     }
     json!({"type": "array", "items": {"type": "object", "properties": properties, "required": ["exercise_template_id", "sets"]}})
 }
@@ -130,7 +130,7 @@ fn exercises_schema(for_routine: bool) -> Value {
 fn workout_schema(with_id: bool) -> Value {
     let mut properties = json!({
         "title": {"type": "string"},
-        "description": {"type": ["string", "null"]},
+        "description": {"type": "string", "nullable": true},
         "start_time": {"type": "string", "description": "ISO 8601, e.g. 2026-10-12T07:30:00+07:00"},
         "end_time": {"type": "string"},
         "is_private": {"type": "boolean"},
@@ -147,7 +147,7 @@ fn workout_schema(with_id: bool) -> Value {
 fn routine_schema(update: bool) -> Value {
     let mut properties = json!({
         "title": {"type": "string"},
-        "notes": {"type": ["string", "null"]},
+        "notes": {"type": "string", "nullable": true},
         "exercises": exercises_schema(true)
     });
     let mut required = vec!["title", "exercises"];
@@ -155,7 +155,7 @@ fn routine_schema(update: bool) -> Value {
         properties["routine_id"] = json!({"type": "string"});
         required.insert(0, "routine_id");
     } else {
-        properties["folder_id"] = json!({"type": ["integer", "null"], "description": "From hevy_routine_folders; empty puts it in My Routines."});
+        properties["folder_id"] = json!({"type": "integer", "nullable": true, "description": "From hevy_routine_folders; empty puts it in My Routines."});
     }
     json!({"type": "object", "properties": properties, "required": required})
 }

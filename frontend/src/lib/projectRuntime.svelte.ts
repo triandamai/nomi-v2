@@ -123,6 +123,18 @@ export class ProjectRuntime {
 		await this.#write(path, content);
 	}
 
+	/** A file or folder the person deleted in the editor. */
+	async removeFile(path: string) {
+		if (!this.#wc) return;
+		try {
+			await this.#wc.fs.rm(path, { force: true, recursive: true });
+		} catch {
+			// file might already be removed
+		}
+		this.#known.delete(path);
+		this.files = this.files.filter((f) => f.path !== path && !f.path.startsWith(`${path}/`));
+	}
+
 	/** Starts the dev server again (after a crash, or on request). */
 	async restart() {
 		if (this.#stopped) return;

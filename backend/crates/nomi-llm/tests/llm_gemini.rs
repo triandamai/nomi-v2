@@ -276,3 +276,59 @@ async fn api_key_is_sent_in_header_not_query_string() {
     let response = collect_stream(stream).await.unwrap();
     assert_eq!(response.content, vec![ContentBlock::Text { text: "ok".to_string() }]);
 }
+
+#[test]
+fn clean_gemini_schema_flattens_array_types_and_sanitizes_enums() {
+    use nomi_llm::gemini::clean_gemini_schema;
+
+    let input = json!({
+        "type": "object",
+        "properties": {
+            "description": { "type": ["string", "null"] },
+            "weight_kg": { "type": ["number", "null"] },
+            "status": { "type": "string", "enum": ["active", "inactive", null] },
+            "rpe": {
+                "type": ["number", "null"],
+                "enum": [6, 7, 7.5, 8, 8.5, 9, 9.5, 10, null],
+                "description": "Rate of perceived exertion"
+            },
+            "nested": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "notes": { "type": ["string", "null"] },
+                        "reps": { "type": ["integer", "null"] }
+                    }
+                }
+            }
+        }
+    });
+
+    let cleaned = clean_gemini_schema(&input);
+
+    // description becomes single type with nullable: true
+    assert_eq!(cleaned["properties"]["description"]["type"], "string");
+    assert_eq!(cleaned["properties"]["description"]["nullable"], true);
+
+    // weight_kg becomes single type with nullable: true
+    assert_eq!(cleaned["properties"]["weight_kg"]["type"], "number");
+    assert_eq!(cleaned["properties"]["weight_kg"]["nullable"], true);
+
+    // status string enum keeps only string values
+    assert_eq!(cleaned["properties"]["status"]["enum"], json!(["active", "inactive"]));
+
+    // rpe numeric enum is stripped and values appended to description
+    assert_eq!(cleaned["properties"]["rpe"]["type"], "number");
+    assert_eq!(cleaned["properties"]["rpe"]["nullable"], true);
+    assert!(cleaned["properties"]["rpe"].get("enum").is_none());
+    let rpe_desc = cleaned["properties"]["rpe"]["description"].as_str().unwrap();
+    assert!(rpe_desc.contains("Allowed values: 6, 7, 7.5, 8, 8.5, 9, 9.5, 10"));
+
+    // nested items are recursively cleaned
+    let nested_props = &cleaned["properties"]["nested"]["items"]["properties"];
+    assert_eq!(nested_props["notes"]["type"], "string");
+    assert_eq!(nested_props["notes"]["nullable"], true);
+    assert_eq!(nested_props["reps"]["type"], "integer");
+    assert_eq!(nested_props["reps"]["nullable"], true);
+}

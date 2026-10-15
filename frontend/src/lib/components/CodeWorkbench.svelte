@@ -5,8 +5,16 @@
 	import { m } from '$lib/paraglide/messages';
 	import CodeEditor from './CodeEditor.svelte';
 	import { buildFileTree, ancestorFolders, type TreeNode } from '$lib/code/fileTree';
+	import {
+		parentFolder,
+		isSubpathOf,
+		isZipFile,
+		extractZipArchive
+	} from '$lib/code/fileOperations';
 	import { fileBadge } from '$lib/code/diffStats';
 	import { languageName } from '$lib/code/language';
+	import Dialog from '$lib/components/m3/Dialog.svelte';
+	import Button from '$lib/components/m3/Button.svelte';
 
 	let {
 		projectName,
@@ -19,7 +27,9 @@
 		onOpen,
 		onSave,
 		onCreateFile,
-		onUploadFiles
+		onUploadFiles,
+		onDeleteFile,
+		onMoveFile
 	}: {
 		projectName: string;
 		files: string[];
@@ -34,6 +44,8 @@
 		onSave: (content: string) => void;
 		onCreateFile?: (path: string, content: string) => Promise<void> | void;
 		onUploadFiles?: (items: { path: string; content: string }[]) => Promise<void> | void;
+		onDeleteFile?: (path: string, isFolder: boolean) => Promise<void> | void;
+		onMoveFile?: (sourcePath: string, targetFolder: string) => Promise<void> | void;
 	} = $props();
 
 	const tree = $derived(buildFileTree(files));
@@ -45,15 +57,31 @@
 	let width = $state(0);
 	const narrow = $derived(width > 0 && width < 640);
 
+	let selectedFolder = $state<string | null>(null);
 	let creatingType = $state<'file' | 'folder' | null>(null);
+	let creatingFolder = $state('');
 	let createPath = $state('');
 	let createInputEl: HTMLInputElement | undefined = $state();
 	let fileUploadInput: HTMLInputElement | undefined = $state();
-	let isDragOver = $state(false);
+	let uploadTargetFolder = $state('');
 
-	function startCreate(type: 'file' | 'folder') {
+	let isTreeDragOver = $state(false);
+	let dropTargetFolder = $state<string | null>(null);
+	let draggedItem = $state<{ path: string; isFolder: boolean } | null>(null);
+
+	let deleteConfirmOpen = $state(false);
+	let itemToDelete = $state<{ path: string; name: string; isFolder: boolean } | null>(null);
+
+	function startCreate(type: 'file' | 'folder', folder = '') {
 		creatingType = type;
+		creatingFolder = folder;
 		createPath = '';
+		if (folder) {
+			const next = new Set(closed);
+			next.delete(folder);
+			for (const ancestor of ancestorFolders(folder)) next.delete(ancestor);
+			closed = next;
+		}
 		setTimeout(() => {
 			createInputEl?.focus();
 		}, 30);
@@ -63,20 +91,21 @@
 		if (!creatingType) return;
 		const raw = createPath.trim();
 		const type = creatingType;
+		const folder = creatingFolder;
 		creatingType = null;
+		creatingFolder = '';
 		createPath = '';
 		if (!raw) return;
 
 		let clean = raw.replace(/^\/+/, '').replace(/\/+$/, '');
 		if (!clean) return;
 
-		if (type === 'folder') {
-			clean = `${clean}/.gitkeep`;
-		}
+		const fullPath = folder ? `${folder}/${clean}` : clean;
+		const finalPath = type === 'folder' ? `${fullPath}/.gitkeep` : fullPath;
 		if (onCreateFile) {
-			await onCreateFile(clean, '');
+			await onCreateFile(finalPath, '');
 		}
-		open(clean);
+		open(finalPath);
 	}
 
 	function handleCreateKeydown(e: KeyboardEvent) {
@@ -86,6 +115,7 @@
 		} else if (e.key === 'Escape') {
 			e.preventDefault();
 			creatingType = null;
+			creatingFolder = '';
 			createPath = '';
 		}
 	}
@@ -95,26 +125,67 @@
 			submitCreate();
 		} else {
 			creatingType = null;
+			creatingFolder = '';
 			createPath = '';
+		}
+	}
+
+	function triggerUpload(folder = '') {
+		uploadTargetFolder = folder;
+		fileUploadInput?.click();
+	}
+
+	async function processUploadedFiles(uploadedFiles: FileList | File[], targetDir: string) {
+		if (!uploadedFiles || uploadedFiles.length === 0) return;
+		if (onUploadFiles) {
+			const items: { path: string; content: string }[] = [];
+			for (let i = 0; i < uploadedFiles.length; i++) {
+				const file = uploadedFiles[i];
+				if (isZipFile(file)) {
+					const buffer = await file.arrayBuffer();
+					const extracted = extractZipArchive(buffer, targetDir);
+					items.push(...extracted);
+				} else {
+					const content = await file.text();
+					const cleanName = file.name.replace(/^\/+/, '');
+					const path = targetDir ? `${targetDir}/${cleanName}` : cleanName;
+					items.push({ path, content });
+				}
+			}
+			if (items.length > 0) {
+				await onUploadFiles(items);
+				if (targetDir) {
+					const next = new Set(closed);
+					next.delete(targetDir);
+					for (const ancestor of ancestorFolders(targetDir)) next.delete(ancestor);
+					closed = next;
+				}
+			}
 		}
 	}
 
 	async function handleFileUpload(e: Event) {
 		const target = e.target as HTMLInputElement;
 		const uploadedFiles = target.files;
-		if (!uploadedFiles || uploadedFiles.length === 0) return;
-
-		if (onUploadFiles) {
-			const items: { path: string; content: string }[] = [];
-			for (let i = 0; i < uploadedFiles.length; i++) {
-				const file = uploadedFiles[i];
-				const content = await file.text();
-				const path = file.name.replace(/^\/+/, '');
-				items.push({ path, content });
-			}
-			await onUploadFiles(items);
+		if (uploadedFiles && uploadedFiles.length > 0) {
+			await processUploadedFiles(uploadedFiles, uploadTargetFolder);
 		}
 		target.value = '';
+	}
+
+	function promptDelete(path: string, name: string, isFolder: boolean) {
+		itemToDelete = { path, name, isFolder };
+		deleteConfirmOpen = true;
+	}
+
+	async function handleConfirmedDelete() {
+		if (!itemToDelete) return;
+		const { path, isFolder } = itemToDelete;
+		deleteConfirmOpen = false;
+		itemToDelete = null;
+		if (onDeleteFile) {
+			await onDeleteFile(path, isFolder);
+		}
 	}
 
 	function toggleFolder(path: string) {
@@ -134,6 +205,90 @@
 		if (narrow) explorerOpen = false;
 	}
 
+	function handleDragStart(e: DragEvent, item: TreeNode) {
+		draggedItem = { path: item.path, isFolder: item.kind === 'folder' };
+		if (e.dataTransfer) {
+			e.dataTransfer.setData('text/plain', item.path);
+			e.dataTransfer.effectAllowed = 'move';
+		}
+	}
+
+	function handleDragEnd() {
+		draggedItem = null;
+		dropTargetFolder = null;
+		isTreeDragOver = false;
+	}
+
+	function handleDragOverFolder(e: DragEvent, folderPath: string) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (draggedItem) {
+			if (draggedItem.path === folderPath || isSubpathOf(folderPath, draggedItem.path)) {
+				if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+				return;
+			}
+			if (parentFolder(draggedItem.path) === folderPath) {
+				if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+				return;
+			}
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		}
+		dropTargetFolder = folderPath;
+	}
+
+	function handleDragLeaveFolder(e: DragEvent, folderPath: string) {
+		e.stopPropagation();
+		if (dropTargetFolder === folderPath) {
+			dropTargetFolder = null;
+		}
+	}
+
+	async function handleDropOnFolder(e: DragEvent, folderPath: string) {
+		e.preventDefault();
+		e.stopPropagation();
+		dropTargetFolder = null;
+		const droppedFiles = e.dataTransfer?.files;
+		if (droppedFiles && droppedFiles.length > 0) {
+			await processUploadedFiles(droppedFiles, folderPath);
+		} else if (draggedItem) {
+			const source = draggedItem.path;
+			draggedItem = null;
+			if (onMoveFile) {
+				await onMoveFile(source, folderPath);
+			}
+		}
+	}
+
+	function handleTreeDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (!draggedItem && e.dataTransfer?.types.includes('Files')) {
+			isTreeDragOver = true;
+		} else if (draggedItem && parentFolder(draggedItem.path) !== '') {
+			isTreeDragOver = true;
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		}
+	}
+
+	function handleTreeDragLeave() {
+		isTreeDragOver = false;
+	}
+
+	async function handleTreeDrop(e: DragEvent) {
+		e.preventDefault();
+		isTreeDragOver = false;
+		dropTargetFolder = null;
+		const droppedFiles = e.dataTransfer?.files;
+		if (droppedFiles && droppedFiles.length > 0) {
+			await processUploadedFiles(droppedFiles, '');
+		} else if (draggedItem) {
+			const source = draggedItem.path;
+			draggedItem = null;
+			if (onMoveFile && parentFolder(source) !== '') {
+				await onMoveFile(source, '');
+			}
+		}
+	}
+
 	const crumbs = $derived(activePath ? activePath.split('/') : []);
 	const activeBadge = $derived(activePath ? fileBadge(activePath) : null);
 </script>
@@ -141,14 +296,118 @@
 {#snippet node(item: TreeNode, depth: number)}
 	{#if item.kind === 'folder'}
 		{@const isOpen = !closed.has(item.path)}
-		<button type="button" class="row" style:--depth={depth} aria-expanded={isOpen} onclick={() => toggleFolder(item.path)}>
+		{@const isSelected = selectedFolder === item.path}
+		{@const isTarget = dropTargetFolder === item.path}
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="row row--folder"
+			class:row--selected={isSelected}
+			class:row--drop-target={isTarget}
+			style:--depth={depth}
+			draggable={true}
+			ondragstart={(e) => handleDragStart(e, item)}
+			ondragend={handleDragEnd}
+			ondragover={(e) => handleDragOverFolder(e, item.path)}
+			ondragleave={(e) => handleDragLeaveFolder(e, item.path)}
+			ondrop={(e) => handleDropOnFolder(e, item.path)}
+			onclick={() => { toggleFolder(item.path); selectedFolder = item.path; }}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					toggleFolder(item.path);
+					selectedFolder = item.path;
+				}
+			}}
+			tabindex="0"
+			role="treeitem"
+			aria-expanded={isOpen}
+			aria-selected={isSelected}
+		>
 			<svg class="row__chevron" class:row__chevron--open={isOpen} width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
 				<path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
 			</svg>
-			<span class="row__name">{item.name}</span>
-		</button>
+			<span class="row__name" title={item.name}>{item.name}</span>
+			<div class="row__actions">
+				<button
+					type="button"
+					class="action-btn action-btn--subtle"
+					title={m.code_new_file_in_folder({ folder: item.name })}
+					aria-label={m.code_new_file()}
+					onclick={(e) => { e.stopPropagation(); startCreate('file', item.path); }}
+				>
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+						<polyline points="14 2 14 8 20 8" />
+						<line x1="12" y1="18" x2="12" y2="12" />
+						<line x1="9" y1="15" x2="15" y2="15" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="action-btn action-btn--subtle"
+					title={m.code_new_folder_in_folder({ folder: item.name })}
+					aria-label={m.code_new_folder()}
+					onclick={(e) => { e.stopPropagation(); startCreate('folder', item.path); }}
+				>
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+						<line x1="12" y1="10" x2="12" y2="16" />
+						<line x1="9" y1="13" x2="15" y2="13" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="action-btn action-btn--subtle"
+					title={m.code_upload_to_folder({ folder: item.name })}
+					aria-label={m.code_upload_files()}
+					onclick={(e) => { e.stopPropagation(); triggerUpload(item.path); }}
+				>
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+						<polyline points="17 8 12 3 7 8" />
+						<line x1="12" y1="3" x2="12" y2="15" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="action-btn action-btn--subtle action-btn--danger"
+					title={m.code_delete_file()}
+					aria-label={m.code_delete_file()}
+					onclick={(e) => { e.stopPropagation(); promptDelete(item.path, item.name, true); }}
+				>
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<polyline points="3 6 5 6 21 6" />
+						<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+					</svg>
+				</button>
+			</div>
+		</div>
 		{#if isOpen}
 			<div class="children" style:--depth={depth}>
+				{#if creatingType && creatingFolder === item.path}
+					<div class="row row--input" style:--depth={depth + 1}>
+						{#if creatingType === 'folder'}
+							<svg class="row__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+							</svg>
+						{:else}
+							<svg class="row__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+								<polyline points="14 2 14 8 20 8" />
+							</svg>
+						{/if}
+						<input
+							bind:this={createInputEl}
+							type="text"
+							class="create-input"
+							placeholder={creatingType === 'folder' ? m.code_folder_name_placeholder() : m.code_file_name_placeholder()}
+							bind:value={createPath}
+							onkeydown={handleCreateKeydown}
+							onblur={handleCreateBlur}
+						/>
+					</div>
+				{/if}
 				{#each item.children as child (child.path)}
 					{@render node(child, depth + 1)}
 				{/each}
@@ -156,17 +415,45 @@
 		{/if}
 	{:else}
 		{@const badge = fileBadge(item.path)}
-		<button
-			type="button"
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
 			class="row row--file"
 			style:--depth={depth}
 			style:--badge={badge.color}
 			aria-current={activePath === item.path ? 'true' : undefined}
-			onclick={() => open(item.path)}
+			draggable={true}
+			ondragstart={(e) => handleDragStart(e, item)}
+			ondragend={handleDragEnd}
+			onclick={() => { open(item.path); selectedFolder = parentFolder(item.path); }}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					open(item.path);
+					selectedFolder = parentFolder(item.path);
+				}
+			}}
+			tabindex="0"
+			role="treeitem"
+			aria-selected={activePath === item.path}
 		>
 			<span class="row__badge" aria-hidden="true">{badge.label}</span>
-			<span class="row__name">{item.name}</span>
-		</button>
+			<span class="row__name" title={item.name}>{item.name}</span>
+			<div class="row__actions">
+				<button
+					type="button"
+					class="action-btn action-btn--subtle action-btn--danger"
+					title={m.code_delete_file()}
+					aria-label={m.code_delete_file()}
+					onclick={(e) => { e.stopPropagation(); promptDelete(item.path, item.name, false); }}
+				>
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<polyline points="3 6 5 6 21 6" />
+						<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+					</svg>
+				</button>
+			</div>
+		</div>
 	{/if}
 {/snippet}
 
@@ -176,14 +463,21 @@
 			<aside class="explorer" aria-label={m.code_explorer()}>
 				<div class="explorer__title">{m.code_explorer()}</div>
 				<div class="explorer__header">
-					<div class="explorer__project" title={projectName}>{projectName}</div>
+					<button
+						type="button"
+						class="explorer__project"
+						title={projectName}
+						onclick={() => (selectedFolder = '')}
+					>
+						{projectName}
+					</button>
 					<div class="explorer__actions">
 						<button
 							type="button"
 							class="action-btn"
-							title={m.code_new_file()}
+							title={selectedFolder ? m.code_new_file_in_folder({ folder: selectedFolder }) : m.code_new_file()}
 							aria-label={m.code_new_file()}
-							onclick={() => startCreate('file')}
+							onclick={() => startCreate('file', selectedFolder ?? '')}
 						>
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -195,9 +489,9 @@
 						<button
 							type="button"
 							class="action-btn"
-							title={m.code_new_folder()}
+							title={selectedFolder ? m.code_new_folder_in_folder({ folder: selectedFolder }) : m.code_new_folder()}
 							aria-label={m.code_new_folder()}
-							onclick={() => startCreate('folder')}
+							onclick={() => startCreate('folder', selectedFolder ?? '')}
 						>
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 								<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
@@ -208,9 +502,9 @@
 						<button
 							type="button"
 							class="action-btn"
-							title={m.code_upload_files()}
+							title={selectedFolder ? m.code_upload_to_folder({ folder: selectedFolder }) : m.code_upload_files()}
 							aria-label={m.code_upload_files()}
-							onclick={() => fileUploadInput?.click()}
+							onclick={() => triggerUpload(selectedFolder ?? '')}
 						>
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -228,30 +522,21 @@
 					</div>
 				</div>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<div
 					class="explorer__tree"
-					class:explorer__tree--dragover={isDragOver}
-					ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
-					ondragleave={() => { isDragOver = false; }}
-					ondrop={async (e) => {
-						e.preventDefault();
-						isDragOver = false;
-						const droppedFiles = e.dataTransfer?.files;
-						if (!droppedFiles || droppedFiles.length === 0) return;
-						if (onUploadFiles) {
-							const items: { path: string; content: string }[] = [];
-							for (let i = 0; i < droppedFiles.length; i++) {
-								const file = droppedFiles[i];
-								const content = await file.text();
-								const path = file.name.replace(/^\/+/, '');
-								items.push({ path, content });
-							}
-							await onUploadFiles(items);
+					class:explorer__tree--dragover={isTreeDragOver}
+					ondragover={handleTreeDragOver}
+					ondragleave={handleTreeDragLeave}
+					ondrop={handleTreeDrop}
+					onclick={(e) => {
+						if (e.target === e.currentTarget) {
+							selectedFolder = '';
 						}
 					}}
 				>
-					{#if creatingType}
-						<div class="row row--input">
+					{#if creatingType && creatingFolder === ''}
+						<div class="row row--input" style:--depth={0}>
 							{#if creatingType === 'folder'}
 								<svg class="row__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 									<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
@@ -343,6 +628,33 @@
 	</footer>
 </div>
 
+<Dialog
+	bind:open={deleteConfirmOpen}
+	headline={m.code_delete_file()}
+>
+	{#snippet icon()}
+		<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<polyline points="3 6 5 6 21 6" />
+			<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+		</svg>
+	{/snippet}
+	{#if itemToDelete}
+		<p class="delete-confirm-text">
+			{itemToDelete.isFolder
+				? m.code_delete_confirm_folder({ name: itemToDelete.name })
+				: m.code_delete_confirm_file({ name: itemToDelete.name })}
+		</p>
+	{/if}
+	{#snippet actions()}
+		<Button variant="text" onclick={() => (deleteConfirmOpen = false)}>
+			{m.common_cancel()}
+		</Button>
+		<Button variant="filled" onclick={handleConfirmedDelete}>
+			{m.code_delete_file()}
+		</Button>
+	{/snippet}
+</Dialog>
+
 <style>
 	.bench {
 		--vs-bg: #1f1f1f;
@@ -409,6 +721,11 @@
 		text-overflow: ellipsis;
 		flex: 1;
 		min-width: 0;
+		background: none;
+		border: none;
+		padding: 0;
+		text-align: left;
+		cursor: pointer;
 	}
 	.explorer__actions {
 		display: flex;
@@ -434,6 +751,17 @@
 		color: var(--vs-text);
 		background: var(--vs-hover);
 	}
+	.action-btn--subtle {
+		width: 18px;
+		height: 18px;
+		border-radius: 2px;
+	}
+	.action-btn--subtle:hover {
+		background: rgba(255, 255, 255, 0.1);
+	}
+	.action-btn--danger:hover {
+		color: #f87171;
+	}
 	.explorer__tree {
 		flex: 1;
 		min-height: 0;
@@ -444,13 +772,13 @@
 	.explorer__tree--dragover {
 		outline: 2px dashed var(--vs-focus);
 		outline-offset: -2px;
-		background: rgba(0, 120, 212, 0.05);
+		background: rgba(0, 120, 212, 0.08);
 	}
 	.row--input {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 2px 8px 2px 14px;
+		padding: 2px 8px 2px calc(14px + var(--depth, 0) * 12px);
 		height: 26px;
 		background: var(--vs-hover);
 	}
@@ -492,7 +820,7 @@
 		gap: 4px;
 		width: 100%;
 		height: 22px;
-		padding: 0 8px 0 calc(8px + var(--depth) * 12px);
+		padding: 0 4px 0 calc(8px + var(--depth) * 12px);
 		border: 1px solid transparent;
 		background: none;
 		color: var(--vs-text);
@@ -500,6 +828,7 @@
 		text-align: left;
 		cursor: pointer;
 		white-space: nowrap;
+		user-select: none;
 	}
 	.row:hover {
 		background: var(--vs-hover);
@@ -511,6 +840,14 @@
 	.row[aria-current='true'] {
 		background: var(--vs-select);
 		color: #ffffff;
+	}
+	.row--selected {
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.row--drop-target {
+		background: rgba(0, 120, 212, 0.25) !important;
+		outline: 1px solid var(--vs-focus) !important;
+		outline-offset: -1px;
 	}
 	.row--file {
 		/* Line up with folder names (past the chevron). */
@@ -534,6 +871,19 @@
 	.row__name {
 		overflow: hidden;
 		text-overflow: ellipsis;
+		flex: 1;
+		min-width: 0;
+	}
+	.row__actions {
+		display: none;
+		align-items: center;
+		gap: 2px;
+		margin-left: auto;
+		flex-shrink: 0;
+	}
+	.row:hover .row__actions,
+	.row:focus-within .row__actions {
+		display: flex;
 	}
 	.children {
 		position: relative;
@@ -682,6 +1032,10 @@
 		display: flex;
 		gap: 14px;
 		margin-left: auto;
+	}
+	.delete-confirm-text {
+		margin: 0;
+		line-height: 1.5;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.row__chevron {
