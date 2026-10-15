@@ -150,15 +150,17 @@
 				{/each}
 				{#snippet list()}
 					{#each shown as project (project.id)}
-						<a role="listitem" class="row-item" href="/projects/session/{project.session_id}" target="_blank" rel="noopener">
-							<span class="row-item__top">
-								<span class="row-item__title">{project.name}</span>
-								<span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
-							</span>
-							<span class="row-item__meta">
-								{m.projects_by({ name: project.created_by })} · {timeAgo(project.updated_at)}{#if project.open_issues > 0} · {issuesLabel(project.open_issues)}{/if}
-							</span>
-						</a>
+						<div role="listitem">
+							<a class="row-item" href="/projects/session/{project.session_id}" target="_blank" rel="noopener">
+								<span class="row-item__top">
+									<span class="row-item__title">{project.name}</span>
+									<span class="status status--{project.status}">{STATUS_LABEL[project.status] ?? project.status}</span>
+								</span>
+								<span class="row-item__meta">
+									{m.projects_by({ name: project.created_by })} · {timeAgo(project.updated_at)}{#if project.open_issues > 0} · {issuesLabel(project.open_issues)}{/if}
+								</span>
+							</a>
+						</div>
 					{/each}
 				{/snippet}
 			</DataTable>

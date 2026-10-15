@@ -9,9 +9,15 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	let displayName = $state(data.profile?.display_name ?? '');
-	let username = $state(data.profile?.username ?? '');
-	let avatarUrl = $state(data.profile?.avatar_url ?? '');
+	let displayName = $state('');
+	let username = $state('');
+	let avatarUrl = $state('');
+
+	$effect(() => {
+		displayName = data.profile?.display_name ?? '';
+		username = data.profile?.username ?? '';
+		avatarUrl = data.profile?.avatar_url ?? '';
+	});
 	let uploading = $state(false);
 	let uploadError = $state<string | null>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
