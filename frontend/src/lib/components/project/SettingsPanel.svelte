@@ -1,12 +1,18 @@
 <script lang="ts">
-	// The project's dangerous actions: taking the published app offline, and deleting the
-	// whole project everywhere.
 	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/m3/Button.svelte';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import List from '$lib/components/m3/List.svelte';
+	import ListItem from '$lib/components/m3/ListItem.svelte';
+	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
+	import Avatar from '$lib/components/m3/Avatar.svelte';
+	import IconCheck from '$lib/components/icons/IconCheck.svelte';
+	import IconGroup from '$lib/components/icons/IconGroup.svelte';
 	import { projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
+	import type { TransferOrgSummary } from '$lib/types';
 
 	let { deploy, projectName }: { deploy: ProjectDeploy; projectName: string } = $props();
 
@@ -18,6 +24,65 @@
 	let typed = $state('');
 	let deleting = $state(false);
 	let error = $state<string | null>(null);
+
+	// Transfer ownership state
+	let transferSheetOpen = $state(false);
+	let searchQuery = $state('');
+	let orgResults = $state<TransferOrgSummary[]>([]);
+	let isSearching = $state(false);
+	let selectedOrg = $state<TransferOrgSummary | null>(null);
+	let transferring = $state(false);
+	let transferError = $state<string | null>(null);
+	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function loadOrgs(query: string) {
+		isSearching = true;
+		transferError = null;
+		try {
+			const res = await projectApi<TransferOrgSummary[]>(
+				deploy.projectId,
+				`transfer/orgs?q=${encodeURIComponent(query)}`
+			);
+			orgResults = res ?? [];
+		} catch (e) {
+			transferError = (e as Error).message;
+			orgResults = [];
+		} finally {
+			isSearching = false;
+		}
+	}
+
+	function onSearchInput(val: string) {
+		searchQuery = val;
+		clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => {
+			loadOrgs(val);
+		}, 300);
+	}
+
+	function openTransferSheet() {
+		searchQuery = '';
+		selectedOrg = null;
+		transferError = null;
+		transferSheetOpen = true;
+		loadOrgs('');
+	}
+
+	async function executeTransfer() {
+		if (!selectedOrg) return;
+		transferring = true;
+		transferError = null;
+		try {
+			await projectApi(deploy.projectId, 'transfer', {
+				method: 'POST',
+				body: { target_org_id: selectedOrg.id }
+			});
+			location.href = '/projects';
+		} catch (e) {
+			transferError = (e as Error).message;
+			transferring = false;
+		}
+	}
 
 	async function remove() {
 		deleting = true;
@@ -42,6 +107,13 @@
 				<p class="muted">{m.pj_offline_hint()}</p>
 			</div>
 			<Button variant="outlined" size="s" disabled={!live || deploy.busy} onclick={() => (offlineOpen = true)}>{m.pj_offline()}</Button>
+		</div>
+		<div class="danger__row">
+			<div>
+				<h3 class="danger__title">{m.pj_transfer()}</h3>
+				<p class="muted">{m.pj_transfer_hint()}</p>
+			</div>
+			<Button variant="outlined" size="s" onclick={openTransferSheet}>{m.pj_transfer()}</Button>
 		</div>
 		<div class="danger__row">
 			<div>
@@ -71,6 +143,108 @@
 	{/snippet}
 </Dialog>
 
+<BottomSheet bind:open={transferSheetOpen} label={m.pj_transfer_title()}>
+	<div class="transfer-sheet">
+		<div class="transfer-sheet__head">
+			<div class="transfer-sheet__icon" aria-hidden="true">
+				<IconGroup size={24} />
+			</div>
+			<div>
+				<h2 class="md-headline-small-emphasized" style="margin: 0; color: var(--md-sys-color-on-surface)">
+					{m.pj_transfer_title()}
+				</h2>
+				<p class="md-body-medium" style="margin: 4px 0 0; color: var(--md-sys-color-on-surface-variant)">
+					{m.pj_transfer_hint()}
+				</p>
+			</div>
+		</div>
+
+		<div class="transfer-sheet__search">
+			<TextField
+				name="org_search"
+				label={m.pj_transfer_search_placeholder()}
+				value={searchQuery}
+				oninput={(e) => onSearchInput((e.target as HTMLInputElement).value)}
+				autocomplete="off"
+			/>
+		</div>
+
+		{#if isSearching}
+			<div class="transfer-sheet__loading">
+				<LoadingIndicator size={36} label={m.pj_transfer_title()} />
+			</div>
+		{:else if orgResults.length === 0}
+			<div class="transfer-sheet__empty">
+				<p class="md-body-medium" style="margin: 0; color: var(--md-sys-color-on-surface-variant)">
+					{m.pj_transfer_no_orgs()}
+				</p>
+			</div>
+		{:else}
+			<div class="transfer-sheet__list-scroll">
+				<List>
+					{#each orgResults as org (org.id)}
+						<ListItem
+							headline={org.name}
+							supportingText={m.pj_transfer_owner({ name: org.owner_name ?? '—' })}
+							selected={selectedOrg?.id === org.id}
+							onclick={() => (selectedOrg = org)}
+							label={org.name}
+						>
+							{#snippet leading()}
+								<Avatar name={org.name} size={36} />
+							{/snippet}
+							{#snippet trailing()}
+								<div class="transfer-sheet__trailing">
+									{#if org.is_personal}
+										<span class="m3-badge">Personal</span>
+									{/if}
+									{#if org.my_role}
+										<span class="m3-badge m3-badge--subtle">{org.my_role}</span>
+									{/if}
+									{#if selectedOrg?.id === org.id}
+										<span class="transfer-sheet__check" aria-hidden="true">
+											<IconCheck size={20} />
+										</span>
+									{/if}
+								</div>
+							{/snippet}
+						</ListItem>
+					{/each}
+				</List>
+			</div>
+		{/if}
+
+		{#if selectedOrg}
+			<div class="transfer-sheet__notice" role="status">
+				<p class="md-body-medium" style="margin: 0;">
+					{m.pj_transfer_confirm_notice({
+						org: selectedOrg.name,
+						owner: selectedOrg.owner_name ?? '—'
+					})}
+				</p>
+			</div>
+		{/if}
+
+		{#if transferError}
+			<p class="error md-body-medium" role="alert">{transferError}</p>
+		{/if}
+
+		<div class="transfer-sheet__actions">
+			<Button variant="text" type="button" onclick={() => (transferSheetOpen = false)}>
+				{m.issues_cancel()}
+			</Button>
+			<Button
+				variant="filled"
+				type="button"
+				disabled={!selectedOrg || transferring}
+				onclick={executeTransfer}
+			>
+				{transferring ? m.pj_transfer_transferring() : m.pj_transfer_button()}
+			</Button>
+		</div>
+	</div>
+</BottomSheet>
+
 <style>
 	.danger {
 		border: 1px solid color-mix(in srgb, var(--md-sys-color-error) 40%, var(--md-sys-color-outline-variant));
@@ -89,14 +263,19 @@
 	}
 	.danger__title {
 		margin: 0;
-		font-size: 0.9375rem;
-		font-weight: 700;
+		font-family: var(--md-sys-typescale-title-medium-font);
+		font-size: var(--md-sys-typescale-title-medium-size);
+		font-weight: var(--md-sys-typescale-title-medium-weight);
+		line-height: var(--md-sys-typescale-title-medium-line-height);
+		color: var(--md-sys-color-on-surface);
 	}
 	.muted {
 		margin: 4px 0 0;
 		max-width: 60ch;
 		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.875rem;
+		font-family: var(--md-sys-typescale-body-medium-font);
+		font-size: var(--md-sys-typescale-body-medium-size);
+		line-height: var(--md-sys-typescale-body-medium-line-height);
 	}
 	.error {
 		margin: 12px 0 0;
@@ -105,5 +284,88 @@
 	.danger :global(.danger-button) {
 		background: var(--md-sys-color-error);
 		color: var(--md-sys-color-on-error);
+	}
+
+	.transfer-sheet {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 4px 0 16px;
+	}
+	.transfer-sheet__head {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+	.transfer-sheet__icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		flex-shrink: 0;
+	}
+	.transfer-sheet__search {
+		margin-top: 2px;
+	}
+	.transfer-sheet__loading {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		padding: 28px 0;
+	}
+	.transfer-sheet__empty {
+		padding: 24px 0;
+		text-align: center;
+	}
+	.transfer-sheet__list-scroll {
+		max-height: 260px;
+		overflow-y: auto;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-large);
+		padding: 4px;
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.transfer-sheet__trailing {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.transfer-sheet__check {
+		display: flex;
+		align-items: center;
+		color: var(--md-sys-color-primary);
+	}
+	.m3-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 8px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		font-family: var(--md-sys-typescale-label-small-font);
+		font-size: var(--md-sys-typescale-label-small-size);
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		line-height: 1.2;
+	}
+	.m3-badge--subtle {
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.transfer-sheet__notice {
+		padding: 12px 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.transfer-sheet__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 4px;
 	}
 </style>

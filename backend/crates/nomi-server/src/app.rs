@@ -266,6 +266,8 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/projects/by-session/:sessionId", get(projects_routes::get_project_by_session))
         .route("/api/projects/:id", get(projects_routes::get_project).delete(crate::routes::deploy::delete_project))
+        .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
+        .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
         .route("/api/projects/:id/deploy", get(crate::routes::deploy::overview))
         .route("/api/projects/:id/deploy/publish", post(crate::routes::deploy::publish))
         .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish))

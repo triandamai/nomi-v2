@@ -832,3 +832,12 @@ export interface QueryResult {
 	rows_affected: number | null;
 	took_ms: number;
 }
+
+export interface TransferOrgSummary {
+	id: string;
+	name: string;
+	is_personal: boolean;
+	owner_id: string | null;
+	owner_name: string | null;
+	my_role: string | null;
+}

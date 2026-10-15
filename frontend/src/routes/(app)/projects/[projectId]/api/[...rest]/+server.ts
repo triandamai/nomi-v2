@@ -34,6 +34,8 @@ const ALLOWED = new RegExp(
 			'database/credentials',
 			'database/tables',
 			'database/query',
+			'transfer',
+			'transfer/orgs',
 		].join('|') +
 		')$',
 );

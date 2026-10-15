@@ -466,3 +466,209 @@ pub async fn preview_project_file(
 ) -> Result<Response, (StatusCode, String)> {
     render_preview(&state, claims.sub, project_id, path).await
 }
+
+#[derive(Serialize)]
+pub struct TransferOrgSummary {
+    pub id: Uuid,
+    pub name: String,
+    pub is_personal: bool,
+    pub owner_id: Option<Uuid>,
+    pub owner_name: Option<String>,
+    pub my_role: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchTransferOrgsQuery {
+    pub q: Option<String>,
+}
+
+#[tracing::instrument(skip(state, claims))]
+pub async fn search_transfer_orgs(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<SearchTransferOrgsQuery>,
+) -> Result<Json<Vec<TransferOrgSummary>>, (StatusCode, String)> {
+    let current_project: (Uuid, Uuid) = sqlx::query_as(
+        "SELECT p.user_id, p.org_id FROM projects p WHERE p.id = $1 AND can_open_project(p.id, $2)"
+    )
+    .bind(project_id)
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
+
+    let is_admin: bool = current_project.0 == claims.sub || sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'active' AND role IN ('owner', 'admin'))"
+    )
+    .bind(current_project.1)
+    .bind(claims.sub)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(false);
+
+    if !is_admin {
+        return Err((StatusCode::FORBIDDEN, "only the project owner or admins can transfer this project".to_string()));
+    }
+
+    let q = query.q.as_deref().unwrap_or("").trim();
+    let current_org_id = current_project.1;
+
+    let orgs: Vec<(Uuid, String, bool, Option<String>)> = if !q.is_empty() {
+        let pattern = format!("%{q}%");
+        sqlx::query_as(
+            "SELECT o.id, o.name, o.is_personal, m.role \
+             FROM organizations o \
+             LEFT JOIN memberships m ON m.org_id = o.id AND m.user_id = $2 AND m.status = 'active' \
+             WHERE o.name ILIKE $1 AND o.id != $3 AND o.is_personal = false \
+             ORDER BY (m.role IS NOT NULL) DESC, o.name ASC \
+             LIMIT 20",
+        )
+        .bind(&pattern)
+        .bind(claims.sub)
+        .bind(current_org_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else {
+        sqlx::query_as(
+            "SELECT o.id, o.name, o.is_personal, m.role \
+             FROM organizations o \
+             JOIN memberships m ON m.org_id = o.id AND m.user_id = $1 AND m.status = 'active' \
+             WHERE o.id != $2 AND o.is_personal = false \
+             ORDER BY m.created_at ASC \
+             LIMIT 20",
+        )
+        .bind(claims.sub)
+        .bind(current_org_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    };
+
+    let mut summaries = Vec::new();
+    for (org_id, name, is_personal, my_role) in orgs {
+        let owner: Option<(Uuid, String)> = sqlx::query_as(
+            "SELECT u.id, COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1), 'Owner') AS name \
+             FROM memberships m \
+             JOIN users u ON u.id = m.user_id \
+             LEFT JOIN user_profiles up ON up.user_id = u.id \
+             LEFT JOIN web_credentials w ON w.user_id = u.id \
+             LEFT JOIN google_identities g ON g.user_id = u.id \
+             WHERE m.org_id = $1 AND m.status = 'active' \
+             ORDER BY (m.role = 'owner') DESC, (m.role = 'admin') DESC, m.created_at ASC \
+             LIMIT 1",
+        )
+        .bind(org_id)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None);
+
+        summaries.push(TransferOrgSummary {
+            id: org_id,
+            name,
+            is_personal,
+            owner_id: owner.as_ref().map(|o| o.0),
+            owner_name: owner.map(|o| o.1),
+            my_role,
+        });
+    }
+
+    Ok(Json(summaries))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferProjectRequest {
+    pub target_org_id: Uuid,
+}
+
+#[tracing::instrument(skip(state, claims))]
+pub async fn transfer_project(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<TransferProjectRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let project_row: Option<(Uuid, Uuid, Uuid)> = sqlx::query_as(
+        "SELECT p.user_id, p.org_id, p.session_id FROM projects p WHERE p.id = $1 AND can_open_project(p.id, $2)"
+    )
+    .bind(project_id)
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let (current_owner_id, current_org_id, session_id) = project_row.ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
+
+    let is_admin: bool = current_owner_id == claims.sub || sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'active' AND role IN ('owner', 'admin'))"
+    )
+    .bind(current_org_id)
+    .bind(claims.sub)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(false);
+
+    if !is_admin {
+        return Err((StatusCode::FORBIDDEN, "only the project owner or admins can transfer this project".to_string()));
+    }
+
+    if req.target_org_id == current_org_id {
+        return Err((StatusCode::BAD_REQUEST, "project is already in this organization".to_string()));
+    }
+
+    let target_org_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1)")
+        .bind(req.target_org_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !target_org_exists {
+        return Err((StatusCode::NOT_FOUND, "target organization not found".to_string()));
+    }
+
+    let target_owner: Option<Uuid> = sqlx::query_scalar(
+        "SELECT m.user_id FROM memberships m \
+         WHERE m.org_id = $1 AND m.status = 'active' \
+         ORDER BY (m.role = 'owner') DESC, (m.role = 'admin') DESC, m.created_at ASC \
+         LIMIT 1"
+    )
+    .bind(req.target_org_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let target_owner_id = target_owner.ok_or((StatusCode::BAD_REQUEST, "target organization has no active members or owner".to_string()))?;
+
+    let mut tx = state.pool.begin().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    sqlx::query("UPDATE projects SET org_id = $2, user_id = $3, updated_at = now() WHERE id = $1")
+        .bind(project_id)
+        .bind(req.target_org_id)
+        .bind(target_owner_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    sqlx::query("UPDATE sessions SET org_id = $2, user_id = $3 WHERE id = $1")
+        .bind(session_id)
+        .bind(req.target_org_id)
+        .bind(target_owner_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    sqlx::query(
+        "DELETE FROM project_members WHERE project_id = $1 AND user_id NOT IN (SELECT user_id FROM memberships WHERE org_id = $2 AND status = 'active')"
+    )
+    .bind(project_id)
+    .bind(req.target_org_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    tx.commit().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(StatusCode::OK)
+}
