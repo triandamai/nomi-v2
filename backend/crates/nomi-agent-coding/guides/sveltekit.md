@@ -217,6 +217,13 @@ Read the `database` guide. In short: schema in `src/lib/server/db/schema.ts`, co
 `src/lib/server/db/index.ts` that uses the in-browser database when `NOMI_PREVIEW` is set,
 migrations generated with `npm run db:generate` and applied by `migrateDb()` in the `init` hook.
 
+## Node environment & Docker
+
+SvelteKit 3 postbuild prerendering uses `Promise.withResolvers()`, which requires **Node.js 22 or newer**.
+- Custom Dockerfiles or CI/CD build environments must run on `node:22-alpine` (or `node:22+`).
+- If running in an older environment (< Node 22) where upgrading Node is not possible, polyfill `Promise.withResolvers` before building (`node --require polyfill.js` or in `vite.config.ts`).
+- Never use Node 20 or earlier, as building modern Vite/SvelteKit projects will fail with: `TypeError: Promise.withResolvers is not a function`.
+
 ## Before you finish
 
 Run `npm install` (after changing package.json), then `npm run check`, then `npm run build`.

@@ -55,22 +55,22 @@ pub fn dockerfile(stack: &str, files: &[(String, Vec<u8>)]) -> String {
     let drizzle = if has_dir(files, "drizzle") { "COPY --from=build /app/drizzle ./drizzle\n" } else { "" };
     match stack {
         "sveltekit" => format!(
-            "FROM node:20-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build && npm prune --omit=dev\n\n\
-             FROM node:20-alpine\nWORKDIR /app\nCOPY --from=build /app/build ./build\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/package.json ./\n{drizzle}\
+            "FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build && npm prune --omit=dev\n\n\
+             FROM node:22-alpine\nWORKDIR /app\nCOPY --from=build /app/build ./build\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/package.json ./\n{drizzle}\
              ENV NODE_ENV=production HOST=0.0.0.0 PORT={PORT} PROTOCOL_HEADER=x-forwarded-proto HOST_HEADER=x-forwarded-host\nEXPOSE {PORT}\nCMD [\"node\", \"build\"]\n"
         ),
         "astro" => format!(
-            "FROM node:20-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build && npm prune --omit=dev\n\n\
-             FROM node:20-alpine\nWORKDIR /app\nCOPY --from=build /app/dist ./dist\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/package.json ./\n{drizzle}\
+            "FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build && npm prune --omit=dev\n\n\
+             FROM node:22-alpine\nWORKDIR /app\nCOPY --from=build /app/dist ./dist\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/package.json ./\n{drizzle}\
              ENV NODE_ENV=production HOST=0.0.0.0 PORT={PORT}\nEXPOSE {PORT}\nCMD [\"node\", \"./dist/server/entry.mjs\"]\n"
         ),
         "static" => format!(
-            "FROM node:20-alpine\nWORKDIR /site\nRUN npm install -g serve@14\nCOPY . .\nEXPOSE {PORT}\nCMD [\"serve\", \"-l\", \"tcp://0.0.0.0:{PORT}\", \"/site\"]\n"
+            "FROM node:22-alpine\nWORKDIR /site\nRUN npm install -g serve@14\nCOPY . .\nEXPOSE {PORT}\nCMD [\"serve\", \"-l\", \"tcp://0.0.0.0:{PORT}\", \"/site\"]\n"
         ),
         // Single-page apps built by Vite (svelte, react, vue): served with SPA fallback.
         _ => format!(
-            "FROM node:20-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build\n\n\
-             FROM node:20-alpine\nWORKDIR /site\nRUN npm install -g serve@14\nCOPY --from=build /app/dist ./\nEXPOSE {PORT}\nCMD [\"serve\", \"-s\", \"-l\", \"tcp://0.0.0.0:{PORT}\", \"/site\"]\n"
+            "FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build\n\n\
+             FROM node:22-alpine\nWORKDIR /site\nRUN npm install -g serve@14\nCOPY --from=build /app/dist ./\nEXPOSE {PORT}\nCMD [\"serve\", \"-s\", \"-l\", \"tcp://0.0.0.0:{PORT}\", \"/site\"]\n"
         ),
     }
 }
@@ -151,10 +151,12 @@ mod tests {
     fn dockerfiles_fit_the_stack() {
         let files = [file("package-lock.json", "{}"), file("drizzle/0000.sql", "")];
         let svelte_kit = dockerfile("sveltekit", &files);
+        assert!(svelte_kit.contains("FROM node:22-alpine"));
         assert!(svelte_kit.contains("npm ci"));
         assert!(svelte_kit.contains("COPY --from=build /app/drizzle ./drizzle"));
         assert!(svelte_kit.contains("CMD [\"node\", \"build\"]"));
         let spa = dockerfile("react", &[]);
+        assert!(spa.contains("FROM node:22-alpine"));
         assert!(spa.contains("npm install\n"));
         assert!(spa.contains("serve\", \"-s\""));
         assert!(!dockerfile("sveltekit", &[]).contains("drizzle"));

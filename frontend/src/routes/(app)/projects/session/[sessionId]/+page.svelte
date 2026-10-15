@@ -200,20 +200,59 @@
 		contentKey += 1;
 	}
 
-	async function saveFile(projectId: string, content: string) {
-		if (!activePath) return;
+	async function saveFilePath(projectId: string, path: string, content: string) {
 		saveError = null;
 		const body = new FormData();
 		body.set('projectId', projectId);
-		body.set('path', activePath);
+		body.set('path', path);
 		body.set('content', content);
 		const response = await fetch('?/saveFile', { method: 'POST', body });
 		const result = deserialize(await response.text());
 		if (result.type !== 'success') {
-			saveError = (result.type === 'failure' && (result.data?.error as string)) || m.project_save_failed();
-			return;
+			const err = (result.type === 'failure' && (result.data?.error as string)) || m.project_save_failed();
+			saveError = err;
+			throw new Error(err);
 		}
-		await runtime?.writeFile(activePath, content);
+		await runtime?.writeFile(path, content);
+		const now = new Date().toISOString();
+		const current: { path: string; updated_at: string }[] = polledFiles
+			? [...polledFiles]
+			: (data.project?.files?.map((f) => ({ path: f.path, updated_at: now })) ?? []);
+		const existingIndex = current.findIndex((f) => f.path === path);
+		if (existingIndex >= 0) {
+			current[existingIndex] = { ...current[existingIndex], updated_at: now };
+		} else {
+			current.push({ path, updated_at: now });
+		}
+		polledFiles = current;
+		if (runtime && !runtime.files.some((f) => f.path === path)) {
+			runtime.files = [...runtime.files, { path, size_bytes: content.length, updated_at: now }];
+		}
+	}
+
+	async function saveFile(projectId: string, content: string) {
+		if (!activePath) return;
+		try {
+			await saveFilePath(projectId, activePath, content);
+		} catch {
+			// saveError already set
+		}
+	}
+
+	async function createFile(projectId: string, path: string, content = '') {
+		await saveFilePath(projectId, path, content);
+		await openFile(projectId, path);
+	}
+
+	async function uploadFiles(projectId: string, items: { path: string; content: string }[]) {
+		let lastPath: string | null = null;
+		for (const item of items) {
+			await saveFilePath(projectId, item.path, item.content);
+			lastPath = item.path;
+		}
+		if (lastPath) {
+			await openFile(projectId, lastPath);
+		}
 	}
 
 	// The chat and the workspace (preview, code, terminal) side by side: the chat's width is
@@ -441,6 +480,8 @@
 						{saveError}
 						onOpen={(path) => openFile(project.id, path)}
 						onSave={(content) => saveFile(project.id, content)}
+						onCreateFile={(path, content) => createFile(project.id, path, content)}
+						onUploadFiles={(items) => uploadFiles(project.id, items)}
 					/>
 				{/if}
 			</div>

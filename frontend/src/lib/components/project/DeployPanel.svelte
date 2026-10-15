@@ -23,6 +23,10 @@
 	let deployment = $state<DeploymentDetail | null>(null);
 	let detailError = $state<string | null>(null);
 
+	function getDeploymentId(d: any): string | null {
+		return d?.deployment_id ?? d?.id ?? null;
+	}
+
 	async function openPublish(publish: ProjectPublish) {
 		if (openId === publish.id) {
 			openId = null;
@@ -35,17 +39,52 @@
 		try {
 			detail = await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${publish.id}`);
 			// The web service's log is what people want first.
-			const first = detail.deployments.find((d) => d.service !== 'db') ?? detail.deployments[0];
-			if (first) await openDeployment(publish.environment, first.deployment_id, publish.status === 'running');
+			const first = detail.deployments?.find((d) => d.service !== 'db') ?? detail.deployments?.[0];
+			let firstId = getDeploymentId(first);
+			if (!firstId && overview?.live?.services) {
+				const liveWeb = overview.live.services.find((s) => s.type !== 'database' && s.name !== 'db') ?? overview.live.services[0];
+				firstId = liveWeb?.last_deployment?.id ?? null;
+			}
+			if (firstId) await openDeployment(publish.environment, firstId, false);
 		} catch (e) {
 			detailError = (e as Error).message;
 		}
 	}
 
-	async function openDeployment(environment: string, deploymentId: string, silentFail = false) {
+	async function openDeployment(environment: string, deploymentId: string | null | undefined, silentFail = false) {
+		if (!deploymentId) return;
 		try {
-			const res = await projectApi<DeploymentDetail>(deploy.projectId, `deploy/deployments/${deploymentId}?environment=${environment}`);
-			deployment = res;
+			const res = await projectApi<any>(deploy.projectId, `deploy/deployments/${deploymentId}?environment=${environment}`);
+			if (!res) return;
+			const raw = res.data ?? res.deployment ?? res;
+			const normalized: DeploymentDetail = {
+				id: raw.id ?? raw.deployment_id ?? deploymentId,
+				service: raw.service ?? raw.service_name ?? 'web',
+				status: raw.status ?? 'unknown',
+				image: raw.image ?? null,
+				created_at: raw.created_at ?? new Date().toISOString(),
+				finished_at: raw.finished_at ?? null,
+				steps: Array.isArray(raw.steps) ? raw.steps : [],
+				logs: Array.isArray(raw.logs)
+					? raw.logs.map((l: any) =>
+							typeof l === 'string'
+								? { level: 'info', message: l, at: new Date().toISOString() }
+								: { level: l.level ?? 'info', message: l.message ?? String(l), at: l.at ?? new Date().toISOString() }
+						)
+					: Array.isArray(raw.lines)
+						? raw.lines.map((l: any) =>
+								typeof l === 'string'
+									? { level: 'info', message: l, at: new Date().toISOString() }
+									: { level: l.level ?? 'info', message: l.message ?? String(l), at: l.at ?? new Date().toISOString() }
+							)
+						: typeof raw.logs === 'string'
+							? raw.logs
+									.split('\n')
+									.filter(Boolean)
+									.map((line: string) => ({ level: 'info', message: line, at: new Date().toISOString() }))
+							: []
+			};
+			deployment = normalized;
 			detailError = null;
 		} catch (e) {
 			if (!silentFail) {
@@ -64,8 +103,8 @@
 			const fresh = await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`).catch(() => null);
 			if (fresh) detail = fresh;
 			// While still publishing/building, ignore transient gateway/polling errors so 502 isn't flashed
-			if (deployment) await openDeployment(fresh?.environment ?? 'production', deployment.id, true);
-			else if (fresh?.deployments[0]) await openDeployment(fresh.environment, fresh.deployments[0].deployment_id, true);
+			const currentId = deployment?.id ?? getDeploymentId(fresh?.deployments?.[0]);
+			if (currentId) await openDeployment(fresh?.environment ?? 'production', currentId, true);
 		}, 3000);
 		return () => clearInterval(timer);
 	});
@@ -90,8 +129,11 @@
 		return seconds < 90 ? `${seconds}s` : `${Math.round(seconds / 60)} min`;
 	}
 
-	function logTime(at: string): string {
-		return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(at));
+	function logTime(at: string | undefined): string {
+		if (!at) return '';
+		const d = new Date(at);
+		if (isNaN(d.getTime())) return '';
+		return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(d);
 	}
 
 	const liveService = $derived(overview?.live?.services.find((s) => s.type !== 'database' && s.name !== 'db') ?? null);
@@ -159,21 +201,22 @@
 					{#if open}
 						<div class="publish__detail">
 							{#if detailError}<p class="error">{detailError}</p>{/if}
-							{#if detail && detail.deployments.length > 1}
+							{#if detail && detail.deployments && detail.deployments.length > 1}
 								<div class="services" role="tablist" aria-label={m.pj_services()}>
-									{#each detail.deployments as d (d.deployment_id)}
+									{#each detail.deployments as d (getDeploymentId(d) ?? d.service)}
+										{@const dId = getDeploymentId(d)}
 										<button
 											type="button"
 											role="tab"
 											class="service-tab"
-											aria-selected={deployment?.id === d.deployment_id}
-											onclick={() => openDeployment(publish.environment, d.deployment_id)}
+											aria-selected={deployment?.id === dId}
+											onclick={() => dId && openDeployment(publish.environment, dId)}
 										>{d.service}</button>
 									{/each}
 								</div>
 							{/if}
 							{#if deployment}
-								{#if deployment.steps.length > 0}
+								{#if deployment.steps && deployment.steps.length > 0}
 									<ol class="steps">
 										{#each deployment.steps as step (step.name)}
 											<li class="step step--{step.status}">{step.name}</li>
@@ -183,7 +226,11 @@
 								<pre class="log">{#each deployment.logs as line, i (i)}<span class="log__line log__line--{line.level}"><span class="log__time">{logTime(line.at)}</span> {line.message}
 </span>{:else}{m.pj_log_empty()}{/each}</pre>
 							{:else if !detailError}
-								<p class="muted">{publish.status === 'running' ? m.pj_waiting_build() : m.pj_loading()}</p>
+								{#if publish.status === 'running'}
+									<p class="muted">{m.pj_waiting_build()}</p>
+								{:else}
+									<p class="muted">{publish.error ?? m.pj_log_empty()}</p>
+								{/if}
 							{/if}
 						</div>
 					{/if}

@@ -17,7 +17,9 @@
 		dirty = $bindable(false),
 		saveError = null,
 		onOpen,
-		onSave
+		onSave,
+		onCreateFile,
+		onUploadFiles
 	}: {
 		projectName: string;
 		files: string[];
@@ -30,6 +32,8 @@
 		saveError?: string | null;
 		onOpen: (path: string) => void;
 		onSave: (content: string) => void;
+		onCreateFile?: (path: string, content: string) => Promise<void> | void;
+		onUploadFiles?: (items: { path: string; content: string }[]) => Promise<void> | void;
 	} = $props();
 
 	const tree = $derived(buildFileTree(files));
@@ -40,6 +44,78 @@
 	let editor: CodeEditor | undefined = $state();
 	let width = $state(0);
 	const narrow = $derived(width > 0 && width < 640);
+
+	let creatingType = $state<'file' | 'folder' | null>(null);
+	let createPath = $state('');
+	let createInputEl: HTMLInputElement | undefined = $state();
+	let fileUploadInput: HTMLInputElement | undefined = $state();
+	let isDragOver = $state(false);
+
+	function startCreate(type: 'file' | 'folder') {
+		creatingType = type;
+		createPath = '';
+		setTimeout(() => {
+			createInputEl?.focus();
+		}, 30);
+	}
+
+	async function submitCreate() {
+		if (!creatingType) return;
+		const raw = createPath.trim();
+		const type = creatingType;
+		creatingType = null;
+		createPath = '';
+		if (!raw) return;
+
+		let clean = raw.replace(/^\/+/, '').replace(/\/+$/, '');
+		if (!clean) return;
+
+		if (type === 'folder') {
+			clean = `${clean}/.gitkeep`;
+		}
+		if (onCreateFile) {
+			await onCreateFile(clean, '');
+		}
+		open(clean);
+	}
+
+	function handleCreateKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			submitCreate();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			creatingType = null;
+			createPath = '';
+		}
+	}
+
+	function handleCreateBlur() {
+		if (createPath.trim()) {
+			submitCreate();
+		} else {
+			creatingType = null;
+			createPath = '';
+		}
+	}
+
+	async function handleFileUpload(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const uploadedFiles = target.files;
+		if (!uploadedFiles || uploadedFiles.length === 0) return;
+
+		if (onUploadFiles) {
+			const items: { path: string; content: string }[] = [];
+			for (let i = 0; i < uploadedFiles.length; i++) {
+				const file = uploadedFiles[i];
+				const content = await file.text();
+				const path = file.name.replace(/^\/+/, '');
+				items.push({ path, content });
+			}
+			await onUploadFiles(items);
+		}
+		target.value = '';
+	}
 
 	function toggleFolder(path: string) {
 		const next = new Set(closed);
@@ -99,12 +175,108 @@
 		{#if explorerOpen}
 			<aside class="explorer" aria-label={m.code_explorer()}>
 				<div class="explorer__title">{m.code_explorer()}</div>
-				<div class="explorer__project">{projectName}</div>
-				<div class="explorer__tree">
+				<div class="explorer__header">
+					<div class="explorer__project" title={projectName}>{projectName}</div>
+					<div class="explorer__actions">
+						<button
+							type="button"
+							class="action-btn"
+							title={m.code_new_file()}
+							aria-label={m.code_new_file()}
+							onclick={() => startCreate('file')}
+						>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+								<polyline points="14 2 14 8 20 8" />
+								<line x1="12" y1="18" x2="12" y2="12" />
+								<line x1="9" y1="15" x2="15" y2="15" />
+							</svg>
+						</button>
+						<button
+							type="button"
+							class="action-btn"
+							title={m.code_new_folder()}
+							aria-label={m.code_new_folder()}
+							onclick={() => startCreate('folder')}
+						>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+								<line x1="12" y1="10" x2="12" y2="16" />
+								<line x1="9" y1="13" x2="15" y2="13" />
+							</svg>
+						</button>
+						<button
+							type="button"
+							class="action-btn"
+							title={m.code_upload_files()}
+							aria-label={m.code_upload_files()}
+							onclick={() => fileUploadInput?.click()}
+						>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+								<polyline points="17 8 12 3 7 8" />
+								<line x1="12" y1="3" x2="12" y2="15" />
+							</svg>
+						</button>
+						<input
+							type="file"
+							multiple
+							bind:this={fileUploadInput}
+							class="sr-only"
+							onchange={handleFileUpload}
+						/>
+					</div>
+				</div>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="explorer__tree"
+					class:explorer__tree--dragover={isDragOver}
+					ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
+					ondragleave={() => { isDragOver = false; }}
+					ondrop={async (e) => {
+						e.preventDefault();
+						isDragOver = false;
+						const droppedFiles = e.dataTransfer?.files;
+						if (!droppedFiles || droppedFiles.length === 0) return;
+						if (onUploadFiles) {
+							const items: { path: string; content: string }[] = [];
+							for (let i = 0; i < droppedFiles.length; i++) {
+								const file = droppedFiles[i];
+								const content = await file.text();
+								const path = file.name.replace(/^\/+/, '');
+								items.push({ path, content });
+							}
+							await onUploadFiles(items);
+						}
+					}}
+				>
+					{#if creatingType}
+						<div class="row row--input">
+							{#if creatingType === 'folder'}
+								<svg class="row__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+								</svg>
+							{:else}
+								<svg class="row__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+									<polyline points="14 2 14 8 20 8" />
+								</svg>
+							{/if}
+							<input
+								bind:this={createInputEl}
+								type="text"
+								class="create-input"
+								placeholder={creatingType === 'folder' ? m.code_folder_name_placeholder() : m.code_file_name_placeholder()}
+								bind:value={createPath}
+								onkeydown={handleCreateKeydown}
+								onblur={handleCreateBlur}
+							/>
+						</div>
+					{/if}
 					{#each tree as item (item.path)}
 						{@render node(item, 0)}
 					{/each}
-					{#if files.length === 0}
+					{#if files.length === 0 && !creatingType}
 						<p class="explorer__empty">{m.project_no_files()}</p>
 					{/if}
 				</div>
@@ -220,8 +392,14 @@
 		text-transform: uppercase;
 		color: var(--vs-muted);
 	}
+	.explorer__header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 2px 8px 4px 16px;
+		gap: 6px;
+	}
 	.explorer__project {
-		padding: 2px 12px 4px 16px;
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
@@ -229,12 +407,80 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		flex: 1;
+		min-width: 0;
+	}
+	.explorer__actions {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		flex-shrink: 0;
+	}
+	.action-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		border: none;
+		border-radius: 3px;
+		background: transparent;
+		color: var(--vs-muted);
+		cursor: pointer;
+		transition: color 0.15s, background-color 0.15s;
+	}
+	.action-btn:hover {
+		color: var(--vs-text);
+		background: var(--vs-hover);
 	}
 	.explorer__tree {
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
 		padding-bottom: 12px;
+		transition: outline-color 0.15s;
+	}
+	.explorer__tree--dragover {
+		outline: 2px dashed var(--vs-focus);
+		outline-offset: -2px;
+		background: rgba(0, 120, 212, 0.05);
+	}
+	.row--input {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 2px 8px 2px 14px;
+		height: 26px;
+		background: var(--vs-hover);
+	}
+	.create-input {
+		flex: 1;
+		min-width: 0;
+		height: 20px;
+		padding: 0 4px;
+		border: 1px solid var(--vs-focus);
+		border-radius: 2px;
+		background: var(--vs-bg);
+		color: var(--vs-text);
+		font: inherit;
+		font-size: 12px;
+		outline: none;
+	}
+	.row__icon {
+		flex-shrink: 0;
+		color: var(--vs-muted);
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	.explorer__empty {
 		padding: 8px 16px;

@@ -11,7 +11,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
@@ -403,7 +403,36 @@ pub async fn get_publish(
     let mut deployments = Vec::new();
     if let (Some(shipyard_id), Some(app), Ok(client)) = (shipyard_id, target.shipyard_app.as_deref(), client(&state)) {
         if let Ok(remote) = client.get_publish(&target.org_key(), app, &environment, &shipyard_id).await {
-            deployments = remote.get("deployments").and_then(Value::as_array).cloned().unwrap_or_default();
+            let list = remote
+                .get("deployments")
+                .or_else(|| remote.get("services"))
+                .and_then(Value::as_array);
+            if let Some(list) = list {
+                deployments = list
+                    .iter()
+                    .filter_map(|d| match d {
+                        Value::Object(_) => {
+                            let mut obj = d.clone();
+                            if let Value::Object(ref mut map) = obj {
+                                if let Some(id) = map.get("id").cloned() {
+                                    map.entry("deployment_id".to_string()).or_insert(id);
+                                } else if let Some(dep_id) = map.get("deployment_id").cloned() {
+                                    map.entry("id".to_string()).or_insert(dep_id);
+                                }
+                                map.entry("service".to_string()).or_insert_with(|| json!("web"));
+                            }
+                            Some(obj)
+                        }
+                        Value::String(s) => Some(json!({
+                            "service": "web",
+                            "id": s,
+                            "deployment_id": s,
+                            "status": "unknown"
+                        })),
+                        _ => None,
+                    })
+                    .collect();
+            }
             let status = remote.get("status").and_then(Value::as_str).unwrap_or("running");
             if status == "succeeded" || status == "failed" {
                 let url = remote.get("urls").and_then(Value::as_array).and_then(|u| u.first()).and_then(Value::as_str);
@@ -423,6 +452,29 @@ pub async fn get_publish(
                 .execute(&state.pool)
                 .await
                 .map_err(internal("failed to update publish"))?;
+            }
+        }
+    }
+    // Fallback: If no deployments were listed on the publish, query environment's last deployments
+    if deployments.is_empty() {
+        if let (Some(app), Ok(client)) = (target.shipyard_app.as_deref(), client(&state)) {
+            if let Ok(env_data) = client.get_env(&target.org_key(), app, &environment).await {
+                if let Some(services) = env_data.get("services").and_then(Value::as_array) {
+                    for s in services {
+                        let name = s.get("name").and_then(Value::as_str).unwrap_or("web");
+                        if let Some(last_dep) = s.get("last_deployment").filter(|d| !d.is_null()) {
+                            let dep_id = last_dep.get("id").or_else(|| last_dep.get("deployment_id"));
+                            if let Some(id) = dep_id {
+                                deployments.push(json!({
+                                    "service": name,
+                                    "id": id,
+                                    "deployment_id": id,
+                                    "status": last_dep.get("status").unwrap_or(&json!("succeeded"))
+                                }));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
