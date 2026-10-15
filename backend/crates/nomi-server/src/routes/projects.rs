@@ -672,3 +672,53 @@ pub async fn transfer_project(
 
     Ok(StatusCode::OK)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn deserializes_transfer_request() {
+        let org_id = Uuid::new_v4();
+        let payload = format!(r#"{{"target_org_id":"{org_id}"}}"#);
+        let req: TransferProjectRequest = serde_json::from_str(&payload).expect("valid request");
+        assert_eq!(req.target_org_id, org_id);
+
+        let invalid = r#"{"target_org_id":"not-a-uuid"}"#;
+        assert!(serde_json::from_str::<TransferProjectRequest>(invalid).is_err());
+    }
+
+    #[test]
+    fn deserializes_search_transfer_query() {
+        let query_with_q: SearchTransferOrgsQuery =
+            serde_json::from_value(serde_json::json!({"q": "acme"})).expect("valid query");
+        assert_eq!(query_with_q.q.as_deref(), Some("acme"));
+
+        let empty_query: SearchTransferOrgsQuery =
+            serde_json::from_value(serde_json::json!({})).expect("empty query");
+        assert_eq!(empty_query.q, None);
+    }
+
+    #[test]
+    fn serializes_transfer_org_summary_as_spec() {
+        let org_id = Uuid::new_v4();
+        let owner_id = Uuid::new_v4();
+        let summary = TransferOrgSummary {
+            id: org_id,
+            name: "Acme Corp".to_string(),
+            is_personal: false,
+            owner_id: Some(owner_id),
+            owner_name: Some("Alice".to_string()),
+            my_role: Some("admin".to_string()),
+        };
+
+        let json = serde_json::to_value(&summary).expect("serialization succeeds");
+        assert_eq!(json["id"], org_id.to_string());
+        assert_eq!(json["name"], "Acme Corp");
+        assert_eq!(json["is_personal"], false);
+        assert_eq!(json["owner_id"], owner_id.to_string());
+        assert_eq!(json["owner_name"], "Alice");
+        assert_eq!(json["my_role"], "admin");
+    }
+}

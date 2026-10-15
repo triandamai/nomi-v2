@@ -191,6 +191,12 @@
 
 <style>
 	.m3-bottom-sheet {
+		position: fixed;
+		top: auto;
+		bottom: 0;
+		inset-block-start: auto;
+		inset-block-end: 0;
+		height: fit-content;
 		margin: auto auto 0 auto;
 		padding: 0;
 		border: none;
@@ -234,6 +240,7 @@
 		box-shadow: var(--md-sys-elevation-shadow-level3);
 		max-height: 80vh;
 		max-height: 80dvh;
+		height: auto;
 		display: flex;
 		flex-direction: column;
 		/* Focused on open (see the effect above) so nothing inside starts with a focus ring. */

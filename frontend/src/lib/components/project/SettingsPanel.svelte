@@ -12,6 +12,7 @@
 	import IconGroup from '$lib/components/icons/IconGroup.svelte';
 	import { projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
+	import { formatTransferNoticeParams } from '$lib/projectTransfer';
 	import type { TransferOrgSummary } from '$lib/types';
 
 	let { deploy, projectName }: { deploy: ProjectDeploy; projectName: string } = $props();
@@ -143,7 +144,7 @@
 	{/snippet}
 </Dialog>
 
-<BottomSheet bind:open={transferSheetOpen} label={m.pj_transfer_title()}>
+<BottomSheet bind:open={transferSheetOpen} label={m.pj_transfer_title()} class="transfer-bottom-sheet">
 	<div class="transfer-sheet">
 		<div class="transfer-sheet__head">
 			<div class="transfer-sheet__icon" aria-hidden="true">
@@ -217,10 +218,7 @@
 		{#if selectedOrg}
 			<div class="transfer-sheet__notice" role="status">
 				<p class="md-body-medium" style="margin: 0;">
-					{m.pj_transfer_confirm_notice({
-						org: selectedOrg.name,
-						owner: selectedOrg.owner_name ?? '—'
-					})}
+					{m.pj_transfer_confirm_notice(formatTransferNoticeParams(selectedOrg))}
 				</p>
 			</div>
 		{/if}
@@ -286,11 +284,28 @@
 		color: var(--md-sys-color-on-error);
 	}
 
+	:global(.transfer-bottom-sheet) {
+		max-width: min(560px, calc(100% - 32px)) !important;
+		height: fit-content !important;
+		max-height: 85dvh !important;
+		bottom: 16px !important;
+		margin: 0 auto !important;
+	}
+	:global(.transfer-bottom-sheet .m3-bottom-sheet__panel) {
+		height: auto !important;
+		max-height: 85dvh !important;
+		border-radius: var(--md-sys-shape-corner-extra-large) !important;
+	}
+	:global(.transfer-bottom-sheet .m3-bottom-sheet__body) {
+		padding: 0 24px calc(20px + env(safe-area-inset-bottom)) !important;
+	}
+
 	.transfer-sheet {
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
-		padding: 4px 0 16px;
+		padding: 4px 0 12px;
+		height: auto;
 	}
 	.transfer-sheet__head {
 		display: flex;

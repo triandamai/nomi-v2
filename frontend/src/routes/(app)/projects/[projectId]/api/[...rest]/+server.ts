@@ -1,47 +1,13 @@
 import { error } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { ALLOWED_PROJECT_API_PATHS } from '$lib/projectTransfer';
 import type { RequestHandler } from './$types';
 
 // The open project page talks to the backend through here: the in-browser runtime (changed
 // files, commands, results, files), and the project's sheets (issues, publishing, monitoring,
 // database, members, settings). An empty path is the project itself (deleting it).
-const UUID = '[0-9a-f-]{36}';
-const ALLOWED = new RegExp(
-	'^(' +
-		[
-			'',
-			'runtime',
-			'runtime/check',
-			`runtime/runs/${UUID}`,
-			'snapshot',
-			'manifest',
-			'files/.+',
-			'issues',
-			'issues/\\d+',
-			'deploy',
-			'deploy/publish',
-			`deploy/publishes/${UUID}`,
-			`deploy/publishes/${UUID}/rollback`,
-			'deploy/deployments/[A-Za-z0-9-]+',
-			'deploy/logs',
-			'deploy/usage',
-			'deploy/events',
-			'deploy/environments/[a-z0-9-]+',
-			'members',
-			`members/${UUID}`,
-			'access',
-			'database',
-			'database/credentials',
-			'database/tables',
-			'database/query',
-			'transfer',
-			'transfer/orgs',
-		].join('|') +
-		')$',
-);
-
 const proxy: RequestHandler = async ({ params, request, url, cookies, fetch }) => {
-	if (!ALLOWED.test(params.rest)) throw error(404, 'Not found');
+	if (!ALLOWED_PROJECT_API_PATHS.test(params.rest)) throw error(404, 'Not found');
 	const path = params.rest
 		.split('/')
 		.map((part) => encodeURIComponent(part))
