@@ -69,6 +69,12 @@ pub enum ReasoningEffort {
     High,
 }
 
+/// Room for the thinking a model does even when reasoning wasn't asked for. Gemini 2.5/3 think
+/// by default and OpenAI's reasoning models always do, and that thinking counts against the same
+/// output limit as the answer: without this, a short call (memory extraction asks for 1024
+/// tokens) could spend all of it thinking and come back empty. It's a ceiling, not a cost.
+pub const UNREQUESTED_THINKING_ALLOWANCE: u32 = 8192;
+
 impl ReasoningEffort {
     pub fn as_str(self) -> &'static str {
         match self {

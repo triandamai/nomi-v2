@@ -235,6 +235,26 @@ async fn enabling_reasoning_sets_thinking_config_on_the_request() {
 }
 
 #[tokio::test]
+async fn without_reasoning_the_answer_still_has_room_beside_default_thinking() {
+    // Gemini 2.5/3 think even when not asked to, and that counts against maxOutputTokens: a short
+    // call (memory extraction) used to spend its whole limit thinking and come back empty.
+    let server = MockServer::start().await;
+    let sse_body = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]},\"finishReason\":\"STOP\"}]}\n\n";
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/v1beta/models/.*:streamGenerateContent$"))
+        .and(body_string_contains("\"maxOutputTokens\":8292"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+        .mount(&server)
+        .await;
+
+    let provider = GeminiProvider::new(reqwest::Client::new(), "test-key".to_string(), "gemini-2.5-pro".to_string(), server.uri());
+    let stream = provider.complete_stream(text_request()).await.unwrap();
+    collect_stream(stream).await.unwrap();
+    let sent: serde_json::Value = server.received_requests().await.unwrap()[0].body_json().unwrap();
+    assert!(sent["generationConfig"].get("thinkingConfig").is_none());
+}
+
+#[tokio::test]
 async fn non_success_status_is_returned_before_any_stream_is_produced() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
