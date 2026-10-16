@@ -1,6 +1,5 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import { CUSTOM_PERMISSION_RESOURCE } from '$lib/permissions';
 import type { AdminSubscription, AdminUserDetail, AdminUserListResponse, Plan } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
@@ -120,37 +119,6 @@ export const actions: Actions = {
 		}
 		const user: AdminUserDetail = await response.json();
 		return { success: true, user };
-	},
-
-	grantPermission: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const userId = requireUserId(data);
-		const resourceField = data.get('resource');
-		const customResource = data.get('customResource');
-		const actions = data.getAll('actions').filter((a): a is string => typeof a === 'string');
-
-		if (!userId || typeof resourceField !== 'string' || !resourceField) {
-			return fail(400, { error: m.err_resource_required() });
-		}
-		const resource =
-			resourceField === CUSTOM_PERMISSION_RESOURCE ? (typeof customResource === 'string' ? customResource : '') : resourceField;
-		if (!resource) {
-			return fail(400, { error: m.err_resource_required() });
-		}
-		if (actions.length === 0) {
-			return fail(400, { error: m.err_select_action() });
-		}
-
-		const response = await apiFetch(fetch, cookies, `/api/admin/users/${userId}/permissions`, {
-			method: 'POST',
-			body: JSON.stringify({ scope_type: 'admin', org_id: null, resource, actions }),
-		});
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || m.err_grant_permission() });
-		}
-		const permissions = await response.json();
-		return { success: true, permissions };
 	},
 
 	revokePermission: async ({ request, cookies, fetch }) => {

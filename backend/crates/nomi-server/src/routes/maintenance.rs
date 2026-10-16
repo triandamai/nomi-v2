@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
-use crate::routes::settings::require_system_config_permission;
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct Maintenance {
@@ -50,7 +49,7 @@ pub async fn put(
     AuthClaims(claims): AuthClaims,
     Json(input): Json<MaintenanceInput>,
 ) -> Result<Json<Maintenance>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "maintenance", "manage")?;
     if input.message.chars().count() > 500 {
         return Err((StatusCode::BAD_REQUEST, "the message is at most 500 characters"));
     }

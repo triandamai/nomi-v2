@@ -8,6 +8,8 @@
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
+	import IconRocket from '$lib/components/icons/IconRocket.svelte';
+	import { can } from '$lib/permissions';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -23,11 +25,12 @@
 	const running = $derived(data.stats.running_agents);
 
 	const AREAS = [
-		{ href: '/admin/agents', title: m.admin_live_agents(), body: m.admin_area_agents(), icon: IconAgents, users: false },
-		{ href: '/admin/dynamic-agents', title: m.admin_custom_agents(), body: m.admin_area_custom(), icon: IconSparkle, users: false },
-		{ href: '/admin/settings/llm', title: m.admin_models(), body: m.admin_area_models(), icon: IconChip, users: false },
-		{ href: '/admin/settings/embedding', title: m.admin_embeddings(), body: m.admin_area_embeddings(), icon: IconMemory, users: false },
-		{ href: '/admin/users', title: m.admin_users(), body: m.admin_area_users(), icon: IconPerson, users: true },
+		{ href: '/admin/agents', title: m.admin_live_agents(), body: m.admin_area_agents(), icon: IconAgents, area: 'dashboard' },
+		{ href: '/admin/dynamic-agents', title: m.admin_custom_agents(), body: m.admin_area_custom(), icon: IconSparkle, area: 'agents' },
+		{ href: '/admin/settings/llm', title: m.admin_models(), body: m.admin_area_models(), icon: IconChip, area: 'models' },
+		{ href: '/admin/settings/embedding', title: m.admin_embeddings(), body: m.admin_area_embeddings(), icon: IconMemory, area: 'models' },
+		{ href: '/admin/integrations', title: m.admin_integrations(), body: m.admin_area_integrations(), icon: IconRocket, area: 'integrations' },
+		{ href: '/admin/users', title: m.admin_users(), body: m.admin_area_users(), icon: IconPerson, area: 'user' },
 	];
 </script>
 
@@ -54,7 +57,7 @@
 <section class="areas" aria-labelledby="areas-title">
 	<h2 id="areas-title" class="section-label">{m.admin_manage()}</h2>
 	<ul class="areas__grid">
-		{#each AREAS.filter((a) => (a.users ? data.canViewUsers : data.canManageSystemConfig)) as area (area.href)}
+		{#each AREAS.filter((a) => can(data.access, a.area)) as area (area.href)}
 			<li>
 				<a class="area" href={area.href}>
 					<span class="area__icon"><area.icon size={24} /></span>

@@ -1,4 +1,5 @@
 pub mod authorize;
+pub mod catalog;
 pub mod claims;
 pub mod email_code;
 pub mod extractor;

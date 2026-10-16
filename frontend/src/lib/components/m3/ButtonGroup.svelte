@@ -9,7 +9,7 @@
 		'aria-label': ariaLabel,
 		onchange,
 	}: {
-		options: { value: T; label: string }[];
+		options: { value: T; label: string; disabled?: boolean }[];
 		value: T;
 		/** When set, a hidden input submits the current value with the surrounding form. */
 		name?: string;
@@ -30,6 +30,7 @@
 			class="m3-button-group__item"
 			class:m3-button-group__item--selected={option.value === value}
 			aria-pressed={option.value === value}
+			disabled={option.disabled}
 			onclick={() => pick(option.value)}
 		>
 			{option.label}
@@ -77,10 +78,18 @@
 	.m3-button-group__item:only-child {
 		border-radius: var(--round);
 	}
-	.m3-button-group__item:hover {
+	.m3-button-group__item:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.m3-button-group__item:disabled {
+		color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+		cursor: not-allowed;
+	}
+	.m3-button-group__item:not(:disabled):hover {
 		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-high));
 	}
-	.m3-button-group__item:active {
+	.m3-button-group__item:not(:disabled):active {
 		background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, var(--md-sys-color-surface-container-high));
 	}
 	/* Selected springs to fully round, wherever it sits in the group. */

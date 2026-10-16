@@ -1,4 +1,4 @@
-use axum::{routing::{delete, get, post, put}, Router};
+use axum::{routing::{delete, get, patch, post, put}, Router};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
@@ -191,6 +191,31 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
+        .route("/api/admin/shipyard/webhooks", get(crate::routes::admin_shipyard::list_webhooks))
+        .route(
+            "/api/admin/shipyard/webhooks/:id",
+            patch(crate::routes::admin_shipyard::update_webhook).delete(crate::routes::admin_shipyard::delete_webhook),
+        )
+        .route("/api/admin/shipyard/webhooks/:id/rotate", post(crate::routes::admin_shipyard::rotate_webhook))
+        .route("/api/admin/shipyard/webhooks/:id/test", post(crate::routes::admin_shipyard::test_webhook))
+        .route("/api/admin/shipyard/webhooks/:id/deliveries", get(crate::routes::admin_shipyard::webhook_deliveries))
+        .route("/api/admin/shipyard/deliveries/:id/redeliver", post(crate::routes::admin_shipyard::redeliver))
+        .route("/api/admin/shipyard/orgs", get(crate::routes::admin_shipyard::list_orgs))
+        .route("/api/admin/shipyard/orgs/:id", delete(crate::routes::admin_shipyard::remove_org))
+        .route("/api/admin/shipyard/orgs/:id/sync", post(crate::routes::admin_shipyard::sync_org))
+        .route(
+            "/api/admin/shipyard/orgs/:org/apps/:app",
+            get(crate::routes::admin_shipyard::get_app).delete(crate::routes::admin_shipyard::delete_app),
+        )
+        .route("/api/admin/shipyard/orgs/:org/apps/:app/envs/:env", delete(crate::routes::admin_shipyard::delete_env))
+        .route("/api/admin/shipyard/orgs/:org/apps/:app/envs/:env/duplicate", post(crate::routes::admin_shipyard::duplicate_env))
+        .route("/api/admin/shipyard/orgs/:org/apps/:app/secrets", get(crate::routes::admin_shipyard::list_secrets))
+        .route(
+            "/api/admin/shipyard/orgs/:org/apps/:app/secrets/:name",
+            put(crate::routes::admin_shipyard::set_secret).delete(crate::routes::admin_shipyard::delete_secret),
+        )
+        .route("/api/admin/shipyard/events", get(crate::routes::admin_shipyard::list_events))
+        .route("/api/admin/shipyard/events/catch-up", post(crate::routes::admin_shipyard::catch_up))
         .route("/api/admin/shipyard/webhook", post(crate::routes::deploy::admin_register_webhook))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
         .route("/api/admin/agents/ws", get(admin_dashboard_routes::admin_agents_stream))
@@ -217,6 +242,8 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/users/:id/permissions",
             post(admin_users_routes::grant_user_permission),
         )
+        .route("/api/admin/users/:id/admin-access", put(admin_users_routes::put_admin_access))
+        .route("/api/admin/permissions/catalog", get(crate::routes::admin_access::catalog))
         .route(
             "/api/admin/users/:id/permissions/:permission_id",
             delete(admin_users_routes::revoke_user_permission),

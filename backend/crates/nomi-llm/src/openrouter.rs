@@ -102,7 +102,12 @@ impl OpenRouterProvider {
         // the reply's room. A share-based `effort` would take most of max_tokens for thinking at
         // high and leave a plan or draft cut off.
         let reasoning_budget = request.reasoning_effort.budget_tokens();
-        let max_tokens = if request.enable_reasoning { request.max_tokens + reasoning_budget } else { request.max_tokens };
+        // Models that think anyway (Gemini 2.5, o-series) still need room when it wasn't asked for.
+        let max_tokens = if request.enable_reasoning {
+            request.max_tokens + reasoning_budget
+        } else {
+            request.max_tokens + crate::types::UNREQUESTED_THINKING_ALLOWANCE
+        };
         let mut body = json!({
             "model": self.model,
             "max_tokens": max_tokens,

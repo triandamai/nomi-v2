@@ -106,7 +106,8 @@ impl OpenAiProvider {
         // covers their thinking as well as the reply. They always think, so thinking gets its own
         // budget on top of the reply's room.
         if is_reasoning_model(&self.model) {
-            body["max_completion_tokens"] = json!(request.max_tokens + request.reasoning_effort.budget_tokens());
+            let thinking = if request.enable_reasoning { request.reasoning_effort.budget_tokens() } else { crate::types::UNREQUESTED_THINKING_ALLOWANCE };
+            body["max_completion_tokens"] = json!(request.max_tokens + thinking);
         } else {
             body["max_tokens"] = json!(request.max_tokens);
         }
@@ -117,8 +118,9 @@ impl OpenAiProvider {
         // tolerant unified `reasoning` param) — only send it when the model_id looks like one of
         // OpenAI's own reasoning families, so enabling reasoning globally can't break every other
         // OpenAI model a user might pick.
-        if request.enable_reasoning && is_reasoning_model(&self.model) {
-            body["reasoning_effort"] = json!(request.reasoning_effort.as_str());
+        if is_reasoning_model(&self.model) {
+            // Not asked to reason: think as little as the model allows.
+            body["reasoning_effort"] = json!(if request.enable_reasoning { request.reasoning_effort.as_str() } else { "low" });
         }
         if stream {
             body["stream"] = json!(true);

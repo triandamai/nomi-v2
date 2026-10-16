@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use crate::app::AppState;
 use nomi_auth::extractor::AuthClaims;
-use crate::routes::settings::require_system_config_permission;
 use nomi_settings::{self as settings, llm_models};
 
 pub(crate) const ALLOWED_PROVIDERS: [&str; 6] = ["anthropic", "openai", "openrouter", "gemini", "deepseek", "fake"];
@@ -75,7 +74,7 @@ pub async fn list_admin_models(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<Vec<AdminLlmModelResponse>>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "view")?;
     let models = llm_models::list_admin_llm_models(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?;
@@ -105,7 +104,7 @@ pub async fn create_admin_model(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<CreateAdminModelRequest>,
 ) -> Result<(StatusCode, Json<AdminLlmModelResponse>), (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     if !ALLOWED_PROVIDERS.contains(&req.provider.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)"));
     }
@@ -167,7 +166,7 @@ pub async fn update_admin_model(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateAdminModelRequest>,
 ) -> Result<Json<AdminLlmModelResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     if !ALLOWED_PROVIDERS.contains(&req.provider.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)"));
     }
@@ -216,7 +215,7 @@ pub async fn delete_admin_model(
     AuthClaims(claims): AuthClaims,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "manage")?;
     llm_models::delete_admin_llm_model(&state.pool, id).await.map_err(|e| match e {
         llm_models::DeleteAdminLlmModelError::NotFound => (StatusCode::NOT_FOUND, "model not found"),
         llm_models::DeleteAdminLlmModelError::IsDefault => {
@@ -232,7 +231,7 @@ pub async fn set_default_admin_model(
     AuthClaims(claims): AuthClaims,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     llm_models::set_default_admin_llm_model(&state.pool, id).await.map_err(|e| match e {
         llm_models::SetDefaultAdminLlmModelError::NotFound => (StatusCode::NOT_FOUND, "model not found"),
         llm_models::SetDefaultAdminLlmModelError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "failed to set default"),
@@ -252,7 +251,7 @@ pub async fn set_files_admin_model(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<SetFilesModelRequest>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     let found = llm_models::set_files_admin_llm_model(&state.pool, req.id)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to set the files model"))?;
@@ -269,7 +268,7 @@ pub async fn set_coding_admin_model(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<SetFilesModelRequest>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     let found = llm_models::set_coding_admin_llm_model(&state.pool, req.id)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to set the coding model"))?;
@@ -307,7 +306,7 @@ pub async fn fetch_provider_models(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<FetchProviderModelsRequest>,
 ) -> Result<Json<FetchProviderModelsResponse>, (StatusCode, String)> {
-    require_system_config_permission(&claims).map_err(|(status, msg)| (status, msg.to_string()))?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write").map_err(|(status, msg)| (status, msg.to_string()))?;
 
     let provider_kind = provider_kind_from_str(&req.provider)
         .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)".to_string()))?;
@@ -602,7 +601,7 @@ pub async fn set_admin_model_enabled(
     Path(id): Path<Uuid>,
     Json(req): Json<EnabledRequest>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     match llm_models::set_admin_llm_model_enabled(&state.pool, id, req.enabled)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update model"))?

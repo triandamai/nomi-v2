@@ -282,6 +282,81 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::DELETE, &format!("/webhooks/{}", seg(id)), None).await
     }
 
+    /// Turns an endpoint on or off, or changes its URL or events.
+    pub async fn update_webhook(&self, id: &str, patch: &Value) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::PATCH, &format!("/webhooks/{}", seg(id)), Some(patch.clone())).await
+    }
+
+    /// A new signing secret for the endpoint; returned only here.
+    pub async fn rotate_webhook_secret(&self, id: &str) -> Result<String, ShipyardError> {
+        let data = self.call(reqwest::Method::POST, &format!("/webhooks/{}/rotate-secret", seg(id)), None).await?;
+        data.get("secret")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| ShipyardError::Unavailable("rotation returned no secret".into()))
+    }
+
+    /// The endpoint's recent deliveries, optionally only those with one status (pending, delivered, failed).
+    pub async fn webhook_deliveries(&self, id: &str, status: Option<&str>, limit: u32) -> Result<Value, ShipyardError> {
+        let mut path = format!("/webhooks/{}/deliveries?limit={}", seg(id), limit.clamp(1, 200));
+        if let Some(status) = status {
+            path.push_str(&format!("&status={}", seg(status)));
+        }
+        self.call(reqwest::Method::GET, &path, None).await
+    }
+
+    /// Queues a delivery to be sent again.
+    pub async fn redeliver(&self, delivery_id: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::POST, &format!("/deliveries/{}/redeliver", seg(delivery_id)), None).await
+    }
+
+    /// The organization's events after `after` (exclusive), oldest first: `{ events, next_after }`.
+    pub async fn org_events(&self, org: &str, after: Option<&str>, limit: u32) -> Result<Value, ShipyardError> {
+        let mut path = format!("/orgs/{}/events?limit={}", seg(org), limit.clamp(1, 500));
+        if let Some(after) = after {
+            path.push_str(&format!("&after={}", seg(after)));
+        }
+        self.call(reqwest::Method::GET, &path, None).await
+    }
+
+    /// The event types Shipyard can send.
+    pub async fn event_types(&self) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::GET, "/event-types", None).await
+    }
+
+    /// The app's environments with their services, and whether it has a dev database.
+    pub async fn get_app(&self, org: &str, app: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::GET, &Self::app_path(org, app), None).await
+    }
+
+    /// Creates `to` from `env`'s last manifest and source (its own database, secrets and URL) and deploys it.
+    pub async fn duplicate_env(&self, org: &str, app: &str, env: &str, to: &str, copy_secrets: bool) -> Result<Value, ShipyardError> {
+        self.call(
+            reqwest::Method::POST,
+            &format!("{}/duplicate", Self::env_path(org, app, env)),
+            Some(json!({ "to": to, "copy_secrets": copy_secrets })),
+        )
+        .await
+    }
+
+    /// Creates or changes a secret, app-wide or for one environment. `value` None asks Shipyard
+    /// to generate a password. The response has the ref, never the value.
+    pub async fn set_secret(&self, org: &str, app: &str, name: &str, value: Option<&str>, environment: Option<&str>) -> Result<Value, ShipyardError> {
+        let body = match value {
+            Some(value) => json!({ "value": value, "environment": environment }),
+            None => json!({ "generate": "password", "environment": environment }),
+        };
+        self.call(reqwest::Method::PUT, &format!("{}/secrets/{}", Self::app_path(org, app), seg(name)), Some(body)).await
+    }
+
+    pub async fn delete_secret(&self, org: &str, app: &str, name: &str, environment: Option<&str>) -> Result<Value, ShipyardError> {
+        let mut path = format!("{}/secrets/{}", Self::app_path(org, app), seg(name));
+        if let Some(environment) = environment {
+            path.push_str(&format!("?environment={}", seg(environment)));
+        }
+        self.call(reqwest::Method::DELETE, &path, None).await
+    }
+
     /// Sends a signed `ping` to the endpoint and returns the result.
     pub async fn test_webhook(&self, id: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::POST, &format!("/webhooks/{}/test", seg(id)), None).await

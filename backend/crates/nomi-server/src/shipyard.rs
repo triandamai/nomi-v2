@@ -300,3 +300,97 @@ async fn person_locale(pool: &PgPool, user_id: Uuid) -> nomi_i18n::Locale {
         .flatten();
     nomi_i18n::Locale::from_code_or_default(language.as_deref())
 }
+
+/// What one catch-up pass found.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct CatchUp {
+    pub orgs: usize,
+    /// Events Nomi hadn't seen yet.
+    pub new_events: usize,
+    /// Organizations Shipyard couldn't be asked about.
+    pub errors: Vec<String>,
+}
+
+/// Pulls each synced organization's event feed from where Nomi last got to, and records and
+/// applies the events no webhook delivered. Safe to run any time: events are deduplicated.
+pub async fn catch_up(pool: &PgPool, client: &Shipyard<'_>) -> Result<CatchUp, sqlx::Error> {
+    let orgs: Vec<(Uuid, Option<String>)> = sqlx::query_as(
+        "SELECT o.id, c.after_id FROM organizations o LEFT JOIN shipyard_event_cursors c ON c.org_id = o.id \
+         WHERE o.shipyard_synced_at IS NOT NULL",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut result = CatchUp { orgs: orgs.len(), ..Default::default() };
+    for (org_id, mut after) in orgs {
+        // A few pages per pass; the next pass continues from the cursor.
+        for _ in 0..5 {
+            let page = match client.org_events(&org_id.to_string(), after.as_deref(), 200).await {
+                Ok(page) => page,
+                Err(ShipyardError::NotFound(_)) => break,
+                Err(e) => {
+                    result.errors.push(format!("{org_id}: {e}"));
+                    break;
+                }
+            };
+            let events = page.get("events").and_then(Value::as_array).cloned().unwrap_or_default();
+            for raw in &events {
+                let Ok(event) = serde_json::from_value::<Event>(raw.clone()) else { continue };
+                let existed: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM shipyard_events WHERE id = $1)")
+                    .bind(&event.id)
+                    .fetch_one(pool)
+                    .await?;
+                if existed {
+                    continue;
+                }
+                result.new_events += 1;
+                // Old events are only recorded: a first catch-up shouldn't send stale alerts.
+                let recent = event.created_at > chrono::Utc::now() - chrono::Duration::hours(1);
+                if let Some(project_id) = store_event(pool, &event).await?.filter(|_| recent) {
+                    if let Err(e) = apply_event(pool, project_id, &event).await {
+                        tracing::warn!(error = %e, event = %event.id, "failed to apply a caught-up Shipyard event");
+                    }
+                }
+            }
+            let next = page.get("next_after").and_then(Value::as_str).map(str::to_string);
+            if next.is_some() && next != after {
+                sqlx::query(
+                    "INSERT INTO shipyard_event_cursors (org_id, after_id) VALUES ($1, $2) \
+                     ON CONFLICT (org_id) DO UPDATE SET after_id = $2, updated_at = now()",
+                )
+                .bind(org_id)
+                .bind(&next)
+                .execute(pool)
+                .await?;
+                after = next;
+            }
+            if events.len() < 200 {
+                break;
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// Every ten minutes, [`catch_up`] — in case a webhook delivery never arrived.
+pub async fn catch_up_loop(pool: PgPool, http: reqwest::Client, config: ShipyardConfig) {
+    let client = Shipyard::new(&http, &config);
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+    loop {
+        tick.tick().await;
+        match catch_up(&pool, &client).await {
+            Ok(done) if done.new_events > 0 => tracing::info!(events = done.new_events, "caught up on Shipyard events"),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "Shipyard catch-up failed"),
+        }
+    }
+}
+
+/// Keeps the organization's name on Shipyard in step with Nomi, when it's there.
+pub async fn sync_org_name(pool: &PgPool, client: &Shipyard<'_>, org_id: Uuid) -> Result<bool, EnsureError> {
+    let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
+        sqlx::query_as("SELECT name, shipyard_synced_at FROM organizations WHERE id = $1").bind(org_id).fetch_optional(pool).await?;
+    let Some((name, Some(_))) = row else { return Ok(false) };
+    client.put_org(&org_id.to_string(), &name).await?;
+    sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(org_id).execute(pool).await?;
+    Ok(true)
+}

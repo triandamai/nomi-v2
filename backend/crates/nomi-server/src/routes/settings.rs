@@ -2,7 +2,6 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use nomi_auth::claims::Claims;
 use nomi_auth::extractor::AuthClaims;
 use nomi_settings as settings;
 
@@ -20,14 +19,6 @@ pub struct UpdateProviderSettingsRequest {
     pub model_id: String,
     pub api_key: Option<String>,
     pub base_url: Option<String>,
-}
-
-pub(crate) fn require_system_config_permission(claims: &Claims) -> Result<(), (StatusCode, &'static str)> {
-    if claims.has_permission("admin", "system_config", "manage") {
-        Ok(())
-    } else {
-        Err((StatusCode::FORBIDDEN, "not authorized to manage system settings"))
-    }
 }
 
 #[tracing::instrument(skip(state))]
@@ -79,7 +70,7 @@ pub async fn fetch_embedding_provider_models(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<FetchEmbeddingModelsRequest>,
 ) -> Result<Json<FetchEmbeddingModelsResponse>, (StatusCode, String)> {
-    require_system_config_permission(&claims).map_err(|(status, msg)| (status, msg.to_string()))?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write").map_err(|(status, msg)| (status, msg.to_string()))?;
 
     if !["openai", "gemini", "cohere", "fake"].contains(&req.provider.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "unknown provider (expected openai, gemini, cohere, or fake)".to_string()));
@@ -111,7 +102,7 @@ pub async fn get_embedding_settings(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<ProviderSettingsResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "view")?;
     load_settings_response(&state, "embedding").await
 }
 
@@ -143,7 +134,7 @@ pub async fn put_embedding_settings(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<UpdateProviderSettingsRequest>,
 ) -> Result<Json<ProviderSettingsResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "models", "write")?;
     tracing::info!(
         provider = %req.provider,
         model_id = %req.model_id,

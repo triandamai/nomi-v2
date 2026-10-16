@@ -57,7 +57,11 @@ impl GeminiProvider {
         // beyond what the caller asked for so enabling reasoning doesn't starve the reply itself.
         // Thinking counts against maxOutputTokens, so its budget is added on top of the reply's.
         let thinking_budget = request.reasoning_effort.budget_tokens();
-        let max_output_tokens = if request.enable_reasoning { request.max_tokens + thinking_budget } else { request.max_tokens };
+        let max_output_tokens = if request.enable_reasoning {
+            request.max_tokens + thinking_budget
+        } else {
+            request.max_tokens + crate::types::UNREQUESTED_THINKING_ALLOWANCE
+        };
         let mut generation_config = json!({ "maxOutputTokens": max_output_tokens });
         if request.enable_reasoning {
             generation_config["thinkingConfig"] = json!({ "includeThoughts": true, "thinkingBudget": thinking_budget });

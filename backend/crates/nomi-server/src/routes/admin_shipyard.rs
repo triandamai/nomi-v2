@@ -2,7 +2,7 @@
 //! project each belongs to, and reconnecting the ones no project points at (after a restore,
 //! or a project that was recreated) to an existing project or a new one.
 
-use axum::extract::State;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use futures_util::stream::{self, StreamExt};
@@ -14,10 +14,9 @@ use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
 use crate::routes::deploy::{client, internal, shipyard_error, ApiError};
-use crate::routes::settings::require_system_config_permission;
 
-fn admin(claims: &nomi_auth::claims::Claims) -> Result<(), ApiError> {
-    require_system_config_permission(claims).map_err(|(s, m)| (s, m.to_string()))
+fn admin(claims: &nomi_auth::claims::Claims, level: &str) -> Result<(), ApiError> {
+    crate::routes::admin_access::require_admin_owned(claims, "integrations", level)
 }
 
 #[derive(Serialize)]
@@ -61,7 +60,7 @@ pub struct AppsOverview {
 
 /// `GET /api/admin/shipyard/apps`
 pub async fn list_apps(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<AppsOverview>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "view")?;
     let client = client(&state)?;
     // Organizations that were ever sent to Shipyard, or have projects that might have been.
     let orgs: Vec<(Uuid, String)> = sqlx::query_as(
@@ -149,7 +148,7 @@ pub struct LinkRequest {
 
 /// `POST /api/admin/shipyard/apps/link`: ties a Shipyard app to a Nomi project.
 pub async fn link_app(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(req): Json<LinkRequest>) -> Result<Json<LinkedProject>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "write")?;
     let client = client(&state)?;
     // Confirm the app really is that organization's on Shipyard.
     let org = client.get_org(&req.org_id.to_string()).await.map_err(shipyard_error)?;
@@ -218,4 +217,364 @@ pub async fn link_app(State(state): State<AppState>, AuthClaims(claims): AuthCla
         }
     };
     Ok(Json(LinkedProject { id: project.0, name: project.1, session_id: project.2 }))
+}
+
+// ─── Webhook endpoints ───────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct Webhooks {
+    pub endpoints: Value,
+    /// The endpoint Nomi registered for itself (its secret is kept by Nomi, never shown).
+    pub own_id: Option<String>,
+}
+
+/// `GET /api/admin/shipyard/webhooks`: every endpoint the integration has on Shipyard.
+pub async fn list_webhooks(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Webhooks>, ApiError> {
+    admin(&claims, "view")?;
+    let endpoints = client(&state)?.list_webhooks().await.map_err(shipyard_error)?;
+    let own_id = crate::shipyard::registered_webhook(&state.pool).await.map_err(internal("failed to read Shipyard settings"))?.map(|(id, _, _)| id);
+    Ok(Json(Webhooks { endpoints, own_id }))
+}
+
+#[derive(Deserialize)]
+pub struct WebhookPatch {
+    pub enabled: Option<bool>,
+    pub events: Option<Vec<String>>,
+}
+
+/// `PATCH /api/admin/shipyard/webhooks/:id`: on or off, or which events it gets.
+pub async fn update_webhook(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(id): Path<String>,
+    Json(req): Json<WebhookPatch>,
+) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "write")?;
+    let mut patch = serde_json::Map::new();
+    if let Some(enabled) = req.enabled {
+        patch.insert("enabled".into(), Value::Bool(enabled));
+    }
+    if let Some(events) = req.events {
+        if events.is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "pick at least one event".to_string()));
+        }
+        patch.insert("events".into(), serde_json::json!(events));
+    }
+    Ok(Json(client(&state)?.update_webhook(&id, &Value::Object(patch)).await.map_err(shipyard_error)?))
+}
+
+/// `DELETE /api/admin/shipyard/webhooks/:id`
+pub async fn delete_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+    admin(&claims, "manage")?;
+    client(&state)?.delete_webhook(&id).await.map_err(shipyard_error)?;
+    sqlx::query("DELETE FROM shipyard_webhook WHERE endpoint_id = $1")
+        .bind(&id)
+        .execute(&state.pool)
+        .await
+        .map_err(internal("failed to forget the webhook"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+pub struct Rotated {
+    /// The new secret, shown once — except for Nomi's own endpoint, whose secret Nomi keeps.
+    pub secret: Option<String>,
+}
+
+/// `POST /api/admin/shipyard/webhooks/:id/rotate`: a new signing secret.
+pub async fn rotate_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Rotated>, ApiError> {
+    admin(&claims, "manage")?;
+    let secret = client(&state)?.rotate_webhook_secret(&id).await.map_err(shipyard_error)?;
+    let stored = sqlx::query("UPDATE shipyard_webhook SET secret_encrypted = $2 WHERE endpoint_id = $1")
+        .bind(&id)
+        .bind(nomi_settings::crypto::encrypt(&state.settings_key, &secret))
+        .execute(&state.pool)
+        .await
+        .map_err(internal("failed to keep the new secret"))?
+        .rows_affected()
+        > 0;
+    Ok(Json(Rotated { secret: (!stored).then_some(secret) }))
+}
+
+/// `POST /api/admin/shipyard/webhooks/:id/test`: Shipyard sends it a signed ping.
+pub async fn test_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "write")?;
+    Ok(Json(client(&state)?.test_webhook(&id).await.map_err(shipyard_error)?))
+}
+
+#[derive(Deserialize)]
+pub struct DeliveriesQuery {
+    pub status: Option<String>,
+}
+
+/// `GET /api/admin/shipyard/webhooks/:id/deliveries`
+pub async fn webhook_deliveries(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(id): Path<String>,
+    Query(q): Query<DeliveriesQuery>,
+) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "view")?;
+    let status = q.status.filter(|s| !s.is_empty());
+    Ok(Json(client(&state)?.webhook_deliveries(&id, status.as_deref(), 50).await.map_err(shipyard_error)?))
+}
+
+/// `POST /api/admin/shipyard/deliveries/:id/redeliver`
+pub async fn redeliver(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "write")?;
+    Ok(Json(client(&state)?.redeliver(&id).await.map_err(shipyard_error)?))
+}
+
+// ─── Organizations ───────────────────────────────────────────────────────────
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct SyncedOrg {
+    pub id: Uuid,
+    pub name: String,
+    pub synced_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub projects: i64,
+    pub published: i64,
+}
+
+/// `GET /api/admin/shipyard/orgs`: Nomi's organizations and whether each is on Shipyard.
+pub async fn list_orgs(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<SyncedOrg>>, ApiError> {
+    admin(&claims, "view")?;
+    let orgs = sqlx::query_as(
+        "SELECT o.id, o.name, o.shipyard_synced_at AS synced_at, \
+                (SELECT COUNT(*) FROM projects p WHERE p.org_id = o.id) AS projects, \
+                (SELECT COUNT(*) FROM projects p WHERE p.org_id = o.id AND p.shipyard_app IS NOT NULL) AS published \
+         FROM organizations o \
+         WHERE o.shipyard_synced_at IS NOT NULL OR EXISTS (SELECT 1 FROM projects p WHERE p.org_id = o.id) \
+         ORDER BY o.shipyard_synced_at IS NULL, o.name LIMIT 500",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal("failed to list organizations"))?;
+    Ok(Json(orgs))
+}
+
+/// `POST /api/admin/shipyard/orgs/:id/sync`: creates the organization on Shipyard, or brings its name up to date.
+pub async fn sync_org(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(org_id): Path<Uuid>) -> Result<StatusCode, ApiError> {
+    admin(&claims, "write")?;
+    let client = client(&state)?;
+    let name: String = sqlx::query_scalar("SELECT name FROM organizations WHERE id = $1")
+        .bind(org_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(internal("failed to load organization"))?
+        .ok_or((StatusCode::NOT_FOUND, "organization not found".to_string()))?;
+    client.put_org(&org_id.to_string(), &name).await.map_err(shipyard_error)?;
+    sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1")
+        .bind(org_id)
+        .execute(&state.pool)
+        .await
+        .map_err(internal("failed to save organization"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `DELETE /api/admin/shipyard/orgs/:id`: removes the organization from Shipyard with every app
+/// it has there. The Nomi organization and its projects stay; they just aren't published.
+pub async fn remove_org(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(org_id): Path<Uuid>) -> Result<StatusCode, ApiError> {
+    admin(&claims, "manage")?;
+    match client(&state)?.delete_org(&org_id.to_string()).await {
+        Ok(_) | Err(nomi_shipyard::ShipyardError::NotFound(_)) => {}
+        Err(e) => return Err(shipyard_error(e)),
+    }
+    let mut tx = state.pool.begin().await.map_err(internal("failed to update organization"))?;
+    sqlx::query("UPDATE projects SET shipyard_app = NULL WHERE org_id = $1")
+        .bind(org_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(internal("failed to update organization"))?;
+    sqlx::query("UPDATE organizations SET shipyard_synced_at = NULL WHERE id = $1")
+        .bind(org_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(internal("failed to update organization"))?;
+    sqlx::query("DELETE FROM shipyard_event_cursors WHERE org_id = $1")
+        .bind(org_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(internal("failed to update organization"))?;
+    tx.commit().await.map_err(internal("failed to update organization"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── Apps, environments, secrets ─────────────────────────────────────────────
+
+/// `GET /api/admin/shipyard/orgs/:org/apps/:app`: its environments, services and dev database.
+pub async fn get_app(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((org, app)): Path<(Uuid, String)>) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "view")?;
+    Ok(Json(client(&state)?.get_app(&org.to_string(), &app).await.map_err(shipyard_error)?))
+}
+
+/// `DELETE /api/admin/shipyard/orgs/:org/apps/:app`: terminates the app everywhere.
+pub async fn delete_app(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((org, app)): Path<(Uuid, String)>) -> Result<StatusCode, ApiError> {
+    admin(&claims, "manage")?;
+    match client(&state)?.delete_app(&org.to_string(), &app).await {
+        Ok(_) | Err(nomi_shipyard::ShipyardError::NotFound(_)) => {}
+        Err(e) => return Err(shipyard_error(e)),
+    }
+    sqlx::query("UPDATE projects SET shipyard_app = NULL WHERE org_id = $1 AND shipyard_app = $2")
+        .bind(org)
+        .bind(&app)
+        .execute(&state.pool)
+        .await
+        .map_err(internal("failed to update project"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct DuplicateRequest {
+    pub to: String,
+    #[serde(default = "yes")]
+    pub copy_secrets: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Environment names: what Shipyard accepts in a URL.
+fn valid_env(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 40
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+}
+
+/// `POST /api/admin/shipyard/orgs/:org/apps/:app/envs/:env/duplicate`: a staging or preview
+/// copy of the environment, with its own empty database, secrets and URL.
+pub async fn duplicate_env(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((org, app, env)): Path<(Uuid, String, String)>,
+    Json(req): Json<DuplicateRequest>,
+) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "write")?;
+    let to = req.to.trim().to_lowercase();
+    if !valid_env(&to) {
+        return Err((StatusCode::BAD_REQUEST, "use lowercase letters, numbers and dashes for the environment name".to_string()));
+    }
+    Ok(Json(client(&state)?.duplicate_env(&org.to_string(), &app, &env, &to, req.copy_secrets).await.map_err(shipyard_error)?))
+}
+
+/// `DELETE /api/admin/shipyard/orgs/:org/apps/:app/envs/:env`: takes one environment down.
+pub async fn delete_env(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((org, app, env)): Path<(Uuid, String, String)>,
+) -> Result<StatusCode, ApiError> {
+    admin(&claims, "manage")?;
+    client(&state)?.delete_env(&org.to_string(), &app, &env).await.map_err(shipyard_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `GET /api/admin/shipyard/orgs/:org/apps/:app/secrets`: names, refs and where they're used. Never values.
+pub async fn list_secrets(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((org, app)): Path<(Uuid, String)>) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "view")?;
+    Ok(Json(client(&state)?.list_secrets(&org.to_string(), &app).await.map_err(shipyard_error)?))
+}
+
+#[derive(Deserialize)]
+pub struct SecretRequest {
+    /// Left out to have Shipyard generate one.
+    pub value: Option<String>,
+    /// Left out for every environment.
+    pub environment: Option<String>,
+}
+
+/// Secret names as environment variables: `A-Z0-9_`, not starting with a digit.
+fn valid_secret_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// `PUT /api/admin/shipyard/orgs/:org/apps/:app/secrets/:name`: sets a secret. The value goes
+/// straight to Shipyard; Nomi doesn't keep it and no agent sees it.
+pub async fn set_secret(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((org, app, name)): Path<(Uuid, String, String)>,
+    Json(req): Json<SecretRequest>,
+) -> Result<Json<Value>, ApiError> {
+    admin(&claims, "manage")?;
+    if !valid_secret_name(&name) {
+        return Err((StatusCode::BAD_REQUEST, "secret names use A-Z, 0-9 and _, like an environment variable".to_string()));
+    }
+    let value = req.value.filter(|v| !v.is_empty());
+    let environment = req.environment.map(|e| e.trim().to_string()).filter(|e| !e.is_empty());
+    let saved = client(&state)?
+        .set_secret(&org.to_string(), &app, &name, value.as_deref(), environment.as_deref())
+        .await
+        .map_err(shipyard_error)?;
+    Ok(Json(saved))
+}
+
+#[derive(Deserialize)]
+pub struct SecretScope {
+    pub environment: Option<String>,
+}
+
+/// `DELETE /api/admin/shipyard/orgs/:org/apps/:app/secrets/:name`
+pub async fn delete_secret(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((org, app, name)): Path<(Uuid, String, String)>,
+    Query(scope): Query<SecretScope>,
+) -> Result<StatusCode, ApiError> {
+    admin(&claims, "manage")?;
+    let environment = scope.environment.filter(|e| !e.is_empty());
+    client(&state)?.delete_secret(&org.to_string(), &app, &name, environment.as_deref()).await.map_err(shipyard_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── Events ──────────────────────────────────────────────────────────────────
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct ReceivedEvent {
+    pub id: String,
+    #[sqlx(rename = "type")]
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub project_id: Option<Uuid>,
+    pub project_name: Option<String>,
+    pub environment: Option<String>,
+    pub service: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub received_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize)]
+pub struct EventFeed {
+    pub events: Vec<ReceivedEvent>,
+    /// What Shipyard can send.
+    pub types: Value,
+}
+
+/// `GET /api/admin/shipyard/events`: the latest events Nomi received.
+pub async fn list_events(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<EventFeed>, ApiError> {
+    admin(&claims, "view")?;
+    let events = sqlx::query_as(
+        "SELECT e.id, e.type, e.project_id, p.name AS project_name, e.environment, e.service, e.created_at, e.received_at \
+         FROM shipyard_events e LEFT JOIN projects p ON p.id = e.project_id ORDER BY e.received_at DESC LIMIT 100",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal("failed to list events"))?;
+    let types = match &state.shipyard {
+        Some(_) => client(&state)?.event_types().await.unwrap_or(Value::Array(vec![])),
+        None => Value::Array(vec![]),
+    };
+    Ok(Json(EventFeed { events, types }))
+}
+
+/// `POST /api/admin/shipyard/events/catch-up`: pulls events no webhook delivered, now.
+pub async fn catch_up(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<crate::shipyard::CatchUp>, ApiError> {
+    admin(&claims, "write")?;
+    let client = client(&state)?;
+    Ok(Json(crate::shipyard::catch_up(&state.pool, &client).await.map_err(internal("failed to catch up on events"))?))
 }

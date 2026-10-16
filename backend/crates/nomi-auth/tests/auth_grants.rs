@@ -97,7 +97,7 @@ async fn revoking_a_grant_removes_it_from_compute_permissions(pool: PgPool) {
 
     let grants = grant_permission(
         &pool,
-        NewGrant { user_id, scope_type: "admin", org_id: None, resource: "billing", actions: &["view".to_string()], granted_by: granter },
+        NewGrant { user_id, scope_type: "admin", org_id: None, resource: "support", actions: &["view".to_string()], granted_by: granter },
     )
     .await
     .unwrap();
@@ -107,7 +107,7 @@ async fn revoking_a_grant_removes_it_from_compute_permissions(pool: PgPool) {
     assert!(remaining.is_empty());
 
     let permissions = compute_permissions(&pool, user_id).await.unwrap();
-    assert!(!permissions.iter().any(|p| p.contains("billing")));
+    assert!(!permissions.iter().any(|p| p.contains("support")));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

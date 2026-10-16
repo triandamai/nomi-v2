@@ -25,7 +25,7 @@ fn internal(e: sqlx::Error) -> ApiError {
 }
 
 fn require(claims: &Claims, action: &str) -> Result<(), ApiError> {
-    if claims.has_permission("admin", "user", action) {
+    if claims.has_permission("admin", "plans", action) {
         Ok(())
     } else {
         Err((StatusCode::FORBIDDEN, "not authorized to manage plans"))
@@ -98,7 +98,7 @@ fn unique_violation(e: &sqlx::Error) -> bool {
 
 /// `POST /api/admin/plans`.
 pub async fn admin_create(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(input): Json<PlanInput>) -> Result<(StatusCode, Json<PlanRow>), ApiError> {
-    require(&claims, "manage")?;
+    require(&claims, "write")?;
     let input = input.validate().map_err(|m| (StatusCode::BAD_REQUEST, m))?;
     match plans::create_plan(&state.pool, &input).await {
         Ok(plan) => Ok((StatusCode::CREATED, Json(plan))),
@@ -114,7 +114,7 @@ pub async fn admin_update(
     Path(id): Path<Uuid>,
     Json(input): Json<PlanInput>,
 ) -> Result<Json<PlanRow>, ApiError> {
-    require(&claims, "manage")?;
+    require(&claims, "write")?;
     let input = input.validate().map_err(|m| (StatusCode::BAD_REQUEST, m))?;
     match plans::update_plan(&state.pool, id, &input).await {
         Ok(Some(plan)) => Ok(Json(plan)),
@@ -126,7 +126,7 @@ pub async fn admin_update(
 
 /// `PUT /api/admin/plans/:id/default`: where new people start.
 pub async fn admin_set_default(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
-    require(&claims, "manage")?;
+    require(&claims, "write")?;
     match plans::set_default_plan(&state.pool, id).await.map_err(internal)? {
         true => Ok(StatusCode::NO_CONTENT),
         false => Err((StatusCode::NOT_FOUND, "plan not found")),
@@ -230,7 +230,7 @@ pub async fn admin_put_subscription(
     Path(user_id): Path<Uuid>,
     Json(req): Json<SubscriptionRequest>,
 ) -> Result<Json<UserSubscription>, ApiError> {
-    require(&claims, "manage")?;
+    require(&claims, "write")?;
     require_user_exists(&state, user_id).await?;
     if req.quota_override.is_some_and(|q| q < 0) {
         return Err((StatusCode::BAD_REQUEST, "quota must be zero or more"));

@@ -204,7 +204,7 @@ async fn non_success_status_is_returned_before_any_stream_is_produced() {
 }
 
 #[tokio::test]
-async fn a_reasoning_model_gets_max_completion_tokens_instead_of_max_tokens() {
+async fn a_reasoning_model_gets_max_completion_tokens_and_thinks_little_when_not_asked_to() {
     let server = MockServer::start().await;
     let sse_body = concat!(
         "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
@@ -213,7 +213,8 @@ async fn a_reasoning_model_gets_max_completion_tokens_instead_of_max_tokens() {
     );
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(body_partial_json(json!({"max_completion_tokens": 1124})))
+        // It thinks anyway, so the answer still needs room on top of that (100 + 8192).
+        .and(body_partial_json(json!({"max_completion_tokens": 8292, "reasoning_effort": "low"})))
         .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
         .mount(&server)
         .await;

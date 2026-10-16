@@ -10,7 +10,6 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::routes::settings::require_system_config_permission;
 use nomi_auth::extractor::AuthClaims;
 
 #[derive(Serialize)]
@@ -26,7 +25,7 @@ pub async fn get_dashboard(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<DashboardResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "dashboard", "view")?;
 
     let total_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&state.pool)
@@ -94,7 +93,7 @@ pub async fn get_agents(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<AgentsResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "dashboard", "view")?;
 
     let rows: Vec<(Uuid, Option<String>, String, String, Uuid, Uuid, String, String, DateTime<Utc>, DateTime<Utc>, String, Option<String>)> = sqlx::query_as(
         "SELECT \
@@ -166,7 +165,7 @@ pub async fn admin_agents_stream(
     AuthClaims(claims): AuthClaims,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "dashboard", "view")?;
     let broker_host = state.mqtt_broker_host.clone();
     let broker_port = state.mqtt_broker_port;
     Ok(ws.on_upgrade(move |socket| relay_admin_agents_stream(socket, broker_host, broker_port)))
@@ -264,7 +263,7 @@ pub async fn list_agent_events(
     AuthClaims(claims): AuthClaims,
     Query(query): Query<AgentEventsQuery>,
 ) -> Result<Json<Vec<AgentEventItem>>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "dashboard", "view")?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
 
     // agent_type is a nullable column on agent_events — the CASE has no ELSE, so a NULL

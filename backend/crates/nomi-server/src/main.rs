@@ -111,6 +111,7 @@ async fn main() {
     let tool_catalog = nomi_server::build_tool_catalog(project_storage.clone());
 
     if let Some(config) = nomi_shipyard::ShipyardConfig::from_env() {
+        tokio::spawn(nomi_server::shipyard::catch_up_loop(pool.clone(), http_client.clone(), config.clone()));
         tokio::spawn(nomi_server::shipyard::register_webhook_on_start(pool.clone(), http_client.clone(), config, settings_key));
     }
 

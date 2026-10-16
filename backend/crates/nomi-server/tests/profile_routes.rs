@@ -173,6 +173,17 @@ async fn setting_accent_color_does_not_clobber_theme_and_vice_versa(pool: PgPool
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn every_new_theme_can_be_saved(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "themes@example.com").await;
+    for theme in ["lautan", "matcha", "saffron", "lagoon", "orchid", "ruby", "graphite"] {
+        let (status, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "accent_color": theme }), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "{theme}");
+        assert_eq!(body["accent_color"], theme);
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn setting_an_invalid_accent_color_is_rejected(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "nell@example.com").await;

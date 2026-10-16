@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::app::AppState;
-use crate::routes::settings::require_system_config_permission;
 
 type ApiError = (StatusCode, &'static str);
 
@@ -112,7 +111,7 @@ async fn voice_view(state: &AppState, conn: &mut sqlx::PgConnection) -> Result<(
 
 #[tracing::instrument(skip(state, claims))]
 pub async fn list_tools(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<ToolsResponse>, ApiError> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "tools", "view")?;
     let mut conn = state.pool.acquire().await.map_err(db_error)?;
 
     let rows: Vec<(String, bool)> = sqlx::query_as("SELECT name, enabled FROM tool_settings").fetch_all(&mut *conn).await.map_err(db_error)?;
@@ -211,7 +210,7 @@ pub async fn set_tool_enabled(
     Path(name): Path<String>,
     Json(req): Json<SetEnabledRequest>,
 ) -> Result<StatusCode, ApiError> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "tools", "write")?;
     match switchable(&state, &name) {
         Switchable::Yes => {}
         Switchable::AgentOnly => return Err((StatusCode::BAD_REQUEST, "this tool belongs to its agent and can't be switched off")),
@@ -260,7 +259,7 @@ pub async fn save_tool_settings(
     Path(name): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<StatusCode, ApiError> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "tools", "write")?;
     let mut conn = state.pool.acquire().await.map_err(db_error)?;
     match name.as_str() {
         web::WEB_SEARCH_TOOL_NAME => {
@@ -372,7 +371,7 @@ fn elevenlabs_error(e: voice::VoiceError) -> VoiceRouteError {
 
 /// The saved settings and key, or why there's no key yet.
 async fn voice_setup(state: &AppState, claims: &nomi_auth::claims::Claims) -> Result<(VoiceSettings, String), VoiceRouteError> {
-    require_system_config_permission(claims).map_err(|(s, _)| voice_route_error(s, "forbidden"))?;
+    crate::routes::admin_access::require_admin(claims, "tools", "write").map_err(|(s, _)| voice_route_error(s, "forbidden"))?;
     let server_error = |e: sqlx::Error| {
         tracing::error!(error = %e, "speak: couldn't load the settings");
         voice_route_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error")
@@ -438,7 +437,7 @@ pub async fn test_web_search(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<TestSearchRequest>,
 ) -> Result<Json<TestSearchResponse>, ApiError> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "tools", "write")?;
     let mut conn = state.pool.acquire().await.map_err(db_error)?;
     let (settings, secrets) = web::search_settings_with(&mut conn, &state.settings_key).await.map_err(db_error)?;
     drop(conn);

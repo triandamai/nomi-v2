@@ -18,7 +18,6 @@ use nomi_auth::extractor::AuthClaims;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRequest, LlmRole};
 
 use crate::app::AppState;
-use crate::routes::settings::require_system_config_permission;
 
 type ApiError = (StatusCode, String);
 
@@ -33,8 +32,8 @@ fn internal<E: std::fmt::Display>(context: &'static str) -> impl Fn(E) -> ApiErr
     }
 }
 
-fn admin(claims: &nomi_auth::claims::Claims) -> Result<(), ApiError> {
-    require_system_config_permission(claims).map_err(|(s, m)| (s, m.to_string()))
+fn admin(claims: &nomi_auth::claims::Claims, level: &str) -> Result<(), ApiError> {
+    crate::routes::admin_access::require_admin_owned(claims, "support", level)
 }
 
 fn hash_key(key: &str) -> Vec<u8> {
@@ -321,7 +320,7 @@ pub struct ListQuery {
 
 /// `GET /api/admin/support/articles?q=`
 pub async fn list_articles(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Query(query): Query<ListQuery>) -> Result<Json<Vec<Article>>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "view")?;
     let articles = match query.q.as_deref().and_then(or_query) {
         Some(q) => sqlx::query_as(
             "SELECT a.id, a.title, a.body, a.tags, a.published, a.created_at, a.updated_at FROM kb_articles a, to_tsquery('simple', $1) q \
@@ -363,7 +362,7 @@ fn check_article(input: &ArticleInput) -> Result<(), ApiError> {
 
 /// `POST /api/admin/support/articles`
 pub async fn create_article(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(input): Json<ArticleInput>) -> Result<(StatusCode, Json<Article>), ApiError> {
-    admin(&claims)?;
+    admin(&claims, "write")?;
     check_article(&input)?;
     let article = sqlx::query_as(
         "INSERT INTO kb_articles (title, body, tags, published, created_by) VALUES ($1, $2, $3, $4, $5) \
@@ -387,7 +386,7 @@ pub async fn update_article(
     Path(id): Path<Uuid>,
     Json(input): Json<ArticleInput>,
 ) -> Result<Json<Article>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "write")?;
     check_article(&input)?;
     let article = sqlx::query_as(
         "UPDATE kb_articles SET title = $2, body = $3, tags = $4, published = $5, updated_at = now() WHERE id = $1 \
@@ -407,7 +406,7 @@ pub async fn update_article(
 
 /// `DELETE /api/admin/support/articles/:id`
 pub async fn delete_article(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "manage")?;
     sqlx::query("DELETE FROM kb_articles WHERE id = $1")
         .bind(id)
         .execute(&state.pool)
@@ -438,7 +437,7 @@ pub struct DraftsQuery {
 
 /// `GET /api/admin/support/drafts?status=open`
 pub async fn list_drafts(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Query(query): Query<DraftsQuery>) -> Result<Json<Vec<Draft>>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "view")?;
     let status = query.status.unwrap_or_else(|| "open".to_string());
     let drafts = sqlx::query_as(
         "SELECT id, question, title, body, status, times_asked, last_asked_at, article_id, created_at FROM kb_drafts \
@@ -459,7 +458,7 @@ pub async fn publish_draft(
     Path(id): Path<Uuid>,
     Json(input): Json<ArticleInput>,
 ) -> Result<Json<Article>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "write")?;
     check_article(&input)?;
     let mut tx = state.pool.begin().await.map_err(internal("failed to publish the draft"))?;
     let article: Article = sqlx::query_as(
@@ -489,7 +488,7 @@ pub async fn publish_draft(
 
 /// `POST /api/admin/support/drafts/:id/dismiss`
 pub async fn dismiss_draft(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "write")?;
     sqlx::query("UPDATE kb_drafts SET status = 'dismissed' WHERE id = $1 AND status = 'open'")
         .bind(id)
         .execute(&state.pool)
@@ -513,7 +512,7 @@ pub struct SupportKey {
 
 /// `GET /api/admin/support/keys`
 pub async fn list_keys(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<SupportKey>>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "view")?;
     let keys = sqlx::query_as(
         "SELECT id, name, prefix, product_name, created_at, last_used_at, revoked_at FROM support_keys ORDER BY revoked_at NULLS FIRST, created_at DESC",
     )
@@ -540,7 +539,7 @@ pub struct CreatedKey {
 
 /// `POST /api/admin/support/keys`: a new key for a product (shown once).
 pub async fn create_key(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(input): Json<KeyInput>) -> Result<(StatusCode, Json<CreatedKey>), ApiError> {
-    admin(&claims)?;
+    admin(&claims, "manage")?;
     let name = input.name.trim();
     if name.is_empty() || name.chars().count() > 80 {
         return Err((StatusCode::BAD_REQUEST, "names are 1–80 characters".to_string()));
@@ -566,7 +565,7 @@ pub async fn create_key(State(state): State<AppState>, AuthClaims(claims): AuthC
 
 /// `DELETE /api/admin/support/keys/:id`: revokes it.
 pub async fn revoke_key(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "manage")?;
     sqlx::query("UPDATE support_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL")
         .bind(id)
         .execute(&state.pool)
@@ -588,7 +587,7 @@ pub struct AskedQuestion {
 
 /// `GET /api/admin/support/questions`: the newest questions and how they were answered.
 pub async fn list_questions(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<AskedQuestion>>, ApiError> {
-    admin(&claims)?;
+    admin(&claims, "view")?;
     let questions = sqlx::query_as(
         "SELECT q.id, q.question, q.answer, q.answered, q.customer, k.name AS key_name, q.created_at \
          FROM support_questions q LEFT JOIN support_keys k ON k.id = q.key_id ORDER BY q.created_at DESC LIMIT 200",
