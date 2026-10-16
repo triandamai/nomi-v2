@@ -154,10 +154,12 @@
 					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'action'} label={m.usage_progress_label({ share: formatShare(share) })} />
 					<span class="usage__detail">{m.usage_of_tokens({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}</span>
 				</a>
-				<button type="button" class="usage__upgrade" onclick={() => (proOpen = true)}>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
-					{m.usage_upgrade()}
-				</button>
+				{#if usage.can_upgrade}
+					<button type="button" class="usage__upgrade" onclick={() => (proOpen = true)}>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
+						{m.usage_upgrade()}
+					</button>
+				{/if}
 			</div>
 		{/if}
 		<Menu bind:open={accountMenuOpen} class="w-full">

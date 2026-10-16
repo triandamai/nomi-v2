@@ -39,6 +39,16 @@
 	});
 	$effect(() => pollUnread());
 
+	// Maintenance starting while someone is here takes them to its page.
+	$effect(() => {
+		const timer = setInterval(async () => {
+			if (document.hidden) return;
+			const response = await fetch('/maintenance/status').catch(() => null);
+			if (response?.ok && ((await response.json()) as { enabled: boolean }).enabled) location.href = '/maintenance';
+		}, 30_000);
+		return () => clearInterval(timer);
+	});
+
 	// A notification that comes in while the person is here pops up for a moment.
 	let toastOpen = $state(false);
 	let toast = $state<{ title: string; link: string | null } | null>(null);

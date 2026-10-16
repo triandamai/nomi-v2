@@ -24,6 +24,7 @@ export interface TableColumn {
 
 export type ContentBlock =
 	| { kind: 'file_write'; project_id: string; path: string; content: string; previous_content: string | null }
+	| { kind: 'file_writes'; project_id: string; files: { path: string; content: string; previous_content: string | null }[] }
 	| { kind: 'file_delete'; project_id: string; path: string; previous_content?: string | null }
 	| { kind: 'todo_list'; items: TodoItem[] }
 	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
@@ -152,6 +153,8 @@ export interface AdminLlmModel {
 	is_files_model: boolean;
 	/** What Koda builds projects with, unless the person picked another. */
 	is_coding_model: boolean;
+	/** Switched off: nobody can pick it and nothing is routed to it. */
+	enabled: boolean;
 	/** What an admin said it opens besides text; null when it's worked out from the model id. */
 	media_inputs: MediaInput[] | null;
 	/** What it opens, listed or worked out. */
@@ -658,6 +661,8 @@ export interface UsageBrief {
 	plan: UsagePlan;
 	month: string;
 	tokens_used: number;
+	/** A bigger plan is offered than theirs. */
+	can_upgrade: boolean;
 }
 
 /** One month of usage and spend (GET /api/usage). */

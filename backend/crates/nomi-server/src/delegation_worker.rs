@@ -48,41 +48,9 @@ async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedDelegation>, sqlx::Er
     }))
 }
 
+/// The error with any key or token stripped (see nomi_llm::redact).
 fn sanitize_error_message(err: &str) -> String {
-    let mut out = String::with_capacity(err.len());
-    let mut rest = err;
-    let sensitive_keys = ["?key=", "&key=", "?api_key=", "&api_key=", "?token=", "&token=", "?access_token=", "&access_token=", "?secret=", "&secret="];
-
-    while !rest.is_empty() {
-        // Find the earliest occurrence of any sensitive query param key (case-insensitive)
-        let mut next_match: Option<(usize, usize)> = None; // (start_idx, prefix_len)
-        let lower = rest.to_lowercase();
-        for key in sensitive_keys {
-            if let Some(pos) = lower.find(key) {
-                match next_match {
-                    None => next_match = Some((pos, key.len())),
-                    Some((min_pos, _)) if pos < min_pos => next_match = Some((pos, key.len())),
-                    _ => {}
-                }
-            }
-        }
-
-        match next_match {
-            Some((pos, key_len)) => {
-                out.push_str(&rest[..pos + key_len]);
-                out.push_str("[REDACTED]");
-                let after_key = &rest[pos + key_len..];
-                // Consume value until '&', whitespace, ')', or end of string
-                let end_val = after_key.find(|c: char| c == '&' || c == ')' || c.is_whitespace()).unwrap_or(after_key.len());
-                rest = &after_key[end_val..];
-            }
-            None => {
-                out.push_str(rest);
-                break;
-            }
-        }
-    }
-    out
+    nomi_llm::redact::redacted(err)
 }
 
 async fn fail_and_notify(pool: &PgPool, mqtt: &MqttPublisher, delegation_id: Uuid, session_id: Uuid, error: &str) {

@@ -11,6 +11,7 @@
 	import IconCheck from '$lib/components/icons/IconCheck.svelte';
 	import IconGroup from '$lib/components/icons/IconGroup.svelte';
 	import { projectApi } from '$lib/projectApi';
+	import ImportCode from '$lib/components/project/ImportCode.svelte';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { formatTransferNoticeParams } from '$lib/projectTransfer';
 	import type { TransferOrgSummary } from '$lib/types';
@@ -97,6 +98,12 @@
 		}
 	}
 </script>
+
+<section class="block">
+	<h3 class="block__title">{m.import_title()}</h3>
+	<p class="block__hint">{m.import_lede()}</p>
+	<ImportCode projectId={deploy.projectId} />
+</section>
 
 {#if !isAdmin}
 	<p class="muted">{m.pj_admins_only()}</p>
@@ -244,6 +251,25 @@
 </BottomSheet>
 
 <style>
+	.block {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-bottom: 20px;
+		padding: 16px 18px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-large);
+	}
+	.block__title {
+		margin: 0;
+		font-size: 0.9375rem;
+		font-weight: 700;
+	}
+	.block__hint {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
 	.danger {
 		border: 1px solid color-mix(in srgb, var(--md-sys-color-error) 40%, var(--md-sys-color-outline-variant));
 		border-radius: var(--md-sys-shape-corner-large);

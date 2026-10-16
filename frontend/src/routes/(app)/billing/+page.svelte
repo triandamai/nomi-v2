@@ -20,6 +20,14 @@
 	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
 	const isCurrent = $derived(usage ? usage.month === usage.current_month : true);
 	let proOpen = $state(false);
+	// Only when a bigger plan is offered than theirs (not for someone already on the top plan).
+	const canUpgrade = $derived.by(() => {
+		const plans = data.plans;
+		if (!plans || !data.usage || data.usage.plan.custom_quota) return false;
+		const current = plans.plans.find((p) => p.id === plans.current_plan_id);
+		const tokens = current?.monthly_tokens ?? data.usage.plan.monthly_tokens;
+		return plans.plans.some((p) => p.is_active && p.id !== plans.current_plan_id && p.monthly_tokens > tokens);
+	});
 	let showDayTable = $state(false);
 	let hoverDay = $state<number | null>(null);
 
@@ -107,9 +115,11 @@
 						{m.usage_of_tokens({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}
 						{#if isCurrent}· {m.billing_resets({ date: resetsOn })}{/if}
 					</span>
-					<div class="hero__actions">
-						<Button variant="gradient" size="m" onclick={() => (proOpen = true)}>{m.usage_upgrade()}</Button>
-					</div>
+					{#if canUpgrade}
+						<div class="hero__actions">
+							<Button variant="gradient" size="m" onclick={() => (proOpen = true)}>{m.usage_upgrade()}</Button>
+						</div>
+					{/if}
 				</div>
 				<dl class="tiles">
 					<div class="tile">

@@ -227,7 +227,7 @@ async fn resolve_coding_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: 
     });
     let picked = match choice {
         CodingChoice::SameAsChat => return None,
-        CodingChoice::Admin(id) => settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten(),
+        CodingChoice::Admin(id) => settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten().filter(|m| m.enabled),
         CodingChoice::Default => None,
     };
     // Their pick was deleted, or they left it to Nomi: the admin's coding model.
@@ -250,9 +250,11 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
 
     if let Some(row) = selection {
         if let Some(admin_model_id) = row.admin_model_id {
+            // A model an admin switched off falls back to the default.
             if let Some(admin_model) = settings::llm_models::get_admin_llm_model(pool, admin_model_id)
                 .await
                 .expect("failed to query admin_llm_models")
+                .filter(|m| m.enabled)
             {
                 let (id, label) = (admin_model.id, admin_model.label.clone());
                 let support = media_support_for(&admin_model.provider, &admin_model.model_id, admin_model.media_inputs.as_deref());

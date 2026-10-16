@@ -1,4 +1,7 @@
 <script lang="ts">
+	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
+	import IconRocket from '$lib/components/icons/IconRocket.svelte';
+	import IconSettings from '$lib/components/icons/IconSettings.svelte';
 	import { VERSION_LABEL } from '$lib/version';
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
@@ -58,6 +61,9 @@
 					{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip },
 					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
 					{ href: '/admin/usage', label: m.admin_usage(), icon: IconBarChart },
+					{ href: '/admin/support', label: m.admin_support(), icon: IconChatBubble },
+					{ href: '/admin/shipyard', label: m.admin_shipyard(), icon: IconRocket },
+					{ href: '/admin/maintenance', label: m.admin_maintenance(), icon: IconSettings },
 				]
 			: []),
 		...(canViewUsers

@@ -15,6 +15,8 @@
 	import Pagination from '$lib/components/m3/Pagination.svelte';
 	import ListToolbar from '$lib/components/ListToolbar.svelte';
 	import { onMount } from 'svelte';
+	import { deserialize } from '$app/forms';
+	import ImportCode from '$lib/components/project/ImportCode.svelte';
 	import { timeAgo } from '$lib/i18n';
 	import { pageCount, pageOf, searchItems, storedLayout, storeLayout, type ListLayout } from '$lib/listView';
 	import type { ActionData, PageData } from './$types';
@@ -31,6 +33,23 @@
 	const orgError = $derived(form && 'orgError' in form ? (form.orgError as string) : null);
 
 	let switcherOpen = $state(false);
+
+	// Importing existing code: a new project is made on the first import, then opened.
+	let importOpen = $state(false);
+	let importSession = $state<string | null>(null);
+	let importProject = $state<string | null>(null);
+	async function prepareImport(): Promise<string> {
+		if (importProject) return importProject;
+		const body = new FormData();
+		body.set('org_id', currentOrg?.id ?? '');
+		const response = await fetch('?/createForImport', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+		const result = deserialize(await response.text());
+		const made = result.type === 'success' ? (result.data?.imported as { session_id: string; project_id: string } | undefined) : undefined;
+		if (!made) throw new Error(m.err_new_project());
+		importSession = made.session_id;
+		importProject = made.project_id;
+		return made.project_id;
+	}
 	let newOrgOpen = $state(false);
 	let newOrgName = $state('');
 	let switchForm: HTMLFormElement | undefined = $state();
@@ -70,6 +89,17 @@
 		return count === 1 ? m.projects_open_issue() : m.projects_open_issues({ count });
 	}
 </script>
+
+<Dialog bind:open={importOpen} headline={m.import_title()}>
+	<p class="import-lede">{m.import_new_lede()}</p>
+	<ImportCode
+		projectId={importProject ?? undefined}
+		prepare={prepareImport}
+		ondone={() => {
+			if (importSession) location.href = `/projects/session/${importSession}`;
+		}}
+	/>
+</Dialog>
 
 <div class="projects">
 	<header class="projects__head">
@@ -119,10 +149,13 @@
 	{:else}
 		<div class="list-bar">
 			<ListToolbar bind:query bind:layout placeholder={m.projects_search()} onlayout={(next) => storeLayout('projects', next)} />
-			<form method="POST" action="?/createProject" use:enhance>
-				<input type="hidden" name="org_id" value={currentOrg.id} />
-				<Button type="submit" variant="filled" size="m"><IconPlus size={20} />{m.projects_add()}</Button>
-			</form>
+			<div class="list-bar__actions">
+				<Button type="button" variant="tonal" size="m" onclick={() => (importOpen = true)}>{m.import_title()}</Button>
+				<form method="POST" action="?/createProject" use:enhance>
+					<input type="hidden" name="org_id" value={currentOrg.id} />
+					<Button type="submit" variant="filled" size="m"><IconPlus size={20} />{m.projects_add()}</Button>
+				</form>
+			</div>
 		</div>
 
 		{#if data.projects.length === 0}
@@ -304,6 +337,15 @@
 	}
 	.pick__lede {
 		margin: 8px 0 16px;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.list-bar__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.import-lede {
+		margin: 0 0 12px;
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.list-bar {

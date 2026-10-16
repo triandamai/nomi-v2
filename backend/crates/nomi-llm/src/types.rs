@@ -84,8 +84,8 @@ impl ReasoningEffort {
     pub fn budget_tokens(self) -> u32 {
         match self {
             ReasoningEffort::Low => 1024,
-            ReasoningEffort::Medium => 1536,
-            ReasoningEffort::High => 3072,
+            ReasoningEffort::Medium => 1024,
+            ReasoningEffort::High => 2048,
         }
     }
 }
@@ -108,16 +108,49 @@ pub struct LlmResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
-    #[error("http request failed: {0}")]
+    // Request errors quote the URL and providers echo request details, so secrets are stripped
+    // from everything shown or logged (see crate::redact).
+    #[error("http request failed: {}", crate::redact::redacted(.0.to_string()))]
     Http(#[from] reqwest::Error),
-    #[error("provider returned an error response: {0}")]
+    #[error("provider returned an error response: {}", crate::redact::redacted(.0))]
     ProviderError(String),
-    #[error("failed to parse provider response: {0}")]
+    #[error("failed to parse provider response: {}", crate::redact::redacted(.0))]
     ParseError(String),
     /// The person has used their plan's monthly allowance on Nomi's models and has no key of
     /// their own to fall back on.
     #[error("monthly token quota used up")]
     QuotaExceeded,
+}
+
+impl LlmError {
+    /// Whether trying the same request again later may work: the provider couldn't be reached,
+    /// timed out, was rate limited or overloaded, or failed on its side (5xx). Bad requests,
+    /// rejected keys and a used-up allowance are final.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            LlmError::Http(e) => {
+                e.is_connect() || e.is_timeout() || e.is_request() || e.is_body() || e.status().is_some_and(|s| retryable_status(s.as_u16()))
+            }
+            LlmError::ProviderError(text) => {
+                let lower = text.to_lowercase();
+                if lower.contains("overloaded") || lower.contains("rate limit") || lower.contains("unavailable") || lower.contains("try again") {
+                    return true;
+                }
+                // "<provider> returned 503 Service Unavailable: ..."
+                lower
+                    .split("returned ")
+                    .nth(1)
+                    .and_then(|rest| rest.get(..3))
+                    .and_then(|code| code.parse::<u16>().ok())
+                    .is_some_and(retryable_status)
+            }
+            LlmError::ParseError(_) | LlmError::QuotaExceeded => false,
+        }
+    }
+}
+
+fn retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 409 | 425 | 429) || (500..=599).contains(&status)
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -148,6 +181,17 @@ pub type LlmEventStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, LlmError
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retryable_errors_are_the_temporary_ones() {
+        use super::LlmError;
+        assert!(LlmError::ProviderError("gemini returned 503 Service Unavailable: busy".into()).is_retryable());
+        assert!(LlmError::ProviderError("anthropic returned 429 Too Many Requests: slow down".into()).is_retryable());
+        assert!(LlmError::ProviderError("anthropic stream error: {\"type\":\"overloaded_error\"}".into()).is_retryable());
+        assert!(!LlmError::ProviderError("openai returned 401 Unauthorized: bad key".into()).is_retryable());
+        assert!(!LlmError::ProviderError("openai returned 400 Bad Request: context too long".into()).is_retryable());
+        assert!(!LlmError::QuotaExceeded.is_retryable());
+    }
+
     use super::*;
 
     #[test]

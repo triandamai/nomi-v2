@@ -8,7 +8,7 @@
 	// What a link to Nomi shows when it's shared in WhatsApp, Telegram, Slack, iMessage and the
 	// like. Crawlers need absolute URLs; the origin is the deployment's own (ORIGIN on the server).
 	const TITLE = 'Nomi';
-	const DESCRIPTION = 'A small crew of agents that remembers you.';
+	const DESCRIPTION = 'A small crew of agents that remembers & builds for you.';
 	const origin = $derived(page.url.origin);
 </script>
 
@@ -31,7 +31,7 @@
 	<meta property="og:image:type" content="image/png" />
 	<meta property="og:image:width" content="1200" />
 	<meta property="og:image:height" content="630" />
-	<meta property="og:image:alt" content="Nomi's green shape with two eyes, beside the words: A small crew of agents that remembers you." />
+	<meta property="og:image:alt" content="Nomi's green shape with two eyes, beside the words: A small crew of agents that remembers & builds for you." />
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={TITLE} />
 	<meta name="twitter:description" content={DESCRIPTION} />

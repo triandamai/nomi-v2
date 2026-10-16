@@ -161,6 +161,11 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::PUT, &format!("/orgs/{}", seg(org)), Some(json!({ "name": name }))).await
     }
 
+    /// The organization and its apps with their environments.
+    pub async fn get_org(&self, org: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::GET, &format!("/orgs/{}", seg(org)), None).await
+    }
+
     pub async fn delete_org(&self, org: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::DELETE, &format!("/orgs/{}", seg(org)), None).await
     }

@@ -1,6 +1,6 @@
 import { sequence } from '@sveltejs/kit/hooks';
 import type { Handle, HandleFetch } from '@sveltejs/kit';
-import { isApiRequest } from '$lib/server/api';
+import { isApiRequest, refreshSession } from '$lib/server/api';
 import { APP_VERSION, CLIENT_VERSION_HEADER } from '$lib/version';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { APPEARANCE_COOKIE, appearanceAttributes, parseAppearance } from '$lib/appearanceCookie';
@@ -21,6 +21,11 @@ const i18n: Handle = ({ event, resolve }) =>
 
 const auth: Handle = async ({ event, resolve }) => {
 	event.locals.accessToken = event.cookies.get('access_token');
+	// The access cookie went (it lapsed, or an older sign-in only kept it for the session) but the
+	// refresh token is still here: sign back in quietly instead of sending them to the login page.
+	if (!event.locals.accessToken && event.cookies.get('refresh_token') && !event.url.pathname.startsWith('/logout')) {
+		event.locals.accessToken = (await refreshSession(fetch, event.cookies)) ?? undefined;
+	}
 	return resolve(event);
 };
 

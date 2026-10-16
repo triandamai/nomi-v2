@@ -30,9 +30,9 @@ const CUT_OFF_RETRY: &str = "Your last response hit the output limit before it f
 const MAX_CUT_OFF_RETRIES: u32 = 3;
 
 /// How agents should think when reasoning is on. Users read the thinking in chat.
-pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point: 2-3 short points (about \
-     60 words) on what the person needs, what you'll do, and any catch, in the language you reply in. Don't \
-     restate their message, weigh every option, or draft the reply there. Your reply is only the answer for \
+pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point: at most 3 short fragments \
+     (about 40 words) on what the person needs, what you'll do, and any catch, in the language you reply in. No \
+     preamble, no restating their message, no weighing every option, no drafting the reply there. Your reply is only the answer for \
      the person: never write your thinking, your plan of action, or notes about what they asked in it.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
@@ -50,6 +50,12 @@ const PHASE_THINKING: &str = "thinking";
 const PHASE_CALLING_TOOL: &str = "calling_tool";
 const PHASE_WRITING_REPLY: &str = "writing_reply";
 const PHASE_WAITING: &str = "waiting";
+/// The provider couldn't be reached: the detail is `{"attempt", "max", "retry_at"}`.
+const PHASE_RETRYING: &str = "retrying";
+/// A command runs in the project: the detail is `{"command", "started_at"}`.
+const PHASE_RUNNING_COMMAND: &str = "running_command";
+/// How many times a model call is tried before the turn gives up.
+pub const LLM_MAX_ATTEMPTS: u32 = 10;
 
 /// Everything the model wrote in one response, in order. Providers can split a reply across
 /// several text blocks; keeping only the first cut answers short.
@@ -641,6 +647,13 @@ pub async fn run_agent_turn(
         system_prompt
     };
 
+    // Every agent sees what the rest of the crew is doing in this chat, so two never work the
+    // same task or talk over each other.
+    let system_prompt = match crate::crew::crew_board(&mut **conn, session_id, agent.agent_type().as_ref()).await {
+        Some(board) => format!("{system_prompt}\n\n{board}"),
+        None => system_prompt,
+    };
+
     let system_prompt = if agent.supports_reminders() || agent.wants_current_time() {
         let timezone_name = crate::scheduled_jobs::get_user_timezone(conn, user_id).await;
         let tz: chrono_tz::Tz = timezone_name.parse().unwrap_or(chrono_tz::UTC);
@@ -706,29 +719,64 @@ pub async fn run_agent_turn(
         // The LLM call happens outside any DB transaction: holding a transaction open across
         // a slow network round trip would needlessly extend how long this connection's locks
         // are held.
-        let stream = provider.complete_stream(request).await.map_err(TurnError::LlmCallFailed)?;
-        let response = match mqtt {
-            Some((publisher, turn_job_id)) => {
-                use futures_util::StreamExt;
-                // LlmEventStream requires 'static (boxed as `dyn Stream + Send`, no lifetime),
-                // so this clones the publisher handle (cheap — wraps rumqttc's AsyncClient,
-                // itself a cheap handle clone) rather than capturing the `&MqttPublisher`
-                // borrow.
-                let publisher = publisher.clone();
-                let published = stream.then(move |event_result| {
-                    let publisher = publisher.clone();
-                    async move {
-                        if let Ok(event) = &event_result {
-                            let envelope = StreamEnvelope::Delta { turn_job_id, event: event.clone() };
-                            // Best-effort: an MQTT publish failure never fails the turn.
-                            let _ = publisher.publish(session_id, &envelope).await;
-                        }
-                        event_result
+        // A provider that can't be reached, is overloaded or rate limited is tried again (up to
+        // LLM_MAX_ATTEMPTS), and the person sees the retry and its countdown instead of a silent
+        // wait. A response that already started streaming isn't retried: they've seen part of it.
+        let mut attempt: u32 = 1;
+        let response = loop {
+            let streamed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let result = match provider.complete_stream(request.clone()).await {
+                Err(e) => Err(e),
+                Ok(stream) => match mqtt {
+                    Some((publisher, turn_job_id)) => {
+                        use futures_util::StreamExt;
+                        // LlmEventStream requires 'static (boxed as `dyn Stream + Send`, no
+                        // lifetime), so this clones the publisher handle (cheap) rather than
+                        // capturing the `&MqttPublisher` borrow.
+                        let publisher = publisher.clone();
+                        let streamed = streamed.clone();
+                        let published = stream.then(move |event_result| {
+                            let publisher = publisher.clone();
+                            let streamed = streamed.clone();
+                            async move {
+                                if let Ok(event) = &event_result {
+                                    streamed.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    let envelope = StreamEnvelope::Delta { turn_job_id, event: event.clone() };
+                                    // Best-effort: an MQTT publish failure never fails the turn.
+                                    let _ = publisher.publish(session_id, &envelope).await;
+                                }
+                                event_result
+                            }
+                        });
+                        nomi_llm::collect_stream(Box::pin(published)).await
                     }
-                });
-                nomi_llm::collect_stream(Box::pin(published)).await.map_err(TurnError::LlmCallFailed)?
+                    None => nomi_llm::collect_stream(stream).await,
+                },
+            };
+            match result {
+                Ok(response) => break response,
+                Err(e) if e.is_retryable() && attempt < LLM_MAX_ATTEMPTS && !streamed.load(std::sync::atomic::Ordering::Relaxed) => {
+                    let delay = retry_delay(attempt);
+                    tracing::warn!(%session_id, attempt, error = %e, "model call failed; retrying in {delay:?}");
+                    let retry_at = chrono::Utc::now() + chrono::Duration::from_std(delay).unwrap_or_default();
+                    let detail = serde_json::json!({ "attempt": attempt + 1, "max": LLM_MAX_ATTEMPTS, "retry_at": retry_at }).to_string();
+                    update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_RETRYING, Some(&detail)).await;
+                    // Waits in short steps so a stop still lands quickly.
+                    let mut waited = std::time::Duration::ZERO;
+                    while waited < delay {
+                        let step = std::time::Duration::from_millis(500).min(delay - waited);
+                        tokio::time::sleep(step).await;
+                        waited += step;
+                        if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
+                            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+                            return Ok(LoopOutcome::Cancelled);
+                        }
+                    }
+                    attempt += 1;
+                    update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_THINKING, None).await;
+                }
+                Err(e) => return Err(TurnError::LlmCallFailed(e)),
             }
-            None => nomi_llm::collect_stream(stream).await.map_err(TurnError::LlmCallFailed)?,
         };
 
         // The LLM call is the slow step, so this is where a stop most often lands: drop the
@@ -1033,7 +1081,15 @@ pub async fn resolve_tool_batch(
     let mut tool_results = Vec::new();
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
-            update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await;
+            // A command shows itself and how long it has run, so a long install never looks
+            // like a silent wait.
+            match input.get("command").and_then(|c| c.as_str()).filter(|_| name.as_str() == "run_command") {
+                Some(command) => {
+                    let detail = serde_json::json!({ "command": command, "started_at": chrono::Utc::now() }).to_string();
+                    update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_RUNNING_COMMAND, Some(&detail)).await;
+                }
+                None => update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await,
+            }
 
             let (result_text, is_error, rich_block) = if !own_tools.contains(name) && !switches.allows(name) {
                 (format!("The {name} tool is switched off. Don't call it again; do without it."), true, None)
@@ -1156,6 +1212,8 @@ pub async fn resolve_tool_batch(
                 }
             };
 
+            // Tool output (command output, provider errors) never carries a secret onward.
+            let result_text = nomi_llm::redact::redacted(&result_text);
             log_tool_call(conn, session_id, agent_session_id, agent.agent_type().as_ref(), name, input, &result_text, is_error).await;
 
             // A tool that returns a block (a table, a file change, a Connect card) means it to be
@@ -1218,6 +1276,18 @@ async fn log_tool_call(
 /// default agent's turns, where `agent_session_id` is the `session_id` sentinel (see
 /// `nomi_turn::run_locked_turn`'s call site comment) — there is no real `agent_sessions` row
 /// with that id, so the UPDATE affects zero rows and nothing is published.
+/// How long to wait before trying the model again: 2s, 4s, 8s, then 15s, capped at 30s.
+fn retry_delay(attempt: u32) -> std::time::Duration {
+    let seconds = match attempt {
+        1 => 2,
+        2 => 4,
+        3 => 8,
+        4 => 15,
+        _ => 30,
+    };
+    std::time::Duration::from_secs(if cfg!(test) { 0 } else { seconds })
+}
+
 async fn update_agent_phase(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,

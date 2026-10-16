@@ -1,6 +1,7 @@
 import { APPEARANCE_COOKIE, APPEARANCE_COOKIE_OPTIONS, formatAppearance } from '$lib/appearanceCookie';
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { maintenanceState } from '$lib/server/maintenance';
 import { getLocale } from '$lib/paraglide/runtime';
 import { setLanguageCookie } from '$lib/server/locale';
 import type { CrewRosterMember } from '$lib/crew';
@@ -8,6 +9,9 @@ import type { Preferences, Profile, UsageBrief } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) => {
+	// Maintenance: everyone waits on its page (the admin area stays open to switch it off).
+	if ((await maintenanceState(fetch)).enabled) throw redirect(307, '/maintenance');
+
 	if (!locals.accessToken) {
 		// Signing in brings them back here (e.g. to a team invite they opened from an email).
 		const back = url.pathname === '/' ? '' : `?redirect_to=${encodeURIComponent(url.pathname + url.search)}`;

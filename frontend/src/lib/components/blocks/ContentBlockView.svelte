@@ -34,6 +34,13 @@
 
 {#if block.kind === 'file_write' || block.kind === 'file_delete'}
 	<FileChangeBlock {block} {fresh} />
+{:else if block.kind === 'file_writes'}
+	<!-- Every file of a batch, each its own tab; only a short batch opens by itself. -->
+	<div class="file-batch">
+		{#each block.files as file (file.path)}
+			<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
+		{/each}
+	</div>
 {:else if block.kind === 'todo_list'}
 	<TodoListBlock {block} {agent} />
 {:else if block.kind === 'table'}
@@ -59,3 +66,11 @@
 {:else if block.kind === 'reasoning'}
 	<ReasoningDisclosure steps={[block.text]} />
 {/if}
+
+<style>
+	.file-batch {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+</style>

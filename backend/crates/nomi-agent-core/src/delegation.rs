@@ -13,6 +13,26 @@ pub async fn create_delegation(
     task: &str,
     user_id: Uuid,
 ) -> Result<String, String> {
+    // The same agent already has this chat's work queued or in hand: two runs racing on one
+    // task (and talking over each other in the chat) helps nobody.
+    let busy: Option<String> = sqlx::query_scalar(
+        "SELECT task FROM agent_delegations WHERE session_id = $1 AND target_agent_type = $2 \
+         AND status IN ('pending', 'claimed', 'processing') AND created_at > now() - interval '30 minutes' \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .bind(target_agent_type)
+    .fetch_optional(&mut **conn)
+    .await
+    .map_err(|e| format!("failed to check delegations: {e}"))?;
+    if let Some(task_in_hand) = busy {
+        return Ok(format!(
+            "{target_agent_type} is already working on \"{task_in_hand}\" in this chat. Don't delegate again: tell the user \
+             it's in progress and that its result will appear here. If the new request changes that work, say so and \
+             it will be picked up after."
+        ));
+    }
+
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO agent_delegations (session_id, user_id, requesting_agent_type, target_agent_type, task) \
          VALUES ($1, $2, $3, $4, $5) RETURNING id",

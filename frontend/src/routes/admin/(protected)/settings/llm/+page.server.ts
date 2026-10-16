@@ -96,6 +96,24 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	// Switches a model on or off for everyone (the default can't be switched off).
+	setEnabled: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const id = data.get('id');
+		if (typeof id !== 'string') {
+			return fail(400, { error: m.err_invalid_model() });
+		}
+		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}/enabled`, {
+			method: 'PUT',
+			body: JSON.stringify({ enabled: data.get('enabled') === 'true' }),
+		});
+		if (!response.ok) {
+			const message = await response.text();
+			return fail(response.status, { error: message || m.err_set_default() });
+		}
+		return { success: true };
+	},
+
 	setDefault: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const id = data.get('id');

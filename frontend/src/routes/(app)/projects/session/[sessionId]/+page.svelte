@@ -89,6 +89,12 @@
 		await invalidateAll();
 	}
 
+	const PROJECT_STATUS: Record<'planning' | 'building' | 'ready', () => string> = {
+		planning: m.projects_planning,
+		building: m.projects_building,
+		ready: m.projects_ready,
+	};
+
 	const TOOLS: { id: Sheet; label: () => string; icon: typeof IconRocket }[] = [
 		{ id: 'deploy', label: m.pj_tab_deploy, icon: IconHistory },
 		{ id: 'monitor', label: m.pj_tab_monitor, icon: IconPulse },
@@ -461,7 +467,7 @@
 	<header class="topbar">
 		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face /></a>
 		<div class="topbar__titles">
-			<h1 class="topbar__name">{project.name}</h1>
+			<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
 			<p class="topbar__meta">
 				{project.org_name}
 				{#if deploy?.overview?.url}
@@ -509,6 +515,7 @@
 			thinkingLevel={data.thinkingLevel}
 			project={{ status: data.project?.status ?? 'planning' }}
 			extraControls={paneToggle}
+			compactHeader={Boolean(data.project)}
 		/>
 	</section>
 
@@ -626,11 +633,26 @@
 		min-height: 0;
 		height: auto;
 	}
+	.topbar__status {
+		margin-left: 8px;
+		padding: 1px 7px;
+		border-radius: 4px;
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-plain);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		vertical-align: 2px;
+	}
+	.topbar__status[data-status='ready'] {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
 	.topbar {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		padding: 8px 12px;
+		gap: 10px;
+		padding: 4px 10px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 		background: var(--md-sys-color-surface);
 	}
@@ -859,8 +881,16 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 8px 8px 8px 14px;
+		min-height: 44px;
+		padding: 2px 8px 2px 10px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+	}
+	/* The project's name is already in the bar above. */
+	.pane-bar__title {
+		display: none;
+	}
+	.pane-bar__tabs {
+		margin-right: auto;
 	}
 	.pane-bar__title {
 		flex: 1;

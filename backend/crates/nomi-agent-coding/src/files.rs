@@ -7,7 +7,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::{PgConnection, Postgres};
 use uuid::Uuid;
 
-use nomi_agent_core::{ContentBlock, ToolOutcome};
+use nomi_agent_core::{ContentBlock, FileWriteEntry, ToolOutcome};
 use nomi_llm::ToolDefinition;
 use nomi_storage::ProjectStore;
 
@@ -311,19 +311,25 @@ pub async fn write_files(
         validate_path(path).map_err(|e| format!("{path}: {e}"))?;
         batch.push((path, content));
     }
-    let mut written = Vec::with_capacity(batch.len());
+    let mut written: Vec<FileWriteEntry> = Vec::with_capacity(batch.len());
     for (path, content) in batch {
-        if let Err(e) = save_file(conn, storage, project_id, path, content).await {
-            if !written.is_empty() {
-                bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
+        match save_file(conn, storage, project_id, path, content).await {
+            Ok(previous_content) => written.push(FileWriteEntry { path: path.to_string(), content: content.to_string(), previous_content }),
+            Err(e) => {
+                if !written.is_empty() {
+                    bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
+                }
+                return Err(format!("wrote {} file(s), then {path} failed: {e}", written.len()));
             }
-            return Err(format!("wrote {} file(s), then {path} failed: {e}", written.len()));
         }
-        written.push(path);
     }
     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
-    let list = written.iter().map(|p| format!("`{p}`")).collect::<Vec<_>>().join(", ");
-    Ok(ToolOutcome::text(format!("📝 Wrote {} files: {list}", written.len())))
+    let list = written.iter().map(|f| format!("`{}`", f.path)).collect::<Vec<_>>().join(", ");
+    Ok(ToolOutcome {
+        display_text: format!("📝 Wrote {} files: {list}", written.len()),
+        // Every file of the batch reaches the chat, not only a summary line.
+        block: Some(ContentBlock::FileWrites { project_id, files: written }),
+    })
 }
 
 pub async fn edit_file(

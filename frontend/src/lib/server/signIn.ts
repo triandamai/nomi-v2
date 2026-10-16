@@ -1,3 +1,4 @@
+import { setSession } from '$lib/server/sessionCookies';
 import type { Cookies } from '@sveltejs/kit';
 import { settleLanguageAfterSignIn } from '$lib/server/locale';
 
@@ -50,8 +51,6 @@ export async function completeSignIn(
 	email: string,
 	isNew: boolean,
 ): Promise<void> {
-	cookies.set('access_token', tokens.access_token, { httpOnly: true, path: '/', sameSite: 'lax' });
-	cookies.set('refresh_token', tokens.refresh_token, { httpOnly: true, path: '/', sameSite: 'lax' });
-	cookies.set('user_email', email, { httpOnly: false, path: '/', sameSite: 'lax' });
+	setSession(cookies, { access_token: tokens.access_token, refresh_token: tokens.refresh_token, email });
 	await settleLanguageAfterSignIn(fetch, cookies, isNew);
 }

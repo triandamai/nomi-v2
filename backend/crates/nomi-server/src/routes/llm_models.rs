@@ -31,6 +31,8 @@ pub struct AdminLlmModelResponse {
     pub media_inputs: Option<Vec<String>>,
     /// What it takes, listed or guessed.
     pub media_support: Vec<&'static str>,
+    /// Switched off: nobody can pick it and nothing is routed to it.
+    pub enabled: bool,
 }
 
 fn to_response(
@@ -55,6 +57,7 @@ fn to_response(
         is_coding_model: model.is_coding_model,
         media_support,
         media_inputs: model.media_inputs,
+        enabled: model.enabled,
     })
 }
 
@@ -428,6 +431,8 @@ pub async fn get_user_models(
     let models = llm_models::list_admin_llm_models(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?;
+    // Switched-off models aren't offered.
+    let models: Vec<_> = models.into_iter().filter(|m| m.enabled).collect();
     let default_coding_model_id = models.iter().find(|m| m.is_coding_model).map(|m| m.id);
     let admin_models = models
         .into_iter()
@@ -486,7 +491,7 @@ pub async fn put_user_coding_selection(
             let exists = llm_models::get_admin_llm_model(&state.pool, admin_model_id)
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up model"))?
-                .is_some();
+                .is_some_and(|m| m.enabled);
             if !exists {
                 return Err((StatusCode::NOT_FOUND, "model not found"));
             }
@@ -532,7 +537,7 @@ pub async fn put_user_selection(
             let exists = llm_models::get_admin_llm_model(&state.pool, admin_model_id)
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up model".to_string()))?
-                .is_some();
+                .is_some_and(|m| m.enabled);
             if !exists {
                 return Err((StatusCode::NOT_FOUND, "model not found".to_string()));
             }
@@ -583,4 +588,27 @@ pub async fn put_user_selection(
         }
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct EnabledRequest {
+    pub enabled: bool,
+}
+
+/// `PUT /api/admin/settings/llm/models/:id/enabled`: switches a model on or off for everyone.
+pub async fn set_admin_model_enabled(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(id): Path<Uuid>,
+    Json(req): Json<EnabledRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    require_system_config_permission(&claims)?;
+    match llm_models::set_admin_llm_model_enabled(&state.pool, id, req.enabled)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update model"))?
+    {
+        None => Err((StatusCode::NOT_FOUND, "model not found")),
+        Some(Err(why)) => Err((StatusCode::CONFLICT, why)),
+        Some(Ok(())) => Ok(StatusCode::NO_CONTENT),
+    }
 }

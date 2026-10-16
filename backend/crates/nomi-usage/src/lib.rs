@@ -146,6 +146,9 @@ pub struct Brief {
     pub month: String,
     /// Tokens of Nomi's own models this month (own-key usage doesn't count).
     pub tokens_used: i64,
+    /// Whether a bigger plan is offered than theirs (no "Upgrade" for someone already on the
+    /// top plan, or with an allowance set by an admin).
+    pub can_upgrade: bool,
 }
 
 /// One month of usage, for Billing & usage.
@@ -222,7 +225,16 @@ pub async fn brief(pool: &PgPool, user_id: Uuid) -> Result<Brief, sqlx::Error> {
     .bind(&month)
     .fetch_one(pool)
     .await?;
-    Ok(Brief { plan: plan_for(pool, user_id).await?, month, tokens_used })
+    let plan = plan_for(pool, user_id).await?;
+    let can_upgrade = !plan.custom_quota
+        && sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM plans WHERE is_active AND slug <> $1 AND monthly_tokens > $2)",
+        )
+        .bind(&plan.id)
+        .bind(plan.monthly_tokens)
+        .fetch_one(pool)
+        .await?;
+    Ok(Brief { plan, month, tokens_used, can_upgrade })
 }
 
 /// `month` is `YYYY-MM`; anything else (or nothing) means this month.

@@ -18,6 +18,14 @@ describe('sanitizeError', () => {
 		expect(sanitized).toContain('other=safe');
 	});
 
+	it('redacts headers, connection strings and known key formats, and leaves ordinary text alone', () => {
+		expect(sanitizeError('Authorization: Bearer abcdefghijklmnop123')).not.toContain('abcdefghijklmnop123');
+		expect(sanitizeError('postgres://app:s3cr3t@db:5432/app')).toBe('postgres://app:[REDACTED]@db:5432/app');
+		expect(sanitizeError('failed with sk-ant-api03-abcdefghijklmnopqrstuvwxyz')).not.toContain('abcdefghijklmnop');
+		expect(sanitizeError('{"api_key": "hunter2-secret"}')).toBe('{"api_key": "[REDACTED]"}');
+		expect(sanitizeError('The model returned 429: rate limited')).toBe('The model returned 429: rate limited');
+	});
+
 	it('handles null and empty input safely', () => {
 		expect(sanitizeError(null)).toBe('');
 		expect(sanitizeError(undefined)).toBe('');
