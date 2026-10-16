@@ -1902,5 +1902,9 @@
 	"theme_lagoon": "Clear cyan water over coral sand.",
 	"theme_orchid": "Vivid orchid violet with terracotta.",
 	"theme_ruby": "Bold ruby red with marigold.",
-	"theme_graphite": "Quiet greys with a touch of brass."
+	"theme_graphite": "Quiet greys with a touch of brass.",
+	"appearance_more": "More",
+	"appearance_more_count": "{count} more themes",
+	"appearance_all_themes": "All themes",
+	"appearance_all_themes_lede": "Each one recolours Nomi and the admin console, in light and dark."
 }

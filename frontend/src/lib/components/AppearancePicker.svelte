@@ -2,6 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { MODES, THEMES } from '$lib/appearance';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import { rememberAppearance } from '$lib/appearanceCookie';
 	import type { AccentColor, Preferences, Theme } from '$lib/types';
 
@@ -16,6 +17,17 @@
 		mode = preferences.theme;
 		theme = preferences.accent_color;
 	});
+
+	// Five themes on the page, always including the one in use; the rest are a tap away.
+	const VISIBLE = 5;
+	let moreOpen = $state(false);
+	const shown = $derived.by(() => {
+		const first = THEMES.slice(0, VISIBLE);
+		if (first.some((t) => t.value === theme)) return first;
+		const current = THEMES.find((t) => t.value === theme);
+		return current ? [...first.slice(0, VISIBLE - 1), current] : first;
+	});
+	const hidden = $derived(THEMES.filter((t) => !shown.includes(t)));
 
 	function show(nextMode: Theme, nextTheme: AccentColor) {
 		document.documentElement.dataset.theme = nextMode;
@@ -55,47 +67,75 @@
 	<section aria-labelledby="theme-title">
 		<h3 id="theme-title" class="appearance__label">{m.appearance_theme()}</h3>
 		<form method="POST" action="/preferences?/updateAccentColor" use:enhance={keep} class="themes">
-			{#each THEMES as option (option.value)}
-				{@const selected = theme === option.value}
-				<button
-					type="submit"
-					name="accent_color"
-					value={option.value}
-					class="theme"
-					class:theme--selected={selected}
-					aria-pressed={selected}
-					onclick={() => {
-						theme = option.value;
-						show(mode, option.value);
-					}}
-				>
-					<span class="theme__preview" aria-hidden="true">
-						{#each [option.light, option.dark] as swatch, i (i)}
-							<span class="theme__half" style="background: {swatch.surface}">
-								<span class="theme__card" style="background: {swatch.surfacecontainerlowest}">
-									<span class="theme__line" style="background: {swatch.onsurface}"></span>
-									<span class="theme__line theme__line--short" style="background: {swatch.onsurface}"></span>
-									<span class="theme__row">
-										<span class="theme__pill" style="background: {swatch.primary}"></span>
-										<span class="theme__dot" style="background: {swatch.tertiary}"></span>
-									</span>
-								</span>
-								<span class="theme__chip" style="background: {swatch.primarycontainer}"></span>
+			{#each shown as option (option.value)}
+				{@render tile(option)}
+			{/each}
+			{#if hidden.length > 0}
+				<button type="button" class="theme theme--more" aria-haspopup="dialog" onclick={() => (moreOpen = true)}>
+					<span class="theme__preview theme__mosaic" aria-hidden="true">
+						{#each hidden.slice(0, 6) as option (option.value)}
+							<span class="theme__tile" style="background: {option.light.primary}">
+								<span class="theme__tile-dot" style="background: {option.light.tertiary}"></span>
 							</span>
 						{/each}
-						{#if selected}
-							<span class="theme__check">
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10" /></svg>
-							</span>
-						{/if}
 					</span>
-					<span class="theme__name">{option.label}</span>
-					<span class="theme__description">{option.description}</span>
+					<span class="theme__name">{m.appearance_more()}</span>
+					<span class="theme__description">{m.appearance_more_count({ count: hidden.length })}</span>
 				</button>
-			{/each}
+			{/if}
 		</form>
 	</section>
 </div>
+
+{#snippet tile(option: (typeof THEMES)[number])}
+	{@const selected = theme === option.value}
+	<button
+		type="submit"
+		name="accent_color"
+		value={option.value}
+		class="theme"
+		class:theme--selected={selected}
+		aria-pressed={selected}
+		onclick={() => {
+			theme = option.value;
+			show(mode, option.value);
+			moreOpen = false;
+		}}
+	>
+		<span class="theme__preview" aria-hidden="true">
+			{#each [option.light, option.dark] as swatch, i (i)}
+				<span class="theme__half" style="background: {swatch.surface}">
+					<span class="theme__card" style="background: {swatch.surfacecontainerlowest}">
+						<span class="theme__line" style="background: {swatch.onsurface}"></span>
+						<span class="theme__line theme__line--short" style="background: {swatch.onsurface}"></span>
+						<span class="theme__row">
+							<span class="theme__pill" style="background: {swatch.primary}"></span>
+							<span class="theme__dot" style="background: {swatch.tertiary}"></span>
+						</span>
+					</span>
+					<span class="theme__chip" style="background: {swatch.primarycontainer}"></span>
+				</span>
+			{/each}
+			{#if selected}
+				<span class="theme__check">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10" /></svg>
+				</span>
+			{/if}
+		</span>
+		<span class="theme__name">{option.label}</span>
+		<span class="theme__description">{option.description}</span>
+	</button>
+{/snippet}
+
+<BottomSheet bind:open={moreOpen} label={m.appearance_all_themes()}>
+	<h2 class="sheet__title">{m.appearance_all_themes()}</h2>
+	<p class="sheet__lede">{m.appearance_all_themes_lede()}</p>
+	<form method="POST" action="/preferences?/updateAccentColor" use:enhance={keep} class="themes">
+		{#each THEMES as option (option.value)}
+			{@render tile(option)}
+		{/each}
+	</form>
+</BottomSheet>
 
 <style>
 	.appearance {
@@ -181,8 +221,44 @@
 	.theme:hover {
 		border-radius: var(--md-sys-shape-corner-large);
 	}
+	.theme:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
 	.theme--selected {
 		border-color: var(--md-sys-color-primary);
+	}
+	/* "More": a peek at the themes it holds. */
+	.theme__preview.theme__mosaic {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 4px;
+		padding: 4px;
+		background: var(--md-sys-color-surface-container-high);
+	}
+	.theme__tile {
+		position: relative;
+		border-radius: 10px;
+	}
+	.theme__tile-dot {
+		position: absolute;
+		right: 6px;
+		bottom: 6px;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+	}
+	.sheet__title {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+		font-family: var(--md-sys-typescale-headline-small-font);
+		font-size: 1.375rem;
+		font-weight: 700;
+	}
+	.sheet__lede {
+		margin: 4px 0 16px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
 	}
 	.theme__preview {
 		position: relative;

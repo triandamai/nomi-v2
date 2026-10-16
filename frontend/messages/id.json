@@ -1902,5 +1902,9 @@
 	"theme_lagoon": "Air cyan jernih di atas pasir koral.",
 	"theme_orchid": "Ungu anggrek yang cerah dengan terakota.",
 	"theme_ruby": "Merah delima yang berani dengan kuning marigold.",
-	"theme_graphite": "Abu-abu tenang dengan sentuhan kuningan."
+	"theme_graphite": "Abu-abu tenang dengan sentuhan kuningan.",
+	"appearance_more": "Lainnya",
+	"appearance_more_count": "{count} tema lainnya",
+	"appearance_all_themes": "Semua tema",
+	"appearance_all_themes_lede": "Setiap tema mewarnai ulang Nomi dan konsol admin, dalam mode terang dan gelap."
 }
