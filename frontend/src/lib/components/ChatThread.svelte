@@ -32,7 +32,7 @@
 	import { provideChatSend } from '$lib/chatSend';
 	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
-	import { agentTypeFallbackLabel, delegationStatusLabel, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
+	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
 	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
@@ -55,6 +55,7 @@
 		title = m.chat_title(),
 		context,
 		extraControls,
+		compactHeader = false,
 		thinkingLevel = null,
 		unsaved = false,
 		project = null,
@@ -73,6 +74,9 @@
 		context?: string;
 		/** App-bar actions (model / personality menus). */
 		extraControls?: Snippet;
+		/** The page has its own header with the title (an open project): keep only the crew and
+		 * the controls here, in one slim row. */
+		compactHeader?: boolean;
 		/** The chat's thinking level; null hides the picker. The page must have a setThinking action. */
 		thinkingLevel?: ThinkingLevel | null;
 		/** A new chat not saved yet: no live connection, and the first send creates it (/chat/new). */
@@ -347,14 +351,25 @@
 		agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null,
 	);
 
+	// A retry counts down to its next attempt, so the clock ticks while one is showing.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (currentPhase?.phase !== 'retrying' && currentPhase?.phase !== 'running_command') return;
+		const timer = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+
 	/** What Nomi is doing, fit to follow "Nomi is": "thinking", "checking your transactions". */
 	function phaseActivity(phase: string, detail: string | null): string {
+		if (phase === 'retrying') return retryActivity(detail, now);
+		if (phase === 'running_command') return commandActivity(detail, now);
 		if (phase === 'thinking') return m.phase_thinking();
 		if (phase === 'writing_reply') return m.chat_finalizing_reply();
 		if (phase === 'calling_tool') return detail ? toolActivityLabel(detail) : m.tool_using_a_tool();
 		return m.chat_working();
 	}
 	function phaseText(phase: string, detail: string | null): string {
+		if (phase === 'retrying') return retryActivity(detail, now);
 		return m.chat_nomi_is({ activity: phaseActivity(phase, detail) });
 	}
 
@@ -418,6 +433,18 @@
 
 	function onThreadScroll() {
 		if (messagesContainer && messagesContainer.scrollTop < 240) void loadOlder();
+	}
+
+	// The message box grows with what's typed (up to its max height) instead of scrolling inside
+	// three lines: browsers without `field-sizing` get it measured here.
+	function autoGrow(field: HTMLTextAreaElement, _value: string) {
+		const fit = () => {
+			if (CSS.supports('field-sizing', 'content')) return;
+			field.style.height = 'auto';
+			field.style.height = `${field.scrollHeight}px`;
+		};
+		fit();
+		return { update: () => requestAnimationFrame(fit) };
 	}
 
 	// Enter sends, Shift+Enter breaks the line — the textarea grows with its content.
@@ -674,8 +701,8 @@
 </script>
 
 <div class="chat" class:chat--project={!!project}>
-	<header class="appbar">
-		<div class="appbar__titles">
+	<header class="appbar" class:appbar--compact={compactHeader}>
+		<div class="appbar__titles" hidden={compactHeader}>
 			{#if project}
 				<span class="appbar__project">
 					<span class="appbar__project-label">{m.project_context()}</span>
@@ -910,6 +937,7 @@
 							rows="1"
 							placeholder={project ? m.project_placeholder() : m.chat_placeholder()}
 							class="composer__input"
+							use:autoGrow={draft}
 							onkeydown={onComposerKeydown}
 							onpaste={onPaste}
 							onfocus={() => (dictationBase = draft)}
@@ -1077,6 +1105,14 @@
 	.chat--project .appbar {
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
 		background: var(--md-sys-color-surface);
+	}
+	.appbar--compact {
+		justify-content: flex-end;
+		min-height: 44px;
+		padding: 2px 8px;
+	}
+	.appbar__titles[hidden] {
+		display: none;
 	}
 	.appbar__project {
 		display: inline-flex;
@@ -1306,6 +1342,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+		container-type: inline-size;
 		max-width: 780px;
 		margin: 0 auto;
 		padding: 8px;
@@ -1320,6 +1357,7 @@
 		min-width: 0;
 		align-self: center;
 		max-height: 200px;
+		overflow-y: auto;
 		field-sizing: content;
 		padding: 12px 4px;
 		border: none;
@@ -1341,6 +1379,30 @@
 	}
 	.composer__row > :global(*) {
 		align-self: center;
+	}
+	/* Bigger screens: a long message grows the box (to most of the screen) instead of scrolling. */
+	@media (min-width: 768px) {
+		.composer__input {
+			max-height: min(45vh, 420px);
+		}
+	}
+	/* A narrow box (a project's chat column dragged small) keeps the message a usable width: it
+	   takes its own line above the buttons rather than being squeezed between them. */
+	@container (max-width: 480px) {
+		.composer__row {
+			flex-wrap: wrap;
+		}
+		.composer__input {
+			flex: 1 1 100%;
+			order: -1;
+			min-width: 0;
+			padding-left: 8px;
+		}
+	}
+	@container (min-width: 481px) {
+		.composer__input {
+			min-width: 220px;
+		}
 	}
 	.composer__attach {
 		flex: none;

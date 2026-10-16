@@ -1,3 +1,4 @@
+import { setSession } from '$lib/server/sessionCookies';
 import { redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
 import { settleLanguageAfterSignIn } from '$lib/server/locale';
@@ -29,9 +30,7 @@ export const GET: RequestHandler = async ({ url, cookies, fetch }) => {
 	};
 	if (result.linked || !result.access_token || !result.refresh_token) redirect(303, '/account?google=linked');
 
-	cookies.set('access_token', result.access_token, { httpOnly: true, path: '/', sameSite: 'lax' });
-	cookies.set('refresh_token', result.refresh_token, { httpOnly: true, path: '/', sameSite: 'lax' });
-	cookies.set('user_email', result.email, { httpOnly: false, path: '/', sameSite: 'lax' });
+	setSession(cookies, { access_token: result.access_token, refresh_token: result.refresh_token, email: result.email });
 	await settleLanguageAfterSignIn(fetch, cookies, result.is_new);
 	// New here: offer to let Workspace use this same Google account.
 	redirect(303, result.is_new ? '/connections/google?welcome=1' : '/');

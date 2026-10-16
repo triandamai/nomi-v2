@@ -59,6 +59,12 @@ pub async fn refresh_access_token(
 
     let user_id = user_id.ok_or(RefreshError::Invalid)?;
 
+    // Someone who keeps coming back stays signed in: each use pushes the expiry out again.
+    sqlx::query(&format!("UPDATE refresh_tokens SET expires_at = now() + interval '{REFRESH_TOKEN_TTL_DAYS}' WHERE token_hash = $1"))
+        .bind(&token_hash)
+        .execute(pool)
+        .await?;
+
     let permissions = compute_permissions(pool, user_id).await?;
     let active_org_id: Uuid = sqlx::query_scalar(
         "SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'active' ORDER BY created_at ASC LIMIT 1",

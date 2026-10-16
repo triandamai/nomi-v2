@@ -36,6 +36,8 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'database/query',
 			'transfer',
 			'transfer/orgs',
+			'import/github',
+			'import/files',
 		].join('|') +
 		')$',
 );

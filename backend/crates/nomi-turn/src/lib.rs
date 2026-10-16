@@ -70,7 +70,7 @@ pub async fn handle_inbound_message(
                 "INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)",
             )
             .bind(session_id)
-            .bind(serde_json::json!({"error": err.to_string()}))
+            .bind(serde_json::json!({"error": nomi_llm::redact::redacted(err.to_string())}))
             .execute(&mut *conn)
             .await;
             settle_agent_phases(&mut conn, None, session_id).await;
@@ -145,7 +145,7 @@ pub async fn process_turn(
                 "INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)",
             )
             .bind(session_id)
-            .bind(serde_json::json!({"error": err.to_string()}))
+            .bind(serde_json::json!({"error": nomi_llm::redact::redacted(err.to_string())}))
             .execute(&mut *conn)
             .await;
 
@@ -532,7 +532,7 @@ pub async fn resume_paused_turn(
         Err(err) => {
             let _ = sqlx::query("INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)")
                 .bind(session_id)
-                .bind(serde_json::json!({"error": err.to_string()}))
+                .bind(serde_json::json!({"error": nomi_llm::redact::redacted(err.to_string())}))
                 .execute(&mut *conn)
                 .await;
             settle_agent_phases(&mut conn, Some(mqtt), session_id).await;

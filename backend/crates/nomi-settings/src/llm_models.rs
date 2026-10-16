@@ -23,12 +23,14 @@ pub struct AdminLlmModel {
     /// USD per million input tokens served from the provider's prompt cache; `None` charges
     /// them at the full input price.
     pub cached_input_usd_per_mtok: Option<f64>,
+    /// Switched off by an admin: nobody can pick it and nothing is routed to it.
+    pub enabled: bool,
 }
 
 pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models ORDER BY created_at",
     )
     .fetch_all(pool)
@@ -38,7 +40,7 @@ pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, 
 pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models WHERE id = $1",
     )
     .bind(id)
@@ -49,7 +51,7 @@ pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<Admin
 pub async fn get_default_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models WHERE is_default = true",
     )
     .fetch_optional(pool)
@@ -81,7 +83,7 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
                                        input_usd_per_mtok, output_usd_per_mtok, media_inputs, cached_input_usd_per_mtok) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
          RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok",
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
     )
     .bind(input.label)
     .bind(input.provider)
@@ -124,7 +126,7 @@ pub async fn update_admin_llm_model(
          input_usd_per_mtok = $8, output_usd_per_mtok = $9, media_inputs = $10, cached_input_usd_per_mtok = $11 \
          WHERE id = $1 \
          RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok",
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
     )
     .bind(id)
     .bind(input.label)
@@ -194,8 +196,8 @@ pub async fn set_default_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<(), 
 pub async fn get_files_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
-         FROM admin_llm_models WHERE is_files_model = true",
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
+         FROM admin_llm_models WHERE is_files_model = true AND enabled",
     )
     .fetch_optional(pool)
     .await
@@ -219,8 +221,8 @@ pub async fn set_files_admin_llm_model(pool: &PgPool, id: Option<Uuid>) -> Resul
 pub async fn get_coding_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
         "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
-         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok \
-         FROM admin_llm_models WHERE is_coding_model = true",
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
+         FROM admin_llm_models WHERE is_coding_model = true AND enabled",
     )
     .fetch_optional(pool)
     .await
@@ -345,4 +347,19 @@ pub async fn set_user_llm_selection_custom(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Switches a model on or off. The default model can't be switched off (something must answer);
+/// `Ok(None)` when the model doesn't exist.
+pub async fn set_admin_llm_model_enabled(pool: &PgPool, id: Uuid, enabled: bool) -> Result<Option<Result<(), &'static str>>, sqlx::Error> {
+    let Some(model) = get_admin_llm_model(pool, id).await? else { return Ok(None) };
+    if !enabled && model.is_default {
+        return Ok(Some(Err("make another model the default before switching this one off")));
+    }
+    sqlx::query("UPDATE admin_llm_models SET enabled = $2, updated_at = now() WHERE id = $1")
+        .bind(id)
+        .bind(enabled)
+        .execute(pool)
+        .await?;
+    Ok(Some(Ok(())))
 }

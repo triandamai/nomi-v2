@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import type { Cookies } from '@sveltejs/kit';
+import { clearSession, setSession } from '$lib/server/sessionCookies';
 
 const API_URL = env.API_URL ?? 'http://localhost:8080';
 
@@ -56,7 +57,28 @@ export async function apiFetch(
 	}
 
 	const { access_token } = (await refreshResponse.json()) as { access_token: string };
-	cookies.set('access_token', access_token, { httpOnly: true, path: '/', sameSite: 'lax' });
+	// The refresh token's expiry moved out on the API: the cookies follow.
+	setSession(cookies, { access_token, refresh_token: refreshToken });
 
 	return fetchFn(apiUrl(path), withAuth(init, access_token));
+}
+
+/** A new access token from the refresh token, or null when it's gone or no longer valid. */
+export async function refreshSession(fetchFn: typeof fetch, cookies: Cookies): Promise<string | null> {
+	const refreshToken = cookies.get('refresh_token');
+	if (!refreshToken) return null;
+	const response = await fetchFn(apiUrl('/api/auth/refresh'), {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ refresh_token: refreshToken }),
+	}).catch(() => null);
+	if (!response) return null;
+	if (!response.ok) {
+		// A refresh token the API no longer accepts is dropped, so it isn't tried on every request.
+		if (response.status === 401) clearSession(cookies);
+		return null;
+	}
+	const { access_token } = (await response.json()) as { access_token: string };
+	setSession(cookies, { access_token, refresh_token: refreshToken });
+	return access_token;
 }

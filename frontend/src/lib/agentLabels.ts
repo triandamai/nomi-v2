@@ -167,7 +167,58 @@ export function sourceSite(url: string): string {
 /** Redacts sensitive query parameters (key, token, api_key, etc.) and credentials from error messages. */
 export function sanitizeError(err: string | null | undefined): string {
 	if (!err) return '';
-	return err
-		.replace(/([?&](?:key|api_key|token|access_token|secret)=)[^&\s)]+/gi, '$1[REDACTED]')
-		.replace(/(https?:\/\/[^\s:/?#]+:[^\s/@]+@)/gi, 'http://[REDACTED]@');
+	let out = err;
+	for (const [pattern, replacement] of SECRET_PATTERNS) out = out.replace(pattern, replacement);
+	return out;
+}
+
+/** Secrets that can turn up in error text (the same patterns the API strips, see nomi_llm::redact):
+ * keys and tokens in URLs, headers and JSON, passwords in connection strings, and well-known
+ * key formats. */
+const SECRET_PATTERNS: [RegExp, string][] = [
+	[/([?&;\s,]?(?:api[_-]?key|key|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|secret|client[_-]?secret|password|passwd|pwd|signature|sig)=)[^&\s)\]'"<>,;]+/gi, '$1[REDACTED]'],
+	[/(["']?(?:api[_-]?key|apikey|x-api-key|x-goog-api-key|token|access[_-]?token|refresh[_-]?token|secret|client[_-]?secret|password|authorization)["']?\s*[:=]\s*["'])[^"']+/gi, '$1[REDACTED]'],
+	[/(\bbearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, '$1[REDACTED]'],
+	[/(\b[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+@/g, '$1[REDACTED]@'],
+	[/\bsk-ant-[A-Za-z0-9_-]{16,}/g, '[REDACTED]'],
+	[/\bsk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
+	[/\bAIza[0-9A-Za-z_-]{30,}/g, '[REDACTED]'],
+	[/\bAQ\.[0-9A-Za-z_-]{20,}/g, '[REDACTED]'],
+	[/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}/g, '[REDACTED]'],
+	[/\bgithub_pat_[A-Za-z0-9_]{30,}/g, '[REDACTED]'],
+	[/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, '[REDACTED]'],
+	[/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[REDACTED]'],
+	[/\b(?:ship_int|whsec|nsk|tvly|sk_live|sk_test|rk_live|pk_live)_[A-Za-z0-9-]{12,}/g, '[REDACTED]'],
+	[/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[REDACTED]'],
+];
+
+/** "Couldn't reach the model. Trying again in 8s (attempt 3 of 10)" from a `retrying` phase. */
+export function retryActivity(detail: string | null, now: number = Date.now()): string {
+	let attempt = 2;
+	let max = 10;
+	let seconds = 0;
+	try {
+		const parsed = JSON.parse(detail ?? '{}') as { attempt?: number; max?: number; retry_at?: string };
+		attempt = parsed.attempt ?? attempt;
+		max = parsed.max ?? max;
+		if (parsed.retry_at) seconds = Math.max(0, Math.ceil((new Date(parsed.retry_at).getTime() - now) / 1000));
+	} catch {
+		// An older or odd detail: the generic wording below still reads right.
+	}
+	return seconds > 0 ? m.phase_retrying_in({ seconds, attempt, max }) : m.phase_retrying_now({ attempt, max });
+}
+
+/** "running `npm install` (12s)" from a `running_command` phase. */
+export function commandActivity(detail: string | null, now: number = Date.now()): string {
+	let command = '';
+	let seconds = 0;
+	try {
+		const parsed = JSON.parse(detail ?? '{}') as { command?: string; started_at?: string };
+		command = parsed.command ?? '';
+		if (parsed.started_at) seconds = Math.max(0, Math.round((now - new Date(parsed.started_at).getTime()) / 1000));
+	} catch {
+		command = detail ?? '';
+	}
+	const shown = command.length > 60 ? `${command.slice(0, 57)}…` : command;
+	return seconds >= 3 ? m.phase_running_command_for({ command: shown, seconds }) : m.phase_running_command({ command: shown });
 }

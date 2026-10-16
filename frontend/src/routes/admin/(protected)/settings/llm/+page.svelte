@@ -181,7 +181,7 @@
 {:else}
 	<ul class="models">
 		{#each data.models as model (model.id)}
-			<li class="model" class:model--default={model.is_default}>
+			<li class="model" class:model--default={model.is_default} class:model--off={!model.enabled}>
 				<div class="model__top">
 					<span class="model__icon"><IconChip size={24} /></span>
 					<div class="model__text">
@@ -189,9 +189,10 @@
 						<p class="model__provider">{providerName(model.provider)}</p>
 					</div>
 				</div>
-				{#if model.is_default || model.is_files_model || model.is_coding_model}
+				{#if model.is_default || model.is_files_model || model.is_coding_model || !model.enabled}
 					<!-- Its own row: beside the name, the chips squeezed it to a letter per line. -->
 					<div class="model__chips">
+						{#if !model.enabled}<span class="chip chip--off">{m.llm_switched_off()}</span>{/if}
 						{#if model.is_default}<span class="chip">{m.llm_default()}</span>{/if}
 						{#if model.is_files_model}<span class="chip chip--files">{m.llm_files_chip()}</span>{/if}
 						{#if model.is_coding_model}<span class="chip chip--coding">{m.llm_coding_chip()}</span>{/if}
@@ -218,6 +219,11 @@
 						</form>
 					{/if}
 					{#if !model.is_default}
+						<form method="POST" action="?/setEnabled" use:enhance>
+							<input type="hidden" name="id" value={model.id} />
+							<input type="hidden" name="enabled" value={model.enabled ? 'false' : 'true'} />
+							<Button type="submit" variant="text" size="xs">{model.enabled ? m.llm_switch_off() : m.llm_switch_on()}</Button>
+						</form>
 						<form method="POST" action="?/setDefault" use:enhance>
 							<input type="hidden" name="id" value={model.id} />
 							<Button type="submit" variant="text" size="xs">{m.llm_make_default()}</Button>
@@ -341,6 +347,13 @@
 </BottomSheet>
 
 <style>
+	.model--off {
+		opacity: 0.65;
+	}
+	.chip--off {
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface-variant);
+	}
 	.files-model {
 		display: flex;
 		align-items: center;

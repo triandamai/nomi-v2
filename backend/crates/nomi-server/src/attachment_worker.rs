@@ -90,7 +90,7 @@ pub async fn pass(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest:
                         "no model here can open {} files; an admin can pick a files model that can in Admin → Models",
                         kind.as_str()
                     );
-                    finish(pool, id, "failed", None, json!({ "error": error })).await;
+                    finish(pool, id, "failed", None, json!({ "error": nomi_llm::redact::redacted(&error) })).await;
                 }
             }
             // Retried on the next pass, up to MAX_ATTEMPTS.

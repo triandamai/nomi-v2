@@ -24,7 +24,7 @@ pub mod voice;
 pub mod web;
 pub mod working_memory;
 
-pub use content_block::{ApprovalStatus, ContentBlock, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
+pub use content_block::{ApprovalStatus, ContentBlock, FileWriteEntry, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{
     crew_tool_definitions, resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, CANCEL_REMINDER_TOOL_NAME,

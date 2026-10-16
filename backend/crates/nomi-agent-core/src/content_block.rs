@@ -60,6 +60,14 @@ pub struct QuestionOption {
     pub detail: Option<String>,
 }
 
+/// One file of a [`ContentBlock::FileWrites`] batch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileWriteEntry {
+    pub path: String,
+    pub content: String,
+    pub previous_content: Option<String>,
+}
+
 /// Structured widget data attached to a chat message alongside its plain-text `content` fallback
 /// (see `messages.content_blocks`). Named `ContentBlock` to match the design spec; callers that
 /// also need `nomi_llm::ContentBlock` (a different type — LLM message content, not chat-UI
@@ -73,6 +81,11 @@ pub enum ContentBlock {
         path: String,
         content: String,
         previous_content: Option<String>,
+    },
+    /// Several files written by one call: each one is shown, not only the first.
+    FileWrites {
+        project_id: Uuid,
+        files: Vec<FileWriteEntry>,
     },
     FileDelete {
         project_id: Uuid,

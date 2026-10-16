@@ -7,6 +7,7 @@ pub mod deepseek;
 pub mod config;
 pub mod fake;
 pub mod media;
+pub mod redact;
 mod user_message;
 
 pub use types::*;

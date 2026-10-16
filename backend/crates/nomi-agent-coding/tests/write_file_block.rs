@@ -141,3 +141,47 @@ async fn read_file_and_list_files_never_produce_a_block(pool: PgPool) {
         .unwrap();
     assert!(list_outcome.block.is_none());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writing_several_files_shows_every_one_of_them(pool: PgPool) {
+    let (user_id, project_id) = seed_project(&pool).await;
+    let agent = CodingAgent::new(temp_storage());
+    let mut conn = pool.acquire().await.unwrap();
+    agent
+        .execute_tool(
+            &mut conn,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            user_id,
+            "write_file",
+            serde_json::json!({"project_id": project_id.to_string(), "path": "a.txt", "content": "old a"}),
+        )
+        .await
+        .unwrap();
+
+    let outcome = agent
+        .execute_tool(
+            &mut conn,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            user_id,
+            "write_files",
+            serde_json::json!({"project_id": project_id.to_string(), "files": [
+                {"path": "a.txt", "content": "new a"},
+                {"path": "src/b.ts", "content": "b"},
+                {"path": "src/c.ts", "content": "c"}
+            ]}),
+        )
+        .await
+        .unwrap();
+
+    match outcome.block {
+        Some(ContentBlock::FileWrites { files, .. }) => {
+            let paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
+            assert_eq!(paths, ["a.txt", "src/b.ts", "src/c.ts"]);
+            assert_eq!(files[0].previous_content.as_deref(), Some("old a"));
+            assert_eq!(files[1].previous_content, None);
+        }
+        other => panic!("expected a FileWrites block, got {other:?}"),
+    }
+}

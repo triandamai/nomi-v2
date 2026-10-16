@@ -80,4 +80,18 @@ export const actions: Actions = {
 		const { session_id } = (await response.json()) as { session_id: string; project_id: string };
 		throw redirect(303, `/projects/session/${session_id}`);
 	},
+
+	// A new project to import existing code into: the page fills it, then opens it.
+	createForImport: async ({ request, cookies, fetch }) => {
+		const orgId = (await request.formData()).get('org_id');
+		const response = await apiFetch(fetch, cookies, '/api/projects', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(typeof orgId === 'string' && orgId ? { org_id: orgId } : {}),
+		});
+		if (response.status === 409 || response.status === 404) return fail(409, { needsOrg: true });
+		if (!response.ok) return fail(500, { importError: m.err_new_project() });
+		const { session_id, project_id } = (await response.json()) as { session_id: string; project_id: string };
+		return { imported: { session_id, project_id } };
+	},
 };

@@ -127,6 +127,10 @@ pub fn build_router(state: AppState) -> Router {
             put(llm_models_routes::update_admin_model).delete(llm_models_routes::delete_admin_model),
         )
         .route(
+            "/api/admin/settings/llm/models/:id/enabled",
+            put(llm_models_routes::set_admin_model_enabled),
+        )
+        .route(
             "/api/admin/settings/llm/models/:id/default",
             put(llm_models_routes::set_default_admin_model),
         )
@@ -170,7 +174,23 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/personality/rollback", post(personality_routes::rollback_personality))
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
         .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
+        .route("/api/maintenance", get(crate::routes::maintenance::get))
+        .route("/api/admin/maintenance", put(crate::routes::maintenance::put))
+        .route("/api/support/v1/ask", post(crate::routes::support::ask))
+        .route("/api/admin/support/articles", get(crate::routes::support::list_articles).post(crate::routes::support::create_article))
+        .route(
+            "/api/admin/support/articles/:id",
+            put(crate::routes::support::update_article).delete(crate::routes::support::delete_article),
+        )
+        .route("/api/admin/support/drafts", get(crate::routes::support::list_drafts))
+        .route("/api/admin/support/drafts/:id/publish", post(crate::routes::support::publish_draft))
+        .route("/api/admin/support/drafts/:id/dismiss", post(crate::routes::support::dismiss_draft))
+        .route("/api/admin/support/keys", get(crate::routes::support::list_keys).post(crate::routes::support::create_key))
+        .route("/api/admin/support/keys/:id", delete(crate::routes::support::revoke_key))
+        .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
+        .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
+        .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
         .route("/api/admin/shipyard/webhook", post(crate::routes::deploy::admin_register_webhook))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
         .route("/api/admin/agents/ws", get(admin_dashboard_routes::admin_agents_stream))
@@ -277,6 +297,16 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/deploy/usage", get(crate::routes::deploy::usage))
         .route("/api/projects/:id/deploy/events", get(crate::routes::deploy::events))
         .route("/api/projects/:id/deploy/environments/:env", delete(crate::routes::deploy::take_offline))
+        .route(
+            "/api/projects/:id/import",
+            post(crate::routes::project_import::import_archive)
+                .layer(axum::extract::DefaultBodyLimit::max(crate::routes::project_import::MAX_ARCHIVE_BYTES)),
+        )
+        .route("/api/projects/:id/import/github", post(crate::routes::project_import::import_github))
+        .route(
+            "/api/projects/:id/import/files",
+            post(crate::routes::project_import::import_batch).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
         .route("/api/projects/:id/members", get(crate::routes::project_members::list))
         .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))
         .route(

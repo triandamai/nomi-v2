@@ -24,6 +24,8 @@ nomi-agent-health = { path = "../nomi-agent-health" }
 thiserror = "1"
 rand = "0.8"
 hex = "0.4"
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
