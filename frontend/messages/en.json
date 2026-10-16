@@ -1895,5 +1895,12 @@
 	"integ_terminate_confirm": "{name} is removed from Shipyard with all its data. The Nomi project stays.",
 	"integ_are_you_sure": "Are you sure?",
 	"integ_confirm": "Yes, do it",
-	"integ_delete_secret_confirm": "{name} is removed; services using it lose it on their next deploy."
+	"integ_delete_secret_confirm": "{name} is removed; services using it lose it on their next deploy.",
+	"theme_lautan": "Deep sea blue with a lagoon-green glint.",
+	"theme_matcha": "Soft matcha green with roasted tea.",
+	"theme_saffron": "Warm saffron gold against a violet dusk.",
+	"theme_lagoon": "Clear cyan water over coral sand.",
+	"theme_orchid": "Vivid orchid violet with terracotta.",
+	"theme_ruby": "Bold ruby red with marigold.",
+	"theme_graphite": "Quiet greys with a touch of brass."
 }

@@ -337,7 +337,7 @@ const PINNABLE_FEATURES: [&str; 8] = ["money", "reminders", "memory", "notificat
 
 const ALLOWED_THEMES: [&str; 3] = ["light", "dark", "system"];
 /// Appearance themes (Preferences → Appearance); the column keeps its accent_color name.
-const ALLOWED_ACCENT_COLORS: [&str; 5] = ["canopy", "coral-reef", "borneo-dusk", "phantom", "senja-jakarta"];
+const ALLOWED_ACCENT_COLORS: [&str; 12] = ["canopy", "coral-reef", "borneo-dusk", "phantom", "senja-jakarta", "lautan", "matcha", "saffron", "lagoon", "orchid", "ruby", "graphite"];
 
 #[tracing::instrument(skip(state, claims, req))]
 pub async fn put_preferences(
@@ -352,7 +352,7 @@ pub async fn put_preferences(
     }
     if let Some(accent_color) = &req.accent_color {
         if !ALLOWED_ACCENT_COLORS.contains(&accent_color.as_str()) {
-            return Err((StatusCode::BAD_REQUEST, "accent_color must be one of canopy/coral-reef/borneo-dusk/phantom/senja-jakarta"));
+            return Err((StatusCode::BAD_REQUEST, "accent_color must be one of the appearance themes"));
         }
     }
     if let Some(language) = &req.language {

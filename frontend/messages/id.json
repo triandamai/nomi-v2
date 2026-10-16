@@ -1895,5 +1895,12 @@
 	"integ_terminate_confirm": "{name} dihapus dari Shipyard beserta semua datanya. Proyek Nomi tetap ada.",
 	"integ_are_you_sure": "Kamu yakin?",
 	"integ_confirm": "Ya, lakukan",
-	"integ_delete_secret_confirm": "{name} dihapus; layanan yang memakainya kehilangannya saat deploy berikutnya."
+	"integ_delete_secret_confirm": "{name} dihapus; layanan yang memakainya kehilangannya saat deploy berikutnya.",
+	"theme_lautan": "Biru laut dalam dengan kilau hijau laguna.",
+	"theme_matcha": "Hijau matcha lembut dengan teh sangrai.",
+	"theme_saffron": "Emas kunyit yang hangat di senja ungu.",
+	"theme_lagoon": "Air cyan jernih di atas pasir koral.",
+	"theme_orchid": "Ungu anggrek yang cerah dengan terakota.",
+	"theme_ruby": "Merah delima yang berani dengan kuning marigold.",
+	"theme_graphite": "Abu-abu tenang dengan sentuhan kuningan."
 }

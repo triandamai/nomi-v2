@@ -331,7 +331,19 @@ export interface Profile {
 
 export type Theme = 'light' | 'dark' | 'system';
 /** Appearance theme (stored as accent_color). */
-export type AccentColor = 'canopy' | 'coral-reef' | 'borneo-dusk' | 'phantom' | 'senja-jakarta';
+export type AccentColor =
+	| 'canopy'
+	| 'coral-reef'
+	| 'borneo-dusk'
+	| 'phantom'
+	| 'senja-jakarta'
+	| 'lautan'
+	| 'matcha'
+	| 'saffron'
+	| 'lagoon'
+	| 'orchid'
+	| 'ruby'
+	| 'graphite';
 
 export interface Preferences {
 	theme: Theme;
