@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::routes::settings::require_system_config_permission;
 use nomi_auth::extractor::AuthClaims;
 
 #[derive(Serialize)]
@@ -54,7 +53,7 @@ pub async fn list_dynamic_agents(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<Vec<DynamicAgentResponse>>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "agents", "view")?;
 
     let rows: Vec<DynamicAgentRow> = sqlx::query_as(&format!("SELECT {SELECT_COLUMNS} FROM dynamic_agents ORDER BY created_at DESC"))
         .fetch_all(&state.pool)
@@ -132,7 +131,7 @@ pub async fn create_dynamic_agent(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<DynamicAgentRequest>,
 ) -> Result<(StatusCode, Json<DynamicAgentResponse>), (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "agents", "write")?;
     validate_request(&req, &state.tool_catalog)?;
 
     let row: DynamicAgentRow = sqlx::query_as(&format!(
@@ -167,7 +166,7 @@ pub async fn update_dynamic_agent(
     Path(id): Path<Uuid>,
     Json(req): Json<DynamicAgentRequest>,
 ) -> Result<Json<DynamicAgentResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "agents", "write")?;
     validate_request(&req, &state.tool_catalog)?;
 
     let row: Option<DynamicAgentRow> = sqlx::query_as(&format!(
@@ -203,7 +202,7 @@ pub async fn toggle_active_dynamic_agent(
     AuthClaims(claims): AuthClaims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DynamicAgentResponse>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "agents", "write")?;
 
     let row: Option<DynamicAgentRow> = sqlx::query_as(&format!(
         "UPDATE dynamic_agents SET is_active = NOT is_active, updated_at = now() WHERE id = $1 RETURNING {SELECT_COLUMNS}"

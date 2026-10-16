@@ -37,11 +37,11 @@ async fn platform_admin_gets_the_admin_permission_string(pool: PgPool) {
         .unwrap();
 
     let permissions = compute_permissions(&pool, user_id).await.unwrap();
-    assert!(permissions.contains(&"nomi:admin:user:[view,manage]".to_string()));
+    assert!(permissions.contains(&"nomi:admin:user:[view,write,manage]".to_string()));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn platform_admins_get_the_system_config_permission(pool: PgPool) {
+async fn platform_admins_can_manage_every_admin_area(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
         .await
@@ -53,18 +53,20 @@ async fn platform_admins_get_the_system_config_permission(pool: PgPool) {
         .unwrap();
 
     let permissions = compute_permissions(&pool, user_id).await.unwrap();
-    assert!(permissions.contains(&"nomi:admin:system_config:[view,manage]".to_string()));
+    for resource in nomi_auth::catalog::ADMIN_RESOURCES {
+        assert!(permissions.contains(&format!("nomi:admin:{resource}:[view,write,manage]")), "{resource}");
+    }
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn non_platform_admins_do_not_get_the_system_config_permission(pool: PgPool) {
+async fn non_platform_admins_get_no_admin_area(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(&pool)
         .await
         .unwrap();
 
     let permissions = compute_permissions(&pool, user_id).await.unwrap();
-    assert!(!permissions.iter().any(|p| p.contains("system_config")));
+    assert!(!permissions.iter().any(|p| p.starts_with("nomi:admin:")));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

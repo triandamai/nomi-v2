@@ -32,7 +32,7 @@
 </script>
 
 <div class="app-shell flex" style="background: var(--md-sys-color-surface)">
-	<AdminSidebar canManageSystemConfig={data.canManageSystemConfig} canViewUsers={data.canViewUsers} bind:mobileOpen={mobileNavOpen} onappearance={() => (appearanceOpen = true)} />
+	<AdminSidebar access={data.access} bind:mobileOpen={mobileNavOpen} onappearance={() => (appearanceOpen = true)} />
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
 			<IconButton onclick={() => (mobileNavOpen = true)} aria-label={m.nav_open_menu()}><IconMenu /></IconButton>

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::claims::permission_string;
 use super::grants::list_grants_for_user;
 
-const ACTION_ORDER: [&str; 2] = ["view", "manage"];
+const ACTION_ORDER: [&str; 3] = ["view", "write", "manage"];
 
 pub async fn compute_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<String>, sqlx::Error> {
     let mut merged: HashMap<(String, String), HashSet<String>> = HashMap::new();
@@ -16,15 +16,14 @@ pub async fn compute_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<Str
             .bind(user_id)
             .fetch_one(pool)
             .await?;
+    // Platform admins can do everything in every admin area.
     if is_platform_admin {
-        merged
-            .entry(("admin".to_string(), "user".to_string()))
-            .or_default()
-            .extend(["view".to_string(), "manage".to_string()]);
-        merged
-            .entry(("admin".to_string(), "system_config".to_string()))
-            .or_default()
-            .extend(["view".to_string(), "manage".to_string()]);
+        for resource in crate::catalog::ADMIN_RESOURCES {
+            merged
+                .entry(("admin".to_string(), resource.to_string()))
+                .or_default()
+                .extend(crate::catalog::LEVELS.iter().map(|l| l.to_string()));
+        }
     }
 
     let memberships: Vec<(Uuid, String)> = sqlx::query_as(

@@ -46,12 +46,20 @@ impl Claims {
         Ok(data.claims)
     }
 
+    /// Whether they may do `action` on the resource. For the access levels (view, write,
+    /// manage) a higher level includes the lower ones; any other action has to match exactly.
     pub fn has_permission(&self, scope: &str, resource: &str, action: &str) -> bool {
         let prefix = format!("nomi:{scope}:{resource}:[");
+        let wanted = crate::catalog::rank(action);
         self.permissions.iter().any(|p| {
             p.strip_prefix(prefix.as_str())
                 .and_then(|rest| rest.strip_suffix(']'))
-                .map(|actions| actions.split(',').any(|a| a == action))
+                .map(|actions| {
+                    actions.split(',').any(|a| {
+                        a == action
+                            || matches!((wanted, crate::catalog::rank(a)), (Some(want), Some(held)) if held >= want)
+                    })
+                })
                 .unwrap_or(false)
         })
     }
@@ -124,6 +132,14 @@ mod tests {
         let org_id = "11111111-1111-1111-1111-111111111111";
         let claims = sample_claims(vec![permission_string(org_id, "member", &["view"])]);
         assert!(!claims.has_permission(org_id, "member", "manage"));
+    }
+
+    #[test]
+    fn higher_levels_include_lower_ones() {
+        let claims = sample_claims(vec![permission_string("admin", "models", &["write"])]);
+        assert!(claims.has_permission("admin", "models", "view"));
+        assert!(claims.has_permission("admin", "models", "write"));
+        assert!(!claims.has_permission("admin", "models", "manage"));
     }
 
     #[test]

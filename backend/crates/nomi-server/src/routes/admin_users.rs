@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
+use nomi_auth::catalog;
 use nomi_auth::claims::Claims;
 use nomi_auth::extractor::AuthClaims;
-use nomi_auth::grants::{grant_permission, list_grants_for_user, revoke_permission, GrantError, NewGrant};
+use nomi_auth::grants::{grant_permission, list_grants_for_user, revoke_permission, set_admin_access, GrantError, NewGrant};
 use nomi_auth::permissions::compute_permissions;
 
 fn require_user_permission(claims: &Claims, action: &str) -> Result<(), (StatusCode, &'static str)> {
@@ -20,7 +21,12 @@ fn require_user_permission(claims: &Claims, action: &str) -> Result<(), (StatusC
 
 fn grant_error_to_response(e: GrantError) -> (StatusCode, String) {
     match e {
-        GrantError::InvalidResource | GrantError::InvalidActions | GrantError::OrgRequiredForOrgScope | GrantError::OrgNotAllowedForAdminScope => {
+        GrantError::InvalidResource
+        | GrantError::InvalidActions
+        | GrantError::UnknownAdminArea
+        | GrantError::InvalidLevel
+        | GrantError::OrgRequiredForOrgScope
+        | GrantError::OrgNotAllowedForAdminScope => {
             (StatusCode::BAD_REQUEST, e.to_string())
         }
         GrantError::Db(err) => {
@@ -246,7 +252,7 @@ pub async fn update_user_profile(
     Path(user_id): Path<Uuid>,
     Json(req): Json<UpdateUserProfileRequest>,
 ) -> Result<Json<UserDetailResponse>, (StatusCode, String)> {
-    require_user_permission(&claims, "manage").map_err(|(status, msg)| (status, msg.to_string()))?;
+    require_user_permission(&claims, "write").map_err(|(status, msg)| (status, msg.to_string()))?;
 
     if let Some(username) = &req.username {
         if !username.is_empty() && !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
@@ -361,11 +367,91 @@ pub async fn revoke_user_permission(
 ) -> Result<Json<Vec<nomi_auth::grants::PermissionGrant>>, (StatusCode, &'static str)> {
     require_user_permission(&claims, "manage")?;
 
+    // Taking access away is held to the same ceiling as giving it.
+    let existing = list_grants_for_user(&state.pool, user_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to load permissions");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load permissions")
+    })?;
+    if let Some(grant) = existing.iter().find(|g| g.id == permission_id) {
+        let scope = match grant.org_id {
+            Some(org_id) => org_id.to_string(),
+            None => "admin".to_string(),
+        };
+        require_grant_within_ceiling(&state.pool, claims.sub, &scope, &grant.resource, &grant.actions)
+            .await
+            .map_err(|(status, _)| (status, "cannot revoke a permission you do not already hold yourself"))?;
+    }
+
     let grants = revoke_permission(&state.pool, user_id, permission_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to revoke permission");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to revoke permission")
     })?;
 
+    Ok(Json(grants))
+}
+
+#[derive(Deserialize)]
+pub struct AdminAccessEntry {
+    pub resource: String,
+    /// view, write or manage.
+    pub level: String,
+}
+
+#[derive(Deserialize)]
+pub struct SetAdminAccessRequest {
+    pub access: Vec<AdminAccessEntry>,
+}
+
+/// `PUT /api/admin/users/:id/admin-access`: their admin role as a whole, each area at one
+/// level. Every area whose level changes must be within what the person saving holds.
+#[tracing::instrument(skip(state, claims, req))]
+pub async fn put_admin_access(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(user_id): Path<Uuid>,
+    Json(req): Json<SetAdminAccessRequest>,
+) -> Result<Json<Vec<nomi_auth::grants::PermissionGrant>>, (StatusCode, String)> {
+    require_user_permission(&claims, "manage").map_err(|(status, msg)| (status, msg.to_string()))?;
+
+    let existing = list_grants_for_user(&state.pool, user_id).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to load permissions");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load permissions".to_string())
+    })?;
+    let current = |resource: &str| {
+        existing
+            .iter()
+            .filter(|g| g.scope_type == "admin" && g.resource == resource)
+            .find_map(|g| catalog::highest(g.actions.iter().map(String::as_str)))
+    };
+
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for entry in &req.access {
+        if wanted.iter().any(|(r, _)| *r == entry.resource) {
+            return Err((StatusCode::BAD_REQUEST, format!("{} is listed twice", entry.resource)));
+        }
+        wanted.push((entry.resource.clone(), entry.level.clone()));
+    }
+
+    // Each area that changes, at the higher of its old and new level.
+    let mut touched: Vec<(String, &str)> = Vec::new();
+    for resource in catalog::ADMIN_RESOURCES {
+        let before = current(resource);
+        let after = wanted.iter().find(|(r, _)| r == resource).map(|(_, l)| l.as_str());
+        if before == after {
+            continue;
+        }
+        let top = match (before.and_then(catalog::rank), after.and_then(catalog::rank)) {
+            (Some(a), Some(b)) => catalog::LEVELS[a.max(b)],
+            (Some(a), None) | (None, Some(a)) => catalog::LEVELS[a],
+            (None, None) => continue,
+        };
+        touched.push((resource.to_string(), top));
+    }
+    for (resource, level) in &touched {
+        require_grant_within_ceiling(&state.pool, claims.sub, "admin", resource, &[level.to_string()]).await?;
+    }
+
+    let grants = set_admin_access(&state.pool, user_id, &wanted, claims.sub).await.map_err(grant_error_to_response)?;
     Ok(Json(grants))
 }
 
@@ -384,7 +470,7 @@ pub async fn assign_user_to_org(
     Path(user_id): Path<Uuid>,
     Json(req): Json<AssignOrgRequest>,
 ) -> Result<Json<Vec<MembershipRow>>, (StatusCode, &'static str)> {
-    require_user_permission(&claims, "manage")?;
+    require_user_permission(&claims, "write")?;
 
     if !ALLOWED_ROLES.contains(&req.role.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "role must be owner, admin, or member"));
@@ -417,7 +503,7 @@ pub async fn remove_user_from_org(
     AuthClaims(claims): AuthClaims,
     Path((user_id, org_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Vec<MembershipRow>>, (StatusCode, &'static str)> {
-    require_user_permission(&claims, "manage")?;
+    require_user_permission(&claims, "write")?;
 
     sqlx::query("UPDATE memberships SET status = 'removed' WHERE org_id = $1 AND user_id = $2")
         .bind(org_id)

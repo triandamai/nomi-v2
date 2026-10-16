@@ -698,14 +698,14 @@ async fn admin_status(state: &AppState) -> Result<AdminShipyard, ApiError> {
 
 /// `GET /api/admin/shipyard`
 pub async fn admin_get(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<AdminShipyard>, ApiError> {
-    crate::routes::settings::require_system_config_permission(&claims).map_err(|(s, m)| (s, m.to_string()))?;
+    crate::routes::admin_access::require_admin(&claims, "integrations", "view").map_err(|(s, m)| (s, m.to_string()))?;
     Ok(Json(admin_status(&state).await?))
 }
 
 /// `POST /api/admin/shipyard/webhook`: registers Nomi's webhook endpoint at `APP_URL` again
 /// (a new secret), then asks Shipyard to send it a test event.
 pub async fn admin_register_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<AdminShipyard>, ApiError> {
-    crate::routes::settings::require_system_config_permission(&claims).map_err(|(s, m)| (s, m.to_string()))?;
+    crate::routes::admin_access::require_admin(&claims, "integrations", "manage").map_err(|(s, m)| (s, m.to_string()))?;
     let client = client(&state)?;
     let app_url = std::env::var("APP_URL")
         .ok()

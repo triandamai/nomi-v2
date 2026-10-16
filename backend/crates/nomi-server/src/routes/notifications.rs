@@ -193,8 +193,8 @@ pub async fn put_preferences(
     Ok(Json(prefs))
 }
 
-fn require_broadcast_permission(claims: &nomi_auth::claims::Claims) -> Result<(), ApiError> {
-    if claims.has_permission("admin", "user", "manage") {
+fn require_broadcast_permission(claims: &nomi_auth::claims::Claims, level: &str) -> Result<(), ApiError> {
+    if claims.has_permission("admin", "notifications", level) {
         Ok(())
     } else {
         Err((StatusCode::FORBIDDEN, "not authorized to send notifications"))
@@ -224,7 +224,7 @@ pub async fn broadcast(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<BroadcastRequest>,
 ) -> Result<(StatusCode, Json<BroadcastResponse>), ApiError> {
-    require_broadcast_permission(&claims)?;
+    require_broadcast_permission(&claims, "write")?;
     let (title, body) = (req.title.trim().to_string(), req.body.trim().to_string());
     if title.is_empty() || body.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "title and body are required"));
@@ -260,7 +260,7 @@ pub struct BroadcastItem {
 
 /// `GET /api/admin/notifications/broadcasts`: what was sent, newest first, with how many read it.
 pub async fn list_broadcasts(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<BroadcastItem>>, ApiError> {
-    require_broadcast_permission(&claims)?;
+    require_broadcast_permission(&claims, "view")?;
     let items = sqlx::query_as(
         "SELECT b.id, b.title, b.body, b.link, b.audience, b.recipients, \
                 (SELECT count(*) FROM notifications n WHERE n.broadcast_id = b.id AND n.read_at IS NOT NULL) AS read, b.created_at \

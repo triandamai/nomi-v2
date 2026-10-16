@@ -26,8 +26,12 @@ pub struct NewGrant<'a> {
 pub enum GrantError {
     #[error("resource must start with a lowercase letter and contain only lowercase letters, digits, and underscores")]
     InvalidResource,
-    #[error("actions must be a non-empty subset of view, manage")]
+    #[error("actions must be a non-empty subset of view, write, manage")]
     InvalidActions,
+    #[error("unknown admin area")]
+    UnknownAdminArea,
+    #[error("level must be view, write or manage")]
+    InvalidLevel,
     #[error("org_id is required when scope_type is org")]
     OrgRequiredForOrgScope,
     #[error("org_id must not be set when scope_type is admin")]
@@ -36,7 +40,7 @@ pub enum GrantError {
     Db(#[from] sqlx::Error),
 }
 
-const ALLOWED_ACTIONS: [&str; 2] = ["view", "manage"];
+const ALLOWED_ACTIONS: [&str; 3] = ["view", "write", "manage"];
 
 fn validate_resource(resource: &str) -> Result<(), GrantError> {
     let mut chars = resource.chars();
@@ -73,6 +77,9 @@ pub async fn list_grants_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<Pe
 pub async fn grant_permission(pool: &PgPool, input: NewGrant<'_>) -> Result<Vec<PermissionGrant>, GrantError> {
     validate_resource(input.resource)?;
     validate_actions(input.actions)?;
+    if input.scope_type == "admin" && !crate::catalog::is_admin_resource(input.resource) {
+        return Err(GrantError::UnknownAdminArea);
+    }
     match (input.scope_type, input.org_id) {
         ("admin", Some(_)) => return Err(GrantError::OrgNotAllowedForAdminScope),
         ("org", None) => return Err(GrantError::OrgRequiredForOrgScope),
@@ -133,4 +140,34 @@ pub async fn revoke_permission(pool: &PgPool, user_id: Uuid, grant_id: Uuid) -> 
         .execute(pool)
         .await?;
     list_grants_for_user(pool, user_id).await
+}
+
+/// Someone's admin access as a whole: each area at one level. Replaces every admin-scope grant
+/// they had (org-scope grants are left alone).
+pub async fn set_admin_access(pool: &PgPool, user_id: Uuid, access: &[(String, String)], granted_by: Uuid) -> Result<Vec<PermissionGrant>, GrantError> {
+    let mut rows = Vec::with_capacity(access.len());
+    for (resource, level) in access {
+        if !crate::catalog::is_admin_resource(resource) {
+            return Err(GrantError::UnknownAdminArea);
+        }
+        rows.push((resource, crate::catalog::up_to(level).ok_or(GrantError::InvalidLevel)?));
+    }
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM user_permissions WHERE user_id = $1 AND scope_type = 'admin'")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    for (resource, actions) in rows {
+        sqlx::query(
+            "INSERT INTO user_permissions (user_id, scope_type, org_id, resource, actions, granted_by) VALUES ($1, 'admin', NULL, $2, $3, $4)",
+        )
+        .bind(user_id)
+        .bind(resource)
+        .bind(&actions)
+        .bind(granted_by)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    list_grants_for_user(pool, user_id).await.map_err(GrantError::Db)
 }

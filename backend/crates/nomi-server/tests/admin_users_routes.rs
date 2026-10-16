@@ -164,7 +164,7 @@ async fn get_user_detail_returns_permissions_and_memberships(pool: PgPool) {
         router.clone(),
         "POST",
         &format!("/api/admin/users/{target_id}/permissions"),
-        json!({ "scope_type": "admin", "org_id": null, "resource": "billing", "actions": ["view"] }),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "support", "actions": ["view"] }),
         Some(&admin_token),
     )
     .await;
@@ -173,7 +173,7 @@ async fn get_user_detail_returns_permissions_and_memberships(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["email"], "target@example.com");
     assert_eq!(body["permissions"].as_array().unwrap().len(), 1);
-    assert_eq!(body["permissions"][0]["resource"], "billing");
+    assert_eq!(body["permissions"][0]["resource"], "support");
     // Registration itself creates and assigns an "Acme" org (owner), so the assigned "Beta Org"
     // membership shows up alongside it.
     let memberships = body["memberships"].as_array().unwrap();
@@ -424,7 +424,7 @@ async fn view_only_staff_is_forbidden_from_every_mutating_endpoint(pool: PgPool)
         router.clone(),
         "POST",
         &format!("/api/admin/users/{target_id}/permissions"),
-        json!({ "scope_type": "admin", "org_id": null, "resource": "billing", "actions": ["view"] }),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "support", "actions": ["view"] }),
         Some(&staff_token),
     )
     .await;
@@ -468,7 +468,7 @@ async fn manage_scoped_staff_cannot_grant_a_permission_they_do_not_hold_themselv
     register_via_api(router.clone(), "staff@example.com").await;
     let staff_id = user_id_by_email(&pool, "staff@example.com").await;
 
-    // Promote to user:[view,manage] only — no system_config.
+    // Promote to user:[view,manage] only — no integrations.
     json_request(
         router.clone(),
         "POST",
@@ -482,12 +482,12 @@ async fn manage_scoped_staff_cannot_grant_a_permission_they_do_not_hold_themselv
     register_via_api(router.clone(), "target@example.com").await;
     let target_id = user_id_by_email(&pool, "target@example.com").await;
 
-    // Cannot self-escalate: staff doesn't hold system_config themselves.
+    // Cannot self-escalate: staff doesn't hold integrations themselves.
     let (status, _) = json_request(
         router.clone(),
         "POST",
         &format!("/api/admin/users/{staff_id}/permissions"),
-        json!({ "scope_type": "admin", "org_id": null, "resource": "system_config", "actions": ["manage"] }),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "integrations", "actions": ["manage"] }),
         Some(&staff_token),
     )
     .await;
@@ -498,7 +498,7 @@ async fn manage_scoped_staff_cannot_grant_a_permission_they_do_not_hold_themselv
         router.clone(),
         "POST",
         &format!("/api/admin/users/{target_id}/permissions"),
-        json!({ "scope_type": "admin", "org_id": null, "resource": "system_config", "actions": ["manage"] }),
+        json!({ "scope_type": "admin", "org_id": null, "resource": "integrations", "actions": ["manage"] }),
         Some(&staff_token),
     )
     .await;
@@ -510,6 +510,101 @@ async fn manage_scoped_staff_cannot_grant_a_permission_they_do_not_hold_themselv
         "POST",
         &format!("/api/admin/users/{target_id}/permissions"),
         json!({ "scope_type": "admin", "org_id": null, "resource": "user", "actions": ["view"] }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_access_is_saved_as_areas_with_levels(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    let (status, catalog) = json_request(router.clone(), "GET", "/api/admin/permissions/catalog", Value::Null, Some(&admin_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(catalog["resources"].as_array().unwrap().iter().any(|r| r == "integrations"));
+    assert_eq!(catalog["levels"], json!(["view", "write", "manage"]));
+
+    let (status, grants) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/admin/users/{target_id}/admin-access"),
+        json!({ "access": [{ "resource": "integrations", "level": "write" }, { "resource": "support", "level": "view" }] }),
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let integrations = grants.as_array().unwrap().iter().find(|g| g["resource"] == "integrations").unwrap();
+    assert_eq!(integrations["actions"], json!(["view", "write"]));
+
+    // View on support lets them read it, not make keys; models they have no access to.
+    let token = login_via_api(router.clone(), "target@example.com").await;
+    let (status, _) = json_request(router.clone(), "GET", "/api/admin/support/articles", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = json_request(router.clone(), "POST", "/api/admin/support/keys", json!({ "name": "x" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = json_request(router.clone(), "GET", "/api/admin/settings/llm/models", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Saving again replaces the whole role.
+    let (status, grants) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/admin/users/{target_id}/admin-access"),
+        json!({ "access": [{ "resource": "models", "level": "manage" }] }),
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(grants.as_array().unwrap().len(), 1);
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/admin/users/{target_id}/admin-access"),
+        json!({ "access": [{ "resource": "billing", "level": "view" }] }),
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_access_cannot_go_beyond_what_the_saver_holds(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    register_via_api(router.clone(), "staff@example.com").await;
+    let staff_id = user_id_by_email(&pool, "staff@example.com").await;
+    json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/admin/users/{staff_id}/admin-access"),
+        json!({ "access": [{ "resource": "user", "level": "manage" }, { "resource": "support", "level": "view" }] }),
+        Some(&admin_token),
+    )
+    .await;
+    let staff_token = login_via_api(router.clone(), "staff@example.com").await;
+    register_via_api(router.clone(), "target@example.com").await;
+    let target_id = user_id_by_email(&pool, "target@example.com").await;
+
+    let (status, _) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/admin/users/{target_id}/admin-access"),
+        json!({ "access": [{ "resource": "support", "level": "write" }] }),
+        Some(&staff_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = json_request(
+        router,
+        "PUT",
+        &format!("/api/admin/users/{target_id}/admin-access"),
+        json!({ "access": [{ "resource": "support", "level": "view" }] }),
         Some(&staff_token),
     )
     .await;

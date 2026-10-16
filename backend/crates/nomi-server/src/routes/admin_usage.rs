@@ -8,7 +8,6 @@ use serde::Deserialize;
 use nomi_auth::extractor::AuthClaims;
 use nomi_usage::admin::AdminUsage;
 
-use super::settings::require_system_config_permission;
 use crate::app::AppState;
 
 #[derive(Deserialize)]
@@ -23,7 +22,7 @@ pub async fn get_usage(
     AuthClaims(claims): AuthClaims,
     Query(query): Query<UsageQuery>,
 ) -> Result<Json<AdminUsage>, (StatusCode, &'static str)> {
-    require_system_config_permission(&claims)?;
+    crate::routes::admin_access::require_admin(&claims, "dashboard", "view")?;
     let current = crate::bootstrap::current_embedding_model(&state.pool).await;
     let report = nomi_usage::admin::report(&state.pool, query.month.as_deref(), current.as_ref().map(|(p, m)| (p.as_str(), m.as_str())))
         .await

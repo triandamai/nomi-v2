@@ -172,6 +172,16 @@ pub async fn rename_org(
         .execute(&state.pool)
         .await
         .map_err(internal("failed to rename organization"))?;
+    // Shipyard shows the same name; it follows in the background.
+    if let Some(config) = state.shipyard.clone() {
+        let (pool, http) = (state.pool.clone(), state.http_client.clone());
+        tokio::spawn(async move {
+            let client = nomi_shipyard::Shipyard::new(&http, &config);
+            if let Err(e) = crate::shipyard::sync_org_name(&pool, &client, org_id).await {
+                tracing::warn!(error = ?e, %org_id, "couldn't rename the organization on Shipyard");
+            }
+        });
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

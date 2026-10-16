@@ -4,17 +4,10 @@ import { apiFetch } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
 import { setLanguageCookie } from '$lib/server/locale';
 import type { Preferences } from '$lib/types';
+import { ADMIN_AREAS, adminAccess, areaForPath, can } from '$lib/permissions';
 import type { LayoutServerLoad } from './$types';
 
-function hasAction(permissions: string[], resourcePrefix: string, action: string): boolean {
-	return permissions.some((p) => {
-		if (!p.startsWith(resourcePrefix)) return false;
-		const match = p.match(/\[(.*)\]$/);
-		return match ? match[1].split(',').includes(action) : false;
-	});
-}
-
-export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) => {
 	if (!locals.accessToken) {
 		throw redirect(303, '/login?redirect_to=/admin');
 	}
@@ -25,14 +18,17 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	}
 
 	const claims = (await response.json()) as { permissions: string[] };
-	const isStaff = claims.permissions.some((permission) => permission.startsWith('nomi:admin:'));
-	if (!isStaff) {
+	const access = adminAccess(claims.permissions);
+	const first = ADMIN_AREAS.find((area) => can(access, area.resource));
+	if (!first) {
 		throw redirect(303, '/?error=forbidden');
 	}
-
-	const canManageSystemConfig = hasAction(claims.permissions, 'nomi:admin:system_config:', 'manage');
-	const canViewUsers = hasAction(claims.permissions, 'nomi:admin:user:', 'view');
-	const canManageUsers = hasAction(claims.permissions, 'nomi:admin:user:', 'manage');
+	// A page of an area they can't see: the first area they can.
+	const area = areaForPath(url.pathname);
+	if (area && !can(access, area.resource)) {
+		const home = first.resource === 'dashboard' ? '/admin' : (first.paths[0] ?? '/admin');
+		if (home !== url.pathname) throw redirect(303, home);
+	}
 
 	const preferencesResponse = await apiFetch(fetch, cookies, '/api/preferences');
 	const preferences: Preferences = preferencesResponse.ok
@@ -45,5 +41,5 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	const appearance = preferencesResponse.ok ? formatAppearance(preferences.theme, preferences.accent_color) : null;
 	if (appearance && cookies.get(APPEARANCE_COOKIE) !== appearance) cookies.set(APPEARANCE_COOKIE, appearance, APPEARANCE_COOKIE_OPTIONS);
 
-	return { canManageSystemConfig, canViewUsers, canManageUsers, preferences };
+	return { access, preferences };
 };

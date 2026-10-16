@@ -26,15 +26,15 @@
 	import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
 	import IconTool from '$lib/components/icons/IconTool.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
+	import { can, type Level } from '$lib/permissions';
 
 	// The admin console's navigation: the same drawer, rail and phone sheet as the app's sidebar,
 	// marked "Admin" so it's never mistaken for the app itself.
 	let {
-		canManageSystemConfig,
-		canViewUsers,
+		access,
 		mobileOpen = $bindable(false),
 		onappearance,
-	}: { canManageSystemConfig: boolean; canViewUsers: boolean; mobileOpen?: boolean; onappearance: () => void } = $props();
+	}: { access: Record<string, Level>; mobileOpen?: boolean; onappearance: () => void } = $props();
 
 	const STORAGE_KEY = 'nomi:admin-sidebar-collapsed';
 	let collapsed = $state(false);
@@ -51,29 +51,24 @@
 	// The phone drawer always shows labels, whatever the desktop rail preference is.
 	const rail = $derived(collapsed && !mobileOpen);
 
-	const NAV = $derived([
-		...(canManageSystemConfig
-			? [
-					{ href: '/admin', label: m.admin_overview(), icon: IconDashboard },
-					{ href: '/admin/agents', label: m.admin_live_agents(), icon: IconAgents },
-					{ href: '/admin/dynamic-agents', label: m.admin_custom_agents(), icon: IconSparkle },
-					{ href: '/admin/tools', label: m.admin_tools(), icon: IconTool },
-					{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip },
-					{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory },
-					{ href: '/admin/usage', label: m.admin_usage(), icon: IconBarChart },
-					{ href: '/admin/support', label: m.admin_support(), icon: IconChatBubble },
-					{ href: '/admin/shipyard', label: m.admin_shipyard(), icon: IconRocket },
-					{ href: '/admin/maintenance', label: m.admin_maintenance(), icon: IconSettings },
-				]
-			: []),
-		...(canViewUsers
-			? [
-					{ href: '/admin/users', label: m.admin_users(), icon: IconPerson },
-					{ href: '/admin/plans', label: m.admin_plans(), icon: IconWallet },
-					{ href: '/admin/notifications', label: m.admin_notifications(), icon: IconInbox },
-				]
-			: []),
-	]);
+	// Each page shows for whoever can at least view its area.
+	const NAV = $derived(
+		[
+			{ href: '/admin', label: m.admin_overview(), icon: IconDashboard, area: 'dashboard' },
+			{ href: '/admin/agents', label: m.admin_live_agents(), icon: IconAgents, area: 'dashboard' },
+			{ href: '/admin/usage', label: m.admin_usage(), icon: IconBarChart, area: 'dashboard' },
+			{ href: '/admin/dynamic-agents', label: m.admin_custom_agents(), icon: IconSparkle, area: 'agents' },
+			{ href: '/admin/tools', label: m.admin_tools(), icon: IconTool, area: 'tools' },
+			{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip, area: 'models' },
+			{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory, area: 'models' },
+			{ href: '/admin/integrations', label: m.admin_integrations(), icon: IconRocket, area: 'integrations' },
+			{ href: '/admin/support', label: m.admin_support(), icon: IconChatBubble, area: 'support' },
+			{ href: '/admin/users', label: m.admin_users(), icon: IconPerson, area: 'user' },
+			{ href: '/admin/plans', label: m.admin_plans(), icon: IconWallet, area: 'plans' },
+			{ href: '/admin/notifications', label: m.admin_notifications(), icon: IconInbox, area: 'notifications' },
+			{ href: '/admin/maintenance', label: m.admin_maintenance(), icon: IconSettings, area: 'maintenance' },
+		].filter((item) => can(access, item.area)),
+	);
 
 	function isActive(href: string): boolean {
 		const path = page.url.pathname;
