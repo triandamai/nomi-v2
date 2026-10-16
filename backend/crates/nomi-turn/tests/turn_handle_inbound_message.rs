@@ -248,7 +248,13 @@ async fn chitchat_turn_keeps_only_the_last_20_messages_ordered_oldest_first(pool
     .await
     .unwrap();
 
-    let base = chrono::Utc::now();
+    // Taken from Postgres, not the test process: the bootstrap rows and "latest" get the
+    // database's own `now()`, so a host clock that differs from the database's (Postgres in a
+    // Docker/Colima VM or on another machine) would otherwise sort the seeded rows around them.
+    let base: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     // Alternating between the person (odd) and the crew (even), as a real chat does: runs from
     // one side are merged into one turn (fetch_recent_messages), which would hide the window.
     for i in 0..25 {
