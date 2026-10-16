@@ -35,6 +35,12 @@ pub async fn get(State(state): State<AppState>) -> Result<Json<Maintenance>, (St
     Ok(Json(load(&state.pool).await?))
 }
 
+/// `GET /api/admin/maintenance`: the same, for the admin page.
+pub async fn admin_get(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Maintenance>, (StatusCode, &'static str)> {
+    crate::routes::admin_access::require_admin(&claims, "maintenance", "view")?;
+    Ok(Json(load(&state.pool).await?))
+}
+
 #[derive(Deserialize)]
 pub struct MaintenanceInput {
     pub enabled: bool,

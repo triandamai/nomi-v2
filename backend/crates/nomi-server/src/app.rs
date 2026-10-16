@@ -181,7 +181,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/dashboard", get(admin_dashboard_routes::get_dashboard))
         .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
         .route("/api/maintenance", get(crate::routes::maintenance::get))
-        .route("/api/admin/maintenance", put(crate::routes::maintenance::put))
+        .route("/api/admin/maintenance", get(crate::routes::maintenance::admin_get).put(crate::routes::maintenance::put))
         .route("/api/support/v1/ask", post(crate::routes::support::ask))
         .route("/api/admin/support/articles", get(crate::routes::support::list_articles).post(crate::routes::support::create_article))
         .route(

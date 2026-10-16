@@ -352,7 +352,7 @@
 	"home_afternoon": "Afternoon",
 	"home_all_chats": "All chats",
 	"home_back": "Back to Home",
-	"home_enter_hint": "Enter to send · Shift+Enter for a new line",
+	"home_enter_hint": "Enter for a new line · send with the button",
 	"home_evening": "Evening",
 	"home_forbidden": "That account does not have admin access.",
 	"home_from_agent": "From {agent}",
@@ -1914,5 +1914,11 @@
 	"chatpage_personality_history": "Past personalities",
 	"chatpage_personality_is_default": "default",
 	"chatpage_use_here": "This chat",
-	"chatpage_use_everywhere": "All chats"
+	"chatpage_use_everywhere": "All chats",
+	"maintenance_until_hint": "Leave empty if you don't know yet: people see “We'll be back soon”.",
+	"maintenance_until_time": "Time",
+	"maintenance_back_soon": "We'll be back soon.",
+	"integ_webhook_missing": "Nomi's webhook isn't set up on Shipyard",
+	"integ_webhook_missing_hint": "Without it Nomi only hears about deploys and crashes when it catches up every 10 minutes. Registering creates the endpoint with a new signing secret that Nomi keeps.",
+	"integ_register_webhook": "Register with Shipyard"
 }

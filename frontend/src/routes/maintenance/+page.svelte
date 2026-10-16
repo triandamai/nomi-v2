@@ -30,7 +30,7 @@
 	<StatusScene variant="maintenance" />
 	<h1 class="status__title">{m.maintenance_title()}</h1>
 	<p class="status__text">{state.message || m.maintenance_default()}</p>
-	{#if back}<p class="status__meta">{m.maintenance_back_at({ when: back })}</p>{/if}
+	<p class="status__meta">{back ? m.maintenance_back_at({ when: back }) : m.maintenance_back_soon()}</p>
 	<p class="status__meta" role="status">{state.enabled ? m.maintenance_watching() : m.maintenance_over()}</p>
 </main>
 

@@ -509,6 +509,9 @@ fn describe_pending_action(tool_name: &str, input: &serde_json::Value, locale: L
     }
 }
 
+/// The personality agent's tools that change which personality a chat replies in.
+const PERSONALITY_TOOL_NAMES: [&str; 3] = ["set_personality", "reset_chat_personality", "rollback_personality"];
+
 /// After an agent answers in chat (a reply, or the summary it finished with), queues the exchange
 /// so the memory worker can save anything lasting the person said. Never waits on a model call.
 async fn learn_from_turn(conn: &mut PoolConnection<Postgres>, user_id: Uuid, session_id: Uuid, messages: &[LlmMessage], answer: &str) {
@@ -1215,6 +1218,13 @@ pub async fn resolve_tool_batch(
             // Tool output (command output, provider errors) never carries a secret onward.
             let result_text = nomi_llm::redact::redacted(&result_text);
             log_tool_call(conn, session_id, agent_session_id, agent.agent_type().as_ref(), name, input, &result_text, is_error).await;
+
+            // A personality change shows in the chat's personality menu straight away.
+            if !is_error && PERSONALITY_TOOL_NAMES.contains(&name.as_str()) {
+                if let Some((publisher, _)) = mqtt {
+                    let _ = publisher.publish(session_id, &StreamEnvelope::PersonalityChanged).await;
+                }
+            }
 
             // A tool that returns a block (a table, a file change, a Connect card) means it to be
             // seen, whether or not the agent narrates the rest of its tool calls.

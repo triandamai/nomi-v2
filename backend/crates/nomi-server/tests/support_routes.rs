@@ -188,8 +188,14 @@ async fn maintenance_mode_is_public_to_read_and_admin_to_change(pool: PgPool) {
     let (status, state) = send(router.clone(), "PUT", "/api/admin/maintenance", Some(&admin), Some(json!({ "enabled": true, "message": "Upgrading the database" }))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(state["message"], "Upgrading the database");
-    let (_, state) = send(router, "GET", "/api/maintenance", None, None).await;
+    let (_, state) = send(router.clone(), "GET", "/api/maintenance", None, None).await;
     assert_eq!(state["enabled"], true);
+    // The admin page reads it back from the admin route; members can't.
+    let (status, state) = send(router.clone(), "GET", "/api/admin/maintenance", Some(&admin), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(state["message"], "Upgrading the database");
+    let (status, _) = send(router, "GET", "/api/admin/maintenance", Some(&member), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

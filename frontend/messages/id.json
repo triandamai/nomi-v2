@@ -352,7 +352,7 @@
 	"home_afternoon": "Selamat siang",
 	"home_all_chats": "Semua obrolan",
 	"home_back": "Kembali ke Beranda",
-	"home_enter_hint": "Enter untuk kirim · Shift+Enter untuk baris baru",
+	"home_enter_hint": "Enter untuk baris baru · kirim dengan tombol",
 	"home_evening": "Selamat malam",
 	"home_forbidden": "Maaf, akun itu tidak memiliki akses admin.",
 	"home_from_agent": "Dari {agent}",
@@ -1914,5 +1914,11 @@
 	"chatpage_personality_history": "Kepribadian sebelumnya",
 	"chatpage_personality_is_default": "bawaan",
 	"chatpage_use_here": "Chat ini",
-	"chatpage_use_everywhere": "Semua chat"
+	"chatpage_use_everywhere": "Semua chat",
+	"maintenance_until_hint": "Kosongkan jika belum tahu: orang akan melihat “Kami segera kembali”.",
+	"maintenance_until_time": "Jam",
+	"maintenance_back_soon": "Kami segera kembali.",
+	"integ_webhook_missing": "Webhook Nomi belum terpasang di Shipyard",
+	"integ_webhook_missing_hint": "Tanpa itu Nomi hanya tahu soal deploy dan crash saat mengejar ketinggalan tiap 10 menit. Mendaftarkannya membuat endpoint dengan rahasia baru yang disimpan Nomi.",
+	"integ_register_webhook": "Daftarkan ke Shipyard"
 }

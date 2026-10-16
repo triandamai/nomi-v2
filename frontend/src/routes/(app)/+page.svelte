@@ -69,13 +69,6 @@
 		input?.focus();
 	}
 
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-			event.preventDefault();
-			if (text.trim()) (event.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
-		}
-	}
-
 </script>
 
 <div class="home">
@@ -114,7 +107,6 @@
 						rows="2"
 						placeholder={m.home_placeholder()}
 						class="composer__input"
-						onkeydown={onKeydown}
 					></textarea>
 					<div class="composer__bar">
 						<span class="nomi-meta">{m.home_enter_hint()}</span>
