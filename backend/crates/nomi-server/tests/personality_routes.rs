@@ -128,3 +128,49 @@ async fn a_second_users_history_never_leaks_into_the_first_users_response(pool: 
     let (_, body) = json_request(router, "GET", "/api/personality/history", Value::Null, Some(&token2)).await;
     assert_eq!(body["versions"].as_array().unwrap().len(), 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_can_have_its_own_personality_apart_from_the_default(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "persona@example.com").await;
+    let (_, a) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let (_, b) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let (chat_a, chat_b) = (a["session_id"].as_str().unwrap().to_string(), b["session_id"].as_str().unwrap().to_string());
+
+    // A default for all chats.
+    let (status, body) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/sessions/{chat_a}/personality"),
+        json!({ "description": "Be warm.", "scope": "all_chats" }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["default"], "Be warm.");
+    assert_eq!(body["chat"], Value::Null);
+
+    // Chat A gets its own; chat B keeps the default.
+    let (_, body) = json_request(
+        router.clone(),
+        "PUT",
+        &format!("/api/sessions/{chat_a}/personality"),
+        json!({ "description": "Talk like a pirate." }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(body["chat"], "Talk like a pirate.");
+    let (_, body) = json_request(router.clone(), "GET", &format!("/api/sessions/{chat_b}/personality"), Value::Null, Some(&token)).await;
+    assert_eq!(body["chat"], Value::Null);
+    assert_eq!(body["default"], "Be warm.");
+
+    // Back to the default.
+    let (status, body) = json_request(router.clone(), "DELETE", &format!("/api/sessions/{chat_a}/personality"), Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["chat"], Value::Null);
+
+    // Someone else's chat is off limits.
+    let other = register_and_login(router.clone(), "other@example.com").await;
+    let (status, _) = json_request(router, "GET", &format!("/api/sessions/{chat_a}/personality"), Value::Null, Some(&other)).await;
+    assert!(status == StatusCode::NOT_FOUND || status == StatusCode::FORBIDDEN, "{status}");
+}

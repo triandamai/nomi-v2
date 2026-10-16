@@ -196,12 +196,12 @@ async fn get_user_identity(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -
 /// run_agent_turn's full tool loop; this is a deliberate, documented design decision, not an
 /// oversight, see the design spec). Sharing between the functions in this file, unlike sharing
 /// with run_agent_turn, is a plain within-crate dedup with no such tradeoff.
-async fn personalize_system_prompt(conn: &mut PoolConnection<Postgres>, user_id: Uuid, base: String) -> String {
+async fn personalize_system_prompt(conn: &mut PoolConnection<Postgres>, user_id: Uuid, session_id: Uuid, base: String) -> String {
     let mut system = base;
     if let Some(identity) = get_user_identity(conn, user_id).await {
         system = format!("{system}\n\nYou're speaking with {identity}.");
     }
-    if let Some(p) = nomi_agent_core::personality::get_current_personality(conn, user_id).await {
+    if let Some(p) = nomi_agent_core::personality::personality_for_chat(conn, user_id, session_id).await {
         system = format!("{system}\n\nAdopt this personality in your reply: {p}");
     }
     let locale = nomi_agent_core::user_locale(conn, user_id).await;
@@ -215,6 +215,7 @@ pub async fn phrase_delegation_started(
     provider: &dyn nomi_llm::LlmProvider,
     conn: &mut PoolConnection<Postgres>,
     user_id: Uuid,
+    session_id: Uuid,
     target_agent_type: &str,
     target_display_name: &str,
     task: &str,
@@ -228,7 +229,7 @@ pub async fn phrase_delegation_started(
          result. One sentence, no matter how expressive the personality is.\n\n\
          What was asked: {task}"
     );
-    let system = personalize_system_prompt(conn, user_id, base).await;
+    let system = personalize_system_prompt(conn, user_id, session_id, base).await;
     let locale = nomi_agent_core::user_locale(conn, user_id).await;
 
     let request = nomi_llm::LlmRequest {

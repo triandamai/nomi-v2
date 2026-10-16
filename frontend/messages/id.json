@@ -1906,5 +1906,13 @@
 	"appearance_more": "Lainnya",
 	"appearance_more_count": "{count} tema lainnya",
 	"appearance_all_themes": "Semua tema",
-	"appearance_all_themes_lede": "Setiap tema mewarnai ulang Nomi dan konsol admin, dalam mode terang dan gelap."
+	"appearance_all_themes_lede": "Setiap tema mewarnai ulang Nomi dan konsol admin, dalam mode terang dan gelap.",
+	"chatpage_personality_this_chat": "Khusus chat ini",
+	"chatpage_personality_default": "Bawaan kamu (semua chat)",
+	"chatpage_personality_reset": "Pakai bawaan di sini",
+	"chatpage_personality_hint": "Minta Nomi untuk mengubahnya. Bilang “di semua chat” agar jadi bawaan.",
+	"chatpage_personality_history": "Kepribadian sebelumnya",
+	"chatpage_personality_is_default": "bawaan",
+	"chatpage_use_here": "Chat ini",
+	"chatpage_use_everywhere": "Semua chat"
 }

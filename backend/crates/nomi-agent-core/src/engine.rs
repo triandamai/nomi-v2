@@ -639,7 +639,7 @@ pub async fn run_agent_turn(
     let system_prompt = format!("{system_prompt}\n\n{}", locale.reply_instruction());
 
     let system_prompt = if agent.uses_personality() {
-        match crate::personality::get_current_personality(conn, user_id).await {
+        match crate::personality::personality_for_chat(conn, user_id, session_id).await {
             Some(p) => format!("{system_prompt}\n\nAdopt this personality in your replies: {p}"),
             None => system_prompt,
         }

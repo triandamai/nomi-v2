@@ -1906,5 +1906,13 @@
 	"appearance_more": "More",
 	"appearance_more_count": "{count} more themes",
 	"appearance_all_themes": "All themes",
-	"appearance_all_themes_lede": "Each one recolours Nomi and the admin console, in light and dark."
+	"appearance_all_themes_lede": "Each one recolours Nomi and the admin console, in light and dark.",
+	"chatpage_personality_this_chat": "This chat only",
+	"chatpage_personality_default": "Your default (all chats)",
+	"chatpage_personality_reset": "Use my default here",
+	"chatpage_personality_hint": "Ask Nomi to change it. Say “in all chats” to make it your default.",
+	"chatpage_personality_history": "Past personalities",
+	"chatpage_personality_is_default": "default",
+	"chatpage_use_here": "This chat",
+	"chatpage_use_everywhere": "All chats"
 }

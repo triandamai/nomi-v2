@@ -174,6 +174,14 @@ export interface PersonalityHistoryResponse {
 	versions: PersonalityVersion[];
 }
 
+/** Which personality a chat replies in (GET /api/sessions/:id/personality). */
+export interface ChatPersonality {
+	/** This chat's own personality, when it has one. */
+	chat: string | null;
+	/** The person's default, used by chats without their own. */
+	default: string | null;
+}
+
 export type MemoryKind = 'preference' | 'person' | 'routine' | 'goal' | 'fact';
 
 /** Why a reply missed, given with a thumbs-down. */
