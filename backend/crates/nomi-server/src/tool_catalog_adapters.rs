@@ -69,8 +69,16 @@ impl CatalogTool for SetPersonality {
 struct ListPersonalityVersions;
 #[async_trait]
 impl CatalogTool for ListPersonalityVersions {
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_personality::list_personality_versions(conn, user_id).await.map(ToolOutcome::text)
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+        nomi_agent_personality::list_personality_versions(conn, session_id, user_id).await.map(ToolOutcome::text)
+    }
+}
+
+struct ResetChatPersonality;
+#[async_trait]
+impl CatalogTool for ResetChatPersonality {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+        nomi_agent_personality::reset_chat_personality(conn, session_id).await.map(ToolOutcome::text)
     }
 }
 
@@ -104,6 +112,10 @@ pub fn non_coding_entries() -> HashMap<&'static str, (ToolDefinition, Box<dyn Ca
     entries.insert(
         "list_personality_versions",
         (nomi_agent_personality::list_personality_versions_tool_definition(), Box::new(ListPersonalityVersions)),
+    );
+    entries.insert(
+        "reset_chat_personality",
+        (nomi_agent_personality::reset_chat_personality_tool_definition(), Box::new(ResetChatPersonality)),
     );
     entries.insert(
         "rollback_personality",

@@ -19,6 +19,8 @@ pub enum StreamEnvelope {
     MessageCreated { message_id: Uuid },
     /// The chat got a new name (the person renamed it, or asked the crew to).
     SessionRenamed { title: String },
+    /// The personality this chat replies in changed (set, reset or rolled back): the page reloads it.
+    PersonalityChanged,
     /// An existing message's content_blocks changed in place (a todo list step flipped, an
     /// approval was decided) — the frontend fetches it and replaces its existing entry.
     MessageUpdated { message_id: Uuid },

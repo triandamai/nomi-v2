@@ -118,6 +118,7 @@ email:
   tagline: "Nomi · kru kecil para agen yang mengingat & membangun untuk Anda."
 notify:
   open_in_app: "Buka Nomi lalu ke %{where} untuk melihatnya."
+  open_button: "Buka di Nomi"
   reason_account: "Kamu menerima email ini karena ada perubahan di akun Nomi-mu. Email seperti ini bisa dimatikan di Notifikasi."
   reason_promo: "Kamu menerima email ini karena mengizinkan kabar dan penawaran dari Nomi. Email seperti ini bisa dimatikan di Notifikasi."
 quota:
@@ -137,9 +138,11 @@ subscription:
 team:
   invite_title: "%{inviter} mengundang Anda ke %{org} di Nomi"
   invite_body: "Bergabunglah dengan %{org} untuk mengerjakan proyeknya bersama kru. Undangan berlaku 7 hari."
-  invite_link: "Terima di sini: %{link}"
+  invite_button: "Terima undangan"
+  invite_link: "Masuk ke Nomi dengan alamat ini untuk menerimanya."
   invite_in_app: "Masuk ke Nomi dengan alamat ini dan buka %{where} untuk menerimanya."
-  invite_signup_link: "Buat akun Nomi dengan alamat ini, lalu terima undangannya: %{link}"
+  invite_signup_button: "Buat akun dan bergabung"
+  invite_signup_link: "Buat akun Nomi dengan alamat ini; undangannya langsung terbuka setelahnya."
   invite_signup_in_app: "Buat akun Nomi dengan alamat ini, lalu buka %{where} untuk menerimanya."
   invite_reason: "Anda menerima email ini karena %{inviter} mengundang alamat ini ke tim di Nomi. Jika Anda tidak mengenalnya, abaikan saja."
   joined_title: "%{name} bergabung dengan %{org}"

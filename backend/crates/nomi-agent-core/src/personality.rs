@@ -5,6 +5,71 @@ use uuid::Uuid;
 
 use crate::error::TurnError;
 
+/// The personality a chat replies in: its own when it has one, else the person's default.
+pub async fn personality_for_chat(conn: &mut PoolConnection<Postgres>, user_id: Uuid, session_id: Uuid) -> Option<String> {
+    match chat_personality(conn, session_id).await {
+        Some(own) => Some(own),
+        None => get_current_personality(conn, user_id).await,
+    }
+}
+
+/// The chat's own personality, when it was given one.
+pub async fn chat_personality(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Option<String> {
+    sqlx::query_scalar("SELECT description FROM session_personality WHERE session_id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Gives one chat its own personality; other chats keep theirs (or the default). Recorded as a
+/// `PersonalityChanged` event with `scope: "chat"`.
+pub async fn set_chat_personality(
+    conn: &mut PoolConnection<Postgres>,
+    session_id: Uuid,
+    agent_session_id: Option<Uuid>,
+    user_id: Uuid,
+    description: &str,
+) -> Result<(), TurnError> {
+    let mut tx = conn.begin().await?;
+    let old_description: Option<String> = sqlx::query_scalar("SELECT description FROM session_personality WHERE session_id = $1")
+        .bind(session_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO session_personality (session_id, description, set_by, updated_at) VALUES ($1, $2, $3, now()) \
+         ON CONFLICT (session_id) DO UPDATE SET description = $2, set_by = $3, updated_at = now()",
+    )
+    .bind(session_id)
+    .bind(description)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) \
+         VALUES ($1, (SELECT id FROM agent_sessions WHERE id = $2), 'personality', 'PersonalityChanged', $3)",
+    )
+    .bind(session_id)
+    .bind(agent_session_id)
+    .bind(serde_json::json!({ "scope": "chat", "old_description": old_description, "new_description": description }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Takes a chat back to the person's default personality. False when it had none of its own.
+pub async fn clear_chat_personality(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<bool, TurnError> {
+    Ok(sqlx::query("DELETE FROM session_personality WHERE session_id = $1")
+        .bind(session_id)
+        .execute(&mut **conn)
+        .await?
+        .rows_affected()
+        > 0)
+}
+
+/// The person's default personality: every chat without its own uses it.
 pub async fn get_current_personality(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> Option<String> {
     sqlx::query_scalar("SELECT description FROM user_personality WHERE user_id = $1")
         .bind(user_id)
@@ -14,7 +79,8 @@ pub async fn get_current_personality(conn: &mut PoolConnection<Postgres>, user_i
         .flatten()
 }
 
-/// Upserts `user_personality`, appends a new row to `user_personality_versions`, and records a
+/// The personality for all of the person's chats: upserts `user_personality` (the default), and
+/// drops the chat-only personalities in their own chats so it applies everywhere. Appends a new row to `user_personality_versions`, and records a
 /// `PersonalityChanged` `agent_events` row with `{old_description, new_description, new_version}`
 /// (`old_description` is `null` on a user's first-ever change) — all in one transaction.
 /// `session_id`/`agent_session_id` are `None` for changes with no chat turn behind them (e.g. a
@@ -64,6 +130,12 @@ pub async fn set_personality(
     .execute(&mut *tx)
     .await?;
 
+    // "Everywhere" means every chat, including ones that had their own.
+    sqlx::query("DELETE FROM session_personality WHERE session_id IN (SELECT id FROM sessions WHERE user_id = $1)")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query(
         "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) \
          VALUES ($1, (SELECT id FROM agent_sessions WHERE id = $2), 'personality', 'PersonalityChanged', $3)",
@@ -71,6 +143,7 @@ pub async fn set_personality(
     .bind(session_id)
     .bind(agent_session_id)
     .bind(serde_json::json!({
+        "scope": "all_chats",
         "old_description": old_description,
         "new_description": new_description,
         "new_version": new_version,

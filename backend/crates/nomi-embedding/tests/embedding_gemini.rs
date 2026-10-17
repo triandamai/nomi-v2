@@ -1,7 +1,7 @@
 use nomi_embedding::gemini::GeminiEmbeddingProvider;
 use nomi_embedding::{EmbeddingError, EmbeddingProvider};
 use serde_json::json;
-use wiremock::matchers::{body_partial_json, method, path, query_param};
+use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]

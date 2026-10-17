@@ -114,6 +114,7 @@
 		bind:this={panelEl}
 		popover="auto"
 		role="menu"
+		tabindex="-1"
 		class="m3-menu-panel"
 		ontoggle={handleToggle}
 		onkeydown={handleKeydown}

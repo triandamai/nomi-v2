@@ -52,6 +52,7 @@ pub fn code_email(challenge: &Challenge, code: &str, locale: Locale) -> Email {
         title: locale.t(title),
         paragraphs: vec![locale.t(intro)],
         highlight: Some(code.to_string()),
+        action: None,
         notes: vec![locale.tf("sign_in.expires", &[("minutes", &minutes)]), locale.t(warning)],
         crew_label: locale.t("email.crew_label"),
         footer: format!("{} {}", locale.t(reason), locale.t("email.tagline")),

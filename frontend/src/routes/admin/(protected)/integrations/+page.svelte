@@ -365,6 +365,18 @@
 		{/if}
 	{:else if tab === 'webhooks'}
 		{#if webhooks}
+			<!-- Nomi's own endpoint isn't on Shipyard (never registered, or deleted there): put it back. -->
+			{#if !webhooks.own_id && status && !status.webhook_from_env}
+				<div class="setup">
+					<span class="setup__text">
+						<strong>{m.integ_webhook_missing()}</strong>
+						<span class="muted small">{m.integ_webhook_missing_hint()}</span>
+					</span>
+					{#if canManage}
+						<Button variant="filled" size="s" disabled={busy === 'register'} onclick={registerWebhook}>{m.integ_register_webhook()}</Button>
+					{/if}
+				</div>
+			{/if}
 			{#if webhooks.endpoints.length === 0}
 				<p class="muted">{m.integ_no_endpoints()}</p>
 			{:else}
@@ -653,6 +665,23 @@
 		padding: 16px;
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-low);
+	}
+	.setup {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px 16px;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-high);
+	}
+	.setup__text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: min(100%, 240px);
+		flex: 1;
 	}
 	.integration__head {
 		display: flex;

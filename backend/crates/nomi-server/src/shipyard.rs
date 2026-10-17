@@ -138,7 +138,7 @@ pub async fn register_webhook_on_start(pool: PgPool, http: reqwest::Client, conf
             return;
         }
     }
-    let Some(app_url) = std::env::var("APP_URL").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) else {
+    let Some(app_url) = crate::public_url::app_url() else {
         tracing::warn!("Shipyard is set up but APP_URL isn't: set it so Nomi can register its webhook, or set SHIPYARD_WEBHOOK_SECRET");
         return;
     };

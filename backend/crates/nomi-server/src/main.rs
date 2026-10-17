@@ -40,6 +40,7 @@ async fn main() {
 
     // Notifications are emailed through the same SMTP settings as sign-in codes.
     nomi_server::notifications::init_mailer(nomi_mail::from_env());
+    nomi_server::public_url::warn_if_unknown();
 
     // Chat attachments go to the same bucket as avatars, or to disk without one.
     nomi_storage::blob::init_attachment_store(s3.clone());

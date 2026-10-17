@@ -5,6 +5,8 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import DatePicker from '$lib/components/m3/DatePicker.svelte';
+	import TimePicker from '$lib/components/m3/TimePicker.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { adminApi } from '$lib/adminApi';
 
@@ -12,16 +14,32 @@
 
 	let enabled = $state(false);
 	let message = $state('');
-	let until = $state('');
+	// When it's expected back: a day and (optionally) a time. No day means "back soon".
+	let untilDate = $state('');
+	let untilTime = $state('');
 	let saving = $state(false);
 	let saved = $state(false);
 	let error = $state<string | null>(null);
 
-	function toLocalInput(iso: string | null): string {
-		if (!iso) return '';
+	const pad = (n: number) => String(n).padStart(2, '0');
+
+	function fill(iso: string | null) {
+		if (!iso) {
+			untilDate = '';
+			untilTime = '';
+			return;
+		}
 		const d = new Date(iso);
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+		untilDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+		untilTime = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	}
+
+	/** The picked day and time in the admin's own timezone, or null for "back soon". */
+	function untilIso(): string | null {
+		if (!untilDate) return null;
+		const [y, mo, d] = untilDate.split('-').map(Number);
+		const [h, mi] = (untilTime || '00:00').split(':').map(Number);
+		return new Date(y, mo - 1, d, h, mi).toISOString();
 	}
 
 	$effect(() => {
@@ -29,7 +47,7 @@
 			.then((s) => {
 				enabled = s.enabled;
 				message = s.message;
-				until = toLocalInput(s.until);
+				fill(s.until);
 			})
 			.catch((e) => (error = (e as Error).message));
 	});
@@ -40,7 +58,7 @@
 		saved = false;
 		error = null;
 		try {
-			await adminApi('maintenance', { method: 'PUT', body: { enabled, message, until: until ? new Date(until).toISOString() : null } });
+			await adminApi('maintenance', { method: 'PUT', body: { enabled, message, until: untilIso() } });
 			saved = true;
 		} catch (e) {
 			error = (e as Error).message;
@@ -58,10 +76,12 @@
 		<Switch bind:checked={enabled} aria-label={m.maintenance_mode()} />
 	</label>
 	<TextField name="message" label={m.maintenance_message()} bind:value={message} maxlength={500} />
-	<label class="field">
-		<span class="field__label">{m.maintenance_until()}</span>
-		<input type="datetime-local" bind:value={until} />
-	</label>
+	<div class="when">
+		<DatePicker id="maintenance-day" label={m.maintenance_until()} bind:value={untilDate} supportingText={m.maintenance_until_hint()} />
+		{#if untilDate}
+			<TimePicker id="maintenance-time" label={m.maintenance_until_time()} bind:value={untilTime} step={15} />
+		{/if}
+	</div>
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 	{#if saved}<p class="ok" role="status">{m.maintenance_saved()}</p>{/if}
 	<div><Button type="submit" variant="filled" disabled={saving}>{m.support_save()}</Button></div>
@@ -97,24 +117,10 @@
 	.hint a {
 		color: var(--md-sys-color-primary);
 	}
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.field__label {
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
-		font-weight: 600;
-	}
-	.field input {
-		min-height: 44px;
-		padding: 0 12px;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: 8px;
-		background: var(--md-sys-color-surface);
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
+	.when {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+		gap: 12px;
 	}
 	.error {
 		margin: 0;

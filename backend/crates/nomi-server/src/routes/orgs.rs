@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
 use nomi_i18n::Locale;
+use nomi_mail::layout::Action;
 
 use crate::app::AppState;
 use crate::notifications::{self, Kind, Notice};
@@ -395,17 +396,17 @@ pub async fn create_invite(
             tracing::warn!(error = %e, "failed to notify an invited member");
         }
     }
-    let app_url = std::env::var("APP_URL").ok().map(|url| url.trim().trim_end_matches('/').to_string()).filter(|url| !url.is_empty());
-    let note = match (invitee.is_some(), app_url) {
-        (true, Some(url)) => locale.tf("team.invite_link", &[("link", &format!("{url}{open_path}"))]),
-        (true, None) => locale.tf("team.invite_in_app", &[("where", &path)]),
-        (false, Some(url)) => locale.tf("team.invite_signup_link", &[("link", &format!("{url}{open_path}"))]),
-        (false, None) => locale.tf("team.invite_signup_in_app", &[("where", &path)]),
+    let (action, note) = match (invitee.is_some(), crate::public_url::link(&open_path)) {
+        (true, Some(url)) => (Some(Action { label: locale.t("team.invite_button"), url }), locale.t("team.invite_link")),
+        (true, None) => (None, locale.tf("team.invite_in_app", &[("where", &path)])),
+        (false, Some(url)) => (Some(Action { label: locale.t("team.invite_signup_button"), url }), locale.t("team.invite_signup_link")),
+        (false, None) => (None, locale.tf("team.invite_signup_in_app", &[("where", &path)])),
     };
     notifications::email_address(
         email.clone(),
         title,
         vec![body],
+        action,
         vec![note],
         locale.tf("team.invite_reason", &[("inviter", &inviter)]),
         locale,

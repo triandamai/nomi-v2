@@ -8,8 +8,6 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconAgents from '$lib/components/icons/IconAgents.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
-	import List from '$lib/components/m3/List.svelte';
-	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import ModelKeySheet from '$lib/components/ModelKeySheet.svelte';
@@ -31,10 +29,13 @@
 		return selection.label;
 	});
 
-	const currentPersonalityLabel = $derived.by(() => {
-		const current = data.personality.versions.find((v) => v.is_current);
-		return current?.description ?? m.chatpage_not_set();
-	});
+	// What this chat replies in: its own personality, else the person's default.
+	const chatOwn = $derived(data.chatPersonality.chat);
+	const currentPersonalityLabel = $derived(chatOwn ?? data.chatPersonality.default ?? m.chatpage_not_set());
+	const closeAfter = () => async ({ update }: { update: () => Promise<void> }) => {
+		await update();
+		personalityMenuOpen = false;
+	};
 </script>
 
 <ChatThread
@@ -110,9 +111,16 @@
 				</IconButton>
 			{/snippet}
 			<div class="w-full">
-				<p class="md-label-medium px-2 pt-1 pb-2" style="color: var(--md-sys-color-on-surface-variant)">
-					{m.chatpage_personality_heading({ personality: currentPersonalityLabel })}
-				</p>
+				<div class="persona-now">
+					<span class="persona-now__label">{chatOwn ? m.chatpage_personality_this_chat() : m.chatpage_personality_default()}</span>
+					<span class="persona-now__text">{currentPersonalityLabel}</span>
+					{#if chatOwn}
+						<form method="POST" action="?/resetPersonality" use:enhance={closeAfter}>
+							<Button type="submit" variant="text">{m.chatpage_personality_reset()}</Button>
+						</form>
+					{/if}
+					<span class="persona-now__hint">{m.chatpage_personality_hint()}</span>
+				</div>
 				{#if form?.personalityError}
 					<p class="md-body-small mb-2 px-2" style="color: var(--md-sys-color-error)">{form.personalityError}</p>
 				{/if}
@@ -121,35 +129,90 @@
 						{m.chatpage_no_personality()}
 					</p>
 				{:else}
-					<List>
+					<p class="md-label-medium px-2 pt-2" style="color: var(--md-sys-color-on-surface-variant)">{m.chatpage_personality_history()}</p>
+					<ul class="persona-list">
 						{#each data.personality.versions as version (version.version)}
-							<ListItem
-								headline={version.description}
-								supportingText={`v${version.version} · ${new Date(version.created_at).toLocaleString(getLocale())}`}
-								selected={version.is_current}
-							>
-								{#snippet trailing()}
-									{#if !version.is_current}
-										<form
-											method="POST"
-											action="?/restorePersonality"
-											use:enhance={() => {
-												return async ({ update }) => {
-													await update();
-													personalityMenuOpen = false;
-												};
-											}}
-										>
-											<input type="hidden" name="version" value={version.version} />
-											<Button type="submit" variant="text">{m.chatpage_restore()}</Button>
+							<li class="persona-row" class:persona-row--active={version.description === currentPersonalityLabel}>
+								<span class="persona-row__text">{version.description}</span>
+								<span class="persona-row__meta">v{version.version} · {new Date(version.created_at).toLocaleDateString(getLocale())}{version.is_current ? ` · ${m.chatpage_personality_is_default()}` : ''}</span>
+								<span class="persona-actions">
+									{#if version.description !== chatOwn}
+										<form method="POST" action="?/usePersonality" use:enhance={closeAfter}>
+											<input type="hidden" name="description" value={version.description} />
+											<input type="hidden" name="scope" value="chat" />
+											<Button type="submit" variant="text">{m.chatpage_use_here()}</Button>
 										</form>
 									{/if}
-								{/snippet}
-							</ListItem>
+									{#if !version.is_current || chatOwn}
+										<form method="POST" action="?/usePersonality" use:enhance={closeAfter}>
+											<input type="hidden" name="description" value={version.description} />
+											<input type="hidden" name="scope" value="all_chats" />
+											<Button type="submit" variant="text">{m.chatpage_use_everywhere()}</Button>
+										</form>
+									{/if}
+								</span>
+							</li>
 						{/each}
-					</List>
+					</ul>
 				{/if}
 			</div>
 		</Menu>
 	{/snippet}
 </ChatThread>
+
+<style>
+	.persona-now {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		padding: 4px 8px 8px;
+	}
+	.persona-now__label {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+	.persona-now__text {
+		color: var(--md-sys-color-on-surface);
+		font-weight: 600;
+	}
+	.persona-now__hint {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+	}
+	.persona-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		max-height: 50vh;
+		margin: 4px 0 0;
+		padding: 0;
+		overflow-y: auto;
+		list-style: none;
+	}
+	.persona-row {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 8px 8px 2px;
+		border-radius: var(--md-sys-shape-corner-medium);
+	}
+	.persona-row--active {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.persona-row__text {
+		font-size: 0.875rem;
+		overflow-wrap: anywhere;
+	}
+	.persona-row__meta {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+	}
+	.persona-actions {
+		display: flex;
+		flex-wrap: wrap;
+		margin-left: -12px;
+	}
+</style>

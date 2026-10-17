@@ -118,6 +118,7 @@ email:
   tagline: "Nomi · a small crew of agents that remembers & builds for you."
 notify:
   open_in_app: "Open Nomi and go to %{where} to see it."
+  open_button: "Open in Nomi"
   reason_account: "You're getting this because something changed on your Nomi account. You can turn these emails off in Notifications."
   reason_promo: "You're getting this because you allowed news and offers from Nomi. You can turn these emails off in Notifications."
 quota:
@@ -137,9 +138,11 @@ subscription:
 team:
   invite_title: "%{inviter} invited you to %{org} on Nomi"
   invite_body: "Join %{org} to work on its projects together with the crew. The invite works for 7 days."
-  invite_link: "Accept it here: %{link}"
+  invite_button: "Accept the invite"
+  invite_link: "Sign in to Nomi with this address to accept it."
   invite_in_app: "Sign in to Nomi with this address and open %{where} to accept it."
-  invite_signup_link: "Create your Nomi account with this address, then accept the invite: %{link}"
+  invite_signup_button: "Create your account and join"
+  invite_signup_link: "Create your Nomi account with this address; the invite opens right after."
   invite_signup_in_app: "Create a Nomi account with this address, then open %{where} to accept it."
   invite_reason: "You're getting this because %{inviter} invited this address to a team on Nomi. If you don't know them, you can ignore it."
   joined_title: "%{name} joined %{org}"

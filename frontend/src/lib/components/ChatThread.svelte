@@ -345,10 +345,10 @@
 		void tick().then(() => messageInput?.form?.requestSubmit());
 	});
 
-	let localMessages = $state(messages);
+	let localMessages = $state(untrack(() => messages));
 
 	let currentPhase = $state<{ phase: string; detail: string | null } | null>(
-		agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null,
+		untrack(() => (agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null)),
 	);
 
 	// A retry counts down to its next attempt, so the clock ticks while one is showing.
@@ -445,17 +445,6 @@
 		};
 		fit();
 		return { update: () => requestAnimationFrame(fit) };
-	}
-
-	// Enter sends, Shift+Enter breaks the line — the textarea grows with its content.
-	function onComposerKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-			event.preventDefault();
-			const field = event.currentTarget as HTMLTextAreaElement;
-			// While the crew works, only a stop command goes through (anything else would queue
-			// behind the running turn).
-			if (canSend && (!isWorking || STOP_COMMAND.test(draft))) field.form?.requestSubmit();
-		}
 	}
 
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -667,6 +656,8 @@
 				} else if (envelope.kind === 'SessionRenamed') {
 					if (typeof envelope.title === 'string') shownTitle = envelope.title;
 					invalidateAll(); // the sidebar and chat list show the new name too
+				} else if (envelope.kind === 'PersonalityChanged') {
+					invalidateAll(); // the personality menu shows the new one
 				} else if (envelope.kind === 'AgentDelegationUpdated') {
 					invalidateAll();
 				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
@@ -938,7 +929,6 @@
 							placeholder={project ? m.project_placeholder() : m.chat_placeholder()}
 							class="composer__input"
 							use:autoGrow={draft}
-							onkeydown={onComposerKeydown}
 							onpaste={onPaste}
 							onfocus={() => (dictationBase = draft)}
 						></textarea>
@@ -1355,7 +1345,7 @@
 	.composer__input {
 		flex: 1;
 		min-width: 0;
-		align-self: center;
+		align-self: stretch;
 		max-height: 200px;
 		overflow-y: auto;
 		field-sizing: content;
@@ -1377,8 +1367,9 @@
 		align-items: flex-end;
 		gap: 6px;
 	}
+	/* The buttons sit at the bottom of the box, beside the last line, however long the message. */
 	.composer__row > :global(*) {
-		align-self: center;
+		align-self: flex-end;
 	}
 	/* Bigger screens: a long message grows the box (to most of the screen) instead of scrolling. */
 	@media (min-width: 768px) {

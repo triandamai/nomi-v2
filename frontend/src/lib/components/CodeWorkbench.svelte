@@ -3,7 +3,7 @@
      bar. On narrow panes the explorer slides over the editor and hides once a file is picked. -->
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
-	import CodeEditor from './CodeEditor.svelte';
+	import type CodeEditorComponent from './CodeEditor.svelte';
 	import { buildFileTree, ancestorFolders, type TreeNode } from '$lib/code/fileTree';
 	import {
 		parentFolder,
@@ -53,7 +53,9 @@
 	let closed = $state(new Set<string>());
 	let explorerOpen = $state(true);
 	let cursor = $state({ line: 1, column: 1 });
-	let editor: CodeEditor | undefined = $state();
+	let editor: CodeEditorComponent | undefined = $state();
+	// The editor (CodeMirror) is its own download, fetched when a file is first opened.
+	const codeEditor = () => import('./CodeEditor.svelte');
 	let width = $state(0);
 	const narrow = $derived(width > 0 && width < 640);
 
@@ -598,14 +600,16 @@
 			<div class="editor-body">
 				{#if activePath}
 					{#key `${activePath}:${contentKey}`}
-						<CodeEditor
-							bind:this={editor}
-							path={activePath}
-							value={content}
-							{onSave}
-							onDirty={(d) => (dirty = d)}
-							onCursor={(line, column) => (cursor = { line, column })}
-						/>
+						{#await codeEditor() then { default: CodeEditor }}
+							<CodeEditor
+								bind:this={editor}
+								path={activePath}
+								value={content}
+								{onSave}
+								onDirty={(d) => (dirty = d)}
+								onCursor={(line, column) => (cursor = { line, column })}
+							/>
+						{/await}
 					{/key}
 				{:else}
 					<div class="editor-empty">

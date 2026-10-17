@@ -19,7 +19,9 @@ ENV NODE_ENV=production
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# --ignore-scripts: `prepare` compiles messages and syncs SvelteKit with dev tools, which the
+# runtime image neither has nor needs (the build is copied in below).
+RUN npm ci --omit=dev --ignore-scripts
 COPY --from=builder /app/build ./build
 COPY server.js ./server.js
 COPY ws-proxy ./ws-proxy

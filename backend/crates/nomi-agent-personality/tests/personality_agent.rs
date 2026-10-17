@@ -40,7 +40,7 @@ async fn seed_agent_session(pool: &PgPool, session_id: Uuid) -> (Uuid, Uuid) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn set_personality_upserts_and_records_an_audit_event(pool: PgPool) {
+async fn set_personality_for_all_chats_upserts_the_default_and_records_an_audit_event(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -52,7 +52,7 @@ async fn set_personality_upserts_and_records_an_audit_event(pool: PgPool) {
             agent_session_id,
             user_id,
             "set_personality",
-            serde_json::json!({"description": "Be sarcastic and blunt."}),
+            serde_json::json!({"description": "Be sarcastic and blunt.", "scope": "all_chats"}),
         )
         .await
         .unwrap();
@@ -141,7 +141,7 @@ async fn list_personality_versions_reports_history_with_the_current_one_marked(p
             agent_session_id,
             user_id,
             "set_personality",
-            serde_json::json!({"description": "Be sarcastic."}),
+            serde_json::json!({"description": "Be sarcastic.", "scope": "all_chats"}),
         )
         .await
         .unwrap();
@@ -152,7 +152,7 @@ async fn list_personality_versions_reports_history_with_the_current_one_marked(p
             agent_session_id,
             user_id,
             "set_personality",
-            serde_json::json!({"description": "Be warm."}),
+            serde_json::json!({"description": "Be warm.", "scope": "all_chats"}),
         )
         .await
         .unwrap();
@@ -180,7 +180,8 @@ async fn list_personality_versions_with_no_history_says_so(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(result.display_text, "No personality history yet.");
+    assert!(result.display_text.contains("No default personality history yet."));
+    assert!(result.display_text.contains("This chat uses the default personality."));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -196,7 +197,7 @@ async fn rollback_personality_restores_an_old_version(pool: PgPool) {
             agent_session_id,
             user_id,
             "set_personality",
-            serde_json::json!({"description": "Be sarcastic."}),
+            serde_json::json!({"description": "Be sarcastic.", "scope": "all_chats"}),
         )
         .await
         .unwrap();
@@ -207,7 +208,7 @@ async fn rollback_personality_restores_an_old_version(pool: PgPool) {
             agent_session_id,
             user_id,
             "set_personality",
-            serde_json::json!({"description": "Be warm."}),
+            serde_json::json!({"description": "Be warm.", "scope": "all_chats"}),
         )
         .await
         .unwrap();
@@ -251,4 +252,64 @@ async fn rollback_personality_rejects_a_missing_version(pool: PgPool) {
         .await;
 
     assert!(result.is_err());
+}
+
+async fn seed_second_session(pool: &PgPool) -> Uuid {
+    let org_id: Uuid = sqlx::query_scalar("SELECT org_id FROM sessions LIMIT 1").fetch_one(pool).await.unwrap();
+    sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'chat-2') RETURNING id")
+        .bind(org_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn set_personality_defaults_to_this_chat_only(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let other_chat = seed_second_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    PersonalityAgent
+        .execute_tool(&mut conn, session_id, agent_session_id, user_id, "set_personality", serde_json::json!({"description": "Be warm.", "scope": "all_chats"}))
+        .await
+        .unwrap();
+    let result = PersonalityAgent
+        .execute_tool(&mut conn, session_id, agent_session_id, user_id, "set_personality", serde_json::json!({"description": "Talk like a pirate."}))
+        .await
+        .unwrap();
+    assert!(result.display_text.contains("this chat only"));
+
+    use nomi_agent_core::personality::personality_for_chat;
+    assert_eq!(personality_for_chat(&mut conn, user_id, session_id).await.as_deref(), Some("Talk like a pirate."));
+    // Another chat keeps the default.
+    assert_eq!(personality_for_chat(&mut conn, user_id, other_chat).await.as_deref(), Some("Be warm."));
+
+    // Back to the default.
+    let result = PersonalityAgent
+        .execute_tool(&mut conn, session_id, agent_session_id, user_id, "reset_chat_personality", serde_json::json!({}))
+        .await
+        .unwrap();
+    assert!(result.display_text.contains("back to the default"));
+    assert_eq!(personality_for_chat(&mut conn, user_id, session_id).await.as_deref(), Some("Be warm."));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn setting_it_for_all_chats_replaces_chat_only_personalities(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("UPDATE sessions SET user_id = $2 WHERE id = $1").bind(session_id).bind(user_id).execute(&pool).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+
+    PersonalityAgent
+        .execute_tool(&mut conn, session_id, agent_session_id, user_id, "set_personality", serde_json::json!({"description": "Talk like a pirate."}))
+        .await
+        .unwrap();
+    PersonalityAgent
+        .execute_tool(&mut conn, session_id, agent_session_id, user_id, "set_personality", serde_json::json!({"description": "Be formal.", "scope": "all_chats"}))
+        .await
+        .unwrap();
+
+    use nomi_agent_core::personality::personality_for_chat;
+    assert_eq!(personality_for_chat(&mut conn, user_id, session_id).await.as_deref(), Some("Be formal."));
 }

@@ -3,7 +3,7 @@ import { apiFetch } from '$lib/server/api';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
-import type { AgentStatus, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
+import type { AgentStatus, ChatPersonality, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
@@ -27,6 +27,10 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const personality: PersonalityHistoryResponse = personalityResponse.ok
 		? ((await personalityResponse.json()) as PersonalityHistoryResponse)
 		: { versions: [] };
+	const chatPersonalityResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/personality`);
+	const chatPersonality: ChatPersonality = chatPersonalityResponse.ok
+		? ((await chatPersonalityResponse.json()) as ChatPersonality)
+		: { chat: null, default: null };
 
 	const agentActivityResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/agent-activity`);
 	const agentActivity = agentActivityResponse.ok ? await agentActivityResponse.json() : [];
@@ -42,7 +46,7 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? m.nav_new_chat();
 
 	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
-	return { messages, hasOlder, models, personality, agentActivity, agentStatus, title, thinkingLevel };
+	return { messages, hasOlder, models, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel };
 };
 
 export const actions: Actions = {
@@ -209,6 +213,27 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	/** A past personality for this chat only, or (scope all_chats) as the default everywhere. */
+	usePersonality: async ({ request, params, cookies, fetch }) => {
+		const data = await request.formData();
+		const description = String(data.get('description') ?? '').trim();
+		const scope = data.get('scope') === 'all_chats' ? 'all_chats' : 'chat';
+		if (!description) return fail(400, { personalityError: m.err_invalid_version() });
+		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/personality`, {
+			method: 'PUT',
+			body: JSON.stringify({ description, scope }),
+		});
+		if (!response.ok) return fail(response.status, { personalityError: (await response.text()) || m.err_rollback_personality() });
+		return { personalityRestored: true };
+	},
+
+	/** This chat goes back to the default personality. */
+	resetPersonality: async ({ params, cookies, fetch }) => {
+		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/personality`, { method: 'DELETE' });
+		if (!response.ok) return fail(response.status, { personalityError: (await response.text()) || m.err_rollback_personality() });
+		return { personalityRestored: true };
 	},
 
 	restorePersonality: async ({ request, cookies, fetch }) => {

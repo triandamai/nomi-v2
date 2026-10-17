@@ -2,7 +2,7 @@
 //! (mail apps get them as attachments instead):
 //!     cargo run -p nomi-mail --example preview -- <out dir>
 
-use nomi_mail::layout::{BrandedEmail, Sender};
+use nomi_mail::layout::{Action, BrandedEmail, Sender};
 
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| "email-previews".into());
@@ -23,6 +23,13 @@ fn main() {
             vec!["You asked me to remind you today at 13:52.".into()],
             None,
         ),
+        (
+            "invite",
+            Sender::nomi(),
+            "Ana invited you to Acme on Nomi",
+            vec!["Join Acme to work on its projects together with the crew. The invite works for 7 days.".into()],
+            None,
+        ),
         ("custom", Sender::custom("Chef", "pill", "bloom"), "Tonight's dinner plan", vec!["Three dishes you can make with what's in your fridge.".into()], None),
     ];
     for (file, sender, title, paragraphs, highlight) in samples {
@@ -34,6 +41,7 @@ fn main() {
             title: title.into(),
             paragraphs,
             highlight: highlight.map(String::from),
+            action: (file == "invite").then(|| Action { label: "Accept the invite".into(), url: "https://nomi.example.com/invite/k3J9xQ".into() }),
             notes: vec!["If this wasn't you, you can ignore this email.".into()],
             crew_label: "Nomi crew".into(),
             footer: "Nomi · a small crew of agents that remembers & builds for you.".into(),

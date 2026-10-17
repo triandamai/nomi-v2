@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	// Shown to everyone while an admin has maintenance mode on. It checks every few seconds and
 	// takes people back to Nomi as soon as it's over.
 	import { m } from '$lib/paraglide/messages';
@@ -8,7 +9,8 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let state = $state(data.maintenance);
+	// Starts from the page load; the poll below keeps it current.
+	let state = $state(untrack(() => data.maintenance));
 	$effect(() => {
 		const timer = setInterval(async () => {
 			const response = await fetch('/maintenance/status').catch(() => null);
@@ -30,7 +32,7 @@
 	<StatusScene variant="maintenance" />
 	<h1 class="status__title">{m.maintenance_title()}</h1>
 	<p class="status__text">{state.message || m.maintenance_default()}</p>
-	{#if back}<p class="status__meta">{m.maintenance_back_at({ when: back })}</p>{/if}
+	<p class="status__meta">{back ? m.maintenance_back_at({ when: back }) : m.maintenance_back_soon()}</p>
 	<p class="status__meta" role="status">{state.enabled ? m.maintenance_watching() : m.maintenance_over()}</p>
 </main>
 

@@ -49,12 +49,21 @@ pub struct BrandedEmail {
     pub paragraphs: Vec<String>,
     /// Something to copy, shown large in the sender's colour (a sign-in code).
     pub highlight: Option<String>,
+    /// A button to the page the email is about.
+    pub action: Option<Action>,
     /// Smaller print under the main text.
     pub notes: Vec<String>,
     /// The tag under a crew member's name, e.g. "Nomi crew".
     pub crew_label: String,
     /// The last line, e.g. why they got this email.
     pub footer: String,
+}
+
+/// A link shown as a button, with the address written out under it for clients that hide buttons.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Action {
+    pub label: String,
+    pub url: String,
 }
 
 const FONT_BRAND: &str = "'Bricolage Grotesque','Trebuchet MS',Helvetica,Arial,sans-serif";
@@ -152,6 +161,17 @@ impl BrandedEmail {
                 )
             })
             .unwrap_or_default();
+        // Only web links: anything else would be a way to put script in a button.
+        let action = self.action.as_ref().filter(|a| a.url.starts_with("https://") || a.url.starts_with("http://"));
+        let button = action
+            .map(|a| {
+                format!(
+                    r#"<tr><td style="padding:4px 32px 18px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-radius:999px;background-color:{INK}" class="button"><a href="{url}" style="display:inline-block;padding:14px 26px;font-family:{FONT_PLAIN};font-size:16px;line-height:1.2;font-weight:600;color:#ffffff;text-decoration:none;border-radius:999px" class="button-text">{label}</a></td></tr></table><p style="margin:12px 0 0;font-family:{FONT_PLAIN};font-size:13px;line-height:1.5;color:{INK_SOFT};word-break:break-all" class="soft"><a href="{url}" style="color:{INK_SOFT}" class="soft">{url}</a></p></td></tr>"#,
+                    url = escape(&a.url),
+                    label = escape(&a.label),
+                )
+            })
+            .unwrap_or_default();
         let notes: String = self
             .notes
             .iter()
@@ -172,6 +192,8 @@ impl BrandedEmail {
   .rule {{ border-color:#2a3a31 !important; }}
   .highlight {{ background-color:#1d2c24 !important; color:{dark_accent} !important; }}
   .accent {{ color:{dark_accent} !important; }}
+  .button {{ background-color:#e3ede5 !important; }}
+  .button-text {{ color:#0f1a14 !important; }}
 }}
 </style></head>
 <body style="margin:0;padding:0;background-color:{PAGE}" class="page">
@@ -184,6 +206,7 @@ impl BrandedEmail {
 </tr></table></td></tr>
 <tr><td style="padding:26px 32px 4px"><h1 style="margin:0 0 14px;font-family:{FONT_BRAND};font-size:26px;line-height:1.2;font-weight:800;letter-spacing:-0.5px;color:{INK}" class="ink">{title}</h1>{paragraphs}</td></tr>
 {highlight}
+{button}
 <tr><td style="padding:0 32px 8px">{notes}<p style="margin:8px 0 0;font-family:{FONT_PLAIN};font-size:15px;line-height:1.5;font-weight:600;color:{INK}" class="ink">— {name}</p></td></tr>
 <tr><td style="padding:22px 32px 26px"><div style="border-top:1px solid {LINE};padding-top:18px" class="rule">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>{crew_cells}</tr></table>
@@ -205,6 +228,9 @@ impl BrandedEmail {
         }
         if let Some(h) = &self.highlight {
             text.push_str(&format!("    {h}\n\n"));
+        }
+        if let Some(a) = action {
+            text.push_str(&format!("{}: {}\n\n", a.label, a.url));
         }
         for n in &self.notes {
             text.push_str(&format!("{n}\n\n"));
@@ -228,6 +254,7 @@ mod tests {
             title: "Here's your code".into(),
             paragraphs: vec!["Enter it to sign in <now>.".into()],
             highlight: Some("123456".into()),
+            action: None,
             notes: vec!["Didn't ask? Ignore this.".into()],
             crew_label: "Nomi crew".into(),
             footer: "You got this because someone signed in.".into(),

@@ -707,10 +707,7 @@ pub async fn admin_get(State(state): State<AppState>, AuthClaims(claims): AuthCl
 pub async fn admin_register_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<AdminShipyard>, ApiError> {
     crate::routes::admin_access::require_admin(&claims, "integrations", "manage").map_err(|(s, m)| (s, m.to_string()))?;
     let client = client(&state)?;
-    let app_url = std::env::var("APP_URL")
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+    let app_url = crate::public_url::app_url()
         .ok_or((StatusCode::UNPROCESSABLE_ENTITY, "set APP_URL to Nomi's public address first".to_string()))?;
     nomi_shipyard_side::register_webhook(&state.pool, &client, &state.settings_key, &app_url).await.map_err(ensure_error)?;
     if let Ok(Some((id, _, _))) = nomi_shipyard_side::registered_webhook(&state.pool).await {

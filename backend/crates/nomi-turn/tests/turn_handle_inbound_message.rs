@@ -527,7 +527,7 @@ async fn a_personality_change_is_recorded_and_folded_into_the_next_chitchat_repl
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_context_for_the_same_person(pool: PgPool) {
+async fn a_personality_set_for_all_chats_is_visible_in_a_different_chat_for_the_same_person(pool: PgPool) {
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry =
         AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(PersonalityAgent)]);
@@ -537,7 +537,7 @@ async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_co
     // Seed a personality change through a personal DM.
     let personality_provider = FakeLlmProvider::sequence(vec![
         canned_response("personality"),
-        tool_use_response("t1", "set_personality", serde_json::json!({"description": "Talk like a 1920s detective."})),
+        tool_use_response("t1", "set_personality", serde_json::json!({"description": "Talk like a 1920s detective.", "scope": "all_chats"})),
         tool_use_response(
             "t2",
             "complete_task",
@@ -598,6 +598,77 @@ async fn a_personality_set_in_one_chat_context_is_visible_in_a_different_chat_co
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn a_personality_set_for_one_chat_stays_in_that_chat(pool: PgPool) {
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let registry =
+        AgentRegistry::new(vec![Box::new(ChitchatAgent), Box::new(MoneyAgent), Box::new(PersonalityAgent)]);
+        let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+    seed_speaker_with_allowed_tools(&pool, "tg-user-1", &["set_personality"]).await;
+
+    // Seed a personality change through a personal DM.
+    let personality_provider = FakeLlmProvider::sequence(vec![
+        canned_response("personality"),
+        tool_use_response("t1", "set_personality", serde_json::json!({"description": "Talk like a 1920s detective."})),
+        tool_use_response(
+            "t2",
+            "complete_task",
+            serde_json::json!({"status": "completed", "summary": "Right-o, consider it done, see."}),
+        ),
+    ]);
+    handle_inbound_message(
+        &pool,
+        None,
+        &personality_provider,
+        &embedder,
+        &registry, &catalog,
+        "telegram",
+        "dm",
+        "dm-chat",
+        "tg-user-1",
+        "talk like a detective",
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Same sender (same channel_user_id), but a DIFFERENT chat_id and chat_type ("group") — a
+    // distinct session, same person per channel_identities' (channel, channel_user_id)
+    // resolution (proven by turn_bootstrap.rs's existing
+    // existing_sender_new_chat_creates_a_new_session_under_the_same_personal_org).
+    let chitchat_provider = FakeLlmProvider::sequence(vec![
+        canned_response("chitchat"),
+        canned_response("Say, what can I do for ya?"),
+        canned_response("NONE"),
+    ]);
+    let group_outcome = handle_inbound_message(
+        &pool,
+        None,
+        &chitchat_provider,
+        &embedder,
+        &registry, &catalog,
+        "telegram",
+        "group",
+        "group-chat",
+        "tg-user-1",
+        "hello there",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let requests = chitchat_provider.received_requests.lock().unwrap();
+    let system = requests[1].system.as_ref().unwrap();
+    assert!(!system.contains("Talk like a 1920s detective."));
+
+    let dm_session_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM sessions WHERE channel = 'telegram' AND chat_id = 'dm-chat'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(dm_session_id, group_outcome.session_id);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgPool) {
     let embedder = FakeEmbeddingProvider::success(dummy_embedding());
     let registry =
@@ -608,7 +679,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
     // Turn 1: set an initial personality (v1).
     let set_v1_provider = FakeLlmProvider::sequence(vec![
         canned_response("personality"),
-        tool_use_response("t1", "set_personality", serde_json::json!({"description": "Be sarcastic and blunt."})),
+        tool_use_response("t1", "set_personality", serde_json::json!({"description": "Be sarcastic and blunt.", "scope": "all_chats"})),
         tool_use_response("t2", "complete_task", serde_json::json!({"status": "completed", "summary": "Done, sarcastic now."})),
     ]);
     handle_inbound_message(&pool, None, &set_v1_provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "be sarcastic", None)
@@ -618,7 +689,7 @@ async fn a_chat_driven_rollback_is_folded_into_the_next_chitchat_reply(pool: PgP
     // Turn 2: change it again (v2), so there's something to roll back from.
     let set_v2_provider = FakeLlmProvider::sequence(vec![
         canned_response("personality"),
-        tool_use_response("t3", "set_personality", serde_json::json!({"description": "Be warm and encouraging."})),
+        tool_use_response("t3", "set_personality", serde_json::json!({"description": "Be warm and encouraging.", "scope": "all_chats"})),
         tool_use_response("t4", "complete_task", serde_json::json!({"status": "completed", "summary": "Done, warm now."})),
     ]);
     handle_inbound_message(&pool, None, &set_v2_provider, &embedder, &registry, &catalog, "telegram", "dm", "chat-1", "tg-1", "actually be warm", None)
