@@ -24,3 +24,5 @@ nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-planning = { path = "../nomi-agent-planning" }
 nomi-test-support = { path = "../nomi-test-support" }
 tokio = { version = "1", features = ["full"] }
+# Tests drive turns into a failing model; skip the real waits between retries.
+nomi-agent-core = { path = "../nomi-agent-core", features = ["instant-retries"] }

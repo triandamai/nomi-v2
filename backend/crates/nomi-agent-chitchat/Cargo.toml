@@ -14,3 +14,5 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 nomi-test-support = { path = "../nomi-test-support" }
+# Tests drive turns into a failing model; skip the real waits between retries.
+nomi-agent-core = { path = "../nomi-agent-core", features = ["instant-retries"] }
