@@ -476,6 +476,10 @@ pub async fn delete_env(
 ) -> Result<StatusCode, ApiError> {
     admin(&claims, "manage")?;
     client(&state)?.delete_env(&org.to_string(), &app, &env).await.map_err(shipyard_error)?;
+    let project: Option<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE shipyard_app = $1").bind(&app).fetch_optional(&state.pool).await.ok().flatten();
+    if let Some(project_id) = project {
+        crate::routes::showcase::hide_when_offline(&state.pool, project_id, &env).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

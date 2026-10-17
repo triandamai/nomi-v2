@@ -602,6 +602,7 @@ pub async fn take_offline(
     let target = target(&state, project_id).await?;
     let app = published_app(&target)?;
     client(&state)?.delete_env(&target.org_key(), app, &environment).await.map_err(shipyard_error)?;
+    crate::routes::showcase::hide_when_offline(&state.pool, project_id, &environment).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
