@@ -1,18 +1,27 @@
 // A project's publishing state, shared by the project's top bar (the Publish button and the
-// live address) and its Deployments sheet. Polls while a publish runs.
+// live address) and its Deployments sheet. Shipyard's webhooks reach the page over the
+// project's socket (`/projects/{id}/ws`) and it reloads then; while a publish runs it also
+// checks now and then, in case an event never arrives.
 
 import { projectApi } from '$lib/projectApi';
 import type { DeployOverview, ProjectPublish } from '$lib/types';
 
-const POLL_MS = 3000;
+/** How often a running publish is checked with Shipyard when no event has come. */
+const FALLBACK_MS = 30_000;
+const MAX_RETRY_MS = 30_000;
 
 export class ProjectDeploy {
 	overview = $state<DeployOverview | null>(null);
 	error = $state<string | null>(null);
 	busy = $state(false);
 	readonly projectId: string;
+	/** Bumped on every update the socket brings, for views that show more (an open log). */
+	changes = $state(0);
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#stopped = false;
+	#socket: WebSocket | null = null;
+	#retry: ReturnType<typeof setTimeout> | null = null;
+	#retryMs = 1000;
 
 	constructor(projectId: string) {
 		this.projectId = projectId;
@@ -44,10 +53,33 @@ export class ProjectDeploy {
 		if (this.#timer) clearTimeout(this.#timer);
 		this.#timer = null;
 		if (this.#stopped || !this.running) return;
-		this.#timer = setTimeout(() => void this.#poll(), POLL_MS);
+		this.#timer = setTimeout(() => void this.#poll(), FALLBACK_MS);
 	}
 
-	// While running, asking for the newest publish makes the backend check with Shipyard too.
+	/** Opens the project's socket; every message means "something changed, reload". */
+	listen() {
+		if (this.#stopped || this.#socket || typeof WebSocket === 'undefined') return;
+		const socket = new WebSocket(`/projects/${this.projectId}/ws`);
+		this.#socket = socket;
+		socket.addEventListener('open', () => {
+			// Whatever happened while it was closed came with no message.
+			if (this.#retryMs > 1000) void this.refresh();
+			this.#retryMs = 1000;
+		});
+		socket.addEventListener('message', () => {
+			this.changes += 1;
+			void this.refresh();
+		});
+		socket.addEventListener('close', (event) => {
+			this.#socket = null;
+			// Signed out or no longer a member: the fallback check is all that's left.
+			if (this.#stopped || event.code === 4401 || event.code === 4404) return;
+			this.#retry = setTimeout(() => this.listen(), this.#retryMs + Math.random() * 250);
+			this.#retryMs = Math.min(this.#retryMs * 2, MAX_RETRY_MS);
+		});
+	}
+
+	// The fallback: asking for the running publish makes the backend check with Shipyard.
 	async #poll() {
 		const running = this.overview?.publishes.find((p) => p.status === 'running');
 		if (running && !document.hidden) {
@@ -86,5 +118,8 @@ export class ProjectDeploy {
 	stop() {
 		this.#stopped = true;
 		if (this.#timer) clearTimeout(this.#timer);
+		if (this.#retry) clearTimeout(this.#retry);
+		this.#socket?.close();
+		this.#socket = null;
 	}
 }

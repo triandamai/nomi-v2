@@ -30,6 +30,7 @@
 		quota: { agent: 'money', label: m.notif_kind_quota },
 		promo: { agent: 'reminders', label: m.notif_kind_promo },
 		deploy: { agent: 'coding', label: m.notif_kind_deploy },
+		project: { agent: 'coding', label: m.notif_kind_project },
 	};
 
 	type Filter = PageData['filter'];

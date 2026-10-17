@@ -18,6 +18,7 @@
 	import IconDatabase from '$lib/components/icons/IconDatabase.svelte';
 	import IconGroup from '$lib/components/icons/IconGroup.svelte';
 	import IconSettings from '$lib/components/icons/IconSettings.svelte';
+	import IconLink from '$lib/components/icons/IconLink.svelte';
 	import IconHistory from '$lib/components/icons/IconHistory.svelte';
 	import IconOpenInNew from '$lib/components/icons/IconOpenInNew.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -30,6 +31,7 @@
 	import DatabasePanel from '$lib/components/project/DatabasePanel.svelte';
 	import MembersPanel from '$lib/components/project/MembersPanel.svelte';
 	import SettingsPanel from '$lib/components/project/SettingsPanel.svelte';
+	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import type { ActionData, PageData } from './$types';
@@ -40,8 +42,8 @@
 
 	// The project's tools open in full-screen sheets over the project, so its chat, code and
 	// running preview stay as they are underneath (closing one never restarts the install).
-	type Sheet = 'deploy' | 'monitor' | 'database' | 'members' | 'issues' | 'settings';
-	const SHEETS: Sheet[] = ['deploy', 'monitor', 'database', 'members', 'issues', 'settings'];
+	type Sheet = 'deploy' | 'domain' | 'monitor' | 'database' | 'members' | 'issues' | 'settings';
+	const SHEETS: Sheet[] = ['deploy', 'domain', 'monitor', 'database', 'members', 'issues', 'settings'];
 	let sheet = $state<Sheet | null>(null);
 	let sheetOpen = $state(false);
 	onMount(() => {
@@ -70,6 +72,7 @@
 		const d = new ProjectDeploy(id);
 		deploy = d;
 		void d.refresh();
+		d.listen();
 		return () => d.stop();
 	});
 
@@ -97,6 +100,7 @@
 
 	const TOOLS: { id: Sheet; label: () => string; icon: typeof IconRocket }[] = [
 		{ id: 'deploy', label: m.pj_tab_deploy, icon: IconHistory },
+		{ id: 'domain', label: m.pj_tab_domain, icon: IconLink },
 		{ id: 'monitor', label: m.pj_tab_monitor, icon: IconPulse },
 		{ id: 'database', label: m.pj_tab_database, icon: IconDatabase },
 		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
@@ -104,6 +108,7 @@
 	];
 	const SHEET_TITLE: Record<Sheet, () => string> = {
 		deploy: m.pj_tab_deploy,
+		domain: m.pj_tab_domain,
 		monitor: m.pj_tab_monitor,
 		database: m.pj_tab_database,
 		members: m.pj_tab_members,
@@ -608,6 +613,8 @@
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
 				<DeployPanel {deploy} />
+			{:else if sheet === 'domain' && deploy}
+				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}
 				<MonitorPanel projectId={project.id} {published} />
 			{:else if sheet === 'database'}

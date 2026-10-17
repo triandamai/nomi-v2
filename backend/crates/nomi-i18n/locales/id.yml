@@ -154,3 +154,7 @@ deploy:
   crashed_body: "Aplikasi yang dipublikasikan berhenti tiba-tiba (kode keluar %{detail}). Shipyard menjalankannya lagi; log runtime menunjukkan penyebabnya."
   resource_title: "%{name} bekerja terlalu berat"
   resource_body: "Shipyard melaporkan pemakaian %{detail}. Periksa monitor di proyek untuk melihat apakah perlu ruang lebih."
+
+project:
+  transferred_title: "%{name} dipindahkan ke %{org}"
+  transferred_body: "%{who} memindahkan proyek %{name} dari %{from} ke %{org}. Proyek ini sekarang ada di organisasi Anda, dan Anda pemiliknya."

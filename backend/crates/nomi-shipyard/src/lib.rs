@@ -217,6 +217,30 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::GET, &Self::env_path(org, app, env), None).await
     }
 
+    /// Whether `subdomain` is free on the platform (`available`), with `reason` (`taken` or
+    /// `invalid`) and nearby free `suggestions` when it isn't. Given the app and environment, the
+    /// environment's own current name counts as free. Always `200`: read `available`.
+    pub async fn check_domain(&self, org: &str, subdomain: &str, app_env: Option<(&str, &str)>) -> Result<Value, ShipyardError> {
+        let mut path = format!("/orgs/{}/domains/check?subdomain={}", seg(org), seg(subdomain));
+        if let Some((app, env)) = app_env {
+            path.push_str(&format!("&app={}&env={}", seg(app), seg(env)));
+        }
+        self.call(reqwest::Method::GET, &path, None).await
+    }
+
+    /// The environment's platform address: `{ hostname, subdomain, url }`, nulls before its first
+    /// publish.
+    pub async fn get_domain(&self, org: &str, app: &str, env: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::GET, &format!("{}/domain", Self::env_path(org, app, env)), None).await
+    }
+
+    /// Moves the environment to `<subdomain>.<apps-domain>` (the new name is attached before the
+    /// old one goes). `409` when it's taken or invalid, or the environment has no address yet;
+    /// nothing changes then.
+    pub async fn set_domain(&self, org: &str, app: &str, env: &str, subdomain: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::PUT, &format!("{}/domain", Self::env_path(org, app, env)), Some(json!({ "subdomain": subdomain }))).await
+    }
+
     /// Takes the environment down: services, database and data, volumes, domains.
     pub async fn delete_env(&self, org: &str, app: &str, env: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::DELETE, &Self::env_path(org, app, env), None).await

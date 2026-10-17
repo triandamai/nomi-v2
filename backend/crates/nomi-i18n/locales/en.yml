@@ -154,3 +154,7 @@ deploy:
   crashed_body: "The published app stopped unexpectedly (exit code %{detail}). Shipyard restarts it; the runtime log shows why."
   resource_title: "%{name} is running hot"
   resource_body: "Shipyard reported %{detail} use. Check the monitor in the project to see whether it needs more room."
+
+project:
+  transferred_title: "%{name} was moved to %{org}"
+  transferred_body: "%{who} moved the project %{name} from %{from} to %{org}. It's in your organization now, and you're its owner."

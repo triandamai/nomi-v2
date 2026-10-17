@@ -664,7 +664,7 @@ export interface PlansForUser {
 	override_until: string | null;
 }
 
-export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo' | 'deploy';
+export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo' | 'deploy' | 'project';
 
 export interface NotificationItem {
 	id: string;

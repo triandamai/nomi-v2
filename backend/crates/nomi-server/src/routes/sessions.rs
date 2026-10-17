@@ -1156,11 +1156,15 @@ pub async fn get_agent_status(
     })))
 }
 
-async fn relay_session_stream(mut socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {
+async fn relay_session_stream(socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {
+    relay_topic(socket, format!("chat/{session_id}/stream"), broker_host, broker_port).await;
+}
+
+/// Forwards everything published on `topic` to the socket until either side goes away.
+pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_host: String, broker_port: u16) {
     let mut options = MqttOptions::new(format!("ws-bridge-{}", Uuid::new_v4()), broker_host, broker_port);
     options.set_keep_alive(Duration::from_secs(30));
     let (client, mut eventloop) = AsyncClient::new(options, 16);
-    let topic = format!("chat/{session_id}/stream");
     if client.subscribe(&topic, QoS::AtMostOnce).await.is_err() {
         return; // socket closes on drop
     }
