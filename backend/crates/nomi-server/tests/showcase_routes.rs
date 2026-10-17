@@ -66,8 +66,24 @@ async fn new_project(router: axum::Router, token: &str) -> Uuid {
     created["project_id"].as_str().unwrap().parse().unwrap()
 }
 
+/// Shipyard reports `url` as the address of `project_id`'s production environment.
+async fn live_on_shipyard(shipyard: &MockServer, project_id: Uuid, url: &str) {
+    Mock::given(method("GET"))
+        .and(path_regex(format!(r"/apps/todo-{project_id}/envs/production$")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "services": [
+            { "name": "db", "type": "database", "urls": [] },
+            { "name": "web", "urls": [url], "live": true },
+        ] }, "error": null })))
+        .mount(shipyard)
+        .await;
+}
+
 async fn publish_live(pool: &PgPool, project_id: Uuid, url: &str) {
-    sqlx::query("UPDATE projects SET shipyard_app = $2, name = 'Todo' WHERE id = $1").bind(project_id).bind(format!("todo-{project_id}")).execute(pool).await.unwrap();
+    publish_named(pool, project_id, "Todo", url).await;
+}
+
+async fn publish_named(pool: &PgPool, project_id: Uuid, name: &str, url: &str) {
+    sqlx::query("UPDATE projects SET shipyard_app = $2, name = $3 WHERE id = $1").bind(project_id).bind(format!("todo-{project_id}")).bind(name).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO project_publishes (project_id, environment, status, url, manifest) VALUES ($1, 'production', 'succeeded', $2, '{}')")
         .bind(project_id)
         .bind(url)
@@ -94,6 +110,7 @@ async fn a_live_app_can_be_shown_and_anyone_sees_it(pool: PgPool) {
     assert_eq!(status, StatusCode::CONFLICT);
 
     publish_live(&pool, project, "https://todo.apps.example.dev").await;
+    live_on_shipyard(&shipyard, project, "https://todo.apps.example.dev").await;
     let (status, _) = request(router.clone(), "PUT", &uri, Some(&owner), Some(json!({ "showcase": true, "blurb": "x".repeat(141) }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "a description that's too long");
     let (status, body) = request(router.clone(), "PUT", &uri, Some(&owner), Some(json!({ "showcase": true, "blurb": "  A to-do list   for two. " }))).await;
@@ -121,6 +138,52 @@ async fn a_live_app_can_be_shown_and_anyone_sees_it(pool: PgPool) {
     assert_eq!(apps, json!([]));
     let (_, body) = request(router, "GET", &uri, Some(&owner), None).await;
     assert_eq!(body["showcase"], false);
+    let stored: Option<String> = sqlx::query_scalar("SELECT showcase_url FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored, None);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn each_app_is_shown_at_the_address_shipyard_reports_for_it(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).mount(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), &shipyard));
+    let owner = register(router.clone(), "ana@example.com", json!({ "mode": "create", "name": "Acme" })).await;
+    let habits = new_project(router.clone(), &owner).await;
+    let users = new_project(router.clone(), &owner).await;
+    let other = new_project(router.clone(), &owner).await;
+
+    // The publish records name the same address for both; Shipyard knows better.
+    publish_named(&pool, users, "Users", "https://users.apps.example.dev").await;
+    publish_named(&pool, habits, "Habits", "https://users.apps.example.dev").await;
+    live_on_shipyard(&shipyard, users, "https://users.apps.example.dev").await;
+    live_on_shipyard(&shipyard, habits, "https://habits.apps.example.dev").await;
+    for project in [users, habits] {
+        let (status, body) = request(router.clone(), "PUT", &format!("/api/projects/{project}/showcase"), Some(&owner), Some(json!({ "showcase": true }))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let (_, body) = request(router.clone(), "GET", &format!("/api/projects/{habits}/showcase"), Some(&owner), None).await;
+    assert_eq!(body["url"], "https://habits.apps.example.dev");
+    let (_, apps) = request(router.clone(), "GET", "/api/showcase", None, None).await;
+    let mut shown: Vec<(String, String)> = apps.as_array().unwrap().iter().map(|a| (a["name"].as_str().unwrap().into(), a["url"].as_str().unwrap().into())).collect();
+    shown.sort();
+    assert_eq!(shown, vec![("Habits".into(), "https://habits.apps.example.dev".into()), ("Users".into(), "https://users.apps.example.dev".into())]);
+
+    // An address already shown for another project isn't shown twice.
+    publish_named(&pool, other, "Other", "https://users.apps.example.dev").await;
+    live_on_shipyard(&shipyard, other, "https://users.apps.example.dev").await;
+    let (status, _) = request(router.clone(), "PUT", &format!("/api/projects/{other}/showcase"), Some(&owner), Some(json!({ "showcase": true }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Shipyard says it isn't live: it can't be shown.
+    let offline = new_project(router.clone(), &owner).await;
+    publish_named(&pool, offline, "Offline", "https://offline.apps.example.dev").await;
+    Mock::given(method("GET"))
+        .and(path_regex(format!(r"/apps/todo-{offline}/envs/production$")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "services": [{ "name": "web", "urls": [] }] }, "error": null })))
+        .mount(&shipyard)
+        .await;
+    let (status, _) = request(router, "PUT", &format!("/api/projects/{offline}/showcase"), Some(&owner), Some(json!({ "showcase": true }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -132,6 +195,7 @@ async fn a_personal_workspace_isnt_named(pool: PgPool) {
     let project = new_project(router.clone(), &owner).await;
     sqlx::query("UPDATE organizations SET is_personal = true WHERE id = (SELECT org_id FROM projects WHERE id = $1)").bind(project).execute(&pool).await.unwrap();
     publish_live(&pool, project, "https://todo.apps.example.dev").await;
+    live_on_shipyard(&shipyard, project, "https://todo.apps.example.dev").await;
     request(router.clone(), "PUT", &format!("/api/projects/{project}/showcase"), Some(&owner), Some(json!({ "showcase": true }))).await;
     let (_, apps) = request(router, "GET", "/api/showcase", None, None).await;
     assert_eq!(apps[0]["team"], Value::Null);
