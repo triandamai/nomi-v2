@@ -1920,5 +1920,11 @@
 	"maintenance_back_soon": "Kami segera kembali.",
 	"integ_webhook_missing": "Webhook Nomi belum terpasang di Shipyard",
 	"integ_webhook_missing_hint": "Tanpa itu Nomi hanya tahu soal deploy dan crash saat mengejar ketinggalan tiap 10 menit. Mendaftarkannya membuat endpoint dengan rahasia baru yang disimpan Nomi.",
-	"integ_register_webhook": "Daftarkan ke Shipyard"
+	"integ_register_webhook": "Daftarkan ke Shipyard",
+	"integ_webhook_not_on_shipyard": "Belum terdaftar di Shipyard",
+	"integ_webhook_off": "{url} (dimatikan)",
+	"integ_webhook_unknown": "Tidak bisa menanyakan Shipyard",
+	"integ_webhook_target": "Shipyard akan diarahkan ke {url}.",
+	"integ_webhook_needs_app_url": "Atur APP_URL di server ke alamat publik Nomi dulu, supaya Shipyard tahu ke mana mengirim kejadian.",
+	"integ_webhook_switched_off": "Webhook Nomi dimatikan di Shipyard, jadi tidak ada kejadian yang masuk. Nyalakan di tab Webhook."
 }

@@ -636,12 +636,15 @@ pub async fn delete_project(
 /// `POST /api/hooks/shipyard`: Shipyard's events. Signature first, then stored once and applied.
 pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> StatusCode {
     let Some(config) = state.shipyard.as_ref() else { return StatusCode::NOT_FOUND };
-    let Some(secret) = nomi_shipyard_side::webhook_secret(&state.pool, config, &state.settings_key).await else {
+    let secrets = nomi_shipyard_side::webhook_secrets(&state.pool, config, &state.settings_key).await;
+    if secrets.is_empty() {
         tracing::warn!("a Shipyard webhook arrived but Nomi has no secret to check it with");
         return StatusCode::SERVICE_UNAVAILABLE;
-    };
+    }
     let signature = headers.get("shipyard-signature").and_then(|v| v.to_str().ok()).unwrap_or_default();
-    if !nomi_shipyard::signature::verify(&secret, signature, &body, Utc::now().timestamp()) {
+    let now = Utc::now().timestamp();
+    if !secrets.iter().any(|secret| nomi_shipyard::signature::verify(secret, signature, &body, now)) {
+        tracing::warn!("a Shipyard webhook's signature didn't match any secret Nomi has");
         return StatusCode::UNAUTHORIZED;
     }
     let event: nomi_shipyard_side::Event = match serde_json::from_slice(&body) {
@@ -672,9 +675,16 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
 pub struct AdminShipyard {
     pub configured: bool,
     pub can_reveal: bool,
-    /// Where Shipyard sends its events, when Nomi registered the endpoint itself.
+    /// Nomi's endpoint on Shipyard, as Shipyard lists it.
     pub webhook_url: Option<String>,
-    /// The secret came from SHIPYARD_WEBHOOK_SECRET.
+    /// Whether Shipyard has an endpoint for Nomi; `None` when Shipyard couldn't be asked.
+    pub webhook_registered: Option<bool>,
+    /// Whether that endpoint is switched on.
+    pub webhook_enabled: Option<bool>,
+    /// Where "Register" would point Shipyard (`APP_URL` + /hooks/shipyard); `None` until the
+    /// public address is set.
+    pub webhook_target: Option<String>,
+    /// SHIPYARD_WEBHOOK_SECRET is set (its endpoint was set up by hand).
     pub webhook_from_env: bool,
     pub registered_at: Option<DateTime<Utc>>,
     pub last_event_at: Option<DateTime<Utc>>,
@@ -686,10 +696,26 @@ async fn admin_status(state: &AppState) -> Result<AdminShipyard, ApiError> {
         .fetch_one(&state.pool)
         .await
         .map_err(internal("failed to read Shipyard settings"))?;
+    // Shipyard's own list decides whether the endpoint exists: it may have been deleted there,
+    // or never registered while SHIPYARD_WEBHOOK_SECRET was set.
+    let listed = match client(state) {
+        Ok(client) => match client.list_webhooks().await {
+            Ok(endpoints) => Some(endpoints),
+            Err(e) => {
+                tracing::warn!(error = ?e, "couldn't list Shipyard's webhooks");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+    let own = listed.as_ref().and_then(|endpoints| nomi_shipyard_side::own_endpoint(endpoints, registered.as_ref().map(|(id, _, _)| id.as_str())));
     Ok(AdminShipyard {
         configured: state.shipyard.is_some(),
         can_reveal: state.shipyard.as_ref().is_some_and(|c| c.reveal_key.is_some()),
-        webhook_url: registered.as_ref().map(|(_, url, _)| url.clone()),
+        webhook_url: own.and_then(|e| e.get("url")).and_then(Value::as_str).map(str::to_string),
+        webhook_registered: listed.as_ref().map(|_| own.is_some()),
+        webhook_enabled: own.map(|e| e.get("enabled").and_then(Value::as_bool).unwrap_or(true)),
+        webhook_target: crate::public_url::app_url().map(|url| format!("{url}{}", nomi_shipyard_side::WEBHOOK_PATH)),
         webhook_from_env: state.shipyard.as_ref().is_some_and(|c| c.webhook_secret.is_some()),
         registered_at: registered.map(|(_, _, at)| at),
         last_event_at,

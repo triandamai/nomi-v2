@@ -224,7 +224,8 @@ pub async fn link_app(State(state): State<AppState>, AuthClaims(claims): AuthCla
 #[derive(Serialize)]
 pub struct Webhooks {
     pub endpoints: Value,
-    /// The endpoint Nomi registered for itself (its secret is kept by Nomi, never shown).
+    /// Nomi's own endpoint: the one it registered (its secret is kept by Nomi, never shown), or
+    /// one pointing at its `/hooks/shipyard` address.
     pub own_id: Option<String>,
 }
 
@@ -232,7 +233,8 @@ pub struct Webhooks {
 pub async fn list_webhooks(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Webhooks>, ApiError> {
     admin(&claims, "view")?;
     let endpoints = client(&state)?.list_webhooks().await.map_err(shipyard_error)?;
-    let own_id = crate::shipyard::registered_webhook(&state.pool).await.map_err(internal("failed to read Shipyard settings"))?.map(|(id, _, _)| id);
+    let registered = crate::shipyard::registered_webhook(&state.pool).await.map_err(internal("failed to read Shipyard settings"))?.map(|(id, _, _)| id);
+    let own_id = crate::shipyard::own_endpoint(&endpoints, registered.as_deref()).and_then(|e| e.get("id")).and_then(Value::as_str).map(str::to_string);
     Ok(Json(Webhooks { endpoints, own_id }))
 }
 
@@ -284,16 +286,22 @@ pub struct Rotated {
 /// `POST /api/admin/shipyard/webhooks/:id/rotate`: a new signing secret.
 pub async fn rotate_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Rotated>, ApiError> {
     admin(&claims, "manage")?;
-    let secret = client(&state)?.rotate_webhook_secret(&id).await.map_err(shipyard_error)?;
-    let stored = sqlx::query("UPDATE shipyard_webhook SET secret_encrypted = $2 WHERE endpoint_id = $1")
-        .bind(&id)
-        .bind(nomi_settings::crypto::encrypt(&state.settings_key, &secret))
-        .execute(&state.pool)
-        .await
-        .map_err(internal("failed to keep the new secret"))?
-        .rows_affected()
-        > 0;
-    Ok(Json(Rotated { secret: (!stored).then_some(secret) }))
+    let client = client(&state)?;
+    // Nomi's own endpoint keeps its new secret (and from then on is Nomi's, even one set up by
+    // hand); any other endpoint's secret is shown once to whoever runs it.
+    let endpoints = client.list_webhooks().await.map_err(shipyard_error)?;
+    let registered = crate::shipyard::registered_webhook(&state.pool).await.map_err(internal("failed to read Shipyard settings"))?.map(|(id, _, _)| id);
+    let own = crate::shipyard::own_endpoint(&endpoints, registered.as_deref())
+        .filter(|e| e.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        .and_then(|e| e.get("url"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let secret = client.rotate_webhook_secret(&id).await.map_err(shipyard_error)?;
+    if let Some(url) = own {
+        crate::shipyard::keep_webhook(&state.pool, &state.settings_key, &id, &url, &secret).await.map_err(internal("failed to keep the new secret"))?;
+        return Ok(Json(Rotated { secret: None }));
+    }
+    Ok(Json(Rotated { secret: Some(secret) }))
 }
 
 /// `POST /api/admin/shipyard/webhooks/:id/test`: Shipyard sends it a signed ping.

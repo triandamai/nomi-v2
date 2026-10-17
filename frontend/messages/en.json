@@ -1920,5 +1920,11 @@
 	"maintenance_back_soon": "We'll be back soon.",
 	"integ_webhook_missing": "Nomi's webhook isn't set up on Shipyard",
 	"integ_webhook_missing_hint": "Without it Nomi only hears about deploys and crashes when it catches up every 10 minutes. Registering creates the endpoint with a new signing secret that Nomi keeps.",
-	"integ_register_webhook": "Register with Shipyard"
+	"integ_register_webhook": "Register with Shipyard",
+	"integ_webhook_not_on_shipyard": "Not registered on Shipyard",
+	"integ_webhook_off": "{url} (switched off)",
+	"integ_webhook_unknown": "Couldn't ask Shipyard",
+	"integ_webhook_target": "It will point Shipyard at {url}.",
+	"integ_webhook_needs_app_url": "Set APP_URL on the server to Nomi's public address first, so Shipyard knows where to send events.",
+	"integ_webhook_switched_off": "Nomi's webhook is switched off on Shipyard, so no events arrive. Turn it on in the Webhooks tab."
 }
