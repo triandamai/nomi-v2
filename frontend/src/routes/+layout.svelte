@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
-	import { page } from '$app/state';
+	import { page, updated } from '$app/state';
+	import { beforeNavigate } from '$app/navigation';
 	import { pageTitle } from '$lib/pageTitle';
 
 	let { children } = $props();
@@ -10,6 +11,14 @@
 	const TITLE = 'Nomi';
 	const DESCRIPTION = 'A small crew of agents that remembers & builds for you.';
 	const origin = $derived(page.url.origin);
+
+	// A new build went out since this tab loaded: its pages need files this one doesn't know about,
+	// so go to the next page with a full load instead of client-side.
+	beforeNavigate(({ willUnload, to, cancel }) => {
+		if (!updated.current || willUnload || !to?.url) return;
+		cancel();
+		location.href = to.url.href;
+	});
 </script>
 
 <svelte:head>
