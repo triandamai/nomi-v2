@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use nomi_i18n::Locale;
-use nomi_mail::layout::{BrandedEmail, Sender};
+use nomi_mail::layout::{Action, BrandedEmail, Sender};
 use nomi_mail::Mailer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -83,9 +83,14 @@ async fn email_target(pool: &PgPool, user_id: Uuid, kind: Kind) -> Option<(Strin
 }
 
 fn email_for(to: String, notice: &Notice, locale: Locale) -> nomi_mail::Email {
+    // A button to the page when Nomi knows its own address; otherwise the page to open.
     let mut notes = Vec::new();
+    let mut action = None;
     if let Some(link) = &notice.link {
-        notes.push(locale.tf("notify.open_in_app", &[("where", link)]));
+        match crate::public_url::link(link) {
+            Some(url) => action = Some(Action { label: locale.t("notify.open_button"), url }),
+            None => notes.push(locale.tf("notify.open_in_app", &[("where", link)])),
+        }
     }
     let reason = if notice.kind == Kind::Promo { "notify.reason_promo" } else { "notify.reason_account" };
     BrandedEmail {
@@ -96,6 +101,7 @@ fn email_for(to: String, notice: &Notice, locale: Locale) -> nomi_mail::Email {
         title: notice.title.clone(),
         paragraphs: notice.body.split("\n\n").map(str::to_string).collect(),
         highlight: None,
+        action,
         notes,
         crew_label: locale.t("email.crew_label"),
         footer: format!("{} {}", locale.t(reason), locale.t("email.tagline")),
@@ -105,7 +111,7 @@ fn email_for(to: String, notice: &Notice, locale: Locale) -> nomi_mail::Email {
 
 /// Emails an address that may not have a Nomi account yet (a team invite), in the background.
 /// `reason` is the footer saying why they got it.
-pub fn email_address(to: String, title: String, paragraphs: Vec<String>, notes: Vec<String>, reason: String, locale: Locale) {
+pub fn email_address(to: String, title: String, paragraphs: Vec<String>, action: Option<Action>, notes: Vec<String>, reason: String, locale: Locale) {
     let email = BrandedEmail {
         sender: Sender::nomi(),
         to,
@@ -114,6 +120,7 @@ pub fn email_address(to: String, title: String, paragraphs: Vec<String>, notes: 
         title,
         paragraphs,
         highlight: None,
+        action,
         notes,
         crew_label: locale.t("email.crew_label"),
         footer: format!("{reason} {}", locale.t("email.tagline")),
@@ -228,5 +235,17 @@ mod tests {
         assert!(html.contains("10,000,000 tokens"));
         assert!(html.contains("/billing"));
         assert!(email.text.contains("Your plan changed to Pro."));
+    }
+
+    #[test]
+    fn a_notice_email_links_to_the_page_by_its_full_address() {
+        // No other unit test here depends on APP_URL being unset.
+        std::env::set_var("APP_URL", "https://nomi.example.com/");
+        let notice = Notice { kind: Kind::Account, title: "Hi".into(), body: "Body".into(), link: Some("/billing".into()) };
+        let email = email_for("ana@example.com".into(), &notice, Locale::En);
+        let html = email.html.unwrap();
+        assert!(html.contains(r#"href="https://nomi.example.com/billing""#), "a button to the full address");
+        assert!(email.text.contains("Open in Nomi: https://nomi.example.com/billing"));
+        assert!(!email.text.contains("go to /billing"));
     }
 }
