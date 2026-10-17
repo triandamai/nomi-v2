@@ -10,6 +10,7 @@
 	import CrewPanel from '$lib/components/CrewPanel.svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
+	import GlassBackdrop from '$lib/components/GlassBackdrop.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
@@ -60,6 +61,7 @@
 		unsaved = false,
 		project = null,
 		hasOlder = false,
+		glass = false,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -83,6 +85,8 @@
 		unsaved?: boolean;
 		/** A project's chat: built around making the project (status, crew, suggestions) rather than conversation. */
 		project?: { status: 'planning' | 'building' | 'ready' } | null;
+		/** Sit on the frosted crew stage (GlassBackdrop): regular chats, not a project's. */
+		glass?: boolean;
 	} = $props();
 
 	// The chat's name: renamed in place by the person, or live when they ask the crew to.
@@ -691,7 +695,8 @@
 	});
 </script>
 
-<div class="chat" class:chat--project={!!project}>
+<div class="chat" class:chat--project={!!project} class:chat--glass={glass && !project}>
+	{#if glass && !project}<GlassBackdrop busy={isWorking} />{/if}
 	<header class="appbar" class:appbar--compact={compactHeader}>
 		<div class="appbar__titles" hidden={compactHeader}>
 			{#if project}
@@ -1327,6 +1332,33 @@
 
 	.dock {
 		padding: 8px clamp(12px, 3vw, 32px) 14px;
+	}
+	/* On the glass stage: the chat sits above it, and the composer is a frosted pane. Only the
+	   composer blurs what's behind it (a backdrop-filter over the whole thread would re-blur
+	   every frame the crew moves). */
+	.chat--glass {
+		position: relative;
+		isolation: isolate;
+	}
+	.chat--glass > .appbar,
+	.chat--glass > .chat__body {
+		position: relative;
+		z-index: 1;
+	}
+	.chat--glass .composer {
+		background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent);
+		-webkit-backdrop-filter: blur(20px) saturate(1.5);
+		backdrop-filter: blur(20px) saturate(1.5);
+		box-shadow:
+			inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 55%, transparent),
+			0 18px 40px -28px color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
+	}
+	@media (prefers-reduced-transparency: reduce) {
+		.chat--glass .composer {
+			background: var(--md-sys-color-surface-container-lowest);
+			-webkit-backdrop-filter: none;
+			backdrop-filter: none;
+		}
 	}
 	.composer {
 		display: flex;

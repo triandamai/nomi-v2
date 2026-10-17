@@ -1987,5 +1987,13 @@
 	"pj_transfer_type": "Type {name} to confirm",
 	"pj_transfer_owner_told": "The owners of {org} get a notification and an email saying the project is theirs now.",
 	"notif_kind_project": "Projects",
-	"pj_transfer_shipyard": "The published app moves to {org} on Shipyard too, with its data and settings. Its address stays the same; it restarts once."
+	"pj_transfer_shipyard": "The published app moves to {org} on Shipyard too, with its data and settings. Its address stays the same; it restarts once.",
+	"prefs_home": "Home page",
+	"prefs_home_hint": "Pick the page you land on. You can switch any time.",
+	"home_layout_classic": "Classic",
+	"home_layout_classic_hint": "Composer and crew side by side, then your day and recent chats.",
+	"home_layout_stage": "Stage",
+	"home_layout_stage_hint": "A frosted stage with the crew drifting behind a centred composer.",
+	"prefs_backdrop": "Animated background",
+	"prefs_backdrop_hint": "The softly moving crew behind your chats and the Stage home. Turn it off for a plain, still background."
 }

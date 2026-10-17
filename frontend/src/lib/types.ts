@@ -362,6 +362,10 @@ export interface Preferences {
 	has_stored_timezone: boolean;
 	/** Features pinned to the drawer, in order; null until customised (see $lib/drawerPins). */
 	drawer_pins?: string[] | null;
+	/** The home page layout's slug ($lib/homeLayouts); null until picked. */
+	home_layout?: string | null;
+	/** The animated crew background behind chats and the Stage home (on unless turned off). */
+	animated_backdrop?: boolean;
 }
 
 export interface ProjectSummary {

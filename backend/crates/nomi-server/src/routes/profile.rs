@@ -291,6 +291,10 @@ pub struct PreferencesResponse {
     pub has_stored_timezone: bool,
     /// Features pinned to the navigation drawer, in order; null until the person customises it.
     pub drawer_pins: Option<Vec<String>>,
+    /// The home page layout the person picked; null means the default one.
+    pub home_layout: Option<String>,
+    /// The animated crew background behind chats and the Stage home.
+    pub animated_backdrop: bool,
 }
 
 #[tracing::instrument(skip(state, claims))]
@@ -299,8 +303,10 @@ pub async fn get_preferences(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<PreferencesResponse>, (StatusCode, &'static str)> {
     #[allow(clippy::type_complexity)]
-    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<Vec<String>>)> =
-        sqlx::query_as("SELECT theme, accent_color, timezone, language, drawer_pins FROM user_preferences WHERE user_id = $1")
+    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<Vec<String>>, Option<String>, Option<bool>)> =
+        sqlx::query_as(
+            "SELECT theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop FROM user_preferences WHERE user_id = $1",
+        )
             .bind(claims.sub)
             .fetch_optional(&state.pool)
             .await
@@ -309,7 +315,8 @@ pub async fn get_preferences(
                 (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences")
             })?;
 
-    let (theme, accent_color, timezone, language, drawer_pins) = row.unwrap_or((None, None, None, None, None));
+    let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop) =
+        row.unwrap_or((None, None, None, None, None, None, None));
     Ok(Json(PreferencesResponse {
         theme: theme.unwrap_or_else(|| "system".to_string()),
         accent_color: accent_color.unwrap_or_else(|| "canopy".to_string()),
@@ -317,6 +324,8 @@ pub async fn get_preferences(
         timezone: timezone.unwrap_or_else(|| "UTC".to_string()),
         language: Locale::from_code_or_default(language.as_deref()).code().to_string(),
         drawer_pins,
+        home_layout,
+        animated_backdrop: animated_backdrop.unwrap_or(true),
     }))
 }
 
@@ -330,6 +339,16 @@ pub struct UpdatePreferencesRequest {
     pub timezone: Option<String>,
     pub language: Option<String>,
     pub drawer_pins: Option<Vec<String>>,
+    pub home_layout: Option<String>,
+    pub animated_backdrop: Option<bool>,
+}
+
+/// A home layout is a slug the frontend knows (its layouts live in $lib/homeLayouts), so adding
+/// one needs no backend change; the frontend falls back to its default for a slug it doesn't know.
+fn is_home_layout_slug(value: &str) -> bool {
+    (1..=32).contains(&value.len())
+        && value.starts_with(|c: char| c.is_ascii_lowercase())
+        && value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// Features that can be pinned to the drawer (Home, Chats and Projects are always there).
@@ -374,6 +393,11 @@ pub async fn put_preferences(
             return Err((StatusCode::BAD_REQUEST, "drawer_pins can't list a feature twice"));
         }
     }
+    if let Some(layout) = &req.home_layout {
+        if !is_home_layout_slug(layout) {
+            return Err((StatusCode::BAD_REQUEST, "home_layout must be a layout's slug"));
+        }
+    }
 
     // An UPDATE's SET clause can COALESCE against the row's own current columns directly, unlike
     // an INSERT .. ON CONFLICT's EXCLUDED, which holds the VALUES clause's already-defaulted
@@ -387,16 +411,18 @@ pub async fn put_preferences(
     })?;
 
     #[allow(clippy::type_complexity)]
-    let updated: Option<(String, String, String, String, Option<Vec<String>>)> = sqlx::query_as(
+    let updated: Option<(String, String, String, String, Option<Vec<String>>, Option<String>, Option<bool>)> = sqlx::query_as(
         "UPDATE user_preferences SET \
             theme = COALESCE($2, theme), \
             accent_color = COALESCE($3, accent_color), \
             timezone = COALESCE($4, timezone), \
             language = COALESCE($5, language), \
             drawer_pins = COALESCE($6, drawer_pins), \
+            home_layout = COALESCE($7, home_layout), \
+            animated_backdrop = COALESCE($8, animated_backdrop), \
             updated_at = now() \
          WHERE user_id = $1 \
-         RETURNING theme, accent_color, timezone, language, drawer_pins",
+         RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop",
     )
     .bind(claims.sub)
     .bind(&req.theme)
@@ -404,6 +430,8 @@ pub async fn put_preferences(
     .bind(&req.timezone)
     .bind(language)
     .bind(&req.drawer_pins)
+    .bind(&req.home_layout)
+    .bind(req.animated_backdrop)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
@@ -411,12 +439,12 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    let (theme, accent_color, timezone, language, drawer_pins) = match updated {
+    let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop) = match updated {
         Some(row) => row,
         None => sqlx::query_as(
-            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language, drawer_pins) \
-             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6) \
-             RETURNING theme, accent_color, timezone, language, drawer_pins",
+            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop) \
+             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6, $7, $8) \
+             RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop",
         )
         .bind(claims.sub)
         .bind(&req.theme)
@@ -424,6 +452,8 @@ pub async fn put_preferences(
         .bind(&req.timezone)
         .bind(language)
         .bind(&req.drawer_pins)
+        .bind(&req.home_layout)
+        .bind(req.animated_backdrop)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
@@ -440,5 +470,14 @@ pub async fn put_preferences(
     // A PUT always leaves a row behind (via the insert-if-missing fallback above), so a
     // timezone is always "stored" by the time this response is built — unlike GET, which can
     // observe a user with no row at all yet.
-    Ok(Json(PreferencesResponse { theme, accent_color, timezone, language, has_stored_timezone: true, drawer_pins }))
+    Ok(Json(PreferencesResponse {
+        theme,
+        accent_color,
+        timezone,
+        language,
+        has_stored_timezone: true,
+        drawer_pins,
+        home_layout,
+        animated_backdrop: animated_backdrop.unwrap_or(true),
+    }))
 }
