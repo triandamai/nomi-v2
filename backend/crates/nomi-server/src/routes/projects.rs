@@ -709,8 +709,10 @@ async fn move_shipyard_app(state: &AppState, project_id: Uuid, from_org: Uuid, t
             tracing::info!(%project_id, %app, %from_org, %to_org, redeploying = %moved.get("redeploying").cloned().unwrap_or_default(), "moved the Shipyard app");
             Ok(())
         }
+        // A publish or deployment is running, or the destination already has an app with this
+        // key: the transfer is cancelled, never renamed on the way.
         Err(nomi_shipyard::ShipyardError::Rejected { status: 409, message, .. }) => {
-            Err((StatusCode::CONFLICT, format!("Shipyard can't move the app right now: {message}")))
+            Err((StatusCode::CONFLICT, format!("Shipyard can't move the app ({message}), so the project wasn't moved")))
         }
         Err(nomi_shipyard::ShipyardError::Unauthorized(message)) => {
             Err((StatusCode::FORBIDDEN, format!("Shipyard won't move the app to this organization: {message}")))
