@@ -213,7 +213,6 @@ pub async fn delete_session(
         "DELETE FROM agent_delegations WHERE session_id = $1",
         "DELETE FROM turn_jobs WHERE session_id = $1",
         "DELETE FROM messages WHERE session_id = $1",
-        "DELETE FROM session_participants WHERE session_id = $1",
         "DELETE FROM sessions WHERE id = $1",
     ] {
         exec_delete_step(&mut tx, sql, session_id).await?;

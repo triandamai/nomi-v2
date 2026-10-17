@@ -449,6 +449,8 @@ pub struct SyncedOrg {
 }
 
 /// `GET /api/admin/shipyard/orgs`: Nomi's organizations and whether each is on Shipyard.
+/// Every team organization (a new one with no projects yet included, to put on Shipyard ahead
+/// of its first publish), and personal workspaces once they have projects.
 pub async fn list_orgs(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<SyncedOrg>>, ApiError> {
     admin(&claims, "view")?;
     let orgs = sqlx::query_as(
@@ -456,7 +458,7 @@ pub async fn list_orgs(State(state): State<AppState>, AuthClaims(claims): AuthCl
                 (SELECT COUNT(*) FROM projects p WHERE p.org_id = o.id) AS projects, \
                 (SELECT COUNT(*) FROM projects p WHERE p.org_id = o.id AND p.shipyard_app IS NOT NULL) AS published \
          FROM organizations o \
-         WHERE o.shipyard_synced_at IS NOT NULL OR EXISTS (SELECT 1 FROM projects p WHERE p.org_id = o.id) \
+         WHERE o.shipyard_synced_at IS NOT NULL OR NOT o.is_personal OR EXISTS (SELECT 1 FROM projects p WHERE p.org_id = o.id) \
          ORDER BY o.shipyard_synced_at IS NULL, o.name LIMIT 500",
     )
     .fetch_all(&state.pool)
