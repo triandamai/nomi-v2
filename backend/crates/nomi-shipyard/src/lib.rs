@@ -241,6 +241,18 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::PUT, &format!("{}/domain", Self::env_path(org, app, env)), Some(json!({ "subdomain": subdomain }))).await
     }
 
+    /// Moves the app, with every environment, its data, secrets and publish history, to `to_org`
+    /// (both organizations must be this integration's). Addresses stay; containers restart once.
+    /// `app_key` renames it on the way when the destination already has that key. `409` while a
+    /// publish or deployment runs, `403` when the destination's plan can't hold it.
+    pub async fn transfer_app(&self, org: &str, app: &str, to_org: &str, app_key: Option<&str>) -> Result<Value, ShipyardError> {
+        let mut body = json!({ "to_org": to_org });
+        if let Some(key) = app_key {
+            body["app_key"] = json!(key);
+        }
+        self.call(reqwest::Method::POST, &format!("{}/transfer", Self::app_path(org, app)), Some(body)).await
+    }
+
     /// Takes the environment down: services, database and data, volumes, domains.
     pub async fn delete_env(&self, org: &str, app: &str, env: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::DELETE, &Self::env_path(org, app, env), None).await

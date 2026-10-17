@@ -1986,5 +1986,6 @@
 	"pj_transfer_back": "Kembali",
 	"pj_transfer_type": "Ketik {name} untuk mengonfirmasi",
 	"pj_transfer_owner_told": "Pemilik {org} mendapat notifikasi dan email bahwa proyek ini sekarang milik mereka.",
-	"notif_kind_project": "Proyek"
+	"notif_kind_project": "Proyek",
+	"pj_transfer_shipyard": "Aplikasi yang diterbitkan juga pindah ke {org} di Shipyard, beserta data dan pengaturannya. Alamatnya tetap sama; aplikasi dimulai ulang sekali."
 }

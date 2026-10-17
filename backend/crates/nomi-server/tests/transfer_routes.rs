@@ -7,7 +7,8 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
-use wiremock::MockServer;
+use wiremock::matchers::{body_partial_json, method, path, path_regex};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const SECRET: &str = "test-secret-do-not-use-in-prod";
 
@@ -97,4 +98,50 @@ async fn a_transfer_is_confirmed_by_name_and_the_new_owners_hear_of_it(pool: PgP
     assert_eq!(moved["link"], format!("/projects/{project}/app"));
     let (_, inbox) = request(router, "GET", "/api/notifications", Some(&ana), None).await;
     assert!(inbox["items"].as_array().unwrap().iter().all(|n| n["kind"] != "project"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_published_project_moves_its_shipyard_app_first(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    let router = build_router(test_state(pool.clone(), &shipyard));
+    let ana = register(router.clone(), "ana@example.com", json!({ "mode": "create", "name": "Acme" })).await;
+    register(router.clone(), "bo@example.com", json!({ "mode": "create", "name": "Beta" })).await;
+    let project = new_project(router.clone(), &ana).await;
+    sqlx::query("UPDATE projects SET name = 'Todo', shipyard_app = 'todo-1a2b3c' WHERE id = $1").bind(project).execute(&pool).await.unwrap();
+    let (acme, beta): (Uuid, Uuid) = sqlx::query_as("SELECT (SELECT org_id FROM projects WHERE id = $1), (SELECT id FROM organizations WHERE name = 'Beta')")
+        .bind(project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let uri = format!("/api/projects/{project}/transfer");
+    let transfer = format!("/orgs/{acme}/apps/todo-1a2b3c/transfer");
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).mount(&shipyard).await;
+
+    // Shipyard refuses (a deployment is running): nothing moves in Nomi either.
+    let busy = Mock::given(method("POST"))
+        .and(path(transfer.clone()))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({ "data": null, "error": { "code": "CONFLICT", "message": "a deployment is running" } })))
+        .expect(1)
+        .mount_as_scoped(&shipyard)
+        .await;
+    let (status, _) = request(router.clone(), "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": "Todo" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let org: Uuid = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    assert_eq!(org, acme);
+    drop(busy);
+
+    // Shipyard moves the app to Beta's organization, then the project follows.
+    Mock::given(method("POST"))
+        .and(path(transfer))
+        .and(body_partial_json(json!({ "to_org": beta.to_string() })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {
+            "app": "todo-1a2b3c", "from_org": acme.to_string(), "to_org": beta.to_string(), "environments": [], "redeploying": [], "skipped": []
+        }, "error": null })))
+        .expect(1)
+        .mount(&shipyard)
+        .await;
+    let (status, _) = request(router, "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": "Todo" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (org, app): (Uuid, Option<String>) = sqlx::query_as("SELECT org_id, shipyard_app FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    assert_eq!((org, app.as_deref()), (beta, Some("todo-1a2b3c")));
 }

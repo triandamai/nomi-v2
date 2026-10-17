@@ -1986,5 +1986,6 @@
 	"pj_transfer_back": "Back",
 	"pj_transfer_type": "Type {name} to confirm",
 	"pj_transfer_owner_told": "The owners of {org} get a notification and an email saying the project is theirs now.",
-	"notif_kind_project": "Projects"
+	"notif_kind_project": "Projects",
+	"pj_transfer_shipyard": "The published app moves to {org} on Shipyard too, with its data and settings. Its address stays the same; it restarts once."
 }

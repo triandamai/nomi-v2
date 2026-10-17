@@ -334,6 +334,11 @@
 				<p class="md-body-medium" style="margin: 0; color: var(--md-sys-color-on-surface-variant)">
 					{m.pj_transfer_owner_told({ org: selectedOrg.name })}
 				</p>
+				{#if deploy.overview?.app}
+					<p class="md-body-medium" style="margin: 0; color: var(--md-sys-color-on-surface-variant)">
+						{m.pj_transfer_shipyard({ org: selectedOrg.name })}
+					</p>
+				{/if}
 				<TextField name="confirm_transfer" label={m.pj_transfer_type({ name: projectName })} bind:value={transferTyped} autocomplete="off" />
 				{#if transferError}
 					<p class="error md-body-medium" role="alert">{transferError}</p>

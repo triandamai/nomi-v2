@@ -646,6 +646,10 @@ pub async fn transfer_project(
 
     let target_owner_id = target_owner.ok_or((StatusCode::BAD_REQUEST, "target organization has no active members or owner".to_string()))?;
 
+    // A published project's Shipyard app moves first, so the two stay in step: when Shipyard
+    // refuses (a publish is running, the destination's plan can't hold it), nothing moves here.
+    move_shipyard_app(&state, project_id, current_org_id, req.target_org_id).await?;
+
     let mut tx = state.pool.begin().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     sqlx::query("UPDATE projects SET org_id = $2, user_id = $3, updated_at = now() WHERE id = $1")
@@ -675,8 +679,44 @@ pub async fn transfer_project(
 
     tx.commit().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    crate::project_events::changed(project_id, "app.transferred");
     notify_transfer(&state.pool, project_id, &project_name, current_org_id, req.target_org_id, claims.sub).await;
     Ok(StatusCode::OK)
+}
+
+/// Moves the project's app on Shipyard to the destination organization (created there first if
+/// it hasn't published anything yet). A project that was never published has nothing to move.
+async fn move_shipyard_app(state: &AppState, project_id: Uuid, from_org: Uuid, to_org: Uuid) -> Result<(), (StatusCode, String)> {
+    let internal = |e: sqlx::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    let app: Option<String> = sqlx::query_scalar("SELECT shipyard_app FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(internal)?;
+    let Some(app) = app else { return Ok(()) };
+    let shipyard = crate::routes::deploy::client(state).map_err(|_| {
+        (StatusCode::SERVICE_UNAVAILABLE, "this project is published on Shipyard, which isn't set up here, so it can't be moved".to_string())
+    })?;
+    let to_name: String = sqlx::query_scalar("SELECT name FROM organizations WHERE id = $1")
+        .bind(to_org)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(internal)?;
+    shipyard.put_org(&to_org.to_string(), &to_name).await.map_err(crate::routes::deploy::shipyard_error)?;
+    sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(to_org).execute(&state.pool).await.map_err(internal)?;
+    match shipyard.transfer_app(&from_org.to_string(), &app, &to_org.to_string(), None).await {
+        Ok(moved) => {
+            tracing::info!(%project_id, %app, %from_org, %to_org, redeploying = %moved.get("redeploying").cloned().unwrap_or_default(), "moved the Shipyard app");
+            Ok(())
+        }
+        Err(nomi_shipyard::ShipyardError::Rejected { status: 409, message, .. }) => {
+            Err((StatusCode::CONFLICT, format!("Shipyard can't move the app right now: {message}")))
+        }
+        Err(nomi_shipyard::ShipyardError::Unauthorized(message)) => {
+            Err((StatusCode::FORBIDDEN, format!("Shipyard won't move the app to this organization: {message}")))
+        }
+        Err(e) => Err(crate::routes::deploy::shipyard_error(e)),
+    }
 }
 
 /// Tells the receiving organization's owners (its admins when it has no owner) that the project
