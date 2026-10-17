@@ -108,6 +108,7 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('issues')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('members')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('database')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('showcase')).toBe(true);
 		});
 	});
 });

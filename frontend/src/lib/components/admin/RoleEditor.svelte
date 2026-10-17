@@ -39,9 +39,12 @@
 
 	let rows = $state<Row[]>([]);
 	let saved = $state<Row[]>([]);
+	// Reads only the grants: reading `rows` back here would make the effect depend on what it
+	// writes and loop forever (which also froze the sheet, so it couldn't close).
 	$effect(() => {
-		rows = fromGrants(user.permissions);
-		saved = rows.map((r) => ({ ...r }));
+		const loaded = fromGrants(user.permissions);
+		rows = loaded;
+		saved = loaded.map((r) => ({ ...r }));
 	});
 
 	const dirty = $derived(JSON.stringify(rows) !== JSON.stringify(saved));

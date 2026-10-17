@@ -116,7 +116,7 @@ pub async fn list_users(
     let search = q.query.filter(|s| !s.trim().is_empty());
 
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(Uuid, String, bool, bool, i64, String, bool, i64, i64)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, bool, bool, i64, String, bool, i64, i64)> = sqlx::query_as(&format!(
         "SELECT u.id, wc.email, u.is_platform_admin, \
                 EXISTS(SELECT 1 FROM user_permissions up WHERE up.user_id = u.id AND up.scope_type = 'admin') AS has_admin_grant, \
                 (SELECT COUNT(*) FROM memberships m WHERE m.user_id = u.id AND m.status = 'active') AS org_count, \
@@ -124,7 +124,7 @@ pub async fn list_users(
                 (s.quota_override IS NOT NULL AND (s.override_until IS NULL OR s.override_until > now())) AS custom_quota, \
                 CASE WHEN s.quota_override IS NOT NULL AND (s.override_until IS NULL OR s.override_until > now()) \
                      THEN s.quota_override ELSE p.monthly_tokens END AS monthly_tokens, \
-                (SELECT COALESCE(SUM(l.input_tokens + l.output_tokens), 0)::bigint FROM llm_usage l \
+                (SELECT COALESCE(ROUND(SUM({counted})), 0)::bigint FROM llm_usage l \
                   WHERE l.user_id = u.id AND l.source = 'nomi' AND l.created_at >= date_trunc('month', now())) AS tokens_used \
          FROM users u \
          JOIN web_credentials wc ON wc.user_id = u.id \
@@ -133,7 +133,8 @@ pub async fn list_users(
          WHERE $1::text IS NULL OR wc.email ILIKE '%' || $1 || '%' \
          ORDER BY wc.email ASC \
          LIMIT $2 OFFSET $3",
-    )
+        counted = nomi_usage::counted_tokens_sql("l.")
+    ))
     .bind(&search)
     .bind(page_size)
     .bind(offset)

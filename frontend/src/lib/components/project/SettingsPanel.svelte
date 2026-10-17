@@ -8,6 +8,7 @@
 	import ListItem from '$lib/components/m3/ListItem.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import Avatar from '$lib/components/m3/Avatar.svelte';
+	import Switch from '$lib/components/m3/Switch.svelte';
 	import IconCheck from '$lib/components/icons/IconCheck.svelte';
 	import IconGroup from '$lib/components/icons/IconGroup.svelte';
 	import { projectApi } from '$lib/projectApi';
@@ -86,6 +87,41 @@
 		}
 	}
 
+	// The showcase: whether this app is on Nomi's public showcase page, with one line about it.
+	interface Showcase { showcase: boolean; blurb: string | null; url: string | null; can_edit: boolean }
+	const BLURB_MAX = 140;
+	let showcase = $state<Showcase | null>(null);
+	let blurb = $state('');
+	let showcaseBusy = $state(false);
+	let showcaseError = $state<string | null>(null);
+	let showcaseSaved = $state(false);
+	$effect(() => {
+		const id = deploy.projectId;
+		projectApi<Showcase>(id, 'showcase')
+			.then((loaded) => {
+				showcase = loaded;
+				blurb = loaded.blurb ?? '';
+			})
+			.catch((e) => (showcaseError = (e as Error).message));
+	});
+	const blurbChanged = $derived((showcase?.blurb ?? '') !== blurb.trim());
+
+	async function saveShowcase(on: boolean) {
+		if (!showcase) return;
+		showcaseBusy = true;
+		showcaseError = null;
+		showcaseSaved = false;
+		try {
+			showcase = await projectApi<Showcase>(deploy.projectId, 'showcase', { method: 'PUT', body: { showcase: on, blurb: blurb.trim() || null } });
+			blurb = showcase.blurb ?? '';
+			showcaseSaved = true;
+		} catch (e) {
+			showcaseError = (e as Error).message;
+		} finally {
+			showcaseBusy = false;
+		}
+	}
+
 	async function remove() {
 		deleting = true;
 		error = null;
@@ -98,6 +134,42 @@
 		}
 	}
 </script>
+
+<section class="block">
+	<div class="block__row">
+		<div class="block__text">
+			<h3 class="block__title">{m.showcase_setting()}</h3>
+			<p class="block__hint">
+				{#if showcase && !showcase.url}{m.showcase_setting_unpublished()}{:else}{m.showcase_setting_hint()}{/if}
+				<a href="/showcase" target="_blank" rel="noopener">{m.showcase_see()}</a>
+			</p>
+		</div>
+		<Switch
+			checked={showcase?.showcase ?? false}
+			disabled={!showcase || !showcase.can_edit || !showcase.url || showcaseBusy}
+			aria-label={m.showcase_setting()}
+			onchange={(on) => saveShowcase(on)}
+		/>
+	</div>
+	{#if showcase?.url && showcase.can_edit}
+		<TextField
+			name="showcase_blurb"
+			label={m.showcase_blurb()}
+			bind:value={blurb}
+			maxlength={BLURB_MAX}
+			supportingText={m.showcase_blurb_hint({ count: blurb.length, max: BLURB_MAX })}
+		/>
+		{#if blurbChanged}
+			<div class="block__actions">
+				<Button variant="tonal" size="s" disabled={showcaseBusy} onclick={() => saveShowcase(showcase?.showcase ?? false)}>{m.showcase_save_blurb()}</Button>
+			</div>
+		{/if}
+	{:else if showcase && !showcase.can_edit}
+		<p class="block__hint">{m.pj_admins_only()}</p>
+	{/if}
+	{#if showcaseError}<p class="error" role="alert">{showcaseError}</p>{/if}
+	{#if showcaseSaved && !showcaseError}<p class="block__hint" role="status">{showcase?.showcase ? m.showcase_on() : m.showcase_off()}</p>{/if}
+</section>
 
 <section class="block">
 	<h3 class="block__title">{m.import_title()}</h3>
@@ -259,6 +331,30 @@
 		padding: 16px 18px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-large);
+	}
+	.block__row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+	}
+	.block__text {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+	.block__hint a {
+		color: var(--md-sys-color-primary);
+		font-weight: 600;
+	}
+	.block__hint a:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.block__actions {
+		display: flex;
+		justify-content: flex-end;
 	}
 	.block__title {
 		margin: 0;

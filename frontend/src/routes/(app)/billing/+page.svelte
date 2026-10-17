@@ -129,6 +129,9 @@
 					<div class="tile">
 						<dt>{m.billing_input()}</dt>
 						<dd title={formatTokensFull(usage.input_tokens)}>{formatTokens(usage.input_tokens)}</dd>
+						{#if usage.cached_input_tokens > 0}
+							<span class="tile__note">{m.billing_cached({ tokens: formatTokens(usage.cached_input_tokens) })}</span>
+						{/if}
 					</div>
 					<div class="tile">
 						<dt>{m.billing_output()}</dt>
@@ -498,6 +501,11 @@
 		font-weight: 650;
 		line-height: 1.2;
 		overflow-wrap: anywhere;
+	}
+	.tile__note {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+		line-height: 1.35;
 	}
 	.panel {
 		display: flex;

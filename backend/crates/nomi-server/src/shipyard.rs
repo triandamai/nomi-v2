@@ -84,18 +84,51 @@ impl From<sqlx::Error> for EnsureError {
     }
 }
 
-/// The secret Shipyard signs webhooks with: from the environment, else the one Nomi stored when
-/// it registered its own endpoint.
-pub async fn webhook_secret(pool: &PgPool, config: &ShipyardConfig, settings_key: &[u8; 32]) -> Option<String> {
-    if let Some(secret) = &config.webhook_secret {
-        return Some(secret.clone());
-    }
+/// The secrets a Shipyard webhook may be signed with: SHIPYARD_WEBHOOK_SECRET, and the one Nomi
+/// stored when it registered (or rotated) its own endpoint. Both count, so an endpoint Nomi
+/// registers itself works even when the environment also names a secret.
+pub async fn webhook_secrets(pool: &PgPool, config: &ShipyardConfig, settings_key: &[u8; 32]) -> Vec<String> {
     let stored: Option<Vec<u8>> = sqlx::query_scalar("SELECT secret_encrypted FROM shipyard_webhook WHERE singleton")
         .fetch_optional(pool)
         .await
         .ok()
         .flatten();
-    stored.and_then(|bytes| nomi_settings::crypto::decrypt(settings_key, &bytes).ok())
+    config
+        .webhook_secret
+        .clone()
+        .into_iter()
+        .chain(stored.and_then(|bytes| nomi_settings::crypto::decrypt(settings_key, &bytes).ok()))
+        .collect()
+}
+
+/// Nomi's own endpoint among Shipyard's (`GET /webhooks`): the one Nomi registered, else any
+/// pointing at a `/hooks/shipyard` path (one set up by hand, e.g. with SHIPYARD_WEBHOOK_SECRET).
+pub fn own_endpoint<'a>(endpoints: &'a serde_json::Value, registered_id: Option<&str>) -> Option<&'a serde_json::Value> {
+    let list = endpoints.as_array()?;
+    let str_of = |e: &serde_json::Value, key: &str| e.get(key).and_then(serde_json::Value::as_str).map(str::to_string);
+    registered_id
+        .and_then(|id| list.iter().find(|e| str_of(e, "id").as_deref() == Some(id)))
+        .or_else(|| {
+            list.iter().find(|e| {
+                str_of(e, "url")
+                    .and_then(|url| reqwest::Url::parse(&url).ok())
+                    .is_some_and(|url| url.path().trim_end_matches('/').ends_with(WEBHOOK_PATH))
+            })
+        })
+}
+
+/// Keeps `secret` as the one for Nomi's own endpoint `endpoint_id` (registered, rotated or adopted).
+pub async fn keep_webhook(pool: &PgPool, settings_key: &[u8; 32], endpoint_id: &str, url: &str, secret: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO shipyard_webhook (singleton, endpoint_id, url, secret_encrypted) VALUES (true, $1, $2, $3) \
+         ON CONFLICT (singleton) DO UPDATE SET endpoint_id = $1, url = $2, secret_encrypted = $3, created_at = now()",
+    )
+    .bind(endpoint_id)
+    .bind(url)
+    .bind(nomi_settings::crypto::encrypt(settings_key, secret))
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// The registered endpoint, if Nomi registered one itself.
@@ -112,37 +145,33 @@ pub async fn register_webhook(pool: &PgPool, client: &Shipyard<'_>, settings_key
         let _ = client.delete_webhook(&old_id).await;
     }
     let (endpoint_id, secret) = client.create_webhook(&url).await?;
-    sqlx::query(
-        "INSERT INTO shipyard_webhook (singleton, endpoint_id, url, secret_encrypted) VALUES (true, $1, $2, $3) \
-         ON CONFLICT (singleton) DO UPDATE SET endpoint_id = $1, url = $2, secret_encrypted = $3, created_at = now()",
-    )
-    .bind(&endpoint_id)
-    .bind(&url)
-    .bind(nomi_settings::crypto::encrypt(settings_key, &secret))
-    .execute(pool)
-    .await?;
+    keep_webhook(pool, settings_key, &endpoint_id, &url, &secret).await?;
     Ok(url)
 }
 
-/// At startup: when Shipyard is set up, no secret was given and Nomi hasn't registered an
-/// endpoint yet, register one at `APP_URL`.
+/// At startup: when Shipyard has no endpoint for Nomi (never registered, or deleted there),
+/// register one at `APP_URL`, so events arrive without anyone pressing "Catch up".
 pub async fn register_webhook_on_start(pool: PgPool, http: reqwest::Client, config: ShipyardConfig, settings_key: [u8; 32]) {
-    if config.webhook_secret.is_some() {
-        return;
-    }
-    match registered_webhook(&pool).await {
-        Ok(Some(_)) => return,
-        Ok(None) => {}
+    let client = Shipyard::new(&http, &config);
+    let registered = match registered_webhook(&pool).await {
+        Ok(registered) => registered.map(|(id, _, _)| id),
         Err(e) => {
             tracing::warn!(error = %e, "couldn't check the Shipyard webhook");
             return;
         }
+    };
+    match client.list_webhooks().await {
+        Ok(endpoints) if own_endpoint(&endpoints, registered.as_deref()).is_some() => return,
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(error = ?e, "couldn't list Shipyard's webhooks");
+            return;
+        }
     }
     let Some(app_url) = crate::public_url::app_url() else {
-        tracing::warn!("Shipyard is set up but APP_URL isn't: set it so Nomi can register its webhook, or set SHIPYARD_WEBHOOK_SECRET");
+        tracing::warn!("Shipyard has no webhook for Nomi and APP_URL isn't set: set it so Nomi can register one");
         return;
     };
-    let client = Shipyard::new(&http, &config);
     match register_webhook(&pool, &client, &settings_key, &app_url).await {
         Ok(url) => tracing::info!(%url, "registered Nomi's Shipyard webhook"),
         Err(e) => tracing::warn!(error = ?e, "couldn't register Nomi's Shipyard webhook"),
@@ -393,4 +422,24 @@ pub async fn sync_org_name(pool: &PgPool, client: &Shipyard<'_>, org_id: Uuid) -
     client.put_org(&org_id.to_string(), &name).await?;
     sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(org_id).execute(pool).await?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn nomis_endpoint_is_the_registered_one_else_one_at_its_hook_path() {
+        let endpoints = json!([
+            { "id": "a", "url": "https://ops.example/events" },
+            { "id": "b", "url": "https://nomi.example/hooks/shipyard" },
+            { "id": "c", "url": "https://nomi.example/api/hooks/shipyard/" },
+        ]);
+        assert_eq!(own_endpoint(&endpoints, Some("a")).unwrap()["id"], "a");
+        assert_eq!(own_endpoint(&endpoints, Some("gone")).unwrap()["id"], "b");
+        assert_eq!(own_endpoint(&endpoints, None).unwrap()["id"], "b");
+        assert!(own_endpoint(&json!([{ "id": "a", "url": "https://ops.example/hooks/shipyard-x" }]), None).is_none());
+        assert!(own_endpoint(&json!([]), None).is_none());
+    }
 }

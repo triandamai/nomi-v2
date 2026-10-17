@@ -202,6 +202,10 @@ async fn cached_input_is_priced_at_the_cached_price(pool: PgPool) {
     assert_eq!(cached, 800_000);
     // 0.2M uncached at $3 + 0.8M cached at $0.30
     assert!((cost - 0.84).abs() < 1e-9, "{cost}");
-    // Every input token still counts toward the allowance.
-    assert_eq!(nomi_usage::brief(&pool, ana).await.unwrap().tokens_used, 1_000_000);
+    // Toward the allowance, cached input counts at a tenth: 0.2M + 0.8M × 0.1.
+    assert_eq!(nomi_usage::brief(&pool, ana).await.unwrap().tokens_used, 280_000);
+    let month = nomi_usage::month(&pool, ana, None).await.unwrap();
+    assert_eq!((month.tokens_used, month.input_tokens, month.cached_input_tokens), (280_000, 1_000_000, 800_000));
+    assert_eq!(month.by_day[0].tokens, 280_000);
+    assert_eq!(month.by_model[0].tokens, 280_000);
 }

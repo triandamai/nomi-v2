@@ -1,6 +1,6 @@
 // Which features are pinned to the navigation drawer, and in what order (see $lib/features).
 
-export const PINNABLE = ['money', 'reminders', 'memory', 'notifications', 'crew', 'connections', 'models', 'billing'] as const;
+export const PINNABLE = ['money', 'reminders', 'memory', 'notifications', 'crew', 'connections', 'models', 'billing', 'showcase'] as const;
 export type PinnableId = (typeof PINNABLE)[number];
 
 /** What the drawer showed before it could be customised. */

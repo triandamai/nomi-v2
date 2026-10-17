@@ -16,6 +16,7 @@ import IconChip from '$lib/components/icons/IconChip.svelte';
 import IconCard from '$lib/components/icons/IconCard.svelte';
 import IconSettings from '$lib/components/icons/IconSettings.svelte';
 import IconPerson from '$lib/components/icons/IconPerson.svelte';
+import IconSparkle from '$lib/components/icons/IconSparkle.svelte';
 
 import { type PinnableId } from '$lib/drawerPins';
 
@@ -37,6 +38,7 @@ export const FEATURES: Record<FeatureId, Feature> = {
 	home: { id: 'home', href: '/', label: m.nav_home, description: m.feature_home, icon: IconHome },
 	chats: { id: 'chats', href: '/chats', label: m.nav_chats, description: m.feature_chats, icon: IconChatBubble },
 	projects: { id: 'projects', href: '/projects', label: m.nav_projects, description: m.feature_projects, icon: IconFolder },
+	showcase: { id: 'showcase', href: '/showcase', label: m.nav_showcase, description: m.feature_showcase, icon: IconSparkle },
 	money: { id: 'money', href: '/money', label: m.nav_money, description: m.feature_money, icon: IconWallet },
 	reminders: { id: 'reminders', href: '/reminders', label: m.nav_reminders, description: m.feature_reminders, icon: IconBell },
 	memory: { id: 'memory', href: '/memory', label: m.nav_memory, description: m.feature_memory, icon: IconMemory },
@@ -52,7 +54,7 @@ export const FEATURES: Record<FeatureId, Feature> = {
 
 /** The More page's sections, in order. */
 export const MORE_SECTIONS: { title: () => string; ids: FeatureId[] }[] = [
-	{ title: m.more_section_main, ids: ['home', 'chats', 'projects', 'orgs'] },
+	{ title: m.more_section_main, ids: ['home', 'chats', 'projects', 'showcase', 'orgs'] },
 	{ title: m.more_section_life, ids: ['money', 'reminders', 'memory', 'notifications'] },
 	{ title: m.more_section_crew, ids: ['crew', 'connections', 'models'] },
 	{ title: m.more_section_account, ids: ['billing', 'preferences', 'profile'] }

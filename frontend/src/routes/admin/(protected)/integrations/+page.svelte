@@ -18,7 +18,20 @@
 	const canWrite = $derived(can(data.access, 'integrations', 'write'));
 	const canManage = $derived(can(data.access, 'integrations', 'manage'));
 
-	interface Status { configured: boolean; can_reveal: boolean; webhook_url: string | null; webhook_from_env: boolean; registered_at: string | null; last_event_at: string | null }
+	interface Status {
+		configured: boolean;
+		can_reveal: boolean;
+		/** Nomi's endpoint as Shipyard lists it. */
+		webhook_url: string | null;
+		/** Whether Shipyard has an endpoint for Nomi; null when Shipyard couldn't be asked. */
+		webhook_registered: boolean | null;
+		webhook_enabled: boolean | null;
+		/** Where registering points Shipyard; null until APP_URL is set. */
+		webhook_target: string | null;
+		webhook_from_env: boolean;
+		registered_at: string | null;
+		last_event_at: string | null;
+	}
 	interface App { org_id: string; org_name: string; key: string; name: string; environments: string[]; project: { id: string; name: string; session_id: string } | null }
 	interface Overview { apps: App[]; candidates: { org_id: string; projects: { id: string; name: string }[] }[]; errors: string[] }
 	interface Endpoint { id: string; url: string; events: string[]; enabled: boolean; org: string | null; created_at: string }
@@ -79,6 +92,17 @@
 	$effect(() => {
 		void loadStatus();
 	});
+
+	// Shipyard's own list decides: missing there (never registered, or deleted) means no events.
+	const webhookMissing = $derived(status?.configured === true && status.webhook_registered === false);
+	const webhookLabel = (s: Status) =>
+		s.webhook_registered === null
+			? m.integ_webhook_unknown()
+			: !s.webhook_url
+				? m.integ_webhook_not_on_shipyard()
+				: s.webhook_enabled === false
+					? m.integ_webhook_off({ url: s.webhook_url })
+					: s.webhook_url;
 
 	async function registerWebhook() {
 		await run('register', async () => {
@@ -307,6 +331,19 @@
 	});
 </script>
 
+{#snippet webhookSetup(s: Status)}
+	<div class="setup">
+		<span class="setup__text">
+			<strong>{m.integ_webhook_missing()}</strong>
+			<span class="muted small">{m.integ_webhook_missing_hint()}</span>
+			<span class="muted small break">{s.webhook_target ? m.integ_webhook_target({ url: s.webhook_target }) : m.integ_webhook_needs_app_url()}</span>
+		</span>
+		{#if canManage}
+			<Button variant="filled" size="s" disabled={busy === 'register' || !s.webhook_target} onclick={registerWebhook}>{m.integ_register_webhook()}</Button>
+		{/if}
+	</div>
+{/snippet}
+
 <PageHeader title={m.admin_integrations()} lede={m.integ_lede()} agent="coding" />
 
 <section class="integration">
@@ -345,17 +382,19 @@
 		{#if status}
 			<dl class="facts">
 				<div><dt>{m.shipyard_connection()}</dt><dd>{status.configured ? m.shipyard_connected() : m.shipyard_not_configured()}</dd></div>
-				<div><dt>{m.shipyard_webhook()}</dt><dd>{status.webhook_from_env ? m.shipyard_webhook_env() : (status.webhook_url ?? m.shipyard_webhook_none())}</dd></div>
+				<div><dt>{m.shipyard_webhook()}</dt><dd class="break">{webhookLabel(status)}</dd></div>
 				<div><dt>{m.shipyard_last_event()}</dt><dd>{when(status.last_event_at)}</dd></div>
 				<div><dt>{m.shipyard_db_access()}</dt><dd>{status.can_reveal ? m.shipyard_db_on() : m.shipyard_db_off()}</dd></div>
 			</dl>
 			{#if !status.configured}
 				<p class="muted">{m.integ_setup_hint()}</p>
 			{:else}
+				{#if webhookMissing}
+					{@render webhookSetup(status)}
+				{:else if status.webhook_enabled === false}
+					<p class="muted small">{m.integ_webhook_switched_off()}</p>
+				{/if}
 				<div class="actions">
-					{#if canManage && !status.webhook_from_env}
-						<Button variant="tonal" size="s" disabled={busy === 'register'} onclick={registerWebhook}>{status.webhook_url ? m.shipyard_reregister() : m.shipyard_register()}</Button>
-					{/if}
 					{#if canWrite}
 						<Button variant="outlined" size="s" disabled={busy === 'catchup'} onclick={catchUp}>{m.integ_catch_up()}</Button>
 					{/if}
@@ -366,16 +405,8 @@
 	{:else if tab === 'webhooks'}
 		{#if webhooks}
 			<!-- Nomi's own endpoint isn't on Shipyard (never registered, or deleted there): put it back. -->
-			{#if !webhooks.own_id && status && !status.webhook_from_env}
-				<div class="setup">
-					<span class="setup__text">
-						<strong>{m.integ_webhook_missing()}</strong>
-						<span class="muted small">{m.integ_webhook_missing_hint()}</span>
-					</span>
-					{#if canManage}
-						<Button variant="filled" size="s" disabled={busy === 'register'} onclick={registerWebhook}>{m.integ_register_webhook()}</Button>
-					{/if}
-				</div>
+			{#if !webhooks.own_id && status}
+				{@render webhookSetup(status)}
 			{/if}
 			{#if webhooks.endpoints.length === 0}
 				<p class="muted">{m.integ_no_endpoints()}</p>
@@ -675,6 +706,9 @@
 		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container-high);
+	}
+	.break {
+		overflow-wrap: anywhere;
 	}
 	.setup__text {
 		display: flex;

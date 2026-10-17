@@ -84,7 +84,7 @@ async fn webhooks_can_be_switched_off_and_given_a_new_secret(pool: PgPool) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/webhooks"))
-        .respond_with(ok(json!([{ "id": "ep1", "url": "https://nomi.test/hooks/shipyard", "events": ["*"], "enabled": true, "org": null, "created_at": "2026-01-01T00:00:00Z" }])))
+        .respond_with(ok(json!([{ "id": "ep1", "url": "https://ops.test/events", "events": ["*"], "enabled": true, "org": null, "created_at": "2026-01-01T00:00:00Z" }])))
         .mount(&server)
         .await;
     Mock::given(method("PATCH"))
@@ -109,13 +109,13 @@ async fn webhooks_can_be_switched_off_and_given_a_new_secret(pool: PgPool) {
     let (status, _) = request(router.clone(), "PATCH", "/api/admin/shipyard/webhooks/ep1", &token, Some(json!({ "enabled": false }))).await;
     assert_eq!(status, StatusCode::OK);
 
-    // Not Nomi's own endpoint: the secret is shown once.
+    // Someone else's endpoint: the secret is shown once.
     let (status, body) = request(router.clone(), "POST", "/api/admin/shipyard/webhooks/ep1/rotate", &token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["secret"], "whsec_new");
 
-    // Nomi's own: it keeps the secret and doesn't show it.
-    sqlx::query("INSERT INTO shipyard_webhook (endpoint_id, url, secret_encrypted) VALUES ('ep1', 'https://nomi.test/hooks/shipyard', $1)")
+    // Nomi's own (it registered it): it keeps the secret and doesn't show it.
+    sqlx::query("INSERT INTO shipyard_webhook (endpoint_id, url, secret_encrypted) VALUES ('ep1', 'https://ops.test/events', $1)")
         .bind(nomi_settings::crypto::encrypt(&nomi_test_support::TEST_SETTINGS_KEY, "whsec_old"))
         .execute(&pool)
         .await
@@ -213,4 +213,71 @@ async fn removing_an_org_from_shipyard_unpublishes_its_projects(pool: PgPool) {
     let synced: Option<chrono::DateTime<chrono::Utc>> =
         sqlx::query_scalar("SELECT shipyard_synced_at FROM organizations WHERE id = $1").bind(org).fetch_one(&pool).await.unwrap();
     assert!(synced.is_none());
+}
+
+async fn signed_webhook(router: axum::Router, secret: &str) -> StatusCode {
+    let raw = json!({ "id": "ping-1", "type": "ping" }).to_string();
+    let now = chrono::Utc::now().timestamp();
+    let signature = format!("t={now},v1={}", nomi_shipyard::signature::sign(secret, now, raw.as_bytes()));
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/hooks/shipyard")
+        .header("content-type", "application/json")
+        .header("shipyard-signature", signature)
+        .body(Body::from(raw))
+        .unwrap();
+    router.oneshot(request).await.unwrap().status()
+}
+
+/// SHIPYARD_WEBHOOK_SECRET set but no endpoint on Shipyard: the page says so, registering puts
+/// one there, and events signed with either secret are accepted.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_missing_webhook_shows_up_and_can_be_registered_despite_an_env_secret(pool: PgPool) {
+    std::env::set_var("APP_URL", "https://nomi.test");
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/webhooks"))
+        .respond_with(ok(json!([])))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/webhooks"))
+        .respond_with(ok(json!([{ "id": "ep9", "url": "https://nomi.test/hooks/shipyard", "events": ["*"], "enabled": true, "org": null, "created_at": "2026-01-01T00:00:00Z" }])))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/webhooks"))
+        .and(body_json(json!({ "url": "https://nomi.test/hooks/shipyard", "events": ["*"] })))
+        .respond_with(ok(json!({ "id": "ep9", "url": "https://nomi.test/hooks/shipyard", "events": ["*"], "org": null, "secret": "whsec_new" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/webhooks/ep9/test"))
+        .respond_with(ok(json!({ "ok": true })))
+        .mount(&server)
+        .await;
+    let mut state = test_state(pool.clone(), &server);
+    state.shipyard.as_mut().unwrap().webhook_secret = Some("whsec_env".into());
+    let router = build_router(state);
+    let token = login(router.clone(), &pool, "admin@example.com", true).await;
+
+    let (status, body) = request(router.clone(), "GET", "/api/admin/shipyard", &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["webhook_registered"], false);
+    assert_eq!(body["webhook_from_env"], true);
+    assert_eq!(body["webhook_target"], "https://nomi.test/hooks/shipyard");
+
+    let (status, body) = request(router.clone(), "POST", "/api/admin/shipyard/webhook", &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["webhook_registered"], true);
+    assert_eq!(body["webhook_url"], "https://nomi.test/hooks/shipyard");
+
+    let (_, body) = request(router.clone(), "GET", "/api/admin/shipyard/webhooks", &token, None).await;
+    assert_eq!(body["own_id"], "ep9");
+
+    assert_eq!(signed_webhook(router.clone(), "whsec_new").await, StatusCode::NO_CONTENT);
+    assert_eq!(signed_webhook(router.clone(), "whsec_env").await, StatusCode::NO_CONTENT);
+    assert_eq!(signed_webhook(router, "whsec_wrong").await, StatusCode::UNAUTHORIZED);
 }

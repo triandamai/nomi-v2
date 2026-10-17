@@ -35,7 +35,7 @@
 	--md-sys-color-surface: #f4f7f2;
 	--md-sys-color-on-surface: #0f1a14;
 	--md-sys-color-on-surface-variant: #47544b;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #edf2ea;
 	--md-sys-color-surface-container: #e6ede3;
 	--md-sys-color-surface-container-high: #dde6da;
@@ -48,6 +48,13 @@
 	--md-sys-color-inverse-on-surface: #eaf4e5;
 	--md-sys-color-inverse-primary: #7ce0a3;
 	--md-sys-color-scrim: #000000;
+
+	/* ---- Surfaces in light ----
+	   M3's lowest container is pure white in every scheme, which left cards and tables the same
+	   white whatever the theme. Light schemes tint it with a breath of the theme's primary (it
+	   stays the lightest surface), and the page ground is the theme's surface-container, so
+	   cards sit on a ground that carries the theme. Dark keeps M3's surface as the ground. */
+	--nomi-color-ground: var(--md-sys-color-surface-container);
 
 	/* ---- Typography ----
 	   Bricolage Grotesque (brand) drives Display/Headline — a variable grotesque with real 800
@@ -345,6 +352,7 @@
    data-theme is absent or literally "system". */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']):not([data-theme='dark']) {
+		--nomi-color-ground: var(--md-sys-color-surface);
 		--md-sys-color-primary: #7ce0a3;
 		--md-sys-color-on-primary: #00391f;
 		--md-sys-color-primary-container: #0b5236;
@@ -385,6 +393,7 @@
    file already holds the light values, and neither this selector nor the media query above
    matches when data-theme="light", so those base values simply apply unopposed.) */
 :root[data-theme='dark'] {
+	--nomi-color-ground: var(--md-sys-color-surface);
 	--md-sys-color-primary: #7ce0a3;
 	--md-sys-color-on-primary: #00391f;
 	--md-sys-color-primary-container: #0b5236;
@@ -453,7 +462,7 @@
 	--md-sys-color-surface: #fff8f7;
 	--md-sys-color-on-surface: #221a19;
 	--md-sys-color-on-surface-variant: #534341;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #fff0ee;
 	--md-sys-color-surface-container: #faeae8;
 	--md-sys-color-surface-container-high: #f4e5e2;
@@ -569,7 +578,7 @@
 	--md-sys-color-surface: #fff8f5;
 	--md-sys-color-on-surface: #221a14;
 	--md-sys-color-on-surface-variant: #534439;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #fff1e9;
 	--md-sys-color-surface-container: #fbebe1;
 	--md-sys-color-surface-container-high: #f5e5dc;
@@ -685,7 +694,7 @@
 	--md-sys-color-surface: #fdf8fb;
 	--md-sys-color-on-surface: #1c1b1e;
 	--md-sys-color-on-surface-variant: #48464b;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #f7f2f6;
 	--md-sys-color-surface-container: #f1ecf0;
 	--md-sys-color-surface-container-high: #ebe7ea;
@@ -801,7 +810,7 @@
 	--md-sys-color-surface: #fff8f8;
 	--md-sys-color-on-surface: #21191c;
 	--md-sys-color-on-surface-variant: #524348;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #fff0f3;
 	--md-sys-color-surface-container: #faeaed;
 	--md-sys-color-surface-container-high: #f4e4e8;
@@ -917,7 +926,7 @@
 	--md-sys-color-surface: #f9f9ff;
 	--md-sys-color-on-surface: #171c25;
 	--md-sys-color-on-surface-variant: #414753;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #f0f3ff;
 	--md-sys-color-surface-container: #eaeefa;
 	--md-sys-color-surface-container-high: #e4e8f5;
@@ -1033,7 +1042,7 @@
 	--md-sys-color-surface: #f8fbe7;
 	--md-sys-color-on-surface: #191d11;
 	--md-sys-color-on-surface-variant: #434937;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #f2f6e1;
 	--md-sys-color-surface-container: #ecf0dc;
 	--md-sys-color-surface-container-high: #e7ead6;
@@ -1149,7 +1158,7 @@
 	--md-sys-color-surface: #fff8f3;
 	--md-sys-color-on-surface: #221a0d;
 	--md-sys-color-on-surface-variant: #514531;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #fff2e1;
 	--md-sys-color-surface-container: #fcecd5;
 	--md-sys-color-surface-container-high: #f6e6d0;
@@ -1265,7 +1274,7 @@
 	--md-sys-color-surface: #eefcfe;
 	--md-sys-color-on-surface: #111d20;
 	--md-sys-color-on-surface-variant: #39494c;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #e8f6f9;
 	--md-sys-color-surface-container: #e3f0f3;
 	--md-sys-color-surface-container-high: #ddebed;
@@ -1381,7 +1390,7 @@
 	--md-sys-color-surface: #fff7fb;
 	--md-sys-color-on-surface: #201922;
 	--md-sys-color-on-surface-variant: #4e4350;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #feeffd;
 	--md-sys-color-surface-container: #f8eaf7;
 	--md-sys-color-surface-container-high: #f2e4f2;
@@ -1497,7 +1506,7 @@
 	--md-sys-color-surface: #fff8f7;
 	--md-sys-color-on-surface: #271816;
 	--md-sys-color-on-surface-variant: #58413f;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #fff0ef;
 	--md-sys-color-surface-container: #ffe9e6;
 	--md-sys-color-surface-container-high: #ffe2de;
@@ -1613,7 +1622,7 @@
 	--md-sys-color-surface: #fbf9fa;
 	--md-sys-color-on-surface: #1b1c1d;
 	--md-sys-color-on-surface-variant: #464748;
-	--md-sys-color-surface-container-lowest: #ffffff;
+	--md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
 	--md-sys-color-surface-container-low: #f5f3f4;
 	--md-sys-color-surface-container: #efedee;
 	--md-sys-color-surface-container-high: #eae8e8;

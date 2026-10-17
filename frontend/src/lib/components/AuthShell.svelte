@@ -138,7 +138,7 @@
 		min-height: 100dvh;
 		display: flex;
 		flex-wrap: wrap;
-		background: var(--md-sys-color-surface);
+		background: var(--nomi-color-ground);
 	}
 
 	/* ---- Stage ---- */

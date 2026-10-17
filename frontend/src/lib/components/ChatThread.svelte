@@ -1004,7 +1004,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		background: var(--md-sys-color-surface);
+		background: var(--nomi-color-ground);
 	}
 
 	.appbar {
@@ -1094,7 +1094,7 @@
 	}
 	.chat--project .appbar {
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-		background: var(--md-sys-color-surface);
+		background: var(--nomi-color-ground);
 	}
 	.appbar--compact {
 		justify-content: flex-end;

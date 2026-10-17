@@ -33,5 +33,6 @@ pub mod profile;
 pub mod reminders;
 pub mod sessions;
 pub mod settings;
+pub mod showcase;
 pub mod support;
 pub mod tools;

@@ -73,6 +73,21 @@ impl LlmProvider for MeteredProvider {
     }
 }
 
+/// How much a cached input token counts toward the monthly allowance. Providers bill input they
+/// serve from their prompt cache at about a tenth of the normal price, and a long agent loop
+/// resends mostly the same conversation every round: counting those tokens in full made a
+/// build look far bigger than what it cost.
+pub const CACHED_INPUT_WEIGHT: f64 = 0.1;
+
+/// SQL for what one `llm_usage` row counts toward the allowance (`table` is an alias with its
+/// dot, like "l.", or ""): fresh input and output in full, cached input at
+/// [`CACHED_INPUT_WEIGHT`]. Sum it and round: `ROUND(SUM(…))::bigint`.
+pub fn counted_tokens_sql(table: &str) -> String {
+    format!(
+        "({table}input_tokens - {table}cached_input_tokens + {table}output_tokens + {table}cached_input_tokens * {CACHED_INPUT_WEIGHT}::numeric)"
+    )
+}
+
 /// One call's tokens. `input` counts every input token; `cached_input` is the part the
 /// provider served from its prompt cache.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -144,7 +159,8 @@ pub async fn plan_for(pool: &PgPool, user_id: Uuid) -> Result<Plan, sqlx::Error>
 pub struct Brief {
     pub plan: Plan,
     pub month: String,
-    /// Tokens of Nomi's own models this month (own-key usage doesn't count).
+    /// Tokens of Nomi's own models this month, cached input at [`CACHED_INPUT_WEIGHT`]
+    /// (own-key usage doesn't count).
     pub tokens_used: i64,
     /// Whether a bigger plan is offered than theirs (no "Upgrade" for someone already on the
     /// top plan, or with an allowance set by an admin).
@@ -159,10 +175,13 @@ pub struct MonthUsage {
     pub month: String,
     pub current_month: String,
     pub timezone: String,
-    /// Tokens of Nomi's own models: what the plan's allowance counts.
+    /// Tokens of Nomi's own models: what the plan's allowance counts (cached input at
+    /// [`CACHED_INPUT_WEIGHT`]).
     pub tokens_used: i64,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    /// The part of `input_tokens` served from the provider's prompt cache.
+    pub cached_input_tokens: i64,
     /// Tokens sent with the person's own API key.
     pub own_key_tokens: i64,
     pub calls: i64,
@@ -218,7 +237,8 @@ pub(crate) fn valid_month(month: &str) -> bool {
 pub async fn brief(pool: &PgPool, user_id: Uuid) -> Result<Brief, sqlx::Error> {
     let (tz, month) = timezone_and_current_month(pool, user_id).await?;
     let tokens_used: i64 = sqlx::query_scalar(&format!(
-        "SELECT COALESCE(SUM(input_tokens + output_tokens), 0)::bigint FROM llm_usage WHERE {IN_MONTH} AND source = 'nomi'"
+        "SELECT COALESCE(ROUND(SUM({})), 0)::bigint FROM llm_usage WHERE {IN_MONTH} AND source = 'nomi'",
+        counted_tokens_sql("")
     ))
     .bind(user_id)
     .bind(&tz)
@@ -242,12 +262,15 @@ pub async fn month(pool: &PgPool, user_id: Uuid, month: Option<&str>) -> Result<
     let (tz, current_month) = timezone_and_current_month(pool, user_id).await?;
     let month = month.filter(|m| valid_month(m)).unwrap_or(&current_month).to_string();
 
-    let (tokens_used, input_tokens, output_tokens, own_key_tokens, calls, spend_usd): (i64, i64, i64, i64, i64, f64) = sqlx::query_as(&format!(
+    let counted = counted_tokens_sql("");
+    #[allow(clippy::type_complexity)]
+    let (tokens_used, input_tokens, output_tokens, cached_input_tokens, own_key_tokens, calls, spend_usd): (i64, i64, i64, i64, i64, i64, f64) = sqlx::query_as(&format!(
         "SELECT \
-            COALESCE(SUM(input_tokens + output_tokens) FILTER (WHERE source = 'nomi'), 0)::bigint, \
+            COALESCE(ROUND(SUM({counted}) FILTER (WHERE source = 'nomi')), 0)::bigint, \
             COALESCE(SUM(input_tokens), 0)::bigint, \
             COALESCE(SUM(output_tokens), 0)::bigint, \
-            COALESCE(SUM(input_tokens + output_tokens) FILTER (WHERE source = 'own_key'), 0)::bigint, \
+            COALESCE(SUM(cached_input_tokens), 0)::bigint, \
+            COALESCE(ROUND(SUM({counted}) FILTER (WHERE source = 'own_key')), 0)::bigint, \
             count(*), \
             COALESCE(SUM(cost_usd), 0)::float8 \
          FROM llm_usage WHERE {IN_MONTH}"
@@ -260,7 +283,7 @@ pub async fn month(pool: &PgPool, user_id: Uuid, month: Option<&str>) -> Result<
 
     let by_day: Vec<DayUsage> = sqlx::query_as(&format!(
         "SELECT to_char((created_at AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS date, \
-                SUM(input_tokens + output_tokens)::bigint AS tokens, SUM(cost_usd)::float8 AS spend_usd \
+                ROUND(SUM({counted}))::bigint AS tokens, SUM(cost_usd)::float8 AS spend_usd \
          FROM llm_usage WHERE {IN_MONTH} GROUP BY 1 ORDER BY 1"
     ))
     .bind(user_id)
@@ -272,9 +295,10 @@ pub async fn month(pool: &PgPool, user_id: Uuid, month: Option<&str>) -> Result<
     let by_model: Vec<ModelUsage> = sqlx::query_as(&format!(
         "SELECT u.admin_model_id, COALESCE(m.label, (array_agg(u.model_label ORDER BY u.created_at DESC))[1]) AS label, \
                 u.provider, u.model_id, u.source, \
-                SUM(u.input_tokens + u.output_tokens)::bigint AS tokens, count(*) AS calls, SUM(u.cost_usd)::float8 AS spend_usd \
+                ROUND(SUM({}))::bigint AS tokens, count(*) AS calls, SUM(u.cost_usd)::float8 AS spend_usd \
          FROM (SELECT * FROM llm_usage WHERE {IN_MONTH}) u LEFT JOIN admin_llm_models m ON m.id = u.admin_model_id \
-         GROUP BY u.admin_model_id, m.id, m.label, u.provider, u.model_id, u.source ORDER BY tokens DESC"
+         GROUP BY u.admin_model_id, m.id, m.label, u.provider, u.model_id, u.source ORDER BY tokens DESC",
+        counted_tokens_sql("u.")
     ))
     .bind(user_id)
     .bind(&tz)
@@ -290,6 +314,7 @@ pub async fn month(pool: &PgPool, user_id: Uuid, month: Option<&str>) -> Result<
         tokens_used,
         input_tokens,
         output_tokens,
+        cached_input_tokens,
         own_key_tokens,
         calls,
         spend_usd,
