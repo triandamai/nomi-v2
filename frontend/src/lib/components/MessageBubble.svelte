@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { deserialize } from '$app/forms';
@@ -52,7 +53,7 @@
 	} = $props();
 	const steps = $derived(message.steps ?? []);
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
-	const fresh = Date.now() - Date.parse(message.created_at) < 30_000;
+	const fresh = untrack(() => Date.now() - Date.parse(message.created_at) < 30_000);
 	const sources = $derived(message.sources ?? []);
 	const continues = $derived(thread === 'start' || thread === 'middle');
 	const inThread = $derived(thread !== 'solo');
@@ -60,21 +61,23 @@
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	// The files a user attached are referenced in the message text (see $lib/attachments).
 	const attached = $derived(message.sender === 'user' ? splitAttachments(message.content) : null);
-	let feedback = $state(message.my_feedback);
+	let feedback = $state(untrack(() => message.my_feedback));
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
 	let deleteOpen = $state(false);
 
-	const senderLabel = message.sender === 'user' ? m.msg_you() : (message.agent_display_name ?? 'Nomi');
+	const senderLabel = $derived(message.sender === 'user' ? m.msg_you() : (message.agent_display_name ?? 'Nomi'));
 	// Crew members other than Nomi get their name as a chip tinted with their gradient, so a
 	// hand-off reads at a glance (matches the agent's avatar shape).
 	const look = $derived(agentLook(message.agent_display_name));
 	const isCrewMember = $derived(message.sender === 'assistant' && look.tone !== 'glow');
 	const senderTint = $derived(GRADIENT_STOPS[look.tone].at(-1));
-	const formattedTime = new Date(message.created_at).toLocaleString(getLocale(), {
-		dateStyle: 'medium',
-		timeStyle: 'short',
-	});
+	const formattedTime = $derived(
+		new Date(message.created_at).toLocaleString(getLocale(), {
+			dateStyle: 'medium',
+			timeStyle: 'short',
+		}),
+	);
 
 	// Hardcoded (not the $lib/components/icons/* components) because these get assigned via
 	// innerHTML to plain DOM buttons built in enhanceCodeBlocks below — that code runs against

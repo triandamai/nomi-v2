@@ -1,6 +1,5 @@
 <!-- frontend/src/lib/components/blocks/ContentBlockView.svelte -->
 <script lang="ts">
-	import FileChangeBlock from './FileChangeBlock.svelte';
 	import TodoListBlock from './TodoListBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import ApprovalCard from './ApprovalCard.svelte';
@@ -30,16 +29,24 @@
 		/** The person has replied since this message. */
 		answered?: boolean;
 	} = $props();
+
+	// File changes bring the code editor (CodeMirror): it loads the first time one is shown, not
+	// with every chat.
+	const fileChangeBlock = () => import('./FileChangeBlock.svelte');
 </script>
 
 {#if block.kind === 'file_write' || block.kind === 'file_delete'}
-	<FileChangeBlock {block} {fresh} />
+	{#await fileChangeBlock() then { default: FileChangeBlock }}
+		<FileChangeBlock {block} {fresh} />
+	{/await}
 {:else if block.kind === 'file_writes'}
 	<!-- Every file of a batch, each its own tab; only a short batch opens by itself. -->
 	<div class="file-batch">
-		{#each block.files as file (file.path)}
-			<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
-		{/each}
+		{#await fileChangeBlock() then { default: FileChangeBlock }}
+			{#each block.files as file (file.path)}
+				<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
+			{/each}
+		{/await}
 	</div>
 {:else if block.kind === 'todo_list'}
 	<TodoListBlock {block} {agent} />

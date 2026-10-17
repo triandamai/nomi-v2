@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
 	import ListItem from '$lib/components/m3/ListItem.svelte';
@@ -28,8 +28,9 @@
 		last_activity_at: string;
 	};
 
+	// Seeded from the page load, then kept live by the agents stream.
 	let rows = $state<Row[]>(
-		data.agents.users.flatMap((group) =>
+		untrack(() => data.agents.users).flatMap((group) =>
 			group.agents.map((agent) => ({
 				agent_session_id: agent.agent_session_id,
 				session_id: agent.session_id,
@@ -45,7 +46,7 @@
 		),
 	);
 
-	let feed = $state<AgentEventItem[]>(data.events);
+	let feed = $state<AgentEventItem[]>(untrack(() => data.events));
 
 	function feedLine(item: AgentEventItem): string {
 		const who = item.agent_display_name ?? (item.agent_type ? agentTypeFallbackLabel(item.agent_type) : m.agent_an_agent());

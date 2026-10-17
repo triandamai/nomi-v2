@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
-import { devWsProxy } from './vite-plugins/dev-ws-proxy';
+import { devWsProxy } from './vite-plugins/dev-ws-proxy.ts';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { appVersion } from './app-version.js';
 

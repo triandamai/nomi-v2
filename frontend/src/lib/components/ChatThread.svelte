@@ -345,10 +345,10 @@
 		void tick().then(() => messageInput?.form?.requestSubmit());
 	});
 
-	let localMessages = $state(messages);
+	let localMessages = $state(untrack(() => messages));
 
 	let currentPhase = $state<{ phase: string; detail: string | null } | null>(
-		agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null,
+		untrack(() => (agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null)),
 	);
 
 	// A retry counts down to its next attempt, so the clock ticks while one is showing.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import { enhance } from '$app/forms';
@@ -20,10 +21,11 @@
 	];
 
 	let sheetOpen = $state(false);
-	let provider = $state(data.settings?.provider ?? 'openai');
+	// The form starts from the saved settings; edits stay local until saved.
+	let provider = $state(untrack(() => data.settings?.provider ?? 'openai'));
 	let apiKey = $state('');
-	let baseUrl = $state(data.settings?.base_url ?? '');
-	let modelId = $state(data.settings?.model_id ?? '');
+	let baseUrl = $state(untrack(() => data.settings?.base_url ?? ''));
+	let modelId = $state(untrack(() => data.settings?.model_id ?? ''));
 
 	let fetching = $state(false);
 	let fetchedModels = $state<{ id: string; label: string | null }[]>([]);
