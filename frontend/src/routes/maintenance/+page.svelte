@@ -46,7 +46,7 @@
 		min-height: 100dvh;
 		padding: 24px 16px;
 		box-sizing: border-box;
-		background: var(--md-sys-color-surface);
+		background: var(--nomi-color-ground);
 		color: var(--md-sys-color-on-surface);
 		text-align: center;
 	}

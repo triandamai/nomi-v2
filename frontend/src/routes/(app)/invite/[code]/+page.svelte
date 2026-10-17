@@ -75,7 +75,7 @@
 		padding: 22px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface);
+		background: var(--md-sys-color-surface-container-lowest);
 	}
 	.invite__title {
 		margin: 0;

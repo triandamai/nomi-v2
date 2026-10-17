@@ -13,5 +13,8 @@ Nomi's own screens follow the same bar as the apps Koda builds
   follow the person's theme uses the theme roles (`--md-sys-color-primary`, …), the action
   gradient (`--nomi-gradient-action`, `--nomi-on-action`) or `--nomi-chart` for single-series
   charts. Agent gradients (`--nomi-gradient-<tone>`) belong to agents only.
+- Pages sit on `--nomi-color-ground`; cards and tables on `--md-sys-color-surface-container-lowest`
+  (in light it's white with a touch of the theme, so it follows the person's theme); things inside
+  a card on `surface-container-low`. Never paint a surface `#fff`/`white`.
 - Every interactive element has hover and `focus-visible` states and a 44px target on phones;
   check every screen at 390px wide and in dark mode.

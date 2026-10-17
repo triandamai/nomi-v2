@@ -654,7 +654,7 @@
 		gap: 10px;
 		padding: 4px 10px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-		background: var(--md-sys-color-surface);
+		background: var(--nomi-color-ground);
 	}
 	.topbar__brand {
 		display: inline-flex;
@@ -794,7 +794,7 @@
 		flex-direction: column;
 		min-width: 0;
 		height: 100%;
-		background: var(--md-sys-color-surface);
+		background: var(--nomi-color-ground);
 		animation: pane-in var(--nomi-motion-spatial-default, 350ms cubic-bezier(0.27, 1.06, 0.18, 1));
 	}
 	.workspace__pane[hidden] {

@@ -462,7 +462,7 @@
 		padding: 14px;
 		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface);
+		background: var(--md-sys-color-surface-container-lowest);
 		transition: background-color 150ms ease-out;
 	}
 	.card:hover {
