@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { isThemeName } from '$lib/appearance';
 import { isPinnable } from '$lib/drawerPins';
+import { isHomeLayoutId } from '$lib/homeLayouts';
 import { apiFetch } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
 import type { Preferences } from '$lib/types';
@@ -57,6 +58,34 @@ export const actions: Actions = {
 		const response = await apiFetch(fetch, cookies, '/api/preferences', {
 			method: 'PUT',
 			body: JSON.stringify({ timezone }),
+		});
+		if (!response.ok) {
+			return fail(response.status, { error: m.err_save_preference() });
+		}
+		return { success: true };
+	},
+
+	updateHomeLayout: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const layout = data.get('home_layout');
+		if (!isHomeLayoutId(layout)) {
+			return fail(400, { error: m.err_save_preference() });
+		}
+		const response = await apiFetch(fetch, cookies, '/api/preferences', {
+			method: 'PUT',
+			body: JSON.stringify({ home_layout: layout }),
+		});
+		if (!response.ok) {
+			return fail(response.status, { error: m.err_save_preference() });
+		}
+		return { success: true };
+	},
+
+	updateBackdrop: async ({ request, cookies, fetch }) => {
+		const data = await request.formData();
+		const response = await apiFetch(fetch, cookies, '/api/preferences', {
+			method: 'PUT',
+			body: JSON.stringify({ animated_backdrop: data.get('animated_backdrop') === 'true' }),
 		});
 		if (!response.ok) {
 			return fail(response.status, { error: m.err_save_preference() });

@@ -10,6 +10,32 @@
 			href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap"
 			rel="stylesheet"
 		/>
+		<script>
+			// After a deploy, a page from the previous build (an open tab, a restored one, a cached copy)
+			// asks for app files that no longer exist, and nothing on it can load. Load it again from
+			// the server, once: a second failure within a minute stays as it is rather than looping.
+			(function () {
+				var KEY = 'nomi-stale-build-reload';
+				var STALE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS/i;
+				function reload() {
+					try {
+						if (Date.now() - Number(sessionStorage.getItem(KEY) || 0) < 60000) return;
+						sessionStorage.setItem(KEY, String(Date.now()));
+					} catch (e) {
+						// No storage (private mode): reload anyway; the new page has the new files.
+					}
+					location.reload();
+				}
+				addEventListener('unhandledrejection', function (event) {
+					var reason = event.reason;
+					if (STALE.test(String((reason && reason.message) || reason || ''))) reload();
+				});
+				addEventListener('vite:preloadError', function (event) {
+					event.preventDefault();
+					reload();
+				});
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

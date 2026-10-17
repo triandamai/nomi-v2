@@ -379,3 +379,43 @@ async fn drawer_pins_reject_unknown_and_repeated_features(pool: PgPool) {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{pins}");
     }
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn home_layout_is_unset_until_picked_and_only_takes_a_slug(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "hana@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert!(body["home_layout"].is_null());
+
+    let (status, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "home_layout": "stage" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["home_layout"], "stage");
+
+    // Other preference saves leave the layout alone.
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
+    assert_eq!(body["home_layout"], "stage");
+
+    for layout in ["", "Stage", "../home", "9lives", &"a".repeat(33)] {
+        let (status, _) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "home_layout": layout }), Some(&token)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{layout}");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn animated_backdrop_is_on_until_turned_off(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "bea@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(body["animated_backdrop"], true);
+
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "animated_backdrop": false }), Some(&token)).await;
+    assert_eq!(body["animated_backdrop"], false);
+
+    // Other preference saves leave it alone.
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
+    assert_eq!(body["animated_backdrop"], false);
+    let (_, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(body["animated_backdrop"], false);
+}

@@ -1987,5 +1987,13 @@
 	"pj_transfer_type": "Ketik {name} untuk mengonfirmasi",
 	"pj_transfer_owner_told": "Pemilik {org} mendapat notifikasi dan email bahwa proyek ini sekarang milik mereka.",
 	"notif_kind_project": "Proyek",
-	"pj_transfer_shipyard": "Aplikasi yang diterbitkan juga pindah ke {org} di Shipyard, beserta data dan pengaturannya. Alamatnya tetap sama; aplikasi dimulai ulang sekali."
+	"pj_transfer_shipyard": "Aplikasi yang diterbitkan juga pindah ke {org} di Shipyard, beserta data dan pengaturannya. Alamatnya tetap sama; aplikasi dimulai ulang sekali.",
+	"prefs_home": "Halaman beranda",
+	"prefs_home_hint": "Pilih halaman yang pertama kamu buka. Bisa diganti kapan saja.",
+	"home_layout_classic": "Klasik",
+	"home_layout_classic_hint": "Kolom pesan dan kru berdampingan, lalu harimu dan obrolan terbaru.",
+	"home_layout_stage": "Panggung",
+	"home_layout_stage_hint": "Panggung buram dengan kru melayang di belakang kolom pesan di tengah.",
+	"prefs_backdrop": "Latar belakang animasi",
+	"prefs_backdrop_hint": "Kru yang bergerak lembut di balik obrolan dan beranda Panggung. Matikan untuk latar polos yang diam."
 }

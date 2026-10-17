@@ -49,7 +49,19 @@ const crossOriginIsolation: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(i18n, auth, crossOriginIsolation);
+/**
+ * Pages are revalidated on every load. The HTML names this build's app files, which go away with
+ * the next deploy; a page kept in a cache past that can't start (see the reload guard in app.html).
+ */
+const noStalePages: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	if (response.headers.get('content-type')?.startsWith('text/html') && !response.headers.has('cache-control')) {
+		response.headers.set('cache-control', 'no-cache');
+	}
+	return response;
+};
+
+export const handle = sequence(i18n, auth, crossOriginIsolation, noStalePages);
 
 /** Every call to the backend says which version of the frontend made it. */
 export const handleFetch: HandleFetch = ({ request, fetch }) => {

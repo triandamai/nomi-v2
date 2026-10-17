@@ -34,8 +34,9 @@ export default defineConfig({
 			// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
 			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
 			adapter: adapter(),
-			// SvelteKit's own update check follows the same version.
-			version: { name: version }
+			// SvelteKit's own update check follows the same version. It looks every few minutes, so
+			// after a deploy the next navigation loads the new build (see routes/+layout.svelte).
+			version: { name: version, pollInterval: 5 * 60_000 }
 		})
 	]
 });

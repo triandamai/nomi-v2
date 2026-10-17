@@ -46,6 +46,7 @@
 	agentActivity={data.agentActivity}
 	agentStatus={data.agentStatus}
 	sendError={form?.error ?? null}
+	glass={page.data.preferences?.animated_backdrop !== false}
 	thinkingLevel={data.thinkingLevel}
 >
 	{#snippet extraControls()}

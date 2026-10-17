@@ -1,13 +1,21 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
+	import { tick } from 'svelte';
 	import AppearancePicker from '$lib/components/AppearancePicker.svelte';
 	import DrawerCustomizer from '$lib/components/DrawerCustomizer.svelte';
+	import HomeLayoutPicker from '$lib/components/HomeLayoutPicker.svelte';
+	import Switch from '$lib/components/m3/Switch.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let timezoneForm: HTMLFormElement | undefined = $state();
+	let backdropForm: HTMLFormElement | undefined = $state();
+	let backdropOn = $state(true);
+	$effect.pre(() => {
+		backdropOn = data.preferences.animated_backdrop !== false;
+	});
 	let timezoneInput: HTMLInputElement | undefined = $state();
 	let detectedTimezone = $state('');
 	// Guards the auto-save to exactly one attempt per page visit — an $effect (not onMount)
@@ -54,6 +62,23 @@
 			<AppearancePicker preferences={data.preferences} />
 		</section>
 
+		<section id="home" class="mt-8">
+			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.prefs_home()}</h2>
+			<p class="md-body-medium mt-1 mb-4" style="color: var(--md-sys-color-on-surface-variant)">{m.prefs_home_hint()}</p>
+			<HomeLayoutPicker current={data.preferences.home_layout} />
+			<form bind:this={backdropForm} method="POST" action="?/updateBackdrop" use:enhance={() => async ({ update }) => update({ reset: false })} class="backdrop-row">
+				<label for="animated-backdrop" class="backdrop-row__text">
+					<span class="backdrop-row__title">{m.prefs_backdrop()}</span>
+					<span class="backdrop-row__hint">{m.prefs_backdrop_hint()}</span>
+				</label>
+				<Switch id="animated-backdrop" name="animated_backdrop" bind:checked={backdropOn} onchange={async () => {
+						// The hidden input follows `checked` on the next render; submit after it.
+						await tick();
+						backdropForm?.requestSubmit();
+					}} />
+			</form>
+		</section>
+
 		<section id="drawer" class="mt-8">
 			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.drawer_title()}</h2>
 			<p class="md-body-medium mt-1 mb-2" style="color: var(--md-sys-color-on-surface-variant)">{m.drawer_hint()}</p>
@@ -93,6 +118,31 @@
 </div>
 
 <style>
+	.backdrop-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		margin-top: 16px;
+		padding: 14px 16px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.backdrop-row__text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		cursor: pointer;
+	}
+	.backdrop-row__title {
+		font-weight: 650;
+		color: var(--md-sys-color-on-surface);
+	}
+	.backdrop-row__hint {
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
 	.m3-timezone-select {
 		height: 52px;
 		padding: 0 14px;
