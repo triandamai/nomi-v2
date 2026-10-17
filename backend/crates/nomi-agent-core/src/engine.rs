@@ -36,8 +36,9 @@ pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point
      the person: never write your thinking, your plan of action, or notes about what they asked in it.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
-pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
 pub const RENAME_CHAT_TOOL_NAME: &str = "rename_chat";
+/// What the model hears back after `show`: the view is in the chat, so it needn't say it again.
+const VIEW_SHOWN: &str = "Shown in the chat. Don't repeat what it shows; add only what it doesn't say.";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
 pub const ASK_USER_TOOL_NAME: &str = "ask_user";
@@ -188,25 +189,6 @@ fn delegate_tool_definition(targets: &[String]) -> ToolDefinition {
                 "task": {"type": "string", "description": "What the user wants from the specialist, with any details from this conversation it needs"}
             },
             "required": ["target_agent", "task"]
-        }),
-    }
-}
-
-fn show_table_tool_definition() -> ToolDefinition {
-    ToolDefinition {
-        name: SHOW_TABLE_TOOL_NAME.to_string(),
-        description: "Show the user a table of structured data — either a plain data table or a side-by-side comparison of a few items across criteria.".to_string(),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "variant": {"type": "string", "enum": ["data", "comparison"]},
-                "columns": {
-                    "type": "array",
-                    "items": {"type": "object", "properties": {"key": {"type": "string"}, "label": {"type": "string"}}, "required": ["key", "label"]}
-                },
-                "rows": {"type": "array", "items": {"type": "object"}}
-            },
-            "required": ["variant", "columns", "rows"]
         }),
     }
 }
@@ -433,7 +415,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     let mut tools = vec![
         complete_task_tool_definition(),
         delegate_tool_definition(&registry.delegatable_agent_types("")),
-        show_table_tool_definition(),
+        crate::views::show_tool_definition(),
         rename_chat_tool_definition(),
         update_todos_tool_definition(),
         write_plan_tool_definition(),
@@ -476,12 +458,12 @@ const USER_DENIED_RESULT: &str =
     "The user denied this action. Do not try it again; tell them it wasn't done and ask how they'd like to proceed.";
 
 /// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
-/// delegate_to_agent, show_table, update_todos) — none of these touch anything a user would
+/// delegate_to_agent, show, update_todos) — none of these touch anything a user would
 /// want to approve/deny.
 fn is_gateable(tool_name: &str) -> bool {
     tool_name != COMPLETE_TASK_TOOL_NAME
         && tool_name != DELEGATE_TOOL_NAME
-        && tool_name != SHOW_TABLE_TOOL_NAME
+        && tool_name != crate::views::SHOW_TOOL_NAME
         && tool_name != ASK_USER_TOOL_NAME
         && tool_name != READ_PLAN_TOOL_NAME
         && tool_name != RENAME_CHAT_TOOL_NAME
@@ -556,7 +538,7 @@ pub async fn run_agent_turn(
             tools.push(delegate_tool_definition(&targets));
         }
     }
-    tools.push(show_table_tool_definition());
+    tools.push(crate::views::show_tool_definition());
     tools.push(rename_chat_tool_definition());
     if agent.supports_todos() {
         tools.push(update_todos_tool_definition());
@@ -1094,6 +1076,8 @@ pub async fn resolve_tool_batch(
                 None => update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await,
             }
 
+            // What the posted message says, when it isn't the tool result itself (`show`).
+            let mut posted_text: Option<String> = None;
             let (result_text, is_error, rich_block) = if !own_tools.contains(name) && !switches.allows(name) {
                 (format!("The {name} tool is switched off. Don't call it again; do without it."), true, None)
             } else if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -1123,12 +1107,14 @@ pub async fn resolve_tool_batch(
                     },
                 };
                 (text, err, None)
-            } else if name.as_str() == SHOW_TABLE_TOOL_NAME {
-                match parse_table_input(input) {
-                    Ok((variant, columns, rows)) => {
-                        let text = table_display_text(&variant, rows.len(), locale);
-                        let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
-                        (text, false, Some(block))
+            } else if name.as_str() == crate::views::SHOW_TOOL_NAME {
+                match crate::views::parse_show_input(input) {
+                    Ok(view) => {
+                        let view = crate::web::fill_link_preview(view).await;
+                        let shown = crate::content_block::ToolOutcome::view(view);
+                        // The model gets a short receipt; the message keeps the view's own text.
+                        posted_text = Some(shown.display_text);
+                        (VIEW_SHOWN.to_string(), false, shown.block)
                     }
                     Err(err) => (err, true, None),
                 }
@@ -1228,7 +1214,7 @@ pub async fn resolve_tool_batch(
 
             // A tool that returns a block (a table, a file change, a Connect card) means it to be
             // seen, whether or not the agent narrates the rest of its tool calls.
-            let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
+            let should_post = name.as_str() == crate::views::SHOW_TOOL_NAME
                 || rich_block.is_some()
                 || (agent.surfaces_activity()
                     && name.as_str() != COMPLETE_TASK_TOOL_NAME
@@ -1242,7 +1228,7 @@ pub async fn resolve_tool_batch(
                     && !crate::web::is_web_tool(name)
                     && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), posted_text.as_deref().unwrap_or(&result_text), rich_block.as_ref()).await;
             }
 
             if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -1559,39 +1545,6 @@ async fn upsert_todo_list(
     }
 
     Ok("todo list updated".to_string())
-}
-
-fn parse_table_input(
-    input: &serde_json::Value,
-) -> Result<(crate::content_block::TableVariant, Vec<crate::content_block::TableColumn>, Vec<serde_json::Value>), String> {
-    use crate::content_block::{TableColumn, TableVariant};
-    let variant = match input.get("variant").and_then(|v| v.as_str()) {
-        Some("data") => TableVariant::Data,
-        Some("comparison") => TableVariant::Comparison,
-        _ => return Err("variant must be 'data' or 'comparison'".to_string()),
-    };
-    let columns: Vec<TableColumn> = input
-        .get("columns")
-        .and_then(|v| v.as_array())
-        .ok_or("columns is required")?
-        .iter()
-        .map(|c| {
-            let key = c.get("key").and_then(|v| v.as_str()).ok_or("each column needs a key")?.to_string();
-            let label = c.get("label").and_then(|v| v.as_str()).ok_or("each column needs a label")?.to_string();
-            Ok(TableColumn { key, label })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let rows = input.get("rows").and_then(|v| v.as_array()).ok_or("rows is required")?.clone();
-    Ok((variant, columns, rows))
-}
-
-fn table_display_text(variant: &crate::content_block::TableVariant, row_count: usize, locale: Locale) -> String {
-    use crate::content_block::TableVariant;
-    let count = row_count.to_string();
-    match variant {
-        TableVariant::Data => locale.tf("engine.table_data", &[("count", &count)]),
-        TableVariant::Comparison => locale.tf("engine.table_comparison", &[("count", &count)]),
-    }
 }
 
 /// Templated, non-LLM description of a failed tool call — kept generic in the engine (unlike a

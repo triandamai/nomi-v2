@@ -129,3 +129,28 @@ async fn unknown_tool_name_returns_an_error(pool: PgPool) {
     let result = MoneyAgent.execute_tool(&mut conn, Uuid::new_v4(), Uuid::new_v4(), user_id, "transfer_money", serde_json::json!({})).await;
     assert!(result.is_err());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_logged_transaction_is_shown_as_a_card_of_what_was_saved(pool: PgPool) {
+    let user_id = seed_user(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let input = serde_json::json!({
+        "amount": 45000, "category": "food", "description": "Lunch at Warung Bu Sri", "occurred_at": "2026-10-12",
+        "items": [{"name": "Nasi campur", "amount": 35000}, {"name": "Es teh", "quantity": 2, "unit_amount": 5000}]
+    });
+    let result = MoneyAgent.execute_tool(&mut conn, Uuid::new_v4(), Uuid::new_v4(), user_id, "log_transaction", input).await.unwrap();
+
+    // The agent hears the summary; the chat shows the card.
+    assert!(result.display_text.starts_with("Logged 45000.00 for Lunch at Warung Bu Sri"), "{}", result.display_text);
+    let block = serde_json::to_value(result.block.expect("a card")).unwrap();
+    assert_eq!(block["kind"], "view");
+    assert_eq!(block["view"], "card");
+    assert_eq!(block["title"], "Lunch at Warung Bu Sri");
+    assert_eq!(block["eyebrow"], "Expense · food");
+    assert_eq!(block["highlight"]["value"], 45000.0);
+    assert_eq!(block["highlight"]["format"], "money");
+    let labels: Vec<&str> = block["fields"].as_array().unwrap().iter().map(|f| f["label"].as_str().unwrap()).collect();
+    assert_eq!(labels, ["Date", "Nasi campur", "Es teh × 2"]);
+    assert_eq!(block["fields"][2]["value"], 10000.0);
+    assert_eq!(block["link"]["url"], "/money");
+}

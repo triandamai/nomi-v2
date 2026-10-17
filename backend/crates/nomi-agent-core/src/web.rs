@@ -343,8 +343,9 @@ pub async fn execute(conn: &mut PgConnection, name: &str, input: &Value) -> Opti
 /// Most bytes downloaded from one page.
 const MAX_PAGE_BYTES: usize = 2 * 1024 * 1024;
 
-/// Reads a web page as plain text (its title first), at most `max_chars` characters.
-pub async fn read_page(url: &str, max_chars: usize) -> Result<String, String> {
+/// Downloads a page (http/https on a public host, at most `MAX_PAGE_BYTES`): its text and
+/// whether it is HTML.
+async fn fetch_page(url: &str) -> Result<(String, bool), String> {
     let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "that isn't a valid web address".to_string())?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("only http and https pages can be read".to_string());
@@ -372,7 +373,12 @@ pub async fn read_page(url: &str, max_chars: usize) -> Result<String, String> {
             break;
         }
     }
-    let raw = String::from_utf8_lossy(&bytes);
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), is_html))
+}
+
+/// Reads a web page as plain text (its title first), at most `max_chars` characters.
+pub async fn read_page(url: &str, max_chars: usize) -> Result<String, String> {
+    let (raw, is_html) = fetch_page(url).await?;
     let (title, text) = if is_html { html_to_text(&raw) } else { (None, raw.trim().to_string()) };
     let mut out = String::new();
     if let Some(title) = title {
@@ -384,6 +390,84 @@ pub async fn read_page(url: &str, max_chars: usize) -> Result<String, String> {
         out.push_str(&format!("\n\n[…the page goes on; {} more characters not shown]", total - max_chars));
     }
     Ok(out)
+}
+
+/// What a link preview shows: from the page's Open Graph tags, falling back to its <title> and
+/// description.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PagePreview {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image: Option<String>,
+    pub site: Option<String>,
+}
+
+/// The `content` of the first <meta> whose `property` or `name` is one of `names`.
+fn meta_content(html: &str, names: &[&str]) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(start) = lower[from..].find("<meta") {
+        let start = from + start;
+        let end = start + lower[start..].find('>').unwrap_or(lower.len() - start);
+        let tag = &html[start..end];
+        let attr = |name: &str| -> Option<String> {
+            let tag_lower = tag.to_ascii_lowercase();
+            let at = tag_lower.find(&format!("{name}="))? + name.len() + 1;
+            let rest = &tag[at..];
+            let quote = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+            let value = &rest[1..];
+            Some(value[..value.find(quote)?].to_string())
+        };
+        let key = attr("property").or_else(|| attr("name")).map(|k| k.to_ascii_lowercase());
+        if key.is_some_and(|k| names.contains(&k.as_str())) {
+            if let Some(content) = attr("content").map(|c| decode_entities(c.trim())).filter(|c| !c.is_empty()) {
+                return Some(content);
+            }
+        }
+        from = end.max(start + 5);
+    }
+    None
+}
+
+/// Reads a page's preview details (title, description, image, site name).
+pub async fn page_preview(url: &str) -> Result<PagePreview, String> {
+    let (raw, is_html) = fetch_page(url).await?;
+    if !is_html {
+        return Ok(PagePreview::default());
+    }
+    Ok(preview_from_html(url, &raw))
+}
+
+fn preview_from_html(url: &str, html: &str) -> PagePreview {
+    let base = reqwest::Url::parse(url).ok();
+    let image = meta_content(html, &["og:image", "twitter:image"])
+        .and_then(|src| match &base {
+            Some(base) => base.join(&src).ok().map(|u| u.to_string()),
+            None => Some(src),
+        })
+        .filter(|src| src.starts_with("https://"));
+    PagePreview {
+        title: meta_content(html, &["og:title", "twitter:title"]).or_else(|| html_to_text(html).0),
+        description: meta_content(html, &["og:description", "twitter:description", "description"]),
+        image,
+        site: meta_content(html, &["og:site_name"]).or_else(|| base.as_ref().and_then(|b| b.host_str()).map(|h| h.trim_start_matches("www.").to_string())),
+    }
+}
+
+/// A link view the agent left details out of gets them from the page itself. Best effort: a page
+/// that can't be read leaves the view as it was (it still shows the address).
+pub async fn fill_link_preview(view: crate::views::View) -> crate::views::View {
+    let crate::views::View::Link(mut link) = view else { return view };
+    if link.title.is_none() || link.description.is_none() || link.image.is_none() {
+        let preview = if cfg!(test) { Err(String::new()) } else { page_preview(&link.url).await };
+        if let Ok(preview) = preview {
+            link.title = link.title.or(preview.title);
+            link.description = link.description.or(preview.description);
+            link.image = link.image.or(preview.image);
+            link.site = link.site.or(preview.site);
+        }
+    }
+    crate::views::View::Link(link)
 }
 
 /// Pages on the server's own network (localhost, private ranges, cloud metadata) are off-limits:
@@ -515,6 +599,21 @@ mod tests {
         let (title, text) = html_to_text(html);
         assert_eq!(title.as_deref(), Some("Ubud & more"));
         assert_eq!(text, "Ubud\nRice terraces\nand temples.\nDay's plan");
+    }
+
+    #[test]
+    fn a_preview_reads_open_graph_tags_and_falls_back_to_the_title() {
+        let html = r#"<html><head><title>Plain title</title>
+            <meta property="og:title" content="Svelte &amp; Kit">
+            <meta name="description" content='Build web apps.'>
+            <meta property="og:image" content="/card.png"></head><body></body></html>"#;
+        let preview = preview_from_html("https://www.svelte.dev/docs", html);
+        assert_eq!(preview.title.as_deref(), Some("Svelte & Kit"));
+        assert_eq!(preview.description.as_deref(), Some("Build web apps."));
+        assert_eq!(preview.image.as_deref(), Some("https://www.svelte.dev/card.png"));
+        assert_eq!(preview.site.as_deref(), Some("svelte.dev"));
+        let bare = preview_from_html("http://example.com", "<title>Example</title><meta property=\"og:image\" content=\"http://x/a.png\">");
+        assert_eq!((bare.title.as_deref(), bare.image), (Some("Example"), None), "only https images are kept");
     }
 
     #[test]

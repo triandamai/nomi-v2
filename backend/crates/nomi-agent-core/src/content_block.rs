@@ -168,6 +168,16 @@ pub enum ContentBlock {
         session_id: Uuid,
         name: String,
     },
+    /// A view (a list, a timeline, a chart, a form…; see `crate::views`), from the `show` tool or
+    /// an agent's own tool. Stored flat: `{"kind": "view", "view": "timeline", "events": [...]}`.
+    View(crate::views::View),
+}
+
+impl ToolOutcome {
+    /// A tool's result shown as a view, with the view's plain text as the message's text.
+    pub fn view(view: crate::views::View) -> Self {
+        Self { display_text: view.plain_text(), block: Some(ContentBlock::View(view.trimmed())) }
+    }
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror

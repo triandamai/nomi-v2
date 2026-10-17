@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::sessions::MessageItem;
 
 /// Engine bookkeeping that isn't a step anyone would want to see.
-const HIDDEN_TOOLS: &[&str] = &["complete_task", "update_todos", "write_plan", "show_table", "list_files", "read_guide"];
+const HIDDEN_TOOLS: &[&str] = &["complete_task", "update_todos", "write_plan", "show", "list_files", "read_guide"];
 const MAX_STEPS: usize = 80;
 /// How much of a command's output a step keeps (its end, where errors are).
 const MAX_OUTPUT: usize = 4000;
