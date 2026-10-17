@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Publishing on Shipyard: where the app lives, what runs there, every publish with its
 	// build and deploy log, and rolling back to an earlier one.
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -93,20 +94,39 @@
 		}
 	}
 
-	// The open log follows a running publish.
+	// The open log follows a running publish: only the log is fetched every few seconds (it
+	// isn't in the events). The publish itself is reloaded when the project's socket says it
+	// changed, which is also when a deployment appears or the publish finishes.
+	async function followLog(id: string) {
+		if (!detail) return;
+		const currentId = deployment?.id ?? getDeploymentId(detail.deployments?.find((d) => d.service !== 'db') ?? detail.deployments?.[0]);
+		// While still building, a transient gateway error isn't shown.
+		if (currentId) await openDeployment(detail.environment ?? 'production', currentId, true);
+		else if (openId === id) detail = (await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`).catch(() => null)) ?? detail;
+	}
 	$effect(() => {
 		const id = openId;
 		const running = overview?.publishes.find((p) => p.id === id)?.status === 'running';
 		if (!id || !running) return;
-		const timer = setInterval(async () => {
-			if (document.hidden || !detail) return;
-			const fresh = await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`).catch(() => null);
-			if (fresh) detail = fresh;
-			// While still publishing/building, ignore transient gateway/polling errors so 502 isn't flashed
-			const currentId = deployment?.id ?? getDeploymentId(fresh?.deployments?.[0]);
-			if (currentId) await openDeployment(fresh?.environment ?? 'production', currentId, true);
+		const timer = setInterval(() => {
+			if (!document.hidden) void followLog(id);
 		}, 3000);
 		return () => clearInterval(timer);
+	});
+	// A change pushed for the project: the open publish (its status, its deployments) and its log
+	// are fetched once more, so the last lines show after it finishes.
+	$effect(() => {
+		const changes = deploy.changes;
+		const id = untrack(() => openId);
+		if (!changes || !id) return;
+		void projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`)
+			.then((fresh) => {
+				if (openId !== id) return;
+				detail = fresh;
+				const currentId = untrack(() => deployment?.id) ?? getDeploymentId(fresh.deployments?.find((d) => d.service !== 'db') ?? fresh.deployments?.[0]);
+				if (currentId) void openDeployment(fresh.environment ?? 'production', currentId, true);
+			})
+			.catch(() => null);
 	});
 
 	let rollbackTarget = $state<ProjectPublish | null>(null);
@@ -136,7 +156,7 @@
 		return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(d);
 	}
 
-	const liveService = $derived(overview?.live?.services.find((s) => s.type !== 'database' && s.name !== 'db') ?? null);
+	const liveService = $derived(overview?.live?.services?.find((s) => s.type !== 'database' && s.name !== 'db') ?? null);
 </script>
 
 {#if !overview}

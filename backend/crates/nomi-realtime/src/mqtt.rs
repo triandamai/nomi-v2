@@ -39,6 +39,14 @@ impl MqttPublisher {
         Self { client }
     }
 
+    /// Sends to any topic without waiting: when the broker is unreachable and the queue is full,
+    /// the message is dropped rather than holding up the caller (a request handler, say).
+    pub fn try_publish_to<T: Serialize>(&self, topic: &str, envelope: &T) -> Result<(), MqttError> {
+        let payload = serde_json::to_vec(envelope)?;
+        self.client.try_publish(topic, QoS::AtMostOnce, false, payload)?;
+        Ok(())
+    }
+
     pub async fn publish<T: Serialize>(&self, session_id: Uuid, envelope: &T) -> Result<(), MqttError> {
         let payload = serde_json::to_vec(envelope)?;
         let topic = format!("chat/{session_id}/stream");

@@ -250,6 +250,8 @@ pub async fn apply_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Resu
                 .execute(pool)
                 .await?;
             }
+            // The open pages update now, before the admins' notifications go out.
+            crate::project_events::changed(project_id, &event.kind);
             if status == "failed" {
                 let why = error_text(&event.data).unwrap_or_default();
                 notify_admins(pool, project_id, "publish_failed", &why).await;
@@ -269,6 +271,9 @@ pub async fn apply_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Resu
             }
         }
         _ => {}
+    }
+    if !event.kind.starts_with("publish.") {
+        crate::project_events::changed(project_id, &event.kind);
     }
     Ok(())
 }

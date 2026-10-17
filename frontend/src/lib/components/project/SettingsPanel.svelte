@@ -36,6 +36,9 @@
 	let selectedOrg = $state<TransferOrgSummary | null>(null);
 	let transferring = $state(false);
 	let transferError = $state<string | null>(null);
+	// Picking the organization, then confirming by typing the project's name.
+	let transferStep = $state<'pick' | 'confirm'>('pick');
+	let transferTyped = $state('');
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function loadOrgs(query: string) {
@@ -67,18 +70,20 @@
 		searchQuery = '';
 		selectedOrg = null;
 		transferError = null;
+		transferStep = 'pick';
+		transferTyped = '';
 		transferSheetOpen = true;
 		loadOrgs('');
 	}
 
 	async function executeTransfer() {
-		if (!selectedOrg) return;
+		if (!selectedOrg || transferTyped.trim() !== projectName.trim()) return;
 		transferring = true;
 		transferError = null;
 		try {
 			await projectApi(deploy.projectId, 'transfer', {
 				method: 'POST',
-				body: { target_org_id: selectedOrg.id }
+				body: { target_org_id: selectedOrg.id, confirm_name: transferTyped.trim() }
 			});
 			location.href = '/projects';
 		} catch (e) {
@@ -239,6 +244,7 @@
 			</div>
 		</div>
 
+		{#if transferStep === 'pick'}
 		<div class="transfer-sheet__search">
 			<TextField
 				name="org_search"
@@ -310,15 +316,41 @@
 			<Button variant="text" type="button" onclick={() => (transferSheetOpen = false)}>
 				{m.issues_cancel()}
 			</Button>
-			<Button
-				variant="filled"
-				type="button"
-				disabled={!selectedOrg || transferring}
-				onclick={executeTransfer}
-			>
-				{transferring ? m.pj_transfer_transferring() : m.pj_transfer_button()}
+			<Button variant="filled" type="button" disabled={!selectedOrg} onclick={() => { transferTyped = ''; transferError = null; transferStep = 'confirm'; }}>
+				{m.pj_transfer_next()}
 			</Button>
 		</div>
+		{:else if selectedOrg}
+			<form
+				class="transfer-sheet__confirm"
+				onsubmit={(e) => {
+					e.preventDefault();
+					void executeTransfer();
+				}}
+			>
+				<p class="md-body-large" style="margin: 0;">
+					{m.pj_transfer_confirm_notice(formatTransferNoticeParams(selectedOrg))}
+				</p>
+				<p class="md-body-medium" style="margin: 0; color: var(--md-sys-color-on-surface-variant)">
+					{m.pj_transfer_owner_told({ org: selectedOrg.name })}
+				</p>
+				{#if deploy.overview?.app}
+					<p class="md-body-medium" style="margin: 0; color: var(--md-sys-color-on-surface-variant)">
+						{m.pj_transfer_shipyard({ org: selectedOrg.name })}
+					</p>
+				{/if}
+				<TextField name="confirm_transfer" label={m.pj_transfer_type({ name: projectName })} bind:value={transferTyped} autocomplete="off" />
+				{#if transferError}
+					<p class="error md-body-medium" role="alert">{transferError}</p>
+				{/if}
+				<div class="transfer-sheet__actions">
+					<Button variant="text" type="button" onclick={() => (transferStep = 'pick')}>{m.pj_transfer_back()}</Button>
+					<Button variant="filled" type="submit" disabled={transferTyped.trim() !== projectName.trim() || transferring}>
+						{transferring ? m.pj_transfer_transferring() : m.pj_transfer_button()}
+					</Button>
+				</div>
+			</form>
+		{/if}
 	</div>
 </BottomSheet>
 
@@ -498,6 +530,11 @@
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-secondary-container);
 		color: var(--md-sys-color-on-secondary-container);
+	}
+	.transfer-sheet__confirm {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
 	}
 	.transfer-sheet__actions {
 		display: flex;

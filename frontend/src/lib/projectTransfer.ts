@@ -35,6 +35,8 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'database/tables',
 			'database/query',
 			'showcase',
+			'domain',
+			'domain/check',
 			'transfer',
 			'transfer/orgs',
 			'import/github',

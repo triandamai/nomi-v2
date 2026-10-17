@@ -88,6 +88,24 @@ describe('session-stream-proxy', () => {
 		expect(headers.authorization).toBe('Bearer test-token');
 	});
 
+	it("relays a project's live updates from the project's own upstream path", async () => {
+		const upstream = await startFakeUpstream();
+		cleanups.push(() => upstream.server.close());
+		const path = new Promise((resolve) => upstream.wss.on('connection', (ws, request) => {
+			ws.send('changed');
+			resolve(request.url);
+		}));
+
+		const proxy = await startProxyServer({ apiUrl: upstream.url });
+		cleanups.push(() => proxy.server.close());
+
+		const browser = new WebSocket(`ws://127.0.0.1:${proxy.port}/projects/${SESSION_ID}/ws`, { headers: { cookie: 'access_token=test-token' } });
+		cleanups.push(() => browser.close());
+		const [message] = await waitFor(browser, 'message');
+		expect(await path).toBe(`/api/projects/${SESSION_ID}/ws`);
+		expect(message.toString()).toBe('changed');
+	});
+
 	it('maps a 401 from the upstream to close code 4401', async () => {
 		const upstream = await startFakeUpstream({ rejectStatus: 401 });
 		cleanups.push(() => upstream.server.close());

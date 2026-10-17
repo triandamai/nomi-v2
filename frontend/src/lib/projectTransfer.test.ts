@@ -101,6 +101,12 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('transfer/..')).toBe(false);
 		});
 
+		it("allows the project's address and checking a name", () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('domain')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('domain/check')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('domain/other')).toBe(false);
+		});
+
 		it('still allows all standard project endpoints', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('runtime')).toBe(true);

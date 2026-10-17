@@ -225,6 +225,15 @@ async fn removing_an_org_from_shipyard_unpublishes_its_projects(pool: PgPool) {
     let (status, body) = request(router.clone(), "GET", "/api/admin/shipyard/orgs", &token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.as_array().unwrap().iter().any(|o| o["id"] == org.to_string()));
+    // A second team organization with no projects yet is listed too, not yet on Shipyard; an
+    // empty personal workspace isn't.
+    let second: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Second') RETURNING id").fetch_one(&pool).await.unwrap();
+    let personal: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ('Mine', true) RETURNING id").fetch_one(&pool).await.unwrap();
+    let (_, body) = request(router.clone(), "GET", "/api/admin/shipyard/orgs", &token, None).await;
+    let listed = body.as_array().unwrap();
+    let entry = listed.iter().find(|o| o["id"] == second.to_string()).expect("the new organization");
+    assert_eq!(entry["synced_at"], Value::Null);
+    assert!(listed.iter().all(|o| o["id"] != personal.to_string()));
 
     let (status, _) = request(router, "DELETE", &format!("/api/admin/shipyard/orgs/{org}"), &token, None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);

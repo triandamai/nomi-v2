@@ -581,6 +581,8 @@ pub async fn search_transfer_orgs(
 #[derive(Debug, Deserialize)]
 pub struct TransferProjectRequest {
     pub target_org_id: Uuid,
+    /// The project's name as the person typed it to confirm; it has to match.
+    pub confirm_name: String,
 }
 
 #[tracing::instrument(skip(state, claims))]
@@ -590,8 +592,8 @@ pub async fn transfer_project(
     Path(project_id): Path<Uuid>,
     Json(req): Json<TransferProjectRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let project_row: Option<(Uuid, Uuid, Uuid)> = sqlx::query_as(
-        "SELECT p.user_id, p.org_id, p.session_id FROM projects p WHERE p.id = $1 AND can_open_project(p.id, $2)"
+    let project_row: Option<(Uuid, Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT p.user_id, p.org_id, p.session_id, p.name FROM projects p WHERE p.id = $1 AND can_open_project(p.id, $2)"
     )
     .bind(project_id)
     .bind(claims.sub)
@@ -599,7 +601,7 @@ pub async fn transfer_project(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let (current_owner_id, current_org_id, session_id) = project_row.ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
+    let (current_owner_id, current_org_id, session_id, project_name) = project_row.ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
 
     let is_admin: bool = current_owner_id == claims.sub || sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'active' AND role IN ('owner', 'admin'))"
@@ -616,6 +618,9 @@ pub async fn transfer_project(
 
     if req.target_org_id == current_org_id {
         return Err((StatusCode::BAD_REQUEST, "project is already in this organization".to_string()));
+    }
+    if req.confirm_name.trim() != project_name.trim() {
+        return Err((StatusCode::BAD_REQUEST, "type the project's name to confirm the transfer".to_string()));
     }
 
     let target_org_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1)")
@@ -640,6 +645,10 @@ pub async fn transfer_project(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let target_owner_id = target_owner.ok_or((StatusCode::BAD_REQUEST, "target organization has no active members or owner".to_string()))?;
+
+    // A published project's Shipyard app moves first, so the two stay in step: when Shipyard
+    // refuses (a publish is running, the destination's plan can't hold it), nothing moves here.
+    move_shipyard_app(&state, project_id, current_org_id, req.target_org_id).await?;
 
     let mut tx = state.pool.begin().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -670,7 +679,97 @@ pub async fn transfer_project(
 
     tx.commit().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    crate::project_events::changed(project_id, "app.transferred");
+    notify_transfer(&state.pool, project_id, &project_name, current_org_id, req.target_org_id, claims.sub).await;
     Ok(StatusCode::OK)
+}
+
+/// Moves the project's app on Shipyard to the destination organization (created there first if
+/// it hasn't published anything yet). A project that was never published has nothing to move.
+async fn move_shipyard_app(state: &AppState, project_id: Uuid, from_org: Uuid, to_org: Uuid) -> Result<(), (StatusCode, String)> {
+    let internal = |e: sqlx::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    let app: Option<String> = sqlx::query_scalar("SELECT shipyard_app FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(internal)?;
+    let Some(app) = app else { return Ok(()) };
+    let shipyard = crate::routes::deploy::client(state).map_err(|_| {
+        (StatusCode::SERVICE_UNAVAILABLE, "this project is published on Shipyard, which isn't set up here, so it can't be moved".to_string())
+    })?;
+    let to_name: String = sqlx::query_scalar("SELECT name FROM organizations WHERE id = $1")
+        .bind(to_org)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(internal)?;
+    shipyard.put_org(&to_org.to_string(), &to_name).await.map_err(crate::routes::deploy::shipyard_error)?;
+    sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(to_org).execute(&state.pool).await.map_err(internal)?;
+    match shipyard.transfer_app(&from_org.to_string(), &app, &to_org.to_string(), None).await {
+        Ok(moved) => {
+            tracing::info!(%project_id, %app, %from_org, %to_org, redeploying = %moved.get("redeploying").cloned().unwrap_or_default(), "moved the Shipyard app");
+            Ok(())
+        }
+        // A publish or deployment is running, or the destination already has an app with this
+        // key: the transfer is cancelled, never renamed on the way.
+        Err(nomi_shipyard::ShipyardError::Rejected { status: 409, message, .. }) => {
+            Err((StatusCode::CONFLICT, format!("Shipyard can't move the app ({message}), so the project wasn't moved")))
+        }
+        Err(nomi_shipyard::ShipyardError::Unauthorized(message)) => {
+            Err((StatusCode::FORBIDDEN, format!("Shipyard won't move the app to this organization: {message}")))
+        }
+        Err(e) => Err(crate::routes::deploy::shipyard_error(e)),
+    }
+}
+
+/// Tells the receiving organization's owners (its admins when it has no owner) that the project
+/// is theirs now, in their inbox and by email. The person who moved it isn't told.
+async fn notify_transfer(pool: &sqlx::PgPool, project_id: Uuid, project_name: &str, from_org: Uuid, to_org: Uuid, mover: Uuid) {
+    let names: Result<(String, String, String), sqlx::Error> = sqlx::query_as(
+        "SELECT (SELECT name FROM organizations WHERE id = $1), (SELECT name FROM organizations WHERE id = $2), \
+                (SELECT COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1), 'Someone') \
+                 FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id LEFT JOIN web_credentials w ON w.user_id = u.id \
+                 LEFT JOIN google_identities g ON g.user_id = u.id WHERE u.id = $3)",
+    )
+    .bind(from_org)
+    .bind(to_org)
+    .bind(mover)
+    .fetch_one(pool)
+    .await;
+    let (from, org, who) = match names {
+        Ok(names) => names,
+        Err(e) => {
+            tracing::warn!(error = %e, %project_id, "couldn't tell the new organization about a transferred project");
+            return;
+        }
+    };
+    let owners: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM memberships WHERE org_id = $1 AND status = 'active' AND user_id <> $2 \
+           AND role = CASE WHEN EXISTS (SELECT 1 FROM memberships WHERE org_id = $1 AND status = 'active' AND role = 'owner') \
+                           THEN 'owner' ELSE 'admin' END",
+    )
+    .bind(to_org)
+    .bind(mover)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    for user_id in owners {
+        let code: Option<String> = sqlx::query_scalar("SELECT language FROM user_preferences WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        let locale = nomi_i18n::Locale::from_code_or_default(code.as_deref());
+        let notice = crate::notifications::Notice {
+            kind: crate::notifications::Kind::Project,
+            title: locale.tf("project.transferred_title", &[("name", project_name), ("org", &org)]),
+            body: locale.tf("project.transferred_body", &[("who", &who), ("name", project_name), ("from", &from), ("org", &org)]),
+            link: Some(format!("/projects/{project_id}/app")),
+        };
+        if let Err(e) = crate::notifications::send(pool, user_id, notice).await {
+            tracing::warn!(error = %e, "couldn't send a project transfer notification");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -681,11 +780,11 @@ mod tests {
     #[test]
     fn deserializes_transfer_request() {
         let org_id = Uuid::new_v4();
-        let payload = format!(r#"{{"target_org_id":"{org_id}"}}"#);
+        let payload = format!(r#"{{"target_org_id":"{org_id}","confirm_name":"Todo"}}"#);
         let req: TransferProjectRequest = serde_json::from_str(&payload).expect("valid request");
         assert_eq!(req.target_org_id, org_id);
 
-        let invalid = r#"{"target_org_id":"not-a-uuid"}"#;
+        let invalid = r#"{"target_org_id":"not-a-uuid","confirm_name":"Todo"}"#;
         assert!(serde_json::from_str::<TransferProjectRequest>(invalid).is_err());
     }
 

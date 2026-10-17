@@ -89,7 +89,7 @@ pub(crate) fn client(state: &AppState) -> Result<Shipyard<'_>, ApiError> {
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "publishing isn't set up on this Nomi".to_string()))
 }
 
-async fn target(state: &AppState, project_id: Uuid) -> Result<ProjectTarget, ApiError> {
+pub(crate) async fn target(state: &AppState, project_id: Uuid) -> Result<ProjectTarget, ApiError> {
     nomi_shipyard_side::load_target(&state.pool, project_id)
         .await
         .map_err(internal("failed to load project"))?
@@ -632,6 +632,20 @@ pub async fn delete_project(
         .await
         .map_err(internal("failed to delete project"))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// `GET /api/projects/:id/ws`: the project's live updates (see `project_events`), for anyone
+/// who can open the project.
+pub async fn project_stream(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+    ws: axum::extract::ws::WebSocketUpgrade,
+) -> Result<axum::response::Response, ApiError> {
+    project_role(&state.pool, project_id, claims.sub).await?;
+    let topic = crate::project_events::topic(project_id);
+    let (host, port) = (state.mqtt_broker_host.clone(), state.mqtt_broker_port);
+    Ok(ws.on_upgrade(move |socket| crate::routes::sessions::relay_topic(socket, topic, host, port)))
 }
 
 /// `POST /api/hooks/shipyard`: Shipyard's events. Signature first, then stored once and applied.

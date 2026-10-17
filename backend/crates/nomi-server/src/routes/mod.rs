@@ -8,6 +8,7 @@ pub mod attachments;
 pub mod auth;
 pub mod connections;
 pub mod deploy;
+pub mod domain;
 pub mod dynamic_agents;
 pub mod google_auth;
 pub mod home;

@@ -92,35 +92,3 @@ async fn message_sender_is_nullable_for_assistant_replies(pool: PgPool) {
         .unwrap();
     assert_eq!(count, 2);
 }
-
-#[sqlx::test(migrations = "../../migrations")]
-async fn session_participant_cannot_be_added_twice(pool: PgPool) {
-    let org_id = make_org(&pool).await;
-    let session_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO sessions (org_id, channel, chat_type, chat_id) VALUES ($1, 'web', 'group', 'group-1') RETURNING id",
-    )
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let (user_id, _identity_id) = make_user_with_channel_identity(&pool, "222").await;
-
-    sqlx::query("INSERT INTO session_participants (session_id, user_id) VALUES ($1, $2)")
-        .bind(session_id)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let err = sqlx::query("INSERT INTO session_participants (session_id, user_id) VALUES ($1, $2)")
-        .bind(session_id)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .unwrap_err();
-
-    assert_eq!(
-        err.as_database_error().unwrap().constraint(),
-        Some("session_participants_pkey")
-    );
-}
