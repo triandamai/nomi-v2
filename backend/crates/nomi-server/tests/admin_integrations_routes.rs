@@ -186,9 +186,27 @@ async fn catching_up_records_missed_events_once(pool: PgPool) {
     let (_, body) = request(router.clone(), "POST", "/api/admin/shipyard/events/catch-up", &token, None).await;
     assert_eq!(body["new_events"], 0);
 
-    let (status, body) = request(router, "GET", "/api/admin/shipyard/events", &token, None).await;
+    let (status, body) = request(router.clone(), "GET", "/api/admin/shipyard/events", &token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["events"].as_array().unwrap().len(), 2);
+    assert_eq!((body["page"].as_i64(), body["pages"].as_i64(), body["total"].as_i64()), (Some(1), Some(1), Some(2)));
+
+    // A long feed comes a page at a time, newest first; a page past the end shows the last one.
+    for i in 0..23 {
+        sqlx::query("INSERT INTO shipyard_events (id, type, created_at, received_at) VALUES ($1, 'deployment.succeeded', now(), now() + make_interval(secs => $2))")
+            .bind(format!("evt_more_{i:02}"))
+            .bind(i as f64)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let (_, body) = request(router.clone(), "GET", "/api/admin/shipyard/events", &token, None).await;
+    assert_eq!((body["pages"].as_i64(), body["total"].as_i64()), (Some(2), Some(25)));
+    assert_eq!(body["events"].as_array().unwrap().len(), 20);
+    assert_eq!(body["events"][0]["id"], "evt_more_22");
+    let (_, body) = request(router, "GET", "/api/admin/shipyard/events?page=9", &token, None).await;
+    assert_eq!(body["page"], 2);
+    assert_eq!(body["events"].as_array().unwrap().len(), 5);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

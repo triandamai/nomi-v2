@@ -174,6 +174,18 @@ async fn each_app_is_shown_at_the_address_shipyard_reports_for_it(pool: PgPool) 
     let (status, _) = request(router.clone(), "PUT", &format!("/api/projects/{other}/showcase"), Some(&owner), Some(json!({ "showcase": true }))).await;
     assert_eq!(status, StatusCode::CONFLICT);
 
+    // Shipyard reports another project's address for this app (its own publish named its own):
+    // refused, even though that project isn't shown.
+    let lone = new_project(router.clone(), &owner).await;
+    let mixed = new_project(router.clone(), &owner).await;
+    publish_named(&pool, lone, "Lone", "https://lone.apps.example.dev").await;
+    publish_named(&pool, mixed, "Mixed", "https://mixed.apps.example.dev").await;
+    live_on_shipyard(&shipyard, mixed, "https://lone.apps.example.dev").await;
+    let (status, _) = request(router.clone(), "PUT", &format!("/api/projects/{mixed}/showcase"), Some(&owner), Some(json!({ "showcase": true }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, body) = request(router.clone(), "GET", &format!("/api/projects/{mixed}/showcase"), Some(&owner), None).await;
+    assert_eq!((body["showcase"].as_bool(), body["url"].as_str()), (Some(false), Some("https://mixed.apps.example.dev")));
+
     // Shipyard says it isn't live: it can't be shown.
     let offline = new_project(router.clone(), &owner).await;
     publish_named(&pool, offline, "Offline", "https://offline.apps.example.dev").await;

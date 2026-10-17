@@ -664,20 +664,36 @@ pub struct ReceivedEvent {
     pub received_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// How many events a page of the feed holds.
+const EVENTS_PER_PAGE: i64 = 20;
+
 #[derive(Serialize)]
 pub struct EventFeed {
     pub events: Vec<ReceivedEvent>,
+    pub page: i64,
+    pub pages: i64,
+    pub total: i64,
     /// What Shipyard can send.
     pub types: Value,
 }
 
-/// `GET /api/admin/shipyard/events`: the latest events Nomi received.
-pub async fn list_events(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<EventFeed>, ApiError> {
+#[derive(Deserialize)]
+pub struct EventPage {
+    pub page: Option<i64>,
+}
+
+/// `GET /api/admin/shipyard/events?page=`: the events Nomi received, newest first, a page at a time.
+pub async fn list_events(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Query(q): Query<EventPage>) -> Result<Json<EventFeed>, ApiError> {
     admin(&claims, "view")?;
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM shipyard_events").fetch_one(&state.pool).await.map_err(internal("failed to count events"))?;
+    let pages = ((total + EVENTS_PER_PAGE - 1) / EVENTS_PER_PAGE).max(1);
+    let page = q.page.unwrap_or(1).clamp(1, pages);
     let events = sqlx::query_as(
         "SELECT e.id, e.type, e.project_id, p.name AS project_name, e.environment, e.service, e.created_at, e.received_at \
-         FROM shipyard_events e LEFT JOIN projects p ON p.id = e.project_id ORDER BY e.received_at DESC LIMIT 100",
+         FROM shipyard_events e LEFT JOIN projects p ON p.id = e.project_id ORDER BY e.received_at DESC, e.id LIMIT $1 OFFSET $2",
     )
+    .bind(EVENTS_PER_PAGE)
+    .bind((page - 1) * EVENTS_PER_PAGE)
     .fetch_all(&state.pool)
     .await
     .map_err(internal("failed to list events"))?;
@@ -685,7 +701,7 @@ pub async fn list_events(State(state): State<AppState>, AuthClaims(claims): Auth
         Some(_) => client(&state)?.event_types().await.unwrap_or(Value::Array(vec![])),
         None => Value::Array(vec![]),
     };
-    Ok(Json(EventFeed { events, types }))
+    Ok(Json(EventFeed { events, page, pages, total, types }))
 }
 
 /// `POST /api/admin/shipyard/events/catch-up`: pulls events no webhook delivered, now.

@@ -150,6 +150,28 @@ async fn verified_url(state: &AppState, project_id: Uuid) -> Result<String, ApiE
     if let Some(other) = other {
         return Err((StatusCode::CONFLICT, format!("{url} is already shown for {other}")));
     }
+    // Shipyard has been seen reporting another app's domain for an environment. When the address
+    // isn't the one this project's own publish named, and another project's publish named it,
+    // it belongs to that project.
+    let owner: Option<String> = sqlx::query_scalar(&format!(
+        "SELECT o.name FROM projects o WHERE o.id <> $1 AND o.shipyard_app IS NOT NULL \
+           AND (SELECT pp.url FROM project_publishes pp WHERE pp.project_id = o.id AND pp.environment = 'production' \
+                AND pp.status = 'succeeded' AND pp.url IS NOT NULL ORDER BY pp.created_at DESC LIMIT 1) = $2 \
+           AND (SELECT {own} FROM projects p WHERE p.id = $1) IS DISTINCT FROM $2 \
+         LIMIT 1",
+        own = LIVE_URL
+    ))
+    .bind(project_id)
+    .bind(&url)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal("failed to check the showcase"))?;
+    if let Some(owner) = owner {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("Shipyard reports {url} for this app, but that's {owner}'s address. Check the app's domains in Shipyard, then try again."),
+        ));
+    }
     Ok(url)
 }
 

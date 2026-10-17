@@ -9,6 +9,7 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import ButtonGroup from '$lib/components/m3/ButtonGroup.svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
+	import Pagination from '$lib/components/m3/Pagination.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
@@ -321,11 +322,17 @@
 	const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
 
 	// ─── Events ──────────────────────────────────────────────────
-	let events = $state<{ events: ReceivedEvent[]; types: string[] } | null>(null);
-	async function loadEvents() {
+	// A page at a time (newest first), so a busy feed doesn't run down the screen.
+	let events = $state<{ events: ReceivedEvent[]; page: number; pages: number; total: number; types: string[] } | null>(null);
+	let eventsTop = $state<HTMLElement | null>(null);
+	async function loadEvents(page = 1) {
 		await run('events', async () => {
-			events = await adminApi('shipyard/events');
+			events = await adminApi(`shipyard/events?page=${page}`);
 		});
+	}
+	async function showEventsPage(page: number) {
+		await loadEvents(page);
+		eventsTop?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 	}
 
 	// ─── Add endpoint ────────────────────────────────────────────
@@ -606,7 +613,8 @@
 			{#if events.events.length === 0}
 				<p class="muted">{m.integ_no_events()}</p>
 			{:else}
-				<ul class="list">
+				<p class="muted small" bind:this={eventsTop}>{m.integ_events_count({ count: events.total })}</p>
+				<ul class="list" aria-busy={busy === 'events'}>
 					{#each events.events as event (event.id)}
 						<li class="mini">
 							<span class="mini__text">
@@ -616,6 +624,9 @@
 						</li>
 					{/each}
 				</ul>
+				<div class="events-pager">
+					<Pagination page={events.page} pages={events.pages} onselect={showEventsPage} label={m.integ_events_pages()} />
+				</div>
 			{/if}
 		{:else}
 			<p class="muted">{m.common_loading()}</p>
@@ -994,6 +1005,14 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+	.list[aria-busy='true'] {
+		opacity: 0.6;
+	}
+	.events-pager {
+		display: flex;
+		justify-content: center;
+		margin-top: 16px;
 	}
 	.row {
 		display: flex;

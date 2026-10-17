@@ -1961,5 +1961,7 @@
 	"integ_add_any_org": "Every organization",
 	"integ_add_submit": "Register with Shipyard",
 	"integ_copy": "Copy",
-	"integ_copied": "Copied"
+	"integ_copied": "Copied",
+	"integ_events_count": "{count} events received, newest first",
+	"integ_events_pages": "Event pages"
 }
