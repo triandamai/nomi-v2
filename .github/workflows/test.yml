@@ -51,7 +51,7 @@ jobs:
       JWT_SECRET: ci-test-secret-do-not-use-in-prod
       SETTINGS_ENCRYPTION_KEY: ca56652b62a97555ffc35331260ee457cb2ffafacdefdf2e9e5e5388e7f81ea5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -77,10 +77,10 @@ jobs:
     name: Frontend (check + unit tests + build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm

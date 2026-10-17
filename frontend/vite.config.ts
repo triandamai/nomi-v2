@@ -11,6 +11,9 @@ const version = appVersion();
 export default defineConfig({
 	// Shown in the app (see $lib/version) and sent to the backend with every call.
 	define: { __APP_VERSION__: JSON.stringify(version) },
+	// Rolldown's plugin-timing report prints as a warning on every build; it's a profiling aid,
+	// not a problem with the build.
+	build: { rolldownOptions: { checks: { pluginTimings: false } } },
 	plugins: [
 		tailwindcss(),
 		// English and Indonesian. The person's saved language (Account → Language) lives in the
