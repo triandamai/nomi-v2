@@ -198,7 +198,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
-        .route("/api/admin/shipyard/webhooks", get(crate::routes::admin_shipyard::list_webhooks))
+        .route("/api/admin/shipyard/webhooks", get(crate::routes::admin_shipyard::list_webhooks).post(crate::routes::admin_shipyard::create_webhook))
         .route(
             "/api/admin/shipyard/webhooks/:id",
             patch(crate::routes::admin_shipyard::update_webhook).delete(crate::routes::admin_shipyard::delete_webhook),

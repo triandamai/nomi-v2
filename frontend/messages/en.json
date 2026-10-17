@@ -1948,5 +1948,18 @@
 	"showcase_save_blurb": "Save",
 	"showcase_on": "It's in the showcase.",
 	"showcase_off": "It's not in the showcase.",
-	"billing_cached": "{tokens} from cache · counts as a tenth"
+	"billing_cached": "{tokens} from cache · counts as a tenth",
+	"integ_add_endpoint": "Add endpoint",
+	"integ_add_url": "Address Shipyard sends events to",
+	"integ_add_url_hint": "A public https address that reads the raw body and replies 2xx within 10 seconds.",
+	"integ_add_own": "This is Nomi's own address: Nomi keeps its signing secret and checks every event with it.",
+	"integ_add_events": "Events",
+	"integ_add_choose": "Choose",
+	"integ_add_no_types": "Shipyard didn't list its event types.",
+	"integ_loading": "Loading…",
+	"integ_add_org": "Organization",
+	"integ_add_any_org": "Every organization",
+	"integ_add_submit": "Register with Shipyard",
+	"integ_copy": "Copy",
+	"integ_copied": "Copied"
 }

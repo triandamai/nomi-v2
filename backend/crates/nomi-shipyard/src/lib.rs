@@ -264,7 +264,17 @@ impl<'a> Shipyard<'a> {
 
     /// Registers a webhook endpoint for every event; the secret is only returned here.
     pub async fn create_webhook(&self, url: &str) -> Result<(String, String), ShipyardError> {
-        let data = self.call(reqwest::Method::POST, "/webhooks", Some(json!({ "url": url, "events": ["*"] }))).await?;
+        self.create_webhook_for(url, &["*".to_string()], None).await
+    }
+
+    /// Registers a webhook endpoint for `events` (exact types, `prefix.*`, or `*`), optionally
+    /// only for one org; the secret is only returned here.
+    pub async fn create_webhook_for(&self, url: &str, events: &[String], org: Option<&str>) -> Result<(String, String), ShipyardError> {
+        let mut body = json!({ "url": url, "events": events });
+        if let Some(org) = org {
+            body["org"] = json!(org);
+        }
+        let data = self.call(reqwest::Method::POST, "/webhooks", Some(body)).await?;
         let id = data.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
         let secret = data
             .get("secret")
