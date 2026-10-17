@@ -1961,5 +1961,7 @@
 	"integ_add_any_org": "Semua organisasi",
 	"integ_add_submit": "Daftarkan ke Shipyard",
 	"integ_copy": "Salin",
-	"integ_copied": "Tersalin"
+	"integ_copied": "Tersalin",
+	"integ_events_count": "{count} kejadian diterima, terbaru di atas",
+	"integ_events_pages": "Halaman kejadian"
 }
