@@ -115,7 +115,7 @@ sign_in:
   expires: "The code works for %{minutes} minutes."
 email:
   crew_label: "Nomi crew"
-  tagline: "Nomi · a small crew of agents that remembers & builds for you."
+  tagline: "Nomi · a small crew of agents that remembers, builds, works for you."
 notify:
   open_in_app: "Open Nomi and go to %{where} to see it."
   open_button: "Open in Nomi"

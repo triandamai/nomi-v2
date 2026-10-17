@@ -115,7 +115,7 @@ sign_in:
   expires: "Kode berlaku selama %{minutes} menit."
 email:
   crew_label: "Kru Nomi"
-  tagline: "Nomi · kru kecil para agen yang mengingat & membangun untuk Anda."
+  tagline: "Nomi · kru kecil para agen yang mengingat, membangun, bekerja untuk Anda."
 notify:
   open_in_app: "Buka Nomi lalu ke %{where} untuk melihatnya."
   open_button: "Buka di Nomi"
