@@ -1948,5 +1948,18 @@
 	"showcase_save_blurb": "Simpan",
 	"showcase_on": "Sudah ada di etalase.",
 	"showcase_off": "Tidak ada di etalase.",
-	"billing_cached": "{tokens} dari cache · dihitung sepersepuluh"
+	"billing_cached": "{tokens} dari cache · dihitung sepersepuluh",
+	"integ_add_endpoint": "Tambah endpoint",
+	"integ_add_url": "Alamat tujuan kejadian dari Shipyard",
+	"integ_add_url_hint": "Alamat https publik yang membaca body mentah dan membalas 2xx dalam 10 detik.",
+	"integ_add_own": "Ini alamat Nomi sendiri: Nomi menyimpan rahasia penandatangannya dan memeriksa setiap kejadian dengannya.",
+	"integ_add_events": "Kejadian",
+	"integ_add_choose": "Pilih",
+	"integ_add_no_types": "Shipyard tidak mengirim daftar jenis kejadiannya.",
+	"integ_loading": "Memuat…",
+	"integ_add_org": "Organisasi",
+	"integ_add_any_org": "Semua organisasi",
+	"integ_add_submit": "Daftarkan ke Shipyard",
+	"integ_copy": "Salin",
+	"integ_copied": "Tersalin"
 }

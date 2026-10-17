@@ -7,6 +7,10 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import ButtonGroup from '$lib/components/m3/ButtonGroup.svelte';
+	import Chip from '$lib/components/m3/Chip.svelte';
+	import Select from '$lib/components/m3/Select.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
@@ -105,11 +109,14 @@
 					: s.webhook_url;
 
 	async function registerWebhook() {
-		await run('register', async () => {
+		const registered = await run('register', async () => {
 			status = await adminApi<Status>('shipyard/webhook', { method: 'POST' });
-			notice = m.integ_registered();
-			webhooks = null;
+			return true;
 		});
+		if (!registered) return;
+		// Reloading the list clears messages, so the confirmation comes after.
+		if (webhooks) await loadWebhooks();
+		notice = m.integ_registered();
 	}
 
 	async function catchUp() {
@@ -321,6 +328,68 @@
 		});
 	}
 
+	// ─── Add endpoint ────────────────────────────────────────────
+	// Registers an address with Shipyard (POST /webhooks): every event or chosen ones, for every
+	// organization or one. Nomi's own address keeps its secret; any other shows it once here.
+	let addOpen = $state(false);
+	let addUrl = $state('');
+	let addAll = $state<'all' | 'some'>('all');
+	let addEvents = $state<string[]>([]);
+	let addOrg = $state('');
+	let addError = $state<string | null>(null);
+	let secretCopied = $state(false);
+	// Prefixes first (deployment.*), then every exact type Shipyard lists.
+	const eventChoices = $derived.by(() => {
+		const types = events?.types ?? [];
+		const prefixes = [...new Set(types.filter((t) => t.includes('.')).map((t) => `${t.split('.')[0]}.*`))];
+		return [...prefixes, ...types];
+	});
+	const orgChoices = $derived([{ value: '', label: m.integ_add_any_org() }, ...(orgs ?? []).filter((o) => o.synced_at).map((o) => ({ value: o.id, label: o.name }))]);
+
+	async function openAddEndpoint() {
+		addUrl = webhooks?.own_id ? '' : (status?.webhook_target ?? '');
+		addAll = 'all';
+		addEvents = [];
+		addOrg = '';
+		addError = null;
+		addOpen = true;
+		// What to choose from: Shipyard's event types and the organizations it knows.
+		if (!events) void loadEvents();
+		if (!orgs) void loadOrgs();
+	}
+
+	function toggleEvent(event: string) {
+		addEvents = addEvents.includes(event) ? addEvents.filter((e) => e !== event) : [...addEvents, event];
+	}
+
+	async function addEndpoint() {
+		addError = null;
+		busy = 'add';
+		try {
+			const created = await adminApi<{ id: string; secret: string | null; own: boolean }>('shipyard/webhooks', {
+				method: 'POST',
+				body: { url: addUrl.trim(), events: addAll === 'all' ? ['*'] : addEvents, org: addOrg || null },
+			});
+			addOpen = false;
+			newSecret = created.secret;
+			secretCopied = false;
+			// Reloading clears messages, so the confirmation comes after.
+			await loadWebhooks();
+			await loadStatus();
+			notice = created.own ? m.integ_registered() : null;
+		} catch (e) {
+			addError = (e as Error).message;
+		} finally {
+			busy = null;
+		}
+	}
+
+	async function copySecret() {
+		if (!newSecret) return;
+		await navigator.clipboard.writeText(newSecret).catch(() => {});
+		secretCopied = true;
+	}
+
 	// Each tab loads the first time it's opened.
 	$effect(() => {
 		if (!status?.configured) return;
@@ -374,6 +443,7 @@
 		<div class="secret-once" role="status">
 			<span>{m.integ_new_secret()}</span>
 			<code>{newSecret}</code>
+			<Button variant="text" size="s" onclick={copySecret}>{secretCopied ? m.integ_copied() : m.integ_copy()}</Button>
 			<Button variant="text" size="s" onclick={() => (newSecret = null)}>{m.integ_done()}</Button>
 		</div>
 	{/if}
@@ -404,6 +474,11 @@
 		{/if}
 	{:else if tab === 'webhooks'}
 		{#if webhooks}
+			{#if canManage}
+				<div class="actions">
+					<Button variant="tonal" size="s" onclick={openAddEndpoint}>{m.integ_add_endpoint()}</Button>
+				</div>
+			{/if}
 			<!-- Nomi's own endpoint isn't on Shipyard (never registered, or deleted there): put it back. -->
 			{#if !webhooks.own_id && status}
 				{@render webhookSetup(status)}
@@ -688,6 +763,47 @@
 	{/snippet}
 </Dialog>
 
+<BottomSheet bind:open={addOpen} label={m.integ_add_endpoint()}>
+	<form
+		class="add"
+		onsubmit={(e) => {
+			e.preventDefault();
+			void addEndpoint();
+		}}
+	>
+		<h2 class="add__title">{m.integ_add_endpoint()}</h2>
+		<TextField name="webhook_url" label={m.integ_add_url()} type="url" inputmode="url" autocomplete="off" bind:value={addUrl} supportingText={m.integ_add_url_hint()} />
+		{#if status?.webhook_target && addUrl.trim() === status.webhook_target}
+			<p class="muted small">{m.integ_add_own()}</p>
+		{/if}
+		<div class="add__group">
+			<span class="add__label">{m.integ_add_events()}</span>
+			<ButtonGroup
+				options={[{ value: 'all', label: m.integ_all_events() }, { value: 'some', label: m.integ_add_choose() }]}
+				bind:value={addAll}
+				aria-label={m.integ_add_events()}
+			/>
+			{#if addAll === 'some'}
+				{#if eventChoices.length === 0}
+					<p class="muted small">{busy === 'events' ? m.integ_loading() : m.integ_add_no_types()}</p>
+				{:else}
+					<div class="add__chips">
+						{#each eventChoices as event (event)}
+							<Chip variant="filter" selected={addEvents.includes(event)} onclick={() => toggleEvent(event)}><code>{event}</code></Chip>
+						{/each}
+					</div>
+				{/if}
+			{/if}
+		</div>
+		<Select name="webhook_org" label={m.integ_add_org()} options={orgChoices} bind:value={addOrg} />
+		{#if addError}<p class="error" role="alert">{addError}</p>{/if}
+		<div class="add__actions">
+			<Button variant="text" type="button" onclick={() => (addOpen = false)}>{m.common_cancel()}</Button>
+			<Button variant="filled" type="submit" disabled={busy === 'add' || !addUrl.trim() || (addAll === 'some' && addEvents.length === 0)}>{m.integ_add_submit()}</Button>
+		</div>
+	</form>
+</BottomSheet>
+
 <style>
 	.integration {
 		display: flex;
@@ -818,6 +934,45 @@
 	}
 	.small {
 		font-size: 0.8125rem;
+	}
+	.add {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		padding: 0 4px 12px;
+	}
+	.add__title {
+		margin: 0;
+		font-family: var(--md-ref-typeface-brand);
+		font-size: 1.5rem;
+		font-weight: 800;
+		color: var(--md-sys-color-on-surface);
+	}
+	.add__group {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.add__label {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+	.add__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		max-height: 220px;
+		overflow-y: auto;
+	}
+	.add__chips code {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.8125rem;
+	}
+	.add__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
 	}
 	.secret-once {
 		display: flex;

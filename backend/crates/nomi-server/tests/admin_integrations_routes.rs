@@ -281,3 +281,81 @@ async fn a_missing_webhook_shows_up_and_can_be_registered_despite_an_env_secret(
     assert_eq!(signed_webhook(router.clone(), "whsec_env").await, StatusCode::NO_CONTENT);
     assert_eq!(signed_webhook(router, "whsec_wrong").await, StatusCode::UNAUTHORIZED);
 }
+
+/// Add endpoint: someone else's gets its secret once; Nomi's own address keeps its secret and
+/// can't be registered twice; only "manage" may add one.
+#[sqlx::test(migrations = "../../migrations")]
+async fn endpoints_can_be_added_with_their_events_and_org(pool: PgPool) {
+    std::env::set_var("APP_URL", "https://nomi.test");
+    let server = MockServer::start().await;
+    let org = Uuid::new_v4();
+    Mock::given(method("POST"))
+        .and(path("/webhooks"))
+        .and(body_json(json!({ "url": "https://ops.test/shipyard", "events": ["deployment.*", "publish.failed"], "org": org.to_string() })))
+        .respond_with(ok(json!({ "id": "ep_ops", "url": "https://ops.test/shipyard", "secret": "whsec_ops" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/webhooks"))
+        .respond_with(ok(json!([])))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/webhooks"))
+        .respond_with(ok(json!([{ "id": "ep_nomi", "url": "https://nomi.test/hooks/shipyard", "events": ["*"], "enabled": true }])))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/webhooks"))
+        .and(body_json(json!({ "url": "https://nomi.test/hooks/shipyard", "events": ["*"] })))
+        .respond_with(ok(json!({ "id": "ep_nomi", "url": "https://nomi.test/hooks/shipyard", "secret": "whsec_nomi" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST")).and(path("/webhooks/ep_nomi/test")).respond_with(ok(json!({ "ok": true }))).mount(&server).await;
+    let router = build_router(test_state(pool.clone(), &server));
+    let admin = login(router.clone(), &pool, "admin@example.com", true).await;
+
+    // Someone else's endpoint, for two kinds of events in one org: its secret comes back once.
+    let (status, body) = request(
+        router.clone(),
+        "POST",
+        "/api/admin/shipyard/webhooks",
+        &admin,
+        Some(json!({ "url": " https://ops.test/shipyard ", "events": ["publish.failed", "deployment.*", "publish.failed"], "org": org })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "id": "ep_ops", "secret": "whsec_ops", "own": false }));
+
+    // Bad input never reaches Shipyard.
+    for bad in [json!({ "url": "http://ops.test/x", "events": ["*"] }), json!({ "url": "https://ops.test/x", "events": [] }), json!({ "url": "https://ops.test/x", "events": ["Deploy"] })] {
+        let (status, _) = request(router.clone(), "POST", "/api/admin/shipyard/webhooks", &admin, Some(bad)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // Nomi's own address: Nomi keeps the secret ("*" swallows the rest).
+    let (status, body) = request(
+        router.clone(),
+        "POST",
+        "/api/admin/shipyard/webhooks",
+        &admin,
+        Some(json!({ "url": "https://nomi.test/hooks/shipyard", "events": ["*", "publish.failed"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "id": "ep_nomi", "secret": null, "own": true }));
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT secret_encrypted FROM shipyard_webhook").fetch_one(&pool).await.unwrap();
+    assert_eq!(nomi_settings::crypto::decrypt(&nomi_test_support::TEST_SETTINGS_KEY, &stored).unwrap(), "whsec_nomi");
+
+    // Twice: refused, Nomi's endpoint is already there.
+    let (status, _) = request(router.clone(), "POST", "/api/admin/shipyard/webhooks", &admin, Some(json!({ "url": "https://nomi.test/hooks/shipyard", "events": ["*"] }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Not an admin: refused.
+    let someone = login(router.clone(), &pool, "someone@example.com", false).await;
+    let (status, _) = request(router, "POST", "/api/admin/shipyard/webhooks", &someone, Some(json!({ "url": "https://ops.test/y", "events": ["*"] }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

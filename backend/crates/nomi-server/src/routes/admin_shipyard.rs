@@ -239,6 +239,110 @@ pub async fn list_webhooks(State(state): State<AppState>, AuthClaims(claims): Au
 }
 
 #[derive(Deserialize)]
+pub struct NewWebhook {
+    pub url: String,
+    /// Exact types (`publish.succeeded`), prefixes (`deployment.*`) or `*`.
+    pub events: Vec<String>,
+    /// Only this Nomi organization's events.
+    pub org: Option<Uuid>,
+}
+
+#[derive(Serialize)]
+pub struct CreatedWebhook {
+    pub id: String,
+    /// The signing secret, shown once, for an endpoint someone else runs; `None` for Nomi's own
+    /// (Nomi keeps that one to check what arrives).
+    pub secret: Option<String>,
+    pub own: bool,
+}
+
+/// An event filter Shipyard accepts: `*`, or dotted lowercase names ending in a name or `*`.
+fn valid_event(event: &str) -> bool {
+    if event == "*" {
+        return true;
+    }
+    let parts: Vec<&str> = event.split('.').collect();
+    let last = parts.len() - 1;
+    parts.len() >= 2
+        && parts.iter().enumerate().all(|(i, part)| {
+            (i == last && *part == "*") || (!part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+        })
+}
+
+/// A web address Shipyard can deliver to: https, or http to this machine while developing.
+fn valid_endpoint(url: &str) -> bool {
+    match reqwest::Url::parse(url) {
+        Ok(url) => match url.scheme() {
+            "https" => url.host_str().is_some(),
+            "http" => matches!(url.host_str(), Some("localhost" | "127.0.0.1")),
+            _ => false,
+        },
+        Err(_) => false,
+    }
+}
+
+/// `POST /api/admin/shipyard/webhooks`: registers an endpoint. Nomi's own address
+/// (`APP_URL`/hooks/shipyard) keeps its secret here; any other gets it back once.
+pub async fn create_webhook(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(req): Json<NewWebhook>) -> Result<Json<CreatedWebhook>, ApiError> {
+    admin(&claims, "manage")?;
+    let url = req.url.trim().to_string();
+    if !valid_endpoint(&url) {
+        return Err((StatusCode::BAD_REQUEST, "use a public https address".to_string()));
+    }
+    let mut events: Vec<String> = req.events.iter().map(|e| e.trim().to_string()).filter(|e| !e.is_empty()).collect();
+    events.sort();
+    events.dedup();
+    if events.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "pick at least one event".to_string()));
+    }
+    if let Some(bad) = events.iter().find(|e| !valid_event(e)) {
+        return Err((StatusCode::BAD_REQUEST, format!("'{bad}' isn't an event type, a prefix like deployment.* or *")));
+    }
+    if events.iter().any(|e| e == "*") {
+        events = vec!["*".to_string()];
+    }
+    let client = client(&state)?;
+    let own = crate::public_url::app_url().is_some_and(|base| url.trim_end_matches('/') == format!("{base}{}", crate::shipyard::WEBHOOK_PATH));
+    if own {
+        // A second endpoint at Nomi's address would sign with a secret Nomi doesn't keep.
+        let endpoints = client.list_webhooks().await.map_err(shipyard_error)?;
+        let registered = crate::shipyard::registered_webhook(&state.pool).await.map_err(internal("failed to read Shipyard settings"))?.map(|(id, _, _)| id);
+        if crate::shipyard::own_endpoint(&endpoints, registered.as_deref()).is_some() {
+            return Err((StatusCode::CONFLICT, "Nomi's endpoint is already registered: give it a new secret or delete it first".to_string()));
+        }
+    }
+    let (id, secret) = client.create_webhook_for(&url, &events, req.org.map(|o| o.to_string()).as_deref()).await.map_err(shipyard_error)?;
+    if own {
+        crate::shipyard::keep_webhook(&state.pool, &state.settings_key, &id, &url, &secret).await.map_err(internal("failed to keep the secret"))?;
+        if let Err(e) = client.test_webhook(&id).await {
+            tracing::warn!(error = ?e, "Shipyard's test event failed");
+        }
+        return Ok(Json(CreatedWebhook { id, secret: None, own }));
+    }
+    Ok(Json(CreatedWebhook { id, secret: Some(secret), own }))
+}
+
+#[cfg(test)]
+mod webhook_tests {
+    use super::*;
+
+    #[test]
+    fn event_filters_and_endpoints() {
+        for ok in ["*", "deployment.*", "publish.succeeded", "deployment.step_failed"] {
+            assert!(valid_event(ok), "{ok}");
+        }
+        for bad in ["", "deployment", "Deployment.*", "a..b", "*.x", "publish.succeeded;drop"] {
+            assert!(!valid_event(bad), "{bad}");
+        }
+        assert!(valid_endpoint("https://nomi.example.com/hooks/shipyard"));
+        assert!(valid_endpoint("http://localhost:3000/hooks/shipyard"));
+        assert!(!valid_endpoint("http://nomi.example.com/hooks/shipyard"));
+        assert!(!valid_endpoint("ftp://x"));
+        assert!(!valid_endpoint("not a url"));
+    }
+}
+
+#[derive(Deserialize)]
 pub struct WebhookPatch {
     pub enabled: Option<bool>,
     pub events: Option<Vec<String>>,
