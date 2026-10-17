@@ -71,7 +71,12 @@
 	"approval_tool": "Alat:",
 	"auth_by": "oleh",
 	"auth_email": "Email",
-	"auth_line": "Kru kecil berisi agen yang mengingat & membangun untukmu.",
+	"auth_line": "Kru kecil berisi agen yang mengingat, membangun, bekerja untukmu.",
+	"tagline_before": "Kru kecil berisi agen yang",
+	"tagline_after": "untukmu.",
+	"tagline_remembers": "mengingat",
+	"tagline_builds": "membangun",
+	"tagline_works": "bekerja",
 	"auth_love": "cinta",
 	"auth_made_with": "Dibuat dengan",
 	"auth_or": "atau",
@@ -1994,6 +1999,8 @@
 	"home_layout_classic_hint": "Kolom pesan dan kru berdampingan, lalu harimu dan obrolan terbaru.",
 	"home_layout_stage": "Panggung",
 	"home_layout_stage_hint": "Panggung buram dengan kru melayang di belakang kolom pesan di tengah.",
+	"home_layout_today": "Hari ini",
+	"home_layout_today_hint": "Harimu di depan, lalu kolom pesan dan obrolan terbaru di samping kru.",
 	"prefs_backdrop": "Latar belakang animasi",
 	"prefs_backdrop_hint": "Kru yang bergerak lembut di balik obrolan dan beranda Panggung. Matikan untuk latar polos yang diam."
 }

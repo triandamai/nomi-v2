@@ -44,7 +44,7 @@ fn main() {
             action: (file == "invite").then(|| Action { label: "Accept the invite".into(), url: "https://nomi.example.com/invite/k3J9xQ".into() }),
             notes: vec!["If this wasn't you, you can ignore this email.".into()],
             crew_label: "Nomi crew".into(),
-            footer: "Nomi · a small crew of agents that remembers & builds for you.".into(),
+            footer: "Nomi · a small crew of agents that remembers, builds, works for you.".into(),
         }
         .build();
         let mut html = email.html.unwrap_or_default();

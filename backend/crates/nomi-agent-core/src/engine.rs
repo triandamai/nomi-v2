@@ -1280,13 +1280,8 @@ async fn log_tool_call(
     .await;
 }
 
-/// Best-effort (never fails the turn, matches `post_activity_message`'s convention): updates
-/// `agent_sessions.current_phase`/`current_phase_detail` and, when `mqtt` is available, pushes
-/// the same change live over `StreamEnvelope::AgentPhaseChanged`. Silently a no-op for the
-/// default agent's turns, where `agent_session_id` is the `session_id` sentinel (see
-/// `nomi_turn::run_locked_turn`'s call site comment) — there is no real `agent_sessions` row
-/// with that id, so the UPDATE affects zero rows and nothing is published.
-/// How long to wait before trying the model again: 2s, 4s, 8s, then 15s, capped at 30s.
+/// How long to wait before trying the model again: 2s, 4s, 8s, then 15s, capped at 30s. No wait
+/// at all in tests (this crate's own, or another crate's with the `instant-retries` feature).
 fn retry_delay(attempt: u32) -> std::time::Duration {
     let seconds = match attempt {
         1 => 2,
@@ -1295,9 +1290,15 @@ fn retry_delay(attempt: u32) -> std::time::Duration {
         4 => 15,
         _ => 30,
     };
-    std::time::Duration::from_secs(if cfg!(test) { 0 } else { seconds })
+    std::time::Duration::from_secs(if cfg!(any(test, feature = "instant-retries")) { 0 } else { seconds })
 }
 
+/// Best-effort (never fails the turn, matches `post_activity_message`'s convention): updates
+/// `agent_sessions.current_phase`/`current_phase_detail` and, when `mqtt` is available, pushes
+/// the same change live over `StreamEnvelope::AgentPhaseChanged`. Silently a no-op for the
+/// default agent's turns, where `agent_session_id` is the `session_id` sentinel (see
+/// `nomi_turn::run_locked_turn`'s call site comment) — there is no real `agent_sessions` row
+/// with that id, so the UPDATE affects zero rows and nothing is published.
 async fn update_agent_phase(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,

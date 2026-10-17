@@ -1,7 +1,7 @@
 {
 	"name": "Nomi",
 	"short_name": "Nomi",
-	"description": "A small crew of agents that remembers & builds for you.",
+	"description": "A small crew of agents that remembers, builds, works for you.",
 	"start_url": "/",
 	"display": "standalone",
 	"background_color": "#f4f7f2",

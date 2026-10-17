@@ -9,7 +9,7 @@
 	// What a link to Nomi shows when it's shared in WhatsApp, Telegram, Slack, iMessage and the
 	// like. Crawlers need absolute URLs; the origin is the deployment's own (ORIGIN on the server).
 	const TITLE = 'Nomi';
-	const DESCRIPTION = 'A small crew of agents that remembers & builds for you.';
+	const DESCRIPTION = 'A small crew of agents that remembers, builds, works for you.';
 	const origin = $derived(page.url.origin);
 
 	// A new build went out since this tab loaded: its pages need files this one doesn't know about,

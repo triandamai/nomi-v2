@@ -7,6 +7,7 @@
 	import { backOut } from 'svelte/easing';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import MorphingShape from '$lib/components/m3/MorphingShape.svelte';
+	import TaglineWheel from '$lib/components/TaglineWheel.svelte';
 
 	// Shared frame for login/register. Left: a dark stage where the agent crew lives — a large
 	// morphing Nomi, the other agents' shapes drifting at different depths (with pointer
@@ -83,7 +84,7 @@
 				<AgentShape size={44} face />
 				<span class="stage__word">nomi</span>
 			</a>
-			<p class="stage__line">{m.auth_line()}</p>
+			<p class="stage__line"><TaglineWheel /></p>
 
 			<div class="ticker">
 				{#key activityIndex}

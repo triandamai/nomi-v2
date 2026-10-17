@@ -71,7 +71,12 @@
 	"approval_tool": "Tool:",
 	"auth_by": "by",
 	"auth_email": "Email",
-	"auth_line": "A small crew of agents that remembers & builds for you.",
+	"auth_line": "A small crew of agents that remembers, builds, works for you.",
+	"tagline_before": "A small crew of agents that",
+	"tagline_after": "for you.",
+	"tagline_remembers": "remembers",
+	"tagline_builds": "builds",
+	"tagline_works": "works",
 	"auth_love": "love",
 	"auth_made_with": "Made with",
 	"auth_or": "or",
@@ -1994,6 +1999,8 @@
 	"home_layout_classic_hint": "Composer and crew side by side, then your day and recent chats.",
 	"home_layout_stage": "Stage",
 	"home_layout_stage_hint": "A frosted stage with the crew drifting behind a centred composer.",
+	"home_layout_today": "Today",
+	"home_layout_today_hint": "Your day up front, then the composer and recent chats beside the crew.",
 	"prefs_backdrop": "Animated background",
 	"prefs_backdrop_hint": "The softly moving crew behind your chats and the Stage home. Turn it off for a plain, still background."
 }

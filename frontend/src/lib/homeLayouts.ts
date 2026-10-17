@@ -38,6 +38,22 @@ export interface HomeLayout {
 
 export const HOME_LAYOUTS: readonly HomeLayout[] = [
 	{
+		id: 'stage',
+		name: m.home_layout_stage,
+		description: m.home_layout_stage_hint,
+		backdrop: 'glass',
+		rows: [
+			{
+				width: 'narrow',
+				align: 'center',
+				columns: [[{ block: 'greeting', size: 'hero' }, { block: 'composer', suggestions: true }]],
+			},
+			{ width: 'narrow', columns: [[{ block: 'crew', style: 'strip', limit: 8 }]] },
+			{ columns: [[{ block: 'status' }]] },
+			{ width: 'narrow', columns: [[{ block: 'recent', style: 'list', limit: 5 }]] },
+		],
+	},
+	{
 		id: 'classic',
 		name: m.home_layout_classic,
 		description: m.home_layout_classic_hint,
@@ -55,24 +71,25 @@ export const HOME_LAYOUTS: readonly HomeLayout[] = [
 		],
 	},
 	{
-		id: 'stage',
-		name: m.home_layout_stage,
-		description: m.home_layout_stage_hint,
-		backdrop: 'glass',
+		id: 'today',
+		name: m.home_layout_today,
+		description: m.home_layout_today_hint,
+		backdrop: 'plain',
 		rows: [
-			{
-				width: 'narrow',
-				align: 'center',
-				columns: [[{ block: 'greeting', size: 'hero' }, { block: 'composer', suggestions: true }]],
-			},
-			{ width: 'narrow', columns: [[{ block: 'crew', style: 'strip', limit: 8 }]] },
+			{ columns: [[{ block: 'greeting', size: 'large' }]] },
 			{ columns: [[{ block: 'status' }]] },
-			{ width: 'narrow', columns: [[{ block: 'recent', style: 'list', limit: 5 }]] },
+			{
+				columns: [
+					[{ block: 'composer', suggestions: false }, { block: 'recent', style: 'list', limit: 5 }],
+					[{ block: 'crew', style: 'card', limit: 6 }],
+				],
+				ratio: [1.4, 1],
+			},
 		],
 	},
 ];
 
-export const DEFAULT_HOME_LAYOUT = 'classic';
+export const DEFAULT_HOME_LAYOUT = 'stage';
 
 /** A slug of one of this build's layouts. */
 export function isHomeLayoutId(value: unknown): value is string {
