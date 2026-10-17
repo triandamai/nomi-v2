@@ -1947,5 +1947,6 @@
 	"showcase_blurb_hint": "{count}/{max}",
 	"showcase_save_blurb": "Save",
 	"showcase_on": "It's in the showcase.",
-	"showcase_off": "It's not in the showcase."
+	"showcase_off": "It's not in the showcase.",
+	"billing_cached": "{tokens} from cache · counts as a tenth"
 }

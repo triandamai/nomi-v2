@@ -691,10 +691,12 @@ export interface UsageMonth {
 	month: string;
 	current_month: string;
 	timezone: string;
-	/** Tokens of Nomi's own models: what the allowance counts. */
+	/** Tokens of Nomi's own models: what the allowance counts (cached input at a tenth). */
 	tokens_used: number;
 	input_tokens: number;
 	output_tokens: number;
+	/** The part of input_tokens the provider served from its prompt cache. */
+	cached_input_tokens: number;
 	/** Tokens sent with the person's own API key (never billed). */
 	own_key_tokens: number;
 	calls: number;
