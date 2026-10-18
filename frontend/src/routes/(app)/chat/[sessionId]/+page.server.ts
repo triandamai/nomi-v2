@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { connectProvider, listConnectionModels, loadConnections, PERSONAL_CONNECTIONS, selectConnectionModel } from '$lib/server/providers';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
@@ -45,8 +46,13 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		: [];
 	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? m.nav_new_chat();
 
-	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
-	return { messages, hasOlder, models, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel };
+	// The person's own providers, for the model menu; the catalog loads only if they connect one.
+	const [thinkingLevel, ownConnections] = await Promise.all([
+		loadThinkingLevel(fetch, cookies, params.sessionId),
+		loadConnections(fetch, cookies, PERSONAL_CONNECTIONS),
+	]);
+	const connections = ownConnections ?? [];
+	return { messages, hasOlder, models, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel, connections };
 };
 
 export const actions: Actions = {
@@ -54,7 +60,7 @@ export const actions: Actions = {
 	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
 
 	// Named (not `default`) because this actions object also has selectAdminModel and
-	// selectCustomModel — SvelteKit forbids mixing a `default` action with named actions in the
+	// selectConnectionModel — SvelteKit forbids mixing a `default` action with named actions in the
 	// same file (throws "When using named actions, the default action cannot be used" at request
 	// time), so the message-send form below must target this action explicitly.
 	sendMessage: async ({ request, params, cookies, fetch }) => {
@@ -107,68 +113,10 @@ export const actions: Actions = {
 		return { modelSelected: true };
 	},
 
-	selectCustomModel: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const label = data.get('label');
-		const provider = data.get('provider');
-		const modelId = data.get('model_id');
-		const apiKey = data.get('api_key');
-		const baseUrl = data.get('base_url');
-
-		if (
-			typeof label !== 'string' ||
-			typeof provider !== 'string' ||
-			typeof modelId !== 'string' ||
-			typeof apiKey !== 'string' ||
-			!label.trim() ||
-			!provider.trim()
-		) {
-			return fail(400, { modelError: m.err_label_provider_required() });
-		}
-
-		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
-			method: 'PUT',
-			body: JSON.stringify({
-				kind: 'custom',
-				label,
-				provider,
-				model_id: modelId,
-				api_key: apiKey,
-				base_url: typeof baseUrl === 'string' && baseUrl.length > 0 ? baseUrl : null,
-			}),
-		});
-
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { modelError: message || m.err_validate_model() });
-		}
-
-		return { modelSelected: true };
-	},
-
-	fetchModels: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const provider = data.get('provider');
-		const apiKey = data.get('api_key');
-		const baseUrl = data.get('base_url');
-		if (typeof provider !== 'string' || !provider) {
-			return fail(400, { error: m.err_provider_required() });
-		}
-		const response = await apiFetch(fetch, cookies, '/api/llm/fetch-models', {
-			method: 'POST',
-			body: JSON.stringify({
-				provider,
-				api_key: typeof apiKey === 'string' ? apiKey : '',
-				base_url: typeof baseUrl === 'string' && baseUrl.length > 0 ? baseUrl : null,
-			}),
-		});
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || m.err_fetch_models() });
-		}
-		const result = (await response.json()) as { models: { id: string; label: string | null }[] };
-		return { models: result.models };
-	},
+	// The model sheet's own providers: connect one in place, list its models, use one.
+	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+	connectionModels: async ({ request, cookies, fetch }) => listConnectionModels(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+	selectConnectionModel: async ({ request, cookies, fetch }) => selectConnectionModel(fetch, cookies, await request.formData()),
 
 	feedback: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();

@@ -35,6 +35,7 @@ describe('areaForPath', () => {
 	it('maps admin pages to their area', () => {
 		expect(areaForPath('/admin')?.resource).toBe('dashboard');
 		expect(areaForPath('/admin/settings/embedding')?.resource).toBe('models');
+		expect(areaForPath('/admin/settings/providers')?.resource).toBe('models');
 		expect(areaForPath('/admin/integrations')?.resource).toBe('integrations');
 		expect(areaForPath('/admin/users')?.resource).toBe('user');
 		expect(areaForPath('/admin/api/shipyard')).toBeUndefined();

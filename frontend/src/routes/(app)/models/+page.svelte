@@ -5,6 +5,7 @@
 	import Card from '$lib/components/m3/Card.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import ModelKeySheet from '$lib/components/ModelKeySheet.svelte';
+	import { connectionSelectionText } from '$lib/providers';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -18,6 +19,7 @@
 			const match = data.models.admin_models.find((m) => m.id === selection.admin_model_id);
 			return match?.label ?? m.models_default();
 		}
+		if (selection.kind === 'connection') return selection.label || selection.model_id;
 		return selection.label;
 	});
 
@@ -63,7 +65,7 @@
 							<div>
 								<p class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{model.label}</p>
 								<p class="md-body-medium" style="color: var(--md-sys-color-on-surface-variant)">
-									{model.provider} · {model.model_id}
+									{model.provider_label ?? model.provider} · {model.model_id}
 								</p>
 							</div>
 							{#if selected}
@@ -97,23 +99,24 @@
 		</section>
 
 		<section class="mt-8">
-			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.models_own_key()}</h2>
-			{#if data.models.selection?.kind === 'custom'}
-				<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
+			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.prov_own_title()}</h2>
+			<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
+				{#if data.models.selection?.kind === 'connection'}
+					{connectionSelectionText(data.models.selection, data.connections, data.providers)}
+				{:else if data.models.selection?.kind === 'custom'}
 					{m.models_using({ label: data.models.selection.label, provider: data.models.selection.provider, key: data.models.selection.api_key_masked })}
-				</p>
-			{:else}
-				<p class="md-body-medium mt-1" style="color: var(--md-sys-color-on-surface-variant)">
-					{m.models_own_key_hint()}
-				</p>
-			{/if}
-			<div class="mt-3">
+				{:else}
+					{m.prov_own_hint()}
+				{/if}
+			</p>
+			<div class="mt-3 flex flex-wrap gap-2">
 				<Button type="button" variant="outlined" onclick={() => (sheetOpen = true)}>
-					{data.models.selection?.kind === 'custom' ? m.models_change_key() : m.models_add_key()}
+					{data.models.selection?.kind === 'connection' ? m.prov_own_change() : m.prov_own_pick()}
 				</Button>
+				<Button href="/providers" variant="text">{m.prov_manage()}</Button>
 			</div>
 		</section>
 	</div>
 </div>
 
-<ModelKeySheet bind:open={sheetOpen} error={form?.error ?? null} />
+<ModelKeySheet bind:open={sheetOpen} connections={data.connections} providers={data.providers} selection={data.models.selection} />

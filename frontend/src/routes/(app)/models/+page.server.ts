@@ -1,15 +1,27 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import {
+	connectProvider,
+	listConnectionModels,
+	loadCatalog,
+	loadConnections,
+	PERSONAL_CONNECTIONS,
+	selectConnectionModel,
+} from '$lib/server/providers';
 import type { LlmModelsResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const response = await apiFetch(fetch, cookies, '/api/llm/models');
+	const [response, connections, providers] = await Promise.all([
+		apiFetch(fetch, cookies, '/api/llm/models'),
+		loadConnections(fetch, cookies, PERSONAL_CONNECTIONS),
+		loadCatalog(fetch, cookies),
+	]);
 	const models: LlmModelsResponse = response.ok
 		? ((await response.json()) as LlmModelsResponse)
 		: { admin_models: [], selection: null, coding: { kind: 'default' }, default_coding_model_id: null };
-	return { models };
+	return { models, connections: connections ?? [], providers: providers ?? [] };
 };
 
 export const actions: Actions = {
@@ -48,68 +60,8 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	selectCustomModel: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const label = data.get('label');
-		const provider = data.get('provider');
-		const modelId = data.get('model_id');
-		const apiKey = data.get('api_key');
-		const baseUrl = data.get('base_url');
-
-		if (
-			typeof label !== 'string' ||
-			typeof provider !== 'string' ||
-			typeof modelId !== 'string' ||
-			typeof apiKey !== 'string' ||
-			!label.trim() ||
-			!provider.trim()
-		) {
-			return fail(400, { error: m.err_label_provider_required() });
-		}
-
-		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
-			method: 'PUT',
-			body: JSON.stringify({
-				kind: 'custom',
-				label,
-				provider,
-				model_id: modelId,
-				api_key: apiKey,
-				base_url: typeof baseUrl === 'string' && baseUrl.length > 0 ? baseUrl : null,
-			}),
-		});
-
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || m.err_validate_model() });
-		}
-		return { success: true };
-	},
-
-	fetchModels: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const provider = data.get('provider');
-		const apiKey = data.get('api_key');
-		const baseUrl = data.get('base_url');
-
-		if (typeof provider !== 'string' || !provider) {
-			return fail(400, { error: m.err_provider_required() });
-		}
-
-		const response = await apiFetch(fetch, cookies, '/api/llm/fetch-models', {
-			method: 'POST',
-			body: JSON.stringify({
-				provider,
-				api_key: typeof apiKey === 'string' ? apiKey : '',
-				base_url: typeof baseUrl === 'string' && baseUrl.length > 0 ? baseUrl : null,
-			}),
-		});
-
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || m.err_fetch_models() });
-		}
-		const result = (await response.json()) as { models: { id: string; label: string | null }[] };
-		return { models: result.models };
-	},
+	// Your own providers: connect one in place, list its models, use one.
+	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+	connectionModels: async ({ request, cookies, fetch }) => listConnectionModels(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+	selectConnectionModel: async ({ request, cookies, fetch }) => selectConnectionModel(fetch, cookies, await request.formData()),
 };
