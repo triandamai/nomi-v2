@@ -31,7 +31,7 @@ class DaoTest {
         SessionEntity(id, "title $id", "preview", updatedAt, unread)
 
     private fun message(id: String, sessionId: String, createdAt: Long) =
-        MessageEntity(id, sessionId, "assistant", "planner", "Planner", "[]", createdAt, "done")
+        MessageEntity(id, sessionId, "assistant", "planner", "Planner", "hi", "[]", createdAt, "done")
 
     @Test
     fun sessionUpsertEmitsOrderedByRecency() = runTest {

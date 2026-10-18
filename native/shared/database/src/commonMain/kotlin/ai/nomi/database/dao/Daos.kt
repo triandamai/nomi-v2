@@ -20,6 +20,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<SessionEntity>>
 
+    @Query("SELECT * FROM sessions WHERE id = :id")
+    suspend fun get(id: String): SessionEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(session: SessionEntity)
 
@@ -80,6 +83,12 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<NotificationEntity>>
 
+    @Query("UPDATE notifications SET readAt = :readAt WHERE readAt IS NULL")
+    suspend fun markAllRead(readAt: Long)
+
+    @Query("SELECT * FROM notifications WHERE id = :id")
+    suspend fun get(id: String): NotificationEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(notification: NotificationEntity)
 }
@@ -88,6 +97,9 @@ interface NotificationDao {
 interface AgentActivityDao {
     @Query("SELECT * FROM agent_activity WHERE phase != '$IDLE_PHASE' ORDER BY updatedAt DESC")
     fun observeActive(): Flow<List<AgentActivityEntity>>
+
+    @Query("SELECT * FROM agent_activity WHERE agentSessionId = :agentSessionId")
+    suspend fun get(agentSessionId: String): AgentActivityEntity?
 
     @Query("DELETE FROM agent_activity WHERE agentSessionId = :agentSessionId")
     suspend fun delete(agentSessionId: String)

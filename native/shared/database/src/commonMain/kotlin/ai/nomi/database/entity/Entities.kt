@@ -14,7 +14,10 @@ data class SessionEntity(
     val unread: Boolean,
 )
 
-/** One chat message; [contentJson] is the content-blocks JSON exactly as the server sent it. */
+/**
+ * One chat message. [content] is the plain/markdown text; [contentJson] is the content-blocks JSON array exactly as
+ * the server sent it, or null when the message has no structured blocks.
+ */
 @Entity(tableName = "messages", indices = [Index("sessionId")])
 data class MessageEntity(
     @PrimaryKey val id: String,
@@ -22,7 +25,8 @@ data class MessageEntity(
     val role: String,
     val agentType: String?,
     val agentDisplayName: String?,
-    val contentJson: String,
+    val content: String,
+    val contentJson: String?,
     val createdAt: Long,
     val status: String,
 )
