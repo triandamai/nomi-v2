@@ -33,9 +33,16 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # Lets Compose render at 120 Hz on ProMotion iPhones.
         CADisableMinimumFrameDurationOnPhone: true
+        # Backend the shared code talks to (read by MainViewController); the simulator reaches the Mac's localhost.
+        NomiApiUrl: $(NOMI_API_URL)
+        # Plain HTTP only to local addresses (the development backend); everything else stays https.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.nomi.app
+        # Override per configuration / on the command line (NOMI_API_URL=https://… xcodebuild …) for real backends.
+        NOMI_API_URL: http://localhost:8080
         PRODUCT_NAME: Nomi
         TARGETED_DEVICE_FAMILY: "1,2"
         FRAMEWORK_SEARCH_PATHS:

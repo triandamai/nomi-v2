@@ -1,5 +1,6 @@
 package ai.nomi.network
 
+import ai.nomi.network.dto.AccessTokenResponse
 import ai.nomi.network.dto.LoginRequest
 import ai.nomi.network.dto.RefreshRequest
 import ai.nomi.network.dto.TokenPairResponse
@@ -8,6 +9,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
@@ -63,6 +65,28 @@ class AuthApi(
         tokens.write(session)
         client.clearCachedTokens()
         return SignInResult.SignedIn(session)
+    }
+
+    /**
+     * Exchanges the stored refresh token for a new access token. False when there is no session or the server
+     * rejected the refresh token (the session is then forgotten); throws [ApiException] for any other failure,
+     * which says nothing about the session.
+     */
+    suspend fun refresh(): Boolean {
+        val current = tokens.read() ?: return false
+        val response = client.post(config.url(REFRESH_PATH)) {
+            contentType(ContentType.Application.Json)
+            setBody(RefreshRequest(current.refresh))
+        }
+        if (response.status == HttpStatusCode.Unauthorized) {
+            tokens.clear()
+            client.clearCachedTokens()
+            return false
+        }
+        if (!response.status.isSuccess()) throw ApiException(response.status.value, "refresh failed")
+        tokens.write(Tokens(response.body<AccessTokenResponse>().accessToken, current.refresh))
+        client.clearCachedTokens()
+        return true
     }
 
     /** Revokes the refresh token server-side (best effort) and always forgets the session locally. */

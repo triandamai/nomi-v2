@@ -120,4 +120,21 @@ class DaoTest {
         dao.clearForSession("s2")
         assertEquals(emptyList(), dao.observeActive().first())
     }
+
+    @Test
+    fun clearAllEmptiesEveryTable() = runTest {
+        db.sessionDao().upsert(session("a"))
+        db.messageDao().upsert(listOf(message("m1", "a", 1)))
+        db.streamingDraftDao().appendDelta("a", "t1", "hi", 1)
+        db.notificationDao().upsert(NotificationEntity("n1", "k", "t", "b", null, 1, null))
+        db.agentActivityDao().upsert(AgentActivityEntity("x", "a", "planner", "thinking", null, 1))
+
+        db.clearAll()
+
+        assertEquals(emptyList(), db.sessionDao().observeAll().first())
+        assertEquals(emptyList(), db.messageDao().observe("a").first())
+        assertNull(db.streamingDraftDao().get("a"))
+        assertEquals(emptyList(), db.notificationDao().observeAll().first())
+        assertEquals(emptyList(), db.agentActivityDao().observeActive().first())
+    }
 }

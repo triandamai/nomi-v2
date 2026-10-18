@@ -1,0 +1,47 @@
+package ai.nomi.data
+
+import ai.nomi.network.AuthApi
+import ai.nomi.network.SignInResult
+import ai.nomi.network.TokenStore
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/** The signed-in session's credentials: sign-in, token refresh and sign-out. */
+interface AuthRepository {
+    /** Whether tokens from an earlier sign-in are stored. */
+    suspend fun hasSession(): Boolean
+
+    /** Tokens are stored on [SignInResult.SignedIn]; an email-code challenge stores nothing. */
+    suspend fun signIn(email: String, password: String): SignInResult
+
+    /**
+     * Gets a new access token. False when signed out or the server rejected the refresh token (tokens forgotten);
+     * throws when the attempt itself failed (offline, 5xx), which is no verdict on the session.
+     */
+    suspend fun refresh(): Boolean
+
+    /** Revokes the session server-side (best effort) and always forgets the tokens. */
+    suspend fun signOut()
+}
+
+class DefaultAuthRepository(private val api: AuthApi, private val tokens: TokenStore) : AuthRepository {
+    private val refreshing = Mutex()
+
+    override suspend fun hasSession(): Boolean = tokens.read() != null
+
+    override suspend fun signIn(email: String, password: String): SignInResult = api.login(email, password)
+
+    /**
+     * Concurrent callers share one refresh: whoever waited on [refreshing] and finds a different access token than
+     * the one it failed with knows someone (another caller, or the HTTP client's own 401 refresh) already renewed it.
+     */
+    override suspend fun refresh(): Boolean {
+        val stale = tokens.read() ?: return false
+        return refreshing.withLock {
+            val current = tokens.read() ?: return@withLock false
+            if (current.access != stale.access) true else api.refresh()
+        }
+    }
+
+    override suspend fun signOut() = api.logout()
+}

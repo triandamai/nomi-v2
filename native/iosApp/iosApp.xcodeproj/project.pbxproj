@@ -270,6 +270,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				NOMI_API_URL = "http://localhost:8080";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -296,6 +297,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				NOMI_API_URL = "http://localhost:8080";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

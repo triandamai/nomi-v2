@@ -31,8 +31,18 @@ class FakeRealtimeHub : RealtimeHub {
     override val state: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Idle)
     private val listeners = mutableListOf<Pair<Topic, RealtimeListener>>()
 
-    override fun start() = Unit
-    override fun stop() = Unit
+    var starts = 0
+        private set
+    var stops = 0
+        private set
+
+    override fun start() {
+        starts++
+    }
+
+    override fun stop() {
+        stops++
+    }
 
     override fun addListener(topic: Topic, listener: RealtimeListener): ListenerHandle {
         val entry = topic to listener

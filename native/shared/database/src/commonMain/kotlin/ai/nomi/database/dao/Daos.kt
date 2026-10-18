@@ -28,6 +28,9 @@ interface SessionDao {
 
     @Query("UPDATE sessions SET unread = 0 WHERE id = :id")
     suspend fun markRead(id: String)
+
+    @Query("DELETE FROM sessions")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -40,6 +43,9 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM messages")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -77,6 +83,9 @@ interface StreamingDraftDao {
     /** Removes the draft only if it belongs to [turnJobId]. */
     @Query("DELETE FROM streaming_drafts WHERE sessionId = :sessionId AND turnJobId = :turnJobId")
     suspend fun clearTurn(sessionId: String, turnJobId: String)
+
+    @Query("DELETE FROM streaming_drafts")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -95,6 +104,9 @@ interface NotificationDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(notification: NotificationEntity)
+
+    @Query("DELETE FROM notifications")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -113,4 +125,7 @@ interface AgentActivityDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(activity: AgentActivityEntity)
+
+    @Query("DELETE FROM agent_activity")
+    suspend fun clearAll()
 }
