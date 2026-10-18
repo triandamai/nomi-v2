@@ -31,6 +31,7 @@ export function createChatLink(
 	events: ChatLinkEvents,
 	openSocket: (sessionId: string) => LinkSocket = (id) => new WebSocket(`/chat/${id}/ws`) as LinkSocket,
 ): ChatLink {
+	let following: string | null = null;
 	let disconnect: (() => void) | null = null;
 
 	function connectTo(id: string): () => void {
@@ -69,6 +70,10 @@ export function createChatLink(
 	}
 
 	function follow(sessionId: string | null) {
+		// Already on this chat: every page reload re-runs the caller with a fresh `page.params`
+		// (same id), and reconnecting would sync on open, reload again, and never stop.
+		if (sessionId === following) return;
+		following = sessionId;
 		disconnect?.();
 		disconnect = sessionId === null ? null : connectTo(sessionId);
 	}
