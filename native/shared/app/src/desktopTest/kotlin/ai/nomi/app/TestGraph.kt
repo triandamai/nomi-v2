@@ -13,6 +13,9 @@ import ai.nomi.network.NotificationsApi
 import ai.nomi.network.SendMessageResponseDto
 import ai.nomi.network.SessionDto
 import ai.nomi.network.SessionsApi
+import ai.nomi.network.CrewMemberDto
+import ai.nomi.network.HomeApi
+import ai.nomi.network.ProfileDto
 import ai.nomi.network.SignInResult
 import ai.nomi.network.VerificationInfo
 import ai.nomi.network.TokenStore
@@ -116,6 +119,13 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
     override suspend fun revoke(refreshToken: String) = Unit
 }
 
+class FakeHomeApi : HomeApi {
+    var displayName: String? = "Ana Lima"
+    var crew: List<CrewMemberDto> = emptyList()
+    override suspend fun profile() = ProfileDto(displayName = displayName, email = "ana@nomi.test")
+    override suspend fun crew() = crew
+}
+
 class FakeSessionsApi : SessionsApi {
     var sessions: List<SessionDto> = emptyList()
     override suspend fun list(): List<SessionDto> = sessions
@@ -174,5 +184,6 @@ class TestGraph {
         single<SessionsApi> { sessionsApi }
         single<MessagesApi> { messagesApi }
         single<NotificationsApi> { FakeNotificationsApi() }
+        single<HomeApi> { FakeHomeApi() }
     }
 }

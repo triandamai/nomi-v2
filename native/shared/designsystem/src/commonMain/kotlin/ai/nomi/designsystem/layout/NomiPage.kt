@@ -1,8 +1,10 @@
 package ai.nomi.designsystem.layout
 
+import ai.nomi.designsystem.brand.NomiPageTitle
 import ai.nomi.designsystem.theme.NomiTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -11,13 +13,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /** Spacing steps shared by the app's screens (multiples of the 4dp grid). */
@@ -32,9 +31,15 @@ object NomiSpacing {
 /** Fills the weight left over in a row or column. */
 private const val FILL = 1f
 
+/** The list and account pages' column (`.list-page`). */
+private val PageMaxWidth = 880.dp
+private val PagePaddingH = 20.dp
+private val PagePaddingTop = 28.dp
+private val PageGap = 20.dp
+
 /**
- * A full screen on the theme's page ground, inside the safe drawing area: a heading row ([title] plus optional
- * [actions]) above [content].
+ * A full screen on the theme's page ground, inside the safe drawing area: the display-size page title (with optional
+ * [actions] beside it) above [content], in a centred column like the web's list pages.
  */
 @Composable
 fun NomiPage(
@@ -43,27 +48,18 @@ fun NomiPage(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier
-            .fillMaxSize()
-            .background(NomiTheme.extendedColors.ground)
-            .safeDrawingPadding()
-            .padding(horizontal = NomiSpacing.Large),
-        verticalArrangement = Arrangement.spacedBy(NomiSpacing.Medium),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = NomiSpacing.Large),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NomiSpacing.Small),
+    Box(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = PageMaxWidth).fillMaxSize().padding(start = PagePaddingH, end = PagePaddingH, top = PagePaddingTop),
+            verticalArrangement = Arrangement.spacedBy(PageGap),
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(FILL).semantics { heading() },
-            )
-            actions()
+            if (title.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NomiSpacing.Small)) {
+                    NomiPageTitle(title, Modifier.weight(FILL))
+                    actions()
+                }
+            }
+            content()
         }
-        content()
     }
 }
