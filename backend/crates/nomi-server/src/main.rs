@@ -43,6 +43,9 @@ async fn main() {
     nomi_server::public_url::warn_if_unknown();
     nomi_server::project_events::init(&mqtt_broker_host, mqtt_broker_port);
     nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
+    // Inbox items and chat replies reach phones by FCM / APNs when those are configured.
+    let push = nomi_server::push::from_env(http_client.clone());
+    nomi_server::push::init(push.clone());
 
     // Chat attachments go to the same bucket as avatars, or to disk without one.
     nomi_storage::blob::init_attachment_store(s3.clone());
@@ -130,6 +133,7 @@ async fn main() {
         tool_catalog,
         email_codes: nomi_server::sign_in_codes::EmailCodes::from_env(),
         shipyard: nomi_shipyard::ShipyardConfig::from_env(),
+        push,
     };
     let app = nomi_server::app::build_router(state);
 

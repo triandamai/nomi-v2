@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
-use nomi_realtime::{MqttPublisher, StreamEnvelope, UserEvent};
+use nomi_realtime::{MqttPublisher, StreamEnvelope};
 use nomi_turn::queue;
 
 const NOTIFY_CHANNEL: &str = "turn_jobs_channel";
@@ -161,10 +161,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         )
                         .await;
                     if let Some(message_id) = outcome.message_id {
-                        let _ = mqtt.try_publish_to(
-                            &crate::user_events::topic(user_id),
-                            &UserEvent::ChatReply { session_id: outcome.session_id, message_id, preview: crate::user_events::preview(&outcome.reply) },
-                        );
+                        crate::user_events::announce_chat_reply(&pool, &mqtt, user_id, outcome.session_id, message_id, &outcome.reply);
                     }
                     tracing::info!(resume_id = %claimed.id, "worker: approval resume completed");
                 }
@@ -239,10 +236,7 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
                 )
                 .await;
             if let Some(message_id) = outcome.message_id {
-                let _ = turns.mqtt.try_publish_to(
-                    &crate::user_events::topic(user_id),
-                    &UserEvent::ChatReply { session_id: claimed.session_id, message_id, preview: crate::user_events::preview(&outcome.reply) },
-                );
+                crate::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
             }
             tracing::info!(job_id = %claimed.id, reply_len = outcome.reply.len(), "worker: turn job completed");
         }

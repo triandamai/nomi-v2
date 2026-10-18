@@ -7,6 +7,7 @@ pub mod memory_worker;
 pub mod notifications;
 pub mod project_events;
 pub mod public_url;
+pub mod push;
 pub mod quota;
 pub mod reminders_worker;
 pub mod scheduler_worker;

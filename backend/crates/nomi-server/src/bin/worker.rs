@@ -39,6 +39,8 @@ async fn main() {
     // Quota notices from turns are emailed through the same SMTP settings as the server's.
     nomi_server::notifications::init_mailer(nomi_mail::from_env());
     nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
+    // Chat replies and quota notices reach phones through the same push setup as the server's.
+    nomi_server::push::init(nomi_server::push::from_env(http_client.clone()));
     nomi_server::public_url::warn_if_unknown();
 
     // Memory learning, chat summaries and tidying run beside the turn worker, as they do inline.

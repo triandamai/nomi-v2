@@ -168,6 +168,7 @@ async fn insert(pool: &PgPool, user_id: Uuid, notice: &Notice, broadcast_id: Opt
             link: notice.link.clone(),
         },
     );
+    crate::push::spawn_dispatch(pool, user_id, crate::push::PushMessage::alert(notice));
     Ok(id)
 }
 
