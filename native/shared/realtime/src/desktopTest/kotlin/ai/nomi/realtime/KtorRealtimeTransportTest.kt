@@ -111,6 +111,38 @@ class KtorRealtimeTransportTest {
         assertEquals(listOf(ServerFrame.Ready("u1"), ServerFrame.Pong), frames)
     }
 
+    @Test fun token_expired_close_ends_the_stream_like_any_close() = runBlocking {
+        serve { head, socket ->
+            val key = head.first { it.startsWith("Sec-WebSocket-Key:", ignoreCase = true) }.substringAfter(':').trim()
+            val accept = Base64.getEncoder().encodeToString(
+                MessageDigest.getInstance("SHA-1").digest((key + WS_GUID).toByteArray(Charsets.ISO_8859_1)),
+            )
+            socket.respond(
+                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                    "Sec-WebSocket-Accept: $accept\r\n\r\n",
+            )
+            socket.getOutputStream().write(textFrame("""{"type":"ready","user_id":"u1"}"""))
+            socket.getOutputStream().write(closeFrame(CLOSE_TOKEN_EXPIRED, "token expired"))
+            socket.getOutputStream().flush()
+            Thread.sleep(SERVER_LINGER_MS)
+        }
+        val transport = KtorRealtimeTransport(client(MemoryTokens(Tokens("a1", "r1"))), ApiConfig(baseUrl))
+
+        // The stream completes normally, so the hub takes its ordinary reconnect path (and the Auth plugin's
+        // refresh-and-retry supplies a fresh token for the next upgrade).
+        val frames = withTimeout(TIMEOUT_MS) {
+            val session = transport.connect()
+            session.incoming.toList().also { session.close() }
+        }
+        assertEquals(listOf<ServerFrame>(ServerFrame.Ready("u1")), frames)
+    }
+
+    /** An unmasked server-to-client close frame carrying [code] and [reason]. */
+    private fun closeFrame(code: Int, reason: String): ByteArray {
+        val payload = byteArrayOf((code shr BYTE_BITS).toByte(), code.toByte()) + reason.toByteArray(Charsets.UTF_8)
+        return byteArrayOf(FIN_CLOSE_OPCODE.toByte(), payload.size.toByte()) + payload
+    }
+
     /** An unmasked server-to-client text frame (payloads here are < 126 bytes). */
     private fun textFrame(text: String): ByteArray {
         val payload = text.toByteArray(Charsets.UTF_8)
@@ -122,5 +154,10 @@ class KtorRealtimeTransportTest {
         const val SERVER_LINGER_MS = 2_000L
         const val WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
         const val FIN_TEXT_OPCODE = 0x81
+        const val FIN_CLOSE_OPCODE = 0x88
+        const val BYTE_BITS = 8
+
+        /** The gateway's close code for a socket whose access token expired (routes/realtime.rs). */
+        const val CLOSE_TOKEN_EXPIRED = 4001
     }
 }

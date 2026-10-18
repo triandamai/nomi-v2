@@ -7,7 +7,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +65,9 @@ interface RealtimeHub {
  * late frame or timer.
  *
  * Listener dispatch happens on the actor, i.e. on [scope]'s dispatcher (the apps pass a Main-dispatcher scope).
+ *
+ * [onAuthLost] is called when the gateway still rejects the socket right after a successful token refresh: the
+ * session is unusable and the app should sign out (wired to `SessionGate.signOut`).
  */
 class DefaultRealtimeHub(
     private val transport: RealtimeTransport,
@@ -70,6 +75,7 @@ class DefaultRealtimeHub(
     private val scope: CoroutineScope,
     private val backoff: Backoff = Backoff(),
     private val log: (String) -> Unit = {},
+    private val onAuthLost: () -> Unit = {},
 ) : RealtimeHub {
 
     private val commands = Channel<Command>(Channel.UNLIMITED)
@@ -79,6 +85,10 @@ class DefaultRealtimeHub(
     // ---- Actor-confined state ----
     private val registrations = LinkedHashMap<Topic, MutableList<Registration>>()
     private val denied = HashSet<Topic>()
+
+    /** Topics the server could not authorize yet (`unavailable`): attempt count so far, for the retry backoff. */
+    private val unavailable = HashMap<Topic, Int>()
+    private val subscribeRetries = HashMap<Topic, Job>()
     private var running = false
     private var generation = 0
     private var ready = false
@@ -87,16 +97,16 @@ class DefaultRealtimeHub(
     private var timerJob: Job? = null
     private var failures = 0
     private var refreshedSinceReady = false
-    private var connectedBefore = false
 
     init {
         scope.launch {
             for (command in commands) {
+                // Throwable, not Exception: an Error from a listener (e.g. TODO()) must not end the app's only socket.
                 try {
                     handle(command)
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     log("realtime: hub failed handling $command: $e")
                 }
             }
@@ -144,6 +154,7 @@ class DefaultRealtimeHub(
         class Refreshed(val generation: Int, val ok: Boolean?) : Command
         class Retry(val generation: Int) : Command
         class Stable(val generation: Int) : Command
+        class RetrySubscribe(val generation: Int, val topic: Topic) : Command
     }
 
     // ---- Actor ----
@@ -168,6 +179,7 @@ class DefaultRealtimeHub(
             is Command.Refreshed -> if (command.generation == generation) onRefreshed(command.ok)
             is Command.Retry -> if (command.generation == generation && running) connect()
             is Command.Stable -> if (command.generation == generation && ready) failures = 0
+            is Command.RetrySubscribe -> if (command.generation == generation) onRetrySubscribe(command.topic)
         }
     }
 
@@ -186,6 +198,7 @@ class DefaultRealtimeHub(
         val list = registrations[topic] ?: return
         if (!list.remove(registration) || list.isNotEmpty()) return
         registrations.remove(topic)
+        forgetUnavailable(topic)
         // A denied topic has no server-side subscription left to drop.
         if (!denied.remove(topic)) sendSubscription(topic, subscribe = false)
     }
@@ -218,12 +231,42 @@ class DefaultRealtimeHub(
             is ServerFrame.Denied -> {
                 val topic = Topic.parse(frame.topic) ?: return log("realtime: denied unknown topic '${frame.topic}'")
                 if (topic !in registrations) return
+                forgetUnavailable(topic)
                 denied += topic
                 dispatch(RealtimeEvent.AccessLost(topic))
             }
+            is ServerFrame.Unavailable -> {
+                val topic = Topic.parse(frame.topic) ?: return log("realtime: unavailable unknown topic '${frame.topic}'")
+                if (topic in registrations) scheduleSubscribeRetry(topic)
+            }
+            is ServerFrame.Subscribed -> Topic.parse(frame.topic)?.let(::forgetUnavailable)
             is ServerFrame.Error -> log("realtime: server error: ${frame.message}")
-            is ServerFrame.Subscribed, is ServerFrame.Unsubscribed, ServerFrame.Pong -> Unit
+            is ServerFrame.Unsubscribed, ServerFrame.Pong -> Unit
         }
+    }
+
+    /** Not a refusal: asks again after a backoff, for as long as someone still listens on [topic]. */
+    private fun scheduleSubscribeRetry(topic: Topic) {
+        val attempt = unavailable[topic] ?: FIRST_ATTEMPT
+        unavailable[topic] = attempt + 1
+        val delayMs = backoff.delayFor(attempt)
+        val gen = generation
+        subscribeRetries.remove(topic)?.cancel()
+        subscribeRetries[topic] = scope.launch {
+            delay(delayMs)
+            post(Command.RetrySubscribe(gen, topic))
+        }
+    }
+
+    private suspend fun onRetrySubscribe(topic: Topic) {
+        subscribeRetries.remove(topic)
+        if (topic !in registrations || topic in denied) return
+        sendSubscription(topic, subscribe = true)
+    }
+
+    private fun forgetUnavailable(topic: Topic) {
+        unavailable.remove(topic)
+        subscribeRetries.remove(topic)?.cancel()
     }
 
     private suspend fun onReady(userId: String) {
@@ -239,8 +282,8 @@ class DefaultRealtimeHub(
         }
         val live = registrations.keys.filter { it !in denied }
         live.forEach { sendSubscription(it, subscribe = true) }
-        if (connectedBefore) live.forEach { dispatch(RealtimeEvent.Resynced(it)) }
-        connectedBefore = true
+        // Also on the first `ready`: anything registered before it (a cold-start deep link) may have missed events.
+        live.forEach { dispatch(RealtimeEvent.Resynced(it)) }
     }
 
     private fun dispatch(event: RealtimeEvent) {
@@ -249,7 +292,9 @@ class DefaultRealtimeHub(
             if (registration.removed) continue
             try {
                 registration.listener.onEvent(event)
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
                 log("realtime: listener for ${event.topic.wire} threw: $e")
             }
         }
@@ -279,6 +324,7 @@ class DefaultRealtimeHub(
         if (refreshedSinceReady) {
             log("realtime: still unauthorized after a token refresh; stopping")
             stopInternal()
+            onAuthLost()
             return
         }
         refreshedSinceReady = true
@@ -313,7 +359,6 @@ class DefaultRealtimeHub(
         resetConnection()
         failures = 0
         refreshedSinceReady = false
-        // connectedBefore survives a stop: listeners still registered across stop/start missed events meanwhile.
         denied.clear()
         mutableState.value = ConnectionState.Idle
     }
@@ -327,6 +372,10 @@ class DefaultRealtimeHub(
         timerJob = null
         session = null
         ready = false
+        // The next `ready` resubscribes every live topic anyway.
+        subscribeRetries.values.forEach { it.cancel() }
+        subscribeRetries.clear()
+        unavailable.clear()
     }
 
     // ---- Connection coroutine: owns one socket, never touches hub state, only posts commands ----
@@ -335,7 +384,11 @@ class DefaultRealtimeHub(
         val opened = try {
             transport.connect()
         } catch (e: CancellationException) {
-            throw e
+            // Only our own cancellation (stop / superseded attempt) ends quietly. A CancellationException thrown by
+            // the transport while this attempt is still wanted is a failed attempt, or the hub would stay Connecting.
+            if (!currentCoroutineContext().isActive) throw e
+            post(Command.ConnectFailed(gen, e))
+            return
         } catch (_: UnauthorizedException) {
             post(Command.Unauthorized(gen))
             return
@@ -349,7 +402,8 @@ class DefaultRealtimeHub(
         } finally {
             withContext(NonCancellable) {
                 try {
-                    opened.close()
+                    // A dead socket's close may never return; Closed must still be posted.
+                    withTimeoutOrNull(CLOSE_TIMEOUT_MS) { opened.close() } ?: log("realtime: close timed out")
                 } catch (e: Exception) {
                     log("realtime: close failed: $e")
                 }
@@ -406,5 +460,10 @@ class DefaultRealtimeHub(
 
         /** A connection that stays `ready` this long resets the backoff attempt counter. */
         const val STABLE_AFTER_MS: Long = 10_000L
+
+        /** How long closing a finished socket may take before the hub gives up on it and moves on. */
+        const val CLOSE_TIMEOUT_MS: Long = 5_000L
+
+        private const val FIRST_ATTEMPT = 0
     }
 }

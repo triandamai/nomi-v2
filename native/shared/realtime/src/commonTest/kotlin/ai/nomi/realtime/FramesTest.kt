@@ -27,6 +27,17 @@ class FramesTest {
     }
 
     @Test
+    fun topicIdsAreCaseInsensitive() {
+        assertEquals(Topic.Chat("abc"), Topic.Chat("ABC"))
+        assertEquals(Topic.Chat("abc").hashCode(), Topic.Chat("ABC").hashCode())
+        assertEquals("chat:abc", Topic.Chat("ABC").wire)
+        assertEquals("abc", Topic.Chat("ABC").sessionId)
+        assertEquals(Topic.Chat("abc"), Topic.parse("chat:ABC"))
+        assertEquals(Topic.Project("p1"), Topic.parse("project:P1"))
+        assertEquals("project:p1", Topic.Project("P1").wire)
+    }
+
+    @Test
     fun clientFramesEncodeExactly() {
         assertEquals("""{"op":"subscribe","topic":"chat:s1"}""", WireJson.encodeToString<ClientFrame>(ClientFrame.Subscribe("chat:s1")))
         assertEquals("""{"op":"unsubscribe","topic":"project:p"}""", WireJson.encodeToString<ClientFrame>(ClientFrame.Unsubscribe("project:p")))
@@ -40,6 +51,7 @@ class FramesTest {
         assertEquals(ServerFrame.Subscribed("chat:a"), dec("""{"type":"subscribed","topic":"chat:a"}"""))
         assertEquals(ServerFrame.Unsubscribed("chat:a"), dec("""{"type":"unsubscribed","topic":"chat:a"}"""))
         assertEquals(ServerFrame.Denied("chat:a"), dec("""{"type":"denied","topic":"chat:a"}"""))
+        assertEquals(ServerFrame.Unavailable("chat:a"), dec("""{"type":"unavailable","topic":"chat:a"}"""))
         assertEquals(ServerFrame.Error("boom"), dec("""{"type":"error","message":"boom","extra":1}"""))
         assertEquals(ServerFrame.Pong, dec("""{"type":"pong"}"""))
         val ev = dec("""{"type":"event","topic":"user","payload":{"kind":"PersonalityChanged"}}""")

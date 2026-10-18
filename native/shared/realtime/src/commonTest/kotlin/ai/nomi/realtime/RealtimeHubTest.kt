@@ -1,5 +1,6 @@
 package ai.nomi.realtime
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -10,6 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -233,6 +235,103 @@ class RealtimeHubTest {
         val (hub, t) = connectedHub()
         hub.addListener(chat) {}.remove(); runCurrent()
         assertTrue(t.sent.isEmpty())
+    }
+
+    // ---- Final review fixes ----
+
+    @Test fun listener_throwing_an_Error_does_not_kill_the_hub() = runTest {
+        val (hub, t) = connectedHub()
+        val got = mutableListOf<RealtimeEvent>()
+        hub.addListener(chat) { TODO("not wired yet") }
+        hub.addListener(chat) { got += it }
+        runCurrent()
+        t.push(eventFrame("chat:s1", """{"kind":"SessionRenamed","title":"x"}"""))
+        t.push(eventFrame("chat:s1", """{"kind":"SessionRenamed","title":"y"}"""))
+        runCurrent()
+        assertEquals(listOf("x", "y"), got.map { (it as RealtimeEvent.SessionRenamed).title })
+        // The actor still handles commands afterwards.
+        hub.addListener(Topic.Project("p1")) {}; runCurrent()
+        assertTrue(ClientFrame.Subscribe("project:p1") in t.sent)
+    }
+
+    @Test fun connect_cancelled_inside_the_transport_is_a_failed_attempt_not_a_wedge() = runTest {
+        val t = FakeTransport()
+        t.connectErrors += CancellationException("engine shut the call down")
+        val hub = DefaultRealtimeHub(t, refreshToken = { true }, scope = backgroundScope)
+        hub.start(); runCurrent()
+        assertIs<ConnectionState.Waiting>(hub.state.value)
+        advanceTimeBy(Backoff.MAX_DELAY_MS + 1); t.acceptNext("u1"); runCurrent()
+        assertEquals(2, t.connectCount)
+        assertEquals(ConnectionState.Connected("u1"), hub.state.value)
+    }
+
+    @Test fun a_close_that_never_returns_does_not_wedge_the_hub() = runTest {
+        val (hub, t) = connectedHub()
+        t.closeHangs = true
+        t.dropConnection(); runCurrent()
+        advanceTimeBy(DefaultRealtimeHub.CLOSE_TIMEOUT_MS + 1); runCurrent()
+        assertIs<ConnectionState.Waiting>(hub.state.value)
+        t.closeHangs = false
+        advanceTimeBy(Backoff.MAX_DELAY_MS + 1); t.acceptNext("u1"); runCurrent()
+        assertEquals(2, t.connectCount)
+        assertEquals(ConnectionState.Connected("u1"), hub.state.value)
+    }
+
+    @Test fun unavailable_retries_the_subscribe_later_without_access_lost() = runTest {
+        val (hub, t) = connectedHub()
+        val got = mutableListOf<RealtimeEvent>()
+        hub.addListener(chat) { got += it }; runCurrent()
+        t.sent.clear()
+        t.push(ServerFrame.Unavailable("chat:s1")); runCurrent()
+        assertTrue(got.isEmpty())
+        assertTrue(t.sent.none { it is ClientFrame.Subscribe })
+        advanceTimeBy(Backoff.MAX_DELAY_MS + 1); runCurrent()
+        assertEquals(listOf(ClientFrame.Subscribe("chat:s1")), t.sent.filterIsInstance<ClientFrame.Subscribe>())
+        assertTrue(got.none { it is RealtimeEvent.AccessLost })
+    }
+
+    @Test fun unavailable_retry_is_dropped_once_nobody_listens() = runTest {
+        val (hub, t) = connectedHub()
+        val handle = hub.addListener(chat) {}; runCurrent()
+        t.push(ServerFrame.Unavailable("chat:s1")); runCurrent()
+        handle.remove(); runCurrent(); t.sent.clear()
+        advanceTimeBy(Backoff.MAX_DELAY_MS + 1); runCurrent()
+        assertTrue(t.sent.none { it is ClientFrame.Subscribe })
+    }
+
+    @Test fun still_unauthorized_after_a_refresh_reports_auth_lost() = runTest {
+        var lost = 0
+        val t = FakeTransport(failWith401Times = Int.MAX_VALUE)
+        val hub = DefaultRealtimeHub(t, refreshToken = { true }, scope = backgroundScope, onAuthLost = { lost++ })
+        hub.start(); runCurrent()
+        assertEquals(1, lost)
+        assertEquals(ConnectionState.Idle, hub.state.value)
+    }
+
+    @Test fun rejected_refresh_does_not_report_auth_lost_twice() = runTest {
+        var lost = 0
+        val t = FakeTransport(failWith401Times = 1)
+        val hub = DefaultRealtimeHub(t, refreshToken = { false }, scope = backgroundScope, onAuthLost = { lost++ })
+        hub.start(); runCurrent()
+        // The refresh call's own `false` already ends the session (SessionGate.refreshSession).
+        assertEquals(0, lost)
+        assertEquals(ConnectionState.Idle, hub.state.value)
+    }
+
+    @Test fun first_ready_resyncs_topics_registered_before_it() = runTest {
+        val t = FakeTransport()
+        val hub = DefaultRealtimeHub(t, refreshToken = { true }, scope = backgroundScope)
+        val got = mutableListOf<RealtimeEvent>()
+        hub.addListener(chat) { got += it }
+        hub.start(); t.acceptNext("u1"); runCurrent()
+        assertEquals(listOf<RealtimeEvent>(RealtimeEvent.Resynced(chat)), got)
+    }
+
+    @Test fun listeners_added_after_ready_get_no_resynced() = runTest {
+        val (hub, _) = connectedHub()
+        val got = mutableListOf<RealtimeEvent>()
+        hub.addListener(chat) { got += it }; runCurrent()
+        assertFalse(got.any { it is RealtimeEvent.Resynced })
     }
 }
 

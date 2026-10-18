@@ -8,12 +8,22 @@ sealed interface Topic {
         override val wire: String = WIRE_USER
     }
 
-    data class Chat(val sessionId: String) : Topic {
+    /** Ids are UUIDs, so they compare case-insensitively: the id is kept lowercased, as the gateway spells it. */
+    class Chat(sessionId: String) : Topic {
+        val sessionId: String = sessionId.lowercase()
         override val wire: String get() = "$PREFIX_CHAT$sessionId"
+        override fun equals(other: Any?): Boolean = other is Chat && other.sessionId == sessionId
+        override fun hashCode(): Int = sessionId.hashCode()
+        override fun toString(): String = "Chat(sessionId=$sessionId)"
     }
 
-    data class Project(val projectId: String) : Topic {
+    /** See [Chat]: the id is kept lowercased. */
+    class Project(projectId: String) : Topic {
+        val projectId: String = projectId.lowercase()
         override val wire: String get() = "$PREFIX_PROJECT$projectId"
+        override fun equals(other: Any?): Boolean = other is Project && other.projectId == projectId
+        override fun hashCode(): Int = projectId.hashCode()
+        override fun toString(): String = "Project(projectId=$projectId)"
     }
 
     companion object {

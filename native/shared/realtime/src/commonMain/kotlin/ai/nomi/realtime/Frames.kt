@@ -51,6 +51,11 @@ sealed interface ServerFrame {
     @SerialName("denied")
     data class Denied(val topic: String) : ServerFrame
 
+    /** The server could not check access right now (not a refusal): the subscribe is worth retrying. */
+    @Serializable
+    @SerialName("unavailable")
+    data class Unavailable(val topic: String) : ServerFrame
+
     @Serializable
     @SerialName("event")
     data class Event(val topic: String, val payload: JsonObject) : ServerFrame

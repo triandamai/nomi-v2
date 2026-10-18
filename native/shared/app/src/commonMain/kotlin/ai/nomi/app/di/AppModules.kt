@@ -75,6 +75,8 @@ val coreModule: Module = module {
             refreshToken = { get<SessionGate>().refreshSession() },
             scope = get(AppScope),
             log = ::appLog,
+            // Rejected even with a freshly refreshed token: back to sign-in rather than a silently dead socket.
+            onAuthLost = { get<SessionGate>().signOut() },
         )
     }
 
