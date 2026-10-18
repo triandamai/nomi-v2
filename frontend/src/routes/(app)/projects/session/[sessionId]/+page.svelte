@@ -66,8 +66,10 @@
 	});
 
 	let deploy = $state<ProjectDeploy | null>(null);
+	// Keyed on the id, not `data`: every reload brings a new `data`, and a fresh (empty) deploy
+	// would blank an open Deploy, Domain or Settings sheet until it loads again.
 	$effect(() => {
-		const id = data.project?.id;
+		const id = projectId;
 		if (!id) return;
 		const d = new ProjectDeploy(id);
 		deploy = d;
