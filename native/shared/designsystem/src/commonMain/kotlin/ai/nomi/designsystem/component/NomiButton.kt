@@ -1,9 +1,8 @@
 package ai.nomi.designsystem.component
 
 import ai.nomi.designsystem.generated.NomiCorners
-import ai.nomi.designsystem.generated.NomiMotionTokens
 import ai.nomi.designsystem.theme.NomiTheme
-import ai.nomi.designsystem.theme.toTween
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
@@ -42,7 +41,8 @@ enum class NomiButtonSize(internal val pressedCorner: Float) {
 }
 
 private const val DISABLED_ALPHA = 0.38f
-private const val HALF = 2
+private const val OPAQUE = 1f
+private const val HEIGHT_TO_RADIUS_DIVISOR = 2
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -71,7 +71,7 @@ fun NomiButton(
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val height = size.height()
-    val rest = height / HALF
+    val rest = height / HEIGHT_TO_RADIUS_DIVISOR
     val pressedCorner = size.pressedCorner.dp
     val shapes = ButtonDefaults.shapes(RoundedCornerShape(rest), RoundedCornerShape(pressedCorner))
     val padding = ButtonDefaults.contentPaddingFor(height)
@@ -79,9 +79,10 @@ fun NomiButton(
     val common = modifier
     if (variant == NomiButtonVariant.Gradient) {
         val pressed by source.collectIsPressedAsState()
+        val spatialSpec: FiniteAnimationSpec<Dp> = MaterialTheme.motionScheme.fastSpatialSpec()
         val corner by animateDpAsState(
             if (pressed) pressedCorner else rest,
-            if (NomiTheme.reducedMotion) snap() else NomiMotionTokens.spatialFast.toTween(),
+            if (NomiTheme.reducedMotion) snap() else spatialSpec,
             label = "gradient-button-corner",
         )
         // The gradient is a background behind a transparent M3 button, so it follows the press morph itself.
@@ -90,7 +91,8 @@ fun NomiButton(
             shapes = shapes,
             modifier = common
                 .background(NomiTheme.extendedColors.actionBrush, RoundedCornerShape(corner))
-                .alpha(if (enabled) 1f else DISABLED_ALPHA),
+                .nomiFocusRing(RoundedCornerShape(corner))
+                .alpha(if (enabled) OPAQUE else DISABLED_ALPHA),
             enabled = enabled,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color.Transparent,

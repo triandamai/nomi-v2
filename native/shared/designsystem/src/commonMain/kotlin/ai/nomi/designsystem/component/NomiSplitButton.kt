@@ -5,7 +5,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -36,7 +36,7 @@ fun NomiSplitButton(
                     checked = expanded,
                     onCheckedChange = onExpandedChange,
                     modifier = Modifier.semantics { contentDescription = menuLabel },
-                ) { ChevronDownGlyph(MaterialTheme.colorScheme.onPrimary, SplitButtonDefaults.TrailingIconSize) }
+                ) { ChevronDownGlyph(LocalContentColor.current, SplitButtonDefaults.TrailingIconSize) }
             },
         )
         menu()

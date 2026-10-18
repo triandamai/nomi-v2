@@ -1,22 +1,20 @@
 package ai.nomi.designsystem.component
 
-import ai.nomi.designsystem.generated.NomiMotionTokens
 import ai.nomi.designsystem.generated.NomiShapeSpecs
 import ai.nomi.designsystem.shape.PolarShape
 import ai.nomi.designsystem.theme.NomiTheme
-import ai.nomi.designsystem.theme.toTween
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,7 +42,6 @@ fun sendButtonState(text: String, sending: Boolean): SendButtonState = when {
 
 val SendButtonSize: Dp = 56.dp
 private val ArrowSize = 22.dp
-private val FocusRingWidth = 2.dp
 private val StopSize = 16.dp
 private val LoaderInset = 8.dp
 private const val HOVER_SCALE = 1.06f
@@ -52,6 +49,7 @@ private const val PRESS_SCALE = 0.92f
 private const val HOVER_ROTATION_DEG = 40f
 private const val DISABLED_ALPHA = 0.38f
 private const val REST = 1f
+private const val OPAQUE = 1f
 private const val NO_ROTATION = 0f
 private const val COOKIE = "cookie9"
 
@@ -59,6 +57,7 @@ private const val COOKIE = "cookie9"
  * Nomi's send action: the brand cookie in the theme's action gradient with an arrow on top. While a turn is in
  * flight it becomes the morphing loader; give it [onStop] to make that state a Stop button with a square in its middle.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SendButton(
     state: SendButtonState,
@@ -75,14 +74,14 @@ fun SendButton(
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val pressed by interaction.collectIsPressedAsState()
-    val focused by interaction.collectIsFocusedAsState()
-    val spec = if (NomiTheme.reducedMotion) snap<Float>() else NomiMotionTokens.spatialFast.toTween()
+    val motion = MaterialTheme.motionScheme
+    val spec: FiniteAnimationSpec<Float> = if (NomiTheme.reducedMotion) snap() else motion.fastSpatialSpec()
     val scale by animateFloatAsState(
         when { !enabled -> REST; pressed -> PRESS_SCALE; hovered -> HOVER_SCALE; else -> REST }, spec, label = "send-scale",
     )
     val rotation by animateFloatAsState(
         if (enabled && hovered && state == SendButtonState.Ready) HOVER_ROTATION_DEG else NO_ROTATION,
-        if (NomiTheme.reducedMotion) snap() else NomiMotionTokens.spatialSlow.toTween(), label = "send-rotation",
+        if (NomiTheme.reducedMotion) snap() else motion.slowSpatialSpec(), label = "send-rotation",
     )
     val shape = remember { PolarShape(NomiShapeSpecs.all.getValue(COOKIE)) }
     val brush = NomiTheme.extendedColors.actionBrush
@@ -95,9 +94,9 @@ fun SendButton(
         modifier
             .size(size)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .alpha(if (state == SendButtonState.Disabled) DISABLED_ALPHA else REST)
+            .alpha(if (state == SendButtonState.Disabled) DISABLED_ALPHA else OPAQUE)
             .semantics { contentDescription = label }
-            .then(if (focused) Modifier.border(FocusRingWidth, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+            .nomiFocusRing(CircleShape)
             .clip(CircleShape)
             .clickable(
                 interactionSource = interaction,

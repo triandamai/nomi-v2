@@ -31,10 +31,9 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 
 /** Whether the person types on a hardware keyboard (Enter sends) or a soft one (the IME's Send action sends). */
@@ -46,11 +45,12 @@ val LocalComposerPlatform = compositionLocalOf { ComposerPlatform.Mobile }
 enum class ComposerKeyAction { Send, Newline, Ignore }
 
 /**
- * What a key press does in the composer. Desktop: Enter sends, Shift+Enter is a newline.
- * Mobile: hardware Enter is left alone — sending is the IME action.
+ * What a key press does in the composer. Desktop: Enter sends, Shift+Enter is a newline; while an IME composition is
+ * active ([composing]) Enter belongs to the IME (it commits the candidate), so it is left alone.
+ * Mobile: Enter, hardware or soft, is never a send shortcut and stays a newline in the field: sending is the IME Send action.
  */
-fun composerKeyAction(key: Key, shift: Boolean, platform: ComposerPlatform): ComposerKeyAction = when {
-    platform == ComposerPlatform.Mobile -> ComposerKeyAction.Ignore
+fun composerKeyAction(key: Key, shift: Boolean, platform: ComposerPlatform, composing: Boolean = false): ComposerKeyAction = when {
+    platform == ComposerPlatform.Mobile || composing -> ComposerKeyAction.Ignore
     key != Key.Enter && key != Key.NumPadEnter -> ComposerKeyAction.Ignore
     shift -> ComposerKeyAction.Newline
     else -> ComposerKeyAction.Send
@@ -59,6 +59,9 @@ fun composerKeyAction(key: Key, shift: Boolean, platform: ComposerPlatform): Com
 /** The field grows with its text up to this many lines, then scrolls (the web caps it at 200px of 24px lines). */
 const val COMPOSER_MAX_LINES = 8
 private const val COMPOSER_MIN_LINES = 1
+
+/** The field takes all the width the leading slot and send button leave. */
+private const val FILL = 1f
 private val ComposerPadding = 8.dp
 private val ComposerFieldPadding = 12.dp
 private val ComposerGap = 8.dp
@@ -89,6 +92,9 @@ fun Composer(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val send = { if (state == SendButtonState.Ready) onSend() }
+    // The field is driven by a TextFieldValue so the IME composition range is known; the draft stays the caller's String.
+    var field by remember { mutableStateOf(TextFieldValue(value)) }
+    if (field.text != value) field = TextFieldValue(value)
     Surface(
         modifier = modifier.fillMaxWidth().then(
             if (focused) Modifier.border(FocusRingWidth, colors.primary, MaterialTheme.shapes.extraLarge) else Modifier,
@@ -105,15 +111,17 @@ fun Composer(
         ) {
             leading?.invoke()
             BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
+                value = field,
+                onValueChange = { next ->
+                    field = next
+                    if (next.text != value) onValueChange(next.text)
+                },
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(FILL)
                     .heightIn(min = FieldMinHeight)
-                    .semantics { contentDescription = placeholder }
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (composerKeyAction(event.key, event.isShiftPressed, platform)) {
+                        when (composerKeyAction(event.key, event.isShiftPressed, platform, composing = field.composition != null)) {
                             ComposerKeyAction.Send -> { send(); true }
                             // Shift+Enter: let the field insert the line break itself.
                             ComposerKeyAction.Newline, ComposerKeyAction.Ignore -> false

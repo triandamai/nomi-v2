@@ -21,4 +21,7 @@ class ComposerKeyTest {
         assertEquals(ComposerKeyAction.Ignore, composerKeyAction(Key.Enter, shift = false, platform = ComposerPlatform.Mobile))
         assertEquals(ComposerKeyAction.Ignore, composerKeyAction(Key.Enter, shift = true, platform = ComposerPlatform.Mobile))
     }
+
+    @Test fun desktopEnterDuringImeCompositionIsLeftToTheIme() =
+        assertEquals(ComposerKeyAction.Ignore, composerKeyAction(Key.Enter, shift = false, platform = ComposerPlatform.Desktop, composing = true))
 }

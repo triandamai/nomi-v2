@@ -8,7 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 
-/** M3 Expressive wavy linear progress: [progress] 0..1 draws the wave, the rest is a flat track ending in a stop dot. */
+/**
+ * M3 Expressive wavy linear progress. M3's API takes a solid Color, so the web's gradient wave is not reproduced here.
+ * [progress] 0..1 draws the wave, the rest is a flat track ending in a stop dot. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun NomiWavyProgress(
