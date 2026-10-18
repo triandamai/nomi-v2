@@ -53,7 +53,9 @@
 			buildConfigurationList = 29DCA9F0B3A40325067EB163 /* Build configuration list for PBXNativeTarget "iosApp" */;
 			buildPhases = (
 				458C440C0A3302CF3B2904F4 /* Compile Kotlin framework */,
+				99E444DB1DED5E87F1DFFC5F /* Require a backend URL for release */,
 				297B59D9CE634556D6007C40 /* Sources */,
+				3534BEFCCE14E1C481FF95EC /* Allow local networking in Debug */,
 			);
 			buildRules = (
 			);
@@ -97,6 +99,25 @@
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		3534BEFCCE14E1C481FF95EC /* Allow local networking in Debug */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Allow local networking in Debug";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  PLIST=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n  /usr/libexec/PlistBuddy -c \"Delete :NSAppTransportSecurity\" \"$PLIST\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :NSAppTransportSecurity dict\" -c \"Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true\" \"$PLIST\"\nfi\n";
+		};
 		458C440C0A3302CF3B2904F4 /* Compile Kotlin framework */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -115,6 +136,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\nif [ -z \"$JAVA_HOME\" ]; then\n  export JAVA_HOME=\"$(/usr/libexec/java_home -v 17)\"\nfi\ncd \"$SRCROOT/..\"\n./gradlew :shared:app:embedAndSignAppleFrameworkForXcode\n";
+		};
+		99E444DB1DED5E87F1DFFC5F /* Require a backend URL for release */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Require a backend URL for release";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Release\" ] && [ -z \"$NOMI_API_URL\" ]; then\n  echo \"error: set NOMI_API_URL (https) for release builds\"\n  exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -297,7 +337,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				NOMI_API_URL = "http://localhost:8080";
+				NOMI_API_URL = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

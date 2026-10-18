@@ -84,4 +84,28 @@ class AuthRefreshTest {
 
         assertEquals<List<String?>>(listOf("Bearer old", "Bearer new"), headers)
     }
+
+    @Test
+    fun revokeSendsTheGivenTokenAndLeavesANewerSessionAlone() = runTest {
+        val store = FakeTokenStore(Tokens("new-access", "new-refresh"))
+        var body = ""
+        val engine = MockEngine { request ->
+            assertEquals("/api/auth/logout", request.url.encodedPath)
+            body = request.body.toByteArray().decodeToString()
+            respond("", HttpStatusCode.NoContent)
+        }
+        AuthApi(nomiHttpClient(engine, config, store) {}, config, store).revoke("old-refresh")
+
+        assertEquals("""{"refresh_token":"old-refresh"}""", body)
+        assertEquals(Tokens("new-access", "new-refresh"), store.read())
+    }
+
+    @Test
+    fun forgetLocalSessionReturnsWhatWasStoredAndClearsIt() = runTest {
+        val store = FakeTokenStore(Tokens("a", "r"))
+        val api = AuthApi(nomiHttpClient(MockEngine { error("no request expected") }, config, store) {}, config, store)
+
+        assertEquals(Tokens("a", "r"), api.forgetLocalSession())
+        assertNull(store.read())
+    }
 }

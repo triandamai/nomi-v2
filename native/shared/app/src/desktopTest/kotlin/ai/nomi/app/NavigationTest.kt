@@ -49,6 +49,11 @@ class NavigationTest {
         assertEquals(Home, NomiRoute.fromLink("/projects/p1"))
         assertEquals(Home, NomiRoute.fromLink("/"))
         assertNull(NomiRoute.fromLink(""))
+        assertEquals(Chat("abc"), NomiRoute.fromLink("nomi://chat/abc"))
+        assertEquals(Notifications, NomiRoute.fromLink("nomi://notifications"))
+        assertEquals(Home, NomiRoute.fromLink("nomi://"))
+        assertEquals(Chat("a b/c"), NomiRoute.fromLink("/chat/a%20b%2Fc"))
+        assertEquals(Chat("abc"), NomiRoute.fromLink("http://localhost:8080/chat/abc#latest"))
     }
 
     @Test

@@ -95,9 +95,9 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
 
     override suspend fun refresh(): Boolean = session != null
 
-    override suspend fun signOut() {
-        session = null
-    }
+    override suspend fun forgetSession(): String? = session?.refresh.also { session = null }
+
+    override suspend fun revoke(refreshToken: String) = Unit
 }
 
 class FakeSessionsApi : SessionsApi {

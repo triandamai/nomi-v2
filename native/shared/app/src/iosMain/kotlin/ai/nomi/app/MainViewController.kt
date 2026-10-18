@@ -17,9 +17,8 @@ import platform.Foundation.NSBundle
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIViewController
 
-/** Info.plist key holding the backend URL (set per configuration in project.yml). */
+/** Info.plist key holding the backend URL (Debug: the local backend; Release: required at build time, project.yml). */
 private const val API_URL_PLIST_KEY = "NomiApiUrl"
-private const val DEFAULT_IOS_API_URL = "http://localhost:8080"
 
 private var koinStarted = false
 
@@ -27,8 +26,9 @@ private var koinStarted = false
 actual fun rememberReducedMotion(): Boolean = remember { UIAccessibilityIsReduceMotionEnabled() }
 
 fun iosPlatformModule(): Module = module {
-    val apiUrl = (NSBundle.mainBundle.objectForInfoDictionaryKey(API_URL_PLIST_KEY) as? String)
-        ?.takeIf { it.isNotBlank() } ?: DEFAULT_IOS_API_URL
+    val apiUrl = requireNotNull((NSBundle.mainBundle.objectForInfoDictionaryKey(API_URL_PLIST_KEY) as? String)?.takeIf { it.isNotBlank() }) {
+        "Info.plist has no $API_URL_PLIST_KEY: set the NOMI_API_URL build setting"
+    }
     single { ApiConfig(apiUrl) }
     single<TokenStore> { IosTokenStore() }
     single<DatabaseFactory> { IosDatabaseFactory() }

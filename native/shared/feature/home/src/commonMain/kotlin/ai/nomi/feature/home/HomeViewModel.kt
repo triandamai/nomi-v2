@@ -1,5 +1,6 @@
 package ai.nomi.feature.home
 
+import ai.nomi.core.STATE_STOP_TIMEOUT_MS
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.Session
 import ai.nomi.data.SessionRepository
@@ -18,8 +19,6 @@ import kotlinx.coroutines.launch
 /** Chats shown under the composer on Home; the full list is the Chats screen. */
 const val HOME_RECENT_CHATS = 5
 
-/** How long Room keeps feeding a screen that went to the background (configuration changes resubscribe within it). */
-private const val STOP_TIMEOUT_MS = 5_000L
 private const val MESSAGE_START_FAILED = "Couldn't start the chat. Check your connection and try again."
 
 data class HomeUiState(
@@ -38,7 +37,7 @@ class HomeViewModel(
 
     val state: StateFlow<HomeUiState> = combine(form, sessions.observeAll().map { it.take(HOME_RECENT_CHATS) }) { f, recent ->
         f.copy(recent = recent)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), HomeUiState())
 
     init {
         viewModelScope.launch { attempt("refresh chats") { sessions.refresh() } }

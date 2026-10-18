@@ -1,5 +1,7 @@
 package ai.nomi.feature.chats
 
+import ai.nomi.core.UNREAD_META
+import ai.nomi.core.UNTITLED_CHAT
 import ai.nomi.designsystem.component.NomiButton
 import ai.nomi.designsystem.component.NomiButtonVariant
 import ai.nomi.designsystem.component.NomiListRow
@@ -22,8 +24,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 const val CHATS_SCREEN_TAG = "chats-screen"
 
-private const val UNTITLED_CHAT = "New chat"
-private const val UNREAD_META = "New"
 private val RefreshIndicatorSize = 24.dp
 
 /** [selectedId] highlights the chat open next to the list on wide windows. */

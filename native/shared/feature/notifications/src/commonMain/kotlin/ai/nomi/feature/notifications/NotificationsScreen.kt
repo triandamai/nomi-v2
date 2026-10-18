@@ -1,5 +1,6 @@
 package ai.nomi.feature.notifications
 
+import ai.nomi.core.UNREAD_META
 import ai.nomi.designsystem.component.NomiButton
 import ai.nomi.designsystem.component.NomiButtonVariant
 import ai.nomi.designsystem.component.NomiListRow
@@ -21,7 +22,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 const val NOTIFICATIONS_SCREEN_TAG = "notifications-screen"
 
-private const val UNREAD_META = "New"
 
 /** Tapping a notification marks it read and hands its link (if any) to [onOpenLink]. */
 @Composable

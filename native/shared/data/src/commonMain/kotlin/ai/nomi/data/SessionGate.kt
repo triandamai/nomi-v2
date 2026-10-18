@@ -37,18 +37,27 @@ class SessionGate(
     /** False until [restore] has looked for a stored session: the UI shows neither sign-in nor home before. */
     val restored: StateFlow<Boolean> = mutableRestored.asStateFlow()
 
-    /** App start: resumes a stored session. */
+    /** App start: resumes a stored session. A token store that cannot be read counts as signed out. */
     suspend fun restore() {
         lock.withLock {
-            if (!live && auth.hasSession()) startSession()
+            val stored = try {
+                auth.hasSession()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("session: reading the stored session failed: $e")
+                false
+            }
+            if (!live && stored) startSession()
             mutableRestored.value = true
         }
     }
 
-    suspend fun signIn(email: String, password: String): SignInResult {
+    /** Serialized with sign-out, so a sign-out still finishing can never clear the tokens this writes. */
+    suspend fun signIn(email: String, password: String): SignInResult = lock.withLock {
         val result = auth.signIn(email, password)
-        if (result is SignInResult.SignedIn) lock.withLock { startSession() }
-        return result
+        if (result is SignInResult.SignedIn) startSession()
+        result
     }
 
     /** Idempotent. */
@@ -71,16 +80,25 @@ class SessionGate(
         hub.start()
     }
 
-    private suspend fun endSession() = lock.withLock {
-        val wasLive = live
-        live = false
-        mutableSignedIn.value = false
-        if (wasLive) {
-            sync.stop()
-            hub.stop()
+    /**
+     * Everything local happens under [lock] (tokens forgotten, cache wiped) before a new sign-in can start; only the
+     * server-side revoke of the captured refresh token runs after it, and it cannot touch newer tokens.
+     */
+    private suspend fun endSession() {
+        val toRevoke = lock.withLock {
+            val wasLive = live
+            live = false
+            mutableSignedIn.value = false
+            if (wasLive) {
+                sync.stop()
+                hub.stop()
+            }
+            var refreshToken: String? = null
+            attempt("forget tokens") { refreshToken = auth.forgetSession() }
+            attempt("clear local data") { clearLocalData() }
+            refreshToken
         }
-        attempt("forget tokens") { auth.signOut() }
-        attempt("clear local data") { clearLocalData() }
+        if (toRevoke != null) attempt("revoke session") { auth.revoke(toRevoke) }
     }
 
     private suspend fun attempt(what: String, block: suspend () -> Unit) {

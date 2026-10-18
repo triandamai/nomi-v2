@@ -7,7 +7,9 @@ import ai.nomi.network.SignInResult
 import ai.nomi.network.Tokens
 import ai.nomi.network.VerificationInfo
 import ai.nomi.realtime.Topic
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -15,6 +17,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Scripted [AuthRepository]: [session] is what a token store would hold. */
@@ -22,17 +25,30 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
     var nextSignIn: SignInResult = SignInResult.SignedIn(Tokens("a", "r"))
     var refreshResult = true
     var signOuts = 0
+    val revoked = mutableListOf<String>()
 
-    override suspend fun hasSession(): Boolean = session != null
+    /** When set, [revoke] suspends until it completes: a logout POST still in flight. */
+    var revokeGate: CompletableDeferred<Unit>? = null
+    var failRead = false
+
+    override suspend fun hasSession(): Boolean {
+        if (failRead) error("keychain unavailable")
+        return session != null
+    }
 
     override suspend fun signIn(email: String, password: String): SignInResult =
         nextSignIn.also { if (it is SignInResult.SignedIn) session = it.tokens }
 
     override suspend fun refresh(): Boolean = session != null && refreshResult
 
-    override suspend fun signOut() {
+    override suspend fun forgetSession(): String? {
         signOuts++
-        session = null
+        return session?.refresh.also { session = null }
+    }
+
+    override suspend fun revoke(refreshToken: String) {
+        revokeGate?.await()
+        revoked += refreshToken
     }
 }
 
@@ -131,5 +147,41 @@ class SessionGateTest {
     fun refresh_without_a_session_is_false() = runTest {
         val gate = gate()
         assertFalse(gate.refreshSession())
+    }
+
+    @Test
+    fun signing_in_again_while_the_logout_post_is_in_flight_keeps_the_new_session() = runTest {
+        val gate = gate()
+        auth.nextSignIn = SignInResult.SignedIn(Tokens("a1", "r1"))
+        gate.signIn("a@b.c", "pw")
+        val inFlight = CompletableDeferred<Unit>()
+        auth.revokeGate = inFlight
+
+        gate.signOut()
+        gate.signedIn.first { !it }
+        auth.nextSignIn = SignInResult.SignedIn(Tokens("a2", "r2"))
+        gate.signIn("a@b.c", "pw")
+        inFlight.complete(Unit)
+        // Let the revoke finish before checking it touched nothing but the old token.
+        auth.revokeGate = null
+        while (auth.revoked.isEmpty()) yield()
+
+        assertEquals(listOf("r1"), auth.revoked)
+        assertEquals(Tokens("a2", "r2"), auth.session)
+        assertTrue(gate.signedIn.value)
+        assertEquals(2, hub.starts)
+    }
+
+    @Test
+    fun unreadable_token_store_restores_to_signed_out() = runTest {
+        auth.failRead = true
+        val gate = gate()
+
+        gate.restore()
+
+        assertTrue(gate.restored.value)
+        assertFalse(gate.signedIn.value)
+        assertEquals(0, hub.starts)
+        assertNull(auth.session)
     }
 }

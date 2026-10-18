@@ -20,8 +20,11 @@ interface AuthRepository {
      */
     suspend fun refresh(): Boolean
 
-    /** Revokes the session server-side (best effort) and always forgets the tokens. */
-    suspend fun signOut()
+    /** Forgets the stored session right away; returns its refresh token for a later [revoke] (null if none). */
+    suspend fun forgetSession(): String?
+
+    /** Best-effort server-side revoke of [refreshToken]; never touches the stored session (a newer one may exist). */
+    suspend fun revoke(refreshToken: String)
 }
 
 class DefaultAuthRepository(private val api: AuthApi, private val tokens: TokenStore) : AuthRepository {
@@ -43,5 +46,7 @@ class DefaultAuthRepository(private val api: AuthApi, private val tokens: TokenS
         }
     }
 
-    override suspend fun signOut() = api.logout()
+    override suspend fun forgetSession(): String? = api.forgetLocalSession()?.refresh
+
+    override suspend fun revoke(refreshToken: String) = api.revoke(refreshToken)
 }

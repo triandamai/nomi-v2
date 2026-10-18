@@ -1,5 +1,6 @@
 package ai.nomi.feature.chat
 
+import ai.nomi.core.STATE_STOP_TIMEOUT_MS
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.ChatState
 import ai.nomi.data.ForegroundChat
@@ -15,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-private const val STOP_TIMEOUT_MS = 5_000L
 private const val MESSAGE_SEND_FAILED = "Couldn't send. Check your connection and try again."
 
 data class ChatComposerState(val draft: String = "", val sending: Boolean = false, val error: String? = null)
@@ -35,7 +35,7 @@ class ChatViewModel(
 
     /** Null until Room's first read. */
     val chat: StateFlow<ChatState?> =
-        chats.observe(sessionId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+        chats.observe(sessionId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), null)
 
     private val mutableComposer = MutableStateFlow(ChatComposerState())
     val composer: StateFlow<ChatComposerState> = mutableComposer.asStateFlow()

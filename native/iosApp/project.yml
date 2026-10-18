@@ -33,16 +33,11 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # Lets Compose render at 120 Hz on ProMotion iPhones.
         CADisableMinimumFrameDurationOnPhone: true
-        # Backend the shared code talks to (read by MainViewController); the simulator reaches the Mac's localhost.
+        # Backend the shared code talks to (read by MainViewController), from the NOMI_API_URL build setting.
         NomiApiUrl: $(NOMI_API_URL)
-        # Plain HTTP only to local addresses (the development backend); everything else stays https.
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.nomi.app
-        # Override per configuration / on the command line (NOMI_API_URL=https://… xcodebuild …) for real backends.
-        NOMI_API_URL: http://localhost:8080
         PRODUCT_NAME: Nomi
         TARGETED_DEVICE_FAMILY: "1,2"
         FRAMEWORK_SEARCH_PATHS:
@@ -52,6 +47,13 @@ targets:
           - $(inherited)
           - -framework
           - Shared
+      configs:
+        # The simulator reaches the Mac's local backend (nomi-server listens on 8080).
+        Debug:
+          NOMI_API_URL: http://localhost:8080
+        # Must be set for release builds (NOMI_API_URL=https://… xcodebuild …); the build fails without it.
+        Release:
+          NOMI_API_URL: ""
     preBuildScripts:
       - name: Compile Kotlin framework
         basedOnDependencyAnalysis: false
@@ -65,3 +67,20 @@ targets:
           fi
           cd "$SRCROOT/.."
           ./gradlew :shared:app:embedAndSignAppleFrameworkForXcode
+      - name: Require a backend URL for release
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "$CONFIGURATION" = "Release" ] && [ -z "$NOMI_API_URL" ]; then
+            echo "error: set NOMI_API_URL (https) for release builds"
+            exit 1
+          fi
+    postBuildScripts:
+      # Debug only: plain HTTP to local addresses (the development backend). Release keeps App Transport Security whole.
+      - name: Allow local networking in Debug
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "$CONFIGURATION" = "Debug" ]; then
+            PLIST="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+            /usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST"
+          fi

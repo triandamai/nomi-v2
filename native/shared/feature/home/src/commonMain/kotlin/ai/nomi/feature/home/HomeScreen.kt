@@ -1,5 +1,7 @@
 package ai.nomi.feature.home
 
+import ai.nomi.core.UNREAD_META
+import ai.nomi.core.UNTITLED_CHAT
 import ai.nomi.designsystem.component.Composer
 import ai.nomi.designsystem.component.NomiListRow
 import ai.nomi.designsystem.layout.NomiPage
@@ -20,8 +22,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 const val HOME_SCREEN_TAG = "home-screen"
 
-private const val UNTITLED_CHAT = "New chat"
-private const val UNREAD_META = "New"
 
 @Composable
 fun HomeScreen(

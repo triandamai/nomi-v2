@@ -91,21 +91,32 @@ class AuthApi(
 
     /** Revokes the refresh token server-side (best effort) and always forgets the session locally. */
     suspend fun logout() {
+        val current = forgetLocalSession()
+        if (current != null) revoke(current.refresh)
+    }
+
+    /**
+     * Drops the stored session (store and the client's cached bearer) and returns what it held, so the caller can
+     * [revoke] it later without that call ever touching tokens a newer sign-in may have written meanwhile.
+     */
+    suspend fun forgetLocalSession(): Tokens? {
         val current = tokens.read()
+        tokens.clear()
+        client.clearCachedTokens()
+        return current
+    }
+
+    /** Best-effort server-side revoke of [refreshToken]; never reads or changes the local token store. */
+    suspend fun revoke(refreshToken: String) {
         try {
-            if (current != null) {
-                client.post(config.url(LOGOUT_PATH)) {
-                    contentType(ContentType.Application.Json)
-                    setBody(RefreshRequest(current.refresh))
-                }
+            client.post(config.url(LOGOUT_PATH)) {
+                contentType(ContentType.Application.Json)
+                setBody(RefreshRequest(refreshToken))
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // Best effort: the local session is dropped below whether or not the server heard us.
-        } finally {
-            tokens.clear()
-            client.clearCachedTokens()
+            // Best effort: the session is already gone locally whether or not the server heard us.
         }
     }
 }
