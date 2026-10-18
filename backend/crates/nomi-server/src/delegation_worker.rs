@@ -199,6 +199,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 .await;
 
             let posted = matches!(outcome, Ok(LoopOutcome::Posted { .. }));
+            // How it went, for the person wherever they are in the app (not when they stopped it).
+            let ended = if outcome.is_err() { nomi_turn::activity::Ended::Failed } else { nomi_turn::activity::Ended::Completed };
+            let stopped = matches!(outcome, Ok(LoopOutcome::Cancelled));
             match outcome {
                 Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) | Ok(LoopOutcome::Posted { text, .. }) => {
                     // The agent's own answer, whole: rewording it through a short supervisor
@@ -305,6 +308,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, e.notice_blocks()).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }
+            }
+            if !stopped {
+                nomi_turn::activity::announce(&pool, &mqtt, claimed.session_id, claimed.user_id, ended).await;
             }
         }
     }

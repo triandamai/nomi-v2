@@ -47,10 +47,22 @@ impl MqttPublisher {
         Ok(())
     }
 
+    /// Sends to everything the person has open (see `crate::UserEnvelope`).
+    pub async fn publish_to_user<T: Serialize>(&self, user_id: Uuid, envelope: &T) -> Result<(), MqttError> {
+        let payload = serde_json::to_vec(envelope)?;
+        self.client.publish(user_topic(user_id), QoS::AtMostOnce, false, payload).await?;
+        Ok(())
+    }
+
     pub async fn publish<T: Serialize>(&self, session_id: Uuid, envelope: &T) -> Result<(), MqttError> {
         let payload = serde_json::to_vec(envelope)?;
         let topic = format!("chat/{session_id}/stream");
         self.client.publish(topic, QoS::AtMostOnce, false, payload).await?;
         Ok(())
     }
+}
+
+/// A person's own topic: what concerns them whichever chat they have open.
+pub fn user_topic(user_id: Uuid) -> String {
+    format!("user/{user_id}/activity")
 }

@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod approval;
 pub mod bootstrap;
 pub mod ingest;
