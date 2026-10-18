@@ -59,5 +59,7 @@ kotlin {
 dependencies {
     implementation(projects.shared.app)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.koin.android)
 }

@@ -5,24 +5,32 @@ import ai.nomi.data.NotificationItem
 import ai.nomi.designsystem.component.NomiButton
 import ai.nomi.designsystem.component.NomiButtonSize
 import ai.nomi.designsystem.component.NomiButtonVariant
+import ai.nomi.designsystem.component.NomiFilterChip
 import ai.nomi.designsystem.component.NomiListPanel
 import ai.nomi.designsystem.component.NomiLoadingIndicator
 import ai.nomi.designsystem.component.NomiRow
-import ai.nomi.designsystem.icon.NomiIcon
-import ai.nomi.designsystem.icon.NomiIcons
 import ai.nomi.designsystem.layout.NomiPage
+import ai.nomi.designsystem.shape.AgentIdentity
+import ai.nomi.designsystem.shape.AgentShape
+import ai.nomi.designsystem.shape.NomiIdentity
+import ai.nomi.designsystem.shape.agentIdentity
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,8 +41,20 @@ import kotlin.time.Clock
 
 const val NOTIFICATIONS_SCREEN_TAG = "notifications-screen"
 
-private val IconBadgeSize = 36.dp
+private val RowAvatarSize = 36.dp
+private val EmptyAvatarSize = 64.dp
+private val EmptyVerticalPadding = 36.dp
+private val EmptyHorizontalPadding = 14.dp
+private val EmptyGap = 12.dp
+private val FilterGap = 8.dp
 private val ListBottomPadding = 20.dp
+
+enum class NotificationFilter(val label: String, val emptyMessage: String) {
+    All("All", "You're all caught up."),
+    Unread("Unread", "Nothing unread right now."),
+    Read("Read", "No read notifications yet."),
+    Promo("Promo", "No promotions yet."),
+}
 
 /** Tapping a notification marks it read and hands its link (if any) to [onOpenLink]. */
 @Composable
@@ -55,7 +75,8 @@ fun NotificationsScreen(
     )
 }
 
-/** The inbox: the display title, then notices as rows in one panel; unread ones read bolder. */
+/** The inbox: the display title, filter chips, then notices as rows with crew shapes; unread ones read bolder. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NotificationsContent(
     items: List<NotificationItem>?,
@@ -64,6 +85,18 @@ fun NotificationsContent(
     modifier: Modifier = Modifier,
     nowMs: Long = Clock.System.now().toEpochMilliseconds(),
 ) {
+    var filter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
+    val filtered = remember(items, filter) {
+        items?.let { all ->
+            when (filter) {
+                NotificationFilter.All -> all
+                NotificationFilter.Unread -> all.filter { it.readAt == null }
+                NotificationFilter.Read -> all.filter { it.readAt != null }
+                NotificationFilter.Promo -> all.filter { it.kind == "promo" }
+            }
+        }
+    }
+
     NomiPage(
         title = "Inbox",
         modifier = modifier.testTag(NOTIFICATIONS_SCREEN_TAG),
@@ -73,12 +106,27 @@ fun NotificationsContent(
             }
         },
     ) {
+        if (items != null) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(FilterGap),
+                verticalArrangement = Arrangement.spacedBy(FilterGap),
+            ) {
+                NotificationFilter.entries.forEach { entry ->
+                    NomiFilterChip(
+                        label = entry.label,
+                        selected = filter == entry,
+                        onClick = { filter = entry },
+                    )
+                }
+            }
+        }
+
         when {
-            items == null -> NomiLoadingIndicator(Modifier.align(Alignment.CenterHorizontally), contentDescription = "Loading notifications")
-            items.isEmpty() -> Text("You're all caught up.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            filtered == null -> NomiLoadingIndicator(Modifier.align(Alignment.CenterHorizontally), contentDescription = "Loading notifications")
+            filtered.isEmpty() -> EmptyInboxCard(filter.emptyMessage)
             else -> NomiListPanel(Modifier.padding(bottom = ListBottomPadding)) {
                 LazyColumn(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)) {
-                    items(items, key = { it.id }) { item ->
+                    items(filtered, key = { it.id }) { item ->
                         val unread = item.readAt == null
                         NomiRow(
                             title = item.title,
@@ -86,7 +134,7 @@ fun NotificationsContent(
                             meta = timeAgo(item.createdAt, nowMs),
                             emphasized = unread,
                             onClick = { onOpen(item) },
-                            leading = { KindIcon(unread) },
+                            leading = { AgentShape(kindIdentity(item.kind), RowAvatarSize) },
                         )
                     }
                 }
@@ -95,14 +143,27 @@ fun NotificationsContent(
     }
 }
 
-/** The bell in a tonal circle: secondary container while unread, quieter once read. */
 @Composable
-private fun KindIcon(unread: Boolean) {
-    val colors = MaterialTheme.colorScheme
-    Box(
-        Modifier.size(IconBadgeSize).clip(CircleShape).background(if (unread) colors.secondaryContainer else colors.surfaceContainerHigh),
-        contentAlignment = Alignment.Center,
+private fun EmptyInboxCard(message: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.extraLarge)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(vertical = EmptyVerticalPadding, horizontal = EmptyHorizontalPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(EmptyGap),
     ) {
-        NomiIcon(NomiIcons.Bell, contentDescription = null, tint = if (unread) colors.onSecondaryContainer else colors.onSurfaceVariant)
+        AgentShape(NomiIdentity, EmptyAvatarSize, face = true)
+        Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** Mirrors `KIND` in `frontend/src/routes/(app)/notifications/+page.svelte`. */
+private fun kindIdentity(kind: String): AgentIdentity = when (kind) {
+    "subscription" -> agentIdentity("supervisor")
+    "quota" -> agentIdentity("money")
+    "promo" -> agentIdentity("reminders")
+    "deploy", "project" -> agentIdentity("coding")
+    else -> NomiIdentity
 }

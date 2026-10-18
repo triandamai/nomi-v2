@@ -39,6 +39,17 @@ class HomeApisTest {
     }
 
     @Test
+    fun preferencesReadsAndUpdatesThemeAndAccent() = runTest {
+        val paths = mutableListOf<String>()
+        val api = api("""{"theme":"dark","accent_color":"coral-reef","timezone":"UTC","language":"en","has_stored_timezone":true,"animated_backdrop":true,"drawer_recents":true,"drawer_recents_limit":10}""", paths = paths)
+        val loaded = api.preferences()
+        assertEquals(PreferencesDto(theme = "dark", accentColor = "coral-reef"), loaded)
+        val updated = api.updatePreferences(UpdatePreferencesDto(theme = "dark"))
+        assertEquals("coral-reef", updated.accentColor)
+        assertEquals(listOf("/api/preferences", "/api/preferences"), paths)
+    }
+
+    @Test
     fun failuresThrow() = runTest {
         assertFailsWith<ApiException> { api("""{"error":"x"}""", HttpStatusCode.InternalServerError).crew() }
     }

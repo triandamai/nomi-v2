@@ -6,6 +6,7 @@ import ai.nomi.data.Session
 import ai.nomi.designsystem.component.NomiListPanel
 import ai.nomi.designsystem.component.NomiLoadingIndicator
 import ai.nomi.designsystem.component.NomiRow
+import ai.nomi.designsystem.component.NomiTextField
 import ai.nomi.designsystem.icon.NomiIcon
 import ai.nomi.designsystem.icon.NomiIcons
 import ai.nomi.designsystem.layout.NomiPage
@@ -20,6 +21,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,7 +53,7 @@ fun ChatsScreen(
     ChatsContent(chats, refreshing, viewModel::refresh, onOpenChat, modifier, selectedId)
 }
 
-/** `chats/+page.svelte`: the display title, then the chats as rows in one panel. */
+/** `chats/+page.svelte`: the display title, search filter, then the chats as rows in one panel. */
 @Composable
 fun ChatsContent(
     chats: List<Session>?,
@@ -59,6 +64,15 @@ fun ChatsContent(
     selectedId: String? = null,
     nowMs: Long = Clock.System.now().toEpochMilliseconds(),
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val filtered = remember(chats, query) {
+        val needle = query.trim().lowercase()
+        if (chats == null || needle.isEmpty()) chats
+        else chats.filter {
+            it.title.lowercase().contains(needle) || it.lastMessagePreview.lowercase().contains(needle)
+        }
+    }
+
     NomiPage(
         title = "Chats",
         modifier = modifier.testTag(CHATS_SCREEN_TAG),
@@ -73,18 +87,35 @@ fun ChatsContent(
         when {
             chats == null -> NomiLoadingIndicator(Modifier.align(Alignment.CenterHorizontally), contentDescription = "Loading chats")
             chats.isEmpty() -> Text("No chats yet.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else -> NomiListPanel(Modifier.padding(bottom = ListBottomPadding)) {
-                LazyColumn(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)) {
-                    items(chats, key = { it.id }) { session ->
-                        NomiRow(
-                            title = session.title.ifEmpty { UNTITLED_CHAT },
-                            line = session.lastMessagePreview.ifBlank { NO_MESSAGES },
-                            meta = timeAgo(session.updatedAt, nowMs),
-                            emphasized = session.unread,
-                            selected = session.id == selectedId,
-                            onClick = { onOpenChat(session.id) },
-                            leading = { AgentShape(NomiIdentity, RowAvatar) },
-                        )
+            else -> {
+                NomiTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = "Search",
+                    placeholder = "Search chats…",
+                )
+                val shown = filtered.orEmpty()
+                if (shown.isEmpty()) {
+                    Text(
+                        "No chats matching \"$query\".",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    NomiListPanel(Modifier.padding(bottom = ListBottomPadding)) {
+                        LazyColumn(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)) {
+                            items(shown, key = { it.id }) { session ->
+                                NomiRow(
+                                    title = session.title.ifEmpty { UNTITLED_CHAT },
+                                    line = session.lastMessagePreview.ifBlank { NO_MESSAGES },
+                                    meta = timeAgo(session.updatedAt, nowMs),
+                                    emphasized = session.unread,
+                                    selected = session.id == selectedId,
+                                    onClick = { onOpenChat(session.id) },
+                                    leading = { AgentShape(NomiIdentity, RowAvatar) },
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -3,12 +3,17 @@ package ai.nomi.network
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 private const val PROFILE_PATH = "/api/profile"
 private const val CREW_PATH = "/api/agents"
+private const val PREFERENCES_PATH = "/api/preferences"
 
 /** `ProfileResponse` in routes/profile.rs. */
 @Serializable
@@ -17,6 +22,20 @@ data class ProfileDto(
     val username: String? = null,
     val email: String,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+)
+
+/** Subset of `PreferencesResponse` in routes/profile.rs used by the native shell. */
+@Serializable
+data class PreferencesDto(
+    val theme: String = "system",
+    @SerialName("accent_color") val accentColor: String = "canopy",
+)
+
+/** `UpdatePreferencesRequest` in routes/profile.rs. */
+@Serializable
+data class UpdatePreferencesDto(
+    val theme: String? = null,
+    @SerialName("accent_color") val accentColor: String? = null,
 )
 
 /**
@@ -39,16 +58,34 @@ data class CrewMemberDto(
 @Serializable
 internal data class CrewResponse(val agents: List<CrewMemberDto>)
 
-/** `/api/profile` and `/api/agents`: who the person is and their crew, for Home. */
+/** `/api/profile`, `/api/agents` and `/api/preferences`: who the person is, their crew, and their appearance choices. */
 interface HomeApi {
     suspend fun profile(): ProfileDto
     suspend fun crew(): List<CrewMemberDto>
+    suspend fun preferences(): PreferencesDto = PreferencesDto()
+    suspend fun updatePreferences(request: UpdatePreferencesDto): PreferencesDto = PreferencesDto(
+        theme = request.theme ?: "system",
+        accentColor = request.accentColor ?: "canopy",
+    )
 }
 
 class HttpHomeApi(private val client: HttpClient, private val config: ApiConfig) : HomeApi {
     override suspend fun profile(): ProfileDto = get(PROFILE_PATH, "profile")
 
     override suspend fun crew(): List<CrewMemberDto> = get<CrewResponse>(CREW_PATH, "crew").agents
+
+    override suspend fun preferences(): PreferencesDto = get(PREFERENCES_PATH, "preferences")
+
+    override suspend fun updatePreferences(request: UpdatePreferencesDto): PreferencesDto {
+        val response = client.put(config.url(PREFERENCES_PATH)) {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess()) {
+            throw ApiException(response.status.value, "update preferences failed (${response.status.value})")
+        }
+        return response.body()
+    }
 
     private suspend inline fun <reified T> get(path: String, what: String): T {
         val response = client.get(config.url(path))

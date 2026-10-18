@@ -1,8 +1,11 @@
 package ai.nomi.app.di
 
+import ai.nomi.companion.CompanionController
 import ai.nomi.data.ActivityRepository
+import ai.nomi.data.AppearanceRepository
 import ai.nomi.data.AuthRepository
 import ai.nomi.data.ChatRepository
+import ai.nomi.data.CompanionPreferences
 import ai.nomi.data.DefaultAuthRepository
 import ai.nomi.data.EpochClock
 import ai.nomi.data.ForegroundChat
@@ -87,12 +90,15 @@ val coreModule: Module = module {
     single<NomiDatabase> { get<DatabaseFactory>().create() }
     // The signed-in account's work (a child of AppScope); SessionGate opens it at sign-in and closes it before the wipe.
     single { SessionScope(get(AppScope)) }
+    single { AppearanceRepository(get(), get(), log = ::appLog) }
+    single { CompanionPreferences() }
     single { SessionRepository(get(), get(), get(), get()) }
     single { NotificationRepository(get(), get(), get(), get()) }
     single { ActivityRepository(get(), get()) }
     single { ForegroundChat() }
     single { ChatRepository(get(), get(), get(), get(), session = get(), clock = get(), log = ::appLog) }
     single { RealtimeSync(get(), get(), get(), get(), get(), session = get(), log = ::appLog) }
+    single { CompanionController(get(AppScope), get(), get(), get(), log = ::appLog) }
     single {
         val database = get<NomiDatabase>()
         SessionGate(
@@ -114,7 +120,7 @@ val featureModule: Module = module {
     viewModel { ChatsViewModel(get(), log = ::appLog) }
     viewModel { (sessionId: String) -> ChatViewModel(sessionId, get(), get(), get(), log = ::appLog) }
     viewModel { NotificationsViewModel(get(), log = ::appLog) }
-    viewModel { SettingsViewModel(get(), get(), log = ::appLog) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), log = ::appLog) }
 }
 
 fun appModules(platformModule: Module): List<Module> = listOf(platformModule, coreModule, featureModule)

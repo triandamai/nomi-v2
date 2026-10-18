@@ -14,6 +14,10 @@ dependencies {
     implementation(projects.shared.app)
     implementation(compose.desktop.currentOs)
     implementation(libs.coroutines.swing)
+    implementation(libs.jna.platform)
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit4)
+    testImplementation(libs.coroutines.test)
 }
 
 compose.desktop {
@@ -24,6 +28,13 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Nomi"
             packageVersion = providers.gradleProperty("nomi.versionName").get()
+
+            macOS {
+                bundleID = "ai.nomi.app"
+                infoPlist {
+                    extraKeysRawXml = "<key>LSUIElement</key><true/>"
+                }
+            }
         }
     }
 }
