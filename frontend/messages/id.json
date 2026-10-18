@@ -2029,5 +2029,15 @@
 	"away_connect": "{who} butuh kamu menghubungkan akun di “{title}”",
 	"away_open": "Buka",
 	"away_answer": "Jawab",
-	"away_review": "Tinjau"
+	"away_review": "Tinjau",
+	"recents_title": "Terbaru",
+	"recents_nav_label": "Obrolan terbaru",
+	"recents_loading": "Memuat obrolan terbaru",
+	"recents_empty": "Belum ada obrolan terbaru",
+	"recents_error": "Obrolan terbaru gagal dimuat.",
+	"recents_see_all": "Semua obrolan",
+	"recents_pref_title": "Obrolan terbaru",
+	"recents_pref_hint": "Obrolan terakhirmu, ditampilkan di bawah menu.",
+	"recents_pref_limit": "Jumlah yang ditampilkan",
+	"recents_save_failed": "Obrolan terbaru gagal disimpan. Coba lagi."
 }

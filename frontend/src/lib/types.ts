@@ -368,6 +368,9 @@ export interface Preferences {
 	home_layout?: string | null;
 	/** The animated crew background behind chats and the Stage home (on unless turned off). */
 	animated_backdrop?: boolean;
+	/** Recent chats listed in the drawer (on unless turned off), and how many (see $lib/drawerRecents). */
+	drawer_recents?: boolean;
+	drawer_recents_limit?: number;
 }
 
 export interface ProjectSummary {

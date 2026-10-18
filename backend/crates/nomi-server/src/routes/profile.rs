@@ -295,7 +295,14 @@ pub struct PreferencesResponse {
     pub home_layout: Option<String>,
     /// The animated crew background behind chats and the Stage home.
     pub animated_backdrop: bool,
+    /// Recent chats listed in the navigation drawer, and how many.
+    pub drawer_recents: bool,
+    pub drawer_recents_limit: i16,
 }
+
+/// How many recent chats the drawer lists until the person picks another of the allowed sizes.
+const DEFAULT_DRAWER_RECENTS_LIMIT: i16 = 10;
+const DRAWER_RECENTS_LIMITS: [i16; 4] = [5, 10, 15, 20];
 
 #[tracing::instrument(skip(state, claims))]
 pub async fn get_preferences(
@@ -303,9 +310,9 @@ pub async fn get_preferences(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<PreferencesResponse>, (StatusCode, &'static str)> {
     #[allow(clippy::type_complexity)]
-    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<Vec<String>>, Option<String>, Option<bool>)> =
+    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<Vec<String>>, Option<String>, Option<bool>, Option<bool>, Option<i16>)> =
         sqlx::query_as(
-            "SELECT theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop FROM user_preferences WHERE user_id = $1",
+            "SELECT theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit FROM user_preferences WHERE user_id = $1",
         )
             .bind(claims.sub)
             .fetch_optional(&state.pool)
@@ -315,8 +322,8 @@ pub async fn get_preferences(
                 (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences")
             })?;
 
-    let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop) =
-        row.unwrap_or((None, None, None, None, None, None, None));
+    let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit) =
+        row.unwrap_or((None, None, None, None, None, None, None, None, None));
     Ok(Json(PreferencesResponse {
         theme: theme.unwrap_or_else(|| "system".to_string()),
         accent_color: accent_color.unwrap_or_else(|| "canopy".to_string()),
@@ -326,6 +333,8 @@ pub async fn get_preferences(
         drawer_pins,
         home_layout,
         animated_backdrop: animated_backdrop.unwrap_or(true),
+        drawer_recents: drawer_recents.unwrap_or(true),
+        drawer_recents_limit: drawer_recents_limit.unwrap_or(DEFAULT_DRAWER_RECENTS_LIMIT),
     }))
 }
 
@@ -341,6 +350,8 @@ pub struct UpdatePreferencesRequest {
     pub drawer_pins: Option<Vec<String>>,
     pub home_layout: Option<String>,
     pub animated_backdrop: Option<bool>,
+    pub drawer_recents: Option<bool>,
+    pub drawer_recents_limit: Option<i16>,
 }
 
 /// A home layout is a slug the frontend knows (its layouts live in $lib/homeLayouts), so adding
@@ -393,6 +404,11 @@ pub async fn put_preferences(
             return Err((StatusCode::BAD_REQUEST, "drawer_pins can't list a feature twice"));
         }
     }
+    if let Some(limit) = req.drawer_recents_limit {
+        if !DRAWER_RECENTS_LIMITS.contains(&limit) {
+            return Err((StatusCode::BAD_REQUEST, "drawer_recents_limit must be 5, 10, 15 or 20"));
+        }
+    }
     if let Some(layout) = &req.home_layout {
         if !is_home_layout_slug(layout) {
             return Err((StatusCode::BAD_REQUEST, "home_layout must be a layout's slug"));
@@ -411,7 +427,7 @@ pub async fn put_preferences(
     })?;
 
     #[allow(clippy::type_complexity)]
-    let updated: Option<(String, String, String, String, Option<Vec<String>>, Option<String>, Option<bool>)> = sqlx::query_as(
+    let updated: Option<(String, String, String, String, Option<Vec<String>>, Option<String>, Option<bool>, Option<bool>, Option<i16>)> = sqlx::query_as(
         "UPDATE user_preferences SET \
             theme = COALESCE($2, theme), \
             accent_color = COALESCE($3, accent_color), \
@@ -420,9 +436,11 @@ pub async fn put_preferences(
             drawer_pins = COALESCE($6, drawer_pins), \
             home_layout = COALESCE($7, home_layout), \
             animated_backdrop = COALESCE($8, animated_backdrop), \
+            drawer_recents = COALESCE($9, drawer_recents), \
+            drawer_recents_limit = COALESCE($10, drawer_recents_limit), \
             updated_at = now() \
          WHERE user_id = $1 \
-         RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop",
+         RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit",
     )
     .bind(claims.sub)
     .bind(&req.theme)
@@ -432,6 +450,8 @@ pub async fn put_preferences(
     .bind(&req.drawer_pins)
     .bind(&req.home_layout)
     .bind(req.animated_backdrop)
+    .bind(req.drawer_recents)
+    .bind(req.drawer_recents_limit)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
@@ -439,12 +459,12 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop) = match updated {
+    let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit) = match updated {
         Some(row) => row,
         None => sqlx::query_as(
-            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop) \
-             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6, $7, $8) \
-             RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop",
+            "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit) \
+             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6, $7, $8, $9, $10) \
+             RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit",
         )
         .bind(claims.sub)
         .bind(&req.theme)
@@ -454,6 +474,8 @@ pub async fn put_preferences(
         .bind(&req.drawer_pins)
         .bind(&req.home_layout)
         .bind(req.animated_backdrop)
+        .bind(req.drawer_recents)
+        .bind(req.drawer_recents_limit)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
@@ -479,5 +501,7 @@ pub async fn put_preferences(
         drawer_pins,
         home_layout,
         animated_backdrop: animated_backdrop.unwrap_or(true),
+        drawer_recents: drawer_recents.unwrap_or(true),
+        drawer_recents_limit: drawer_recents_limit.unwrap_or(DEFAULT_DRAWER_RECENTS_LIMIT),
     }))
 }

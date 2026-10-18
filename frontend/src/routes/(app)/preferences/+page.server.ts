@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { isThemeName } from '$lib/appearance';
 import { isPinnable } from '$lib/drawerPins';
+import { parseRecentsForm } from '$lib/drawerRecents';
 import { isHomeLayoutId } from '$lib/homeLayouts';
 import { apiFetch } from '$lib/server/api';
 import { getLocale } from '$lib/paraglide/runtime';
@@ -89,6 +90,21 @@ export const actions: Actions = {
 		});
 		if (!response.ok) {
 			return fail(response.status, { error: m.err_save_preference() });
+		}
+		return { success: true };
+	},
+
+	updateRecents: async ({ request, cookies, fetch }) => {
+		const recents = parseRecentsForm(await request.formData());
+		if (!recents) {
+			return fail(400, { error: m.recents_save_failed() });
+		}
+		const response = await apiFetch(fetch, cookies, '/api/preferences', {
+			method: 'PUT',
+			body: JSON.stringify(recents),
+		});
+		if (!response.ok) {
+			return fail(response.status, { error: m.recents_save_failed() });
 		}
 		return { success: true };
 	},

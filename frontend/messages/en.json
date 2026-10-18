@@ -2029,5 +2029,15 @@
 	"away_connect": "{who} needs you to connect an account in “{title}”",
 	"away_open": "Open",
 	"away_answer": "Answer",
-	"away_review": "Review"
+	"away_review": "Review",
+	"recents_title": "Recents",
+	"recents_nav_label": "Recent chats",
+	"recents_loading": "Loading recent chats",
+	"recents_empty": "No recent chats",
+	"recents_error": "Couldn't load recent chats.",
+	"recents_see_all": "All chats",
+	"recents_pref_title": "Recent chats",
+	"recents_pref_hint": "Your latest chats, listed under the menu.",
+	"recents_pref_limit": "How many to show",
+	"recents_save_failed": "Couldn't save recent chats. Try again."
 }

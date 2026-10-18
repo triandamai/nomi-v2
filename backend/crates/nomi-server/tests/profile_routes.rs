@@ -420,3 +420,43 @@ async fn animated_backdrop_is_on_until_turned_off(pool: PgPool) {
     let (_, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(body["animated_backdrop"], false);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn drawer_recents_are_shown_ten_at_a_time_until_changed(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "rena@example.com").await;
+
+    let (_, body) = json_request(router.clone(), "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(body["drawer_recents"], true);
+    assert_eq!(body["drawer_recents_limit"], 10);
+
+    let change = json!({ "drawer_recents": false, "drawer_recents_limit": 5 });
+    let (status, body) = json_request(router.clone(), "PUT", "/api/preferences", change, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["drawer_recents"], false);
+    assert_eq!(body["drawer_recents_limit"], 5);
+
+    // Other preference saves leave them alone, and they're there on the next load.
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
+    assert_eq!(body["drawer_recents"], false);
+    assert_eq!(body["drawer_recents_limit"], 5);
+    let (_, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
+    assert_eq!(body["drawer_recents"], false);
+    assert_eq!(body["drawer_recents_limit"], 5);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn drawer_recents_limit_only_takes_the_offered_sizes(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "ari@example.com").await;
+
+    for limit in [5, 10, 15, 20] {
+        let (status, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "drawer_recents_limit": limit }), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "{limit}");
+        assert_eq!(body["drawer_recents_limit"], limit);
+    }
+    for limit in [0, 3, 11, 50, -5] {
+        let (status, _) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "drawer_recents_limit": limit }), Some(&token)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{limit}");
+    }
+}
