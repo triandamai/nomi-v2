@@ -46,3 +46,20 @@ pub enum StreamEnvelope {
     /// "expired", matching `agent_sessions.status`'s possible non-active values exactly.
     AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
 }
+
+/// Events on `user/{id}/stream`: what a person's apps hear about that isn't tied to a chat they
+/// have open — the inbox, and replies that landed in any of their chats.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum UserEvent {
+    NotificationCreated {
+        notification_id: Uuid,
+        /// The inbox category (`quota`, `deploy`, ...). On the wire it is `category`, because `kind` is the event tag.
+        #[serde(rename = "category")]
+        kind: String,
+        title: String,
+        body: String,
+        link: Option<String>,
+    },
+    ChatReply { session_id: Uuid, message_id: Uuid, preview: String },
+}

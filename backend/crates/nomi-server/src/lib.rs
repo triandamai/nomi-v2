@@ -12,6 +12,7 @@ pub mod reminders_worker;
 pub mod scheduler_worker;
 pub mod shipyard;
 pub mod sign_in_codes;
+pub mod user_events;
 mod tool_catalog_adapters;
 pub mod worker;
 

@@ -240,3 +240,29 @@ async fn client_topic_cap_excludes_the_user_topic(pool: PgPool) {
     send(&mut ws, json!({"op":"subscribe","topic":format!("chat:{one_more}")})).await;
     assert_eq!(next_json(&mut ws).await["type"], "denied");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn inbox_notification_reaches_the_user_topic(pool: PgPool) {
+    use nomi_server::notifications::{Kind, Notice};
+    let (base, ws_base) = spawn_app(pool.clone()).await;
+    let client = reqwest::Client::new();
+    let token = register_and_login(&client, &base, "rt-inbox@nomi.test").await;
+    let mut ws = connect(&ws_base, Some(&token)).await.unwrap();
+    let ready = next_json(&mut ws).await;
+    let user_id = Uuid::parse_str(ready["user_id"].as_str().unwrap()).unwrap();
+    nomi_server::user_events::init(nomi_test_support::TEST_MQTT_BROKER_HOST, nomi_test_support::TEST_MQTT_BROKER_PORT);
+
+    // The gateway's MQTT SUBSCRIBE is asynchronous, so send until the event shows up.
+    let deadline = tokio::time::Instant::now() + FRAME_TIMEOUT;
+    let ev = loop {
+        nomi_server::notifications::send_to_inbox(&pool, user_id, Notice { kind: Kind::Account, title: "Hello".into(), body: "B".into(), link: None }).await.unwrap();
+        if let Ok(Some(Ok(WsMessage::Text(t)))) = tokio::time::timeout(PUBLISH_RETRY_INTERVAL, ws.next()).await {
+            let v: Value = serde_json::from_str(&t).unwrap();
+            if v["type"] == "event" { break v; }
+        }
+        assert!(tokio::time::Instant::now() < deadline, "notification never arrived");
+    };
+    assert_eq!(ev["topic"], "user");
+    assert_eq!(ev["payload"]["kind"], "NotificationCreated");
+    assert_eq!(ev["payload"]["title"], "Hello");
+}
