@@ -33,6 +33,7 @@ const KOTLIN_INDENT = '    ';
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CSS_PATH = resolve(ROOT_DIR, 'frontend/src/lib/styles/material3.css');
 const SHAPES_PATH = resolve(ROOT_DIR, 'frontend/src/lib/components/m3/shapes.ts');
+const CREW_PATH = resolve(ROOT_DIR, 'frontend/src/lib/crewNames.ts');
 const OUT_PATH = resolve(
   ROOT_DIR,
   'native/shared/designsystem/src/commonMain/kotlin/ai/nomi/designsystem/generated/NomiTokens.kt',
@@ -76,6 +77,29 @@ const AGENT_LOOKS = {
   workspace: { shape: 'puffy7', tone: 'sky', motion: 'bounce' },
   health: { shape: 'burst16', tone: 'bloom', motion: 'pulse' },
 };
+
+// agentLook's matching order in shapes.ts: first rule that hits wins; 'contains' is a substring test
+// on the lowercased key, 'exact' an equality test. Mirror any change there.
+const AGENT_RULES = [
+  { kind: 'contains', needles: ['money', 'budget'], agent: 'money' },
+  { kind: 'contains', needles: ['cod'], agent: 'coding' },
+  { kind: 'contains', needles: ['plan'], agent: 'planning' },
+  { kind: 'contains', needles: ['personality', 'memory'], agent: 'personality' },
+  { kind: 'contains', needles: ['supervisor'], agent: 'supervisor' },
+  { kind: 'contains', needles: ['reminder'], agent: 'reminders' },
+  { kind: 'exact', needles: ['files'], agent: 'files' },
+  { kind: 'exact', needles: ['workspace'], agent: 'workspace' },
+  { kind: 'exact', needles: ['health'], agent: 'health' },
+];
+
+/** crewNames.ts CREW_NAMES -> { lowercased crew name: agent_type } (CREW_TYPE_BY_NAME). */
+export function parseCrewTypeByName(src) {
+  const body = /CREW_NAMES[^=]*=\s*\{([^}]*)\}/.exec(src);
+  if (!body) throw new Error('CREW_NAMES not found in crewNames.ts');
+  const out = {};
+  for (const [, type, name] of body[1].matchAll(/(\w+)\s*:\s*'([^']+)'/g)) out[name.toLowerCase()] = type;
+  return out;
+}
 
 // ------------------------------------------------------------------------------------- colour
 
@@ -416,6 +440,14 @@ export function emitKotlin(css = readFileSync(CSS_PATH, 'utf8'), shapesSrc = rea
   const specs = parseShapes(shapesSrc);
   const consts = parseShapeConstants(shapesSrc);
 
+  const crewTypeByName = parseCrewTypeByName(readFileSync(CREW_PATH, 'utf8'));
+  for (const rule of AGENT_RULES) if (!(rule.agent in AGENT_LOOKS)) throw new Error(`rule for unknown agent ${rule.agent}`);
+  for (const [name, type] of Object.entries(crewTypeByName)) {
+    if (type !== 'chitchat' && !(type in AGENT_LOOKS)) throw new Error(`crew ${name} -> ${type} has no look in AGENT_LOOKS`);
+  }
+  const agentRules = AGENT_RULES.map((r) => `AgentRule(${kString(r.kind)}, listOf(${r.needles.map(kString).join(', ')}), ${kString(r.agent)})`).join(',\n        ');
+  const crewMap = Object.entries(crewTypeByName).map(([n, t]) => `${kString(n)} to ${kString(t)}`).join(', ');
+
   for (const [agent, look] of Object.entries(AGENT_LOOKS)) {
     if (!(look.shape in specs)) throw new Error(`agent ${agent}: shape ${look.shape} is not in shapes.ts SPECS`);
     if (!(look.tone in gradients)) throw new Error(`agent ${agent}: tone ${look.tone} is not a gradient in material3.css`);
@@ -481,6 +513,9 @@ data class MotionSpec(val durationMs: Int, val x1: Float, val y1: Float, val x2:
 
 data class PolarSpec(val lobes: Int, val amplitude: Float, val phase: Float)
 
+/** One agentLook rule: [kind] is "contains" (substring of the lowercased key) or "exact". */
+data class AgentRule(val kind: String, val needles: List<String>, val agent: String)
+
 /** [family] is one of "brand" | "title" | "plain" | "mono"; sizes in sp (16px per rem), tracking in em. */
 data class TypeRole(val family: String, val weight: Int, val sizeSp: Float, val lineHeightSp: Float, val trackingEm: Float)
 
@@ -527,6 +562,14 @@ ${shapeEntries}
     val agentShape: Map<String, String> = mapOf(${agentShape})
     val agentTone: Map<String, String> = mapOf(${agentTone})
     val agentMotion: Map<String, String> = mapOf(${agentMotion})
+
+    /** agentLook's rules in shapes.ts order; the first match wins, no match is Nomi. */
+    val agentRules: List<AgentRule> = listOf(
+        ${agentRules},
+    )
+
+    /** crewNames.ts CREW_TYPE_BY_NAME: lowercased crew name to agent_type. */
+    val crewTypeByName: Map<String, String> = mapOf(${crewMap})
 }
 `;
 }

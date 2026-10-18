@@ -13,9 +13,12 @@ private const val EYE_RADIUS = 2.6f
 /** How far the eyes slide toward the look target, in 48-box units, at a full (−1..1) look. */
 const val EYE_MAX_OFFSET = 3.5f
 
+private const val LOOK_MIN = -1f
+private const val LOOK_MAX = 1f
+
 /** [lookAt] clamped to −1..1 on both axes; null means looking straight ahead. */
 fun clampLook(lookAt: Offset?): Offset =
-    if (lookAt == null) Offset.Zero else Offset(lookAt.x.coerceIn(-1f, 1f), lookAt.y.coerceIn(-1f, 1f))
+    if (lookAt == null) Offset.Zero else Offset(lookAt.x.coerceIn(LOOK_MIN, LOOK_MAX), lookAt.y.coerceIn(LOOK_MIN, LOOK_MAX))
 
 /** Draws the eyes in a box of the current draw size, shifted toward [look] (already clamped, −1..1). */
 fun DrawScope.drawNomiFace(color: Color, look: Offset) {

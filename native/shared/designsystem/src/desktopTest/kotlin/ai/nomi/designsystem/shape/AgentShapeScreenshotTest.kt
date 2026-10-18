@@ -58,7 +58,7 @@ class AgentShapeScreenshotTest {
         Row(Modifier.background(androidx.compose.ui.graphics.Color.White).padding(Gap), horizontalArrangement = Arrangement.spacedBy(Gap)) {
             ShapeMotion.entries.forEach { motion ->
                 val identity = agentIdentity("x", AgentIdentity("cookie9", "dusk", motion))
-                AgentShapeFrame(identity, Cell * 3, motionFrame(motion, WORKING_FRAME_MS), face = true, look = Offset.Zero)
+                AgentShapeFrame(identity, Cell * 3, { motionFrame(motion, WORKING_FRAME_MS) }, face = true, look = Offset.Zero)
             }
         }
     }

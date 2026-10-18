@@ -52,6 +52,9 @@ data class MotionSpec(val durationMs: Int, val x1: Float, val y1: Float, val x2:
 
 data class PolarSpec(val lobes: Int, val amplitude: Float, val phase: Float)
 
+/** One agentLook rule: [kind] is "contains" (substring of the lowercased key) or "exact". */
+data class AgentRule(val kind: String, val needles: List<String>, val agent: String)
+
 /** [family] is one of "brand" | "title" | "plain" | "mono"; sizes in sp (16px per rem), tracking in em. */
 data class TypeRole(val family: String, val weight: Int, val sizeSp: Float, val lineHeightSp: Float, val trackingEm: Float)
 
@@ -1169,4 +1172,20 @@ object NomiShapeSpecs {
     val agentShape: Map<String, String> = mapOf("Nomi" to "cookie9", "money" to "sunny8", "coding" to "cookie6", "planning" to "clover4", "personality" to "flower5", "supervisor" to "sunny12", "reminders" to "clover3", "files" to "soft-square", "workspace" to "puffy7", "health" to "burst16")
     val agentTone: Map<String, String> = mapOf("Nomi" to "glow", "money" to "ember", "coding" to "tide", "planning" to "sky", "personality" to "bloom", "supervisor" to "dusk", "reminders" to "citrus", "files" to "slate", "workspace" to "sky", "health" to "bloom")
     val agentMotion: Map<String, String> = mapOf("Nomi" to "spin", "money" to "spin", "coding" to "spin", "planning" to "spin", "personality" to "spin", "supervisor" to "orbit", "reminders" to "pulse", "files" to "wobble", "workspace" to "bounce", "health" to "pulse")
+
+    /** agentLook's rules in shapes.ts order; the first match wins, no match is Nomi. */
+    val agentRules: List<AgentRule> = listOf(
+        AgentRule("contains", listOf("money", "budget"), "money"),
+        AgentRule("contains", listOf("cod"), "coding"),
+        AgentRule("contains", listOf("plan"), "planning"),
+        AgentRule("contains", listOf("personality", "memory"), "personality"),
+        AgentRule("contains", listOf("supervisor"), "supervisor"),
+        AgentRule("contains", listOf("reminder"), "reminders"),
+        AgentRule("exact", listOf("files"), "files"),
+        AgentRule("exact", listOf("workspace"), "workspace"),
+        AgentRule("exact", listOf("health"), "health"),
+    )
+
+    /** crewNames.ts CREW_TYPE_BY_NAME: lowercased crew name to agent_type. */
+    val crewTypeByName: Map<String, String> = mapOf("nomi" to "chitchat", "dana" to "money", "kala" to "reminders", "maya" to "files", "rena" to "planning", "koda" to "coding", "tara" to "workspace", "raga" to "health")
 }

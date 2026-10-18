@@ -73,4 +73,27 @@ class PolarShapeTest {
         val own = AgentIdentity("pill", "bloom", ShapeMotion.Bounce)
         assertEquals(own, agentIdentity("anything", own))
     }
+
+    @Test fun matchingFollowsTheWebRuleOrder() {
+        // collisions found in review: each must resolve exactly as shapes.ts agentLook does
+        assertEquals(NomiIdentity, agentIdentity("workspace_files"))
+        assertEquals(NomiIdentity, agentIdentity("healthcare"))
+        assertEquals("sunny8", agentIdentity("budget_reminders").shape)
+        assertEquals("clover4", agentIdentity("reminders_planner").shape)
+    }
+
+    @Test fun everyAgentHasAPlainMatch() {
+        mapOf(
+            "money" to "sunny8", "budget" to "sunny8", "coding" to "cookie6", "planning" to "clover4",
+            "personality" to "flower5", "memory" to "flower5", "supervisor" to "sunny12", "reminders" to "clover3",
+            "files" to "soft-square", "workspace" to "puffy7", "health" to "burst16", "chitchat" to "cookie9",
+        ).forEach { (agent, shape) -> assertEquals(shape, agentIdentity(agent).shape, agent) }
+    }
+
+    @Test fun crewNamesResolveToTheirAgent() {
+        assertEquals(agentIdentity("money"), agentIdentity("Dana"))
+        assertEquals(agentIdentity("reminders"), agentIdentity("Kala"))
+        assertEquals(agentIdentity("health"), agentIdentity("raga"))
+        assertEquals(NomiIdentity, agentIdentity("Nomi"))
+    }
 }

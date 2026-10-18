@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 private const val TOLERANCE = 1e-3f
+private const val FULL_TURN_DEG = 360f
 private const val HALF_SPIN_DEG = 180f
 private const val WOBBLE_EXTREME_DEG = 14f
 
@@ -16,11 +17,13 @@ class MotionTest {
             ShapeMotion.Wobble to WOBBLE_PERIOD_MS,
             ShapeMotion.Bounce to BOUNCE_PERIOD_MS,
             ShapeMotion.Pulse to PULSE_PERIOD_MS,
+            ShapeMotion.Orbit to ORBIT_SPIN_PERIOD_MS,
         ).forEach { (m, period) ->
             val a = motionFrame(m, 0)
             val b = motionFrame(m, period)
             assertEquals(a.scaleX, b.scaleX, TOLERANCE, "$m scale")
-            assertEquals(a.rotationDeg, b.rotationDeg, TOLERANCE, "$m rotation")
+            assertEquals(a.rotationDeg % FULL_TURN_DEG, b.rotationDeg % FULL_TURN_DEG, TOLERANCE, "$m rotation")
+            assertEquals(a.translateXFraction, b.translateXFraction, TOLERANCE, "$m translate")
         }
     }
 

@@ -48,7 +48,11 @@ private const val HALF = 0.5f
 private const val THREE_QUARTERS = 0.75f
 
 // CSS ease-in-out, the orbit's translate timing.
-private val EaseInOut: Easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+private const val EASE_IN_OUT_X1 = 0.42f
+private const val EASE_IN_OUT_Y1 = 0f
+private const val EASE_IN_OUT_X2 = 0.58f
+private const val EASE_IN_OUT_Y2 = 1f
+private val EaseInOut: Easing = CubicBezierEasing(EASE_IN_OUT_X1, EASE_IN_OUT_Y1, EASE_IN_OUT_X2, EASE_IN_OUT_Y2)
 
 /** (fraction of the period, value) stops; each segment eases with the easing of the stop it starts from. */
 private class Keyframes(val stops: List<Pair<Float, Float>>, val easing: Easing) {

@@ -15,7 +15,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.animation.core.snap
 import androidx.compose.ui.Modifier
@@ -27,7 +26,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 
 
-private const val DEFAULT_TONE = "glow"
 private const val START_MS = 0L
 
 /**
@@ -45,20 +43,24 @@ fun AgentShape(
     modifier: Modifier = Modifier,
 ) {
     val animate = working && !NomiTheme.reducedMotion
-    var elapsedMs by remember { mutableLongStateOf(START_MS) }
+    val elapsedMs = remember { mutableLongStateOf(START_MS) }
     if (animate) {
         LaunchedEffect(identity.motion) {
             val start = withFrameMillis { it }
-            while (true) withFrameMillis { elapsedMs = it - start }
+            while (true) withFrameMillis { elapsedMs.longValue = it - start }
         }
     }
-    val frame = if (animate) motionFrame(identity.motion, elapsedMs) else MotionFrame.Rest
     val look by animateOffsetAsState(
         targetValue = clampLook(lookAt),
         animationSpec = if (NomiTheme.reducedMotion) snap() else NomiMotionTokens.spatialDefault.toTween(),
         label = "nomi-look",
     )
-    AgentShapeFrame(identity, size, frame, face, look, modifier)
+    // Elapsed time is read inside graphicsLayer, so each frame re-draws instead of recomposing.
+    AgentShapeFrame(
+        identity, size,
+        frame = { if (animate) motionFrame(identity.motion, elapsedMs.longValue) else MotionFrame.Rest },
+        face = face, look = look, modifier = modifier,
+    )
 }
 
 /** The stateless drawing of an [AgentShape] at one [frame]; also what screenshot tests render at a fixed time. */
@@ -66,14 +68,14 @@ fun AgentShape(
 internal fun AgentShapeFrame(
     identity: AgentIdentity,
     size: Dp,
-    frame: MotionFrame,
+    frame: () -> MotionFrame,
     face: Boolean,
     look: Offset,
     modifier: Modifier = Modifier,
 ) {
     val spec = NomiShapeSpecs.all[identity.shape] ?: NomiShapeSpecs.all.getValue(NomiIdentity.shape)
     val shape = remember(spec) { PolarShape(spec) }
-    val gradient: GradientSpec = NomiTheme.gradients.all[identity.tone] ?: NomiTheme.gradients.all.getValue(DEFAULT_TONE)
+    val gradient: GradientSpec = NomiTheme.gradients.all[identity.tone] ?: NomiTheme.gradients.all.getValue(NomiIdentity.tone)
     val brush = remember(gradient) { gradient.toFittedBrush() }
     val eyes = Color(gradient.onColor)
     val sizePx = with(LocalDensity.current) { size.toPx() }
@@ -81,6 +83,7 @@ internal fun AgentShapeFrame(
         modifier
             .size(size)
             .graphicsLayer {
+                val frame = frame()
                 rotationZ = frame.rotationDeg
                 scaleX = frame.scaleX
                 scaleY = frame.scaleY

@@ -149,3 +149,9 @@ test('corners and bubble shapes parse', () => {
   assert.equal(t.corners.none, 0);
   assert.deepEqual(t.bubbles.start, [28, 28, 28, 8]);
 });
+
+import { parseCrewTypeByName } from './gen-tokens.mjs';
+test('crew names invert to agent types, lowercased', () => {
+  const m = parseCrewTypeByName(`export const CREW_NAMES: Record<string, string> = {\n\tchitchat: 'Nomi',\n\tmoney: 'Dana',\n};`);
+  assert.deepEqual(m, { nomi: 'chitchat', dana: 'money' });
+});

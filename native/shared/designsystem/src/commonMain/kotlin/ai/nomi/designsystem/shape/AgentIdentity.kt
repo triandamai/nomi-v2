@@ -29,19 +29,21 @@ private val identities: Map<String, AgentIdentity> = NomiShapeSpecs.agentShape.m
     )
 }
 
-/** The web matches by substring ("budget" is money, "memory" is personality); these are the extra needles. */
-private val aliases = mapOf("budget" to "money", "memory" to "personality", "reminder" to "reminders", "cod" to "coding", "plan" to "planning")
-
 val NomiIdentity: AgentIdentity = identities.getValue(NOMI)
 
+private const val KIND_EXACT = "exact"
+
 /**
- * The look of an agent_type: a [dynamic] agent wears its own backend-chosen (shape, tone, motion);
- * the built-in crew is matched like the web's agentLook; anything unrecognised (chitchat included) is Nomi.
+ * The look of an agent_type or crew display name, resolved exactly as the web's agentLook: crew names map to
+ * their agent_type, then NomiShapeSpecs.agentRules apply in order (first hit wins). A [dynamic] agent wears
+ * its own backend-chosen (shape, tone, motion); anything unrecognised (chitchat included) is Nomi.
  */
 fun agentIdentity(agentType: String, dynamic: AgentIdentity? = null): AgentIdentity {
     if (dynamic != null) return dynamic
-    val key = agentType.lowercase()
-    val agent = identities.keys.firstOrNull { it != NOMI && key.contains(it.lowercase()) }
-        ?: aliases.entries.firstOrNull { key.contains(it.key) }?.value
-    return identities[agent] ?: NomiIdentity
+    val lowered = agentType.lowercase()
+    val key = NomiShapeSpecs.crewTypeByName[lowered] ?: lowered
+    val rule = NomiShapeSpecs.agentRules.firstOrNull { r ->
+        r.needles.any { if (r.kind == KIND_EXACT) key == it else key.contains(it) }
+    }
+    return identities[rule?.agent] ?: NomiIdentity
 }
