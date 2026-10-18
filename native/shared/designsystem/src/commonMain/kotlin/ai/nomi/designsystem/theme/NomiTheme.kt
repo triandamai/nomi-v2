@@ -36,6 +36,8 @@ private val LocalMetaStyle = staticCompositionLocalOf<TextStyle> {
     error("NomiTheme { } is missing from the composition")
 }
 
+private val LocalReducedMotion = staticCompositionLocalOf { false }
+
 private val LocalBubbleShapes = staticCompositionLocalOf<NomiBubbleShapes> {
     error("NomiTheme { } is missing from the composition")
 }
@@ -45,6 +47,9 @@ object NomiTheme {
     val gradients: NomiGradientSet @Composable @ReadOnlyComposable get() = LocalGradients.current
     val extendedColors: NomiExtendedColors @Composable @ReadOnlyComposable get() = LocalExtendedColors.current
     val metaStyle: TextStyle @Composable @ReadOnlyComposable get() = LocalMetaStyle.current
+
+    /** True when the person asked for less motion: decorative loops (agent working motions) stay still. */
+    val reducedMotion: Boolean @Composable @ReadOnlyComposable get() = LocalReducedMotion.current
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -80,6 +85,7 @@ fun NomiTheme(
         LocalExtendedColors provides extended,
         LocalMetaStyle provides metaStyle,
         LocalBubbleShapes provides bubbles,
+        LocalReducedMotion provides reducedMotion,
     ) {
         MaterialExpressiveTheme(
             colorScheme = roles.toColorScheme(),

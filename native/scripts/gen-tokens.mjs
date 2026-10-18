@@ -63,13 +63,18 @@ const TYPESCALE_FIELDS = ['font', 'weight', 'size', 'line-height', 'tracking'];
 const CORNER_SIDES = 4; // top-left, top-right, bottom-right, bottom-left (CSS order)
 
 // Kotlin-side agent identity table (see agentLook in shapes.ts: it is substring matching code,
-// not a table, so the five canonical agents are pinned here and checked against SPECS/gradients).
+// not a table, so the canonical agents are pinned here and checked against SPECS/gradients).
 const AGENT_LOOKS = {
-  Nomi: { shape: 'cookie9', tone: 'glow' },
-  money: { shape: 'sunny8', tone: 'ember' },
-  coding: { shape: 'cookie6', tone: 'tide' },
-  planning: { shape: 'clover4', tone: 'sky' },
-  personality: { shape: 'flower5', tone: 'bloom' },
+  Nomi: { shape: 'cookie9', tone: 'glow', motion: 'spin' },
+  money: { shape: 'sunny8', tone: 'ember', motion: 'spin' },
+  coding: { shape: 'cookie6', tone: 'tide', motion: 'spin' },
+  planning: { shape: 'clover4', tone: 'sky', motion: 'spin' },
+  personality: { shape: 'flower5', tone: 'bloom', motion: 'spin' },
+  supervisor: { shape: 'sunny12', tone: 'dusk', motion: 'orbit' },
+  reminders: { shape: 'clover3', tone: 'citrus', motion: 'pulse' },
+  files: { shape: 'soft-square', tone: 'slate', motion: 'wobble' },
+  workspace: { shape: 'puffy7', tone: 'sky', motion: 'bounce' },
+  health: { shape: 'burst16', tone: 'bloom', motion: 'pulse' },
 };
 
 // ------------------------------------------------------------------------------------- colour
@@ -447,6 +452,7 @@ export function emitKotlin(css = readFileSync(CSS_PATH, 'utf8'), shapesSrc = rea
     .join('\n');
   const agentShape = Object.entries(AGENT_LOOKS).map(([a, l]) => `${kString(a)} to ${kString(l.shape)}`).join(', ');
   const agentTone = Object.entries(AGENT_LOOKS).map(([a, l]) => `${kString(a)} to ${kString(l.tone)}`).join(', ');
+  const agentMotion = Object.entries(AGENT_LOOKS).map(([a, l]) => `${kString(a)} to ${kString(l.motion)}`).join(', ');
 
   const typescaleVals = Object.entries(typescale)
     .map(
@@ -520,6 +526,7 @@ ${shapeEntries}
 
     val agentShape: Map<String, String> = mapOf(${agentShape})
     val agentTone: Map<String, String> = mapOf(${agentTone})
+    val agentMotion: Map<String, String> = mapOf(${agentMotion})
 }
 `;
 }

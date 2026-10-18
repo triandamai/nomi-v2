@@ -1166,6 +1166,7 @@ object NomiShapeSpecs {
         "pill" to PolarSpec(lobes = 2, amplitude = 0.17f, phase = 0.0f),
     )
 
-    val agentShape: Map<String, String> = mapOf("Nomi" to "cookie9", "money" to "sunny8", "coding" to "cookie6", "planning" to "clover4", "personality" to "flower5")
-    val agentTone: Map<String, String> = mapOf("Nomi" to "glow", "money" to "ember", "coding" to "tide", "planning" to "sky", "personality" to "bloom")
+    val agentShape: Map<String, String> = mapOf("Nomi" to "cookie9", "money" to "sunny8", "coding" to "cookie6", "planning" to "clover4", "personality" to "flower5", "supervisor" to "sunny12", "reminders" to "clover3", "files" to "soft-square", "workspace" to "puffy7", "health" to "burst16")
+    val agentTone: Map<String, String> = mapOf("Nomi" to "glow", "money" to "ember", "coding" to "tide", "planning" to "sky", "personality" to "bloom", "supervisor" to "dusk", "reminders" to "citrus", "files" to "slate", "workspace" to "sky", "health" to "bloom")
+    val agentMotion: Map<String, String> = mapOf("Nomi" to "spin", "money" to "spin", "coding" to "spin", "planning" to "spin", "personality" to "spin", "supervisor" to "orbit", "reminders" to "pulse", "files" to "wobble", "workspace" to "bounce", "health" to "pulse")
 }
