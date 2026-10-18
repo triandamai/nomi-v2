@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
@@ -18,7 +19,11 @@ pub struct AdminLlmModelResponse {
     pub model_id: String,
     pub base_url: Option<String>,
     pub is_default: bool,
+    /// The model's own key, masked; empty when it uses its connection's.
     pub api_key_masked: String,
+    /// The connected provider it comes from (Admin → Providers), and that connection's name.
+    pub connection_id: Option<Uuid>,
+    pub connection_label: Option<String>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
     pub cached_input_usd_per_mtok: Option<f64>,
@@ -37,9 +42,12 @@ pub struct AdminLlmModelResponse {
 fn to_response(
     model: llm_models::AdminLlmModel,
     settings_key: &[u8; 32],
+    connection_labels: &HashMap<Uuid, String>,
 ) -> Result<AdminLlmModelResponse, (StatusCode, &'static str)> {
-    let api_key = settings::crypto::decrypt(settings_key, &model.api_key_encrypted)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?;
+    let api_key = match &model.api_key_encrypted {
+        Some(encrypted) => settings::crypto::decrypt(settings_key, encrypted).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?,
+        None => String::new(),
+    };
     let media_support = crate::bootstrap::media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref()).as_list();
     Ok(AdminLlmModelResponse {
         id: model.id,
@@ -48,7 +56,9 @@ fn to_response(
         model_id: model.model_id,
         base_url: model.base_url,
         is_default: model.is_default,
-        api_key_masked: settings::mask_api_key(&api_key),
+        api_key_masked: if api_key.is_empty() { String::new() } else { settings::mask_api_key(&api_key) },
+        connection_label: model.connection_id.and_then(|id| connection_labels.get(&id).cloned()),
+        connection_id: model.connection_id,
         input_usd_per_mtok: model.input_usd_per_mtok,
         output_usd_per_mtok: model.output_usd_per_mtok,
         cached_input_usd_per_mtok: model.cached_input_usd_per_mtok,
@@ -58,6 +68,14 @@ fn to_response(
         media_inputs: model.media_inputs,
         enabled: model.enabled,
     })
+}
+
+/// The instance's connections by id, for naming where each model comes from.
+async fn connection_labels(state: &AppState) -> Result<HashMap<Uuid, String>, (StatusCode, &'static str)> {
+    let connections = settings::provider_connections::list_connections(&state.pool, settings::provider_connections::Scope::Admin)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load providers"))?;
+    Ok(connections.into_iter().map(|c| (c.id, c.label)).collect())
 }
 
 /// `None` (guess from the model id) or the kinds listed, each one of image, pdf, audio, video.
@@ -78,7 +96,8 @@ pub async fn list_admin_models(
     let models = llm_models::list_admin_llm_models(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?;
-    let responses = models.into_iter().map(|m| to_response(m, &state.settings_key)).collect::<Result<Vec<_>, _>>()?;
+    let labels = connection_labels(&state).await?;
+    let responses = models.into_iter().map(|m| to_response(m, &state.settings_key, &labels)).collect::<Result<Vec<_>, _>>()?;
     Ok(Json(responses))
 }
 
@@ -141,7 +160,7 @@ pub async fn create_admin_model(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create model"))?;
 
-    Ok((StatusCode::CREATED, Json(to_response(model, &state.settings_key)?)))
+    Ok((StatusCode::CREATED, Json(to_response(model, &state.settings_key, &connection_labels(&state).await?)?)))
 }
 
 #[derive(Deserialize)]
@@ -207,7 +226,7 @@ pub async fn update_admin_model(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update model"))?
     .ok_or((StatusCode::NOT_FOUND, "model not found"))?;
 
-    Ok(Json(to_response(model, &state.settings_key)?))
+    Ok(Json(to_response(model, &state.settings_key, &connection_labels(&state).await?)?))
 }
 
 pub async fn delete_admin_model(
@@ -323,8 +342,19 @@ pub async fn fetch_provider_models(
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load existing model".to_string()))?
                 .ok_or((StatusCode::NOT_FOUND, "model not found".to_string()))?;
-            settings::crypto::decrypt(&state.settings_key, &model.api_key_encrypted)
-                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key".to_string()))?
+            match (&model.api_key_encrypted, model.connection_id) {
+                (Some(encrypted), _) => settings::crypto::decrypt(&state.settings_key, encrypted)
+                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key".to_string()))?,
+                // No key of its own: list what its connection offers.
+                (None, Some(connection_id)) => {
+                    let config = crate::bootstrap::connection_model_config(&state.pool, &state.settings_key, settings::provider_connections::Scope::Admin, connection_id, String::new())
+                        .await
+                        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "failed to load the model's provider".to_string()))?;
+                    let models = nomi_llm::list_provider_models(config, state.http_client.clone()).await.map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+                    return Ok(Json(FetchProviderModelsResponse { models: models.into_iter().map(|m| FetchedModel { id: m.id, label: m.label }).collect() }));
+                }
+                (None, None) => return Err((StatusCode::BAD_REQUEST, "api_key is required to fetch models for this entry".to_string())),
+            }
         }
     };
 
