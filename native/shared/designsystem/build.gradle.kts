@@ -7,6 +7,7 @@ kotlin {
     sourceSets.commonMain.dependencies {
         api(projects.shared.core)
         api(libs.compose.material3)
+        api(libs.graphics.shapes)
         api(compose.components.resources)
     }
     sourceSets.named("desktopTest").configure {
