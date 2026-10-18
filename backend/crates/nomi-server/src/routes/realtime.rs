@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use tokio::sync::mpsc;
@@ -23,21 +24,56 @@ const BROKER_EVENT_CAPACITY: usize = 256;
 const MQTT_KEEP_ALIVE: Duration = Duration::from_secs(30);
 const MQTT_CHANNEL_CAPACITY: usize = 64;
 const CLOSE_BROKER_LOST: u16 = 1011;
+/// Private-range close code: the access token the socket was opened with has expired. The app
+/// reconnects with a fresh one.
+const CLOSE_TOKEN_EXPIRED: u16 = 4001;
 
 pub async fn realtime_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| run(socket, state, claims.sub))
+    let expires_in = token_time_left(claims.exp, chrono::Utc::now().timestamp());
+    ws.on_upgrade(move |socket| run(socket, state, claims.sub, expires_in))
 }
 
-async fn may_open(state: &AppState, user_id: Uuid, topic: Topic) -> bool {
-    match topic {
-        Topic::User(id) => id == user_id,
-        Topic::Chat(session_id) => crate::routes::sessions::authorize_session_access(&state.pool, user_id, session_id).await.is_ok(),
-        Topic::Project(project_id) => crate::routes::deploy::project_role(&state.pool, project_id, user_id).await.is_ok(),
+/// How long until a token whose `exp` is `exp` runs out, as of `now` (both unix seconds).
+fn token_time_left(exp: i64, now: i64) -> Duration {
+    Duration::from_secs(u64::try_from(exp - now).unwrap_or(0))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Access {
+    Granted,
+    /// The person may not open it (or it doesn't exist).
+    Denied,
+    /// The check itself failed server-side; it may well succeed later.
+    Unavailable,
+}
+
+fn access_from(result: Result<(), StatusCode>) -> Access {
+    match result {
+        Ok(()) => Access::Granted,
+        Err(status) if status.is_server_error() => Access::Unavailable,
+        Err(_) => Access::Denied,
     }
+}
+
+/// The reply to a subscribe that was not granted.
+fn refusal(access: Access, topic: String) -> ServerFrame {
+    match access {
+        Access::Unavailable => ServerFrame::Unavailable { topic },
+        Access::Granted | Access::Denied => ServerFrame::Denied { topic },
+    }
+}
+
+async fn access(state: &AppState, user_id: Uuid, topic: Topic) -> Access {
+    let result = match topic {
+        Topic::User(id) => if id == user_id { Ok(()) } else { Err(StatusCode::FORBIDDEN) },
+        Topic::Chat(session_id) => crate::routes::sessions::authorize_session_access(&state.pool, user_id, session_id).await.map_err(|(status, _)| status),
+        Topic::Project(project_id) => crate::routes::deploy::project_role(&state.pool, project_id, user_id).await.map(|_| ()).map_err(|(status, _)| status),
+    };
+    access_from(result)
 }
 
 async fn send(socket: &mut WebSocket, frame: &ServerFrame) -> bool {
@@ -64,7 +100,9 @@ fn echo(parsed: Option<Topic>, raw: String) -> String {
     parsed.map(|t| t.wire()).unwrap_or(raw)
 }
 
-async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid) {
+async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid, expires_in: Duration) {
+    let token_expiry = tokio::time::sleep(expires_in);
+    tokio::pin!(token_expiry);
     let mut options = MqttOptions::new(format!("realtime-gw-{}", Uuid::new_v4()), state.mqtt_broker_host.clone(), state.mqtt_broker_port);
     options.set_keep_alive(MQTT_KEEP_ALIVE);
     let (client, mut eventloop) = AsyncClient::new(options, MQTT_CHANNEL_CAPACITY);
@@ -100,6 +138,10 @@ async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid) {
 
     loop {
         tokio::select! {
+            () = &mut token_expiry => {
+                let _ = socket.send(Message::Close(Some(CloseFrame { code: CLOSE_TOKEN_EXPIRED, reason: "token expired".into() }))).await;
+                break;
+            }
             event = broker_rx.recv() => match event {
                 Some(BrokerEvent::Publish { topic, payload }) => {
                     let Some(topic) = Topic::from_mqtt(&topic) else { continue };
@@ -124,11 +166,14 @@ async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid) {
                         let parsed = Topic::parse_client(&name);
                         match parsed {
                             Some(topic) if topics.contains(&topic) => ServerFrame::Subscribed { topic: topic.wire() },
-                            Some(topic) if topics.len() - 1 < MAX_CLIENT_TOPICS_PER_SOCKET && may_open(&state, user_id, topic).await => {
-                                if client.subscribe(topic.mqtt_topic(), QoS::AtMostOnce).await.is_err() { break; }
-                                topics.insert(topic);
-                                ServerFrame::Subscribed { topic: topic.wire() }
-                            }
+                            Some(topic) if topics.len() - 1 < MAX_CLIENT_TOPICS_PER_SOCKET => match access(&state, user_id, topic).await {
+                                Access::Granted => {
+                                    if client.subscribe(topic.mqtt_topic(), QoS::AtMostOnce).await.is_err() { break; }
+                                    topics.insert(topic);
+                                    ServerFrame::Subscribed { topic: topic.wire() }
+                                }
+                                refused => refusal(refused, topic.wire()),
+                            },
                             _ => ServerFrame::Denied { topic: echo(parsed, name) },
                         }
                     }
@@ -143,5 +188,36 @@ async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid) {
                 if !send(&mut socket, &reply).await { break; }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn a_server_error_while_authorizing_is_unavailable_not_denied() {
+        assert_eq!(access_from(Err(StatusCode::INTERNAL_SERVER_ERROR)), Access::Unavailable);
+        assert_eq!(access_from(Err(StatusCode::SERVICE_UNAVAILABLE)), Access::Unavailable);
+    }
+
+    #[test]
+    fn not_found_and_forbidden_are_denied() {
+        assert_eq!(access_from(Err(StatusCode::NOT_FOUND)), Access::Denied);
+        assert_eq!(access_from(Err(StatusCode::FORBIDDEN)), Access::Denied);
+        assert_eq!(access_from(Ok(())), Access::Granted);
+    }
+
+    #[test]
+    fn refusals_map_to_their_frames() {
+        assert_eq!(refusal(Access::Unavailable, "chat:x".into()), ServerFrame::Unavailable { topic: "chat:x".into() });
+        assert_eq!(refusal(Access::Denied, "chat:x".into()), ServerFrame::Denied { topic: "chat:x".into() });
+    }
+
+    #[test]
+    fn time_left_on_a_token_never_goes_negative() {
+        assert_eq!(token_time_left(1_000, 990), Duration::from_secs(10));
+        assert_eq!(token_time_left(1_000, 1_500), Duration::ZERO);
     }
 }

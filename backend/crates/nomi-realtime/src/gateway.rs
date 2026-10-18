@@ -71,6 +71,8 @@ pub enum ServerFrame {
     Subscribed { topic: String },
     Unsubscribed { topic: String },
     Denied { topic: String },
+    /// Access could not be checked right now (a server-side failure, not a refusal): ask again later.
+    Unavailable { topic: String },
     Event { topic: String, payload: serde_json::Value },
     Error { message: String },
     Pong,
@@ -116,6 +118,12 @@ mod tests {
         assert!(matches!(f, ClientFrame::Subscribe { .. }));
         let f: ClientFrame = serde_json::from_str(r#"{"op":"ping"}"#).unwrap();
         assert_eq!(f, ClientFrame::Ping);
+    }
+
+    #[test]
+    fn unavailable_frame_names_the_topic() {
+        let frame = ServerFrame::Unavailable { topic: "chat:x".into() };
+        assert_eq!(serde_json::to_value(&frame).unwrap(), serde_json::json!({"type":"unavailable","topic":"chat:x"}));
     }
 
     #[test]

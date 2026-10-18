@@ -267,3 +267,32 @@ async fn inbox_notification_reaches_the_user_topic(pool: PgPool) {
     assert_eq!(ev["payload"]["kind"], "NotificationCreated");
     assert_eq!(ev["payload"]["title"], "Hello");
 }
+
+/// Long enough to read `ready`, short enough that the test does not drag.
+const SHORT_TOKEN_TTL_SECS: i64 = 2;
+const CLOSE_TOKEN_EXPIRED: u16 = 4001;
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn socket_closes_with_4001_when_its_token_expires(pool: PgPool) {
+    let (_, ws_base) = spawn_app(pool).await;
+    let claims = nomi_auth::claims::Claims::new(Uuid::new_v4(), Uuid::new_v4(), vec![], SHORT_TOKEN_TTL_SECS);
+    let token = claims.encode(SECRET).unwrap();
+    let mut ws = connect(&ws_base, Some(&token)).await.unwrap();
+    assert_eq!(next_json(&mut ws).await["type"], "ready");
+
+    let wait = FRAME_TIMEOUT + Duration::from_secs(SHORT_TOKEN_TTL_SECS as u64);
+    let close = tokio::time::timeout(wait, async {
+        loop {
+            match ws.next().await {
+                Some(Ok(WsMessage::Close(frame))) => break frame,
+                Some(Ok(_)) => continue,
+                other => panic!("socket ended without a close frame: {other:?}"),
+            }
+        }
+    })
+    .await
+    .expect("socket outlived its token");
+    let frame = close.expect("close frame carries a code");
+    assert_eq!(u16::from(frame.code), CLOSE_TOKEN_EXPIRED);
+    assert_eq!(frame.reason, "token expired");
+}

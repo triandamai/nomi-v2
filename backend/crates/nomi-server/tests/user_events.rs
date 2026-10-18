@@ -19,4 +19,5 @@ fn notification_event_wire_shape() {
     let v = serde_json::to_value(UserEvent::NotificationCreated { notification_id: id, kind: "quota".into(), title: "T".into(), body: "B".into(), link: None }).unwrap();
     assert_eq!(v["kind"], "NotificationCreated");
     assert_eq!(v["title"], "T");
+    assert_eq!(v["category"], "quota");
 }

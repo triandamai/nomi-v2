@@ -271,7 +271,7 @@ fn env_nonempty(name: &str) -> Option<String> {
 // ------------------------------------------------------------------------------------------------
 
 /// The fields of a Google service-account key file FCM needs.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ServiceAccount {
     pub client_email: String,
     pub private_key: String,
@@ -279,6 +279,18 @@ pub struct ServiceAccount {
     pub project_id: Option<String>,
     #[serde(default)]
     pub token_uri: Option<String>,
+}
+
+/// Debug output (logs, panics) never carries the private key.
+impl std::fmt::Debug for ServiceAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceAccount")
+            .field("client_email", &self.client_email)
+            .field("private_key", &"<redacted>")
+            .field("project_id", &self.project_id)
+            .field("token_uri", &self.token_uri)
+            .finish()
+    }
 }
 
 pub struct FcmSender {
@@ -776,5 +788,18 @@ mod tests {
 
         assert_eq!(PushMessage::chat_reply(None, Uuid::nil(), Uuid::nil(), "hi").title, CHAT_REPLY_FALLBACK_TITLE);
         assert_eq!(PushMessage::chat_reply(Some("  ".into()), Uuid::nil(), Uuid::nil(), "hi").title, CHAT_REPLY_FALLBACK_TITLE);
+    }
+
+    #[test]
+    fn a_service_account_debug_never_prints_the_private_key() {
+        let account = ServiceAccount {
+            client_email: "push@nomi.iam".into(),
+            private_key: "-----BEGIN PRIVATE KEY-----SECRET".into(),
+            project_id: Some("nomi-prod".into()),
+            token_uri: None,
+        };
+        let printed = format!("{account:?}");
+        assert!(!printed.contains("SECRET"), "{printed}");
+        assert!(printed.contains("push@nomi.iam"));
     }
 }
