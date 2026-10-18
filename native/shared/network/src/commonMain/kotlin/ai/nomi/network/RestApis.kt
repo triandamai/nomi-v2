@@ -5,6 +5,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
@@ -21,6 +22,8 @@ private const val PARAM_LIMIT = "limit"
 private const val PARAM_BEFORE = "before"
 private const val PARAM_FILTER = "filter"
 private const val PARAM_PAGE = "page"
+private const val DECISION_APPROVE = "approve"
+private const val DECISION_DENY = "deny"
 
 private fun messagesPath(sessionId: String) = "$SESSIONS_PATH/${sessionId.encodeURLPathPart()}/messages"
 
@@ -53,6 +56,12 @@ interface MessagesApi {
 
     /** Posts the person's message; the reply arrives over realtime. */
     suspend fun send(sessionId: String, text: String): SendMessageResponseDto
+
+    /**
+     * Decides a pending approval card (`PUT .../approval`, what the web's `resolveApproval` action proxies). The card
+     * flips over realtime (`MessageUpdated`) once the turn resumes; 409 means it is no longer pending.
+     */
+    suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean)
 }
 
 /** `/api/notifications`. */
@@ -90,6 +99,13 @@ class HttpMessagesApi(private val client: HttpClient, private val config: ApiCon
             contentType(ContentType.Application.Json)
             setBody(SendMessageRequest(text))
         }.bodyOrThrow("send message")
+
+    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
+        client.put(config.url("${messagesPath(sessionId)}/${messageId.encodeURLPathPart()}/approval")) {
+            contentType(ContentType.Application.Json)
+            setBody(ApprovalDecisionRequest(if (approve) DECISION_APPROVE else DECISION_DENY, remember))
+        }.ensureSuccess("resolve approval")
+    }
 }
 
 class HttpNotificationsApi(private val client: HttpClient, private val config: ApiConfig) : NotificationsApi {

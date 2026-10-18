@@ -75,6 +75,26 @@ class RestApisTest {
     }
 
     @Test
+    fun resolveApprovalPutsTheDecision() = runTest {
+        val engine = MockEngine { request ->
+            assertEquals(HttpMethod.Put, request.method)
+            assertEquals("/api/sessions/s1/messages/m2/approval", request.url.encodedPath)
+            assertEquals("""{"decision":"deny","remember":true}""", request.body.toByteArray().decodeToString())
+            respond("", HttpStatusCode.Accepted)
+        }
+        HttpMessagesApi(client(engine), config).resolveApproval("s1", "m2", approve = false, remember = true)
+    }
+
+    @Test
+    fun resolveApprovalNoLongerPendingThrowsTheStatus() = runTest {
+        val engine = MockEngine { respond("this action is no longer pending", HttpStatusCode.Conflict) }
+        val error = assertFailsWith<ApiException> {
+            HttpMessagesApi(client(engine), config).resolveApproval("s1", "m2", approve = true, remember = false)
+        }
+        assertEquals(HttpStatusCode.Conflict.value, error.status)
+    }
+
+    @Test
     fun latestPageOmitsBefore() = runTest {
         val engine = MockEngine { request ->
             assertNull(request.url.parameters["before"])

@@ -57,6 +57,7 @@ private fun NomiButtonSize.height(): Dp = when (this) {
 /**
  * M3 Expressive button: fully round at rest (half its height, a real length so the radius animates), corners tighten
  * on press. [NomiButtonVariant.Gradient] is the hero action in the theme's action gradient: use at most one per screen.
+ * [colors] replaces the variant's colours (e.g. a tertiary "ember" action on a tertiary card); Gradient ignores it.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -67,6 +68,7 @@ fun NomiButton(
     size: NomiButtonSize = NomiButtonSize.Small,
     enabled: Boolean = true,
     interactionSource: MutableInteractionSource? = null,
+    colors: ButtonColors? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
@@ -106,7 +108,7 @@ fun NomiButton(
         ) { ProvideTextStyle(textStyle) { content() } }
         return
     }
-    val colors: ButtonColors = when (variant) {
+    val variantColors: ButtonColors = colors ?: when (variant) {
         NomiButtonVariant.Filled, NomiButtonVariant.Gradient -> ButtonDefaults.buttonColors()
         NomiButtonVariant.Tonal -> ButtonDefaults.filledTonalButtonColors()
         NomiButtonVariant.Outlined -> ButtonDefaults.outlinedButtonColors()
@@ -115,10 +117,10 @@ fun NomiButton(
     }
     val styled: @Composable RowScope.() -> Unit = { ProvideTextStyle(textStyle) { content() } }
     when (variant) {
-        NomiButtonVariant.Tonal -> FilledTonalButton(onClick, shapes, common, enabled, colors, contentPadding = padding, interactionSource = source, content = styled)
-        NomiButtonVariant.Outlined -> OutlinedButton(onClick, shapes, common, enabled, colors, contentPadding = padding, interactionSource = source, content = styled)
-        NomiButtonVariant.Text -> TextButton(onClick, shapes, common, enabled, colors, contentPadding = padding, interactionSource = source, content = styled)
-        NomiButtonVariant.Elevated -> ElevatedButton(onClick, shapes, common, enabled, colors, contentPadding = padding, interactionSource = source, content = styled)
-        else -> Button(onClick, shapes, common, enabled, colors, contentPadding = padding, interactionSource = source, content = styled)
+        NomiButtonVariant.Tonal -> FilledTonalButton(onClick, shapes, common, enabled, variantColors, contentPadding = padding, interactionSource = source, content = styled)
+        NomiButtonVariant.Outlined -> OutlinedButton(onClick, shapes, common, enabled, variantColors, contentPadding = padding, interactionSource = source, content = styled)
+        NomiButtonVariant.Text -> TextButton(onClick, shapes, common, enabled, variantColors, contentPadding = padding, interactionSource = source, content = styled)
+        NomiButtonVariant.Elevated -> ElevatedButton(onClick, shapes, common, enabled, variantColors, contentPadding = padding, interactionSource = source, content = styled)
+        else -> Button(onClick, shapes, common, enabled, variantColors, contentPadding = padding, interactionSource = source, content = styled)
     }
 }

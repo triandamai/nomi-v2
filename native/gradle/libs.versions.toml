@@ -29,6 +29,7 @@ java-keyring = "1.0.4"
 roborazzi = "1.76.0"
 turbine = "1.2.1"
 junit4 = "4.13.2"
+markdown-renderer = "0.39.2"            # com.mikepenz; 0.40+ ships Java 21 bytecode, the toolchain here is 17
 
 [libraries]
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
@@ -69,6 +70,7 @@ java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 roborazzi-compose-desktop = { module = "io.github.takahirom.roborazzi:roborazzi-compose-desktop", version.ref = "roborazzi" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
+markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 
 # Gradle plugins, as dependencies of the build-logic convention plugins

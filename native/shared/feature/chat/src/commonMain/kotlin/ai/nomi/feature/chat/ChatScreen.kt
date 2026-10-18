@@ -10,10 +10,14 @@ import ai.nomi.designsystem.component.NomiLoadingIndicator
 import ai.nomi.designsystem.component.NomiSuggestionChip
 import ai.nomi.designsystem.icon.NomiIcon
 import ai.nomi.designsystem.icon.NomiIcons
+import ai.nomi.designsystem.shape.AgentIdentity
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.agentIdentity
 import ai.nomi.designsystem.theme.NomiTheme
+import ai.nomi.feature.chat.blocks.MessageBlocks
+import ai.nomi.feature.chat.blocks.parseContentBlocks
+import ai.nomi.feature.chat.markdown.NomiMarkdown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -110,6 +115,7 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier, onBack: 
     val chat by viewModel.chat.collectAsStateWithLifecycle()
     val composer by viewModel.composer.collectAsStateWithLifecycle()
     val title by viewModel.title.collectAsStateWithLifecycle()
+    val approvals by viewModel.approvals.collectAsStateWithLifecycle()
     LifecycleResumeEffect(viewModel) {
         viewModel.onVisible()
         onPauseOrDispose { viewModel.onHidden() }
@@ -123,6 +129,8 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier, onBack: 
         onSuggestion = viewModel::useSuggestion,
         onBack = onBack,
         modifier = modifier,
+        approvals = approvals,
+        onResolveApproval = viewModel::resolveApproval,
     )
 }
 
@@ -138,6 +146,8 @@ fun ChatContent(
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    approvals: Map<String, ApprovalState> = emptyMap(),
+    onResolveApproval: (messageId: String, approve: Boolean, remember: Boolean) -> Unit = { _, _, _ -> },
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).testTag(CHAT_SCREEN_TAG)) {
         val phone = maxWidth < PhoneBreakpoint
@@ -147,7 +157,7 @@ fun ChatContent(
                 when {
                     chat == null -> NomiLoadingIndicator(Modifier.align(Alignment.Center), contentDescription = "Loading messages")
                     chat.messages.isEmpty() && chat.draft == null && chat.activeAgent == null -> EmptyThread(onSuggestion, Modifier.align(Alignment.Center))
-                    else -> Thread(chat, timeZone)
+                    else -> Thread(chat, timeZone, approvals, onResolveApproval)
                 }
             }
             Column(
@@ -226,7 +236,12 @@ private fun agentName(agentType: String): String =
     else agentType.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
 @Composable
-private fun Thread(chat: ChatState, timeZone: TimeZone) {
+private fun Thread(
+    chat: ChatState,
+    timeZone: TimeZone,
+    approvals: Map<String, ApprovalState>,
+    onResolveApproval: (messageId: String, approve: Boolean, remember: Boolean) -> Unit,
+) {
     val items = chat.messages.map { ThreadItem.Stored(it) } +
         listOfNotNull(chat.draft?.let { ThreadItem.Streaming(it.turnJobId, it.text, chat.activeAgent?.agentType) })
     val list = rememberLazyListState()
@@ -246,8 +261,22 @@ private fun Thread(chat: ChatState, timeZone: TimeZone) {
             Box(Modifier.widthIn(max = ColumnMaxWidth).fillMaxWidth().padding(horizontal = ThreadPaddingH).padding(top = if (i == 0) TurnGap else if (chained) ChainGap else TurnGap)) {
                 when {
                     item.isUser() -> UserTurn((item as ThreadItem.Stored).message, if (lastInChain) clock(item.message.createdAt, timeZone) else null)
-                    item is ThreadItem.Stored -> AssistantTurn(item.author(), item.message.content, chained, if (lastInChain) clock(item.message.createdAt, timeZone) else null, item.message.agentType)
-                    item is ThreadItem.Streaming -> AssistantTurn(item.author(), item.text, chained, time = null, agentType = item.agentType, streaming = true)
+                    item is ThreadItem.Stored -> {
+                        val message = item.message
+                        AssistantTurn(item.author(), chained, if (lastInChain) clock(message.createdAt, timeZone) else null, message.agentType) { identity ->
+                            val blocks = remember(message.contentJson) { parseContentBlocks(message.contentJson) }
+                            if (blocks.isEmpty()) {
+                                MessageText(message.content)
+                            } else {
+                                MessageBlocks(blocks, item.author(), identity, message.content, approvals[message.id], { approve, remember ->
+                                    onResolveApproval(message.id, approve, remember)
+                                })
+                            }
+                        }
+                    }
+                    item is ThreadItem.Streaming -> AssistantTurn(item.author(), chained, time = null, agentType = item.agentType, streaming = true) {
+                        MessageText(item.text, Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    }
                 }
             }
         }
@@ -286,15 +315,20 @@ private fun UserTurn(message: Message, time: String?) {
     }
 }
 
-/** Assistant turns are editorial: the agent's shape as avatar, its name, then the text with no bubble. */
+/** Assistant turns are editorial: the agent's shape as avatar, its name, then the [body] (markdown or blocks), no bubble. */
 @Composable
-private fun AssistantTurn(author: String?, text: String, chained: Boolean, time: String?, agentType: String?, streaming: Boolean = false) {
+private fun AssistantTurn(
+    author: String?,
+    chained: Boolean,
+    time: String?,
+    agentType: String?,
+    streaming: Boolean = false,
+    body: @Composable (AgentIdentity) -> Unit,
+) {
+    val identity = agentIdentity(agentType ?: author ?: FALLBACK_AGENT)
     Row(horizontalArrangement = Arrangement.spacedBy(MessageGap)) {
         Box(Modifier.width(AvatarSize)) {
-            if (!chained) {
-                val identity = agentIdentity(agentType ?: author ?: FALLBACK_AGENT)
-                AgentShape(identity, AvatarSize, working = streaming, face = identity == NomiIdentity)
-            }
+            if (!chained) AgentShape(identity, AvatarSize, working = streaming, face = identity == NomiIdentity)
         }
         Column(Modifier.weight(FILL)) {
             if (!chained) {
@@ -304,15 +338,21 @@ private fun AssistantTurn(author: String?, text: String, chained: Boolean, time:
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Text(
-                text,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = BODY_SP.sp, lineHeight = (BODY_SP * BODY_LINE_HEIGHT).sp),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = if (streaming) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
-            )
+            body(identity)
             time?.let { Meta(it, Modifier.padding(top = ChainGap)) }
         }
     }
+}
+
+/** An assistant message's markdown at the thread's reading size. */
+@Composable
+private fun MessageText(text: String, modifier: Modifier = Modifier) {
+    NomiMarkdown(
+        text,
+        style = MaterialTheme.typography.bodyLarge.copy(fontSize = BODY_SP.sp, lineHeight = (BODY_SP * BODY_LINE_HEIGHT).sp),
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier,
+    )
 }
 
 @Composable
