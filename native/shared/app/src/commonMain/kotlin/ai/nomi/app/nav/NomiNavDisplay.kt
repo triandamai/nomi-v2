@@ -1,5 +1,14 @@
 package ai.nomi.app.nav
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import ai.nomi.designsystem.theme.NomiTheme
+import ai.nomi.designsystem.shape.NomiIdentity
+import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.layout.NomiPage
 import ai.nomi.feature.auth.SignInScreen
 import ai.nomi.feature.chat.ChatScreen
@@ -46,7 +55,7 @@ fun NomiNavDisplay(
         sceneStrategies = listOf(listDetail),
         entryProvider = entryProvider {
             entry<SignIn> { SignInScreen(koinViewModel()) }
-            entry<Home> { HomeScreen(koinViewModel(), onOpenChat = backStack::openChat) }
+            entry<Home> { HomeScreen(koinViewModel(), onOpenChat = backStack::openChat, onOpenChats = { backStack.selectTopLevel(Chats) }) }
             entry<Chats>(metadata = ListPaneMetadata) {
                 ChatsScreen(
                     koinViewModel(),
@@ -68,9 +77,18 @@ fun NomiNavDisplay(
 fun isWideWindow(): Boolean =
     currentWindowAdaptiveInfoV2().windowSizeClass.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
 
+private val NoChatAvatar = 56.dp
+private val NoChatGap = 12.dp
+
+/** The detail pane before a chat is picked (wide windows). */
 @Composable
 private fun NoChatSelected() {
-    NomiPage(title = "") {
+    Column(
+        Modifier.fillMaxSize().background(NomiTheme.extendedColors.ground),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(NoChatGap, Alignment.CenterVertically),
+    ) {
+        AgentShape(NomiIdentity, NoChatAvatar, face = true)
         Text("Pick a chat to read it here.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

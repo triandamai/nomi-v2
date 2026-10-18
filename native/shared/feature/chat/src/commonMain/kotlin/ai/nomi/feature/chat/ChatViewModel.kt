@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -37,6 +38,11 @@ class ChatViewModel(
     val chat: StateFlow<ChatState?> =
         chats.observe(sessionId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), null)
 
+    /** The chat's name, empty until the server names it. */
+    val title: StateFlow<String> = sessions.observeAll()
+        .map { all -> all.firstOrNull { it.id == sessionId }?.title.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), "")
+
     private val mutableComposer = MutableStateFlow(ChatComposerState())
     val composer: StateFlow<ChatComposerState> = mutableComposer.asStateFlow()
 
@@ -51,6 +57,9 @@ class ChatViewModel(
     fun onDraftChange(value: String) {
         mutableComposer.value = mutableComposer.value.copy(draft = value, error = null)
     }
+
+    /** Puts a suggestion in the composer (the person still sends it). */
+    fun useSuggestion(text: String) = onDraftChange(text)
 
     fun send() {
         val current = mutableComposer.value
