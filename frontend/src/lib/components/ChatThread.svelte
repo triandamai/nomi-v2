@@ -31,6 +31,7 @@
 		type UploadedFile,
 	} from '$lib/attachments';
 	import { provideChatSend } from '$lib/chatSend';
+	import { unwatchChat, watchChat } from '$lib/backgroundChats';
 	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
@@ -606,7 +607,35 @@
 	onMount(() => {
 		// Not on a phone: opening a chat shouldn't throw up the keyboard over it.
 		if (!touchScreen()) messageInput?.focus();
+	});
+
+	let connectedSession: string | null = null;
+	// The live connection follows the chat on screen: going to another chat reuses this
+	// component, so it closes and reopens for the new one. Leaving a chat while the crew is still
+	// working on it (another chat, another page, or another tab) hands it to $lib/backgroundChats,
+	// which says in a snackbar when the work is done or needs the person.
+	$effect(() => {
+		const id = sessionId;
 		if (unsaved) return; // nothing to listen to until the first message creates the chat
+		const href = untrack(() => page.url.pathname);
+		unwatchChat(id);
+		// Another chat than the last one: what was streaming belonged to that one.
+		if (connectedSession !== null && connectedSession !== id) {
+			untrack(() => {
+				openTurns = [];
+				currentPhase = null;
+				stopRequested = false;
+			});
+		}
+		connectedSession = id;
+
+		const leave = () =>
+			untrack(() => {
+				if (!(submitting || openTurns.length > 0)) return;
+				watchChat({ sessionId: id, href, title: shownTitle, openTurns: [...openTurns] });
+			});
+		const onVisibility = () => (document.hidden ? leave() : unwatchChat(id));
+		document.addEventListener('visibilitychange', onVisibility);
 
 		let socket: WebSocket | undefined;
 		let retryDelay = INITIAL_RETRY_DELAY_MS;
@@ -615,7 +644,7 @@
 		let hasConnectedBefore = false;
 
 		function connect() {
-			socket = new WebSocket(`/chat/${sessionId}/ws`);
+			socket = new WebSocket(`/chat/${id}/ws`);
 
 			socket.addEventListener('open', () => {
 				retryDelay = INITIAL_RETRY_DELAY_MS;
@@ -691,6 +720,8 @@
 			intentionallyClosed = true;
 			clearTimeout(retryTimeout);
 			socket?.close();
+			document.removeEventListener('visibilitychange', onVisibility);
+			leave();
 		};
 	});
 </script>

@@ -12,6 +12,8 @@
 	import { registerAgentLooks } from '$lib/components/m3/shapes';
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import { badgeLabel, inbox, pollUnread } from '$lib/notifications.svelte';
+	import { nextSnackbar, showSnackbar, snackbars, type SnackbarItem } from '$lib/snackbars.svelte';
+	import { listenToOtherTabs, resumeWatches } from '$lib/backgroundChats';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
 	import type { LayoutData } from './$types';
 
@@ -50,15 +52,30 @@
 	});
 
 	// A notification that comes in while the person is here pops up for a moment.
-	let toastOpen = $state(false);
-	let toast = $state<{ title: string; link: string | null } | null>(null);
 	$effect(() => {
 		const arrived = inbox.arrived;
 		if (!arrived) return;
 		inbox.arrived = null;
 		if (page.url.pathname.startsWith('/notifications')) return;
-		toast = { title: arrived.title, link: arrived.link };
-		toastOpen = true;
+		showSnackbar({ message: arrived.title, actionLabel: m.notif_view(), href: arrived.link || '/notifications', timeout: 6000 });
+	});
+
+	// Chats left while the crew was working on them (another chat, page or tab) say when they're
+	// done or need the person; the watching picks up again after a reload.
+	$effect(() => {
+		resumeWatches();
+		return listenToOtherTabs();
+	});
+
+	// Snackbars show one at a time, the next once the last one goes.
+	let snackbarOpen = $state(false);
+	let snackbar = $state<SnackbarItem | null>(null);
+	$effect(() => {
+		if (snackbarOpen || snackbars.queue.length === 0) return;
+		const next = untrack(() => nextSnackbar(page.url.pathname));
+		if (!next) return;
+		snackbar = next;
+		snackbarOpen = true;
 	});
 
 	// An open project is its own app (it opens in a new tab): no Nomi drawer or app bar around it.
@@ -100,8 +117,9 @@
 </div>
 {/if}
 
-{#if toast}
-	<Snackbar bind:open={toastOpen} message={toast.title} actionLabel={m.notif_view()} timeout={6000} onaction={() => goto(toast?.link || '/notifications')} />
+{#if snackbar}
+	{@const shown = snackbar}
+	<Snackbar bind:open={snackbarOpen} message={shown.message} actionLabel={shown.actionLabel} timeout={shown.timeout} onaction={() => goto(shown.href)} />
 {/if}
 
 <style>

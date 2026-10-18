@@ -2021,5 +2021,13 @@
 	"view_task_failed": "Failed",
 	"view_shell": "Command output",
 	"view_exit_code": "exit {code}",
-	"view_copy_command": "Copy command"
+	"view_copy_command": "Copy command",
+	"away_done": "{who} finished in “{title}”",
+	"away_failed": "Something went wrong in “{title}”",
+	"away_question": "{who} has a question for you in “{title}”",
+	"away_approval": "{who} needs your OK in “{title}”",
+	"away_connect": "{who} needs you to connect an account in “{title}”",
+	"away_open": "Open",
+	"away_answer": "Answer",
+	"away_review": "Review"
 }

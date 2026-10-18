@@ -2021,5 +2021,13 @@
 	"view_task_failed": "Gagal",
 	"view_shell": "Keluaran perintah",
 	"view_exit_code": "keluar {code}",
-	"view_copy_command": "Salin perintah"
+	"view_copy_command": "Salin perintah",
+	"away_done": "{who} selesai di “{title}”",
+	"away_failed": "Ada yang salah di “{title}”",
+	"away_question": "{who} punya pertanyaan untukmu di “{title}”",
+	"away_approval": "{who} butuh persetujuanmu di “{title}”",
+	"away_connect": "{who} butuh kamu menghubungkan akun di “{title}”",
+	"away_open": "Buka",
+	"away_answer": "Jawab",
+	"away_review": "Tinjau"
 }
