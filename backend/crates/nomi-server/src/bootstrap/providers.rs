@@ -140,6 +140,7 @@ async fn saved_own_key(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 3
         model_id: row.custom_model_id?,
         api_key,
         base_url: row.custom_base_url,
+        extra_headers: vec![],
     };
     let tag = tag_for(&config, None, true, row.custom_label.unwrap_or_else(|| config.model_id.clone()));
     let support = MediaSupport::infer(&config.provider, &config.model_id);
@@ -156,14 +157,7 @@ pub fn media_support_for(provider: &str, model_id: &str, listed: Option<&[String
 }
 
 fn provider_name(kind: &ProviderKind) -> &'static str {
-    match kind {
-        ProviderKind::Anthropic => "anthropic",
-        ProviderKind::OpenAi => "openai",
-        ProviderKind::OpenRouter => "openrouter",
-        ProviderKind::Gemini => "gemini",
-        ProviderKind::DeepSeek => "deepseek",
-        ProviderKind::Fake => "fake",
-    }
+    kind.as_str()
 }
 
 fn tag_for(config: &ModelConfig, admin_model_id: Option<uuid::Uuid>, own_key: bool, label: String) -> ModelTag {
@@ -180,6 +174,7 @@ fn model_config_from_admin_model(
             model_id: model.model_id,
             api_key,
             base_url: model.base_url,
+            extra_headers: vec![],
         }),
         Err(e) => {
             tracing::error!(
@@ -278,6 +273,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
                         model_id: row.custom_model_id.expect("custom selection always carries a model_id"),
                         api_key,
                         base_url: row.custom_base_url,
+                        extra_headers: vec![],
                     };
                     let tag = tag_for(&config, None, true, row.custom_label.clone().unwrap_or_else(|| config.model_id.clone()));
                     let support = MediaSupport::infer(&config.provider, &config.model_id);
@@ -318,7 +314,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
             var("LLM_API_KEY").expect("LLM_API_KEY must be set"),
         ),
     };
-    let config = ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok() };
+    let config = ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok(), extra_headers: vec![] };
     let tag = tag_for(&config, None, false, if config.model_id.is_empty() { provider_name(&config.provider).to_string() } else { config.model_id.clone() });
     let support = MediaSupport::infer(&config.provider, &config.model_id);
     (config, tag, support)

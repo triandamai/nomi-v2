@@ -328,7 +328,7 @@ pub async fn fetch_provider_models(
         }
     };
 
-    let config = nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key, base_url: req.base_url.clone() };
+    let config = nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key, base_url: req.base_url.clone(), extra_headers: vec![] };
     let models = nomi_llm::list_provider_models(config, state.http_client.clone())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -364,7 +364,7 @@ pub async fn fetch_user_models(
     }
 
     let config =
-        nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key: req.api_key.clone(), base_url: req.base_url.clone() };
+        nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key: req.api_key.clone(), base_url: req.base_url.clone(), extra_headers: vec![] };
     let models = nomi_llm::list_provider_models(config, state.http_client.clone())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -566,6 +566,7 @@ pub async fn put_user_selection(
                 model_id: model_id.clone(),
                 api_key: api_key.clone(),
                 base_url: base_url.clone(),
+                extra_headers: vec![],
             };
             nomi_llm::validate_model_config(model_config, state.http_client.clone())
                 .await

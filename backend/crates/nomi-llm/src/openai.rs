@@ -13,11 +13,23 @@ pub struct OpenAiProvider {
     api_key: String,
     model: String,
     base_url: String,
+    /// "/v1" for OpenAI itself; empty for OpenAI-compatible endpoints, whose base URL already
+    /// carries their version (https://…/v1).
+    path_prefix: &'static str,
+    extra_headers: Vec<(String, String)>,
+    /// How errors name the provider ("openai returned 401: …").
+    error_name: &'static str,
 }
 
 impl OpenAiProvider {
     pub fn new(client: reqwest::Client, api_key: String, model: String, base_url: String) -> Self {
-        Self { client, api_key, model, base_url }
+        Self { client, api_key, model, base_url, path_prefix: "/v1", extra_headers: Vec::new(), error_name: "openai" }
+    }
+
+    /// Any endpoint that speaks OpenAI's chat API at `base_url` (a gateway, a host, a custom
+    /// provider), with its own extra headers. A blank key sends no Authorization header.
+    pub fn compatible(client: reqwest::Client, api_key: String, model: String, base_url: String, extra_headers: Vec<(String, String)>) -> Self {
+        Self { client, api_key, model, base_url, path_prefix: "", extra_headers, error_name: "provider" }
     }
 
     #[cfg(test)]
@@ -142,13 +154,28 @@ fn is_reasoning_model(model_id: &str) -> bool {
     id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4") || id.contains("gpt-5")
 }
 
+/// The key (when there is one) and any extra headers on a request to an OpenAI-style endpoint.
+fn authorize(request: reqwest::RequestBuilder, api_key: &str, extra_headers: &[(String, String)]) -> reqwest::RequestBuilder {
+    let request = if api_key.is_empty() { request } else { request.bearer_auth(api_key) };
+    extra_headers.iter().fold(request, |request, (name, value)| request.header(name, value))
+}
+
 pub async fn list_models(client: &reqwest::Client, api_key: &str, base_url: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
-    let response = client.get(format!("{base_url}/v1/models")).bearer_auth(api_key).send().await?;
+    fetch_model_list(client, &format!("{base_url}/v1/models"), api_key, &[], "openai").await
+}
+
+/// An OpenAI-compatible endpoint's models, at `{base_url}/models`.
+pub async fn list_compatible_models(client: &reqwest::Client, api_key: &str, base_url: &str, extra_headers: &[(String, String)]) -> Result<Vec<crate::ModelSummary>, LlmError> {
+    fetch_model_list(client, &format!("{base_url}/models"), api_key, extra_headers, "provider").await
+}
+
+async fn fetch_model_list(client: &reqwest::Client, url: &str, api_key: &str, extra_headers: &[(String, String)], error_name: &str) -> Result<Vec<crate::ModelSummary>, LlmError> {
+    let response = authorize(client.get(url), api_key, extra_headers).send().await?;
 
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(LlmError::ProviderError(format!("openai returned {status}: {text}")));
+        return Err(LlmError::ProviderError(format!("{error_name} returned {status}: {text}")));
     }
 
     let body: serde_json::Value = response.json().await.map_err(|e| LlmError::ParseError(e.to_string()))?;
@@ -166,18 +193,13 @@ impl LlmProvider for OpenAiProvider {
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
         let body = self.build_body(&request, true);
 
-        let response = self
-            .client
-            .post(format!("{}/v1/chat/completions", self.base_url))
-            .bearer_auth(&self.api_key)
-            .json(&body)
-            .send()
-            .await?;
+        let request = self.client.post(format!("{}{}/chat/completions", self.base_url, self.path_prefix));
+        let response = authorize(request, &self.api_key, &self.extra_headers).json(&body).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(LlmError::ProviderError(format!("openai returned {status}: {text}")));
+            return Err(LlmError::ProviderError(format!("{} returned {status}: {text}", self.error_name)));
         }
 
         let mut events = response.bytes_stream().eventsource();

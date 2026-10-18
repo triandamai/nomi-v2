@@ -5,6 +5,7 @@ pub mod openrouter;
 pub mod gemini;
 pub mod deepseek;
 pub mod config;
+pub mod catalog;
 pub mod fake;
 pub mod media;
 pub mod redact;
@@ -99,7 +100,7 @@ pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Cli
         ProviderKind::OpenRouter => openrouter::OpenRouterProvider::default_base_url(),
         ProviderKind::Gemini => gemini::GeminiProvider::default_base_url(),
         ProviderKind::DeepSeek => deepseek::DeepSeekProvider::default_base_url(),
-        ProviderKind::Fake => String::new(),
+        ProviderKind::OpenAiCompatible | ProviderKind::Fake => String::new(),
     });
     match config.provider {
         ProviderKind::Anthropic => anthropic::list_models(&http_client, &config.api_key, &base_url).await,
@@ -107,6 +108,7 @@ pub async fn list_provider_models(config: ModelConfig, http_client: reqwest::Cli
         ProviderKind::OpenRouter => openrouter::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::Gemini => gemini::list_models(&http_client, &config.api_key, &base_url).await,
         ProviderKind::DeepSeek => deepseek::list_models(&http_client, &config.api_key, &base_url).await,
+        ProviderKind::OpenAiCompatible => openai::list_compatible_models(&http_client, &config.api_key, &base_url, &config.extra_headers).await,
         ProviderKind::Fake => Ok(vec![ModelSummary {
             id: "fake-model".to_string(),
             label: Some("Fake Model (dev/testing)".to_string()),
@@ -227,6 +229,7 @@ mod tests {
             model_id: String::new(),
             api_key: String::new(),
             base_url: None,
+            extra_headers: vec![],
         };
         let result = validate_model_config(config, reqwest::Client::new()).await;
         assert!(result.is_ok());
