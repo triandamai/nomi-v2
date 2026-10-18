@@ -10,6 +10,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -28,7 +29,7 @@ data class VerificationInfo(
 
 /** Mirrors the untagged `SignInResponse`: tokens, or `{ "verification": {...} }`. */
 sealed interface SignInResult {
-    data class Tokens(val tokens: ai.nomi.network.Tokens) : SignInResult
+    data class SignedIn(val tokens: ai.nomi.network.Tokens) : SignInResult
     data class EmailCode(val verification: VerificationInfo) : SignInResult
 }
 
@@ -61,7 +62,7 @@ class AuthApi(
         val session = Tokens(pair.accessToken, pair.refreshToken)
         tokens.write(session)
         client.clearCachedTokens()
-        return SignInResult.Tokens(session)
+        return SignInResult.SignedIn(session)
     }
 
     /** Revokes the refresh token server-side (best effort) and always forgets the session locally. */
@@ -74,6 +75,10 @@ class AuthApi(
                     setBody(RefreshRequest(current.refresh))
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Best effort: the local session is dropped below whether or not the server heard us.
         } finally {
             tokens.clear()
             client.clearCachedTokens()

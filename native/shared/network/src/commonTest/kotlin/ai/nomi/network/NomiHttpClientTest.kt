@@ -12,7 +12,6 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class NomiHttpClientTest {
     private val config = ApiConfig("https://nomi.example")
@@ -65,7 +64,7 @@ class NomiHttpClientTest {
         assertEquals(HttpStatusCode.Unauthorized, response.status)
         assertEquals(1, signedOut)
         assertNull(store.read())
-        assertTrue(store.clearCount >= 1)
+        assertEquals(1, store.clearCount)
     }
 
     @Test
@@ -86,6 +85,46 @@ class NomiHttpClientTest {
     }
 
     @Test
+    fun bearerIsOnlySentToTheApiHost() = runTest {
+        val store = FakeTokenStore(Tokens("secret", "r"))
+        val seen = mutableMapOf<String, String?>()
+        val engine = MockEngine { request ->
+            seen[request.url.host] = request.headers[HttpHeaders.Authorization]
+            respond("{}", HttpStatusCode.OK, json)
+        }
+        val client = nomiHttpClient(engine, config, store) {}
+        client.get("${config.baseUrl}/api/home")
+        client.get("https://other.example/x")
+        assertEquals("Bearer secret", seen["nomi.example"])
+        assertNull(seen["other.example"])
+    }
+
+    @Test
+    fun authPathsUnderABasePathPrefixDoNotTriggerRefresh() = runTest {
+        val prefixed = ApiConfig("https://nomi.example/nomi")
+        val store = FakeTokenStore(Tokens("a", "r"))
+        var refreshes = 0
+        val engine = MockEngine { request ->
+            if (request.url.encodedPath.endsWith("/auth/refresh")) refreshes++
+            respond("", HttpStatusCode.Unauthorized)
+        }
+        val client = nomiHttpClient(engine, prefixed, store) { error("must not sign out") }
+        AuthApi(client, prefixed, store).also {
+            runCatching { it.login("a@b.c", "bad") }
+        }
+        assertEquals(0, refreshes)
+        assertEquals(Tokens("a", "r"), store.read())
+    }
+
+    @Test
+    fun logoutSurvivesNetworkFailureAndStillClears() = runTest {
+        val store = FakeTokenStore(Tokens("a", "r"))
+        val engine = MockEngine { throw RuntimeException("offline") }
+        AuthApi(nomiHttpClient(engine, config, store) {}, config, store).logout()
+        assertNull(store.read())
+    }
+
+    @Test
     fun loginParsesTokensAndEmailCodeChallenge() = runTest {
         val tokenEngine = MockEngine { request ->
             assertEquals(HttpMethod.Post, request.method)
@@ -95,7 +134,7 @@ class NomiHttpClientTest {
         }
         val store = FakeTokenStore()
         val tokenApi = AuthApi(nomiHttpClient(tokenEngine, config, store) {}, config, store)
-        assertEquals(SignInResult.Tokens(Tokens("a", "r")), tokenApi.login("a@b.c", "pw"))
+        assertEquals(SignInResult.SignedIn(Tokens("a", "r")), tokenApi.login("a@b.c", "pw"))
         assertEquals(Tokens("a", "r"), store.read())
 
         val challengeEngine = MockEngine {

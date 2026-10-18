@@ -5,9 +5,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 
 private const val TOKEN_FILE_NAME = "tokens.json"
+private const val TEMP_SUFFIX = ".tmp"
 private val OWNER_ONLY = setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
 
 /** Tokens in a 0600 file inside the app data dir: the fallback when no OS keyring is available. */
@@ -20,12 +23,21 @@ class FileTokenStore(private val dir: File) : TokenStore {
 
     override suspend fun write(tokens: Tokens) = withContext(Dispatchers.IO) {
         dir.mkdirs()
-        val target = file
-        if (!target.exists()) {
-            runCatching { Files.createFile(target.toPath(), java.nio.file.attribute.PosixFilePermissions.asFileAttribute(OWNER_ONLY)) }
+        val temp = createPrivateTempFile()
+        try {
+            temp.writeText(Json.encodeToString(Tokens.serializer(), tokens))
+            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } finally {
+            temp.delete()
         }
-        runCatching { Files.setPosixFilePermissions(target.toPath(), OWNER_ONLY) }
-        target.writeText(Json.encodeToString(Tokens.serializer(), tokens))
+        Unit
+    }
+
+    private fun createPrivateTempFile(): File = try {
+        Files.createTempFile(dir.toPath(), TOKEN_FILE_NAME, TEMP_SUFFIX, PosixFilePermissions.asFileAttribute(OWNER_ONLY)).toFile()
+    } catch (_: UnsupportedOperationException) {
+        System.err.println("Nomi: file permissions are not POSIX here; the token file is not restricted to its owner")
+        Files.createTempFile(dir.toPath(), TOKEN_FILE_NAME, TEMP_SUFFIX).toFile()
     }
 
     override suspend fun clear() = withContext(Dispatchers.IO) {

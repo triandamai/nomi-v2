@@ -27,6 +27,8 @@ import platform.Foundation.dataUsingEncoding
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
+import platform.Security.SecItemUpdate
+import platform.Security.errSecItemNotFound
 import platform.Security.errSecSuccess
 import platform.Security.kSecAttrAccessible
 import platform.Security.kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -41,6 +43,9 @@ import platform.Security.kSecValueData
 
 private const val KEYCHAIN_ACCOUNT = "session"
 
+/** A Keychain call failed with [status]; the session was not saved. */
+class KeychainException(val status: Int) : RuntimeException("Keychain error $status")
+
 /** Tokens in the iOS Keychain (`kSecClassGenericPassword`, service `ai.nomi.app.tokens`), device-local. */
 class IosTokenStore : TokenStore {
     override suspend fun read(): Tokens? = memScoped {
@@ -53,14 +58,32 @@ class IosTokenStore : TokenStore {
     }
 
     override suspend fun write(tokens: Tokens) {
-        clear()
         val payload = Json.encodeToString(Tokens.serializer(), tokens)
-        val data = NSString.create(string = payload).dataUsingEncoding(NSUTF8StringEncoding) ?: return
-        withQuery(returnData = false) { query ->
-            val retainedData = CFBridgingRetain(data)
-            CFDictionaryAddValue(query, kSecValueData, retainedData)
-            CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
-            SecItemAdd(query, null).also { CFRelease(retainedData) }
+        val data = NSString.create(string = payload).dataUsingEncoding(NSUTF8StringEncoding)
+            ?: error("token encoding failed")
+        val retainedData = CFBridgingRetain(data)
+        try {
+            val updated = withQuery(returnData = false) { query ->
+                val changes = CFDictionaryCreateMutable(null, 0, kCFTypeDictionaryKeyCallBacks.ptr, kCFTypeDictionaryValueCallBacks.ptr)!!
+                try {
+                    CFDictionaryAddValue(changes, kSecValueData, retainedData)
+                    SecItemUpdate(query, changes)
+                } finally {
+                    CFRelease(changes)
+                }
+            }
+            val status = if (updated == errSecItemNotFound) {
+                withQuery(returnData = false) { query ->
+                    CFDictionaryAddValue(query, kSecValueData, retainedData)
+                    CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+                    SecItemAdd(query, null)
+                }
+            } else {
+                updated
+            }
+            if (status != errSecSuccess) throw KeychainException(status)
+        } finally {
+            CFRelease(retainedData)
         }
     }
 

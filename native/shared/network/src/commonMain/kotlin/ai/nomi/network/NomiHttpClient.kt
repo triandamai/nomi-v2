@@ -18,6 +18,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
@@ -27,7 +28,9 @@ import kotlin.time.Duration.Companion.seconds
 private val WEBSOCKET_PING_INTERVAL = 25.seconds
 
 /** Auth endpoints whose own 401 means "bad credentials", not "access token expired". */
-private val PUBLIC_AUTH_PATHS = setOf(LOGIN_PATH, REFRESH_PATH, LOGOUT_PATH)
+private val PUBLIC_AUTH_PATHS = listOf(LOGIN_PATH, REFRESH_PATH, LOGOUT_PATH)
+
+private fun String.isPublicAuthPath() = PUBLIC_AUTH_PATHS.any { endsWith(it) }
 
 internal val apiJson = Json {
     ignoreUnknownKeys = true
@@ -43,36 +46,42 @@ fun nomiHttpClient(
     config: ApiConfig,
     tokens: TokenStore,
     onSignedOut: () -> Unit,
-): HttpClient = HttpClient(engine) {
-    install(ContentNegotiation) { json(apiJson) }
-    install(WebSockets) { pingInterval = WEBSOCKET_PING_INTERVAL }
-    install(Auth) {
-        bearer {
-            loadTokens { tokens.read()?.let { BearerTokens(it.access, it.refresh) } }
-            refreshTokens {
-                val stale = oldTokens ?: return@refreshTokens null
-                if (response.request.url.encodedPath in PUBLIC_AUTH_PATHS) return@refreshTokens null
-                val refreshed = client.post(config.url(REFRESH_PATH)) {
-                    markAsRefreshTokenRequest()
-                    contentType(ContentType.Application.Json)
-                    setBody(RefreshRequest(stale.refreshToken.orEmpty()))
-                }
-                when {
-                    refreshed.status == HttpStatusCode.Unauthorized -> {
-                        tokens.clear()
-                        onSignedOut()
-                        null
+): HttpClient {
+    val apiUrl = Url(config.baseUrl)
+    return HttpClient(engine) {
+        install(ContentNegotiation) { json(apiJson) }
+        install(WebSockets) { pingInterval = WEBSOCKET_PING_INTERVAL }
+        install(Auth) {
+            bearer {
+                loadTokens { tokens.read()?.let { BearerTokens(it.access, it.refresh) } }
+                refreshTokens {
+                    val stale = oldTokens ?: return@refreshTokens null
+                    val failed = response.request.url
+                    if (failed.encodedPath.isPublicAuthPath() || failed.host != apiUrl.host || failed.port != apiUrl.port) {
+                        return@refreshTokens null
                     }
-                    !refreshed.status.isSuccess() -> null
-                    else -> {
-                        val access = refreshed.body<AccessTokenResponse>().accessToken
-                        val next = Tokens(access, stale.refreshToken.orEmpty())
-                        tokens.write(next)
-                        BearerTokens(next.access, next.refresh)
+                    val refreshed = client.post(config.url(REFRESH_PATH)) {
+                        markAsRefreshTokenRequest()
+                        contentType(ContentType.Application.Json)
+                        setBody(RefreshRequest(stale.refreshToken.orEmpty()))
+                    }
+                    when {
+                        refreshed.status == HttpStatusCode.Unauthorized -> {
+                            tokens.clear()
+                            onSignedOut()
+                            null
+                        }
+                        !refreshed.status.isSuccess() -> null
+                        else -> {
+                            val access = refreshed.body<AccessTokenResponse>().accessToken
+                            val next = Tokens(access, stale.refreshToken.orEmpty())
+                            tokens.write(next)
+                            BearerTokens(next.access, next.refresh)
+                        }
                     }
                 }
+                sendWithoutRequest { request -> request.url.build().let { it.host == apiUrl.host && it.port == apiUrl.port } }
             }
-            sendWithoutRequest { true }
         }
     }
 }

@@ -25,7 +25,13 @@ private val SESSION_KEY = stringPreferencesKey("session")
 
 private val Context.tokenDataStore by preferencesDataStore(DATASTORE_NAME)
 
-/** Tokens encrypted with a Tink AES-256-GCM key whose keyset is wrapped by the Android Keystore, kept in DataStore. */
+/**
+ * Tokens encrypted with a Tink AES-256-GCM key whose keyset is wrapped by the Android Keystore, kept in DataStore.
+ *
+ * The Keystore master key never leaves the device, so the app MUST exclude `datastore/nomi_tokens.preferences_pb`
+ * and the `nomi_tokens_keyset_prefs` shared prefs from Auto Backup / device transfer (backup rules); a restored
+ * copy could not be decrypted and would only leave a dead session.
+ */
 class AndroidTokenStore(context: Context) : TokenStore {
     private val appContext = context.applicationContext
 
