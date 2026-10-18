@@ -137,6 +137,15 @@ class FakeSessionsApi : SessionsApi {
 }
 
 class FakeMessagesApi : MessagesApi {
+    /** Every approval decision as (message id, approve, remember); [approvalFailure] is thrown instead when set. */
+    val approvals = mutableListOf<Triple<String, Boolean, Boolean>>()
+    var approvalFailure: Exception? = null
+
+    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
+        approvalFailure?.let { throw it }
+        approvals += Triple(messageId, approve, remember)
+    }
+
     val sent = mutableListOf<Pair<String, String>>()
 
     override suspend fun page(sessionId: String, before: String?, limit: Int) = MessagePageDto(emptyList(), hasMore = false)

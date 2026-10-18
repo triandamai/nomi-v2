@@ -128,6 +128,14 @@ class ChatRepository(
         store(sessionId, listOfNotNull(response.userMessage, response.supervisorReply))
     }
 
+    /**
+     * Approves or denies a pending approval card. The card itself changes when the resumed turn updates it (a
+     * `MessageUpdated` event); an [ApiException] with 409 means the turn behind it has already moved on.
+     */
+    suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) = session.run {
+        api.resolveApproval(sessionId, messageId, approve, remember)
+    }
+
     fun clearError(sessionId: String) = updateFlags(sessionId) { it.copy(lastError = null) }
 
     private suspend fun handle(sessionId: String, binding: Binding, event: RealtimeEvent) {

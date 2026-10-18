@@ -5,9 +5,11 @@ import ai.nomi.data.ChatRepository
 import ai.nomi.data.ChatState
 import ai.nomi.data.ForegroundChat
 import ai.nomi.data.SessionRepository
+import ai.nomi.network.ApiException
 import ai.nomi.realtime.ListenerHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -15,11 +17,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val MESSAGE_SEND_FAILED = "Couldn't send. Check your connection and try again."
+private const val APPROVAL_FAILED = "Failed to record your decision."
 
 data class ChatComposerState(val draft: String = "", val sending: Boolean = false, val error: String? = null)
+
+/**
+ * Where the person's decision on one approval card stands. [sent] stays true once the server took it, until the
+ * card itself flips (over realtime); [expired] means the turn behind the card moved on, so deciding can't help.
+ */
+data class ApprovalState(val sending: Boolean = false, val sent: Boolean = false, val error: String? = null, val expired: Boolean = false)
 
 /**
  * One open chat. Created per navigation entry, so the chat's realtime binding lives exactly as long as the entry is
@@ -53,6 +63,36 @@ class ChatViewModel(
     }
 
     fun onHidden() = foreground.leave(sessionId)
+
+    private val mutableApprovals = MutableStateFlow<Map<String, ApprovalState>>(emptyMap())
+
+    /** Decisions in flight or refused, by the approval card's message id; a card with no entry is untouched. */
+    val approvals: StateFlow<Map<String, ApprovalState>> = mutableApprovals.asStateFlow()
+
+    fun resolveApproval(messageId: String, approve: Boolean, remember: Boolean) {
+        val current = mutableApprovals.value[messageId]
+        if (current?.sending == true || current?.sent == true || current?.expired == true) return
+        setApproval(messageId, ApprovalState(sending = true))
+        viewModelScope.launch {
+            val outcome = try {
+                chats.resolveApproval(sessionId, messageId, approve, remember)
+                ApprovalState(sent = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                log("chat: approval failed: $e")
+                if (e.status == HttpStatusCode.Conflict.value) ApprovalState(expired = true) else ApprovalState(error = APPROVAL_FAILED)
+            } catch (e: Exception) {
+                log("chat: approval failed: $e")
+                ApprovalState(error = APPROVAL_FAILED)
+            }
+            setApproval(messageId, outcome)
+        }
+    }
+
+    private fun setApproval(messageId: String, state: ApprovalState) {
+        mutableApprovals.update { it + (messageId to state) }
+    }
 
     fun onDraftChange(value: String) {
         mutableComposer.value = mutableComposer.value.copy(draft = value, error = null)
