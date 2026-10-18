@@ -7,8 +7,11 @@ pub struct AdminLlmModel {
     pub label: String,
     pub provider: String,
     pub model_id: String,
-    pub api_key_encrypted: Vec<u8>,
+    /// The model's own key, saved before providers were connected; used before the connection's.
+    pub api_key_encrypted: Option<Vec<u8>>,
     pub base_url: Option<String>,
+    /// The connected provider the model comes from (Admin → Providers).
+    pub connection_id: Option<Uuid>,
     pub is_default: bool,
     /// Reads files the person's own model can't open (at most one model is).
     pub is_files_model: bool,
@@ -29,7 +32,7 @@ pub struct AdminLlmModel {
 
 pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models ORDER BY created_at",
     )
@@ -39,7 +42,7 @@ pub async fn list_admin_llm_models(pool: &PgPool) -> Result<Vec<AdminLlmModel>, 
 
 pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models WHERE id = $1",
     )
@@ -50,7 +53,7 @@ pub async fn get_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<Option<Admin
 
 pub async fn get_default_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models WHERE is_default = true",
     )
@@ -82,7 +85,7 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
         "INSERT INTO admin_llm_models (label, provider, model_id, api_key_encrypted, base_url, is_default, updated_by, \
                                        input_usd_per_mtok, output_usd_per_mtok, media_inputs, cached_input_usd_per_mtok) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
-         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
     )
     .bind(input.label)
@@ -97,6 +100,64 @@ pub async fn create_admin_llm_model(pool: &PgPool, input: NewAdminLlmModel<'_>) 
     .bind(input.media_inputs)
     .bind(input.cached_input_usd_per_mtok)
     .fetch_one(pool)
+    .await
+}
+
+pub struct NewConnectionModel<'a> {
+    pub label: &'a str,
+    /// One of the instance's connections (Admin → Providers); its kind becomes the provider.
+    pub connection_id: Uuid,
+    pub model_id: &'a str,
+    pub input_usd_per_mtok: Option<f64>,
+    pub output_usd_per_mtok: Option<f64>,
+    pub cached_input_usd_per_mtok: Option<f64>,
+    pub media_inputs: Option<Vec<String>>,
+    pub updated_by: Uuid,
+}
+
+/// A model from one of the instance's connected providers: no key of its own. Becomes the default
+/// when it's the first model, like [`create_admin_llm_model`]. `RowNotFound` when the connection
+/// isn't an instance connection.
+pub async fn create_connection_model(pool: &PgPool, input: NewConnectionModel<'_>) -> Result<AdminLlmModel, sqlx::Error> {
+    let kind: String = sqlx::query_scalar("SELECT kind FROM llm_provider_connections WHERE id = $1 AND user_id IS NULL")
+        .bind(input.connection_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
+    let existing_count: i64 = sqlx::query_scalar("SELECT count(*) FROM admin_llm_models").fetch_one(pool).await?;
+
+    sqlx::query_as::<_, AdminLlmModel>(
+        "INSERT INTO admin_llm_models (label, provider, model_id, connection_id, is_default, updated_by, \
+                                       input_usd_per_mtok, output_usd_per_mtok, media_inputs, cached_input_usd_per_mtok) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
+    )
+    .bind(input.label)
+    .bind(kind)
+    .bind(input.model_id)
+    .bind(input.connection_id)
+    .bind(existing_count == 0)
+    .bind(input.updated_by)
+    .bind(input.input_usd_per_mtok)
+    .bind(input.output_usd_per_mtok)
+    .bind(input.media_inputs)
+    .bind(input.cached_input_usd_per_mtok)
+    .fetch_one(pool)
+    .await
+}
+
+/// Runs the model on one of the instance's connections from now on, dropping the key and address
+/// it carried itself.
+pub async fn link_admin_llm_model_to_connection(pool: &PgPool, id: Uuid, connection_id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
+    sqlx::query_as::<_, AdminLlmModel>(
+        "UPDATE admin_llm_models SET connection_id = $2, api_key_encrypted = NULL, base_url = NULL, updated_at = now() WHERE id = $1 \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
+    )
+    .bind(id)
+    .bind(connection_id)
+    .fetch_optional(pool)
     .await
 }
 
@@ -125,7 +186,7 @@ pub async fn update_admin_llm_model(
          base_url = $6, updated_by = $7, updated_at = now(), \
          input_usd_per_mtok = $8, output_usd_per_mtok = $9, media_inputs = $10, cached_input_usd_per_mtok = $11 \
          WHERE id = $1 \
-         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
     )
     .bind(id)
@@ -195,7 +256,7 @@ pub async fn set_default_admin_llm_model(pool: &PgPool, id: Uuid) -> Result<(), 
 /// The model that reads files people's own models can't open, if an admin picked one.
 pub async fn get_files_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models WHERE is_files_model = true AND enabled",
     )
@@ -220,7 +281,7 @@ pub async fn set_files_admin_llm_model(pool: &PgPool, id: Option<Uuid>) -> Resul
 /// The model Koda builds projects with, if an admin picked one.
 pub async fn get_coding_admin_llm_model(pool: &PgPool) -> Result<Option<AdminLlmModel>, sqlx::Error> {
     sqlx::query_as::<_, AdminLlmModel>(
-        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, is_default, is_files_model, is_coding_model, media_inputs, \
+        "SELECT id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
          input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled \
          FROM admin_llm_models WHERE is_coding_model = true AND enabled",
     )
@@ -292,12 +353,14 @@ pub struct UserLlmSelectionRow {
     pub custom_model_id: Option<String>,
     pub custom_api_key_encrypted: Option<Vec<u8>>,
     pub custom_base_url: Option<String>,
+    /// Their own connected provider (Providers) the custom model comes from.
+    pub custom_connection_id: Option<Uuid>,
 }
 
 pub async fn get_user_llm_selection(pool: &PgPool, user_id: Uuid) -> Result<Option<UserLlmSelectionRow>, sqlx::Error> {
     sqlx::query_as::<_, UserLlmSelectionRow>(
         "SELECT admin_model_id, custom_label, custom_provider, custom_model_id, \
-         custom_api_key_encrypted, custom_base_url \
+         custom_api_key_encrypted, custom_base_url, custom_connection_id \
          FROM user_llm_selections WHERE user_id = $1",
     )
     .bind(user_id)
@@ -347,6 +410,26 @@ pub async fn set_user_llm_selection_custom(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Runs the person on `model_id` from one of their own connections, in place of any key saved the
+/// old way. `false` (nothing changed) when the connection isn't theirs.
+pub async fn set_user_llm_selection_connection(pool: &PgPool, user_id: Uuid, connection_id: Uuid, model_id: &str, label: &str) -> Result<bool, sqlx::Error> {
+    let saved = sqlx::query(
+        "INSERT INTO user_llm_selections (user_id, custom_label, custom_provider, custom_model_id, custom_connection_id) \
+         SELECT $1, $4, c.kind, $3, c.id FROM llm_provider_connections c WHERE c.id = $2 AND c.user_id = $1 \
+         ON CONFLICT (user_id) DO UPDATE SET \
+         admin_model_id = NULL, custom_label = EXCLUDED.custom_label, custom_provider = EXCLUDED.custom_provider, \
+         custom_model_id = EXCLUDED.custom_model_id, custom_connection_id = EXCLUDED.custom_connection_id, \
+         custom_api_key_encrypted = NULL, custom_base_url = NULL, updated_at = now()",
+    )
+    .bind(user_id)
+    .bind(connection_id)
+    .bind(model_id)
+    .bind(label)
+    .execute(pool)
+    .await?;
+    Ok(saved.rows_affected() > 0)
 }
 
 /// Switches a model on or off. The default model can't be switched off (something must answer);

@@ -10,6 +10,11 @@ describe('pageTitle', () => {
 		expect(pageTitle(null)).toBe('Nomi');
 	});
 
+	it('names both Providers pages', () => {
+		expect(pageTitle('/(app)/providers')).toBe('Providers · Nomi');
+		expect(pageTitle('/admin/(protected)/settings/providers')).toBe('Providers · Admin · Nomi');
+	});
+
 	it("prefers the page's own title", () => {
 		expect(pageTitle('/(app)/chat/[sessionId]', 'Bogor day trip')).toBe('Bogor day trip · Nomi');
 		expect(pageTitle('/(app)/chat/[sessionId]', null)).toBe('Chat · Nomi');

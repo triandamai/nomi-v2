@@ -120,12 +120,16 @@ export interface LlmAdminModelOption {
 	id: string;
 	label: string;
 	provider: string;
+	/** Where it runs, by name ("Anthropic", or the connected provider's name). */
+	provider_label?: string;
 	model_id: string;
 }
 
 export type LlmUserSelection =
 	| { kind: 'admin'; admin_model_id: string }
-	| { kind: 'custom'; label: string; provider: string; model_id: string; api_key_masked: string; base_url: string | null };
+	| { kind: 'custom'; label: string; provider: string; model_id: string; api_key_masked: string; base_url: string | null }
+	/** A model from one of the person's own provider connections (see $lib/providers). */
+	| { kind: 'connection'; connection_id: string; provider_id: string; label: string; model_id: string };
 
 /** Which model Koda builds the person's projects with. */
 export type LlmCodingSelection = { kind: 'default' } | { kind: 'same_as_chat' } | { kind: 'admin'; admin_model_id: string };
@@ -161,6 +165,9 @@ export interface AdminLlmModel {
 	media_inputs: MediaInput[] | null;
 	/** What it opens, listed or worked out. */
 	media_support: MediaInput[];
+	/** The shared provider connection it runs on; null for models set up with their own key. */
+	connection_id: string | null;
+	connection_label: string | null;
 }
 
 export type MediaInput = 'image' | 'pdf' | 'audio' | 'video';

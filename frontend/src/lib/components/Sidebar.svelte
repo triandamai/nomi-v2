@@ -193,6 +193,7 @@
 				<MenuItem onclick={() => goToAccountPage('/account')}>{m.nav_account()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/connections')}>{m.nav_connections()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/models')}>{m.nav_model()}</MenuItem>
+				<MenuItem onclick={() => goToAccountPage('/providers')}>{m.prov_nav()}</MenuItem>
 				<MenuItem onclick={() => goToAccountPage('/memory')}>{m.nav_memory()}</MenuItem>
 				<form method="POST" action="/logout">
 					<MenuItem type="submit">{m.nav_log_out()}</MenuItem>

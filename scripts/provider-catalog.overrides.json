@@ -1,0 +1,48 @@
+{
+	"$comment": "Curated layer on top of models.dev for scripts/gen-provider-catalog.mjs. Edit this, then re-run the generator.",
+	"popular": ["opencode", "opencode-go", "anthropic", "openai", "google", "openrouter", "vercel", "deepseek"],
+	"recommended": ["opencode", "opencode-go"],
+	"descriptions": {
+		"opencode": "Curated models including Claude, GPT, Gemini and more",
+		"opencode-go": "Low cost subscription for everyone",
+		"anthropic": "Direct access to Claude models",
+		"openai": "GPT and o-series models from OpenAI",
+		"google": "Gemini models from Google AI Studio",
+		"openrouter": "Hundreds of models behind one key",
+		"vercel": "Models from many providers through Vercel",
+		"deepseek": "DeepSeek chat and reasoning models"
+	},
+	"kinds": {
+		"anthropic": "anthropic",
+		"openai": "openai",
+		"google": "gemini",
+		"openrouter": "openrouter",
+		"deepseek": "deepseek"
+	},
+	"$comment_base_urls": "OpenAI-compatible endpoints for providers models.dev lists under their own SDK.",
+	"openai_compatible_base_urls": {
+		"vercel": "https://ai-gateway.vercel.sh/v1",
+		"groq": "https://api.groq.com/openai/v1",
+		"cerebras": "https://api.cerebras.ai/v1",
+		"xai": "https://api.x.ai/v1",
+		"mistral": "https://api.mistral.ai/v1",
+		"deepinfra": "https://api.deepinfra.com/v1/openai",
+		"togetherai": "https://api.together.xyz/v1",
+		"cohere": "https://api.cohere.ai/compatibility/v1",
+		"venice": "https://api.venice.ai/api/v1"
+	},
+	"excluded": {
+		"github-copilot": "Copilot subscriptions can't be used by third-party apps without GitHub's approval",
+		"gitlab": "Needs GitLab's own client and OAuth",
+		"amazon-bedrock": "Needs AWS credentials and signing",
+		"azure": "Needs an Azure resource name and deployment",
+		"azure-cognitive-services": "Needs an Azure resource name and deployment",
+		"google-vertex": "Needs Google Cloud credentials",
+		"google-vertex-anthropic": "Needs Google Cloud credentials",
+		"cloudflare-ai-gateway": "Needs a Cloudflare account and gateway id",
+		"sap-ai-core": "Needs an SAP service key",
+		"watsonx": "Needs an IBM project id",
+		"merge-gateway": "Speaks an AI SDK protocol, not OpenAI's",
+		"privatemode-ai": "Runs on the person's own machine"
+	}
+}

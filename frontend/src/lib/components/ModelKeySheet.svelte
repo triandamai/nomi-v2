@@ -1,162 +1,270 @@
 <script lang="ts">
+	// Picking a model from one of the person's own provider connections (Model page and chat
+	// page). Without a connection it connects one in place first, through the page's `connect`
+	// action, then carries on to the model. The page needs `connect`, `connectionModels` and
+	// `selectConnectionModel` actions (see $lib/server/providers).
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { deserialize, enhance } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
-
-	const PROVIDER_OPTIONS = [
-		{ value: 'anthropic', label: 'Anthropic' },
-		{ value: 'openai', label: 'OpenAI' },
-		{ value: 'openrouter', label: 'OpenRouter' },
-		{ value: 'gemini', label: 'Gemini' },
-		{ value: 'deepseek', label: 'DeepSeek' },
-		{ value: 'fake', label: m.key_fake() },
-	];
+	import ConnectProviderDialog from '$lib/components/providers/ConnectProviderDialog.svelte';
+	import { postAction, reloadData } from '$lib/providerActions';
+	import {
+		connectInputToForm,
+		connectionErrorMessage,
+		connectionName,
+		type ConnectInput,
+		type ConnectionModel,
+		type ProviderConnection,
+		type ProviderDefinition,
+	} from '$lib/providers';
+	import type { LlmUserSelection } from '$lib/types';
 
 	let {
 		open = $bindable(false),
-		error = null,
+		connections,
+		providers = [],
+		selection = null,
 		onSaved,
 	}: {
 		open?: boolean;
-		error?: string | null;
+		connections: ProviderConnection[];
+		/** The catalog, when the page has it; otherwise it's fetched on first open. */
+		providers?: ProviderDefinition[];
+		selection?: LlmUserSelection | null;
 		onSaved?: () => void;
 	} = $props();
 
-	let label = $state('');
-	let provider = $state('anthropic');
-	let apiKey = $state('');
-	let baseUrl = $state('');
-	let modelId = $state('');
-
-	let fetching = $state(false);
-	let fetchedModels = $state<{ id: string; label: string | null }[]>([]);
-	let modelEntryMode = $state<'select' | 'manual'>('manual');
-	let fetchError = $state<string | null>(null);
-
-	// Every open starts from a clean slate — there's only ever one active custom selection, so
-	// there's no "editing" state to pre-fill, and re-entering the key each time is an accepted
-	// simplification (see the /models + chat-page design discussion).
-	$effect(() => {
-		if (open) {
-			label = '';
-			provider = 'anthropic';
-			apiKey = '';
-			baseUrl = '';
-			modelId = '';
-			fetchedModels = [];
-			modelEntryMode = 'manual';
-			fetchError = null;
-			fetching = false;
+	let fetchedCatalog = $state<ProviderDefinition[]>([]);
+	const catalog = $derived(providers.length > 0 ? providers : fetchedCatalog);
+	let catalogRequested = false;
+	async function ensureCatalog() {
+		if (providers.length > 0 || catalogRequested) return;
+		catalogRequested = true;
+		try {
+			const response = await fetch('/providers/catalog');
+			if (response.ok) fetchedCatalog = ((await response.json()) as { providers: ProviderDefinition[] }).providers;
+			else catalogRequested = false;
+		} catch {
+			catalogRequested = false;
 		}
+	}
+
+	const connectionOptions = $derived(connections.map((c) => ({ value: c.id, label: connectionName(c, catalog) })));
+
+	let connectionId = $state('');
+	let modelId = $state('');
+	let label = $state('');
+	let models = $state<ConnectionModel[]>([]);
+	let entry = $state<'select' | 'manual'>('manual');
+	let loadingModels = $state(false);
+	let modelsError = $state<string | null>(null);
+	let saving = $state(false);
+	let saveError = $state<string | null>(null);
+
+	// Each opening starts on the connection in use (or the first one), nothing typed yet.
+	let wasOpen = false;
+	$effect(() => {
+		const opening = open && !wasOpen;
+		wasOpen = open;
+		if (!opening) return;
+		untrack(() => {
+			const current = selection?.kind === 'connection' && connections.some((c) => c.id === selection.connection_id) ? selection : null;
+			connectionId = current?.connection_id ?? connections[0]?.id ?? '';
+			modelId = current?.model_id ?? '';
+			label = '';
+			saveError = null;
+			void ensureCatalog();
+		});
 	});
 
-	async function fetchModels() {
-		fetching = true;
-		fetchError = null;
+	// The chosen connection's models, asked of the provider whenever it changes.
+	let request = 0;
+	$effect(() => {
+		if (!open || !connectionId) return;
+		const id = connectionId;
+		untrack(() => void loadModels(id));
+	});
 
+	async function loadModels(id: string) {
+		const mine = ++request;
+		loadingModels = true;
+		modelsError = null;
 		const body = new FormData();
-		body.set('provider', provider);
-		body.set('api_key', apiKey);
-		body.set('base_url', baseUrl);
+		body.set('connection_id', id);
+		const outcome = await postAction<{ connectionModels: ConnectionModel[] }>('connectionModels', body);
+		if (mine !== request) return;
+		loadingModels = false;
+		models = outcome.ok ? outcome.data.connectionModels : [];
+		if (!outcome.ok) modelsError = connectionErrorMessage(outcome.error);
+		else if (models.length === 0) modelsError = m.key_no_models();
+		entry = models.length > 0 ? 'select' : 'manual';
+		if (models.length > 0 && !models.some((model) => model.id === modelId)) modelId = models[0].id;
+	}
 
-		const response = await fetch('?/fetchModels', { method: 'POST', body });
-		const result = deserialize(await response.text());
-		fetching = false;
-
-		if (result.type === 'success' && result.data?.models) {
-			fetchedModels = result.data.models as { id: string; label: string | null }[];
-			modelEntryMode = 'select';
-			if (fetchedModels.length > 0 && !fetchedModels.some((m) => m.id === modelId)) {
-				modelId = fetchedModels[0].id;
-			}
-			if (fetchedModels.length === 0) {
-				fetchError = m.key_no_models();
-				modelEntryMode = 'manual';
-			}
+	async function save(event: SubmitEvent) {
+		event.preventDefault();
+		if (!connectionId || !modelId.trim() || saving) return;
+		saving = true;
+		saveError = null;
+		const body = new FormData();
+		body.set('connection_id', connectionId);
+		body.set('model_id', modelId.trim());
+		const name = label.trim() || models.find((model) => model.id === modelId.trim())?.label || '';
+		if (name) body.set('label', name);
+		const outcome = await postAction('selectConnectionModel', body);
+		saving = false;
+		if (outcome.ok) {
+			await reloadData();
+			open = false;
+			onSaved?.();
 		} else {
-			fetchedModels = [];
-			modelEntryMode = 'manual';
-			fetchError =
-				(result.type === 'failure' && (result.data?.error as string)) ||
-				m.err_fetch_models();
+			saveError = connectionErrorMessage(outcome.error);
 		}
+	}
+
+	// Connecting in place.
+	let connectOpen = $state(false);
+	let connecting = $state(false);
+	let connectError = $state<string | null>(null);
+
+	function openConnect() {
+		connectError = null;
+		void ensureCatalog();
+		connectOpen = true;
+	}
+
+	async function connect(input: ConnectInput) {
+		connecting = true;
+		connectError = null;
+		const outcome = await postAction<{ connection: ProviderConnection }>('connect', connectInputToForm(input));
+		if (outcome.ok) {
+			await reloadData();
+			// Straight on to its models.
+			connectionId = outcome.data.connection.id;
+			modelId = '';
+			connectOpen = false;
+		} else {
+			connectError = connectionErrorMessage(outcome.error, outcome.models);
+		}
+		connecting = false;
 	}
 </script>
 
 <BottomSheet bind:open>
-	<h2 class="md-headline-small-emphasized" style="color: var(--md-sys-color-on-surface)">{m.key_title()}</h2>
+	<h2 class="md-headline-small-emphasized title">{m.prov_sheet_title()}</h2>
 
-	{#if error}
-		<p class="md-body-medium mt-2" style="color: var(--md-sys-color-error)">{error}</p>
-	{/if}
-
-	<form
-		method="POST"
-		action="?/selectCustomModel"
-		use:enhance={() => {
-			return async ({ result, update }) => {
-				await update({ reset: result.type === 'success' });
-				if (result.type === 'success') {
-					open = false;
-					onSaved?.();
-				}
-			};
-		}}
-		class="mt-4 flex flex-col gap-3"
-	>
-		<TextField id="label" name="label" label={m.key_label()} bind:value={label} required />
-		<Select label={m.key_provider()} name="provider" bind:value={provider} options={PROVIDER_OPTIONS} />
-		<TextField id="api_key" name="api_key" type="password" label={m.key_api_key()} bind:value={apiKey} />
-		<TextField id="base_url" name="base_url" label={m.key_base_url()} bind:value={baseUrl} />
-
-		<Button
-			type="button"
-			variant="outlined"
-			class="w-fit"
-			disabled={fetching || (provider !== 'fake' && !apiKey)}
-			onclick={fetchModels}
-		>
-			{fetching ? m.key_fetching() : m.key_fetch()}
-		</Button>
-		{#if fetchError}
-			<p class="md-body-small" style="color: var(--md-sys-color-on-surface-variant)">{fetchError}</p>
-		{/if}
-
-		{#if modelEntryMode === 'select' && fetchedModels.length > 0}
-			<Select
-				label={m.key_model()}
-				name="model_id"
-				bind:value={modelId}
-				options={fetchedModels.map((m) => ({ value: m.id, label: m.label ? `${m.id} (${m.label})` : m.id }))}
-			/>
-			<button
-				type="button"
-				class="md-label-large self-start"
-				style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
-				onclick={() => (modelEntryMode = 'manual')}
-			>
-				{m.key_manual()}
-			</button>
-		{:else}
-			<TextField id="model_id" name="model_id" label={m.key_model_id()} bind:value={modelId} required />
-			{#if fetchedModels.length > 0}
-				<button
-					type="button"
-					class="md-label-large self-start"
-					style="color: var(--md-sys-color-primary); background: none; border: none; cursor: pointer; padding: 0"
-					onclick={() => (modelEntryMode = 'select')}
-				>
-					{m.key_choose_list()}
-				</button>
-			{/if}
-		{/if}
-
-		<div class="flex gap-2 pt-2">
-			<Button type="submit" variant="filled">{m.key_save_validate()}</Button>
+	{#if connections.length === 0}
+		<p class="hint">{m.prov_sheet_none()}</p>
+		<div class="actions">
+			<Button type="button" variant="filled" onclick={openConnect}>{m.prov_connect_cta()}</Button>
 			<Button type="button" variant="outlined" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 		</div>
-	</form>
+	{:else}
+		<form class="form" onsubmit={save}>
+			<Select label={m.key_provider()} name="connection_id" bind:value={connectionId} options={connectionOptions} />
+
+			{#if loadingModels}
+				<p class="hint" role="status">{m.prov_models_loading()}</p>
+			{:else if modelsError}
+				<p class="hint">{modelsError}</p>
+			{/if}
+
+			{#if entry === 'select' && models.length > 0}
+				<Select
+					label={m.key_model()}
+					name="model_id"
+					bind:value={modelId}
+					options={models.map((model) => ({ value: model.id, label: model.label ? `${model.label} (${model.id})` : model.id }))}
+				/>
+				<button type="button" class="link" onclick={() => (entry = 'manual')}>{m.key_manual()}</button>
+			{:else}
+				<TextField name="model_id" label={m.key_model_id()} bind:value={modelId} type="text" autocomplete="off" spellcheck="false" required />
+				{#if models.length > 0}
+					<button type="button" class="link" onclick={() => (entry = 'select')}>{m.key_choose_list()}</button>
+				{/if}
+			{/if}
+
+			<TextField label={m.prov_label_optional()} bind:value={label} autocomplete="off" />
+
+			{#if saveError}
+				<p class="error" role="alert">{saveError}</p>
+			{/if}
+
+			<div class="actions">
+				<Button type="submit" variant="filled" disabled={!modelId.trim() || saving}>{saving ? m.prov_saving() : m.prov_use_model()}</Button>
+				<Button type="button" variant="outlined" onclick={() => (open = false)}>{m.common_cancel()}</Button>
+			</div>
+			<button type="button" class="link" onclick={openConnect}>{m.prov_connect_another()}</button>
+		</form>
+	{/if}
 </BottomSheet>
+
+<ConnectProviderDialog
+	bind:open={connectOpen}
+	providers={catalog}
+	connectedIds={connections.map((c) => c.provider_id)}
+	error={connectError}
+	busy={connecting}
+	onsubmit={connect}
+/>
+
+<style>
+	.title {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+	}
+	.hint {
+		margin: 8px 0 0;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.form {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-top: 16px;
+	}
+	.form .hint {
+		margin: 0;
+	}
+	.error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 16px;
+	}
+	.form .actions {
+		margin-top: 4px;
+	}
+	.link {
+		align-self: flex-start;
+		min-height: 32px;
+		padding: 0 4px;
+		border: none;
+		border-radius: 6px;
+		background: none;
+		color: var(--md-sys-color-primary);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.link:hover {
+		text-decoration: underline;
+	}
+	.link:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	@media (max-width: 640px) {
+		.link {
+			min-height: 44px;
+		}
+	}
+</style>
