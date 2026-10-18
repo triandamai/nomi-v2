@@ -5,7 +5,6 @@ import ai.nomi.realtime.RealtimeEvent
 import ai.nomi.realtime.RealtimeHub
 import ai.nomi.realtime.Topic
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,7 +34,7 @@ class RealtimeSync(
     private val notifications: NotificationRepository,
     private val activity: ActivityRepository,
     private val foreground: ForegroundChat,
-    private val scope: CoroutineScope,
+    private val session: SessionScope,
     private val log: (String) -> Unit = {},
 ) {
     private val signals = MutableSharedFlow<CompanionSignal>(
@@ -61,10 +60,10 @@ class RealtimeSync(
     /** Idempotent. Call from the main thread, like [stop]. */
     fun start() {
         if (registration != null) return
-        val work = WorkQueue(scope, log)
+        val work = WorkQueue(session.scope, log)
         queue = work
         registration = hub.addListener(Topic.User) { event -> work.submit { handle(event) } }
-        activityJob = scope.launch {
+        activityJob = session.scope.launch {
             activity.observeActive()
                 .map { active -> active.firstOrNull()?.let { CompanionSignal.Working(it.agentType, it.phase) } ?: CompanionSignal.Idle }
                 .collect { state.value = it }

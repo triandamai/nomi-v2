@@ -33,7 +33,7 @@ class ChatRepositoryTest {
     fun close() = db.close()
 
     private fun TestScope.repository() =
-        ChatRepository(api, db, hub, ActivityRepository(db, clock), backgroundScope, clock)
+        ChatRepository(api, db, hub, ActivityRepository(db, clock), backgroundScope.openSession(), clock)
 
     private fun delta(text: String, turn: String = "t1") = RealtimeEvent.ChatDelta(
         chat, "s1", turn,
@@ -178,5 +178,23 @@ class ChatRepositoryTest {
         val state = repo.observe("s1").first { it.messages.isNotEmpty() }
         assertEquals("user", state.messages.single().role)
         assertEquals("hello", state.messages.single().content)
+    }
+
+    @Test
+    fun a_chat_reopened_in_a_new_session_gets_a_live_binding() = runTest {
+        val session = backgroundScope.openSession()
+        val repo = ChatRepository(api, db, hub, ActivityRepository(db, clock), session, clock)
+        repo.bind("s1") // a screen from the old session, never cleared
+        repo.observe("s1").first()
+        val callsBefore = api.pageCalls
+        session.close()
+        session.open()
+
+        api.latest = listOf(messageDto("m-new"))
+        repo.bind("s1")
+
+        repo.observe("s1").first { it.messages.map(Message::id) == listOf("m-new") }
+        assertTrue(api.pageCalls > callsBefore)
+        assertEquals(1, hub.listenerCount(chat))
     }
 }

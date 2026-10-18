@@ -11,7 +11,6 @@ import ai.nomi.realtime.Topic
 import ai.nomi.realtime.textOrNull
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -34,7 +33,7 @@ class ChatRepository(
     private val db: NomiDatabase,
     private val hub: RealtimeHub,
     private val activity: ActivityRepository,
-    private val scope: CoroutineScope,
+    private val session: SessionScope,
     private val clock: EpochClock,
     private val log: (String) -> Unit = {},
 ) {
@@ -74,8 +73,12 @@ class ChatRepository(
      * binding also resyncs (drops a draft / agent rows left over from before process death), later ones only refresh.
      */
     fun bind(sessionId: String): ListenerHandle {
-        val existing = bindings[sessionId]
-        val binding = existing ?: Binding(WorkQueue(scope, log)).also { created ->
+        // A binding from a session that has since ended has a dead queue: replace it.
+        val existing = bindings[sessionId]?.takeIf { it.queue.isActive } ?: run {
+            bindings.remove(sessionId)?.registration?.remove()
+            null
+        }
+        val binding = existing ?: Binding(WorkQueue(session.scope, log)).also { created ->
             created.registration = hub.addListener(Topic.Chat(sessionId)) { event ->
                 created.queue.submit { handle(sessionId, created, event) }
             }
@@ -85,7 +88,7 @@ class ChatRepository(
         val handle = object : ListenerHandle {
             override fun remove() {
                 if (!binding.holders.remove(this) || binding.holders.isNotEmpty()) return
-                bindings.remove(sessionId)
+                if (bindings[sessionId] === binding) bindings.remove(sessionId)
                 binding.registration.remove()
                 binding.queue.close()
             }
@@ -95,7 +98,7 @@ class ChatRepository(
     }
 
     /** Loads the newest page into Room; a successful load means the chat is readable again. */
-    suspend fun refresh(sessionId: String) {
+    suspend fun refresh(sessionId: String) = session.run {
         store(sessionId, api.page(sessionId).messages)
         updateFlags(sessionId) { it.copy(accessLost = false) }
     }
@@ -112,14 +115,14 @@ class ChatRepository(
     }
 
     /** Loads the page before [beforeMessageId]; returns whether even older messages exist. */
-    suspend fun loadOlder(sessionId: String, beforeMessageId: String): Boolean {
+    suspend fun loadOlder(sessionId: String, beforeMessageId: String): Boolean = session.run {
         val page = api.page(sessionId, before = beforeMessageId)
         store(sessionId, page.messages)
-        return page.hasMore
+        page.hasMore
     }
 
     /** Posts the message and stores what the server stored; the reply arrives over realtime. */
-    suspend fun send(sessionId: String, text: String) {
+    suspend fun send(sessionId: String, text: String) = session.run {
         clearError(sessionId)
         val response = api.send(sessionId, text)
         store(sessionId, listOfNotNull(response.userMessage, response.supervisorReply))

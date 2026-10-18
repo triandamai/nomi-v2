@@ -10,6 +10,7 @@ import ai.nomi.data.NotificationRepository
 import ai.nomi.data.RealtimeSync
 import ai.nomi.data.SessionGate
 import ai.nomi.data.SessionRepository
+import ai.nomi.data.SessionScope
 import ai.nomi.data.SystemEpochClock
 import ai.nomi.database.DatabaseFactory
 import ai.nomi.database.NomiDatabase
@@ -43,7 +44,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
-/** The app-lifetime main-thread scope: the realtime hub's actor and the repositories' event handling run on it. */
+/** The app-lifetime main-thread scope: the realtime hub's actor runs on it, and each signed-in [SessionScope] is its child. */
 val AppScope = named("app")
 
 private const val LOG_PREFIX = "Nomi: "
@@ -81,18 +82,21 @@ val coreModule: Module = module {
     }
 
     single<NomiDatabase> { get<DatabaseFactory>().create() }
-    single { SessionRepository(get(), get(), get()) }
-    single { NotificationRepository(get(), get(), get()) }
+    // The signed-in account's work (a child of AppScope); SessionGate opens it at sign-in and closes it before the wipe.
+    single { SessionScope(get(AppScope)) }
+    single { SessionRepository(get(), get(), get(), get()) }
+    single { NotificationRepository(get(), get(), get(), get()) }
     single { ActivityRepository(get(), get()) }
     single { ForegroundChat() }
-    single { ChatRepository(get(), get(), get(), get(), scope = get(AppScope), clock = get(), log = ::appLog) }
-    single { RealtimeSync(get(), get(), get(), get(), get(), scope = get(AppScope), log = ::appLog) }
+    single { ChatRepository(get(), get(), get(), get(), session = get(), clock = get(), log = ::appLog) }
+    single { RealtimeSync(get(), get(), get(), get(), get(), session = get(), log = ::appLog) }
     single {
         val database = get<NomiDatabase>()
         SessionGate(
             auth = get(),
             hub = get(),
             sync = get(),
+            session = get(),
             clearLocalData = { database.clearAll() },
             scope = get(AppScope),
             log = ::appLog,

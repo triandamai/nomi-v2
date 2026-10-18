@@ -18,6 +18,8 @@ import ai.nomi.realtime.RealtimeListener
 import ai.nomi.realtime.Topic
 import androidx.room.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 
 fun inMemoryDb(): NomiDatabase = Room.inMemoryDatabaseBuilder<NomiDatabase>().setDriver(BundledSQLiteDriver()).build()
+
+/** A signed-in session's scope, already open, child of this scope. */
+fun CoroutineScope.openSession(): SessionScope = SessionScope(this).also { it.open() }
 
 /** Dispatches [emit]ted events synchronously to the listeners registered for the event's topic. */
 class FakeRealtimeHub : RealtimeHub {
@@ -94,8 +99,12 @@ class FakeSessionsApi : SessionsApi {
     var sessions: List<SessionDto> = emptyList()
     var listCalls = 0
 
+    /** When set, [list] suspends until it completes: a list request still in flight. */
+    var listGate: CompletableDeferred<Unit>? = null
+
     override suspend fun list(): List<SessionDto> {
         listCalls++
+        listGate?.await()
         return sessions
     }
 

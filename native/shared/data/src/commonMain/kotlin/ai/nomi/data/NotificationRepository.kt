@@ -12,6 +12,7 @@ class NotificationRepository(
     private val api: NotificationsApi,
     private val db: NomiDatabase,
     private val clock: EpochClock,
+    private val session: SessionScope,
 ) {
     private val dao get() = db.notificationDao()
 
@@ -20,13 +21,13 @@ class NotificationRepository(
     fun observeUnreadCount(): Flow<Int> = dao.observeUnreadCount()
 
     /** Refetches the newest page of the inbox. */
-    suspend fun refresh() {
+    suspend fun refresh() = session.run {
         val now = clock()
         api.list().items.forEach { dto -> dao.upsert(dto.toEntity(dao.get(dto.id), now)) }
     }
 
     /** The event carries no timestamp, so arrival time stands in for `created_at` until the next refresh. */
-    suspend fun onCreated(event: RealtimeEvent.NotificationCreated) {
+    suspend fun onCreated(event: RealtimeEvent.NotificationCreated) = session.run {
         val existing = dao.get(event.notificationId)
         dao.upsert(
             NotificationEntity(
@@ -41,13 +42,13 @@ class NotificationRepository(
         )
     }
 
-    suspend fun markRead(id: String) {
+    suspend fun markRead(id: String) = session.run {
         api.markRead(id)
-        val existing = dao.get(id) ?: return
+        val existing = dao.get(id) ?: return@run
         if (existing.readAt == null) dao.upsert(existing.copy(readAt = clock()))
     }
 
-    suspend fun markAllRead() {
+    suspend fun markAllRead() = session.run {
         api.markAllRead()
         dao.markAllRead(clock())
     }

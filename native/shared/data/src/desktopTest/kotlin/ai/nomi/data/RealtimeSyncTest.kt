@@ -36,13 +36,14 @@ class RealtimeSyncTest {
 
     private fun TestScope.sync(): RealtimeSync {
         activity = ActivityRepository(db, clock)
+        val session = backgroundScope.openSession()
         return RealtimeSync(
             hub,
-            SessionRepository(sessionsApi, db, clock),
-            NotificationRepository(notificationsApi, db, clock),
+            SessionRepository(sessionsApi, db, clock, session),
+            NotificationRepository(notificationsApi, db, clock, session),
             activity,
             foreground,
-            backgroundScope,
+            session,
         )
     }
 

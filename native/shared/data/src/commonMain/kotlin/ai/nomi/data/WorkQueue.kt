@@ -2,6 +2,7 @@ package ai.nomi.data
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -13,19 +14,21 @@ import kotlinx.coroutines.launch
 internal class WorkQueue(scope: CoroutineScope, private val log: (String) -> Unit) {
     private val work = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
-    init {
-        scope.launch {
-            for (item in work) {
-                try {
-                    item()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log("data: queued work failed: $e")
-                }
+    private val consumer: Job = scope.launch {
+        for (item in work) {
+            // Throwable, not Exception: an Error from one item (e.g. TODO()) must not stop every later one.
+            try {
+                item()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                log("data: queued work failed: $e")
             }
         }
     }
+
+    /** False once its scope was cancelled (the session ended): nothing submitted will run any more. */
+    val isActive: Boolean get() = consumer.isActive
 
     fun submit(item: suspend () -> Unit) {
         work.trySend(item)

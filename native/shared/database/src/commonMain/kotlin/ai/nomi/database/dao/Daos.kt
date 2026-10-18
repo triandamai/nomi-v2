@@ -29,6 +29,12 @@ interface SessionDao {
     @Query("UPDATE sessions SET unread = 0 WHERE id = :id")
     suspend fun markRead(id: String)
 
+    @Query("SELECT id FROM sessions")
+    suspend fun ids(): List<String>
+
+    @Query("DELETE FROM sessions WHERE id = :id")
+    suspend fun delete(id: String)
+
     @Query("DELETE FROM sessions")
     suspend fun clearAll()
 }
