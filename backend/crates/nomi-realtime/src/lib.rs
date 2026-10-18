@@ -1,5 +1,7 @@
+pub mod gateway;
 pub mod mqtt;
 
+pub use gateway::{ClientFrame, ServerFrame, Topic};
 pub use mqtt::{MqttError, MqttPublisher};
 
 use serde::{Deserialize, Serialize};
