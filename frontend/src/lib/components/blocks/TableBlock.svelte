@@ -8,10 +8,17 @@
 	import { isAmountColumn, tableListColumns, tableListItem } from '$lib/tableList';
 	import type { ContentBlock } from '$lib/types';
 
-	let { block }: { block: Extract<ContentBlock, { kind: 'table' }> } = $props();
+	let {
+		block,
+		moneyKeys = [],
+	}: {
+		block: Extract<ContentBlock, { kind: 'table' }>;
+		/** Columns known to hold amounts (a view's `money` columns), besides those named like one. */
+		moneyKeys?: string[];
+	} = $props();
 
 	const listColumns = $derived(tableListColumns(block.columns, block.rows));
-	const amountKeys = $derived(new Set(block.columns.filter(isAmountColumn).map((c) => c.key)));
+	const amountKeys = $derived(new Set([...block.columns.filter(isAmountColumn).map((c) => c.key), ...moneyKeys]));
 </script>
 
 {#if block.variant === 'data'}

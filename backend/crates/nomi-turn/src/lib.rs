@@ -419,16 +419,16 @@ async fn finish_agent_turn(
     agent: &dyn nomi_agent_core::SubAgent,
     outcome: nomi_agent_core::LoopOutcome,
 ) -> Result<(String, Option<Uuid>), TurnError> {
-    // A recording that was the whole reply is already in the chat.
-    let spoken = match &outcome {
-        nomi_agent_core::LoopOutcome::Spoke { message_id, .. } => Some(*message_id),
+    // A recording or view that was the whole reply is already in the chat.
+    let posted = match &outcome {
+        nomi_agent_core::LoopOutcome::Posted { message_id, .. } => Some(*message_id),
         _ => None,
     };
     match outcome {
         nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens }
-        | nomi_agent_core::LoopOutcome::Spoke { text: reply_text, memory_ids_used, input_tokens, output_tokens, .. } => {
+        | nomi_agent_core::LoopOutcome::Posted { text: reply_text, memory_ids_used, input_tokens, output_tokens, .. } => {
             let mut tx = conn.begin().await?;
-            let reply_message_id: Uuid = match spoken {
+            let reply_message_id: Uuid = match posted {
                 Some(message_id) => message_id,
                 None => {
                     sqlx::query_scalar(
@@ -471,20 +471,26 @@ async fn finish_agent_turn(
             Ok((reply_text, Some(reply_message_id)))
         }
         nomi_agent_core::LoopOutcome::Completed { status, summary } => {
-            let mut tx = conn.begin().await?;
-            let message_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
-            )
-            .bind(session_id)
-            .bind(&summary)
-            .bind(agent.display_name().as_ref())
-            .fetch_one(&mut *tx)
-            .await?;
-            tx.commit().await?;
+            // Finishing with nothing more to say (what it did is already in the chat, e.g. as a
+            // view) posts no empty bubble.
+            let message_id: Option<Uuid> = if summary.trim().is_empty() {
+                None
+            } else {
+                Some(
+                    sqlx::query_scalar(
+                        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
+                    )
+                    .bind(session_id)
+                    .bind(&summary)
+                    .bind(agent.display_name().as_ref())
+                    .fetch_one(&mut **conn)
+                    .await?,
+                )
+            };
 
             routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, agent.agent_type().as_ref(), &status, &summary).await?;
 
-            Ok((summary, Some(message_id)))
+            Ok((summary, message_id))
         }
         nomi_agent_core::LoopOutcome::AwaitingApproval { .. } => Ok(("Waiting for approval.".to_string(), None)),
         // The questions are already in the chat; the agent keeps the conversation for the answer.

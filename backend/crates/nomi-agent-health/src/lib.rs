@@ -43,7 +43,8 @@ from the current time. Weights are in kg (convert from lb when they use lb).
 everything back.
 - Progress questions (\"how is my bench going?\"): read the exercise history and answer with \
 the trend in a sentence or two (best set, volume, how often), then the numbers.
-- Show lists of workouts, routines or measurements with show_table when there are more than a few.
+- Show workouts, routines or measurements with `show` when there are more than a few: a list or a table, \
+a chart for progress over time.
 - Keep advice practical and safe. You aren't a doctor: for pain, injury or medical questions, \
 suggest seeing a professional.
 - Heart rate, blood oxygen, steps, sleep and runs from Samsung Health or Apple Health aren't \
@@ -318,15 +319,27 @@ impl SubAgent for HealthAgent {
             return Ok(connect_card("not_connected", "The person hasn't connected Hevy. A card to connect it is shown to them."));
         };
         let hevy = Hevy { http: &self.http, base_url: self.hevy_base_url.clone(), api_key: &api_key };
-        match run_tool(&hevy, user_id, name, &input).await {
-            Ok(text) => Ok(ToolOutcome::text(text)),
+        let mut saved = None;
+        match run_tool(&hevy, user_id, name, &input, &mut saved).await {
+            Ok(text) => {
+                let block = match saved {
+                    Some((key, value)) => {
+                        let locale = nomi_agent_core::user_locale(conn, user_id).await;
+                        Some(ContentBlock::View(format::card(&value, locale.t(key), locale)))
+                    }
+                    None => None,
+                };
+                Ok(ToolOutcome { display_text: text, block })
+            }
             Err(HevyError::KeyRejected) => Ok(connect_card("key_rejected", "Hevy rejected the saved API key (revoked, or the account isn't on Hevy Pro). A card to set a new key is shown to the person.")),
             Err(e) => Err(e.to_string()),
         }
     }
 }
 
-async fn run_tool(hevy: &Hevy<'_>, user_id: Uuid, name: &str, input: &Value) -> Result<String, HevyError> {
+/// Runs one Hevy tool. A workout or routine it saves goes in `saved` (with the card's heading),
+/// so the chat can show it as a card.
+async fn run_tool(hevy: &Hevy<'_>, user_id: Uuid, name: &str, input: &Value, saved: &mut Option<(&'static str, Value)>) -> Result<String, HevyError> {
     let arg = |key: &str| required(input, key).map_err(HevyError::Rejected);
     match name {
         "hevy_workouts" => Ok(format::workouts_page(&hevy.workouts(page_arg(input), 10).await?)),
@@ -335,11 +348,17 @@ async fn run_tool(hevy: &Hevy<'_>, user_id: Uuid, name: &str, input: &Value) -> 
         "hevy_workout_changes" => Ok(format::workout_events(&hevy.workout_events(arg("since")?, page_arg(input)).await?)),
         "hevy_log_workout" => {
             let workout = pick(input, &["title", "description", "start_time", "end_time", "is_private", "exercises"]);
-            Ok(format!("Logged.\n{}", format::workout(&hevy.create_workout(&workout).await?)))
+            let created = hevy.create_workout(&workout).await?;
+            let text = format!("Logged.\n{}", format::workout(&created));
+            *saved = Some(("health.card_logged", created));
+            Ok(text)
         }
         "hevy_update_workout" => {
             let workout = pick(input, &["title", "description", "start_time", "end_time", "is_private", "exercises"]);
-            Ok(format!("Updated.\n{}", format::workout(&hevy.update_workout(arg("workout_id")?, &workout).await?)))
+            let updated = hevy.update_workout(arg("workout_id")?, &workout).await?;
+            let text = format!("Updated.\n{}", format::workout(&updated));
+            *saved = Some(("health.card_updated", updated));
+            Ok(text)
         }
         "hevy_routines" => Ok(format::routines_page(&hevy.routines(page_arg(input), 10).await?)),
         "hevy_routine" => Ok(format::routine(&hevy.routine(arg("routine_id")?).await?)),
@@ -348,7 +367,10 @@ async fn run_tool(hevy: &Hevy<'_>, user_id: Uuid, name: &str, input: &Value) -> 
             if routine.get("folder_id").is_none() {
                 routine["folder_id"] = Value::Null;
             }
-            Ok(format!("Created.\n{}", format::routine(&hevy.create_routine(&routine).await?)))
+            let created = hevy.create_routine(&routine).await?;
+            let text = format!("Created.\n{}", format::routine(&created));
+            *saved = Some(("health.card_routine", created));
+            Ok(text)
         }
         "hevy_update_routine" => {
             let routine = pick(input, &["title", "notes", "exercises"]);

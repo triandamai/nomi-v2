@@ -38,7 +38,7 @@ append rows under the existing headers rather than overwriting.
 every send in chat. Keep emails short, in the user's voice and language.
 - Never invent message, file or spreadsheet ids: take them from search results.
 - After acting, say plainly what you changed and where (with the link when you have one). For \
-lists of emails, files or events, use show_table.
+lists of emails or files, use `show` (a list or a table); for events, a timeline.
 - If a tool says Google isn't connected or a service isn't allowed, a Connect card is already \
 shown to the user: tell them in one short sentence and stop.";
 
@@ -259,7 +259,11 @@ impl SubAgent for WorkspaceAgent {
         let google = Google { http: &self.http, config, token: &token };
         let result = run_tool(&google, conn, user_id, name, &input).await;
         match result {
-            Ok(value) => Ok(ToolOutcome::text(value.to_string())),
+            Ok(value) => {
+                let locale = nomi_agent_core::user_locale(conn, user_id).await;
+                let block = result_card(name, &input, &value, locale).map(ContentBlock::View);
+                Ok(ToolOutcome { display_text: value.to_string(), block })
+            }
             Err(GoogleError::Unauthorized) => {
                 let _ = sqlx::query("DELETE FROM workspace_connections WHERE user_id = $1").bind(user_id).execute(&mut **conn).await;
                 Ok(connect_card("not_connected", service, "Google rejected the connection (access was revoked). A card to reconnect is shown to the user.".to_string()))
@@ -267,6 +271,63 @@ impl SubAgent for WorkspaceAgent {
             Err(GoogleError::Failed(message)) => Err(message),
         }
     }
+}
+
+/// What a write shows in the chat: a card of the event, doc, sheet or email it made, with a link
+/// to open it in Google. Reads show nothing of their own (the agent shows what's worth seeing).
+fn result_card(name: &str, input: &Value, result: &Value, locale: nomi_agent_core::Locale) -> Option<nomi_agent_core::View> {
+    use nomi_agent_core::views::{CardView, Field, Format, LinkRef, Scalar, View};
+    let text = |key: &str| str_arg(input, key).map(|s| s.to_string());
+    let link = |key: &str, label: &str| {
+        result.get(key).and_then(|v| v.as_str()).filter(|u| u.starts_with("https://")).map(|url| LinkRef { label: locale.t(label), url: url.to_string() })
+    };
+    let field = |label: &str, value: String, format: Format| Field { label: locale.t(label), value: Scalar::Text(value), format };
+    let card = |eyebrow: &str, title: String| CardView {
+        eyebrow: Some(locale.t(eyebrow)),
+        title,
+        subtitle: None,
+        highlight: None,
+        fields: Vec::new(),
+        body: None,
+        link: None,
+        actions: Vec::new(),
+        tone: Default::default(),
+    };
+    let view = match name {
+        "calendar_add_event" => {
+            let mut c = card("workspace.card_event", text("summary")?);
+            c.fields.extend(text("start").map(|v| field("workspace.card_starts", v, Format::DateTime)));
+            c.fields.extend(text("end").map(|v| field("workspace.card_ends", v, Format::DateTime)));
+            c.fields.extend(text("location").map(|v| field("workspace.card_where", v, Format::Text)));
+            let guests: Vec<&str> = input.get("attendees").and_then(|a| a.as_array()).into_iter().flatten().filter_map(|a| a.as_str()).collect();
+            if !guests.is_empty() {
+                c.fields.push(field("workspace.card_guests", guests.join(", "), Format::Text));
+            }
+            c.link = link("url", "workspace.card_open_calendar");
+            c
+        }
+        "docs_create" => {
+            let mut c = card("workspace.card_doc", text("title")?);
+            let id = result.get("document_id").and_then(|v| v.as_str())?;
+            c.link = Some(LinkRef { label: locale.t("workspace.card_open"), url: google::doc_link(id) });
+            c
+        }
+        "sheets_create" => {
+            let mut c = card("workspace.card_sheet", text("title")?);
+            let id = result.get("spreadsheet_id").and_then(|v| v.as_str())?;
+            c.link = Some(LinkRef { label: locale.t("workspace.card_open"), url: google::sheet_link(id) });
+            c
+        }
+        "gmail_send" | "gmail_draft" => {
+            let eyebrow = if name == "gmail_send" { "workspace.card_sent" } else { "workspace.card_drafted" };
+            let mut c = card(eyebrow, text("subject").filter(|s| !s.trim().is_empty()).unwrap_or_else(|| locale.t("workspace.card_no_subject")));
+            c.fields.push(field("workspace.card_to", text("to")?, Format::Text));
+            c.body = text("body").map(|b| clip(&b, 280));
+            c
+        }
+        _ => return None,
+    };
+    Some(View::Card(view))
 }
 
 async fn run_tool(google: &Google<'_>, conn: &mut PoolConnection<Postgres>, user_id: Uuid, name: &str, input: &Value) -> Result<Value, GoogleError> {

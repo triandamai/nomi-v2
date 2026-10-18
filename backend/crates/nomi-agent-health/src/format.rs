@@ -125,6 +125,40 @@ fn page_line(body: &Value) -> String {
     format!("(page {} of {})", body.get("page").and_then(|v| v.as_u64()).unwrap_or(1), body.get("page_count").and_then(|v| v.as_u64()).unwrap_or(1))
 }
 
+/// Most exercises a workout or routine card lists.
+const CARD_EXERCISES: usize = 12;
+
+/// A card of a workout or routine just saved: its title, when and how long (a workout), and
+/// each exercise with its number of sets.
+pub fn card(x: &Value, eyebrow: String, locale: nomi_agent_core::Locale) -> nomi_agent_core::View {
+    use nomi_agent_core::views::{CardView, Field, Format, Scalar, View};
+    let mut fields = Vec::new();
+    let (start, end) = (s(x, "start_time"), s(x, "end_time"));
+    if !start.is_empty() {
+        fields.push(Field { label: locale.t("health.card_when"), value: Scalar::Text(start.to_string()), format: Format::DateTime });
+    }
+    if let Some(minutes) = minutes_between(start, end) {
+        fields.push(Field { label: locale.t("health.card_duration"), value: Scalar::Text(locale.tf("health.card_minutes", &[("count", &minutes.to_string())])), format: Format::Text });
+    }
+    for exercise in x.get("exercises").and_then(|e| e.as_array()).into_iter().flatten().take(CARD_EXERCISES) {
+        let sets = exercise.get("sets").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0);
+        let label = if sets == 1 { locale.t("health.card_set_one") } else { locale.tf("health.card_sets", &[("count", &sets.to_string())]) };
+        fields.push(Field { label: s(exercise, "title").to_string(), value: Scalar::Text(label), format: Format::Text });
+    }
+    let notes = [s(x, "description"), s(x, "notes")].into_iter().find(|n| !n.is_empty()).map(str::to_string);
+    View::Card(CardView {
+        eyebrow: Some(eyebrow),
+        title: s(x, "title").to_string(),
+        subtitle: None,
+        highlight: None,
+        fields,
+        body: notes,
+        link: None,
+        actions: Vec::new(),
+        tone: Default::default(),
+    })
+}
+
 pub fn workouts_page(body: &Value) -> String {
     let list = body.get("workouts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
     if list.is_empty() {

@@ -186,6 +186,61 @@ fn kind_of(input: &Value) -> Result<&'static str, String> {
     }
 }
 
+/// A transaction just recorded, as it was saved.
+#[derive(Debug, Clone)]
+pub struct Logged {
+    pub id: Uuid,
+    pub kind: &'static str,
+    pub total_cents: i64,
+    pub category: String,
+    pub description: String,
+    pub occurred_at: DateTime<Utc>,
+    pub items: Vec<(String, f64, i64)>,
+}
+
+/// Most item lines a transaction card lists; the rest are in the Money page.
+const CARD_ITEMS: usize = 12;
+
+impl Logged {
+    /// What the agent hears back.
+    pub fn summary(&self) -> String {
+        let verb = if self.kind == "income" { "Logged income of" } else { "Logged" };
+        let lines = if self.items.is_empty() { String::new() } else { format!(" ({} items)", self.items.len()) };
+        format!("{verb} {:.2} for {} under {}{lines}.", self.total_cents as f64 / 100.0, self.description, self.category)
+    }
+
+    /// The card shown in the chat: what was recorded, its total, date and items.
+    pub fn card(&self, locale: nomi_agent_core::Locale) -> nomi_agent_core::View {
+        use nomi_agent_core::views::{CardView, Field, Format, LinkRef, Scalar, Tone, View};
+        let money = |cents: i64| Scalar::Number(cents as f64 / 100.0);
+        let eyebrow_key = if self.kind == "income" { "money.card_income" } else { "money.card_expense" };
+        let mut fields = vec![Field { label: locale.t("money.card_date"), value: Scalar::Text(self.occurred_at.format("%Y-%m-%d").to_string()), format: Format::Date }];
+        fields.extend(self.items.iter().take(CARD_ITEMS).map(|(name, quantity, cents)| Field {
+            label: if *quantity == 1.0 { name.clone() } else { format!("{name} × {}", Scalar::Number(*quantity)) },
+            value: money(*cents),
+            format: Format::Money,
+        }));
+        View::Card(CardView {
+            eyebrow: Some(locale.tf(eyebrow_key, &[("category", &self.category)])),
+            title: self.description.clone(),
+            subtitle: None,
+            highlight: Some(Field { label: locale.t("money.card_total"), value: money(self.total_cents), format: Format::Money }),
+            fields,
+            body: None,
+            link: Some(LinkRef { label: locale.t("money.card_open"), url: "/money".to_string() }),
+            actions: Vec::new(),
+            tone: if self.kind == "income" { Tone::Positive } else { Tone::Neutral },
+        })
+    }
+}
+
+/// `log_transaction` for the crew: the agent hears the summary, the chat shows the card.
+pub async fn log_transaction_outcome(conn: &mut sqlx::PgConnection, user_id: Uuid, input: &Value, session_id: Uuid) -> Result<nomi_agent_core::ToolOutcome, String> {
+    let logged = log_transaction(conn, user_id, input, "agent", Some(session_id)).await?;
+    let locale = nomi_agent_core::user_locale(conn, user_id).await;
+    Ok(nomi_agent_core::ToolOutcome { display_text: logged.summary(), block: Some(nomi_agent_core::ContentBlock::View(logged.card(locale))) })
+}
+
 /// Records money spent or received in the Money agent's own table, with its items. `source` is
 /// "manual" (the Money page) or "agent" (this agent's tool, in chat `session_id`: the person's
 /// message it answers is kept, so deleting that message can take the transaction with it).
@@ -195,7 +250,7 @@ pub async fn log_transaction(
     input: &Value,
     source: &str,
     session_id: Option<Uuid>,
-) -> Result<String, String> {
+) -> Result<Logged, String> {
     let kind = kind_of(input)?;
     let items = items_of(input)?;
     let total = match input.get("amount") {
@@ -253,9 +308,15 @@ pub async fn log_transaction(
         .map_err(|e| e.to_string())?;
     }
     tx.commit().await.map_err(|e| e.to_string())?;
-    let verb = if kind == "income" { "Logged income of" } else { "Logged" };
-    let lines = if items.is_empty() { String::new() } else { format!(" ({} items)", items.len()) };
-    Ok(format!("{verb} {:.2} for {description} under {category}{lines}.", total as f64 / 100.0))
+    Ok(Logged {
+        id,
+        kind,
+        total_cents: total,
+        category,
+        description,
+        occurred_at,
+        items: items.into_iter().map(|i| (i.name, i.quantity, i.amount_cents)).collect(),
+    })
 }
 
 pub async fn set_budget(conn: &mut sqlx::PgConnection, user_id: Uuid, input: &Value) -> Result<String, String> {
@@ -354,7 +415,7 @@ impl SubAgent for MoneyAgent {
         match name {
             "list_transactions" => list_transactions(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
             "summarize_budget" => summarize_budget(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "log_transaction" => log_transaction(conn, user_id, &input, "agent", Some(session_id)).await.map(nomi_agent_core::ToolOutcome::text),
+            "log_transaction" => log_transaction_outcome(conn, user_id, &input, session_id).await,
             "set_budget" => set_budget(conn, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
             "list_budgets" => list_budgets(conn, user_id).await.map(nomi_agent_core::ToolOutcome::text),
             "set_month_start" => {

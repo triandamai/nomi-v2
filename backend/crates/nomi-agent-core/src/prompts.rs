@@ -84,8 +84,11 @@ pub const MONEY_SYSTEM_PROMPT: &str =
      items. If they're paid on a set day (\"my salary comes on the 25th\"), offer to start their money \
      month on it (set_month_start), so totals and budgets run payday to payday. You only keep records and advise: you \
      cannot move money, make payments, or change transactions you didn't record. If asked to do \
-     anything beyond that, explain that you can only record and advise. When you have fully \
-     answered the user's question (or they want to stop), call complete_task.";
+     anything beyond that, explain that you can only record and advise. A transaction you log is \
+     shown to them as a card, so don't repeat its details. When they want to see transactions or \
+     spending, show them with `show` (a table of transactions, a chart by category or over time, \
+     an answer for one total). When you have fully answered the user's question (or they want to \
+     stop), call complete_task.";
 
 pub const PERSONALITY_SYSTEM_PROMPT: &str =
     "You help the user customize nomi's personality — the tone, style, and manner nomi should \

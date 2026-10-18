@@ -144,13 +144,13 @@ async fn a_switched_off_tool_is_not_offered_and_a_call_to_it_is_refused(pool: Pg
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_built_in_agent_keeps_its_own_tools_whatever_the_switches(pool: PgPool) {
-    sqlx::query("INSERT INTO tool_settings (name, enabled) VALUES ('echo', false), ('show_table', false)").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO tool_settings (name, enabled) VALUES ('echo', false), ('show', false)").execute(&pool).await.unwrap();
     let provider = FakeLlmProvider::sequence(vec![call("echo", serde_json::json!({})), text("ok")]);
     run(&pool, &provider).await;
 
     let tools = offered(&provider);
     assert!(tools.contains(&"echo".to_string()));
-    assert!(!tools.contains(&"show_table".to_string()), "crew tools still follow their switch");
+    assert!(!tools.contains(&"show".to_string()), "crew tools still follow their switch");
     let (content, is_error) = tool_result(&provider);
     assert!(!is_error, "{content}");
 }
