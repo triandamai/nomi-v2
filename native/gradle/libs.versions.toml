@@ -24,6 +24,7 @@ datetime = "0.8.0"
 jna = "5.19.1"
 roborazzi = "1.76.0"
 turbine = "1.2.1"
+junit4 = "4.13.2"
 
 [libraries]
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
@@ -57,6 +58,8 @@ coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", ve
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+roborazzi-compose-desktop = { module = "io.github.takahirom.roborazzi:roborazzi-compose-desktop", version.ref = "roborazzi" }
+junit4 = { module = "junit:junit", version.ref = "junit4" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 
 # Gradle plugins, as dependencies of the build-logic convention plugins
