@@ -463,7 +463,8 @@ pub fn show_tool_definition() -> nomi_llm::ToolDefinition {
         "Show something in the chat as a view instead of plain text, when its shape helps: items, records, \
          steps, times, numbers, choices. Plain text stays best for explanations and short answers; don't use a \
          view for a sentence or two. Don't repeat what the view shows in your reply; add only what it doesn't \
-         say. Views that ask (suggestions, decision, form, card actions) send the person's answer as their next \
+         say: a view can be the whole reply, or come with a line of text before or after it. Views \
+         that ask (suggestions, decision, form, card actions) send the person's answer as their next \
          message. `format` is one of text|number|money|percent|date|date_time (money in whole units, dates in \
          ISO 8601); `tone` is neutral|positive|negative|warning. Views and their fields (? = optional):",
     );

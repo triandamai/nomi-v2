@@ -769,6 +769,85 @@ async fn show_is_available_to_every_agent_and_posts_a_view(pool: PgPool) {
     assert!(second.contains("Shown in the chat"), "{second}");
 }
 
+/// What an agent posted in this chat, oldest first: (text, the first block's kind).
+async fn posted(pool: &PgPool, session_id: Uuid) -> Vec<(String, Option<String>)> {
+    sqlx::query_as("SELECT content, content_blocks->0->>'kind' FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NULL ORDER BY created_at, id")
+        .bind(session_id)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_view_can_be_the_whole_reply(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    // Shows the answer, then has nothing to add.
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "show", serde_json::json!({"view": "answer", "spec": {"label": "Spent this month", "value": 1250000, "format": "money"}})),
+        text_response("", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    // The view is the reply: not asked to write one, no "couldn't answer" message.
+    let messages = posted(&pool, session_id).await;
+    assert_eq!(messages, vec![("Spent this month: 1250000".to_string(), Some("view".to_string()))]);
+    let view_id: Uuid = sqlx::query_scalar("SELECT id FROM messages WHERE session_id = $1").bind(session_id).fetch_one(&pool).await.unwrap();
+    assert!(matches!(outcome, LoopOutcome::Posted { message_id, ref text, .. } if message_id == view_id && text == "Spent this month: 1250000"), "{outcome:?}");
+    assert_eq!(provider.received_requests.lock().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn text_around_a_view_reads_in_order_before_and_after_it(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    // A line introducing the view in the same response as the call, then a line after it.
+    let mut intro_and_view = tool_use_response("t1", "show", serde_json::json!({"view": "list", "spec": {"items": [{"title": "Food"}, {"title": "Transport"}]}}));
+    intro_and_view.content.insert(0, ContentBlock::Text { text: "Here's where it went:".to_string() });
+    let provider = FakeLlmProvider::sequence(vec![intro_and_view, text_response("Food is most of it.", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    // The intro is an ordinary message (not a "💭" thought), then the view; the closing line is
+    // the reply, which the turn posts after them.
+    assert_eq!(
+        posted(&pool, session_id).await,
+        vec![("Here's where it went:".to_string(), None), ("- Food\n- Transport".to_string(), Some("view".to_string()))]
+    );
+    assert!(matches!(outcome, LoopOutcome::Reply { ref text, .. } if text == "Food is most of it."), "{outcome:?}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reply_without_a_view_is_plain_text_as_before(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Just a sentence.", StopReason::EndTurn)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    assert!(posted(&pool, session_id).await.is_empty(), "nothing posted ahead of the reply");
+    assert!(matches!(outcome, LoopOutcome::Reply { ref text, .. } if text == "Just a sentence."), "{outcome:?}");
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_view_that_does_not_fit_goes_back_to_the_agent_and_posts_nothing(pool: PgPool) {
     let session_id = seed_session(&pool).await;
@@ -1869,7 +1948,7 @@ async fn a_recording_with_nothing_written_after_it_is_the_whole_reply(pool: PgPo
         .unwrap();
     assert_eq!(
         outcome,
-        LoopOutcome::Spoke { message_id: voice_message, text: "Good morning!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
+        LoopOutcome::Posted { message_id: voice_message, text: "Good morning!".to_string(), memory_ids_used: vec![], input_tokens: 1, output_tokens: 1 }
     );
     assert_eq!(provider.received_requests.lock().unwrap().len(), 2, "no nudge to write an answer as well");
 }

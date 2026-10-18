@@ -435,9 +435,10 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
-    /// The agent answered out loud (`speak`) and wrote nothing after it: the recording, already
-    /// posted as `message_id`, is the reply. `text` is the words it says.
-    Spoke { message_id: Uuid, text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
+    /// The agent answered with something already in the chat — a recording (`speak`) or a view
+    /// (`show`) — and wrote nothing after it: that message, `message_id`, is the reply. `text` is
+    /// its words (what was said, or the view as text).
+    Posted { message_id: Uuid, text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
     /// The agent asked the person questions (`ask_user`) and waits for their answer, which comes
@@ -800,14 +801,14 @@ pub async fn run_agent_turn(
             let output_tokens = response.output_tokens;
             let cut_off = response.stop_reason == StopReason::MaxTokens;
             let reply_text = reply_text_of(&response.content);
-            // Said it out loud and wrote nothing more: the recording is the whole reply.
+            // Said it out loud, or showed a view, and wrote nothing more: that is the whole reply.
             if reply_text.is_empty() && !cut_off {
-                if let Some((message_id, text)) = recording_posted_since(conn, session_id, agent.display_name().as_ref(), started_at).await {
+                if let Some((message_id, text)) = answer_posted_since(conn, session_id, agent.display_name().as_ref(), started_at).await {
                     if agent.uses_memory() {
                         learn_from_turn(conn, user_id, session_id, &messages, &text).await;
                     }
                     update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
-                    return Ok(LoopOutcome::Spoke {
+                    return Ok(LoopOutcome::Posted {
                         message_id,
                         text,
                         memory_ids_used: memories.iter().map(|m| m.id).collect(),
@@ -865,7 +866,12 @@ pub async fn run_agent_turn(
         let finishing = pending_tool_use_blocks.iter().any(
             |b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == COMPLETE_TASK_TOOL_NAME || name.as_str() == DELEGATE_TOOL_NAME),
         );
-        if agent.surfaces_activity() && !finishing && !written.is_empty() {
+        // Text written with a view ("Here's where your money went:") introduces it: it goes in the
+        // chat as an ordinary message, before the view, for every agent.
+        let shows = pending_tool_use_blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == crate::views::SHOW_TOOL_NAME));
+        if shows && !finishing && !written.is_empty() {
+            post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &written, None).await;
+        } else if agent.surfaces_activity() && !finishing && !written.is_empty() {
             post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("💭 {written}"), None).await;
         }
 
@@ -1314,15 +1320,17 @@ async fn update_agent_phase(
 
 /// The newest recording (a voice block) `agent_display_name` posted in the chat since `since`,
 /// with the words it says.
-async fn recording_posted_since(
+/// The newest recording or view this agent posted in this turn, which can stand as its reply:
+/// its id and its words (what the recording says, or the view as text).
+async fn answer_posted_since(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
     agent_display_name: &str,
     since: chrono::DateTime<chrono::Utc>,
 ) -> Option<(Uuid, String)> {
     sqlx::query_as(
-        "SELECT id, content_blocks->0->>'text' FROM messages \
-         WHERE session_id = $1 AND agent_display_name = $2 AND created_at >= $3 AND content_blocks->0->>'kind' = 'voice' \
+        "SELECT id, CASE WHEN content_blocks->0->>'kind' = 'voice' THEN content_blocks->0->>'text' ELSE content END FROM messages \
+         WHERE session_id = $1 AND agent_display_name = $2 AND created_at >= $3 AND content_blocks->0->>'kind' IN ('voice', 'view') \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(session_id)
