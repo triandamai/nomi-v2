@@ -4,7 +4,7 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount, tick, untrack, type Snippet } from 'svelte';
+	import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
 	import { mergeReloaded, prependOlder } from '$lib/mergeMessages';
 	import CrewPanel from '$lib/components/CrewPanel.svelte';
@@ -33,6 +33,7 @@
 	import { provideChatSend } from '$lib/chatSend';
 	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
+	import { createChatLink } from '$lib/chatLink';
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
 	import { groupReasoning } from '$lib/reasoning';
@@ -486,13 +487,9 @@
 			}
 		} catch {
 			// Best-effort — a dropped connection triggers a full invalidateAll() on reconnect
-			// (see the socket 'open' handler below), which reconciles anything missed here.
+			// (see the link's opened handler below), which reconciles anything missed here.
 		}
 	}
-
-	const TERMINAL_CLOSE_CODES = new Set([4401, 4404]);
-	const INITIAL_RETRY_DELAY_MS = 1000;
-	const MAX_RETRY_DELAY_MS = 30000;
 
 	// Consecutive messages from the same sender in the same minute chain into one visual group
 	// (no repeated "You"/"Nomi" label, tighter spacing) — same idea as Slack/iMessage grouping.
@@ -608,13 +605,76 @@
 		if (!touchScreen()) messageInput?.focus();
 	});
 
+	const link = createChatLink({
+		opened(resumed) {
+			connectionLost = false;
+			if (resumed) {
+				// Reconnected after a drop; neither leg replays missed events, so re-fetch to
+				// reconcile anything that happened while disconnected. A turn that ended in the
+				// gap would otherwise stay "working"; one still running streams again.
+				openTurns = [];
+				invalidateAll();
+			} else {
+				// Whatever landed between loading the page and connecting (a quick reply, or a
+				// request moved to a new project) came with no event to show it: sync once.
+				invalidateAll();
+			}
+		},
+		message(data) {
+			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string };
+			try {
+				envelope = JSON.parse(String(data));
+			} catch {
+				return;
+			}
+			const turnId = envelope.turn_job_id ?? NIL_UUID;
+			if (envelope.kind === 'Delta') {
+				if (!stopRequested && !openTurns.includes(turnId)) openTurns = [...openTurns, turnId];
+			} else if (envelope.kind === 'TurnCompleted') {
+				stopRequested = false;
+				closeTurn(turnId);
+				turnError = false;
+				if (envelope.message_id && envelope.message_id !== NIL_UUID) {
+					fetchAndUpsertMessage(envelope.message_id);
+				}
+			} else if (envelope.kind === 'TurnFailed') {
+				stopRequested = false;
+				closeTurn(turnId);
+				// The server posts why (out of credits, a rejected key, ...) as a message in the
+				// chat; the generic notice is only for a failure that came with no explanation.
+				turnError = !envelope.error;
+			} else if (envelope.kind === 'SessionRenamed') {
+				if (typeof envelope.title === 'string') shownTitle = envelope.title;
+				invalidateAll(); // the sidebar and chat list show the new name too
+			} else if (envelope.kind === 'PersonalityChanged') {
+				invalidateAll(); // the personality menu shows the new one
+			} else if (envelope.kind === 'AgentDelegationUpdated') {
+				invalidateAll();
+			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
+				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
+			} else if (envelope.kind === 'AgentPhaseChanged') {
+				if (typeof envelope.phase === 'string' && !stopRequested) {
+					currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
+				}
+			}
+		},
+		lost() {
+			connectionLost = true;
+		},
+	});
+	onDestroy(() => link.close());
+
 	let connectedSession: string | null = null;
 	// The live connection follows the chat on screen: going to another chat reuses this
 	// component, so it closes and reopens for the new one. (What happens in chats that aren't on
 	// screen reaches the app through the person's own feed, $lib/userActivity.)
 	$effect(() => {
 		const id = sessionId;
-		if (unsaved) return; // nothing to listen to until the first message creates the chat
+		// Nothing to listen to until the first message creates the chat.
+		if (unsaved) {
+			link.follow(null);
+			return;
+		}
 		// Another chat than the last one: what was streaming belonged to that one.
 		if (connectedSession !== null && connectedSession !== id) {
 			untrack(() => {
@@ -624,91 +684,7 @@
 			});
 		}
 		connectedSession = id;
-
-		let socket: WebSocket | undefined;
-		let retryDelay = INITIAL_RETRY_DELAY_MS;
-		let retryTimeout: ReturnType<typeof setTimeout> | undefined;
-		let intentionallyClosed = false;
-		let hasConnectedBefore = false;
-
-		function connect() {
-			socket = new WebSocket(`/chat/${id}/ws`);
-
-			socket.addEventListener('open', () => {
-				retryDelay = INITIAL_RETRY_DELAY_MS;
-				connectionLost = false;
-				if (hasConnectedBefore) {
-					// Reconnected after a drop; neither leg replays missed events, so re-fetch to
-					// reconcile anything that happened while disconnected. A turn that ended in the
-					// gap would otherwise stay "working"; one still running streams again.
-					openTurns = [];
-					invalidateAll();
-				} else {
-					// Whatever landed between loading the page and connecting (a quick reply, or a
-					// request moved to a new project) came with no event to show it: sync once.
-					invalidateAll();
-				}
-				hasConnectedBefore = true;
-			});
-
-			socket.addEventListener('message', (event) => {
-				let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string };
-				try {
-					envelope = JSON.parse(event.data);
-				} catch {
-					return;
-				}
-				const turnId = envelope.turn_job_id ?? NIL_UUID;
-				if (envelope.kind === 'Delta') {
-					if (!stopRequested && !openTurns.includes(turnId)) openTurns = [...openTurns, turnId];
-				} else if (envelope.kind === 'TurnCompleted') {
-					stopRequested = false;
-					closeTurn(turnId);
-					turnError = false;
-					if (envelope.message_id && envelope.message_id !== NIL_UUID) {
-						fetchAndUpsertMessage(envelope.message_id);
-					}
-				} else if (envelope.kind === 'TurnFailed') {
-					stopRequested = false;
-					closeTurn(turnId);
-					// The server posts why (out of credits, a rejected key, ...) as a message in the
-					// chat; the generic notice is only for a failure that came with no explanation.
-					turnError = !envelope.error;
-				} else if (envelope.kind === 'SessionRenamed') {
-					if (typeof envelope.title === 'string') shownTitle = envelope.title;
-					invalidateAll(); // the sidebar and chat list show the new name too
-				} else if (envelope.kind === 'PersonalityChanged') {
-					invalidateAll(); // the personality menu shows the new one
-				} else if (envelope.kind === 'AgentDelegationUpdated') {
-					invalidateAll();
-				} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
-					if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
-				} else if (envelope.kind === 'AgentPhaseChanged') {
-					if (typeof envelope.phase === 'string' && !stopRequested) {
-						currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
-					}
-				}
-			});
-
-			socket.addEventListener('close', (event) => {
-				if (intentionallyClosed) return;
-				if (TERMINAL_CLOSE_CODES.has(event.code)) {
-					connectionLost = true;
-					return;
-				}
-				const jitter = Math.random() * 250;
-				retryTimeout = setTimeout(connect, retryDelay + jitter);
-				retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS);
-			});
-		}
-
-		connect();
-
-		return () => {
-			intentionallyClosed = true;
-			clearTimeout(retryTimeout);
-			socket?.close();
-		};
+		link.follow(id);
 	});
 </script>
 
