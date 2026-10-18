@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -7,7 +8,28 @@ export default defineConfig({
 		alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) },
 	},
 	test: {
-		include: ['ws-proxy/**/*.test.js', 'src/**/*.test.ts'],
-		environment: 'node'
-	}
+		projects: [
+			{
+				extends: true,
+				test: {
+					name: 'unit',
+					include: ['ws-proxy/**/*.test.js', 'src/**/*.test.ts'],
+					exclude: ['src/lib/components/**/*.test.ts'],
+					environment: 'node',
+				},
+			},
+			{
+				// Components mount into jsdom with Svelte's own `mount`. Only these tests resolve
+				// packages' browser builds: `ws`, which the ws-proxy tests use, throws in its own.
+				extends: true,
+				plugins: [svelte()],
+				resolve: { conditions: ['browser'] },
+				test: {
+					name: 'components',
+					include: ['src/lib/components/**/*.test.ts'],
+					environment: 'jsdom',
+				},
+			},
+		],
+	},
 });
