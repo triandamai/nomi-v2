@@ -37,7 +37,7 @@ fun ThemePreview() {
         verticalArrangement = Arrangement.spacedBy(PreviewGap),
     ) {
         Text("Display Nomi", style = MaterialTheme.typography.displayMedium, color = colors.onSurface)
-        Text("Headline: plan the week", style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
+        Text("Headline: plan the week", style = MaterialTheme.typography.headlineMedium, color = colors.onSurface)
         Text("Title: Groceries and rent", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
         Text("Body: Instrument Sans reads calmly at paragraph size.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
         Text("META 2026-10-18 12:04 #a1b2c3", style = NomiTheme.metaStyle, color = colors.onSurfaceVariant)

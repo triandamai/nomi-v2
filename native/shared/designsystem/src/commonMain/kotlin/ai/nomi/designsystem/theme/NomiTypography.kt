@@ -1,5 +1,7 @@
 package ai.nomi.designsystem.theme
 
+import ai.nomi.designsystem.generated.NomiTypescale
+import ai.nomi.designsystem.generated.TypeRole
 import ai.nomi.designsystem.resources.Res
 import ai.nomi.designsystem.resources.bricolage_grotesque_variable
 import ai.nomi.designsystem.resources.instrument_sans_variable
@@ -10,57 +12,76 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import org.jetbrains.compose.resources.FontResource
 import org.jetbrains.compose.resources.Font as resourceFont
 
-private val BrandWeights = listOf(
-    FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold,
-)
-private val BodyWeights = listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold)
-private val MonoWeights = listOf(FontWeight.Normal, FontWeight.Medium)
+private const val FAMILY_BRAND = "brand"
+private const val FAMILY_MONO = "mono"
 
+/** Every baseline and emphasized role, so each family can declare exactly the weights Nomi uses. */
+private val allRoles: List<TypeRole> = with(NomiTypescale) {
+    listOf(
+        displayLarge, displayMedium, displaySmall, headlineLarge, headlineMedium, headlineSmall,
+        titleLarge, titleMedium, titleSmall, bodyLarge, bodyMedium, bodySmall,
+        labelLarge, labelMedium, labelSmall,
+        emphasizedDisplayLarge, emphasizedDisplayMedium, emphasizedDisplaySmall,
+        emphasizedHeadlineLarge, emphasizedHeadlineMedium, emphasizedHeadlineSmall,
+        emphasizedTitleLarge, emphasizedTitleMedium, emphasizedTitleSmall,
+        emphasizedBodyLarge, emphasizedBodyMedium, emphasizedBodySmall,
+        emphasizedLabelLarge, emphasizedLabelMedium, emphasizedLabelSmall,
+    )
+}
+
+/** One Font entry per distinct weight, each pinning the variable font's wght axis to exactly that value. */
 @Composable
-private fun variableFamily(
-    resource: org.jetbrains.compose.resources.FontResource,
-    weights: List<FontWeight>,
-): FontFamily = FontFamily(
-    weights.map { weight ->
-        resourceFont(resource, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
+private fun variableFamily(resource: FontResource, weights: Set<Int>): FontFamily = FontFamily(
+    weights.sorted().map { w ->
+        resourceFont(resource, weight = FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
     },
 )
 
-@Composable fun bricolageGrotesque(): FontFamily = variableFamily(Res.font.bricolage_grotesque_variable, BrandWeights)
-@Composable fun instrumentSans(): FontFamily = variableFamily(Res.font.instrument_sans_variable, BodyWeights)
-@Composable fun jetBrainsMono(): FontFamily = variableFamily(Res.font.jetbrains_mono_variable, MonoWeights)
-
-/** Display and headline styles in Bricolage Grotesque (display ExtraBold); title, body and label in Instrument Sans. */
+/** The families Nomi's typescale names; "title" and "plain" are both Instrument Sans on the web. */
 @Composable
-fun nomiTypography(): Typography {
-    val base = Typography()
-    val brand = bricolageGrotesque()
-    val body = instrumentSans()
-    fun TextStyle.display() = copy(fontFamily = brand, fontWeight = FontWeight.ExtraBold)
-    fun TextStyle.headline() = copy(fontFamily = brand)
-    fun TextStyle.text() = copy(fontFamily = body)
-    return base.copy(
-        displayLarge = base.displayLarge.display(),
-        displayMedium = base.displayMedium.display(),
-        displaySmall = base.displaySmall.display(),
-        headlineLarge = base.headlineLarge.headline(),
-        headlineMedium = base.headlineMedium.headline(),
-        headlineSmall = base.headlineSmall.headline(),
-        titleLarge = base.titleLarge.text(),
-        titleMedium = base.titleMedium.text(),
-        titleSmall = base.titleSmall.text(),
-        bodyLarge = base.bodyLarge.text(),
-        bodyMedium = base.bodyMedium.text(),
-        bodySmall = base.bodySmall.text(),
-        labelLarge = base.labelLarge.text(),
-        labelMedium = base.labelMedium.text(),
-        labelSmall = base.labelSmall.text(),
+fun nomiFontFamilies(): Map<String, FontFamily> {
+    fun weightsOf(vararg families: String) = allRoles.filter { it.family in families }.map { it.weight }.toSet()
+    val brand = variableFamily(Res.font.bricolage_grotesque_variable, weightsOf(FAMILY_BRAND))
+    val sans = variableFamily(Res.font.instrument_sans_variable, weightsOf("title", "plain"))
+    val mono = variableFamily(Res.font.jetbrains_mono_variable, weightsOf(FAMILY_MONO) + NomiTypescale.labelSmall.weight)
+    return mapOf(FAMILY_BRAND to brand, "title" to sans, "plain" to sans, FAMILY_MONO to mono)
+}
+
+private fun TypeRole.toTextStyle(families: Map<String, FontFamily>) = TextStyle(
+    fontFamily = families.getValue(family),
+    fontWeight = FontWeight(weight),
+    fontSize = sizeSp.sp,
+    lineHeight = lineHeightSp.sp,
+    letterSpacing = trackingEm.em,
+)
+
+/** M3 [Typography] from the generated typescale (sizes, line heights, tracking and weights as on the web). */
+@Composable
+fun nomiTypography(families: Map<String, FontFamily> = nomiFontFamilies()): Typography = with(NomiTypescale) {
+    Typography(
+        displayLarge = displayLarge.toTextStyle(families),
+        displayMedium = displayMedium.toTextStyle(families),
+        displaySmall = displaySmall.toTextStyle(families),
+        headlineLarge = headlineLarge.toTextStyle(families),
+        headlineMedium = headlineMedium.toTextStyle(families),
+        headlineSmall = headlineSmall.toTextStyle(families),
+        titleLarge = titleLarge.toTextStyle(families),
+        titleMedium = titleMedium.toTextStyle(families),
+        titleSmall = titleSmall.toTextStyle(families),
+        bodyLarge = bodyLarge.toTextStyle(families),
+        bodyMedium = bodyMedium.toTextStyle(families),
+        bodySmall = bodySmall.toTextStyle(families),
+        labelLarge = labelLarge.toTextStyle(families),
+        labelMedium = labelMedium.toTextStyle(families),
+        labelSmall = labelSmall.toTextStyle(families),
     )
 }
 
 /** Meta text (timestamps, ids, counters): JetBrains Mono at `labelSmall` metrics. */
-@Composable
-fun nomiMetaStyle(typography: Typography): TextStyle =
-    typography.labelSmall.copy(fontFamily = jetBrainsMono())
+fun nomiMetaStyle(typography: Typography, families: Map<String, FontFamily>): TextStyle =
+    typography.labelSmall.copy(fontFamily = families.getValue(FAMILY_MONO))

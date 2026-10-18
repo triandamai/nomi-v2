@@ -53,6 +53,14 @@ const GRADIENT_PREFIX = '--nomi-gradient-';
 const ON_GRADIENT_PREFIX = '--nomi-on-gradient-';
 const ACTION_GRADIENT = 'action'; // follows the accent; carried by action-1..3 instead
 const MOTION_PREFIX = '--nomi-motion-';
+const TYPEFACE_PREFIX = '--md-ref-typeface-';
+const TYPESCALE_PREFIX = '--md-sys-typescale-';
+const CORNER_PREFIX = '--md-sys-shape-corner-';
+const BUBBLE_PREFIX = '--nomi-shape-bubble-';
+const PX_PER_REM = 16; // CSS root font size; native sp are derived at the same ratio
+const EXTRA_KEYS = ['gradients', 'motion', 'typescale', 'corners', 'bubbles']; // non-palette entries of parseCss()
+const TYPESCALE_FIELDS = ['font', 'weight', 'size', 'line-height', 'tracking'];
+const CORNER_SIDES = 4; // top-left, top-right, bottom-right, bottom-left (CSS order)
 
 // Kotlin-side agent identity table (see agentLook in shapes.ts: it is substring matching code,
 // not a table, so the five canonical agents are pinned here and checked against SPECS/gradients).
@@ -233,6 +241,88 @@ export function parseCss(css) {
       out.motion[camel(name.slice(MOTION_PREFIX.length))] = parseMotion(raw);
     }
   }
+  out.typescale = parseTypescale(base);
+  out.corners = {};
+  out.bubbles = {};
+  for (const [name, raw] of Object.entries(base)) {
+    if (name.startsWith(CORNER_PREFIX)) out.corners[camel(name.slice(CORNER_PREFIX.length))] = parsePx(raw);
+    else if (name.startsWith(BUBBLE_PREFIX)) out.bubbles[camel(name.slice(BUBBLE_PREFIX.length))] = parseCorners(raw);
+  }
+  return out;
+}
+
+/** '12px' / '0' -> number of px. */
+export function parsePx(raw) {
+  const m = /^(-?[\d.]+)(px)?$/.exec(raw.trim());
+  if (!m) throw new Error(`unsupported px length: ${raw}`);
+  return Number(m[1]);
+}
+
+/** CSS border-radius shorthand with four values -> [topLeft, topRight, bottomRight, bottomLeft]. */
+export function parseCorners(raw) {
+  const parts = raw.trim().split(/\s+/).map(parsePx);
+  if (parts.length !== CORNER_SIDES) throw new Error(`expected ${CORNER_SIDES} corner values: ${raw}`);
+  return parts;
+}
+
+/** A CSS length in rem/em/px/0 -> rem; `sizeRem` converts em. */
+function toRem(raw, sizeRem) {
+  const m = /^(-?[\d.]+)(rem|em|px)?$/.exec(raw.trim());
+  if (!m) throw new Error(`unsupported length: ${raw}`);
+  const n = Number(m[1]);
+  if (m[2] === 'em') return n * sizeRem;
+  if (m[2] === 'px') return n / PX_PER_REM;
+  return n;
+}
+
+const FAMILY_NAMES = ['brand', 'title', 'plain', 'mono'];
+
+/** Follows var() hops from a -font property to the --md-ref-typeface-<family> it names. */
+function familyOf(vars, name) {
+  const raw = vars[name]?.trim() ?? '';
+  const m = /^var\(\s*(--[\w-]+)\s*\)$/.exec(raw);
+  if (!m) throw new Error(`${name}: expected var(--md-ref-typeface-*), got "${raw}"`);
+  if (m[1].startsWith(TYPEFACE_PREFIX)) {
+    const family = m[1].slice(TYPEFACE_PREFIX.length);
+    if (!FAMILY_NAMES.includes(family)) throw new Error(`${name}: unknown family ${family}`);
+    return family;
+  }
+  return familyOf(vars, m[1]);
+}
+
+/**
+ * Every --md-sys-typescale-<role> (incl. emphasized-<role>) as
+ * { family, weight, sizeSp, lineHeightSp, trackingEm }, var() resolved, rem -> sp at 16px/rem.
+ */
+export function parseTypescale(vars) {
+  const resolve = (raw, trail = []) =>
+    raw.replace(/var\(\s*(--[\w-]+)\s*\)/g, (_, name) => {
+      if (trail.includes(name)) throw new Error(`var() cycle through ${name}`);
+      if (!(name in vars)) throw new Error(`unresolved ${name} in "${raw}"`);
+      return resolve(vars[name], [...trail, name]);
+    });
+  const roles = new Set();
+  for (const name of Object.keys(vars)) {
+    if (name.startsWith(TYPESCALE_PREFIX) && name.endsWith('-font')) roles.add(name.slice(TYPESCALE_PREFIX.length, -'-font'.length));
+  }
+  const out = {};
+  for (const role of roles) {
+    const get = (field) => {
+      const name = `${TYPESCALE_PREFIX}${role}-${field}`;
+      if (!(name in vars)) throw new Error(`${name} is missing`);
+      return resolve(vars[name]).trim();
+    };
+    const [, weight, size, lineHeight, tracking] = TYPESCALE_FIELDS.map((field) => (field === 'font' ? '' : get(field)));
+    const family = familyOf(vars, `${TYPESCALE_PREFIX}${role}-font`);
+    const sizeRem = toRem(size);
+    out[camel(role)] = {
+      family,
+      weight: Number(weight),
+      sizeSp: sizeRem * PX_PER_REM,
+      lineHeightSp: toRem(lineHeight) * PX_PER_REM,
+      trackingEm: toRem(tracking, sizeRem) / sizeRem,
+    };
+  }
   return out;
 }
 
@@ -315,8 +405,8 @@ function emitRoles(roles, requiredKeys, indent) {
 /** Builds the whole NomiTokens.kt text from the CSS and shapes.ts on disk (or the given text). */
 export function emitKotlin(css = readFileSync(CSS_PATH, 'utf8'), shapesSrc = readFileSync(SHAPES_PATH, 'utf8')) {
   const tokens = parseCss(css);
-  const { gradients, motion } = tokens;
-  const palettes = Object.entries(tokens).filter(([name]) => name !== 'gradients' && name !== 'motion');
+  const { gradients, motion, typescale, corners, bubbles } = tokens;
+  const palettes = Object.entries(tokens).filter(([name]) => !EXTRA_KEYS.includes(name));
   const roleKeys = Object.keys(tokens[DEFAULT_ACCENT].light);
   const specs = parseShapes(shapesSrc);
   const consts = parseShapeConstants(shapesSrc);
@@ -358,6 +448,17 @@ export function emitKotlin(css = readFileSync(CSS_PATH, 'utf8'), shapesSrc = rea
   const agentShape = Object.entries(AGENT_LOOKS).map(([a, l]) => `${kString(a)} to ${kString(l.shape)}`).join(', ');
   const agentTone = Object.entries(AGENT_LOOKS).map(([a, l]) => `${kString(a)} to ${kString(l.tone)}`).join(', ');
 
+  const typescaleVals = Object.entries(typescale)
+    .map(
+      ([name, t]) =>
+        `${KOTLIN_INDENT}val ${name} = TypeRole(family = ${kString(t.family)}, weight = ${t.weight}, sizeSp = ${kFloat(t.sizeSp)}, lineHeightSp = ${kFloat(t.lineHeightSp)}, trackingEm = ${kFloat(t.trackingEm)})`,
+    )
+    .join('\n');
+  const cornerVals = Object.entries(corners).map(([n, px]) => `${KOTLIN_INDENT}const val ${n} = ${kFloat(px)}`).join('\n');
+  const bubbleVals = Object.entries(bubbles)
+    .map(([n, [tl, tr, br, bl]]) => `${KOTLIN_INDENT}val bubble${n[0].toUpperCase()}${n.slice(1)} = CornerSpec(topStart = ${kFloat(tl)}, topEnd = ${kFloat(tr)}, bottomEnd = ${kFloat(br)}, bottomStart = ${kFloat(bl)})`)
+    .join('\n');
+
   return `${HEADER}
 package ${KOTLIN_PACKAGE}
 
@@ -373,6 +474,12 @@ data class GradientSpec(val angleDeg: Float, val stops: List<Pair<Float, Long>>,
 data class MotionSpec(val durationMs: Int, val x1: Float, val y1: Float, val x2: Float, val y2: Float)
 
 data class PolarSpec(val lobes: Int, val amplitude: Float, val phase: Float)
+
+/** [family] is one of "brand" | "title" | "plain" | "mono"; sizes in sp (16px per rem), tracking in em. */
+data class TypeRole(val family: String, val weight: Int, val sizeSp: Float, val lineHeightSp: Float, val trackingEm: Float)
+
+/** Per-corner radii in dp, already resolved for start-to-end layout. */
+data class CornerSpec(val topStart: Float, val topEnd: Float, val bottomEnd: Float, val bottomStart: Float)
 
 object NomiPalettes {
     const val DEFAULT_ACCENT = ${kString(DEFAULT_ACCENT)}
@@ -390,6 +497,16 @@ ${gradientVals}
 
 object NomiMotionTokens {
 ${motionVals}
+}
+
+object NomiTypescale {
+${typescaleVals}
+}
+
+object NomiCorners {
+${cornerVals}
+
+${bubbleVals}
 }
 
 const val SHAPE_POINTS = ${consts.points}

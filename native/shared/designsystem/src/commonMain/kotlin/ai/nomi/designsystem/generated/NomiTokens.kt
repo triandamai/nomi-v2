@@ -52,6 +52,12 @@ data class MotionSpec(val durationMs: Int, val x1: Float, val y1: Float, val x2:
 
 data class PolarSpec(val lobes: Int, val amplitude: Float, val phase: Float)
 
+/** [family] is one of "brand" | "title" | "plain" | "mono"; sizes in sp (16px per rem), tracking in em. */
+data class TypeRole(val family: String, val weight: Int, val sizeSp: Float, val lineHeightSp: Float, val trackingEm: Float)
+
+/** Per-corner radii in dp, already resolved for start-to-end layout. */
+data class CornerSpec(val topStart: Float, val topEnd: Float, val bottomEnd: Float, val bottomStart: Float)
+
 object NomiPalettes {
     const val DEFAULT_ACCENT = "green"
 
@@ -1086,6 +1092,55 @@ object NomiMotionTokens {
     val spatialSlow = MotionSpec(durationMs = 650, x1 = 0.39f, y1 = 1.29f, x2 = 0.35f, y2 = 0.98f)
     val effectsFast = MotionSpec(durationMs = 150, x1 = 0.31f, y1 = 0.94f, x2 = 0.34f, y2 = 1.0f)
     val effectsDefault = MotionSpec(durationMs = 200, x1 = 0.34f, y1 = 0.8f, x2 = 0.34f, y2 = 1.0f)
+}
+
+object NomiTypescale {
+    val displayLarge = TypeRole(family = "brand", weight = 800, sizeSp = 38.0f, lineHeightSp = 46.0f, trackingEm = -0.04f)
+    val displayMedium = TypeRole(family = "brand", weight = 750, sizeSp = 36.0f, lineHeightSp = 44.0f, trackingEm = -0.035f)
+    val displaySmall = TypeRole(family = "brand", weight = 700, sizeSp = 28.0f, lineHeightSp = 36.0f, trackingEm = -0.03f)
+    val headlineLarge = TypeRole(family = "brand", weight = 700, sizeSp = 26.0f, lineHeightSp = 33.0f, trackingEm = -0.02f)
+    val headlineMedium = TypeRole(family = "brand", weight = 650, sizeSp = 23.0f, lineHeightSp = 30.0f, trackingEm = -0.02f)
+    val headlineSmall = TypeRole(family = "brand", weight = 650, sizeSp = 20.0f, lineHeightSp = 28.0f, trackingEm = -0.02f)
+    val titleLarge = TypeRole(family = "title", weight = 600, sizeSp = 19.0f, lineHeightSp = 25.0f, trackingEm = 0.0f)
+    val titleMedium = TypeRole(family = "title", weight = 600, sizeSp = 15.0f, lineHeightSp = 22.0f, trackingEm = 0.01f)
+    val titleSmall = TypeRole(family = "title", weight = 600, sizeSp = 14.0f, lineHeightSp = 20.0f, trackingEm = 0.00714285714f)
+    val bodyLarge = TypeRole(family = "plain", weight = 400, sizeSp = 15.0f, lineHeightSp = 23.0f, trackingEm = 0.0333333333f)
+    val bodyMedium = TypeRole(family = "plain", weight = 400, sizeSp = 14.0f, lineHeightSp = 20.0f, trackingEm = 0.0178571429f)
+    val bodySmall = TypeRole(family = "plain", weight = 400, sizeSp = 12.0f, lineHeightSp = 16.0f, trackingEm = 0.0333333333f)
+    val labelLarge = TypeRole(family = "plain", weight = 500, sizeSp = 14.0f, lineHeightSp = 20.0f, trackingEm = 0.00714285714f)
+    val labelMedium = TypeRole(family = "plain", weight = 500, sizeSp = 12.0f, lineHeightSp = 16.0f, trackingEm = 0.0416666667f)
+    val labelSmall = TypeRole(family = "plain", weight = 500, sizeSp = 11.0f, lineHeightSp = 16.0f, trackingEm = 0.0454545455f)
+    val emphasizedDisplayLarge = TypeRole(family = "brand", weight = 800, sizeSp = 38.0f, lineHeightSp = 46.0f, trackingEm = -0.04f)
+    val emphasizedDisplayMedium = TypeRole(family = "brand", weight = 800, sizeSp = 36.0f, lineHeightSp = 44.0f, trackingEm = -0.035f)
+    val emphasizedDisplaySmall = TypeRole(family = "brand", weight = 800, sizeSp = 28.0f, lineHeightSp = 36.0f, trackingEm = -0.03f)
+    val emphasizedHeadlineLarge = TypeRole(family = "brand", weight = 800, sizeSp = 26.0f, lineHeightSp = 33.0f, trackingEm = -0.02f)
+    val emphasizedHeadlineMedium = TypeRole(family = "brand", weight = 800, sizeSp = 23.0f, lineHeightSp = 30.0f, trackingEm = -0.02f)
+    val emphasizedHeadlineSmall = TypeRole(family = "brand", weight = 800, sizeSp = 20.0f, lineHeightSp = 28.0f, trackingEm = -0.02f)
+    val emphasizedTitleLarge = TypeRole(family = "title", weight = 700, sizeSp = 19.0f, lineHeightSp = 25.0f, trackingEm = 0.0f)
+    val emphasizedTitleMedium = TypeRole(family = "title", weight = 700, sizeSp = 15.0f, lineHeightSp = 22.0f, trackingEm = 0.01f)
+    val emphasizedTitleSmall = TypeRole(family = "title", weight = 700, sizeSp = 14.0f, lineHeightSp = 20.0f, trackingEm = 0.00714285714f)
+    val emphasizedBodyLarge = TypeRole(family = "plain", weight = 700, sizeSp = 15.0f, lineHeightSp = 23.0f, trackingEm = 0.0333333333f)
+    val emphasizedBodyMedium = TypeRole(family = "plain", weight = 700, sizeSp = 14.0f, lineHeightSp = 20.0f, trackingEm = 0.0178571429f)
+    val emphasizedBodySmall = TypeRole(family = "plain", weight = 700, sizeSp = 12.0f, lineHeightSp = 16.0f, trackingEm = 0.0333333333f)
+    val emphasizedLabelLarge = TypeRole(family = "plain", weight = 700, sizeSp = 14.0f, lineHeightSp = 20.0f, trackingEm = 0.00714285714f)
+    val emphasizedLabelMedium = TypeRole(family = "plain", weight = 700, sizeSp = 12.0f, lineHeightSp = 16.0f, trackingEm = 0.0416666667f)
+    val emphasizedLabelSmall = TypeRole(family = "plain", weight = 700, sizeSp = 11.0f, lineHeightSp = 16.0f, trackingEm = 0.0454545455f)
+}
+
+object NomiCorners {
+    const val none = 0.0f
+    const val extraSmall = 4.0f
+    const val small = 8.0f
+    const val medium = 12.0f
+    const val large = 16.0f
+    const val largeIncreased = 20.0f
+    const val extraLarge = 24.0f
+    const val extraLargeIncreased = 28.0f
+    const val extraExtraLarge = 40.0f
+    const val full = 9999.0f
+
+    val bubbleStart = CornerSpec(topStart = 28.0f, topEnd = 28.0f, bottomEnd = 28.0f, bottomStart = 8.0f)
+    val bubbleEnd = CornerSpec(topStart = 28.0f, topEnd = 28.0f, bottomEnd = 8.0f, bottomStart = 28.0f)
 }
 
 const val SHAPE_POINTS = 120

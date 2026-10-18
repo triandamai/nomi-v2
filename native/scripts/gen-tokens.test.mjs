@@ -104,3 +104,48 @@ test('emitted Kotlin starts with the generated-file header and has no CSS functi
   assert.match(kt, /"coral-reef" to NomiPalette/);
   assert.match(kt, /const val SHAPE_POINTS = 120/);
 });
+
+const TYPE_CSS = `:root {
+  --md-ref-typeface-brand: 'Bricolage Grotesque', system-ui, sans-serif;
+  --md-ref-typeface-title: 'Instrument Sans', system-ui, sans-serif;
+  --md-ref-typeface-plain: 'Instrument Sans', system-ui, sans-serif;
+  --md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-large-weight: 800;
+  --md-sys-typescale-display-large-size: 2.375rem;
+  --md-sys-typescale-display-large-line-height: 2.875rem;
+  --md-sys-typescale-display-large-tracking: -0.04em;
+  --md-sys-typescale-body-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-large-weight: 400;
+  --md-sys-typescale-body-large-size: 0.9375rem;
+  --md-sys-typescale-body-large-line-height: 1.4375rem;
+  --md-sys-typescale-body-large-tracking: 0.03125rem;
+  --md-sys-typescale-emphasized-display-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-emphasized-display-large-weight: 800;
+  --md-sys-typescale-emphasized-display-large-size: var(--md-sys-typescale-display-large-size);
+  --md-sys-typescale-emphasized-display-large-line-height: var(--md-sys-typescale-display-large-line-height);
+  --md-sys-typescale-emphasized-display-large-tracking: var(--md-sys-typescale-display-large-tracking);
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-none: 0px;
+  --nomi-shape-bubble-start: 28px 28px 28px 8px;
+}`;
+test('typescale: display-large values, family mapping and em tracking', () => {
+  const { typescale } = parseCss(TYPE_CSS);
+  assert.deepEqual(typescale.displayLarge, { family: 'brand', weight: 800, sizeSp: 38, lineHeightSp: 46, trackingEm: -0.04 });
+  assert.equal(typescale.bodyLarge.family, 'plain');
+  assert.equal(typescale.emphasizedDisplayLarge.family, 'brand');
+});
+test('typescale: rem tracking converts to em of the role size', () => {
+  const { typescale } = parseCss(TYPE_CSS);
+  assert.ok(Math.abs(typescale.bodyLarge.trackingEm - 0.5 / 15) < 1e-9); // 0.03125rem = 0.5px at 15px
+});
+test('typescale: emphasized variants resolve var()', () => {
+  const { typescale } = parseCss(TYPE_CSS);
+  assert.equal(typescale.emphasizedDisplayLarge.sizeSp, 38);
+  assert.equal(typescale.emphasizedDisplayLarge.trackingEm, -0.04);
+});
+test('corners and bubble shapes parse', () => {
+  const t = parseCss(TYPE_CSS);
+  assert.equal(t.corners.largeIncreased, 20);
+  assert.equal(t.corners.none, 0);
+  assert.deepEqual(t.bubbles.start, [28, 28, 28, 8]);
+});

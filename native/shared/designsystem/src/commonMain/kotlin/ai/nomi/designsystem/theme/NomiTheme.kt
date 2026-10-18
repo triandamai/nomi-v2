@@ -1,12 +1,13 @@
 package ai.nomi.designsystem.theme
 
+import ai.nomi.designsystem.generated.GradientSpec
+import ai.nomi.designsystem.generated.NomiGradients
 import ai.nomi.designsystem.generated.NomiPalettes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
-import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -35,7 +36,12 @@ private val LocalMetaStyle = staticCompositionLocalOf<TextStyle> {
     error("NomiTheme { } is missing from the composition")
 }
 
+private val LocalBubbleShapes = staticCompositionLocalOf<NomiBubbleShapes> {
+    error("NomiTheme { } is missing from the composition")
+}
+
 object NomiTheme {
+    val bubbleShapes: NomiBubbleShapes @Composable @ReadOnlyComposable get() = LocalBubbleShapes.current
     val gradients: NomiGradientSet @Composable @ReadOnlyComposable get() = LocalGradients.current
     val extendedColors: NomiExtendedColors @Composable @ReadOnlyComposable get() = LocalExtendedColors.current
     val metaStyle: TextStyle @Composable @ReadOnlyComposable get() = LocalMetaStyle.current
@@ -51,41 +57,37 @@ fun NomiTheme(
 ) {
     val palette = NomiPalettes.all[accent] ?: NomiPalettes.all.getValue(NomiPalettes.DEFAULT_ACCENT)
     val roles = if (dark) palette.dark else palette.light
-    val typography = nomiTypography()
+    val families = nomiFontFamilies()
+    val typography = nomiTypography(families)
+    val bubbles = remember { nomiBubbleShapes() }
+    // --nomi-gradient-action shares the tone gradients' angle and stop positions; only its colours follow the accent.
+    val actionStops = remember { NomiGradients.glow.stops.map { it.first } }
     val extended = remember(roles) {
         NomiExtendedColors(
             ground = Color(roles.ground),
             stage = Color(roles.stage),
             onStage = Color(roles.onStage),
-            actionBrush = ai.nomi.designsystem.generated.GradientSpec(
-                angleDeg = ACTION_GRADIENT_ANGLE_DEG,
-                stops = listOf(
-                    ACTION_STOP_START to roles.action1,
-                    ACTION_STOP_MID to roles.action2,
-                    ACTION_STOP_END to roles.action3,
-                ),
+            actionBrush = GradientSpec(
+                angleDeg = NomiGradients.glow.angleDeg,
+                stops = actionStops.zip(listOf(roles.action1, roles.action2, roles.action3)) { offset, argb -> offset to argb },
                 onColor = roles.onAction,
             ).toFittedBrush(),
             onAction = Color(roles.onAction),
         )
     }
-    val metaStyle = nomiMetaStyle(typography)
+    val metaStyle = nomiMetaStyle(typography, families)
     CompositionLocalProvider(
         LocalExtendedColors provides extended,
         LocalMetaStyle provides metaStyle,
+        LocalBubbleShapes provides bubbles,
     ) {
         MaterialExpressiveTheme(
             colorScheme = roles.toColorScheme(),
             motionScheme = if (reducedMotion) MotionScheme.standard() else MotionScheme.expressive(),
             typography = typography,
-            shapes = Shapes(),
+            shapes = nomiShapes(),
             content = content,
         )
     }
 }
 
-// Same stops as the web's --nomi-gradient-action.
-private const val ACTION_GRADIENT_ANGLE_DEG = 135f
-private const val ACTION_STOP_START = 0f
-private const val ACTION_STOP_MID = 0.55f
-private const val ACTION_STOP_END = 1f
