@@ -9,6 +9,7 @@
 	import { page } from '$app/state';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import { resolveRecents } from '$lib/drawerRecents';
 	import { registerAgentLooks } from '$lib/components/m3/shapes';
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import { badgeLabel, inbox, pollUnread } from '$lib/notifications.svelte';
@@ -92,7 +93,7 @@
 </div>
 {:else}
 <div class="app-shell flex" style="background: var(--nomi-color-ground)">
-	<Sidebar userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} bind:mobileOpen={mobileNavOpen} />
+	<Sidebar userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} recents={resolveRecents(data.preferences)} bind:mobileOpen={mobileNavOpen} />
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
 			<IconButton onclick={() => (mobileNavOpen = true)} aria-label={m.nav_open_menu()}>

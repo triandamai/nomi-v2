@@ -6,6 +6,8 @@
 	import DrawerCustomizer from '$lib/components/DrawerCustomizer.svelte';
 	import HomeLayoutPicker from '$lib/components/HomeLayoutPicker.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
+	import ButtonGroup from '$lib/components/m3/ButtonGroup.svelte';
+	import { DEFAULT_RECENTS_LIMIT, RECENTS_LIMITS, resolveRecents } from '$lib/drawerRecents';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -16,6 +18,21 @@
 	$effect.pre(() => {
 		backdropOn = data.preferences.animated_backdrop !== false;
 	});
+	// Recents in the drawer: the switch and the size save as soon as either changes.
+	const RECENTS_LIMIT_OPTIONS = RECENTS_LIMITS.map((limit) => ({ value: String(limit), label: String(limit) }));
+	let recentsForm: HTMLFormElement | undefined = $state();
+	let recentsOn = $state(true);
+	let recentsLimit = $state(String(DEFAULT_RECENTS_LIMIT));
+	$effect.pre(() => {
+		const recents = resolveRecents(data.preferences);
+		recentsOn = recents.enabled;
+		recentsLimit = String(recents.limit);
+	});
+	async function saveRecents() {
+		// The hidden inputs follow the switch and the size on the next render; submit after it.
+		await tick();
+		recentsForm?.requestSubmit();
+	}
 	let timezoneInput: HTMLInputElement | undefined = $state();
 	let detectedTimezone = $state('');
 	// Guards the auto-save to exactly one attempt per page visit — an $effect (not onMount)
@@ -83,6 +100,23 @@
 			<h2 class="md-title-medium" style="color: var(--md-sys-color-on-surface)">{m.drawer_title()}</h2>
 			<p class="md-body-medium mt-1 mb-2" style="color: var(--md-sys-color-on-surface-variant)">{m.drawer_hint()}</p>
 			<DrawerCustomizer savedPins={data.preferences.drawer_pins} />
+			<form bind:this={recentsForm} method="POST" action="?/updateRecents" use:enhance={() => async ({ update }) => update({ reset: false })} class="backdrop-row recents-row">
+				<div class="recents-row__top">
+					<label for="drawer-recents" class="backdrop-row__text">
+						<span class="backdrop-row__title">{m.recents_pref_title()}</span>
+						<span class="backdrop-row__hint">{m.recents_pref_hint()}</span>
+					</label>
+					<Switch id="drawer-recents" name="drawer_recents" bind:checked={recentsOn} onchange={saveRecents} />
+				</div>
+				{#if recentsOn}
+					<div class="recents-row__limit">
+						<span class="backdrop-row__hint">{m.recents_pref_limit()}</span>
+						<ButtonGroup options={RECENTS_LIMIT_OPTIONS} bind:value={recentsLimit} name="drawer_recents_limit" aria-label={m.recents_pref_limit()} onchange={saveRecents} />
+					</div>
+				{:else}
+					<input type="hidden" name="drawer_recents_limit" value={recentsLimit} />
+				{/if}
+			</form>
 		</section>
 
 		<section class="mt-8">
@@ -142,6 +176,23 @@
 	.backdrop-row__hint {
 		font-size: 0.875rem;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.recents-row {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.recents-row__top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+	}
+	.recents-row__limit {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px 16px;
 	}
 	.m3-timezone-select {
 		height: 52px;

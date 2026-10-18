@@ -19,6 +19,8 @@
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
 	import NavList from '$lib/components/NavList.svelte';
+	import DrawerRecents from '$lib/components/DrawerRecents.svelte';
+	import { DEFAULT_RECENTS_LIMIT, type RecentsSettings } from '$lib/drawerRecents';
 	import ProSheet from '$lib/components/ProSheet.svelte';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
 	import { formatShare, formatTokens, usageShare } from '$lib/usage';
@@ -30,7 +32,8 @@
 		usage = null,
 		mobileOpen = $bindable(false),
 		savedPins = null,
-	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; mobileOpen?: boolean; savedPins?: string[] | null } = $props();
+		recents = { enabled: true, limit: DEFAULT_RECENTS_LIMIT },
+	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; mobileOpen?: boolean; savedPins?: string[] | null; recents?: RecentsSettings } = $props();
 
 	let proOpen = $state(false);
 	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
@@ -133,6 +136,10 @@
 	     New chat and the account row in place. -->
 	<div class="drawer-scroll">
 		<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} onnavigate={() => (mobileOpen = false)} />
+		<!-- Chat titles need the labelled drawer; the icon rail has no room for them. -->
+		{#if recents.enabled && !effectiveCollapsed}
+			<DrawerRecents limit={recents.limit} onnavigate={() => (mobileOpen = false)} />
+		{/if}
 	</div>
 
 	{#if effectiveCollapsed}
