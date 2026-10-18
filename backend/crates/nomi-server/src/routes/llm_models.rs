@@ -477,7 +477,15 @@ pub struct UserModelOption {
     pub id: Uuid,
     pub label: String,
     pub provider: String,
+    /// Where it runs, by name: its connection's, else the provider's ("Anthropic").
+    pub provider_label: String,
     pub model_id: String,
+}
+
+/// A provider's display name from its stored kind ("gemini" → "Google").
+fn provider_display_name(kind: &str) -> String {
+    let catalog_id = if kind == "gemini" { "google" } else { kind };
+    nomi_llm::catalog::provider(catalog_id).map(|p| p.name.clone()).unwrap_or_else(|| kind.to_string())
 }
 
 #[derive(Serialize)]
@@ -533,9 +541,16 @@ pub async fn get_user_models(
     // Switched-off models aren't offered.
     let models: Vec<_> = models.into_iter().filter(|m| m.enabled).collect();
     let default_coding_model_id = models.iter().find(|m| m.is_coding_model).map(|m| m.id);
+    let labels = connection_labels(&state).await?;
     let admin_models = models
         .into_iter()
-        .map(|m| UserModelOption { id: m.id, label: m.label, provider: m.provider, model_id: m.model_id })
+        .map(|m| UserModelOption {
+            provider_label: m.connection_id.and_then(|id| labels.get(&id).cloned()).unwrap_or_else(|| provider_display_name(&m.provider)),
+            id: m.id,
+            label: m.label,
+            provider: m.provider,
+            model_id: m.model_id,
+        })
         .collect();
     let coding = llm_models::get_user_coding_choice(&state.pool, claims.sub)
         .await

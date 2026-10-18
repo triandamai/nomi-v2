@@ -255,8 +255,12 @@ async fn admins_connect_providers_for_everyone_and_add_their_models(pool: PgPool
 
     let (status, body, _) = request(router.clone(), "DELETE", &format!("/api/admin/settings/llm/connections/{id}"), Value::Null, Some(&admin)).await;
     assert_eq!((status, body["error"].as_str(), body["models"].clone()), (StatusCode::CONFLICT, Some("in_use"), json!(["GPT-5"])));
-    let (_, list, _) = request(router, "GET", "/api/admin/settings/llm/connections", Value::Null, Some(&admin)).await;
+    let (_, list, _) = request(router.clone(), "GET", "/api/admin/settings/llm/connections", Value::Null, Some(&admin)).await;
     assert_eq!(list["connections"][0]["models_in_use"], json!(["GPT-5"]));
+
+    // People see where the model runs by name, not the client Nomi uses for it.
+    let (_, offered, _) = request(router, "GET", "/api/llm/models", Value::Null, Some(&person)).await;
+    assert_eq!(offered["admin_models"][0]["provider_label"], "OpenAI");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
