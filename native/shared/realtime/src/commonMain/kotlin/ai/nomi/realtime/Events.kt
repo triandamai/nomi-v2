@@ -45,6 +45,21 @@ sealed interface RealtimeEvent {
     ) : RealtimeEvent
     data class ChatReply(override val topic: Topic, val sessionId: String, val messageId: String, val preview: String) : RealtimeEvent
 
+    /**
+     * The crew is done with a chat for now (`user/{id}/activity`, relayed under the user topic).
+     * [outcome] is "done", "failed" or "waiting"; [waiting] is "question", "approval" or "connect" when
+     * the chat waits on the person. [projectId] is set for a project's chat; [agent] answered last.
+     */
+    data class ChatActivity(
+        override val topic: Topic,
+        val sessionId: String,
+        val title: String?,
+        val projectId: String?,
+        val outcome: String,
+        val waiting: String?,
+        val agent: String?,
+    ) : RealtimeEvent
+
     /** Hub-emitted after a reconnect: state for [topic] may have been missed, refetch it. Never decoded. */
     data class Resynced(override val topic: Topic) : RealtimeEvent
 
@@ -108,6 +123,13 @@ private fun decodeKnown(topic: Topic, kind: String?, payload: JsonObject): Realt
             topic, p.str("notification_id"), p.str("category"), p.str("title"), p.str("body"), p.strOrNull("link"),
         )
         "ChatReply" -> RealtimeEvent.ChatReply(topic, p.str("session_id"), p.str("message_id"), p.str("preview"))
+        "ChatActivity" -> {
+            if (topic != Topic.User) error("user event off the user topic")
+            RealtimeEvent.ChatActivity(
+                topic, p.str("session_id"), p.strOrNull("title"), p.strOrNull("project_id"),
+                p.str("outcome"), p.strOrNull("waiting"), p.strOrNull("agent"),
+            )
+        }
         else -> null
     }
 }

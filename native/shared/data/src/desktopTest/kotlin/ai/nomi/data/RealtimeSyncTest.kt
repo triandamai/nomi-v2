@@ -145,4 +145,55 @@ class RealtimeSyncTest {
         sync.stop()
         assertEquals(0, hub.listenerCount(Topic.User))
     }
+
+    private fun activityEvent(sessionId: String, outcome: String, waiting: String? = null, title: String? = "T-$sessionId") =
+        RealtimeEvent.ChatActivity(Topic.User, sessionId, title, projectId = null, outcome = outcome, waiting = waiting, agent = "Nomi")
+
+    @Test
+    fun chat_waiting_on_the_person_signals_needs_you_unless_on_screen() = runTest {
+        val sync = sync()
+        sync.start()
+        foreground.enter("open")
+        sync.companionSignals.test {
+            hub.emit(activityEvent("open", "waiting", "approval"))
+            hub.emit(activityEvent("bg", "waiting", "question"))
+            assertEquals(CompanionSignal.NeedsYou("bg", "T-bg", "question"), awaitItem())
+        }
+    }
+
+    @Test
+    fun done_is_announced_only_when_no_reply_already_was() = runTest {
+        val sync = sync()
+        sync.start()
+        sync.companionSignals.test {
+            hub.emit(RealtimeEvent.ChatReply(Topic.User, "replied", "m1", "hi"))
+            hub.emit(activityEvent("replied", "done"))
+            hub.emit(activityEvent("silent", "done"))
+            assertEquals(CompanionSignal.NewReply("replied", "hi", agentType = null), awaitItem())
+            assertEquals(CompanionSignal.ChatDone("silent", "T-silent"), awaitItem())
+            // The reply was consumed by the first "done": the next finished turn without a reply is announced.
+            hub.emit(activityEvent("replied", "done"))
+            assertEquals(CompanionSignal.ChatDone("replied", "T-replied"), awaitItem())
+        }
+    }
+
+    @Test
+    fun failed_chat_signals_failed() = runTest {
+        val sync = sync()
+        sync.start()
+        sync.companionSignals.test {
+            hub.emit(activityEvent("bg", "failed"))
+            assertEquals(CompanionSignal.ChatFailed("bg", "T-bg"), awaitItem())
+        }
+    }
+
+    @Test
+    fun chat_activity_clears_that_chats_working_agents() = runTest {
+        val sync = sync()
+        sync.start()
+        activity.onEvent(RealtimeEvent.AgentSessionStarted(Topic.Chat("s1"), "a1", "s1", "coder", "Coder", "web", "you"))
+        sync.companionState.first { it is CompanionSignal.Working }
+        hub.emit(activityEvent("s1", "waiting", "question"))
+        sync.companionState.first { it == CompanionSignal.Idle }
+    }
 }
