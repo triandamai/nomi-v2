@@ -13,6 +13,9 @@ import ai.nomi.network.NotificationsApi
 import ai.nomi.network.SendMessageResponseDto
 import ai.nomi.network.SessionDto
 import ai.nomi.network.SessionsApi
+import ai.nomi.network.CrewMemberDto
+import ai.nomi.network.HomeApi
+import ai.nomi.network.ProfileDto
 import ai.nomi.network.SignInResult
 import ai.nomi.network.VerificationInfo
 import ai.nomi.network.TokenStore
@@ -116,6 +119,13 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
     override suspend fun revoke(refreshToken: String) = Unit
 }
 
+class FakeHomeApi : HomeApi {
+    var displayName: String? = "Ana Lima"
+    var crew: List<CrewMemberDto> = emptyList()
+    override suspend fun profile() = ProfileDto(displayName = displayName, email = "ana@nomi.test")
+    override suspend fun crew() = crew
+}
+
 class FakeSessionsApi : SessionsApi {
     var sessions: List<SessionDto> = emptyList()
     override suspend fun list(): List<SessionDto> = sessions
@@ -127,6 +137,15 @@ class FakeSessionsApi : SessionsApi {
 }
 
 class FakeMessagesApi : MessagesApi {
+    /** Every approval decision as (message id, approve, remember); [approvalFailure] is thrown instead when set. */
+    val approvals = mutableListOf<Triple<String, Boolean, Boolean>>()
+    var approvalFailure: Exception? = null
+
+    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
+        approvalFailure?.let { throw it }
+        approvals += Triple(messageId, approve, remember)
+    }
+
     val sent = mutableListOf<Pair<String, String>>()
 
     override suspend fun page(sessionId: String, before: String?, limit: Int) = MessagePageDto(emptyList(), hasMore = false)
@@ -174,5 +193,6 @@ class TestGraph {
         single<SessionsApi> { sessionsApi }
         single<MessagesApi> { messagesApi }
         single<NotificationsApi> { FakeNotificationsApi() }
+        single<HomeApi> { FakeHomeApi() }
     }
 }

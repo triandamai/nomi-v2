@@ -1,5 +1,9 @@
 package ai.nomi.designsystem.component
 
+import ai.nomi.designsystem.theme.NomiTheme
+import ai.nomi.designsystem.generated.NomiCorners
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,10 +72,15 @@ private val ComposerGap = 8.dp
 private val FocusRingWidth = 2.dp
 private val FieldMinHeight = 48.dp
 private val ComposerShadow = 6.dp
+private val StackedStartPadding = 12.dp
+private val StackedTopPadding = 8.dp
+/** `.composer`: the web's extra-large-increased corner. */
+private val ComposerShape = RoundedCornerShape(NomiCorners.extraLargeIncreased.dp)
 
 /**
  * The floating message box: a rounded surface holding an auto-growing field, an optional [leading] slot (attach,
  * thinking level…) and the [SendButton]. State is hoisted: [value] is the draft, [sending] the turn in flight.
+ * With a [hint] it stacks like Home's composer: the field on top, then a bar with the hint and the send button.
  */
 @Composable
 fun Composer(
@@ -86,6 +95,7 @@ fun Composer(
     stopLabel: String = sendLabel,
     platform: ComposerPlatform = LocalComposerPlatform.current,
     leading: (@Composable () -> Unit)? = null,
+    hint: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val state = sendButtonState(value, sending)
@@ -97,27 +107,21 @@ fun Composer(
     if (field.text != value) field = TextFieldValue(value)
     Surface(
         modifier = modifier.fillMaxWidth().then(
-            if (focused) Modifier.border(FocusRingWidth, colors.primary, MaterialTheme.shapes.extraLarge) else Modifier,
+            if (focused) Modifier.border(FocusRingWidth, colors.primary, ComposerShape) else Modifier,
         ),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = ComposerShape,
         color = colors.surfaceContainerLowest,
         contentColor = colors.onSurface,
         shadowElevation = ComposerShadow,
     ) {
-        Row(
-            Modifier.padding(ComposerPadding),
-            horizontalArrangement = Arrangement.spacedBy(ComposerGap),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            leading?.invoke()
+        val textField: @Composable (Modifier) -> Unit = { fieldModifier ->
             BasicTextField(
                 value = field,
                 onValueChange = { next ->
                     field = next
                     if (next.text != value) onValueChange(next.text)
                 },
-                modifier = Modifier
-                    .weight(FILL)
+                modifier = fieldModifier
                     .heightIn(min = FieldMinHeight)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -146,6 +150,8 @@ fun Composer(
                     }
                 },
             )
+        }
+        val sendButton: @Composable () -> Unit = {
             SendButton(
                 state = state,
                 onSend = send,
@@ -153,6 +159,26 @@ fun Composer(
                 sendLabel = sendLabel,
                 stopLabel = stopLabel,
             )
+        }
+        if (hint == null) {
+            Row(
+                Modifier.padding(ComposerPadding),
+                horizontalArrangement = Arrangement.spacedBy(ComposerGap),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                leading?.invoke()
+                textField(Modifier.weight(FILL))
+                sendButton()
+            }
+        } else {
+            Column(Modifier.padding(start = StackedStartPadding, top = StackedTopPadding, end = ComposerPadding, bottom = ComposerPadding)) {
+                textField(Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ComposerGap), verticalAlignment = Alignment.CenterVertically) {
+                    leading?.invoke()
+                    Text(hint, style = NomiTheme.metaStyle, color = colors.onSurfaceVariant, modifier = Modifier.weight(FILL))
+                    sendButton()
+                }
+            }
         }
     }
 }

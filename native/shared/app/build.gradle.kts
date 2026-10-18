@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.nomi.kmp.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.roborazzi)
 }
 
 /** Name of the framework the iOS app links (`import Shared` in Swift). */
@@ -54,6 +55,8 @@ kotlin {
                 implementation(libs.junit4)
                 implementation(libs.koin.test)
                 implementation(libs.ktor.client.mock)
+                implementation(libs.roborazzi.compose.desktop)
+                implementation(libs.datetime)
                 // The desktop app's Main dispatcher (desktopApp ships the same).
                 implementation(libs.coroutines.swing)
             }

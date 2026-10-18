@@ -10,5 +10,8 @@ kotlin {
         implementation(libs.lifecycle.viewmodel.compose)
         implementation(libs.lifecycle.runtime.compose)
         implementation(libs.coroutines.core)
+        implementation(libs.datetime)
+        implementation(libs.serialization.json)
+        implementation(libs.markdown.renderer.m3)
     }
 }

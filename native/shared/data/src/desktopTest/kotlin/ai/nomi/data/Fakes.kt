@@ -75,6 +75,15 @@ fun messageDto(id: String, sender: String = "assistant", content: String = "text
     MessageDto(id = id, sender = sender, content = content, contentBlocks = null, createdAt = createdAt, agentDisplayName = null)
 
 class FakeMessagesApi : MessagesApi {
+    /** Every approval decision as (message id, approve, remember); [approvalFailure] is thrown instead when set. */
+    val approvals = mutableListOf<Triple<String, Boolean, Boolean>>()
+    var approvalFailure: Exception? = null
+
+    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
+        approvalFailure?.let { throw it }
+        approvals += Triple(messageId, approve, remember)
+    }
+
     /** Served by [page]; tests swap it to simulate the server changing. */
     var latest: List<MessageDto> = emptyList()
     val byId = mutableMapOf<String, MessageDto>()

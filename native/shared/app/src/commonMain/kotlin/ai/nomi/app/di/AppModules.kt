@@ -23,6 +23,8 @@ import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
 import ai.nomi.network.AuthApi
 import ai.nomi.network.HttpMessagesApi
+import ai.nomi.network.HomeApi
+import ai.nomi.network.HttpHomeApi
 import ai.nomi.network.HttpNotificationsApi
 import ai.nomi.network.HttpSessionsApi
 import ai.nomi.network.MessagesApi
@@ -67,6 +69,7 @@ val coreModule: Module = module {
     single<SessionsApi> { HttpSessionsApi(get(), get()) }
     single<MessagesApi> { HttpMessagesApi(get(), get()) }
     single<NotificationsApi> { HttpNotificationsApi(get(), get()) }
+    single<HomeApi> { HttpHomeApi(get(), get()) }
     single<AuthRepository> { DefaultAuthRepository(get(), get()) }
 
     single<RealtimeTransport> { KtorRealtimeTransport(get(), get(), log = ::appLog) }
@@ -107,11 +110,11 @@ val coreModule: Module = module {
 /** One ViewModel per screen; the chat's takes its session id as a parameter. */
 val featureModule: Module = module {
     viewModel { SignInViewModel(get()) }
-    viewModel { HomeViewModel(get(), get(), log = ::appLog) }
+    viewModel { HomeViewModel(get(), get(), get(), log = ::appLog) }
     viewModel { ChatsViewModel(get(), log = ::appLog) }
     viewModel { (sessionId: String) -> ChatViewModel(sessionId, get(), get(), get(), log = ::appLog) }
     viewModel { NotificationsViewModel(get(), log = ::appLog) }
-    viewModel { SettingsViewModel(get()) }
+    viewModel { SettingsViewModel(get(), get(), log = ::appLog) }
 }
 
 fun appModules(platformModule: Module): List<Module> = listOf(platformModule, coreModule, featureModule)

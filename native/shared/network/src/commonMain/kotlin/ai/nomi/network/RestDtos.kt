@@ -64,6 +64,10 @@ data class MessagePageDto(
 @Serializable
 internal data class SendMessageRequest(val text: String)
 
+/** `PUT /api/sessions/:id/messages/:message_id/approval`: [decision] is `approve` or `deny`. */
+@Serializable
+internal data class ApprovalDecisionRequest(val decision: String, val remember: Boolean)
+
 /** `IngestMessageResponse`: the stored user message, plus the supervisor's reply when the text was a stop command. */
 @Serializable
 data class SendMessageResponseDto(
