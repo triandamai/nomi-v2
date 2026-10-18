@@ -113,3 +113,21 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  native-tokens:
+    name: Native design tokens (generator tests + freshness)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Generator tests
+        run: node --test native/scripts/*.test.mjs
+
+      # Fails when material3.css or shapes.ts changed without regenerating NomiTokens.kt.
+      - name: Generated tokens are up to date
+        run: node native/scripts/gen-tokens.mjs --check

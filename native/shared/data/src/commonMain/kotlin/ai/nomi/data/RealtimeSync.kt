@@ -1,0 +1,114 @@
+package ai.nomi.data
+
+import ai.nomi.realtime.ListenerHandle
+import ai.nomi.realtime.RealtimeEvent
+import ai.nomi.realtime.RealtimeHub
+import ai.nomi.realtime.Topic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+
+/** Signals kept for a slow companion before the oldest is dropped (they are transient UI cues). */
+private const val SIGNAL_BUFFER = 16
+
+/**
+ * The app-wide listener on [Topic.User], started once after sign-in: notifications and chat replies land in Room
+ * whether or not their screen is open. The island / chat head read [companionState] (Working/Idle, always current)
+ * and [companionSignals] (NewReply/Notification, one-off events).
+ *
+ * Limitation: the user topic carries no agent phases. [companionState] is derived
+ * from [ActivityRepository], which only chats bound by [ChatRepository] (open screens) feed, so work in a chat that
+ * is not open does not show as Working; its reply still arrives as [CompanionSignal.NewReply].
+ */
+class RealtimeSync(
+    private val hub: RealtimeHub,
+    private val sessions: SessionRepository,
+    private val notifications: NotificationRepository,
+    private val activity: ActivityRepository,
+    private val foreground: ForegroundChat,
+    private val session: SessionScope,
+    private val log: (String) -> Unit = {},
+) {
+    private val signals = MutableSharedFlow<CompanionSignal>(
+        extraBufferCapacity = SIGNAL_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Transient [CompanionSignal.NewReply] / [CompanionSignal.Notification] events. No replay: an event emitted while
+     * nothing collects is dropped by design (the data itself is in Room; only the pop-up is missed).
+     */
+    val companionSignals: SharedFlow<CompanionSignal> = signals.asSharedFlow()
+
+    private val state = MutableStateFlow<CompanionSignal>(CompanionSignal.Idle)
+
+    /** [CompanionSignal.Working] or [CompanionSignal.Idle], from agent activity; late collectors get the current value. */
+    val companionState: StateFlow<CompanionSignal> = state.asStateFlow()
+
+    private var registration: ListenerHandle? = null
+    private var queue: WorkQueue? = null
+    private var activityJob: Job? = null
+
+    /** Idempotent. Call from the main thread, like [stop]. */
+    fun start() {
+        if (registration != null) return
+        val work = WorkQueue(session.scope, log)
+        queue = work
+        registration = hub.addListener(Topic.User) { event -> work.submit { handle(event) } }
+        activityJob = session.scope.launch {
+            activity.observeActive()
+                .map { active -> active.firstOrNull()?.let { CompanionSignal.Working(it.agentType, it.phase) } ?: CompanionSignal.Idle }
+                .collect { state.value = it }
+        }
+    }
+
+    /** Sign-out: stops listening. Idempotent. */
+    fun stop() {
+        registration?.remove()
+        registration = null
+        queue?.close()
+        queue = null
+        activityJob?.cancel()
+        activityJob = null
+        state.value = CompanionSignal.Idle
+    }
+
+    private suspend fun handle(event: RealtimeEvent) {
+        when (event) {
+            is RealtimeEvent.NotificationCreated -> {
+                notifications.onCreated(event)
+                signals.emit(CompanionSignal.Notification(event.title, event.body, event.link))
+            }
+            is RealtimeEvent.ChatReply -> {
+                val onScreen = foreground.sessionId.value == event.sessionId
+                // The event has no timestamp: the row's updatedAt is this client's receive time until the next refresh.
+                sessions.onReply(event.sessionId, event.preview, unread = !onScreen)
+                if (!onScreen) signals.emit(CompanionSignal.NewReply(event.sessionId, event.preview, agentType = null))
+            }
+            is RealtimeEvent.Resynced -> {
+                attempt("refresh sessions") { sessions.refresh() }
+                attempt("refresh notifications") { notifications.refresh() }
+            }
+            else -> Unit
+        }
+    }
+
+    /** One failed refetch must not skip the other. */
+    private suspend fun attempt(what: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log("data: $what failed: $e")
+        }
+    }
+}

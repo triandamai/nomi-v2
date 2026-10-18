@@ -159,6 +159,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                             &StreamEnvelope::TurnCompleted { turn_job_id: Uuid::nil(), message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
                         )
                         .await;
+                    if let Some(message_id) = outcome.message_id {
+                        crate::user_events::announce_chat_reply(&pool, &mqtt, user_id, outcome.session_id, message_id, &outcome.reply);
+                    }
                     nomi_turn::activity::announce(&pool, &mqtt, outcome.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
                     tracing::info!(resume_id = %claimed.id, "worker: approval resume completed");
                 }
@@ -233,6 +236,9 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
                     &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
                 )
                 .await;
+            if let Some(message_id) = outcome.message_id {
+                crate::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
+            }
             nomi_turn::activity::announce(&turns.pool, &turns.mqtt, claimed.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
             tracing::info!(job_id = %claimed.id, reply_len = outcome.reply.len(), "worker: turn job completed");
         }

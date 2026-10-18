@@ -147,7 +147,7 @@ pub async fn send_to_inbox(pool: &PgPool, user_id: Uuid, notice: Notice) -> Resu
 }
 
 async fn insert(pool: &PgPool, user_id: Uuid, notice: &Notice, broadcast_id: Option<Uuid>) -> Result<Uuid, sqlx::Error> {
-    sqlx::query_scalar(
+    let id: Uuid = sqlx::query_scalar(
         "INSERT INTO notifications (user_id, kind, title, body, link, broadcast_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(user_id)
@@ -157,7 +157,19 @@ async fn insert(pool: &PgPool, user_id: Uuid, notice: &Notice, broadcast_id: Opt
     .bind(&notice.link)
     .bind(broadcast_id)
     .fetch_one(pool)
-    .await
+    .await?;
+    crate::user_events::publish(
+        user_id,
+        &nomi_realtime::UserEvent::NotificationCreated {
+            notification_id: id,
+            kind: notice.kind.as_str().into(),
+            title: notice.title.clone(),
+            body: notice.body.clone(),
+            link: notice.link.clone(),
+        },
+    );
+    crate::push::spawn_dispatch(pool, user_id, crate::push::PushMessage::alert(notice));
+    Ok(id)
 }
 
 async fn send_with(pool: &PgPool, user_id: Uuid, notice: Notice, broadcast_id: Option<Uuid>) -> Result<Uuid, sqlx::Error> {

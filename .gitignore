@@ -10,3 +10,10 @@
 # Local file storage (attachments, project files)
 /backend/data/
 /backend/crates/*/data/
+
+# Native apps (Kotlin Multiplatform)
+native/.gradle/
+native/.kotlin/
+native/**/build/
+native/local.properties
+native/iosApp/**/xcuserdata/

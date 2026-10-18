@@ -43,6 +43,8 @@ pub struct AppState {
     pub email_codes: crate::sign_in_codes::EmailCodes,
     /// Where projects are published; None when Shipyard isn't set up.
     pub shipyard: Option<nomi_shipyard::ShipyardConfig>,
+    /// Pushes to phones (FCM, APNs), or `NoopPush` when neither is set up.
+    pub push: std::sync::Arc<dyn crate::push::PushSender>,
 }
 
 impl nomi_auth::extractor::HasJwtSecret for AppState {
@@ -103,6 +105,9 @@ pub fn build_router(state: AppState) -> Router {
             put(sessions_routes::set_agent_plan_item),
         )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
+        .route("/api/realtime/ws", get(crate::routes::realtime::realtime_stream))
+        .route("/api/devices", post(crate::routes::devices::register))
+        .route("/api/devices/:id", delete(crate::routes::devices::remove))
         .route("/api/me/activity/ws", get(sessions_routes::user_activity_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
         .route("/api/sessions/:id/agent-status", get(sessions_routes::get_agent_status))

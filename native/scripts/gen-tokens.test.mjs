@@ -1,0 +1,157 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { parseCss, resolveColorMix, parseShapes, parseMotion, emitKotlin } from './gen-tokens.mjs';
+
+test('default light primary is the seed scheme value', () => {
+  const t = parseCss(`:root { --md-sys-color-primary: #0b6b4a; }`);
+  assert.equal(t.green.light['primary'], 0xff0b6b4a);
+});
+test('color-mix 3% primary into white', () => {
+  assert.equal(resolveColorMix('#0b6b4a', 3, '#ffffff'), 0xfff8fbfa);
+});
+test('gradient stops parse with positions', () => {
+  const t = parseCss(`:root { --nomi-gradient-glow: linear-gradient(135deg, #e4f76a 0%, #5be08f 55%, #1db9a0 100%); }`);
+  assert.deepEqual(t.gradients.glow.stops, [[0, 0xffe4f76a], [0.55, 0xff5be08f], [1, 0xff1db9a0]]);
+  assert.equal(t.gradients.glow.angle, 135);
+});
+test('shape specs parse from shapes.ts', () => {
+  const s = parseShapes(`const SPECS = { cookie9: { lobes: 9, amplitude: 0.09 }, clover3: { lobes: 3, amplitude: 0.19, phase: -Math.PI / 2 } };`);
+  assert.deepEqual(s.cookie9, { lobes: 9, amplitude: 0.09, phase: 0 });
+  assert.ok(Math.abs(s.clover3.phase + Math.PI / 2) < 1e-9);
+});
+
+const SCHEME = `
+:root {
+  --md-sys-color-primary: #0b6b4a;
+  --md-sys-color-surface: #f4f7f2;
+  --md-sys-color-surface-container: #e6ede3;
+  --md-sys-color-surface-container-lowest: color-mix(in srgb, var(--md-sys-color-primary) 3%, #ffffff);
+  --nomi-color-ground: var(--md-sys-color-surface-container);
+  --nomi-action-1: #e4f76a;
+  --nomi-gradient-glow: linear-gradient(135deg, #e4f76a 0%, #1db9a0 100%);
+  --nomi-on-gradient-glow: #062019;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --md-sys-color-primary: #111111;
+  }
+}
+:root[data-theme='dark'] {
+  --nomi-color-ground: var(--md-sys-color-surface);
+  --md-sys-color-primary: #7ce0a3;
+  --md-sys-color-surface: #0d1511;
+  --md-sys-color-surface-container: #1a251e;
+  --md-sys-color-surface-container-lowest: #08100c;
+}
+:root[data-color='coral-reef'] {
+  --nomi-action-1: #ffd9a0;
+  --md-sys-color-primary: #a43b32;
+}
+:root[data-color='coral-reef'][data-theme='dark'] {
+  --md-sys-color-primary: #ffb4aa;
+}
+`;
+
+test('dark scheme comes from the data-theme block, not the media-query block', () => {
+  const t = parseCss(SCHEME);
+  assert.equal(t.green.dark['primary'], 0xff7ce0a3);
+});
+test('var() resolves within the scheme: ground follows surface-container in light, surface in dark', () => {
+  const t = parseCss(SCHEME);
+  assert.equal(t.green.light['ground'], 0xffe6ede3);
+  assert.equal(t.green.dark['ground'], 0xff0d1511);
+});
+test('accent palettes are complete: missing roles fall back to the default scheme', () => {
+  const t = parseCss(SCHEME);
+  const coral = t['coral-reef'];
+  assert.equal(coral.light['primary'], 0xffa43b32);
+  assert.equal(coral.light['surface'], 0xfff4f7f2);
+  assert.equal(coral.dark['primary'], 0xffffb4aa);
+  assert.equal(coral.dark['surface'], 0xff0d1511);
+  assert.deepEqual(Object.keys(coral.light).sort(), Object.keys(t.green.light).sort());
+  assert.deepEqual(Object.keys(coral.dark).sort(), Object.keys(t.green.dark).sort());
+});
+test('accent-only overrides that the dark block omits cascade from the accent light block', () => {
+  const t = parseCss(SCHEME);
+  assert.equal(t['coral-reef'].dark['action-1'], 0xffffd9a0);
+  assert.equal(t.green.dark['action-1'], 0xffe4f76a);
+});
+test('color-mix resolves against the accent primary, per scheme', () => {
+  const t = parseCss(SCHEME);
+  assert.equal(t.green.light['surface-container-lowest'], resolveColorMix('#0b6b4a', 3, '#ffffff'));
+  assert.equal(t['coral-reef'].light['surface-container-lowest'], resolveColorMix('#a43b32', 3, '#ffffff'));
+  assert.equal(t.green.dark['surface-container-lowest'], 0xff08100c);
+});
+test('on-gradient ink maps to the gradient onColor', () => {
+  const t = parseCss(SCHEME);
+  assert.equal(t.gradients.glow.onColor, 0xff062019);
+});
+test('motion token parses duration and bezier', () => {
+  const t = parseCss(`:root { --nomi-motion-spatial-fast: 350ms cubic-bezier(0.42, 1.67, 0.21, 0.9); }`);
+  assert.deepEqual(t.motion.spatialFast, { durationMs: 350, x1: 0.42, y1: 1.67, x2: 0.21, y2: 0.9 });
+  assert.deepEqual(parseMotion('150ms cubic-bezier(0.31, 0.94, 0.34, 1)'), { durationMs: 150, x1: 0.31, y1: 0.94, x2: 0.34, y2: 1 });
+});
+test('shape phase expressions are evaluated safely', () => {
+  const s = parseShapes(`const SPECS: Record<X, Y> = { 'soft-square': { lobes: 4, amplitude: 0.075, phase: Math.PI / 4 }, a: { lobes: 2, amplitude: 0.1, phase: -Math.PI * 2 / 4 } };`);
+  assert.ok(Math.abs(s['soft-square'].phase - Math.PI / 4) < 1e-9);
+  assert.ok(Math.abs(s.a.phase + Math.PI / 2) < 1e-9);
+  assert.throws(() => parseShapes(`const SPECS = { x: { lobes: 2, amplitude: 0.1, phase: process.exit(1) } };`));
+});
+test('emitted Kotlin starts with the generated-file header and has no CSS functions', () => {
+  const kt = emitKotlin();
+  assert.ok(kt.startsWith('// Generated by native/scripts/gen-tokens.mjs from frontend/src/lib/styles/material3.css and shapes.ts. Do not edit.\n'));
+  assert.ok(!kt.includes('color-mix') && !kt.includes('var(--'));
+  assert.match(kt, /"coral-reef" to NomiPalette/);
+  assert.match(kt, /const val SHAPE_POINTS = 120/);
+});
+
+const TYPE_CSS = `:root {
+  --md-ref-typeface-brand: 'Bricolage Grotesque', system-ui, sans-serif;
+  --md-ref-typeface-title: 'Instrument Sans', system-ui, sans-serif;
+  --md-ref-typeface-plain: 'Instrument Sans', system-ui, sans-serif;
+  --md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-large-weight: 800;
+  --md-sys-typescale-display-large-size: 2.375rem;
+  --md-sys-typescale-display-large-line-height: 2.875rem;
+  --md-sys-typescale-display-large-tracking: -0.04em;
+  --md-sys-typescale-body-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-large-weight: 400;
+  --md-sys-typescale-body-large-size: 0.9375rem;
+  --md-sys-typescale-body-large-line-height: 1.4375rem;
+  --md-sys-typescale-body-large-tracking: 0.03125rem;
+  --md-sys-typescale-emphasized-display-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-emphasized-display-large-weight: 800;
+  --md-sys-typescale-emphasized-display-large-size: var(--md-sys-typescale-display-large-size);
+  --md-sys-typescale-emphasized-display-large-line-height: var(--md-sys-typescale-display-large-line-height);
+  --md-sys-typescale-emphasized-display-large-tracking: var(--md-sys-typescale-display-large-tracking);
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-none: 0px;
+  --nomi-shape-bubble-start: 28px 28px 28px 8px;
+}`;
+test('typescale: display-large values, family mapping and em tracking', () => {
+  const { typescale } = parseCss(TYPE_CSS);
+  assert.deepEqual(typescale.displayLarge, { family: 'brand', weight: 800, sizeSp: 38, lineHeightSp: 46, trackingEm: -0.04 });
+  assert.equal(typescale.bodyLarge.family, 'plain');
+  assert.equal(typescale.emphasizedDisplayLarge.family, 'brand');
+});
+test('typescale: rem tracking converts to em of the role size', () => {
+  const { typescale } = parseCss(TYPE_CSS);
+  assert.ok(Math.abs(typescale.bodyLarge.trackingEm - 0.5 / 15) < 1e-9); // 0.03125rem = 0.5px at 15px
+});
+test('typescale: emphasized variants resolve var()', () => {
+  const { typescale } = parseCss(TYPE_CSS);
+  assert.equal(typescale.emphasizedDisplayLarge.sizeSp, 38);
+  assert.equal(typescale.emphasizedDisplayLarge.trackingEm, -0.04);
+});
+test('corners and bubble shapes parse', () => {
+  const t = parseCss(TYPE_CSS);
+  assert.equal(t.corners.largeIncreased, 20);
+  assert.equal(t.corners.none, 0);
+  assert.deepEqual(t.bubbles.start, [28, 28, 28, 8]);
+});
+
+import { parseCrewTypeByName } from './gen-tokens.mjs';
+test('crew names invert to agent types, lowercased', () => {
+  const m = parseCrewTypeByName(`export const CREW_NAMES: Record<string, string> = {\n\tchitchat: 'Nomi',\n\tmoney: 'Dana',\n};`);
+  assert.deepEqual(m, { nomi: 'chitchat', dana: 'money' });
+});

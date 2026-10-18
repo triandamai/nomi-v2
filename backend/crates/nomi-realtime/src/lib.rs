@@ -1,5 +1,7 @@
+pub mod gateway;
 pub mod mqtt;
 
+pub use gateway::{ClientFrame, ServerFrame, Topic};
 pub use mqtt::{user_topic, MqttError, MqttPublisher};
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,23 @@ pub enum StreamEnvelope {
     /// An `agent_sessions` row was closed. `reason` is one of "completed" | "cancelled" |
     /// "expired", matching `agent_sessions.status`'s possible non-active values exactly.
     AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
+}
+
+/// Events on `user/{id}/stream`: what a person's apps hear about that isn't tied to a chat they
+/// have open — the inbox, and replies that landed in any of their chats.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum UserEvent {
+    NotificationCreated {
+        notification_id: Uuid,
+        /// The inbox category (`quota`, `deploy`, ...). On the wire it is `category`, because `kind` is the event tag.
+        #[serde(rename = "category")]
+        kind: String,
+        title: String,
+        body: String,
+        link: Option<String>,
+    },
+    ChatReply { session_id: Uuid, message_id: Uuid, preview: String },
 }
 
 /// What goes to everything a person has open (`user/{user_id}/activity`), whichever chat they're

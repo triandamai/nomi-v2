@@ -7,11 +7,13 @@ pub mod memory_worker;
 pub mod notifications;
 pub mod project_events;
 pub mod public_url;
+pub mod push;
 pub mod quota;
 pub mod reminders_worker;
 pub mod scheduler_worker;
 pub mod shipyard;
 pub mod sign_in_codes;
+pub mod user_events;
 mod tool_catalog_adapters;
 pub mod worker;
 
