@@ -9,9 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -20,9 +22,10 @@ private const val SIGNAL_BUFFER = 16
 
 /**
  * The app-wide listener on [Topic.User], started once after sign-in: notifications and chat replies land in Room
- * whether or not their screen is open, and [companionSignals] tells the island / chat head what to show.
+ * whether or not their screen is open. The island / chat head read [companionState] (Working/Idle, always current)
+ * and [companionSignals] (NewReply/Notification, one-off events).
  *
- * Limitation: the user topic carries no agent phases. [CompanionSignal.Working]/[CompanionSignal.Idle] are derived
+ * Limitation: the user topic carries no agent phases. [companionState] is derived
  * from [ActivityRepository], which only chats bound by [ChatRepository] (open screens) feed, so work in a chat that
  * is not open does not show as Working; its reply still arrives as [CompanionSignal.NewReply].
  */
@@ -40,8 +43,16 @@ class RealtimeSync(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    /** Hot, no replay: a companion sees what happens while it is collecting. */
+    /**
+     * Transient [CompanionSignal.NewReply] / [CompanionSignal.Notification] events. No replay: an event emitted while
+     * nothing collects is dropped by design (the data itself is in Room; only the pop-up is missed).
+     */
     val companionSignals: SharedFlow<CompanionSignal> = signals.asSharedFlow()
+
+    private val state = MutableStateFlow<CompanionSignal>(CompanionSignal.Idle)
+
+    /** [CompanionSignal.Working] or [CompanionSignal.Idle], from agent activity; late collectors get the current value. */
+    val companionState: StateFlow<CompanionSignal> = state.asStateFlow()
 
     private var registration: ListenerHandle? = null
     private var queue: WorkQueue? = null
@@ -56,8 +67,7 @@ class RealtimeSync(
         activityJob = scope.launch {
             activity.observeActive()
                 .map { active -> active.firstOrNull()?.let { CompanionSignal.Working(it.agentType, it.phase) } ?: CompanionSignal.Idle }
-                .distinctUntilChanged()
-                .collect { signals.emit(it) }
+                .collect { state.value = it }
         }
     }
 
@@ -69,6 +79,7 @@ class RealtimeSync(
         queue = null
         activityJob?.cancel()
         activityJob = null
+        state.value = CompanionSignal.Idle
     }
 
     private suspend fun handle(event: RealtimeEvent) {
@@ -79,6 +90,7 @@ class RealtimeSync(
             }
             is RealtimeEvent.ChatReply -> {
                 val onScreen = foreground.sessionId.value == event.sessionId
+                // The event has no timestamp: the row's updatedAt is this client's receive time until the next refresh.
                 sessions.onReply(event.sessionId, event.preview, unread = !onScreen)
                 if (!onScreen) signals.emit(CompanionSignal.NewReply(event.sessionId, event.preview, agentType = null))
             }

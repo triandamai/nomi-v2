@@ -70,7 +70,6 @@ class RealtimeSyncTest {
         val sync = sync()
         sync.start()
         sync.companionSignals.test {
-            awaitItem() // the initial Idle derived from (empty) agent activity
             hub.emit(RealtimeEvent.NotificationCreated(Topic.User, "n1", "reply", "Title", "Body", "/chat/s1"))
             assertEquals(CompanionSignal.Notification("Title", "Body", "/chat/s1"), awaitItem())
         }
@@ -86,7 +85,6 @@ class RealtimeSyncTest {
         sync.start()
         foreground.enter("open")
         sync.companionSignals.test {
-            awaitItem()
             hub.emit(RealtimeEvent.ChatReply(Topic.User, "open", "m1", "visible already"))
             hub.emit(RealtimeEvent.ChatReply(Topic.User, "bg", "m2", "psst"))
             assertEquals(CompanionSignal.NewReply("bg", "psst", agentType = null), awaitItem())
@@ -97,15 +95,23 @@ class RealtimeSyncTest {
     fun agent_activity_drives_working_and_idle() = runTest {
         val sync = sync()
         sync.start()
-        sync.companionSignals.test {
-            assertEquals(CompanionSignal.Idle, awaitItem())
-            activity.onEvent(RealtimeEvent.AgentSessionStarted(Topic.Chat("s1"), "a1", "s1", "coder", "Coder", "web", "you"))
-            assertEquals(CompanionSignal.Working("coder", ActivityRepository.STARTED_PHASE), awaitItem())
-            activity.onEvent(RealtimeEvent.AgentPhaseChanged(Topic.Chat("s1"), "a1", "writing", null))
-            assertEquals(CompanionSignal.Working("coder", "writing"), awaitItem())
-            activity.onEvent(RealtimeEvent.AgentSessionEnded(Topic.Chat("s1"), "a1", "s1", "done"))
-            assertEquals(CompanionSignal.Idle, awaitItem())
-        }
+        assertEquals(CompanionSignal.Idle, sync.companionState.value)
+        activity.onEvent(RealtimeEvent.AgentSessionStarted(Topic.Chat("s1"), "a1", "s1", "coder", "Coder", "web", "you"))
+        sync.companionState.first { it == CompanionSignal.Working("coder", ActivityRepository.STARTED_PHASE) }
+        activity.onEvent(RealtimeEvent.AgentPhaseChanged(Topic.Chat("s1"), "a1", "writing", null))
+        sync.companionState.first { it == CompanionSignal.Working("coder", "writing") }
+        activity.onEvent(RealtimeEvent.AgentSessionEnded(Topic.Chat("s1"), "a1", "s1", "done"))
+        sync.companionState.first { it == CompanionSignal.Idle }
+    }
+
+    @Test
+    fun late_collector_sees_current_working_state() = runTest {
+        val sync = sync()
+        sync.start()
+        activity.onEvent(RealtimeEvent.AgentSessionStarted(Topic.Chat("s1"), "a1", "s1", "coder", "Coder", "web", "you"))
+        sync.companionState.first { it is CompanionSignal.Working }
+        // A companion that starts collecting only now still gets the current state, not nothing.
+        assertEquals(CompanionSignal.Working("coder", ActivityRepository.STARTED_PHASE), sync.companionState.first())
     }
 
     @Test

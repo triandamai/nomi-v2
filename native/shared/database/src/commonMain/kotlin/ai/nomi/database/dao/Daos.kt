@@ -73,6 +73,10 @@ interface StreamingDraftDao {
 
     @Query("DELETE FROM streaming_drafts WHERE sessionId = :sessionId")
     suspend fun clear(sessionId: String)
+
+    /** Removes the draft only if it belongs to [turnJobId]. */
+    @Query("DELETE FROM streaming_drafts WHERE sessionId = :sessionId AND turnJobId = :turnJobId")
+    suspend fun clearTurn(sessionId: String, turnJobId: String)
 }
 
 @Dao

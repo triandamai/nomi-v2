@@ -1,6 +1,7 @@
 package ai.nomi.data
 
 import ai.nomi.database.NomiDatabase
+import ai.nomi.database.entity.AgentActivityEntity
 import ai.nomi.realtime.RealtimeEvent
 import ai.nomi.realtime.Topic
 import kotlinx.coroutines.flow.first
@@ -39,6 +40,12 @@ class ChatRepositoryTest {
         buildJsonObject { put("TextDelta", buildJsonObject { put("index", JsonPrimitive(0)); put("text", text) }) },
     )
 
+    /** A partial draft and a working agent, as left behind when TurnCompleted / AgentSessionEnded were missed. */
+    private suspend fun seedStaleTurn() {
+        db.streamingDraftDao().appendDelta("s1", "t-old", "half a rep", clock.now)
+        db.agentActivityDao().upsert(AgentActivityEntity("a-old", "s1", "planner", "writing", null, clock.now))
+    }
+
     @Test
     fun resynced_event_refetches_open_chat() = runTest {
         val repo = repository()
@@ -47,11 +54,50 @@ class ChatRepositoryTest {
         repo.observe("s1").first { it.messages.map(Message::id) == listOf("m1") }
         assertEquals(1, api.pageCalls)
 
+        seedStaleTurn()
+        hub.emit(RealtimeEvent.AccessLost(chat))
+        repo.observe("s1").first { it.draft != null && it.activeAgent != null && it.accessLost }
         api.latest = listOf(messageDto("m1"), messageDto("m2", createdAt = "2026-10-18T10:00:01Z"))
         hub.emit(RealtimeEvent.Resynced(chat))
 
-        repo.observe("s1").first { it.messages.map(Message::id) == listOf("m1", "m2") }
+        repo.observe("s1").first {
+            it.messages.map(Message::id) == listOf("m1", "m2") && it.draft == null && it.activeAgent == null && !it.accessLost
+        }
         assertEquals(2, api.pageCalls)
+        assertNull(db.agentActivityDao().get("a-old"))
+    }
+
+    @Test
+    fun first_bind_drops_draft_and_agents_left_from_before() = runTest {
+        seedStaleTurn()
+        val repo = repository()
+        api.latest = listOf(messageDto("m1"))
+        repo.bind("s1")
+        val state = repo.observe("s1").first { it.messages.isNotEmpty() && it.draft == null && it.activeAgent == null }
+        assertEquals(listOf("m1"), state.messages.map(Message::id))
+    }
+
+    @Test
+    fun completed_turn_clears_only_its_own_draft_and_ignores_late_deltas() = runTest {
+        val repo = repository()
+        repo.bind("s1")
+        hub.emit(delta("first", turn = "t1"))
+        api.byId["m1"] = messageDto("m1", content = "first")
+        hub.emit(RealtimeEvent.TurnCompleted(chat, "s1", "t1", "m1"))
+        hub.emit(delta("late", turn = "t1"))
+        api.byId["m2"] = messageDto("m2", createdAt = "2026-10-18T10:00:01Z")
+        hub.emit(RealtimeEvent.MessageUpdated(chat, "s1", "m2"))
+        // Events are applied in order, so once m2 is stored the late delta has been handled. Read the draft from the
+        // DAO: the combined ChatState may still pair the new messages with a not-yet-requeried draft.
+        repo.observe("s1").first { it.messages.size == 2 }
+        assertNull(db.streamingDraftDao().get("s1"))
+
+        hub.emit(delta("second", turn = "t2"))
+        hub.emit(RealtimeEvent.TurnCompleted(chat, "s1", "t-stale", "m1"))
+        api.byId["m3"] = messageDto("m3", createdAt = "2026-10-18T10:00:02Z")
+        hub.emit(RealtimeEvent.MessageUpdated(chat, "s1", "m3"))
+        repo.observe("s1").first { it.messages.size == 3 }
+        assertEquals("second", db.streamingDraftDao().get("s1")?.text)
     }
 
     @Test

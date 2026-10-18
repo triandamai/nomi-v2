@@ -1,6 +1,9 @@
 package ai.nomi.data
 
-/** What the always-on companions (desktop island, Android chat head) should show; emitted by [RealtimeSync]. */
+/**
+ * What the always-on companions (desktop island, Android chat head) should show. [RealtimeSync] publishes
+ * [Working]/[Idle] as state (`companionState`) and [NewReply]/[Notification] as events (`companionSignals`).
+ */
 sealed interface CompanionSignal {
     /** A reply arrived in a chat that is not on screen. [agentType] is null when the reply's agent is unknown. */
     data class NewReply(val sessionId: String, val preview: String, val agentType: String?) : CompanionSignal

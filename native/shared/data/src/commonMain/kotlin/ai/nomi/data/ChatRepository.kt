@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 
+/** Finished turn ids remembered per bound chat, to drop their late deltas; turns finish one at a time. */
+private const val FINISHED_TURNS_KEPT = 8
+
 /**
  * One chat, offline-first: REST pages and realtime events are written to Room and [observe] reads Room only.
  *
@@ -38,9 +41,20 @@ class ChatRepository(
     /** In-memory per-chat state that has no Room table: it only matters while the chat is on screen. */
     private data class Flags(val lastError: String? = null, val accessLost: Boolean = false)
 
-    private class Binding(val registration: ListenerHandle, val queue: WorkQueue) {
+    private class Binding(val queue: WorkQueue) {
+        lateinit var registration: ListenerHandle
+
         /** The live handles given out by [bind] for this chat. */
         val holders = HashSet<ListenerHandle>()
+
+        /** Turns that already completed or failed, oldest first; touched only by [queue]. */
+        val finishedTurns = ArrayDeque<String>()
+
+        fun finish(turnJobId: String) {
+            if (turnJobId in finishedTurns) return
+            finishedTurns.addLast(turnJobId)
+            if (finishedTurns.size > FINISHED_TURNS_KEPT) finishedTurns.removeFirst()
+        }
     }
 
     private val flags = MutableStateFlow<Map<String, Flags>>(emptyMap())
@@ -55,14 +69,19 @@ class ChatRepository(
         ChatState(messages, draft, agent, chatFlags.lastError, chatFlags.accessLost)
     }.distinctUntilChanged()
 
-    /** Listens on the chat's topic and loads its latest page; removing the last handle stops listening. */
+    /**
+     * Listens on the chat's topic and loads its latest page; removing the last handle stops listening. The first
+     * binding also resyncs (drops a draft / agent rows left over from before process death), later ones only refresh.
+     */
     fun bind(sessionId: String): ListenerHandle {
-        val binding = bindings.getOrPut(sessionId) {
-            val queue = WorkQueue(scope, log)
-            val registration = hub.addListener(Topic.Chat(sessionId)) { event -> queue.submit { handle(sessionId, event) } }
-            Binding(registration, queue)
+        val existing = bindings[sessionId]
+        val binding = existing ?: Binding(WorkQueue(scope, log)).also { created ->
+            created.registration = hub.addListener(Topic.Chat(sessionId)) { event ->
+                created.queue.submit { handle(sessionId, created, event) }
+            }
+            bindings[sessionId] = created
         }
-        binding.queue.submit { refresh(sessionId) }
+        binding.queue.submit { if (existing == null) resync(sessionId) else refresh(sessionId) }
         val handle = object : ListenerHandle {
             override fun remove() {
                 if (!binding.holders.remove(this) || binding.holders.isNotEmpty()) return
@@ -75,9 +94,21 @@ class ChatRepository(
         return handle
     }
 
-    /** Loads the newest page into Room. */
+    /** Loads the newest page into Room; a successful load means the chat is readable again. */
     suspend fun refresh(sessionId: String) {
         store(sessionId, api.page(sessionId).messages)
+        updateFlags(sessionId) { it.copy(accessLost = false) }
+    }
+
+    /**
+     * Refetches, then drops the streaming draft and agent rows: events that would have ended them (TurnCompleted,
+     * AgentSessionEnded) may have been missed while disconnected or dead. A turn that is still live recreates both
+     * from its next delta / phase event.
+     */
+    private suspend fun resync(sessionId: String) {
+        refresh(sessionId)
+        db.streamingDraftDao().clear(sessionId)
+        activity.clearForSession(sessionId)
     }
 
     /** Loads the page before [beforeMessageId]; returns whether even older messages exist. */
@@ -96,18 +127,22 @@ class ChatRepository(
 
     fun clearError(sessionId: String) = updateFlags(sessionId) { it.copy(lastError = null) }
 
-    private suspend fun handle(sessionId: String, event: RealtimeEvent) {
+    private suspend fun handle(sessionId: String, binding: Binding, event: RealtimeEvent) {
         val drafts = db.streamingDraftDao()
         when (event) {
             is RealtimeEvent.ChatDelta -> {
                 val text = event.textOrNull() ?: return
+                // A delta delivered after its turn ended must not resurrect the draft.
+                if (event.turnJobId in binding.finishedTurns) return
                 drafts.appendDelta(sessionId, event.turnJobId, text, clock())
                 clearError(sessionId)
             }
             is RealtimeEvent.TurnCompleted -> {
+                binding.finish(event.turnJobId)
                 fetchAndStore(sessionId, event.messageId)
-                // Cleared even if the fetch failed: the turn is over; the next refresh brings the message.
-                drafts.clear(sessionId)
+                // Cleared even if the fetch failed (the turn is over; the next refresh brings the message), but
+                // only this turn's draft: a newer turn may already be streaming.
+                drafts.clearTurn(sessionId, event.turnJobId)
                 clearError(sessionId)
             }
             is RealtimeEvent.MessageCreated -> {
@@ -116,14 +151,15 @@ class ChatRepository(
             }
             is RealtimeEvent.MessageUpdated -> fetchAndStore(sessionId, event.messageId)
             is RealtimeEvent.TurnFailed -> {
-                drafts.clear(sessionId)
+                binding.finish(event.turnJobId)
+                drafts.clearTurn(sessionId, event.turnJobId)
                 updateFlags(sessionId) { it.copy(lastError = event.error) }
             }
             is RealtimeEvent.SessionRenamed -> {
                 val sessions = db.sessionDao()
                 sessions.get(sessionId)?.let { sessions.upsert(it.copy(title = event.title)) }
             }
-            is RealtimeEvent.Resynced -> refresh(sessionId)
+            is RealtimeEvent.Resynced -> resync(sessionId)
             is RealtimeEvent.AccessLost -> updateFlags(sessionId) { it.copy(accessLost = true) }
             is RealtimeEvent.AgentSessionStarted,
             is RealtimeEvent.AgentPhaseChanged,

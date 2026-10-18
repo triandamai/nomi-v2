@@ -22,6 +22,9 @@ class ActivityRepository(private val db: NomiDatabase, private val clock: EpochC
     fun observeActive(sessionId: String): Flow<AgentActivity?> =
         observeActive().map { all -> all.firstOrNull { it.sessionId == sessionId } }.distinctUntilChanged()
 
+    /** Forgets every agent row of [sessionId] (after a resync; live agents re-announce through phase events). */
+    suspend fun clearForSession(sessionId: String) = dao.clearForSession(sessionId)
+
     /** Applies an agent lifecycle event; other events are ignored. */
     suspend fun onEvent(event: RealtimeEvent) {
         when (event) {
