@@ -68,6 +68,48 @@ class NomiHttpClientTest {
     }
 
     @Test
+    fun aRejectedRefreshForAnOlderAccountLeavesTheNewerSessionAlone() = runTest {
+        val store = FakeTokenStore(Tokens("a-access", "a-refresh"))
+        var signedOut = 0
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/auth/refresh" -> {
+                    // B signs in while A's refresh is on the wire.
+                    store.write(Tokens("b-access", "b-refresh"))
+                    respond("", HttpStatusCode.Unauthorized)
+                }
+                else -> respond("", HttpStatusCode.Unauthorized)
+            }
+        }
+        val client = nomiHttpClient(engine, config, store) { signedOut++ }
+
+        client.get("${config.baseUrl}/api/home")
+
+        assertEquals(Tokens("b-access", "b-refresh"), store.read())
+        assertEquals(0, store.clearCount)
+        assertEquals(0, signedOut)
+    }
+
+    @Test
+    fun aSuccessfulRefreshForAnOlderAccountDoesNotOverwriteTheNewerSession() = runTest {
+        val store = FakeTokenStore(Tokens("a-access", "a-refresh"))
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/auth/refresh" -> {
+                    store.write(Tokens("b-access", "b-refresh"))
+                    respond("""{"access_token":"a-new"}""", HttpStatusCode.OK, json)
+                }
+                else -> respond("", HttpStatusCode.Unauthorized)
+            }
+        }
+        val client = nomiHttpClient(engine, config, store) { error("must not sign out") }
+
+        client.get("${config.baseUrl}/api/home")
+
+        assertEquals(Tokens("b-access", "b-refresh"), store.read())
+    }
+
+    @Test
     fun clearedStoreIsNotServedFromTheAuthPluginCache() = runTest {
         val store = FakeTokenStore(Tokens("cached", "r"))
         val headers = mutableListOf<String?>()

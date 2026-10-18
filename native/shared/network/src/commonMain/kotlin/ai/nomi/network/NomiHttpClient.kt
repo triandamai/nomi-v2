@@ -39,7 +39,8 @@ internal val apiJson = Json {
 
 /**
  * The one HTTP client the app talks to Nomi with. Bearer tokens come from [tokens]; a 401 triggers a single
- * refresh and retry. A refresh the server rejects ends the session: store cleared, [onSignedOut] called.
+ * refresh and retry. A refresh the server rejects ends the session: store cleared, [onSignedOut] called. A refresh
+ * whose session was replaced meanwhile (the stored refresh token changed) changes nothing.
  */
 fun nomiHttpClient(
     engine: HttpClientEngine,
@@ -60,11 +61,15 @@ fun nomiHttpClient(
                     if (failed.encodedPath.isPublicAuthPath() || failed.host != apiUrl.host || failed.port != apiUrl.port) {
                         return@refreshTokens null
                     }
+                    val startedWith = stale.refreshToken.orEmpty()
                     val refreshed = client.post(config.url(REFRESH_PATH)) {
                         markAsRefreshTokenRequest()
                         contentType(ContentType.Application.Json)
-                        setBody(RefreshRequest(stale.refreshToken.orEmpty()))
+                        setBody(RefreshRequest(startedWith))
                     }
+                    // Another sign-in (or sign-out) replaced the session while this refresh was out: its verdict is
+                    // about tokens nobody holds any more, so it must neither overwrite nor clear the store.
+                    if (tokens.read()?.refresh != startedWith) return@refreshTokens null
                     when {
                         refreshed.status == HttpStatusCode.Unauthorized -> {
                             tokens.clear()
