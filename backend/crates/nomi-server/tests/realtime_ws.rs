@@ -222,3 +222,21 @@ async fn malformed_frame_gets_error_and_socket_survives(pool: PgPool) {
     send(&mut ws, json!({"op":"ping"})).await;
     assert_eq!(next_json(&mut ws).await, json!({"type":"pong"}));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn client_topic_cap_excludes_the_user_topic(pool: PgPool) {
+    const CAP: usize = 64;
+    let (base, ws_base) = spawn_app(pool).await;
+    let client = reqwest::Client::new();
+    let token = register_and_login(&client, &base, "rt-cap@nomi.test").await;
+    let mut ws = connect(&ws_base, Some(&token)).await.unwrap();
+    next_json(&mut ws).await; // ready
+    for _ in 0..CAP {
+        let session = create_session(&client, &base, &token).await;
+        send(&mut ws, json!({"op":"subscribe","topic":format!("chat:{session}")})).await;
+        assert_eq!(next_json(&mut ws).await["type"], "subscribed");
+    }
+    let one_more = create_session(&client, &base, &token).await;
+    send(&mut ws, json!({"op":"subscribe","topic":format!("chat:{one_more}")})).await;
+    assert_eq!(next_json(&mut ws).await["type"], "denied");
+}
