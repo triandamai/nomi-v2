@@ -28,7 +28,7 @@ import kotlin.time.Duration.Companion.seconds
 private val WEBSOCKET_PING_INTERVAL = 25.seconds
 
 /** Auth endpoints whose own 401 means "bad credentials", not "access token expired". */
-private val PUBLIC_AUTH_PATHS = listOf(LOGIN_PATH, REFRESH_PATH, LOGOUT_PATH)
+private val PUBLIC_AUTH_PATHS = listOf(LOGIN_PATH, REFRESH_PATH, LOGOUT_PATH, VERIFY_PATH, RESEND_PATH)
 
 private fun String.isPublicAuthPath() = PUBLIC_AUTH_PATHS.any { endsWith(it) }
 
