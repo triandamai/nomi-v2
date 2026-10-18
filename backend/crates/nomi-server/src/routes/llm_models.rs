@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
@@ -18,7 +19,11 @@ pub struct AdminLlmModelResponse {
     pub model_id: String,
     pub base_url: Option<String>,
     pub is_default: bool,
+    /// The model's own key, masked; empty when it uses its connection's.
     pub api_key_masked: String,
+    /// The connected provider it comes from (Admin → Providers), and that connection's name.
+    pub connection_id: Option<Uuid>,
+    pub connection_label: Option<String>,
     pub input_usd_per_mtok: Option<f64>,
     pub output_usd_per_mtok: Option<f64>,
     pub cached_input_usd_per_mtok: Option<f64>,
@@ -37,9 +42,12 @@ pub struct AdminLlmModelResponse {
 fn to_response(
     model: llm_models::AdminLlmModel,
     settings_key: &[u8; 32],
+    connection_labels: &HashMap<Uuid, String>,
 ) -> Result<AdminLlmModelResponse, (StatusCode, &'static str)> {
-    let api_key = settings::crypto::decrypt(settings_key, &model.api_key_encrypted)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?;
+    let api_key = match &model.api_key_encrypted {
+        Some(encrypted) => settings::crypto::decrypt(settings_key, encrypted).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key"))?,
+        None => String::new(),
+    };
     let media_support = crate::bootstrap::media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref()).as_list();
     Ok(AdminLlmModelResponse {
         id: model.id,
@@ -48,7 +56,9 @@ fn to_response(
         model_id: model.model_id,
         base_url: model.base_url,
         is_default: model.is_default,
-        api_key_masked: settings::mask_api_key(&api_key),
+        api_key_masked: if api_key.is_empty() { String::new() } else { settings::mask_api_key(&api_key) },
+        connection_label: model.connection_id.and_then(|id| connection_labels.get(&id).cloned()),
+        connection_id: model.connection_id,
         input_usd_per_mtok: model.input_usd_per_mtok,
         output_usd_per_mtok: model.output_usd_per_mtok,
         cached_input_usd_per_mtok: model.cached_input_usd_per_mtok,
@@ -58,6 +68,14 @@ fn to_response(
         media_inputs: model.media_inputs,
         enabled: model.enabled,
     })
+}
+
+/// The instance's connections by id, for naming where each model comes from.
+async fn connection_labels(state: &AppState) -> Result<HashMap<Uuid, String>, (StatusCode, &'static str)> {
+    let connections = settings::provider_connections::list_connections(&state.pool, settings::provider_connections::Scope::Admin)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load providers"))?;
+    Ok(connections.into_iter().map(|c| (c.id, c.label)).collect())
 }
 
 /// `None` (guess from the model id) or the kinds listed, each one of image, pdf, audio, video.
@@ -78,15 +96,22 @@ pub async fn list_admin_models(
     let models = llm_models::list_admin_llm_models(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load models"))?;
-    let responses = models.into_iter().map(|m| to_response(m, &state.settings_key)).collect::<Result<Vec<_>, _>>()?;
+    let labels = connection_labels(&state).await?;
+    let responses = models.into_iter().map(|m| to_response(m, &state.settings_key, &labels)).collect::<Result<Vec<_>, _>>()?;
     Ok(Json(responses))
 }
 
 #[derive(Deserialize)]
 pub struct CreateAdminModelRequest {
     pub label: String,
+    /// One of the instance's connected providers (Admin → Providers). Without it, the model
+    /// carries its own provider and key the old way.
+    #[serde(default)]
+    pub connection_id: Option<Uuid>,
+    #[serde(default)]
     pub provider: String,
     pub model_id: String,
+    #[serde(default)]
     pub api_key: String,
     pub base_url: Option<String>,
     /// USD per million tokens, for showing people what they spend.
@@ -99,14 +124,55 @@ pub struct CreateAdminModelRequest {
     pub media_inputs: Option<Vec<String>>,
 }
 
+/// A model from one of the instance's connected providers: no key of its own.
+async fn create_connection_model(
+    state: &AppState,
+    by: Uuid,
+    connection_id: Uuid,
+    req: &CreateAdminModelRequest,
+) -> Result<(StatusCode, Json<AdminLlmModelResponse>), (StatusCode, &'static str)> {
+    if req.label.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "label is required"));
+    }
+    if req.model_id.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "model_id is required"));
+    }
+    if [req.input_usd_per_mtok, req.output_usd_per_mtok, req.cached_input_usd_per_mtok].into_iter().flatten().any(|p| !p.is_finite() || p < 0.0) {
+        return Err((StatusCode::BAD_REQUEST, "prices must be zero or more"));
+    }
+    validate_media_inputs(&req.media_inputs)?;
+    let model = llm_models::create_connection_model(
+        &state.pool,
+        llm_models::NewConnectionModel {
+            label: req.label.trim(),
+            connection_id,
+            model_id: req.model_id.trim(),
+            input_usd_per_mtok: req.input_usd_per_mtok,
+            output_usd_per_mtok: req.output_usd_per_mtok,
+            cached_input_usd_per_mtok: req.cached_input_usd_per_mtok,
+            media_inputs: req.media_inputs.clone(),
+            updated_by: by,
+        },
+    )
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "provider not connected"),
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, "failed to create model"),
+    })?;
+    Ok((StatusCode::CREATED, Json(to_response(model, &state.settings_key, &connection_labels(state).await?)?)))
+}
+
 pub async fn create_admin_model(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Json(req): Json<CreateAdminModelRequest>,
 ) -> Result<(StatusCode, Json<AdminLlmModelResponse>), (StatusCode, &'static str)> {
     crate::routes::admin_access::require_admin(&claims, "models", "write")?;
+    if let Some(connection_id) = req.connection_id {
+        return create_connection_model(&state, claims.sub, connection_id, &req).await;
+    }
     if !ALLOWED_PROVIDERS.contains(&req.provider.as_str()) {
-        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)"));
+        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, openrouter, gemini, deepseek, or fake)"));
     }
     let is_fake = req.provider == "fake";
     if !is_fake && req.model_id.trim().is_empty() {
@@ -141,12 +207,16 @@ pub async fn create_admin_model(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create model"))?;
 
-    Ok((StatusCode::CREATED, Json(to_response(model, &state.settings_key)?)))
+    Ok((StatusCode::CREATED, Json(to_response(model, &state.settings_key, &connection_labels(&state).await?)?)))
 }
 
 #[derive(Deserialize)]
 pub struct UpdateAdminModelRequest {
     pub label: String,
+    /// Moves the model onto (or keeps it on) one of the instance's connected providers.
+    #[serde(default)]
+    pub connection_id: Option<Uuid>,
+    #[serde(default)]
     pub provider: String,
     pub model_id: String,
     pub api_key: Option<String>,
@@ -164,11 +234,21 @@ pub async fn update_admin_model(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(id): Path<Uuid>,
-    Json(req): Json<UpdateAdminModelRequest>,
+    Json(mut req): Json<UpdateAdminModelRequest>,
 ) -> Result<Json<AdminLlmModelResponse>, (StatusCode, &'static str)> {
     crate::routes::admin_access::require_admin(&claims, "models", "write")?;
-    if !ALLOWED_PROVIDERS.contains(&req.provider.as_str()) {
-        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)"));
+    if let Some(connection_id) = req.connection_id {
+        let connection = settings::provider_connections::get_connection(&state.pool, settings::provider_connections::Scope::Admin, connection_id)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load the provider"))?
+            .ok_or((StatusCode::NOT_FOUND, "provider not connected"))?;
+        // The connection decides the client; its key and address are used, not the model's.
+        req.provider = connection.kind;
+        req.api_key = None;
+        req.base_url = None;
+    }
+    if !ALLOWED_PROVIDERS.contains(&req.provider.as_str()) && req.connection_id.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, openrouter, gemini, deepseek, or fake)"));
     }
     let is_fake = req.provider == "fake";
     if !is_fake && req.model_id.trim().is_empty() {
@@ -206,8 +286,15 @@ pub async fn update_admin_model(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update model"))?
     .ok_or((StatusCode::NOT_FOUND, "model not found"))?;
+    let model = match req.connection_id {
+        Some(connection_id) => llm_models::link_admin_llm_model_to_connection(&state.pool, model.id, connection_id)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update model"))?
+            .ok_or((StatusCode::NOT_FOUND, "model not found"))?,
+        None => model,
+    };
 
-    Ok(Json(to_response(model, &state.settings_key)?))
+    Ok(Json(to_response(model, &state.settings_key, &connection_labels(&state).await?)?))
 }
 
 pub async fn delete_admin_model(
@@ -309,7 +396,7 @@ pub async fn fetch_provider_models(
     crate::routes::admin_access::require_admin(&claims, "models", "write").map_err(|(status, msg)| (status, msg.to_string()))?;
 
     let provider_kind = provider_kind_from_str(&req.provider)
-        .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)".to_string()))?;
+        .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, openrouter, gemini, deepseek, or fake)".to_string()))?;
     let is_fake = req.provider == "fake";
 
     let api_key = match req.api_key.as_deref() {
@@ -323,12 +410,23 @@ pub async fn fetch_provider_models(
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load existing model".to_string()))?
                 .ok_or((StatusCode::NOT_FOUND, "model not found".to_string()))?;
-            settings::crypto::decrypt(&state.settings_key, &model.api_key_encrypted)
-                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key".to_string()))?
+            match (&model.api_key_encrypted, model.connection_id) {
+                (Some(encrypted), _) => settings::crypto::decrypt(&state.settings_key, encrypted)
+                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to decrypt stored api key".to_string()))?,
+                // No key of its own: list what its connection offers.
+                (None, Some(connection_id)) => {
+                    let config = crate::bootstrap::connection_model_config(&state.pool, &state.settings_key, settings::provider_connections::Scope::Admin, connection_id, String::new())
+                        .await
+                        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "failed to load the model's provider".to_string()))?;
+                    let models = nomi_llm::list_provider_models(config, state.http_client.clone()).await.map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+                    return Ok(Json(FetchProviderModelsResponse { models: models.into_iter().map(|m| FetchedModel { id: m.id, label: m.label }).collect() }));
+                }
+                (None, None) => return Err((StatusCode::BAD_REQUEST, "api_key is required to fetch models for this entry".to_string())),
+            }
         }
     };
 
-    let config = nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key, base_url: req.base_url.clone() };
+    let config = nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key, base_url: req.base_url.clone(), extra_headers: vec![] };
     let models = nomi_llm::list_provider_models(config, state.http_client.clone())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -357,14 +455,14 @@ pub async fn fetch_user_models(
     Json(req): Json<FetchUserModelsRequest>,
 ) -> Result<Json<FetchProviderModelsResponse>, (StatusCode, String)> {
     let provider_kind = provider_kind_from_str(&req.provider)
-        .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, gemini, or fake)".to_string()))?;
+        .ok_or((StatusCode::BAD_REQUEST, "unknown provider (expected anthropic, openai, openrouter, gemini, deepseek, or fake)".to_string()))?;
     let is_fake = req.provider == "fake";
     if !is_fake && req.api_key.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "api_key is required for a non-fake provider".to_string()));
     }
 
     let config =
-        nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key: req.api_key.clone(), base_url: req.base_url.clone() };
+        nomi_llm::ModelConfig { provider: provider_kind, model_id: String::new(), api_key: req.api_key.clone(), base_url: req.base_url.clone(), extra_headers: vec![] };
     let models = nomi_llm::list_provider_models(config, state.http_client.clone())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -379,7 +477,15 @@ pub struct UserModelOption {
     pub id: Uuid,
     pub label: String,
     pub provider: String,
+    /// Where it runs, by name: its connection's, else the provider's ("Anthropic").
+    pub provider_label: String,
     pub model_id: String,
+}
+
+/// A provider's display name from its stored kind ("gemini" → "Google").
+fn provider_display_name(kind: &str) -> String {
+    let catalog_id = if kind == "gemini" { "google" } else { kind };
+    nomi_llm::catalog::provider(catalog_id).map(|p| p.name.clone()).unwrap_or_else(|| kind.to_string())
 }
 
 #[derive(Serialize)]
@@ -387,6 +493,8 @@ pub struct UserModelOption {
 pub enum UserSelectionResponse {
     Admin { admin_model_id: Uuid },
     Custom { label: String, provider: String, model_id: String, api_key_masked: String, base_url: Option<String> },
+    /// A model from one of their own connected providers (Providers).
+    Connection { connection_id: Uuid, provider_id: String, label: String, model_id: String },
 }
 
 #[derive(Serialize)]
@@ -433,9 +541,16 @@ pub async fn get_user_models(
     // Switched-off models aren't offered.
     let models: Vec<_> = models.into_iter().filter(|m| m.enabled).collect();
     let default_coding_model_id = models.iter().find(|m| m.is_coding_model).map(|m| m.id);
+    let labels = connection_labels(&state).await?;
     let admin_models = models
         .into_iter()
-        .map(|m| UserModelOption { id: m.id, label: m.label, provider: m.provider, model_id: m.model_id })
+        .map(|m| UserModelOption {
+            provider_label: m.connection_id.and_then(|id| labels.get(&id).cloned()).unwrap_or_else(|| provider_display_name(&m.provider)),
+            id: m.id,
+            label: m.label,
+            provider: m.provider,
+            model_id: m.model_id,
+        })
         .collect();
     let coding = llm_models::get_user_coding_choice(&state.pool, claims.sub)
         .await
@@ -454,6 +569,16 @@ pub async fn get_user_models(
         Some(row) => {
             if let Some(admin_model_id) = row.admin_model_id {
                 Some(UserSelectionResponse::Admin { admin_model_id })
+            } else if let (None, Some(connection_id)) = (&row.custom_api_key_encrypted, row.custom_connection_id) {
+                let connection = settings::provider_connections::get_connection(&state.pool, settings::provider_connections::Scope::User(claims.sub), connection_id)
+                    .await
+                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load selection"))?;
+                connection.map(|connection| UserSelectionResponse::Connection {
+                    connection_id,
+                    provider_id: connection.provider_id,
+                    label: row.custom_label.clone().or_else(|| row.custom_model_id.clone()).unwrap_or_default(),
+                    model_id: row.custom_model_id.unwrap_or_default(),
+                })
             } else if let Some(provider) = row.custom_provider {
                 let api_key = settings::crypto::decrypt(
                     &state.settings_key,
@@ -508,6 +633,7 @@ pub async fn put_user_coding_selection(
 pub enum SelectionRequest {
     Admin { admin_model_id: Uuid },
     Custom { label: String, provider: String, model_id: String, api_key: String, base_url: Option<String> },
+    Connection { connection_id: Uuid, model_id: String, label: Option<String> },
 }
 
 fn provider_kind_from_str(s: &str) -> Option<nomi_llm::ProviderKind> {
@@ -544,11 +670,30 @@ pub async fn put_user_selection(
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save selection".to_string()))?;
         }
+        SelectionRequest::Connection { connection_id, model_id, label } => {
+            let model_id = model_id.trim().to_string();
+            if model_id.is_empty() {
+                return Err((StatusCode::BAD_REQUEST, "model_id is required".to_string()));
+            }
+            let scope = settings::provider_connections::Scope::User(claims.sub);
+            let config = crate::bootstrap::connection_model_config(&state.pool, &state.settings_key, scope, connection_id, model_id.clone())
+                .await
+                .ok_or((StatusCode::NOT_FOUND, "provider not connected".to_string()))?;
+            // A short real call, so a model the provider doesn't serve is caught here, not mid-chat.
+            nomi_llm::validate_model_config(config, state.http_client.clone()).await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            let label = label.map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).unwrap_or_else(|| model_id.clone());
+            let saved = llm_models::set_user_llm_selection_connection(&state.pool, claims.sub, connection_id, &model_id, &label)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save selection".to_string()))?;
+            if !saved {
+                return Err((StatusCode::NOT_FOUND, "provider not connected".to_string()));
+            }
+        }
         SelectionRequest::Custom { label, provider, model_id, api_key, base_url } => {
             if !ALLOWED_PROVIDERS.contains(&provider.as_str()) {
                 return Err((
                     StatusCode::BAD_REQUEST,
-                    "unknown provider (expected anthropic, openai, gemini, or fake)".to_string(),
+                    "unknown provider (expected anthropic, openai, openrouter, gemini, deepseek, or fake)".to_string(),
                 ));
             }
             let is_fake = provider == "fake";
@@ -566,6 +711,7 @@ pub async fn put_user_selection(
                 model_id: model_id.clone(),
                 api_key: api_key.clone(),
                 base_url: base_url.clone(),
+                extra_headers: vec![],
             };
             nomi_llm::validate_model_config(model_config, state.http_client.clone())
                 .await

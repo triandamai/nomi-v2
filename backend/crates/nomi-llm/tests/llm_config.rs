@@ -45,6 +45,7 @@ async fn build_provider_selects_anthropic() {
             model_id: "claude-haiku-4-5".to_string(),
             api_key: "key".to_string(),
             base_url: Some(server.uri()),
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -74,6 +75,7 @@ async fn build_provider_selects_openai() {
             model_id: "gpt-4o".to_string(),
             api_key: "key".to_string(),
             base_url: Some(server.uri()),
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -100,6 +102,7 @@ async fn build_provider_selects_gemini() {
             model_id: "gemini-2.0-flash".to_string(),
             api_key: "key".to_string(),
             base_url: Some(server.uri()),
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -128,6 +131,7 @@ async fn build_provider_selects_openrouter() {
             model_id: "anthropic/claude-sonnet-5".to_string(),
             api_key: "key".to_string(),
             base_url: Some(server.uri()),
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -156,6 +160,7 @@ async fn build_provider_selects_deepseek() {
             model_id: "deepseek-flash".to_string(),
             api_key: "key".to_string(),
             base_url: Some(server.uri()),
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -175,6 +180,7 @@ async fn build_provider_uses_the_real_default_base_url_when_none_given() {
             model_id: "claude-haiku-4-5".to_string(),
             api_key: "key".to_string(),
             base_url: None,
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -184,6 +190,7 @@ async fn build_provider_uses_the_real_default_base_url_when_none_given() {
             model_id: "gpt-4o".to_string(),
             api_key: "key".to_string(),
             base_url: None,
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -193,6 +200,7 @@ async fn build_provider_uses_the_real_default_base_url_when_none_given() {
             model_id: "gemini-2.0-flash".to_string(),
             api_key: "key".to_string(),
             base_url: None,
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -202,6 +210,7 @@ async fn build_provider_uses_the_real_default_base_url_when_none_given() {
             model_id: "anthropic/claude-sonnet-5".to_string(),
             api_key: "key".to_string(),
             base_url: None,
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );
@@ -211,6 +220,7 @@ async fn build_provider_uses_the_real_default_base_url_when_none_given() {
             model_id: "deepseek-flash".to_string(),
             api_key: "key".to_string(),
             base_url: None,
+            extra_headers: vec![],
         },
         reqwest::Client::new(),
     );

@@ -473,7 +473,7 @@ pub async fn fill_link_preview(view: crate::views::View) -> crate::views::View {
 /// Pages on the server's own network (localhost, private ranges, cloud metadata) are off-limits:
 /// an agent must never be steered into reading internal services. `NOMI_WEB_ALLOW_PRIVATE=1`
 /// lifts this for local development and tests.
-async fn ensure_public_host(host: &str, port: u16) -> Result<(), String> {
+pub async fn ensure_public_host(host: &str, port: u16) -> Result<(), String> {
     if std::env::var("NOMI_WEB_ALLOW_PRIVATE").is_ok_and(|v| v == "1") {
         return Ok(());
     }

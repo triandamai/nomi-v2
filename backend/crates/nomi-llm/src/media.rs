@@ -76,7 +76,7 @@ impl MediaSupport {
             pdf: has(MediaKind::Pdf),
             audio: has(MediaKind::Audio),
             video: has(MediaKind::Video),
-            audio_wav_mp3_only: matches!(provider, ProviderKind::OpenAi | ProviderKind::OpenRouter),
+            audio_wav_mp3_only: matches!(provider, ProviderKind::OpenAi | ProviderKind::OpenRouter | ProviderKind::OpenAiCompatible),
         }
     }
 
@@ -93,16 +93,16 @@ impl MediaSupport {
                     "google" if model.starts_with("gemini") => MediaSupport::ALL,
                     "anthropic" => anthropic_support(model),
                     "openai" => openai_support(model),
-                    _ if ["vision", "-vl", "pixtral", "llava", "gemma-3"].iter().any(|m| model.contains(m)) => {
-                        MediaSupport { image: true, ..MediaSupport::NONE }
-                    }
-                    _ => MediaSupport::NONE,
+                    _ => vision_guess(model),
                 };
                 // OpenRouter reads PDFs for any model (it turns them into text when the model can't).
                 support.pdf = true;
                 support.audio_wav_mp3_only = true;
                 support
             }
+            // Hosts and gateways: only what the model's name says; the catalog's inputs (saved as
+            // the model's media list) are what really counts.
+            ProviderKind::OpenAiCompatible => MediaSupport { audio_wav_mp3_only: true, ..vision_guess(&id) },
             ProviderKind::DeepSeek => MediaSupport::NONE,
         }
     }
@@ -129,6 +129,15 @@ impl MediaSupport {
 
     fn allowed_count(&self, request: &LlmRequest) -> usize {
         media_types(request).filter(|t| self.allows(t)).count()
+    }
+}
+
+/// Images for models whose name marks them as vision models; nothing else.
+fn vision_guess(model: &str) -> MediaSupport {
+    if ["vision", "-vl", "pixtral", "llava", "gemma-3"].iter().any(|m| model.contains(m)) {
+        MediaSupport { image: true, ..MediaSupport::NONE }
+    } else {
+        MediaSupport::NONE
     }
 }
 

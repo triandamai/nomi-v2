@@ -86,7 +86,7 @@ async fn update_changes_fields_and_keeps_existing_key_when_none_given(pool: PgPo
     assert_eq!(updated.label, "Renamed");
     assert_eq!(updated.provider, "openai");
     assert_eq!(updated.model_id, "gpt-4o");
-    assert_eq!(updated.api_key_encrypted, vec![1, 2, 3]);
+    assert_eq!(updated.api_key_encrypted, Some(vec![1, 2, 3]));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -114,7 +114,7 @@ async fn update_replaces_the_key_when_one_is_given(pool: PgPool) {
     .unwrap()
     .unwrap();
 
-    assert_eq!(updated.api_key_encrypted, vec![9, 9, 9]);
+    assert_eq!(updated.api_key_encrypted, Some(vec![9, 9, 9]));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

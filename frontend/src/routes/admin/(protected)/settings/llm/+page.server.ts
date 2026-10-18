@@ -1,16 +1,19 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { ADMIN_CONNECTIONS, listCatalogModels, listConnectionModels, loadCatalog, loadConnections } from '$lib/server/providers';
 import type { AdminLlmModel } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models');
-	if (!response.ok) {
-		return { models: [] as AdminLlmModel[] };
-	}
-	const models = (await response.json()) as AdminLlmModel[];
-	return { models };
+	// New models run on a shared provider connection (Providers page); the catalog names them.
+	const [response, connections, providers] = await Promise.all([
+		apiFetch(fetch, cookies, '/api/admin/settings/llm/models'),
+		loadConnections(fetch, cookies, ADMIN_CONNECTIONS),
+		loadCatalog(fetch, cookies),
+	]);
+	const models = response.ok ? ((await response.json()) as AdminLlmModel[]) : [];
+	return { models, connections: connections ?? [], providers: providers ?? [] };
 };
 
 function readForm(data: FormData) {
@@ -28,7 +31,9 @@ function readForm(data: FormData) {
 	};
 	// "auto" leaves it to the backend to work out what the model opens from its id.
 	const mediaInputs = data.get('media_mode') === 'listed' ? data.getAll('media').filter((v): v is string => typeof v === 'string') : null;
+	const connectionId = data.get('connection_id');
 	return {
+		connectionId: typeof connectionId === 'string' && connectionId.length > 0 ? connectionId : null,
 		mediaInputs,
 		inputPrice: price('input_usd_per_mtok'),
 		outputPrice: price('output_usd_per_mtok'),
@@ -43,16 +48,21 @@ function readForm(data: FormData) {
 
 export const actions: Actions = {
 	create: async ({ request, cookies, fetch }) => {
-		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, cachedPrice, mediaInputs } = readForm(await request.formData());
-		if (!label || !provider) {
+		const { label, provider, connectionId, modelId, apiKey, baseUrl, inputPrice, outputPrice, cachedPrice, mediaInputs } = readForm(await request.formData());
+		if (!label || (!connectionId && !provider)) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
 		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice) || Number.isNaN(cachedPrice)) {
 			return fail(400, { error: m.err_price() });
 		}
+		const prices = { input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, cached_input_usd_per_mtok: cachedPrice, media_inputs: mediaInputs };
+		// A model on a provider connection carries no key of its own; the legacy shape still works.
+		const body = connectionId
+			? { label, connection_id: connectionId, model_id: modelId, ...prices }
+			: { label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, ...prices };
 		const response = await apiFetch(fetch, cookies, '/api/admin/settings/llm/models', {
 			method: 'POST',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey ?? '', base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, cached_input_usd_per_mtok: cachedPrice, media_inputs: mediaInputs }),
+			body: JSON.stringify(body),
 		});
 		if (!response.ok) {
 			const message = await response.text();
@@ -64,16 +74,20 @@ export const actions: Actions = {
 	update: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const id = data.get('id');
-		const { label, provider, modelId, apiKey, baseUrl, inputPrice, outputPrice, cachedPrice, mediaInputs } = readForm(data);
-		if (typeof id !== 'string' || !label || !provider) {
+		const { label, provider, connectionId, modelId, apiKey, baseUrl, inputPrice, outputPrice, cachedPrice, mediaInputs } = readForm(data);
+		if (typeof id !== 'string' || !label || (!connectionId && !provider)) {
 			return fail(400, { error: m.err_label_provider_required() });
 		}
 		if (Number.isNaN(inputPrice) || Number.isNaN(outputPrice) || Number.isNaN(cachedPrice)) {
 			return fail(400, { error: m.err_price() });
 		}
+		const prices = { input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, cached_input_usd_per_mtok: cachedPrice, media_inputs: mediaInputs };
+		const body = connectionId
+			? { label, connection_id: connectionId, model_id: modelId, ...prices }
+			: { label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, ...prices };
 		const response = await apiFetch(fetch, cookies, `/api/admin/settings/llm/models/${id}`, {
 			method: 'PUT',
-			body: JSON.stringify({ label, provider, model_id: modelId, api_key: apiKey, base_url: baseUrl, input_usd_per_mtok: inputPrice, output_usd_per_mtok: outputPrice, cached_input_usd_per_mtok: cachedPrice, media_inputs: mediaInputs }),
+			body: JSON.stringify(body),
 		});
 		if (!response.ok) {
 			const message = await response.text();
@@ -155,6 +169,12 @@ export const actions: Actions = {
 		}
 		return { success: true };
 	},
+
+	/** The models a shared connection offers, asked of the provider with its stored key. */
+	connectionModels: async ({ request, cookies, fetch }) => listConnectionModels(fetch, cookies, ADMIN_CONNECTIONS, await request.formData()),
+
+	/** The catalog's prices and inputs for a provider's models, to prefill a new one. */
+	catalogModels: async ({ request, cookies, fetch }) => listCatalogModels(fetch, cookies, await request.formData()),
 
 	fetchModels: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();

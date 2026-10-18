@@ -324,3 +324,97 @@ async fn koda_builds_with_the_coding_model_unless_the_person_picks_another(pool:
     delete_admin_llm_model(&pool, other).await.unwrap();
     assert_eq!(model_for(ModelPurpose::Coding).await, "claude-opus-5-5");
 }
+
+mod connections {
+    use super::*;
+    use nomi_server::bootstrap::resolve_llm_model;
+    use nomi_settings::llm_models::{create_connection_model, set_user_llm_selection_connection, NewConnectionModel};
+    use nomi_settings::provider_connections::{create_connection, NewConnection, Scope};
+
+    async fn gateway(pool: &PgPool, scope: Scope, by: Uuid) -> Uuid {
+        let headers = crypto::encrypt(&SETTINGS_KEY, r#"[{"name":"X-Team","value":"nomi"}]"#);
+        create_connection(
+            pool,
+            scope,
+            NewConnection {
+                provider_id: "custom",
+                label: "Gateway",
+                kind: "openai_compatible",
+                auth_type: "custom_endpoint",
+                api_key_encrypted: Some(crypto::encrypt(&SETTINGS_KEY, "gw-key")),
+                base_url: Some("https://gw.example.com/v1"),
+                headers_encrypted: Some(headers),
+                updated_by: by,
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn an_admin_model_from_a_connection_uses_the_connections_key_url_and_headers(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let connection_id = gateway(&pool, Scope::Admin, user_id).await;
+        let model = create_connection_model(
+            &pool,
+            NewConnectionModel { label: "Llama", connection_id, model_id: "meta/llama-4", input_usd_per_mtok: None, output_usd_per_mtok: None, cached_input_usd_per_mtok: None, media_inputs: None, updated_by: user_id },
+        )
+        .await
+        .unwrap();
+        set_user_llm_selection_admin(&pool, user_id, model.id).await.unwrap();
+
+        let config = resolve_llm_model_config(&pool, user_id, &SETTINGS_KEY).await;
+        assert_eq!(config.provider, ProviderKind::OpenAiCompatible);
+        assert_eq!(config.model_id, "meta/llama-4");
+        assert_eq!(config.api_key, "gw-key");
+        assert_eq!(config.base_url.as_deref(), Some("https://gw.example.com/v1"));
+        assert_eq!(config.extra_headers, vec![("X-Team".to_string(), "nomi".to_string())]);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_model_that_still_has_its_own_key_keeps_using_it(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let connection_id = gateway(&pool, Scope::Admin, user_id).await;
+        let model = admin_model(&pool, user_id, "Old", "claude-haiku-4-5").await;
+        sqlx::query("UPDATE admin_llm_models SET connection_id = $1 WHERE id = $2").bind(connection_id).bind(model).execute(&pool).await.unwrap();
+        set_user_llm_selection_admin(&pool, user_id, model).await.unwrap();
+
+        let config = resolve_llm_model_config(&pool, user_id, &SETTINGS_KEY).await;
+        assert_eq!(config.provider, ProviderKind::Anthropic);
+        assert_eq!(config.api_key, "sk");
+        assert!(config.extra_headers.is_empty());
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_person_can_run_on_a_model_from_their_own_connection(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let connection_id = gateway(&pool, Scope::User(user_id), user_id).await;
+        set_user_llm_selection_connection(&pool, user_id, connection_id, "meta/llama-4", "Llama").await.unwrap();
+
+        let (config, tag) = resolve_llm_model(&pool, user_id, &SETTINGS_KEY).await;
+        assert_eq!(config.provider, ProviderKind::OpenAiCompatible);
+        assert_eq!(config.api_key, "gw-key");
+        assert_eq!(config.model_id, "meta/llama-4");
+        assert!(tag.own_key, "their own provider is never billed to their plan");
+        assert_eq!(tag.label, "Llama");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn someone_elses_connection_is_never_used(pool: PgPool) {
+        let owner = insert_user(&pool).await;
+        let other = insert_user(&pool).await;
+        let connection_id = gateway(&pool, Scope::User(owner), owner).await;
+        // Written directly: the API refuses this, but resolution must not trust the row either.
+        sqlx::query("INSERT INTO user_llm_selections (user_id, custom_provider, custom_model_id, custom_connection_id) VALUES ($1, 'openai_compatible', 'm', $2)")
+            .bind(other)
+            .bind(connection_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        admin_model(&pool, other, "Default", "claude-haiku-4-5").await;
+
+        let config = resolve_llm_model_config(&pool, other, &SETTINGS_KEY).await;
+        assert_eq!(config.provider, ProviderKind::Anthropic, "falls back to Nomi's default");
+    }
+}

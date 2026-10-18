@@ -14,6 +14,7 @@ pub mod dynamic_agents;
 pub mod google_auth;
 pub mod home;
 pub mod llm_models;
+pub mod provider_connections;
 pub mod maintenance;
 pub mod memory;
 pub mod money;

@@ -11,6 +11,7 @@
 	import Menu from '$lib/components/m3/Menu.svelte';
 	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import ModelKeySheet from '$lib/components/ModelKeySheet.svelte';
+	import { connectionSelectionText } from '$lib/providers';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -26,6 +27,7 @@
 			const match = data.models.admin_models.find((m) => m.id === selection.admin_model_id);
 			return match?.label ?? m.models_default();
 		}
+		if (selection.kind === 'connection') return selection.label || selection.model_id;
 		return selection.label;
 	});
 
@@ -86,9 +88,13 @@
 				{/each}
 
 				<p class="md-label-medium mt-3 mb-1 px-2" style="color: var(--md-sys-color-on-surface-variant)">
-					{m.chatpage_own_key()}
+					{m.prov_own_title()}
 				</p>
-				{#if data.models.selection?.kind === 'custom'}
+				{#if data.models.selection?.kind === 'connection'}
+					<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
+						{connectionSelectionText(data.models.selection, data.connections, [])}
+					</p>
+				{:else if data.models.selection?.kind === 'custom'}
 					<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
 						{data.models.selection.label} ({data.models.selection.api_key_masked})
 					</p>
@@ -100,11 +106,11 @@
 						modelSheetOpen = true;
 					}}
 				>
-					{data.models.selection?.kind === 'custom' ? m.models_change_key() : m.chatpage_use_own_key()}
+					{data.models.selection?.kind === 'connection' ? m.prov_own_change() : m.prov_own_use()}
 				</MenuItem>
 			</div>
 		</Menu>
-		<ModelKeySheet bind:open={modelSheetOpen} error={form?.modelError ?? null} />
+		<ModelKeySheet bind:open={modelSheetOpen} connections={data.connections} selection={data.models.selection} />
 		<Menu bind:open={personalityMenuOpen}>
 			{#snippet trigger({ toggle })}
 				<IconButton onclick={toggle} aria-label={m.chatpage_personality_label({ personality: currentPersonalityLabel })}>

@@ -9,16 +9,14 @@ use nomi_llm::{build_provider, LlmProvider, ModelConfig, ProviderKind};
 use nomi_settings as settings;
 use nomi_usage::{MeteredEmbeddingProvider, MeteredProvider, ModelTag};
 
-fn llm_provider_kind_from_str(s: &str) -> ProviderKind {
-    match s {
-        "anthropic" => ProviderKind::Anthropic,
-        "openai" => ProviderKind::OpenAi,
-        "openrouter" => ProviderKind::OpenRouter,
-        "gemini" => ProviderKind::Gemini,
-        "deepseek" => ProviderKind::DeepSeek,
-        "fake" => ProviderKind::Fake,
-        other => panic!("unknown LLM provider: {other} (expected anthropic, openai, openrouter, gemini, deepseek, or fake)"),
+/// None for a name this build doesn't know (written by a newer version): callers fall back
+/// rather than fail the person's turn.
+fn llm_provider_kind_from_str(s: &str) -> Option<ProviderKind> {
+    let kind = ProviderKind::parse(s);
+    if kind.is_none() {
+        tracing::error!(provider = s, "unknown LLM provider; falling back");
     }
+    kind
 }
 
 fn embedding_provider_kind_from_str(s: &str) -> Result<EmbeddingProviderKind, String> {
@@ -101,7 +99,7 @@ pub async fn build_llm_provider_for(
         Ok(Some(model)) if Some(model.id) != primary_admin_id => {
             let files_support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
             let (id, label) = (model.id, model.label.clone());
-            model_config_from_admin_model(settings_key, model).map(|config| {
+            admin_model_config(pool, settings_key, model).await.map(|config| {
                 let tag = tag_for(&config, Some(id), false, label);
                 let provider: Arc<dyn LlmProvider> = Arc::from(build_provider(config, http_client));
                 (Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag)) as Arc<dyn LlmProvider>, files_support)
@@ -133,13 +131,27 @@ pub async fn can_open_for_user(pool: &PgPool, user_id: uuid::Uuid, settings_key:
 /// models: what Nomi falls back to when their allowance runs out.
 async fn saved_own_key(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> Option<(ModelConfig, ModelTag, MediaSupport)> {
     let row = settings::llm_models::get_user_llm_selection(pool, user_id).await.ok()??;
-    let provider = row.custom_provider?;
-    let api_key = settings::crypto::decrypt(settings_key, row.custom_api_key_encrypted.as_ref()?).ok()?;
-    let config = ModelConfig {
-        provider: llm_provider_kind_from_str(&provider),
-        model_id: row.custom_model_id?,
-        api_key,
-        base_url: row.custom_base_url,
+    own_model(pool, user_id, settings_key, row).await
+}
+
+/// The person's own model: a key saved the old way (Models → Your own key), else a model from
+/// one of their connected providers. Never billed to their plan.
+async fn own_model(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    settings_key: &[u8; 32],
+    row: settings::llm_models::UserLlmSelectionRow,
+) -> Option<(ModelConfig, ModelTag, MediaSupport)> {
+    let model_id = row.custom_model_id?;
+    let config = match (&row.custom_api_key_encrypted, row.custom_connection_id) {
+        (Some(encrypted), _) => {
+            let api_key = settings::crypto::decrypt(settings_key, encrypted)
+                .map_err(|e| tracing::error!(%user_id, error = %e, "failed to decrypt custom llm api key; falling back"))
+                .ok()?;
+            ModelConfig { provider: llm_provider_kind_from_str(row.custom_provider.as_deref()?)?, model_id, api_key, base_url: row.custom_base_url, extra_headers: vec![] }
+        }
+        (None, Some(connection_id)) => connection_model_config(pool, settings_key, settings::provider_connections::Scope::User(user_id), connection_id, model_id).await?,
+        (None, None) => return None,
     };
     let tag = tag_for(&config, None, true, row.custom_label.unwrap_or_else(|| config.model_id.clone()));
     let support = MediaSupport::infer(&config.provider, &config.model_id);
@@ -148,7 +160,7 @@ async fn saved_own_key(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 3
 
 /// What a model takes besides text: what an admin listed, or a guess from its id.
 pub fn media_support_for(provider: &str, model_id: &str, listed: Option<&[String]>) -> MediaSupport {
-    let kind = llm_provider_kind_from_str(provider);
+    let Some(kind) = llm_provider_kind_from_str(provider) else { return MediaSupport::NONE };
     match listed {
         Some(kinds) => MediaSupport::from_list(&kind, kinds),
         None => MediaSupport::infer(&kind, model_id),
@@ -156,39 +168,75 @@ pub fn media_support_for(provider: &str, model_id: &str, listed: Option<&[String
 }
 
 fn provider_name(kind: &ProviderKind) -> &'static str {
-    match kind {
-        ProviderKind::Anthropic => "anthropic",
-        ProviderKind::OpenAi => "openai",
-        ProviderKind::OpenRouter => "openrouter",
-        ProviderKind::Gemini => "gemini",
-        ProviderKind::DeepSeek => "deepseek",
-        ProviderKind::Fake => "fake",
-    }
+    kind.as_str()
 }
 
 fn tag_for(config: &ModelConfig, admin_model_id: Option<uuid::Uuid>, own_key: bool, label: String) -> ModelTag {
     ModelTag { admin_model_id, own_key, label, provider: provider_name(&config.provider).to_string(), model_id: config.model_id.clone() }
 }
 
-fn model_config_from_admin_model(
+/// A custom endpoint's extra header, as stored (encrypted JSON) on its connection.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct StoredHeader {
+    pub name: String,
+    pub value: String,
+}
+
+/// What runs `model_id` through a connection in `scope`: its kind, key, base URL and headers.
+/// None (logged) when the connection isn't in that scope or its secrets can't be read.
+pub(crate) async fn connection_model_config(
+    pool: &PgPool,
     settings_key: &[u8; 32],
-    model: settings::llm_models::AdminLlmModel,
+    scope: settings::provider_connections::Scope,
+    connection_id: uuid::Uuid,
+    model_id: String,
 ) -> Option<ModelConfig> {
-    match settings::crypto::decrypt(settings_key, &model.api_key_encrypted) {
-        Ok(api_key) => Some(ModelConfig {
-            provider: llm_provider_kind_from_str(&model.provider),
-            model_id: model.model_id,
-            api_key,
-            base_url: model.base_url,
-        }),
-        Err(e) => {
-            tracing::error!(
-                model_id = %model.id,
-                error = %e,
-                "failed to decrypt admin llm model api key; falling back"
-            );
-            None
-        }
+    let connection = settings::provider_connections::get_connection(pool, scope, connection_id)
+        .await
+        .map_err(|e| tracing::error!(%connection_id, error = %e, "failed to load a provider connection"))
+        .ok()??;
+    let decrypt = |encrypted: &Vec<u8>| {
+        settings::crypto::decrypt(settings_key, encrypted)
+            .map_err(|e| tracing::error!(%connection_id, error = %e, "failed to decrypt a provider connection; falling back"))
+            .ok()
+    };
+    let api_key = match &connection.api_key_encrypted {
+        Some(encrypted) => decrypt(encrypted)?,
+        None => String::new(),
+    };
+    let extra_headers = match &connection.headers_encrypted {
+        Some(encrypted) => serde_json::from_str::<Vec<StoredHeader>>(&decrypt(encrypted)?)
+            .map_err(|e| tracing::error!(%connection_id, error = %e, "unreadable provider connection headers"))
+            .ok()?
+            .into_iter()
+            .map(|h| (h.name, h.value))
+            .collect(),
+        None => Vec::new(),
+    };
+    // A catalog provider's address comes from the catalog unless it was changed when connecting.
+    let base_url = connection.base_url.or_else(|| nomi_llm::catalog::provider(&connection.provider_id).and_then(|p| p.default_base_url.clone()));
+    Some(ModelConfig { provider: llm_provider_kind_from_str(&connection.kind)?, model_id, api_key, base_url, extra_headers })
+}
+
+/// How to run an admin model: its own key when it still has one (saved before providers were
+/// connected), else its connection's.
+async fn admin_model_config(pool: &PgPool, settings_key: &[u8; 32], model: settings::llm_models::AdminLlmModel) -> Option<ModelConfig> {
+    match (&model.api_key_encrypted, model.connection_id) {
+        (Some(encrypted), _) => match settings::crypto::decrypt(settings_key, encrypted) {
+            Ok(api_key) => Some(ModelConfig {
+                provider: llm_provider_kind_from_str(&model.provider)?,
+                model_id: model.model_id,
+                api_key,
+                base_url: model.base_url,
+                extra_headers: vec![],
+            }),
+            Err(e) => {
+                tracing::error!(model_id = %model.id, error = %e, "failed to decrypt admin llm model api key; falling back");
+                None
+            }
+        },
+        (None, Some(connection_id)) => connection_model_config(pool, settings_key, settings::provider_connections::Scope::Admin, connection_id, model.model_id).await,
+        (None, None) => None,
     }
 }
 
@@ -237,7 +285,7 @@ async fn resolve_coding_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: 
     };
     let (id, label) = (model.id, model.label.clone());
     let support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
-    let config = model_config_from_admin_model(settings_key, model)?;
+    let config = admin_model_config(pool, settings_key, model).await?;
     let tag = tag_for(&config, Some(id), false, label);
     Some((config, tag, support))
 }
@@ -258,7 +306,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
             {
                 let (id, label) = (admin_model.id, admin_model.label.clone());
                 let support = media_support_for(&admin_model.provider, &admin_model.model_id, admin_model.media_inputs.as_deref());
-                if let Some(config) = model_config_from_admin_model(settings_key, admin_model) {
+                if let Some(config) = admin_model_config(pool, settings_key, admin_model).await {
                     let tag = tag_for(&config, Some(id), false, label);
                     return (config, tag, support);
                 }
@@ -266,33 +314,10 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
                 // fall through to the admin default below.
             }
             // Referenced admin model no longer exists — fall through to the default below.
-        } else if let Some(provider) = row.custom_provider {
-            let decrypted = settings::crypto::decrypt(
-                settings_key,
-                row.custom_api_key_encrypted.as_ref().expect("custom selection always carries a key"),
-            );
-            match decrypted {
-                Ok(api_key) => {
-                    let config = ModelConfig {
-                        provider: llm_provider_kind_from_str(&provider),
-                        model_id: row.custom_model_id.expect("custom selection always carries a model_id"),
-                        api_key,
-                        base_url: row.custom_base_url,
-                    };
-                    let tag = tag_for(&config, None, true, row.custom_label.clone().unwrap_or_else(|| config.model_id.clone()));
-                    let support = MediaSupport::infer(&config.provider, &config.model_id);
-                    return (config, tag, support);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        user_id = %user_id,
-                        error = %e,
-                        "failed to decrypt custom llm api key; falling back to admin default"
-                    );
-                    // Fall through to the admin default below.
-                }
-            }
+        } else if let Some(resolved) = own_model(pool, user_id, settings_key, row).await {
+            return resolved;
         }
+        // Their own key couldn't be used (unreadable, or the connection is gone): the default below.
     }
 
     if let Some(default_model) = settings::llm_models::get_default_admin_llm_model(pool)
@@ -301,7 +326,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
     {
         let (id, label) = (default_model.id, default_model.label.clone());
         let support = media_support_for(&default_model.provider, &default_model.model_id, default_model.media_inputs.as_deref());
-        if let Some(config) = model_config_from_admin_model(settings_key, default_model) {
+        if let Some(config) = admin_model_config(pool, settings_key, default_model).await {
             let tag = tag_for(&config, Some(id), false, label);
             return (config, tag, support);
         }
@@ -310,7 +335,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
 
     // No admin models configured at all yet (fresh install), or the default model's key
     // couldn't be decrypted — same env-var fallback the function this replaced always used.
-    let provider = llm_provider_kind_from_str(&var("LLM_PROVIDER").expect("LLM_PROVIDER must be set"));
+    let provider = llm_provider_kind_from_str(&var("LLM_PROVIDER").expect("LLM_PROVIDER must be set")).expect("LLM_PROVIDER must name a known provider");
     let (model_id, api_key) = match provider {
         ProviderKind::Fake => (String::new(), String::new()),
         _ => (
@@ -318,7 +343,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
             var("LLM_API_KEY").expect("LLM_API_KEY must be set"),
         ),
     };
-    let config = ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok() };
+    let config = ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok(), extra_headers: vec![] };
     let tag = tag_for(&config, None, false, if config.model_id.is_empty() { provider_name(&config.provider).to_string() } else { config.model_id.clone() });
     let support = MediaSupport::infer(&config.provider, &config.model_id);
     (config, tag, support)
