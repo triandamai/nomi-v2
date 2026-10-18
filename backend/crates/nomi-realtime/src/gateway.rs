@@ -20,6 +20,15 @@ impl Topic {
         }
     }
 
+    /// Every MQTT topic behind this one. The person's own topic is two feeds: `user/{id}/stream`
+    /// (inbox items, chat replies) and `user/{id}/activity` (chat activity, see `crate::user_topic`).
+    pub fn mqtt_topics(&self) -> Vec<String> {
+        match self {
+            Topic::User(id) => vec![self.mqtt_topic(), crate::user_topic(*id)],
+            _ => vec![self.mqtt_topic()],
+        }
+    }
+
     /// What the client sees. The user topic carries no id: a socket only ever has its own.
     pub fn wire(&self) -> String {
         match self {
@@ -43,14 +52,14 @@ impl Topic {
     pub fn from_mqtt(s: &str) -> Option<Topic> {
         let mut parts = s.split('/');
         let (kind, id, tail) = (parts.next()?, parts.next()?, parts.next()?);
-        if tail != "stream" || parts.next().is_some() {
+        if parts.next().is_some() {
             return None;
         }
         let id = Uuid::parse_str(id).ok()?;
-        match kind {
-            "user" => Some(Topic::User(id)),
-            "chat" => Some(Topic::Chat(id)),
-            "project" => Some(Topic::Project(id)),
+        match (kind, tail) {
+            ("user", "stream" | "activity") => Some(Topic::User(id)),
+            ("chat", "stream") => Some(Topic::Chat(id)),
+            ("project", "stream") => Some(Topic::Project(id)),
             _ => None,
         }
     }
@@ -110,6 +119,14 @@ mod tests {
         let id = Uuid::new_v4();
         assert_eq!(Topic::User(id).wire(), "user");
         assert_eq!(Topic::from_mqtt(&format!("user/{id}/stream")), Some(Topic::User(id)));
+    }
+
+    #[test]
+    fn user_activity_topic_is_part_of_the_user_topic() {
+        let id = Uuid::new_v4();
+        assert_eq!(Topic::from_mqtt(&crate::user_topic(id)), Some(Topic::User(id)));
+        assert_eq!(Topic::User(id).mqtt_topics(), vec![format!("user/{id}/stream"), crate::user_topic(id)]);
+        assert_eq!(Topic::from_mqtt(&format!("chat/{id}/activity")), None);
     }
 
     #[test]

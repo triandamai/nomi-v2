@@ -143,6 +143,29 @@ async fn ready_then_user_topic_events_arrive(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn chat_activity_on_the_user_activity_topic_arrives_as_user(pool: PgPool) {
+    let (base, ws_base) = spawn_app(pool).await;
+    let client = reqwest::Client::new();
+    let token = register_and_login(&client, &base, "rt-activity@nomi.test").await;
+    let mut ws = connect(&ws_base, Some(&token)).await.unwrap();
+    let ready = next_json(&mut ws).await;
+    let user_id = Uuid::parse_str(ready["user_id"].as_str().unwrap()).unwrap();
+
+    let activity = nomi_realtime::UserEnvelope::ChatActivity {
+        session_id: Uuid::new_v4(),
+        title: Some("Trip".into()),
+        project_id: None,
+        outcome: "waiting".into(),
+        waiting: Some("question".into()),
+        agent: Some("Nomi".into()),
+    };
+    let ev = publish_until_event(&mut ws, &nomi_realtime::user_topic(user_id), serde_json::to_value(&activity).unwrap()).await;
+    assert_eq!(ev["topic"], "user");
+    assert_eq!(ev["payload"]["kind"], "ChatActivity");
+    assert_eq!(ev["payload"]["waiting"], "question");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn subscribe_to_own_chat_relays_its_events(pool: PgPool) {
     let (base, ws_base) = spawn_app(pool).await;
     let client = reqwest::Client::new();

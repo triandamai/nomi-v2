@@ -133,8 +133,10 @@ async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid, expires_in: 
     }));
 
     let user_topic = Topic::User(user_id);
-    if client.subscribe(user_topic.mqtt_topic(), QoS::AtMostOnce).await.is_err() {
-        return;
+    for mqtt_topic in user_topic.mqtt_topics() {
+        if client.subscribe(mqtt_topic, QoS::AtMostOnce).await.is_err() {
+            return;
+        }
     }
     let mut topics: HashSet<Topic> = HashSet::from([user_topic]); // always holds the user topic
     if !send(&mut socket, &ServerFrame::Ready { user_id }).await {

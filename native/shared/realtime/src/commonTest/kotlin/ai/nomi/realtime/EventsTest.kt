@@ -90,6 +90,23 @@ class EventsTest {
     }
 
     @Test
+    fun chatActivity() {
+        assertEquals(
+            RealtimeEvent.ChatActivity(Topic.User, "s1", "Trip", null, "waiting", "question", "Nomi"),
+            decodeEvent(
+                Topic.User,
+                obj("""{"kind":"ChatActivity","session_id":"s1","title":"Trip","project_id":null,"outcome":"waiting","waiting":"question","agent":"Nomi"}"""),
+            ),
+        )
+        assertEquals(
+            RealtimeEvent.ChatActivity(Topic.User, "s2", null, "p1", "done", null, null),
+            decodeEvent(Topic.User, obj("""{"kind":"ChatActivity","session_id":"s2","title":null,"project_id":"p1","outcome":"done","waiting":null,"agent":null}""")),
+        )
+        // A user-topic event arriving on a chat topic is malformed.
+        assertEquals("ChatActivity", (decodeEvent(Topic.Chat("s1"), obj("""{"kind":"ChatActivity","session_id":"s1","outcome":"done"}""")) as RealtimeEvent.Unknown).kind)
+    }
+
+    @Test
     fun projectEvent() {
         val t = Topic.Project("p1")
         assertEquals(RealtimeEvent.DeployChanged(t, "p1", "publish.succeeded"), decodeEvent(t, obj("""{"kind":"DeployChanged","event":"publish.succeeded"}""")))

@@ -19,10 +19,19 @@ import kotlinx.coroutines.launch
 /** Signals kept for a slow companion before the oldest is dropped (they are transient UI cues). */
 private const val SIGNAL_BUFFER = 16
 
+/** [RealtimeEvent.ChatActivity.outcome] values. */
+internal const val OUTCOME_DONE = "done"
+internal const val OUTCOME_FAILED = "failed"
+internal const val OUTCOME_WAITING = "waiting"
+
 /**
  * The app-wide listener on [Topic.User], started once after sign-in: notifications and chat replies land in Room
  * whether or not their screen is open. The island / chat head read [companionState] (Working/Idle, always current)
  * and [companionSignals] (NewReply/Notification, one-off events).
+ *
+ * The user topic also carries the server's chat activity (`user/{id}/activity`): when the crew finishes, fails or
+ * waits on the person in a chat, that chat's agents stop counting as working and a chat not on screen gets one
+ * [CompanionSignal.NeedsYou] / [CompanionSignal.ChatFailed] / [CompanionSignal.ChatDone].
  *
  * Limitation: the user topic carries no agent phases. [companionState] is derived
  * from [ActivityRepository], which only chats bound by [ChatRepository] (open screens) feed, so work in a chat that
@@ -53,6 +62,13 @@ class RealtimeSync(
     /** [CompanionSignal.Working] or [CompanionSignal.Idle], from agent activity; late collectors get the current value. */
     val companionState: StateFlow<CompanionSignal> = state.asStateFlow()
 
+    /**
+     * Chats that got a [CompanionSignal.NewReply] since their last chat activity. A turn's reply and the chat's
+     * "done" both arrive when the crew finishes; the reply already told the person, so "done" stays quiet for them.
+     * Only touched from the work queue, one event at a time.
+     */
+    private val repliedSinceActivity = mutableSetOf<String>()
+
     private var registration: ListenerHandle? = null
     private var queue: WorkQueue? = null
     private var activityJob: Job? = null
@@ -78,6 +94,7 @@ class RealtimeSync(
         queue = null
         activityJob?.cancel()
         activityJob = null
+        repliedSinceActivity.clear()
         state.value = CompanionSignal.Idle
     }
 
@@ -92,13 +109,32 @@ class RealtimeSync(
                 // The event has no timestamp: the row's updatedAt is this client's receive time until the next refresh.
                 sessions.onReply(event.sessionId, event.preview, unread = !onScreen)
                 if (!onScreen) signals.emit(CompanionSignal.NewReply(event.sessionId, event.preview, agentType = null))
+                repliedSinceActivity += event.sessionId
             }
+            is RealtimeEvent.ChatActivity -> onChatActivity(event)
             is RealtimeEvent.Resynced -> {
                 attempt("refresh sessions") { sessions.refresh() }
                 attempt("refresh notifications") { notifications.refresh() }
             }
             else -> Unit
         }
+    }
+
+    /**
+     * The crew stopped working in a chat (done, failed, or waiting on the person): its agents are no longer working,
+     * and a chat that is not on screen gets one pop-up — unless it is "done" and a reply already announced it.
+     */
+    private suspend fun onChatActivity(event: RealtimeEvent.ChatActivity) {
+        attempt("clear finished agents") { activity.clearForSession(event.sessionId) }
+        val alreadyReplied = repliedSinceActivity.remove(event.sessionId)
+        if (foreground.sessionId.value == event.sessionId) return
+        val signal = when (event.outcome) {
+            OUTCOME_WAITING -> event.waiting?.let { CompanionSignal.NeedsYou(event.sessionId, event.title, it) }
+            OUTCOME_FAILED -> CompanionSignal.ChatFailed(event.sessionId, event.title)
+            OUTCOME_DONE -> if (alreadyReplied) null else CompanionSignal.ChatDone(event.sessionId, event.title)
+            else -> null
+        }
+        signal?.let { signals.emit(it) }
     }
 
     /** One failed refetch must not skip the other. */
