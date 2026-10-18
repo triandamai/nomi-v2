@@ -147,6 +147,20 @@ pub async fn create_connection_model(pool: &PgPool, input: NewConnectionModel<'_
     .await
 }
 
+/// Runs the model on one of the instance's connections from now on, dropping the key and address
+/// it carried itself.
+pub async fn link_admin_llm_model_to_connection(pool: &PgPool, id: Uuid, connection_id: Uuid) -> Result<Option<AdminLlmModel>, sqlx::Error> {
+    sqlx::query_as::<_, AdminLlmModel>(
+        "UPDATE admin_llm_models SET connection_id = $2, api_key_encrypted = NULL, base_url = NULL, updated_at = now() WHERE id = $1 \
+         RETURNING id, label, provider, model_id, api_key_encrypted, base_url, connection_id, is_default, is_files_model, is_coding_model, media_inputs, \
+         input_usd_per_mtok::float8 AS input_usd_per_mtok, output_usd_per_mtok::float8 AS output_usd_per_mtok, cached_input_usd_per_mtok::float8 AS cached_input_usd_per_mtok, enabled",
+    )
+    .bind(id)
+    .bind(connection_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub struct UpdateAdminLlmModel<'a> {
     pub label: &'a str,
     pub provider: &'a str,

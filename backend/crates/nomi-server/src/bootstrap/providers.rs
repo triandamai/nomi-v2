@@ -213,7 +213,9 @@ pub(crate) async fn connection_model_config(
             .collect(),
         None => Vec::new(),
     };
-    Some(ModelConfig { provider: llm_provider_kind_from_str(&connection.kind)?, model_id, api_key, base_url: connection.base_url, extra_headers })
+    // A catalog provider's address comes from the catalog unless it was changed when connecting.
+    let base_url = connection.base_url.or_else(|| nomi_llm::catalog::provider(&connection.provider_id).and_then(|p| p.default_base_url.clone()));
+    Some(ModelConfig { provider: llm_provider_kind_from_str(&connection.kind)?, model_id, api_key, base_url, extra_headers })
 }
 
 /// How to run an admin model: its own key when it still has one (saved before providers were

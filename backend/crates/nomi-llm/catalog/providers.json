@@ -1845,7 +1845,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "opencode-go",
@@ -2326,7 +2327,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "anthropic",
@@ -2594,7 +2596,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "openai",
@@ -3242,7 +3245,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "google",
@@ -3633,7 +3637,8 @@
 					},
 					"context": 65536
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "openrouter",
@@ -8224,7 +8229,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "vercel",
@@ -11719,7 +11725,8 @@
 					},
 					"context": 262100
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "deepseek",
@@ -11787,7 +11794,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "302ai",
@@ -13560,7 +13568,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "abacus",
@@ -15013,7 +15022,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "abliteration-ai",
@@ -15066,7 +15076,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "above",
@@ -15222,7 +15233,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "agentrouter",
@@ -15306,7 +15318,8 @@
 					},
 					"context": 1050000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "agnes",
@@ -15375,7 +15388,8 @@
 					},
 					"context": 512000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ai-router",
@@ -15463,7 +15477,8 @@
 					},
 					"context": 1050000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "aimlapi",
@@ -17601,7 +17616,8 @@
 					},
 					"context": 32000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "aiand",
@@ -17801,7 +17817,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ai21",
@@ -17840,7 +17857,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ainetcafe",
@@ -17867,7 +17885,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "aixy",
@@ -18045,7 +18064,8 @@
 					},
 					"context": 1050000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "aki-io",
@@ -18154,7 +18174,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "alibaba",
@@ -18930,7 +18951,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "alibaba-cn",
@@ -20112,7 +20134,8 @@
 					},
 					"context": 163840
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "alibaba-coding-plan",
@@ -20263,7 +20286,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "alibaba-coding-plan-cn",
@@ -20412,7 +20436,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "alibaba-token-plan",
@@ -20718,7 +20743,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "alibaba-token-plan-cn",
@@ -21024,7 +21050,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ambient",
@@ -21267,7 +21294,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "amd",
@@ -21361,7 +21389,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "anyapi",
@@ -21784,7 +21813,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "arcee",
@@ -21888,7 +21918,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "auriko",
@@ -22122,7 +22153,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "bailing",
@@ -22148,7 +22180,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "baseten",
@@ -22500,7 +22533,8 @@
 					},
 					"context": 128072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "bee",
@@ -22587,7 +22621,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "berget",
@@ -22685,7 +22720,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "blueclaw",
@@ -22711,7 +22747,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "bothub",
@@ -22838,7 +22875,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "boundless",
@@ -23128,7 +23166,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "cerebras",
@@ -23168,7 +23207,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "hyper",
@@ -23479,7 +23519,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "chutes",
@@ -23656,7 +23697,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "clarifai",
@@ -23802,7 +23844,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "claudinio",
@@ -23847,7 +23890,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "cline-pass",
@@ -24124,7 +24168,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "cloudferro-sherlock",
@@ -24202,7 +24247,8 @@
 					},
 					"context": 131000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "cohere",
@@ -24385,7 +24431,8 @@
 					},
 					"context": 8000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "commandcode",
@@ -25459,7 +25506,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "coralbricks",
@@ -25526,7 +25574,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "wandb",
@@ -25848,7 +25897,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "cortecs",
@@ -27264,7 +27314,8 @@
 					},
 					"context": 32000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "crof",
@@ -27561,7 +27612,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "crossmodel",
@@ -28580,7 +28632,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "crusoe",
@@ -28742,7 +28795,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "drun",
@@ -28794,7 +28848,8 @@
 					},
 					"context": 204800
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "daoxe",
@@ -28943,7 +28998,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "deepinfra",
@@ -29994,7 +30050,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "llmgateway",
@@ -32817,7 +32874,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "digitalocean",
@@ -34011,7 +34069,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "dinference",
@@ -34102,7 +34161,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ebcloud",
@@ -34167,7 +34227,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "echo",
@@ -34193,7 +34254,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "edenai",
@@ -38460,7 +38522,8 @@
 					},
 					"context": 2000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "empiriolabs",
@@ -39375,7 +39438,8 @@
 					},
 					"context": 1024000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "engy",
@@ -39510,7 +39574,8 @@
 					},
 					"context": 1001536
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "evroc",
@@ -39650,7 +39715,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "fastrouter",
@@ -40146,7 +40212,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "fireworks-ai",
@@ -40471,7 +40538,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "freemodel",
@@ -40633,7 +40701,8 @@
 					},
 					"context": 1050000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "friendli",
@@ -40740,7 +40809,8 @@
 					},
 					"context": 196608
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "frogbot",
@@ -41128,7 +41198,8 @@
 					},
 					"context": 198000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "gmicloud",
@@ -41373,7 +41444,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "greenpt",
@@ -41897,7 +41969,8 @@
 					},
 					"context": 32768
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "groq",
@@ -42003,7 +42076,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "helicone",
@@ -43005,7 +43079,8 @@
 					},
 					"context": 204800
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "hetzner",
@@ -43046,7 +43121,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "hpc-ai",
@@ -43180,7 +43256,8 @@
 					},
 					"context": 196000
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "huggingface",
@@ -44239,7 +44316,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "iflowcn",
@@ -44435,7 +44513,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "impossibl",
@@ -45537,7 +45616,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "inception",
@@ -45576,7 +45656,8 @@
 					},
 					"context": 260000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "inceptron",
@@ -45643,7 +45724,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "inco",
@@ -45757,7 +45839,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "infer",
@@ -45800,7 +45883,8 @@
 					},
 					"context": 271999
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "inference",
@@ -45920,7 +46004,8 @@
 					},
 					"context": 125000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "inferx",
@@ -46091,7 +46176,8 @@
 					},
 					"context": 262000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "io-net",
@@ -46329,7 +46415,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "iteracompute",
@@ -46477,7 +46564,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "jalapeno",
@@ -46733,7 +46821,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "jiekou",
@@ -47560,7 +47649,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "kenari",
@@ -48402,7 +48492,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "kilo",
@@ -53132,7 +53223,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "kimi-code-plan-global",
@@ -53204,7 +53296,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "kimi-code-plan-cn",
@@ -53276,7 +53369,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "klokintegration",
@@ -53328,7 +53422,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "kosmik",
@@ -53355,7 +53450,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "kuae-cloud-coding-plan",
@@ -53381,7 +53477,8 @@
 					},
 					"context": 204800
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "lilac",
@@ -53451,7 +53548,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "llama",
@@ -53557,7 +53655,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "llmgateway-providers",
@@ -59259,7 +59358,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "llmtech",
@@ -59286,7 +59386,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "llmtr",
@@ -59681,7 +59782,8 @@
 					},
 					"context": 32000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "longcat",
@@ -59707,7 +59809,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "lowrouter",
@@ -60163,7 +60266,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "lucidquery",
@@ -60230,7 +60334,8 @@
 					},
 					"context": 250000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "meganova",
@@ -60482,7 +60587,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "melious",
@@ -60661,7 +60767,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "meta",
@@ -60775,7 +60882,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "minimax-cn",
@@ -60881,7 +60989,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "minimax",
@@ -60987,7 +61096,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "minimax-cn-coding-plan",
@@ -61108,7 +61218,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "minimax-coding-plan",
@@ -61229,7 +61340,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "mistral",
@@ -61771,7 +61883,8 @@
 					},
 					"context": 32768
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "mixlayer",
@@ -61849,7 +61962,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "moark",
@@ -61998,7 +62112,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "modal",
@@ -62068,7 +62183,8 @@
 					},
 					"context": 1010000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "model-oracle-ai",
@@ -62298,7 +62414,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "modelis",
@@ -62444,7 +62561,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "modelscope",
@@ -62548,7 +62666,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "moonshotai",
@@ -62621,7 +62740,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "moonshotai-cn",
@@ -62694,7 +62814,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "nan",
@@ -62805,7 +62926,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "nano-gpt",
@@ -68511,7 +68633,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "nearai",
@@ -69273,7 +69396,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "nebius",
@@ -69591,7 +69715,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "neosmith",
@@ -69660,7 +69785,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "neuralwatt",
@@ -70096,7 +70222,8 @@
 					},
 					"context": 262128
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "nova",
@@ -70141,7 +70268,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "novita-ai",
@@ -71163,7 +71291,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "nvidia",
@@ -72077,7 +72206,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "oci",
@@ -72172,7 +72302,8 @@
 					},
 					"context": 500000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ofox",
@@ -74400,7 +74531,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "ollama-cloud",
@@ -74780,7 +74912,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "openreason",
@@ -74833,7 +74966,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "opper",
@@ -75629,7 +75763,8 @@
 					},
 					"context": 983616
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "orcarouter",
@@ -77324,7 +77459,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "ovhcloud",
@@ -77459,7 +77595,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "pareto",
@@ -77487,7 +77624,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "pendra",
@@ -77579,7 +77717,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "perplexity-agent",
@@ -77918,7 +78057,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "pioneer",
@@ -79487,7 +79627,8 @@
 					},
 					"context": 32768
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "poe",
@@ -81436,7 +81577,8 @@
 					},
 					"context": 480
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "poolside",
@@ -81488,7 +81630,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "prime",
@@ -82445,7 +82588,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "qihang-ai",
@@ -82594,7 +82738,8 @@
 					},
 					"context": 400000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "qiniu-ai",
@@ -83738,7 +83883,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "reflection",
@@ -83764,7 +83910,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "regolo-ai",
@@ -83954,7 +84101,8 @@
 					},
 					"context": 120000
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "requesty",
@@ -86535,7 +86683,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "routing-run",
@@ -86763,7 +86912,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "runinfra",
@@ -86870,7 +87020,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "sakana",
@@ -86940,7 +87091,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "sambanova",
@@ -87033,7 +87185,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "sarvam",
@@ -87072,7 +87225,8 @@
 					},
 					"context": 65536
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "scaleway",
@@ -87290,7 +87444,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "scnet-token-plan",
@@ -87560,7 +87715,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "scx-ai",
@@ -87627,7 +87783,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "sensenova",
@@ -87721,7 +87878,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "siliconflow",
@@ -88489,7 +88647,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "siliconflow-cn",
@@ -89069,7 +89228,8 @@
 					},
 					"context": 131000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "stackit",
@@ -89148,7 +89308,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "standardcompute",
@@ -89757,7 +89918,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "stepfun",
@@ -89852,7 +90014,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "stepfun-ai",
@@ -89947,7 +90110,8 @@
 					},
 					"context": 1024000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "stepfun-step-plan",
@@ -90029,7 +90193,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "stepfun-ai-step-plan",
@@ -90098,7 +90263,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "subconscious",
@@ -90138,7 +90304,8 @@
 					},
 					"context": 5000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "submodel",
@@ -90268,7 +90435,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "synthetic",
@@ -90430,7 +90598,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tempr",
@@ -91589,7 +91758,8 @@
 					},
 					"context": 32000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tencent-coding-plan",
@@ -91708,7 +91878,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tencent-token-plan",
@@ -91747,7 +91918,8 @@
 					},
 					"context": 1024000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tencent-tokenhub",
@@ -91799,7 +91971,8 @@
 					},
 					"context": 1024000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tensorx",
@@ -92163,7 +92336,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "the-grid-ai",
@@ -92390,7 +92564,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "thinkingmachines",
@@ -92431,7 +92606,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tinfoil",
@@ -92539,7 +92715,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "togetherai",
@@ -92956,7 +93133,8 @@
 					},
 					"context": 32768
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tokengo",
@@ -93148,7 +93326,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "tokenrouter",
@@ -93174,7 +93353,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "trustedrouter",
@@ -93292,7 +93472,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "umans-ai",
@@ -93403,7 +93584,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "umans-ai-coding-plan",
@@ -93528,7 +93710,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "unorouter",
@@ -93867,7 +94050,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "upstage",
@@ -93932,7 +94116,8 @@
 					},
 					"context": 131072
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "vancine",
@@ -94062,7 +94247,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "venice",
@@ -95772,7 +95958,8 @@
 					},
 					"context": 128000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "vispark",
@@ -95836,7 +96023,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "vivgrid",
@@ -96394,7 +96582,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "volcengine",
@@ -96637,7 +96826,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "volcengine-coding-plan",
@@ -96795,7 +96985,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "vultr",
@@ -97010,7 +97201,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "wafer.ai",
@@ -97091,7 +97283,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": false
 		},
 		{
 			"id": "wallaby",
@@ -97119,7 +97312,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "xai",
@@ -97237,7 +97431,8 @@
 					},
 					"context": 256000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "xiaomi",
@@ -97383,7 +97578,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "xiaomi-token-plan-cn",
@@ -97470,7 +97666,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "xiaomi-token-plan-ams",
@@ -97557,7 +97754,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "xiaomi-token-plan-sgp",
@@ -97644,7 +97842,8 @@
 					},
 					"context": 1048576
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "xpersona",
@@ -97839,7 +98038,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zai",
@@ -98101,7 +98301,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zai-coding-plan",
@@ -98208,7 +98409,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zeldoc",
@@ -98235,7 +98437,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zenifra",
@@ -98261,7 +98464,8 @@
 					},
 					"context": 262144
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zenmux",
@@ -100062,7 +100266,8 @@
 					},
 					"context": 65536
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zhipuai",
@@ -100311,7 +100516,8 @@
 					},
 					"context": 200000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "zhipuai-coding-plan",
@@ -100381,7 +100587,8 @@
 					},
 					"context": 1000000
 				}
-			]
+			],
+			"has_logo": true
 		},
 		{
 			"id": "custom",
@@ -100393,7 +100600,8 @@
 			"kind": "openai_compatible",
 			"default_base_url": null,
 			"doc_url": null,
-			"models": []
+			"models": [],
+			"has_logo": false
 		}
 	]
 }

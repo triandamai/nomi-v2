@@ -10,6 +10,7 @@
 //
 // Writes backend/crates/nomi-llm/catalog/providers.json and frontend/static/provider-logos/*.svg.
 
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,10 +121,6 @@ providers.push({
 const missingPopular = overrides.popular.filter((id) => !providers.some((p) => p.id === id));
 if (missingPopular.length) throw new Error(`popular providers missing from the catalog: ${missingPopular.join(', ')}`);
 
-await mkdir(dirname(CATALOG_PATH), { recursive: true });
-await writeFile(CATALOG_PATH, `${JSON.stringify({ source: 'https://models.dev (MIT)', providers }, null, '\t')}\n`);
-console.log(`${providers.length} providers (${providers.reduce((n, p) => n + p.models.length, 0)} models) -> ${CATALOG_PATH}`);
-console.log(`${skipped.length} skipped:\n  ${skipped.join('\n  ')}`);
 
 if (withLogos) {
 	await mkdir(LOGO_DIR, { recursive: true });
@@ -148,3 +145,10 @@ if (withLogos) {
 	);
 	console.log(`${saved} logos -> ${LOGO_DIR}${failed.length ? `; no logo for: ${failed.join(', ')}` : ''}`);
 }
+
+// Written last: whether each provider has a logo is only known once they've been fetched.
+for (const provider of providers) provider.has_logo = provider.id !== 'custom' && existsSync(join(LOGO_DIR, `${provider.id}.svg`));
+await mkdir(dirname(CATALOG_PATH), { recursive: true });
+await writeFile(CATALOG_PATH, `${JSON.stringify({ source: 'https://models.dev (MIT)', providers }, null, '\t')}\n`);
+console.log(`${providers.length} providers (${providers.reduce((n, p) => n + p.models.length, 0)} models) -> ${CATALOG_PATH}`);
+console.log(`${skipped.length} skipped:\n  ${skipped.join('\n  ')}`);

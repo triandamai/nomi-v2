@@ -9,6 +9,7 @@ use crate::routes::attachments as attachments_routes;
 use crate::routes::auth as auth_routes;
 use crate::routes::dynamic_agents as dynamic_agents_routes;
 use crate::routes::llm_models as llm_models_routes;
+use crate::routes::provider_connections as provider_connections_routes;
 use crate::routes::agents as agents_routes;
 use crate::routes::home as home_routes;
 use crate::routes::money as money_routes;
@@ -150,6 +151,23 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/llm/selection", put(llm_models_routes::put_user_selection))
         .route("/api/llm/coding-selection", put(llm_models_routes::put_user_coding_selection))
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
+        .route("/api/llm/providers", get(provider_connections_routes::list_providers))
+        .route("/api/llm/providers/:id/models", get(provider_connections_routes::list_provider_catalog_models))
+        .route("/api/llm/connections", get(provider_connections_routes::list_own).post(provider_connections_routes::connect_own))
+        .route(
+            "/api/llm/connections/:id",
+            put(provider_connections_routes::update_own).delete(provider_connections_routes::disconnect_own),
+        )
+        .route("/api/llm/connections/:id/models", post(provider_connections_routes::own_models))
+        .route(
+            "/api/admin/settings/llm/connections",
+            get(provider_connections_routes::list_shared).post(provider_connections_routes::connect_shared),
+        )
+        .route(
+            "/api/admin/settings/llm/connections/:id",
+            put(provider_connections_routes::update_shared).delete(provider_connections_routes::disconnect_shared),
+        )
+        .route("/api/admin/settings/llm/connections/:id/models", post(provider_connections_routes::shared_models))
         .route("/api/agents", get(agents_routes::list_crew))
         .route("/api/home", get(home_routes::home_summary))
         .route("/api/home/updates", get(home_routes::updates_page))

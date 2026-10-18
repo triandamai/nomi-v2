@@ -55,6 +55,8 @@ pub struct ProviderDefinition {
     pub kind: ProviderKind,
     pub default_base_url: Option<String>,
     pub doc_url: Option<String>,
+    /// Whether frontend/static/provider-logos has its logo.
+    pub has_logo: bool,
     pub models: Vec<ModelMetadata>,
 }
 
@@ -74,6 +76,8 @@ struct RawProvider {
     kind: String,
     default_base_url: Option<String>,
     doc_url: Option<String>,
+    #[serde(default)]
+    has_logo: bool,
     models: Vec<ModelMetadata>,
 }
 
@@ -94,6 +98,7 @@ pub fn providers() -> &'static [ProviderDefinition] {
                 auth_type: p.auth_type,
                 default_base_url: p.default_base_url,
                 doc_url: p.doc_url,
+                has_logo: p.has_logo,
                 models: p.models,
             })
             .collect()
