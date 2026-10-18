@@ -3,6 +3,8 @@ package ai.nomi.data
 import ai.nomi.database.NomiDatabase
 import ai.nomi.database.clearAll
 import ai.nomi.database.entity.SessionEntity
+import ai.nomi.network.EmailCodeError
+import ai.nomi.network.EmailCodeException
 import ai.nomi.network.SignInResult
 import ai.nomi.network.Tokens
 import ai.nomi.network.SessionDto
@@ -24,6 +26,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -51,6 +54,18 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
         signInGate?.await()
         return nextSignIn.also { if (it is SignInResult.SignedIn) session = it.tokens }
     }
+
+    /** What [verifyCode] does: store and return these tokens, or throw this error. */
+    var nextCode: Result<Tokens> = Result.success(Tokens("a-code", "r-code"))
+    val verified = mutableListOf<Pair<String, String>>()
+
+    override suspend fun verifyCode(challengeId: String, code: String): Tokens {
+        verified += challengeId to code
+        return nextCode.getOrThrow().also { session = it }
+    }
+
+    override suspend fun resendCode(challengeId: String): VerificationInfo =
+        VerificationInfo(challengeId, "login", "a***@b.c", 600, 60, 2)
 
     override suspend fun refresh(): Boolean = session != null && refreshResult
 
@@ -197,6 +212,28 @@ class SessionGateTest {
         auth.nextSignIn = SignInResult.EmailCode(VerificationInfo("c1", "login", "a***@b.c", 600, 60, 3))
 
         gate.signIn("a@b.c", "pw")
+
+        assertFalse(gate.signedIn.value)
+        assertEquals(0, hub.starts)
+    }
+
+    @Test
+    fun right_email_code_signs_in_and_starts_the_session() = runTest {
+        val gate = gate()
+
+        gate.verifyCode("c1", "123456")
+
+        assertEquals(listOf("c1" to "123456"), auth.verified)
+        assertTrue(gate.signedIn.value)
+        assertEquals(1, hub.starts)
+    }
+
+    @Test
+    fun wrong_email_code_starts_nothing() = runTest {
+        val gate = gate()
+        auth.nextCode = Result.failure(EmailCodeException(EmailCodeError.WrongCode(2)))
+
+        assertFailsWith<EmailCodeException> { gate.verifyCode("c1", "000000") }
 
         assertFalse(gate.signedIn.value)
         assertEquals(0, hub.starts)

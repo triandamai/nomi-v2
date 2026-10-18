@@ -14,6 +14,7 @@ import ai.nomi.network.SendMessageResponseDto
 import ai.nomi.network.SessionDto
 import ai.nomi.network.SessionsApi
 import ai.nomi.network.SignInResult
+import ai.nomi.network.VerificationInfo
 import ai.nomi.network.TokenStore
 import ai.nomi.network.Tokens
 import ai.nomi.network.UnreadCountDto
@@ -91,6 +92,21 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
     override suspend fun signIn(email: String, password: String): SignInResult {
         signIns += email to password
         return nextSignIn.also { if (it is SignInResult.SignedIn) session = it.tokens }
+    }
+
+    var nextCode: Result<Tokens> = Result.success(Tokens("a-code", "r-code"))
+    val verified = mutableListOf<Pair<String, String>>()
+    var nextResend: Result<VerificationInfo> = Result.success(VerificationInfo("c1", "login", "a***@b.c", 600, 60, 2))
+    val resends = mutableListOf<String>()
+
+    override suspend fun verifyCode(challengeId: String, code: String): Tokens {
+        verified += challengeId to code
+        return nextCode.getOrThrow().also { session = it }
+    }
+
+    override suspend fun resendCode(challengeId: String): VerificationInfo {
+        resends += challengeId
+        return nextResend.getOrThrow()
     }
 
     override suspend fun refresh(): Boolean = session != null

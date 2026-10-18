@@ -1,6 +1,7 @@
 package ai.nomi.data
 
 import ai.nomi.network.SignInResult
+import ai.nomi.network.VerificationInfo
 import ai.nomi.realtime.RealtimeHub
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -68,6 +69,15 @@ class SessionGate(
         if (result is SignInResult.SignedIn) startSession()
         result
     }
+
+    /** The second step of a sign-in that asked for an emailed code; serialized with sign-out like [signIn]. */
+    suspend fun verifyCode(challengeId: String, code: String) = lock.withLock {
+        auth.verifyCode(challengeId, code)
+        startSession()
+    }
+
+    /** Emails a fresh code for a waiting sign-in. */
+    suspend fun resendCode(challengeId: String): VerificationInfo = auth.resendCode(challengeId)
 
     /** Idempotent. Ends the session current at the time of the call, never a later one. */
     fun signOut() = signOut(epoch)

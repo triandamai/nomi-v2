@@ -18,3 +18,11 @@ internal data class TokenPairResponse(
     @SerialName("access_token") val accessToken: String,
     @SerialName("refresh_token") val refreshToken: String,
 )
+
+/** Body of `/api/auth/verify`. */
+@Serializable
+internal data class VerifyRequest(@SerialName("challenge_id") val challengeId: String, val code: String)
+
+/** Body of `/api/auth/resend`. */
+@Serializable
+internal data class ChallengeRequest(@SerialName("challenge_id") val challengeId: String)

@@ -1,13 +1,17 @@
 package ai.nomi.network
 
 import ai.nomi.network.dto.AccessTokenResponse
+import ai.nomi.network.dto.ChallengeRequest
 import ai.nomi.network.dto.LoginRequest
 import ai.nomi.network.dto.RefreshRequest
 import ai.nomi.network.dto.TokenPairResponse
+import ai.nomi.network.dto.VerifyRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -17,6 +21,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Where an emailed sign-in code went (`VerificationInfo` in routes/auth.rs). */
 @Serializable
@@ -37,9 +43,37 @@ sealed interface SignInResult {
 
 class ApiException(val status: Int, message: String) : RuntimeException(message)
 
+/** Why an emailed sign-in code was not accepted or resent (`code_error` in routes/auth.rs). */
+sealed interface EmailCodeError {
+    /** The code is wrong; [attemptsLeft] more tries before the sign-in locks. */
+    data class WrongCode(val attemptsLeft: Int) : EmailCodeError
+
+    /** The sign-in expired: start over. */
+    data object Expired : EmailCodeError
+
+    /** Too many wrong codes: start over. */
+    data object TooManyAttempts : EmailCodeError
+
+    /** A new code can be sent in [seconds]. */
+    data class Wait(val seconds: Int) : EmailCodeError
+
+    /** No more codes for this sign-in. */
+    data object TooManyCodes : EmailCodeError
+
+    /** The server or the network failed; try again. */
+    data object Failed : EmailCodeError
+}
+
+class EmailCodeException(val error: EmailCodeError) : RuntimeException(error.toString())
+
 internal const val LOGIN_PATH = "/api/auth/login"
 internal const val REFRESH_PATH = "/api/auth/refresh"
 internal const val LOGOUT_PATH = "/api/auth/logout"
+internal const val VERIFY_PATH = "/api/auth/verify"
+internal const val RESEND_PATH = "/api/auth/resend"
+private const val ERROR_FIELD = "error"
+private const val ATTEMPTS_LEFT_FIELD = "attempts_left"
+private const val SECONDS_FIELD = "seconds"
 private const val VERIFICATION_FIELD = "verification"
 
 class AuthApi(
@@ -65,6 +99,54 @@ class AuthApi(
         tokens.write(session)
         client.clearCachedTokens()
         return SignInResult.SignedIn(session)
+    }
+
+    /** Finishes a sign-in with the emailed code and stores the session; throws [EmailCodeException] otherwise. */
+    suspend fun verifyCode(challengeId: String, code: String): Tokens {
+        val response = postOrFail(VERIFY_PATH) { setBody(VerifyRequest(challengeId, code)) }
+        val pair = response.body<TokenPairResponse>()
+        val session = Tokens(pair.accessToken, pair.refreshToken)
+        tokens.write(session)
+        client.clearCachedTokens()
+        return session
+    }
+
+    /** Emails a fresh code (the old one stops working); throws [EmailCodeException] when it can't. */
+    suspend fun resendCode(challengeId: String): VerificationInfo =
+        postOrFail(RESEND_PATH) { setBody(ChallengeRequest(challengeId)) }.body()
+
+    private suspend fun postOrFail(path: String, body: HttpRequestBuilder.() -> Unit): HttpResponse {
+        val response = try {
+            client.post(config.url(path)) {
+                contentType(ContentType.Application.Json)
+                body()
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            throw EmailCodeException(EmailCodeError.Failed)
+        }
+        if (!response.status.isSuccess()) throw EmailCodeException(codeError(response))
+        return response
+    }
+
+    private suspend fun codeError(response: HttpResponse): EmailCodeError {
+        val body = try {
+            response.body<JsonObject>()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return EmailCodeError.Failed
+        }
+        val error = body[ERROR_FIELD]?.jsonPrimitive?.content
+        return when (error) {
+            "wrong_code" -> body[ATTEMPTS_LEFT_FIELD]?.jsonPrimitive?.intOrNull?.let { EmailCodeError.WrongCode(it) }
+            "expired" -> EmailCodeError.Expired
+            "too_many_attempts" -> EmailCodeError.TooManyAttempts
+            "wait" -> body[SECONDS_FIELD]?.jsonPrimitive?.intOrNull?.let { EmailCodeError.Wait(it) }
+            "too_many_codes" -> EmailCodeError.TooManyCodes
+            else -> null
+        } ?: EmailCodeError.Failed
     }
 
     /**

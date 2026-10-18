@@ -2,6 +2,8 @@ package ai.nomi.app
 
 import ai.nomi.data.SessionGate
 import ai.nomi.feature.auth.SignInViewModel
+import ai.nomi.network.EmailCodeError
+import ai.nomi.network.EmailCodeException
 import ai.nomi.network.SignInResult
 import ai.nomi.network.VerificationInfo
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +63,7 @@ class SignInViewModelTest {
 
         vm.submit()
 
-        assertEquals("a***@b.c", vm.state.value.codeSentTo)
+        assertEquals("a***@b.c", vm.state.value.challenge?.email)
         assertFalse(koin.get<SessionGate>().signedIn.value)
         assertEquals(0, graph.hub.starts)
     }
@@ -74,6 +76,87 @@ class SignInViewModelTest {
 
         assertNotNull(vm.state.value.error)
         assertTrue(graph.auth.signIns.isEmpty())
-        assertNull(vm.state.value.codeSentTo)
+        assertNull(vm.state.value.challenge)
+    }
+
+    private fun atCodeStep(): SignInViewModel {
+        graph.auth.nextSignIn = SignInResult.EmailCode(VerificationInfo("c1", "login", "a***@b.c", 600, 60, 3))
+        return koin.get<SignInViewModel>().apply {
+            onEmailChange("a@b.c")
+            onPasswordChange("pw")
+            submit()
+        }
+    }
+
+    @Test
+    fun right_code_signs_in_and_starts_the_hub() {
+        val vm = atCodeStep()
+        vm.onCodeChange(" 12a3-456 ")
+
+        vm.submitCode()
+
+        assertEquals(listOf("c1" to "123456"), graph.auth.verified)
+        assertTrue(koin.get<SessionGate>().signedIn.value)
+        assertEquals(1, graph.hub.starts)
+    }
+
+    @Test
+    fun code_must_be_six_digits_before_asking_the_server() {
+        val vm = atCodeStep()
+        vm.onCodeChange("123")
+
+        vm.submitCode()
+
+        assertTrue(graph.auth.verified.isEmpty())
+        assertEquals(SIX_DIGITS, vm.state.value.error)
+    }
+
+    @Test
+    fun wrong_code_says_how_many_tries_are_left_and_stays_on_the_code_step() {
+        val vm = atCodeStep()
+        graph.auth.nextCode = Result.failure(EmailCodeException(EmailCodeError.WrongCode(2)))
+        vm.onCodeChange("000000")
+
+        vm.submitCode()
+
+        assertEquals("That code isn't right. 2 tries left.", vm.state.value.error)
+        assertEquals("", vm.state.value.code)
+        assertFalse(vm.state.value.mustStartOver)
+        assertFalse(koin.get<SessionGate>().signedIn.value)
+    }
+
+    @Test
+    fun expired_or_locked_sign_in_can_only_start_over() {
+        val vm = atCodeStep()
+        graph.auth.nextCode = Result.failure(EmailCodeException(EmailCodeError.TooManyAttempts))
+        vm.onCodeChange("000000")
+
+        vm.submitCode()
+
+        assertTrue(vm.state.value.mustStartOver)
+        vm.startOver()
+        assertNull(vm.state.value.challenge)
+        assertEquals("a@b.c", vm.state.value.email)
+        assertEquals("", vm.state.value.password)
+    }
+
+    @Test
+    fun resend_replaces_the_challenge_or_explains_the_wait() {
+        val vm = atCodeStep()
+        graph.auth.nextResend = Result.success(VerificationInfo("c2", "login", "a***@b.c", 600, 60, 1))
+
+        vm.resendCode()
+
+        assertEquals(listOf("c1"), graph.auth.resends)
+        assertEquals("c2", vm.state.value.challenge?.challengeId)
+        assertEquals("New code sent. The old one no longer works.", vm.state.value.notice)
+
+        graph.auth.nextResend = Result.failure(EmailCodeException(EmailCodeError.Wait(42)))
+        vm.resendCode()
+        assertEquals("Wait 42 seconds before asking for another code.", vm.state.value.error)
+    }
+
+    private companion object {
+        const val SIX_DIGITS = "Enter the 6-digit code from the email."
     }
 }

@@ -3,6 +3,8 @@ package ai.nomi.data
 import ai.nomi.network.AuthApi
 import ai.nomi.network.SignInResult
 import ai.nomi.network.TokenStore
+import ai.nomi.network.Tokens
+import ai.nomi.network.VerificationInfo
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -13,6 +15,12 @@ interface AuthRepository {
 
     /** Tokens are stored on [SignInResult.SignedIn]; an email-code challenge stores nothing. */
     suspend fun signIn(email: String, password: String): SignInResult
+
+    /** Finishes an email-code sign-in and stores the session; throws `EmailCodeException` when the code isn't taken. */
+    suspend fun verifyCode(challengeId: String, code: String): Tokens
+
+    /** Emails a fresh code for a waiting sign-in; throws `EmailCodeException` when it can't. */
+    suspend fun resendCode(challengeId: String): VerificationInfo
 
     /**
      * Gets a new access token. False when signed out or the server rejected the refresh token (tokens forgotten);
@@ -33,6 +41,10 @@ class DefaultAuthRepository(private val api: AuthApi, private val tokens: TokenS
     override suspend fun hasSession(): Boolean = tokens.read() != null
 
     override suspend fun signIn(email: String, password: String): SignInResult = api.login(email, password)
+
+    override suspend fun verifyCode(challengeId: String, code: String): Tokens = api.verifyCode(challengeId, code)
+
+    override suspend fun resendCode(challengeId: String): VerificationInfo = api.resendCode(challengeId)
 
     /**
      * Concurrent callers share one refresh: whoever waited on [refreshing] and finds a different access token than
