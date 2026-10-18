@@ -13,7 +13,7 @@
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import { badgeLabel, inbox, pollUnread } from '$lib/notifications.svelte';
 	import { nextSnackbar, showSnackbar, snackbars, type SnackbarItem } from '$lib/snackbars.svelte';
-	import { listenToOtherTabs, resumeWatches } from '$lib/backgroundChats';
+	import { connectUserActivity } from '$lib/userActivity';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
 	import type { LayoutData } from './$types';
 
@@ -60,12 +60,9 @@
 		showSnackbar({ message: arrived.title, actionLabel: m.notif_view(), href: arrived.link || '/notifications', timeout: 6000 });
 	});
 
-	// Chats left while the crew was working on them (another chat, page or tab) say when they're
-	// done or need the person; the watching picks up again after a reload.
-	$effect(() => {
-		resumeWatches();
-		return listenToOtherTabs();
-	});
+	// The person's own live feed, open as long as the app is: a chat the crew finishes (or that
+	// waits on them) anywhere but on screen comes in as a snackbar with a way back.
+	$effect(() => connectUserActivity());
 
 	// Snackbars show one at a time, the next once the last one goes.
 	let snackbarOpen = $state(false);

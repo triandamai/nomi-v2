@@ -1,42 +1,11 @@
 import { m } from '$lib/paraglide/messages';
-import type { ContentBlock, MessageItem } from '$lib/types';
 import type { SnackbarItem } from '$lib/snackbars.svelte';
 
-// What to tell someone about a chat they left while the crew was still working (see
-// backgroundChats.ts): that it finished, failed, or is waiting on them for something.
+// What to tell someone about a chat the crew finished while they were elsewhere in the app (see
+// userActivity.ts): that it's done, failed, or is waiting on them for something.
 
-/** What the crew left waiting on the person, from the newest message that needs them. */
+/** What the crew left waiting on the person (backend: nomi_turn::activity). */
 export type Waiting = 'question' | 'approval' | 'connect';
-
-function waitingOn(block: ContentBlock): Waiting | null {
-	switch (block.kind) {
-		case 'questions':
-			return 'question';
-		case 'approval_request':
-			return block.status === 'pending' ? 'approval' : null;
-		case 'workspace_connect':
-		case 'connector_connect':
-			return 'connect';
-		case 'view':
-			// A decision or a form asks for an answer; other views are just shown.
-			return block.view === 'decision' || block.view === 'form' ? 'question' : null;
-		default:
-			return null;
-	}
-}
-
-/** What the crew is waiting on in these messages (newest first wins), or null if nothing. */
-export function waitingIn(messages: Pick<MessageItem, 'sender' | 'content_blocks'>[]): Waiting | null {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const message = messages[i];
-		if (message.sender !== 'assistant') continue;
-		for (const block of message.content_blocks ?? []) {
-			const waiting = waitingOn(block);
-			if (waiting) return waiting;
-		}
-	}
-	return null;
-}
 
 export type ChatOutcome = { kind: 'done' } | { kind: 'failed' } | { kind: 'waiting'; on: Waiting };
 

@@ -1,5 +1,5 @@
 // The app's snackbars, one at a time (the app layout shows them): a notification that arrives,
-// a chat that finished while the person was elsewhere (see backgroundChats.ts).
+// a chat that finished while the person was elsewhere (see userActivity.ts).
 
 export interface SnackbarItem {
 	message: string;

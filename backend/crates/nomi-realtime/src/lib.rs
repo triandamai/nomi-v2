@@ -1,6 +1,6 @@
 pub mod mqtt;
 
-pub use mqtt::{MqttError, MqttPublisher};
+pub use mqtt::{user_topic, MqttError, MqttPublisher};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -43,4 +43,23 @@ pub enum StreamEnvelope {
     /// An `agent_sessions` row was closed. `reason` is one of "completed" | "cancelled" |
     /// "expired", matching `agent_sessions.status`'s possible non-active values exactly.
     AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
+}
+
+/// What goes to everything a person has open (`user/{user_id}/activity`), whichever chat they're
+/// looking at: the app subscribes once while it's open (see `user_topic`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum UserEnvelope {
+    /// The crew is done with a chat for now: it finished, failed, or is waiting on the person
+    /// (`waiting`: "question", "approval" or "connect"). `project_id` is set for a project's chat.
+    ChatActivity {
+        session_id: Uuid,
+        title: Option<String>,
+        project_id: Option<Uuid>,
+        /// "done", "failed" or "waiting".
+        outcome: String,
+        waiting: Option<String>,
+        /// Who answered last.
+        agent: Option<String>,
+    },
 }
