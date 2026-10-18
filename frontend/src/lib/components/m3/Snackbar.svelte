@@ -76,6 +76,18 @@
 		font-weight: 600;
 		cursor: pointer;
 	}
+	.m3-snackbar__action:hover {
+		background: color-mix(in srgb, var(--md-sys-color-inverse-primary) 12%, transparent);
+	}
+	.m3-snackbar__action:focus-visible {
+		outline: 2px solid var(--md-sys-color-inverse-primary);
+		outline-offset: 2px;
+	}
+	@media (max-width: 600px) {
+		.m3-snackbar__action {
+			height: 44px;
+		}
+	}
 	@keyframes m3-snackbar-in {
 		from {
 			translate: -50% 24px;

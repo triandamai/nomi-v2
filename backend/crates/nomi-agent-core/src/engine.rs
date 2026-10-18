@@ -36,8 +36,9 @@ pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point
      the person: never write your thinking, your plan of action, or notes about what they asked in it.";
 pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
 pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
-pub const SHOW_TABLE_TOOL_NAME: &str = "show_table";
 pub const RENAME_CHAT_TOOL_NAME: &str = "rename_chat";
+/// What the model hears back after `show`: the view is in the chat, so it needn't say it again.
+const VIEW_SHOWN: &str = "Shown in the chat. Don't repeat what it shows; add only what it doesn't say.";
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
 pub const ASK_USER_TOOL_NAME: &str = "ask_user";
@@ -188,25 +189,6 @@ fn delegate_tool_definition(targets: &[String]) -> ToolDefinition {
                 "task": {"type": "string", "description": "What the user wants from the specialist, with any details from this conversation it needs"}
             },
             "required": ["target_agent", "task"]
-        }),
-    }
-}
-
-fn show_table_tool_definition() -> ToolDefinition {
-    ToolDefinition {
-        name: SHOW_TABLE_TOOL_NAME.to_string(),
-        description: "Show the user a table of structured data — either a plain data table or a side-by-side comparison of a few items across criteria.".to_string(),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "variant": {"type": "string", "enum": ["data", "comparison"]},
-                "columns": {
-                    "type": "array",
-                    "items": {"type": "object", "properties": {"key": {"type": "string"}, "label": {"type": "string"}}, "required": ["key", "label"]}
-                },
-                "rows": {"type": "array", "items": {"type": "object"}}
-            },
-            "required": ["variant", "columns", "rows"]
         }),
     }
 }
@@ -433,7 +415,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     let mut tools = vec![
         complete_task_tool_definition(),
         delegate_tool_definition(&registry.delegatable_agent_types("")),
-        show_table_tool_definition(),
+        crate::views::show_tool_definition(),
         rename_chat_tool_definition(),
         update_todos_tool_definition(),
         write_plan_tool_definition(),
@@ -453,9 +435,10 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoopOutcome {
     Reply { text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
-    /// The agent answered out loud (`speak`) and wrote nothing after it: the recording, already
-    /// posted as `message_id`, is the reply. `text` is the words it says.
-    Spoke { message_id: Uuid, text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
+    /// The agent answered with something already in the chat — a recording (`speak`) or a view
+    /// (`show`) — and wrote nothing after it: that message, `message_id`, is the reply. `text` is
+    /// its words (what was said, or the view as text).
+    Posted { message_id: Uuid, text: String, memory_ids_used: Vec<Uuid>, input_tokens: u32, output_tokens: u32 },
     Completed { status: String, summary: String },
     AwaitingApproval { message_id: Uuid },
     /// The agent asked the person questions (`ask_user`) and waits for their answer, which comes
@@ -476,12 +459,12 @@ const USER_DENIED_RESULT: &str =
     "The user denied this action. Do not try it again; tell them it wasn't done and ask how they'd like to proceed.";
 
 /// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
-/// delegate_to_agent, show_table, update_todos) — none of these touch anything a user would
+/// delegate_to_agent, show, update_todos) — none of these touch anything a user would
 /// want to approve/deny.
 fn is_gateable(tool_name: &str) -> bool {
     tool_name != COMPLETE_TASK_TOOL_NAME
         && tool_name != DELEGATE_TOOL_NAME
-        && tool_name != SHOW_TABLE_TOOL_NAME
+        && tool_name != crate::views::SHOW_TOOL_NAME
         && tool_name != ASK_USER_TOOL_NAME
         && tool_name != READ_PLAN_TOOL_NAME
         && tool_name != RENAME_CHAT_TOOL_NAME
@@ -556,7 +539,7 @@ pub async fn run_agent_turn(
             tools.push(delegate_tool_definition(&targets));
         }
     }
-    tools.push(show_table_tool_definition());
+    tools.push(crate::views::show_tool_definition());
     tools.push(rename_chat_tool_definition());
     if agent.supports_todos() {
         tools.push(update_todos_tool_definition());
@@ -818,14 +801,14 @@ pub async fn run_agent_turn(
             let output_tokens = response.output_tokens;
             let cut_off = response.stop_reason == StopReason::MaxTokens;
             let reply_text = reply_text_of(&response.content);
-            // Said it out loud and wrote nothing more: the recording is the whole reply.
+            // Said it out loud, or showed a view, and wrote nothing more: that is the whole reply.
             if reply_text.is_empty() && !cut_off {
-                if let Some((message_id, text)) = recording_posted_since(conn, session_id, agent.display_name().as_ref(), started_at).await {
+                if let Some((message_id, text)) = answer_posted_since(conn, session_id, agent.display_name().as_ref(), started_at).await {
                     if agent.uses_memory() {
                         learn_from_turn(conn, user_id, session_id, &messages, &text).await;
                     }
                     update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
-                    return Ok(LoopOutcome::Spoke {
+                    return Ok(LoopOutcome::Posted {
                         message_id,
                         text,
                         memory_ids_used: memories.iter().map(|m| m.id).collect(),
@@ -883,7 +866,12 @@ pub async fn run_agent_turn(
         let finishing = pending_tool_use_blocks.iter().any(
             |b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == COMPLETE_TASK_TOOL_NAME || name.as_str() == DELEGATE_TOOL_NAME),
         );
-        if agent.surfaces_activity() && !finishing && !written.is_empty() {
+        // Text written with a view ("Here's where your money went:") introduces it: it goes in the
+        // chat as an ordinary message, before the view, for every agent.
+        let shows = pending_tool_use_blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { name, .. } if name.as_str() == crate::views::SHOW_TOOL_NAME));
+        if shows && !finishing && !written.is_empty() {
+            post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &written, None).await;
+        } else if agent.surfaces_activity() && !finishing && !written.is_empty() {
             post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &format!("💭 {written}"), None).await;
         }
 
@@ -1094,6 +1082,8 @@ pub async fn resolve_tool_batch(
                 None => update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await,
             }
 
+            // What the posted message says, when it isn't the tool result itself (`show`).
+            let mut posted_text: Option<String> = None;
             let (result_text, is_error, rich_block) = if !own_tools.contains(name) && !switches.allows(name) {
                 (format!("The {name} tool is switched off. Don't call it again; do without it."), true, None)
             } else if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -1123,12 +1113,14 @@ pub async fn resolve_tool_batch(
                     },
                 };
                 (text, err, None)
-            } else if name.as_str() == SHOW_TABLE_TOOL_NAME {
-                match parse_table_input(input) {
-                    Ok((variant, columns, rows)) => {
-                        let text = table_display_text(&variant, rows.len(), locale);
-                        let block = crate::content_block::ContentBlock::Table { variant, columns, rows };
-                        (text, false, Some(block))
+            } else if name.as_str() == crate::views::SHOW_TOOL_NAME {
+                match crate::views::parse_show_input(input) {
+                    Ok(view) => {
+                        let view = crate::web::fill_link_preview(view).await;
+                        let shown = crate::content_block::ToolOutcome::view(view);
+                        // The model gets a short receipt; the message keeps the view's own text.
+                        posted_text = Some(shown.display_text);
+                        (VIEW_SHOWN.to_string(), false, shown.block)
                     }
                     Err(err) => (err, true, None),
                 }
@@ -1228,7 +1220,7 @@ pub async fn resolve_tool_batch(
 
             // A tool that returns a block (a table, a file change, a Connect card) means it to be
             // seen, whether or not the agent narrates the rest of its tool calls.
-            let should_post = name.as_str() == SHOW_TABLE_TOOL_NAME
+            let should_post = name.as_str() == crate::views::SHOW_TOOL_NAME
                 || rich_block.is_some()
                 || (agent.surfaces_activity()
                     && name.as_str() != COMPLETE_TASK_TOOL_NAME
@@ -1242,7 +1234,7 @@ pub async fn resolve_tool_batch(
                     && !crate::web::is_web_tool(name)
                     && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &result_text, rich_block.as_ref()).await;
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), posted_text.as_deref().unwrap_or(&result_text), rich_block.as_ref()).await;
             }
 
             if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -1280,13 +1272,8 @@ async fn log_tool_call(
     .await;
 }
 
-/// Best-effort (never fails the turn, matches `post_activity_message`'s convention): updates
-/// `agent_sessions.current_phase`/`current_phase_detail` and, when `mqtt` is available, pushes
-/// the same change live over `StreamEnvelope::AgentPhaseChanged`. Silently a no-op for the
-/// default agent's turns, where `agent_session_id` is the `session_id` sentinel (see
-/// `nomi_turn::run_locked_turn`'s call site comment) — there is no real `agent_sessions` row
-/// with that id, so the UPDATE affects zero rows and nothing is published.
-/// How long to wait before trying the model again: 2s, 4s, 8s, then 15s, capped at 30s.
+/// How long to wait before trying the model again: 2s, 4s, 8s, then 15s, capped at 30s. No wait
+/// at all in tests (this crate's own, or another crate's with the `instant-retries` feature).
 fn retry_delay(attempt: u32) -> std::time::Duration {
     let seconds = match attempt {
         1 => 2,
@@ -1295,9 +1282,15 @@ fn retry_delay(attempt: u32) -> std::time::Duration {
         4 => 15,
         _ => 30,
     };
-    std::time::Duration::from_secs(if cfg!(test) { 0 } else { seconds })
+    std::time::Duration::from_secs(if cfg!(any(test, feature = "instant-retries")) { 0 } else { seconds })
 }
 
+/// Best-effort (never fails the turn, matches `post_activity_message`'s convention): updates
+/// `agent_sessions.current_phase`/`current_phase_detail` and, when `mqtt` is available, pushes
+/// the same change live over `StreamEnvelope::AgentPhaseChanged`. Silently a no-op for the
+/// default agent's turns, where `agent_session_id` is the `session_id` sentinel (see
+/// `nomi_turn::run_locked_turn`'s call site comment) — there is no real `agent_sessions` row
+/// with that id, so the UPDATE affects zero rows and nothing is published.
 async fn update_agent_phase(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,
@@ -1327,15 +1320,17 @@ async fn update_agent_phase(
 
 /// The newest recording (a voice block) `agent_display_name` posted in the chat since `since`,
 /// with the words it says.
-async fn recording_posted_since(
+/// The newest recording or view this agent posted in this turn, which can stand as its reply:
+/// its id and its words (what the recording says, or the view as text).
+async fn answer_posted_since(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
     agent_display_name: &str,
     since: chrono::DateTime<chrono::Utc>,
 ) -> Option<(Uuid, String)> {
     sqlx::query_as(
-        "SELECT id, content_blocks->0->>'text' FROM messages \
-         WHERE session_id = $1 AND agent_display_name = $2 AND created_at >= $3 AND content_blocks->0->>'kind' = 'voice' \
+        "SELECT id, CASE WHEN content_blocks->0->>'kind' = 'voice' THEN content_blocks->0->>'text' ELSE content END FROM messages \
+         WHERE session_id = $1 AND agent_display_name = $2 AND created_at >= $3 AND content_blocks->0->>'kind' IN ('voice', 'view') \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(session_id)
@@ -1558,39 +1553,6 @@ async fn upsert_todo_list(
     }
 
     Ok("todo list updated".to_string())
-}
-
-fn parse_table_input(
-    input: &serde_json::Value,
-) -> Result<(crate::content_block::TableVariant, Vec<crate::content_block::TableColumn>, Vec<serde_json::Value>), String> {
-    use crate::content_block::{TableColumn, TableVariant};
-    let variant = match input.get("variant").and_then(|v| v.as_str()) {
-        Some("data") => TableVariant::Data,
-        Some("comparison") => TableVariant::Comparison,
-        _ => return Err("variant must be 'data' or 'comparison'".to_string()),
-    };
-    let columns: Vec<TableColumn> = input
-        .get("columns")
-        .and_then(|v| v.as_array())
-        .ok_or("columns is required")?
-        .iter()
-        .map(|c| {
-            let key = c.get("key").and_then(|v| v.as_str()).ok_or("each column needs a key")?.to_string();
-            let label = c.get("label").and_then(|v| v.as_str()).ok_or("each column needs a label")?.to_string();
-            Ok(TableColumn { key, label })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let rows = input.get("rows").and_then(|v| v.as_array()).ok_or("rows is required")?.clone();
-    Ok((variant, columns, rows))
-}
-
-fn table_display_text(variant: &crate::content_block::TableVariant, row_count: usize, locale: Locale) -> String {
-    use crate::content_block::TableVariant;
-    let count = row_count.to_string();
-    match variant {
-        TableVariant::Data => locale.tf("engine.table_data", &[("count", &count)]),
-        TableVariant::Comparison => locale.tf("engine.table_comparison", &[("count", &count)]),
-    }
 }
 
 /// Templated, non-LLM description of a failed tool call — kept generic in the engine (unlike a

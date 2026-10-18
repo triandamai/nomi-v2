@@ -26,6 +26,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 regex = "1"
 tokio = { version = "1", features = ["net", "time"] }
 
+[features]
+# Model-call retries don't wait between attempts. For other crates' tests only (they enable it
+# as a dev-dependency feature, which never reaches a release build): their failing fake provider
+# would otherwise sit through the real 2s..30s backoff for up to ten attempts.
+instant-retries = []
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 nomi-test-support = { path = "../nomi-test-support" }

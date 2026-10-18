@@ -606,7 +606,24 @@
 	onMount(() => {
 		// Not on a phone: opening a chat shouldn't throw up the keyboard over it.
 		if (!touchScreen()) messageInput?.focus();
+	});
+
+	let connectedSession: string | null = null;
+	// The live connection follows the chat on screen: going to another chat reuses this
+	// component, so it closes and reopens for the new one. (What happens in chats that aren't on
+	// screen reaches the app through the person's own feed, $lib/userActivity.)
+	$effect(() => {
+		const id = sessionId;
 		if (unsaved) return; // nothing to listen to until the first message creates the chat
+		// Another chat than the last one: what was streaming belonged to that one.
+		if (connectedSession !== null && connectedSession !== id) {
+			untrack(() => {
+				openTurns = [];
+				currentPhase = null;
+				stopRequested = false;
+			});
+		}
+		connectedSession = id;
 
 		let socket: WebSocket | undefined;
 		let retryDelay = INITIAL_RETRY_DELAY_MS;
@@ -615,7 +632,7 @@
 		let hasConnectedBefore = false;
 
 		function connect() {
-			socket = new WebSocket(`/chat/${sessionId}/ws`);
+			socket = new WebSocket(`/chat/${id}/ws`);
 
 			socket.addEventListener('open', () => {
 				retryDelay = INITIAL_RETRY_DELAY_MS;

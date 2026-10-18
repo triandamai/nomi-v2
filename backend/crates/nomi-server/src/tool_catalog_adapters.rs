@@ -22,7 +22,7 @@ struct LogTransaction;
 #[async_trait]
 impl CatalogTool for LogTransaction {
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_money::log_transaction(conn, user_id, &input, "agent", Some(session_id)).await.map(ToolOutcome::text)
+        nomi_agent_money::log_transaction_outcome(conn, user_id, &input, session_id).await
     }
 }
 

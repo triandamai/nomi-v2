@@ -140,7 +140,6 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     continue;
                 }
             };
-            let _ = session_id; // resolved above only to fail fast with a clear error if the message/session no longer exists
 
             let provider = build_llm_provider_for_user(&pool, user_id, &settings_key, http_client.clone()).await;
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
@@ -163,10 +162,12 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     if let Some(message_id) = outcome.message_id {
                         crate::user_events::announce_chat_reply(&pool, &mqtt, user_id, outcome.session_id, message_id, &outcome.reply);
                     }
+                    nomi_turn::activity::announce(&pool, &mqtt, outcome.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
                     tracing::info!(resume_id = %claimed.id, "worker: approval resume completed");
                 }
                 Err(e) => {
                     let _ = nomi_turn::approval::mark_failed(&pool, claimed.id, &e.to_string()).await;
+                    nomi_turn::activity::announce(&pool, &mqtt, session_id, user_id, nomi_turn::activity::Ended::Failed).await;
                     tracing::warn!(resume_id = %claimed.id, error = %e, "worker: approval resume failed");
                 }
             }
@@ -238,12 +239,14 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
             if let Some(message_id) = outcome.message_id {
                 crate::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
             }
+            nomi_turn::activity::announce(&turns.pool, &turns.mqtt, claimed.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
             tracing::info!(job_id = %claimed.id, reply_len = outcome.reply.len(), "worker: turn job completed");
         }
         Err(e) => {
             // process_turn already published TurnFailed and recorded the agent_events row
             // internally (see turn::process_turn) — this only updates the job's own status.
             let _ = queue::mark_failed(&turns.pool, claimed.id, &e.to_string()).await;
+            nomi_turn::activity::announce(&turns.pool, &turns.mqtt, claimed.session_id, user_id, nomi_turn::activity::Ended::Failed).await;
             tracing::warn!(job_id = %claimed.id, error = %e, "worker: turn job failed");
         }
     }

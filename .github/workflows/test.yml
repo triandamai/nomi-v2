@@ -71,7 +71,19 @@ jobs:
 
       - name: cargo test --workspace
         working-directory: backend
-        run: cargo test --workspace
+        # The log feeds the report below; pipefail keeps a failing test failing this step.
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee cargo-test.log
+
+      # The backend's counterpart to Vitest's report on the frontend job: totals, failures with
+      # their output, tests that ran over 60s, and every test binary's time.
+      - name: Test report
+        if: always()
+        run: |
+          if [ -f backend/cargo-test.log ]; then
+            python3 .github/scripts/cargo-test-summary.py backend/cargo-test.log >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   frontend:
     name: Frontend (check + unit tests + build)

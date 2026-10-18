@@ -1,5 +1,6 @@
 <!-- frontend/src/lib/components/blocks/ContentBlockView.svelte -->
 <script lang="ts">
+	import type { Component } from 'svelte';
 	import TodoListBlock from './TodoListBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import ApprovalCard from './ApprovalCard.svelte';
@@ -12,6 +13,7 @@
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import QuestionsCard from './QuestionsCard.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
+	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 
 	let {
@@ -29,6 +31,25 @@
 		/** The person has replied since this message. */
 		answered?: boolean;
 	} = $props();
+
+	// Which component draws each kind of block. Each gets the same props (the block and where it
+	// sits) and takes the ones it needs. A new kind is a component and a line here; a kind this
+	// build doesn't know shows nothing (the message's text stands in).
+	const BLOCKS: Partial<Record<ContentBlock['kind'], Component<any>>> = {
+		todo_list: TodoListBlock,
+		table: TableBlock,
+		approval_request: ApprovalCard,
+		plan: PlanBlock,
+		reminder: ReminderBlock,
+		workspace_connect: WorkspaceConnectCard,
+		connector_connect: ConnectorConnectCard,
+		project_link: ProjectLinkCard,
+		questions: QuestionsCard,
+		quota_notice: QuotaNoticeCard,
+		voice: VoiceBlock,
+		view: ViewBlock
+	};
+	const Block = $derived(BLOCKS[block.kind]);
 
 	// File changes bring the code editor (CodeMirror): it loads the first time one is shown, not
 	// with every chat.
@@ -48,30 +69,10 @@
 			{/each}
 		{/await}
 	</div>
-{:else if block.kind === 'todo_list'}
-	<TodoListBlock {block} {agent} />
-{:else if block.kind === 'table'}
-	<TableBlock {block} />
-{:else if block.kind === 'approval_request'}
-	<ApprovalCard {block} {messageId} />
-{:else if block.kind === 'plan'}
-	<PlanBlock {block} {agent} />
-{:else if block.kind === 'reminder'}
-	<ReminderBlock {block} />
-{:else if block.kind === 'workspace_connect'}
-	<WorkspaceConnectCard {block} />
-{:else if block.kind === 'connector_connect'}
-	<ConnectorConnectCard {block} />
-{:else if block.kind === 'project_link'}
-	<ProjectLinkCard {block} />
-{:else if block.kind === 'questions'}
-	<QuestionsCard {block} {agent} {answered} />
-{:else if block.kind === 'quota_notice'}
-	<QuotaNoticeCard />
-{:else if block.kind === 'voice'}
-	<VoiceBlock {block} />
 {:else if block.kind === 'reasoning'}
 	<ReasoningDisclosure steps={[block.text]} />
+{:else if Block}
+	<Block {block} {messageId} {agent} {fresh} {answered} />
 {/if}
 
 <style>

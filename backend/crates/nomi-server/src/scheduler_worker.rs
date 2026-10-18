@@ -139,8 +139,8 @@ pub async fn process_claimed_job(
     .await;
 
     match outcome {
-        // Said out loud: the recording is already in the chat; the notification carries its words.
-        Ok(LoopOutcome::Spoke { text, .. }) => {
+        // Said out loud or shown as a view: it's already in the chat; the notification carries its words.
+        Ok(LoopOutcome::Posted { text, .. }) => {
             let _ = notification.deliver(job.user_id, &text).await;
             finish_one_time_or_advance_recurring(pool, &job).await;
         }

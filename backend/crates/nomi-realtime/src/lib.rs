@@ -2,7 +2,7 @@ pub mod gateway;
 pub mod mqtt;
 
 pub use gateway::{ClientFrame, ServerFrame, Topic};
-pub use mqtt::{MqttError, MqttPublisher};
+pub use mqtt::{user_topic, MqttError, MqttPublisher};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -62,4 +62,23 @@ pub enum UserEvent {
         link: Option<String>,
     },
     ChatReply { session_id: Uuid, message_id: Uuid, preview: String },
+}
+
+/// What goes to everything a person has open (`user/{user_id}/activity`), whichever chat they're
+/// looking at: the app subscribes once while it's open (see `user_topic`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum UserEnvelope {
+    /// The crew is done with a chat for now: it finished, failed, or is waiting on the person
+    /// (`waiting`: "question", "approval" or "connect"). `project_id` is set for a project's chat.
+    ChatActivity {
+        session_id: Uuid,
+        title: Option<String>,
+        project_id: Option<Uuid>,
+        /// "done", "failed" or "waiting".
+        outcome: String,
+        waiting: Option<String>,
+        /// Who answered last.
+        agent: Option<String>,
+    },
 }

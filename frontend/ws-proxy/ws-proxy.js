@@ -44,6 +44,10 @@ const ROUTES = [
 		upstreamPath: (match) => `/api/projects/${match[1]}/ws`
 	},
 	{
+		pattern: /^\/activity\/ws$/,
+		upstreamPath: () => '/api/me/activity/ws'
+	},
+	{
 		pattern: /^\/admin\/agents\/ws$/,
 		upstreamPath: () => '/api/admin/agents/ws'
 	}

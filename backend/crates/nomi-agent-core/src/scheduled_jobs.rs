@@ -21,7 +21,7 @@ pub async fn get_user_timezone(conn: &mut PoolConnection<Postgres>, user_id: Uui
 /// Parses and validates the recurrence-related fields together, since `recurrence_weekday`/
 /// `recurrence_day_of_month` are each required exactly when their matching `recurrence` value is
 /// given — not enforced by a DB CHECK constraint (see the design spec's Data Model section), so
-/// it's validated here instead, the same way `parse_todo_items`/`parse_table_input` validate
+/// it's validated here instead, the same way `parse_todo_items`/`views::parse_show_input` validate
 /// their own tools' input in engine.rs.
 fn parse_recurrence(input: &serde_json::Value) -> Result<(Option<String>, Option<i16>, Option<i16>), String> {
     let recurrence = input.get("recurrence").and_then(|v| v.as_str());

@@ -33,6 +33,8 @@ export type ContentBlock =
 	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
+	/** A view: a list, a timeline, a chart, a form… (see $lib/views). */
+	| ({ kind: 'view' } & import('$lib/views/types').View)
 	| {
 			kind: 'questions';
 			intro: string | null;

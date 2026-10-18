@@ -5,7 +5,9 @@ describe('home layouts', () => {
 	it('falls back to the default for a missing or unknown slug', () => {
 		expect(homeLayout(null).id).toBe(DEFAULT_HOME_LAYOUT);
 		expect(homeLayout('from-a-newer-build').id).toBe(DEFAULT_HOME_LAYOUT);
-		expect(homeLayout('stage').id).toBe('stage');
+		expect(DEFAULT_HOME_LAYOUT).toBe('stage');
+		expect(homeLayout('classic').id).toBe('classic');
+		expect(homeLayout('today').id).toBe('today');
 	});
 
 	it('knows its own ids only', () => {
