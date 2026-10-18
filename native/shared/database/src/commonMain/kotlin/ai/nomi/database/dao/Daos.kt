@@ -12,6 +12,9 @@ import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
+/** Phase the backend reports for an agent that is alive but not doing anything. */
+internal const val IDLE_PHASE = "waiting"
+
 @Dao
 interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY updatedAt DESC")
@@ -49,15 +52,17 @@ interface StreamingDraftDao {
 
     /** Appends [text] to the session's draft; a draft from a different turn is replaced, not extended. */
     @Transaction
-    suspend fun appendDelta(sessionId: String, turnJobId: String, text: String, updatedAt: Long = 0L) {
+    suspend fun appendDelta(sessionId: String, turnJobId: String, text: String, updatedAt: Long) {
         val existing = get(sessionId)
-        val base = if (existing != null && existing.turnJobId == turnJobId) existing.text else ""
+        val sameTurn = existing?.takeIf { it.turnJobId == turnJobId }
+        val base = sameTurn?.text ?: ""
         upsert(
             StreamingDraftEntity(
                 sessionId = sessionId,
                 turnJobId = turnJobId,
                 text = base + text,
-                phase = existing?.takeIf { it.turnJobId == turnJobId }?.phase,
+                // A new turn starts a fresh draft, so the previous turn's phase must not leak into it.
+                phase = sameTurn?.phase,
                 updatedAt = updatedAt,
             ),
         )
@@ -81,8 +86,14 @@ interface NotificationDao {
 
 @Dao
 interface AgentActivityDao {
-    @Query("SELECT * FROM agent_activity WHERE phase NOT IN ('idle', 'done') ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM agent_activity WHERE phase != '$IDLE_PHASE' ORDER BY updatedAt DESC")
     fun observeActive(): Flow<List<AgentActivityEntity>>
+
+    @Query("DELETE FROM agent_activity WHERE agentSessionId = :agentSessionId")
+    suspend fun delete(agentSessionId: String)
+
+    @Query("DELETE FROM agent_activity WHERE sessionId = :sessionId")
+    suspend fun clearForSession(sessionId: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(activity: AgentActivityEntity)

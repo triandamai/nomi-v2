@@ -3,6 +3,7 @@ package ai.nomi.database
 import androidx.room.RoomDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 
 internal const val DATABASE_FILE_NAME = "nomi.db"
 
@@ -18,6 +19,6 @@ interface DatabaseFactory {
  */
 internal fun RoomDatabase.Builder<NomiDatabase>.configureNomi(): NomiDatabase =
     setDriver(BundledSQLiteDriver())
-        .setQueryCoroutineContext(Dispatchers.Default)
+        .setQueryCoroutineContext(Dispatchers.IO)
         .fallbackToDestructiveMigration(dropAllTables = true)
         .build()

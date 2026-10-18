@@ -64,16 +64,17 @@ class DaoTest {
     @Test
     fun appendDeltaConcatenatesWithinATurn() = runTest {
         val dao = db.streamingDraftDao()
-        dao.appendDelta("s1", "job1", "Hel")
-        dao.appendDelta("s1", "job1", "lo")
+        dao.appendDelta("s1", "job1", "Hel", 1L)
+        dao.appendDelta("s1", "job1", "lo", 2L)
+        assertEquals(2L, dao.observe("s1").first()?.updatedAt)
         assertEquals("Hello", dao.observe("s1").first()?.text)
     }
 
     @Test
     fun appendDeltaReplacesDraftOfADifferentTurn() = runTest {
         val dao = db.streamingDraftDao()
-        dao.appendDelta("s1", "job1", "old")
-        dao.appendDelta("s1", "job2", "new")
+        dao.appendDelta("s1", "job1", "old", 1L)
+        dao.appendDelta("s1", "job2", "new", 2L)
         val draft = dao.observe("s1").first()
         assertEquals("new", draft?.text)
         assertEquals("job2", draft?.turnJobId)
@@ -82,7 +83,7 @@ class DaoTest {
     @Test
     fun clearRemovesDraft() = runTest {
         val dao = db.streamingDraftDao()
-        dao.appendDelta("s1", "job1", "x")
+        dao.appendDelta("s1", "job1", "x", 1L)
         dao.clear("s1")
         assertNull(dao.observe("s1").first())
     }
@@ -100,10 +101,23 @@ class DaoTest {
     }
 
     @Test
-    fun observeActiveExcludesIdleAgents() = runTest {
+    fun markReadLeavesOtherSessionsUntouched() = runTest {
+        db.sessionDao().upsert(session("a"))
+        db.sessionDao().upsert(session("b", updatedAt = 2))
+        db.sessionDao().markRead("a")
+        assertEquals(mapOf("a" to false, "b" to true), db.sessionDao().observeAll().first().associate { it.id to it.unread })
+    }
+
+    @Test
+    fun observeActiveExcludesWaitingAndDeletedAgents() = runTest {
         val dao = db.agentActivityDao()
-        dao.upsert(AgentActivityEntity("a1", "s1", "planner", "working", "d", 1))
-        dao.upsert(AgentActivityEntity("a2", "s1", "coder", "idle", "d", 1))
-        assertEquals(listOf("a1"), dao.observeActive().first().map { it.agentSessionId })
+        dao.upsert(AgentActivityEntity("a1", "s1", "planner", "thinking", "d", 1))
+        dao.upsert(AgentActivityEntity("a2", "s1", "coder", "waiting", "d", 1))
+        dao.upsert(AgentActivityEntity("a3", "s2", "coder", "calling_tool", "d", 1))
+        assertEquals(setOf("a1", "a3"), dao.observeActive().first().map { it.agentSessionId }.toSet())
+        dao.delete("a1")
+        assertEquals(listOf("a3"), dao.observeActive().first().map { it.agentSessionId })
+        dao.clearForSession("s2")
+        assertEquals(emptyList(), dao.observeActive().first())
     }
 }
