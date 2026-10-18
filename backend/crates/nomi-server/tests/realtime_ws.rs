@@ -296,3 +296,16 @@ async fn socket_closes_with_4001_when_its_token_expires(pool: PgPool) {
     assert_eq!(u16::from(frame.code), CLOSE_TOKEN_EXPIRED);
     assert_eq!(frame.reason, "token expired");
 }
+
+/// Past `exp` but inside jsonwebtoken's default 60s leeway, so the extractor still accepts it.
+const RECENTLY_EXPIRED_SECS: i64 = -5;
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn upgrade_with_an_already_expired_token_is_rejected(pool: PgPool) {
+    let (_, ws_base) = spawn_app(pool).await;
+    // Accepting it would open a socket only to close it with 4001 at once, over and over until the leeway passes;
+    // a 401 sends the client through its token refresh instead.
+    let claims = nomi_auth::claims::Claims::new(Uuid::new_v4(), Uuid::new_v4(), vec![], RECENTLY_EXPIRED_SECS);
+    let token = claims.encode(SECRET).unwrap();
+    assert!(connect(&ws_base, Some(&token)).await.is_err());
+}

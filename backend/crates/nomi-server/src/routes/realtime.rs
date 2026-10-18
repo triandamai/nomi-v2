@@ -32,8 +32,13 @@ pub async fn realtime_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     ws: WebSocketUpgrade,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     let expires_in = token_time_left(claims.exp, chrono::Utc::now().timestamp());
+    // The extractor allows a little leeway past `exp`; such a socket would be closed with 4001 straight away, so
+    // answer 401 and let the client refresh first.
+    if expires_in.is_zero() {
+        return (StatusCode::UNAUTHORIZED, "token expired").into_response();
+    }
     ws.on_upgrade(move |socket| run(socket, state, claims.sub, expires_in))
 }
 
