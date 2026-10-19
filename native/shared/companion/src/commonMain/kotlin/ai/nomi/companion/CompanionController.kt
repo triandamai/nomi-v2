@@ -3,6 +3,7 @@ package ai.nomi.companion
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.CompanionPreferences
 import ai.nomi.data.RealtimeSync
+import ai.nomi.data.SessionRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
@@ -26,6 +27,7 @@ class CompanionController(
     sync: RealtimeSync,
     private val chatRepository: ChatRepository,
     private val preferences: CompanionPreferences,
+    private val sessionRepository: SessionRepository? = null,
     private val log: (String) -> Unit = {},
 ) {
     val stateMachine = CompanionStateMachine(
@@ -81,7 +83,13 @@ class CompanionController(
         stateMachine.collapse()
         scope.launch {
             try {
-                chatRepository.send(sessionId, text)
+                val targetId = sessionId.ifBlank { sessionRepository?.create().orEmpty() }
+                if (targetId.isNotBlank()) {
+                    chatRepository.send(targetId, text)
+                    if (sessionId.isBlank()) {
+                        mutableNavRequests.tryEmit("/chat/$targetId")
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

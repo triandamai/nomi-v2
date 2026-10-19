@@ -10,11 +10,16 @@ import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.agentIdentity
 import ai.nomi.designsystem.theme.NomiTheme
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,12 +53,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 
 const val MESSENGER_BUBBLE_TAG = "messenger-bubble"
@@ -81,6 +90,15 @@ private const val PREVIEW_MAX_LINES = 2
 private const val EXPANDED_MAX_LINES = 4
 private const val CAPTURED_SCALE = 1.18f
 private const val NORMAL_SCALE = 1f
+private const val EXPANDED_HEAD_SCALE = 0.92f
+private const val LIQUID_DAMPING_RATIO = 0.72f
+private const val LIQUID_STIFFNESS = 420f
+private const val LIQUID_FADE_MS = 180
+private const val LIQUID_INITIAL_SCALE = 0.35f
+private const val ORIGIN_START = 0f
+private const val ORIGIN_END = 1f
+private const val ORIGIN_TOP = 0f
+private const val ORIGIN_CENTER = 0.5f
 
 /**
  * Messenger-style floating chat-head bubble (`AgentShape` 60dp with Nomi's eyes, unread badge, beside-the-head
@@ -97,6 +115,8 @@ fun MessengerBubble(
     modifier: Modifier = Modifier,
     dockedRight: Boolean = true,
     lookAt: Offset? = null,
+    liquidStretchX: Float = NORMAL_SCALE,
+    liquidStretchY: Float = NORMAL_SCALE,
     onDragStart: () -> Unit = {},
     onDragBy: (Offset) -> Unit = {},
     onDragEnd: () -> Unit = {},
@@ -124,6 +144,24 @@ fun MessengerBubble(
     }
     val agentKey = workingSignal?.agentType ?: card?.agentType
     val identity = agentKey?.let(::agentIdentity) ?: NomiIdentity
+    val isExpanded = state is CompanionUiState.Expanded
+
+    val liquidFloatSpec = spring<Float>(
+        dampingRatio = LIQUID_DAMPING_RATIO,
+        stiffness = LIQUID_STIFFNESS,
+    )
+    val liquidSizeSpec = spring<IntSize>(
+        dampingRatio = LIQUID_DAMPING_RATIO,
+        stiffness = LIQUID_STIFFNESS,
+    )
+    val cardOrigin = TransformOrigin(
+        pivotFractionX = if (dockedRight) ORIGIN_END else ORIGIN_START,
+        pivotFractionY = ORIGIN_TOP,
+    )
+    val speechOrigin = TransformOrigin(
+        pivotFractionX = if (dockedRight) ORIGIN_END else ORIGIN_START,
+        pivotFractionY = ORIGIN_CENTER,
+    )
 
     Column(
         modifier = modifier.testTag(MESSENGER_BUBBLE_TAG),
@@ -137,8 +175,12 @@ fun MessengerBubble(
             if (dockedRight) {
                 AnimatedVisibility(
                     visible = state is CompanionUiState.Peeking && card != null,
-                    enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec()),
-                    exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleOut(MaterialTheme.motionScheme.defaultSpatialSpec()),
+                    enter = fadeIn(tween(LIQUID_FADE_MS)) +
+                        scaleIn(liquidFloatSpec, initialScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
+                        expandIn(liquidSizeSpec, expandFrom = Alignment.CenterEnd, clip = false),
+                    exit = fadeOut(tween(LIQUID_FADE_MS)) +
+                        scaleOut(liquidFloatSpec, targetScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
+                        shrinkOut(liquidSizeSpec, shrinkTowards = Alignment.CenterEnd, clip = false),
                 ) {
                     card?.let {
                         BubbleSpeechCard(
@@ -151,9 +193,12 @@ fun MessengerBubble(
 
             BubbleHead(
                 identity = identity,
-                working = workingSignal != null,
+                working = workingSignal != null || state is CompanionUiState.Peeking,
+                expanded = isExpanded,
                 unreadCount = unreadCount,
                 lookAt = lookAt,
+                liquidStretchX = liquidStretchX,
+                liquidStretchY = liquidStretchY,
                 onClick = onTapHead,
                 onDragStart = onDragStart,
                 onDragBy = onDragBy,
@@ -163,8 +208,12 @@ fun MessengerBubble(
             if (!dockedRight) {
                 AnimatedVisibility(
                     visible = state is CompanionUiState.Peeking && card != null,
-                    enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec()),
-                    exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleOut(MaterialTheme.motionScheme.defaultSpatialSpec()),
+                    enter = fadeIn(tween(LIQUID_FADE_MS)) +
+                        scaleIn(liquidFloatSpec, initialScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
+                        expandIn(liquidSizeSpec, expandFrom = Alignment.CenterStart, clip = false),
+                    exit = fadeOut(tween(LIQUID_FADE_MS)) +
+                        scaleOut(liquidFloatSpec, targetScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
+                        shrinkOut(liquidSizeSpec, shrinkTowards = Alignment.CenterStart, clip = false),
                 ) {
                     card?.let {
                         BubbleSpeechCard(
@@ -177,9 +226,29 @@ fun MessengerBubble(
         }
 
         AnimatedVisibility(
-            visible = state is CompanionUiState.Expanded,
-            enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec()),
-            exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleOut(MaterialTheme.motionScheme.defaultSpatialSpec()),
+            visible = isExpanded,
+            enter = fadeIn(tween(LIQUID_FADE_MS)) +
+                scaleIn(
+                    animationSpec = liquidFloatSpec,
+                    initialScale = LIQUID_INITIAL_SCALE,
+                    transformOrigin = cardOrigin,
+                ) +
+                expandIn(
+                    animationSpec = liquidSizeSpec,
+                    expandFrom = if (dockedRight) Alignment.TopEnd else Alignment.TopStart,
+                    clip = false,
+                ),
+            exit = fadeOut(tween(LIQUID_FADE_MS)) +
+                scaleOut(
+                    animationSpec = liquidFloatSpec,
+                    targetScale = LIQUID_INITIAL_SCALE,
+                    transformOrigin = cardOrigin,
+                ) +
+                shrinkOut(
+                    animationSpec = liquidSizeSpec,
+                    shrinkTowards = if (dockedRight) Alignment.TopEnd else Alignment.TopStart,
+                    clip = false,
+                ),
         ) {
             BubbleQuickChatCard(
                 card = card,
@@ -198,40 +267,73 @@ fun MessengerBubble(
 private fun BubbleHead(
     identity: ai.nomi.designsystem.shape.AgentIdentity,
     working: Boolean,
+    expanded: Boolean,
     unreadCount: Int,
     lookAt: Offset?,
+    liquidStretchX: Float,
+    liquidStretchY: Float,
     onClick: () -> Unit,
     onDragStart: () -> Unit,
     onDragBy: (Offset) -> Unit,
     onDragEnd: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var lastWindowPos by remember { mutableStateOf<Offset?>(null) }
+    val baseScale by animateFloatAsState(
+        targetValue = if (expanded) EXPANDED_HEAD_SCALE else NORMAL_SCALE,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "bubble-head-liquid-scale",
+    )
     Box(
         Modifier
             .size(BubbleSizeDp)
+            .onGloballyPositioned { coordinates = it }
+            .graphicsLayer {
+                scaleX = baseScale * liquidStretchX
+                scaleY = baseScale * liquidStretchY
+            }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { onDragStart() },
-                    onDragEnd = { onDragEnd() },
-                    onDragCancel = { onDragEnd() },
+                    onDragStart = { startOffset ->
+                        lastWindowPos = coordinates?.localToWindow(startOffset)
+                        onDragStart()
+                    },
+                    onDragEnd = {
+                        lastWindowPos = null
+                        onDragEnd()
+                    },
+                    onDragCancel = {
+                        lastWindowPos = null
+                        onDragEnd()
+                    },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        onDragBy(dragAmount)
+                        val coords = coordinates
+                        if (coords != null && coords.isAttached) {
+                            val currentWindow = coords.localToWindow(change.position)
+                            val delta = lastWindowPos?.let { currentWindow - it } ?: dragAmount
+                            lastWindowPos = currentWindow
+                            onDragBy(delta)
+                        } else {
+                            onDragBy(dragAmount)
+                        }
                     },
                 )
             }
             .clickable(interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.shadow(BubbleShadow, CircleShape)) {
-            AgentShape(
-                identity = identity,
-                size = BubbleSizeDp,
-                working = working,
-                face = true,
-                lookAt = lookAt,
-            )
-        }
+        AgentShape(
+            identity = identity,
+            size = BubbleSizeDp,
+            working = working,
+            face = true,
+            lookAt = lookAt,
+        )
         if (unreadCount > 0) {
             Box(Modifier.align(Alignment.TopEnd)) {
                 UnreadCountPill(unreadCount)
@@ -338,19 +440,19 @@ fun BubbleQuickChatCard(
         }
 
         Text(
-            text = card?.body ?: "Tap Open in Nomi to jump into your conversation.",
+            text = card?.body ?: "Send a quick message to Nomi, or tap Open in Nomi for the full chat.",
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant,
             maxLines = EXPANDED_MAX_LINES,
             overflow = TextOverflow.Ellipsis,
         )
 
-        val sessionId = card?.sessionId
-        if (sessionId != null && onQuickReply != null) {
+        if (onQuickReply != null) {
+            val targetSessionId = card?.sessionId.orEmpty()
             val sendReply = {
                 val trimmed = replyDraft.trim()
                 if (trimmed.isNotEmpty()) {
-                    onQuickReply(sessionId, trimmed)
+                    onQuickReply(targetSessionId, trimmed)
                     replyDraft = ""
                 }
             }
@@ -380,7 +482,7 @@ fun BubbleQuickChatCard(
                         ) {
                             if (replyDraft.isEmpty()) {
                                 Text(
-                                    "Reply…",
+                                    if (card != null) "Reply…" else "Ask Nomi…",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = colors.onSurfaceVariant,
                                 )

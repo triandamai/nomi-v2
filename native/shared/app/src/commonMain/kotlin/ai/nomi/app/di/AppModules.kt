@@ -98,7 +98,7 @@ val coreModule: Module = module {
     single { ForegroundChat() }
     single { ChatRepository(get(), get(), get(), get(), session = get(), clock = get(), log = ::appLog) }
     single { RealtimeSync(get(), get(), get(), get(), get(), session = get(), log = ::appLog) }
-    single { CompanionController(get(AppScope), get(), get(), get(), log = ::appLog) }
+    single { CompanionController(get(AppScope), get(), get(), get(), sessionRepository = get(), log = ::appLog) }
     single {
         val database = get<NomiDatabase>()
         SessionGate(

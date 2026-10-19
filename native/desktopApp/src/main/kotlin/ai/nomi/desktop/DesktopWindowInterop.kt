@@ -1,14 +1,18 @@
 package ai.nomi.desktop
 
 import androidx.compose.ui.awt.ComposeWindow
+import com.sun.jna.Callback
 import com.sun.jna.Library
 import com.sun.jna.Native
+import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.User32
 import com.sun.jna.platform.win32.WinDef
 import com.sun.jna.platform.win32.WinUser
+import java.awt.Toolkit
+import java.util.concurrent.ConcurrentLinkedQueue
 
-private const val NS_STATUS_WINDOW_LEVEL = 26L
+private const val NS_POPUP_MENU_WINDOW_LEVEL = 101L
 private const val NS_WINDOW_COLLECTION_CAN_JOIN_ALL_SPACES = 1L shl 0
 private const val NS_WINDOW_COLLECTION_STATIONARY = 1L shl 4
 private const val NS_WINDOW_COLLECTION_IGNORES_CYCLE = 1L shl 6
@@ -21,11 +25,21 @@ private const val WS_EX_LAYERED = 0x00080000
 private const val WS_EX_NOACTIVATE = 0x08000000
 
 private interface ObjCRuntime : Library {
-    fun objc_getClass(name: String): Pointer?
+    fun object_getClassName(obj: Pointer): String?
     fun sel_registerName(name: String): Pointer?
     fun objc_msgSend(receiver: Pointer, selector: Pointer): Pointer?
     fun objc_msgSend(receiver: Pointer, selector: Pointer, arg: Long): Pointer?
     fun objc_msgSend(receiver: Pointer, selector: Pointer, arg: Boolean): Pointer?
+    fun objc_msgSend(receiver: Pointer, selector: Pointer, x: Double, y: Double): Pointer?
+}
+
+private interface DispatchWorkCallback : Callback {
+    fun invoke(context: Pointer?)
+}
+
+private interface MacSystemLibrary : Library {
+    fun pthread_main_np(): Int
+    fun dispatch_async_f(queue: Pointer, context: Pointer?, work: DispatchWorkCallback)
 }
 
 /**
@@ -37,12 +51,52 @@ object DesktopWindowInterop {
         runCatching { Native.load("objc", ObjCRuntime::class.java) }.getOrNull()
     }
 
-    fun configureIslandWindow(window: ComposeWindow, os: DesktopOs) {
+    private val macSystem: MacSystemLibrary? by lazy {
+        runCatching { Native.load("System", MacSystemLibrary::class.java) }.getOrNull()
+    }
+
+    private val macMainQueue: Pointer? by lazy {
+        runCatching { NativeLibrary.getInstance("System").getGlobalVariableAddress("_dispatch_main_q") }.getOrNull()
+    }
+
+    private val mainThreadTasks = ConcurrentLinkedQueue<() -> Unit>()
+
+    private val mainQueueDrainCallback = object : DispatchWorkCallback {
+        override fun invoke(context: Pointer?) {
+            while (true) {
+                val task = mainThreadTasks.poll() ?: break
+                runCatching { task() }
+            }
+        }
+    }
+
+    private fun runOnMacMainThread(block: () -> Unit): Boolean {
+        val sys = macSystem ?: return false
+        if (sys.pthread_main_np() != 0) {
+            runCatching { block() }
+            return true
+        }
+        val queue = macMainQueue ?: return false
+        mainThreadTasks.add(block)
+        sys.dispatch_async_f(queue, null, mainQueueDrainCallback)
+        return true
+    }
+
+    fun configureIslandWindow(window: ComposeWindow, os: DesktopOs): Boolean =
         runCatching {
             when (os) {
                 DesktopOs.MacOS -> configureMacIslandWindow(window)
                 DesktopOs.Windows -> configureWindowsIslandWindow(window)
-                else -> Unit
+                else -> true
+            }
+        }.getOrDefault(false)
+
+    fun positionIslandWindow(window: ComposeWindow, os: DesktopOs, xDp: Int, yDp: Int) {
+        runCatching {
+            if (os == DesktopOs.MacOS) {
+                positionMacIslandWindow(window, xDp, yDp)
+            } else {
+                window.setLocation(xDp, yDp)
             }
         }
     }
@@ -57,56 +111,81 @@ object DesktopWindowInterop {
         }
     }
 
-    private fun resolveNsWindow(window: ComposeWindow): Pointer? {
-        val handle = window.windowHandle
+    private fun resolveNsWindow(handle: Long): Pointer? {
         if (handle == 0L) return null
         val ptr = Pointer(handle)
         val runtime = objc ?: return ptr
-        val windowSel = runtime.sel_registerName("window") ?: return ptr
-        // ComposeWindow.windowHandle on macOS is an NSWindow* (or NSView* on older builds; respondsToSelector guards it).
-        val respondsSel = runtime.sel_registerName("respondsToSelector:")
-        if (respondsSel != null) {
-            val setLevelSel = runtime.sel_registerName("setLevel:")
-            if (setLevelSel != null && runtime.objc_msgSend(ptr, respondsSel, Pointer.nativeValue(setLevelSel)) != null) {
-                return ptr
-            }
+        val className = runCatching { runtime.object_getClassName(ptr) }.getOrNull().orEmpty()
+        if (className.contains("Window", ignoreCase = true)) {
+            return ptr
         }
+        val windowSel = runtime.sel_registerName("window") ?: return ptr
         return runtime.objc_msgSend(ptr, windowSel) ?: ptr
     }
 
-    private fun configureMacIslandWindow(window: ComposeWindow) {
+    private fun configureMacIslandWindow(window: ComposeWindow): Boolean {
+        val runtime = objc ?: return false
+        val handle = window.windowHandle
+        if (handle == 0L) return false
+        return runOnMacMainThread {
+            val nsWindow = resolveNsWindow(handle) ?: return@runOnMacMainThread
+            runtime.sel_registerName("setLevel:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, NS_POPUP_MENU_WINDOW_LEVEL)
+            }
+            val behavior = NS_WINDOW_COLLECTION_CAN_JOIN_ALL_SPACES or
+                NS_WINDOW_COLLECTION_STATIONARY or
+                NS_WINDOW_COLLECTION_IGNORES_CYCLE or
+                NS_WINDOW_COLLECTION_FULL_SCREEN_AUXILIARY
+            runtime.sel_registerName("setCollectionBehavior:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, behavior)
+            }
+            runtime.sel_registerName("setHasShadow:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, false)
+            }
+            runtime.sel_registerName("setMovable:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, false)
+            }
+        }
+    }
+
+    private fun positionMacIslandWindow(window: ComposeWindow, xDp: Int, yDp: Int) {
         val runtime = objc ?: return
-        val nsWindow = resolveNsWindow(window) ?: return
-        runtime.sel_registerName("setLevel:")?.let { sel ->
-            runtime.objc_msgSend(nsWindow, sel, NS_STATUS_WINDOW_LEVEL)
-        }
-        val behavior = NS_WINDOW_COLLECTION_CAN_JOIN_ALL_SPACES or
-            NS_WINDOW_COLLECTION_STATIONARY or
-            NS_WINDOW_COLLECTION_IGNORES_CYCLE or
-            NS_WINDOW_COLLECTION_FULL_SCREEN_AUXILIARY
-        runtime.sel_registerName("setCollectionBehavior:")?.let { sel ->
-            runtime.objc_msgSend(nsWindow, sel, behavior)
-        }
-        runtime.sel_registerName("setHasShadow:")?.let { sel ->
-            runtime.objc_msgSend(nsWindow, sel, false)
+        val handle = window.windowHandle
+        if (handle == 0L) return
+        val primaryHeight = runCatching { Toolkit.getDefaultToolkit().screenSize.height.toDouble() }.getOrNull() ?: return
+        val cocoaX = xDp.toDouble()
+        val cocoaTopY = primaryHeight - yDp.toDouble()
+        runOnMacMainThread {
+            val nsWindow = resolveNsWindow(handle) ?: return@runOnMacMainThread
+            runtime.sel_registerName("setLevel:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, NS_POPUP_MENU_WINDOW_LEVEL)
+            }
+            runtime.sel_registerName("setFrameTopLeftPoint:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, cocoaX, cocoaTopY)
+            }
         }
     }
 
     private fun setMacClickThrough(window: ComposeWindow, clickThrough: Boolean) {
         val runtime = objc ?: return
-        val nsWindow = resolveNsWindow(window) ?: return
-        runtime.sel_registerName("setIgnoresMouseEvents:")?.let { sel ->
-            runtime.objc_msgSend(nsWindow, sel, clickThrough)
+        val handle = window.windowHandle
+        if (handle == 0L) return
+        runOnMacMainThread {
+            val nsWindow = resolveNsWindow(handle) ?: return@runOnMacMainThread
+            runtime.sel_registerName("setIgnoresMouseEvents:")?.let { sel ->
+                runtime.objc_msgSend(nsWindow, sel, clickThrough)
+            }
         }
     }
 
-    private fun configureWindowsIslandWindow(window: ComposeWindow) {
+    private fun configureWindowsIslandWindow(window: ComposeWindow): Boolean {
         val handle = window.windowHandle
-        if (handle == 0L) return
+        if (handle == 0L) return false
         val hwnd = WinDef.HWND(Pointer(handle))
         val current = User32.INSTANCE.GetWindowLong(hwnd, WinUser.GWL_EXSTYLE)
         val updated = current or WS_EX_TOOLWINDOW or WS_EX_NOACTIVATE or WS_EX_TOPMOST or WS_EX_LAYERED
         User32.INSTANCE.SetWindowLong(hwnd, WinUser.GWL_EXSTYLE, updated)
+        return true
     }
 
     private fun setWindowsClickThrough(window: ComposeWindow, clickThrough: Boolean) {

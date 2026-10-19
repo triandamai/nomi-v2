@@ -81,3 +81,33 @@ fun isInsideDismissTarget(
     val distance = hypot((bubbleCenterX - target.x).toDouble(), (bubbleCenterY - target.y).toDouble())
     return distance <= captureRadiusPx
 }
+
+/**
+ * Computes the top-left window `(x, y)` for an overlay view of measured size `([viewWidthPx], [viewHeightPx])`
+ * given the collapsed bubble's anchor position [bubbleAnchor] (size [bubbleSizePx]) and [dockedRight],
+ * ensuring that when the bubble expands or peeks, its wider/taller card shifts inward to stay completely inside [area].
+ */
+fun resolveOverlayWindowPosition(
+    bubbleAnchor: BubblePointPx,
+    bubbleSizePx: Int,
+    viewWidthPx: Int,
+    viewHeightPx: Int,
+    dockedRight: Boolean,
+    area: ScreenAreaPx,
+): BubblePointPx {
+    val effectiveW = viewWidthPx.coerceAtLeast(bubbleSizePx)
+    val effectiveH = viewHeightPx.coerceAtLeast(bubbleSizePx)
+    val minX = area.marginPx
+    val maxX = (area.widthPx - effectiveW - area.marginPx).coerceAtLeast(minX)
+    val rawX = if (dockedRight) {
+        bubbleAnchor.x + bubbleSizePx - effectiveW
+    } else {
+        bubbleAnchor.x
+    }
+    val minY = area.topInsetPx + area.marginPx
+    val maxY = (area.heightPx - area.bottomInsetPx - effectiveH - area.marginPx).coerceAtLeast(minY)
+    return BubblePointPx(
+        x = rawX.coerceIn(minX, maxX),
+        y = bubbleAnchor.y.coerceIn(minY, maxY),
+    )
+}

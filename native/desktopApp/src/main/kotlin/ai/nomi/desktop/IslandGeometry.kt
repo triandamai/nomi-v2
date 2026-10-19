@@ -2,15 +2,17 @@ package ai.nomi.desktop
 
 import androidx.compose.ui.unit.IntRect
 
-const val ISLAND_COLLAPSED_WIDTH_DP = 172
-const val ISLAND_WORKING_WIDTH_DP = 248
-const val ISLAND_EXPANDED_WIDTH_DP = 360
-const val ISLAND_COLLAPSED_HEIGHT_DP = 36
-const val ISLAND_EXPANDED_HEIGHT_DP = 180
+const val ISLAND_COLLAPSED_WIDTH_DP = 148
+const val ISLAND_WORKING_WIDTH_DP = 264
+const val ISLAND_EXPANDED_WIDTH_DP = 408
+const val ISLAND_COLLAPSED_HEIGHT_DP = 28
+const val ISLAND_EXPANDED_HEIGHT_DP = 216
 const val ISLAND_WINDOW_PADDING_DP = 16
 const val ISLAND_TOP_GAP_DP = 6
-const val ISLAND_NOTCH_MARGIN_DP = 28
+const val ISLAND_NOTCH_INSET_DP = 24
+const val MIN_NOTCH_PILL_WIDTH_DP = 120
 const val DEFAULT_MENU_BAR_HEIGHT_DP = 28
+const val DEFAULT_MAC_NOTCH_WIDTH_DP = 188
 private const val HALF = 2
 
 /** Bounds and top-edge characteristics of one desktop monitor in dp. */
@@ -53,8 +55,8 @@ fun selectDisplayForCursor(
 /**
  * Computes the island window placement and current pill hit rect on [display].
  *
- * - On a notched Mac (`notchWidthDp != null`), the island hugs `y = display.yDp` and its collapsed width is at least
- *   `notchWidthDp + 2 * ISLAND_NOTCH_MARGIN_DP`.
+ * - On a notched Mac (`notchWidthDp != null`), the island hugs `y = display.yDp` and its collapsed width is smaller
+ *   than `notchWidthDp` so it stays tucked inside the notch until hovered.
  * - On a non-notched screen, the island sits at `display.yDp + display.menuBarHeightDp + ISLAND_TOP_GAP_DP`.
  */
 fun computeIslandPlacement(
@@ -63,7 +65,7 @@ fun computeIslandPlacement(
     isWorking: Boolean = false,
 ): IslandPlacementDp {
     val collapsedWidth = display.notchWidthDp
-        ?.let { maxOf(ISLAND_COLLAPSED_WIDTH_DP, it + ISLAND_NOTCH_MARGIN_DP * HALF) }
+        ?.let { minOf(ISLAND_COLLAPSED_WIDTH_DP, (it - ISLAND_NOTCH_INSET_DP).coerceAtLeast(MIN_NOTCH_PILL_WIDTH_DP)) }
         ?: ISLAND_COLLAPSED_WIDTH_DP
     val activePillWidth = when {
         isExpanded -> ISLAND_EXPANDED_WIDTH_DP
@@ -82,12 +84,22 @@ fun computeIslandPlacement(
     }
     val windowY = pillTopInScreen
 
-    val pillLeftInScreen = display.xDp + (display.widthDp - activePillWidth) / HALF
+    val hoverWidth = if (!isExpanded && display.notchWidthDp != null) {
+        maxOf(activePillWidth, display.notchWidthDp)
+    } else {
+        activePillWidth
+    }
+    val hoverHeight = if (!isExpanded && display.notchWidthDp != null) {
+        maxOf(activePillHeight, display.menuBarHeightDp)
+    } else {
+        activePillHeight
+    }
+    val pillLeftInScreen = display.xDp + (display.widthDp - hoverWidth) / HALF
     val pillRect = IntRect(
         left = pillLeftInScreen,
         top = pillTopInScreen,
-        right = pillLeftInScreen + activePillWidth,
-        bottom = pillTopInScreen + activePillHeight,
+        right = pillLeftInScreen + hoverWidth,
+        bottom = pillTopInScreen + hoverHeight,
     )
 
     return IslandPlacementDp(
@@ -97,5 +109,26 @@ fun computeIslandPlacement(
         windowHeightDp = windowHeight,
         collapsedPillWidthDp = collapsedWidth,
         pillBoundsInScreenDp = pillRect,
+    )
+}
+
+/**
+ * Combines the target [placement] hit rect with the window's actual top-Y on screen (`actualWindowTopYDp`), so even if
+ * the OS window manager clamped the window slightly below `y = 0`, hovering either the top notch (`y = 0`) or the
+ * rendered pill triggers hover expansion.
+ */
+fun resolveLivePillBounds(
+    placement: IslandPlacementDp,
+    actualWindowTopYDp: Int?,
+    isExpanded: Boolean,
+): IntRect {
+    val base = placement.pillBoundsInScreenDp
+    if (actualWindowTopYDp == null) return base
+    val activeHeight = if (isExpanded) ISLAND_EXPANDED_HEIGHT_DP else ISLAND_COLLAPSED_HEIGHT_DP
+    return IntRect(
+        left = base.left,
+        top = minOf(base.top, actualWindowTopYDp),
+        right = base.right,
+        bottom = maxOf(base.bottom, actualWindowTopYDp + activeHeight),
     )
 }

@@ -62,4 +62,21 @@ class BubblePhysicsTest {
             ),
         )
     }
+
+    @Test
+    fun remeasuresExpandedOverlayWindowPositionInsideScreenBounds() {
+        val rightDockedAnchor = BubblePointPx(x = 1080 - bubbleSize - 24, y = 2100)
+        val expandedWidth = 840
+        val expandedHeight = 600
+        val resolved = resolveOverlayWindowPosition(
+            bubbleAnchor = rightDockedAnchor,
+            bubbleSizePx = bubbleSize,
+            viewWidthPx = expandedWidth,
+            viewHeightPx = expandedHeight,
+            dockedRight = true,
+            area = area,
+        )
+        assertEquals(1080 - expandedWidth - 24, resolved.x)
+        assertEquals(2400 - 100 - expandedHeight - 24, resolved.y)
+    }
 }

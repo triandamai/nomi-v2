@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,7 +42,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.delay
 import org.koin.core.context.GlobalContext
 import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
@@ -57,6 +58,8 @@ private const val TRAY_EYE_RADIUS = 0.06f
 private const val HALF_F = 2f
 private const val TRAY_PRIMARY_ARGB = 0xFF5BE08FL
 private const val TRAY_INK_ARGB = 0xFF08100CL
+private const val HANDLE_POLL_MS = 16L
+private const val HANDLE_MAX_ATTEMPTS = 60
 
 private object NomiTrayPainter : Painter() {
     override val intrinsicSize: Size = Size(TRAY_ICON_SIZE, TRAY_ICON_SIZE)
@@ -85,7 +88,6 @@ fun main(args: Array<String>) {
         val companion = remember(koin) { koin.get<CompanionController>() }
         val appearance = remember(koin) { koin.get<AppearanceRepository>() }
 
-        val signedIn by gate.signedIn.collectAsState()
         val islandEnabled by companion.islandEnabled.collectAsState()
         val snoozed by companion.snoozed.collectAsState()
         val uiState by companion.uiState.collectAsState()
@@ -128,7 +130,7 @@ fun main(args: Array<String>) {
             }
         }
 
-        val showIsland = signedIn && islandEnabled && !snoozed && os.supportsIsland && uiState !is CompanionUiState.Snoozed
+        val showIsland = islandEnabled && !snoozed && os.supportsIsland && uiState !is CompanionUiState.Snoozed
         if (showIsland) {
             DesktopIslandWindow(
                 os = os,
@@ -153,7 +155,12 @@ private fun DesktopIslandWindow(
     val isExpanded = uiState is CompanionUiState.Expanded || uiState is CompanionUiState.Peeking
     val isWorking = uiState is CompanionUiState.Working
 
-    var currentPillBounds by remember { mutableStateOf(IntRect.Zero) }
+    val displays = remember(os) { readDesktopDisplays(os) }
+    val initialPlacement = remember(displays) {
+        computeIslandPlacement(displays.first(), isExpanded = false, isWorking = false)
+    }
+
+    var currentPillBounds by remember { mutableStateOf(initialPlacement.pillBoundsInScreenDp) }
     val tracker = remember(scope) {
         CursorTracker(scope = scope, pillBoundsProvider = { currentPillBounds })
     }
@@ -163,10 +170,8 @@ private fun DesktopIslandWindow(
     }
     val cursorSample by tracker.sample.collectAsState()
 
-    val displays = remember { readDesktopDisplays() }
     val activeDisplay = selectDisplayForCursor(displays, cursorSample?.xDp, cursorSample?.yDp)
     val placement = computeIslandPlacement(activeDisplay, isExpanded = isExpanded, isWorking = isWorking)
-    currentPillBounds = placement.pillBoundsInScreenDp
 
     LaunchedEffect(cursorSample?.insideIsland) {
         val inside = cursorSample?.insideIsland ?: false
@@ -200,13 +205,26 @@ private fun DesktopIslandWindow(
         transparent = true,
         alwaysOnTop = true,
         resizable = false,
-        focusable = isExpanded,
+        focusable = true,
     ) {
-        LaunchedEffect(window) {
+        LaunchedEffect(window, placement.windowXDp, placement.windowYDp) {
+            var attempts = 0
+            while (window.windowHandle == 0L && attempts < HANDLE_MAX_ATTEMPTS) {
+                delay(HANDLE_POLL_MS)
+                attempts++
+            }
+            delay(HANDLE_POLL_MS)
             DesktopWindowInterop.configureIslandWindow(window, os)
+            DesktopWindowInterop.positionIslandWindow(window, os, placement.windowXDp, placement.windowYDp)
+            delay(HANDLE_POLL_MS)
+            val actualWindowY = runCatching { if (window.isShowing) window.locationOnScreen.y else null }.getOrNull()
+            currentPillBounds = resolveLivePillBounds(placement, actualWindowY, isExpanded)
         }
+
         val insidePill = cursorSample?.insideIsland ?: false
-        LaunchedEffect(window, insidePill, isExpanded) {
+        LaunchedEffect(window, insidePill, isExpanded, placement) {
+            val actualWindowY = runCatching { if (window.isShowing) window.locationOnScreen.y else null }.getOrNull()
+            currentPillBounds = resolveLivePillBounds(placement, actualWindowY, isExpanded)
             DesktopWindowInterop.setIslandClickThrough(
                 window = window,
                 os = os,
@@ -233,6 +251,7 @@ private fun DesktopIslandWindow(
                     },
                     lookAt = cursorSample?.lookAt,
                     collapsedWidth = placement.collapsedPillWidthDp.dp,
+                    notchMode = activeDisplay.notchWidthDp != null,
                     onQuickReply = companion::sendQuickReply,
                     onClickCollapsed = { companion.stateMachine.toggleExpanded() },
                 )
@@ -241,14 +260,23 @@ private fun DesktopIslandWindow(
     }
 }
 
-private fun readDesktopDisplays(): List<DisplayBoundsDp> {
+private fun readDesktopDisplays(os: DesktopOs): List<DisplayBoundsDp> {
+    val defaultNotch = if (os == DesktopOs.MacOS) DEFAULT_MAC_NOTCH_WIDTH_DP else null
     val devices = runCatching { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.toList() }
         .getOrDefault(emptyList())
     if (devices.isEmpty()) {
-        return listOf(DisplayBoundsDp(xDp = 0, yDp = 0, widthDp = 1440, heightDp = 900))
+        return listOf(
+            DisplayBoundsDp(
+                xDp = 0,
+                yDp = 0,
+                widthDp = 1440,
+                heightDp = 900,
+                notchWidthDp = defaultNotch,
+            ),
+        )
     }
     val toolkit = runCatching { Toolkit.getDefaultToolkit() }.getOrNull()
-    return devices.map { device ->
+    return devices.mapIndexed { index, device ->
         val config = device.defaultConfiguration
         val bounds = config.bounds
         val insets = toolkit?.let { runCatching { it.getScreenInsets(config) }.getOrNull() }
@@ -259,6 +287,7 @@ private fun readDesktopDisplays(): List<DisplayBoundsDp> {
             widthDp = bounds.width,
             heightDp = bounds.height,
             menuBarHeightDp = topInset,
+            notchWidthDp = if (index == 0) defaultNotch else null,
         )
     }
 }
