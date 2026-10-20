@@ -65,6 +65,33 @@ object NomiIcons {
     val Check = glyph(polyline(5f, 12.5f, 10f, 17.5f, 19f, 6.5f))
     val Refresh = glyph("M20 11a8 8 0 1 0-2.3 5.7", polyline(20f, 4f, 20f, 11f, 13f, 11f))
     val Pencil = glyph("M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z")
+    val Wallet = glyph(
+        "M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h14a1 1 0 0 1 1 1v3",
+        "M3 6v12a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-3",
+        "M21 12h-4a2 2 0 0 0 0 4h4z",
+    )
+    val Link = glyph(
+        "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1",
+        "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1",
+    )
+    val Copy = glyph(
+        "M9 10.5a1.5 1.5 0 0 1 1.5-1.5h8a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5z",
+        "M5 15V6a2 2 0 0 1 2-2h9",
+    )
+    val Delete = glyph("M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3")
+    val ChevronDown = glyph("M6 9l6 6 6-6")
+    val ChevronUp = glyph("M6 15l6-6 6 6")
+    val Sparkle = glyph("M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z")
+    val Clock = glyph("M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0", "M12 7v5l3 3")
+    val Folder = glyph("M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z")
+    val Lock = glyph(rect(5f, 11f, 14f, 10f, 2f), "M8 11V8a4 4 0 0 1 8 0v3")
+    val Pin = glyph("M9 4h6l-1 5 3 3v2H7v-2l3-3z", "M12 14v6")
+    val DragHandle = glyph(
+        line(8f, 6f, 16f, 6f),
+        line(8f, 12f, 16f, 12f),
+        line(8f, 18f, 16f, 18f),
+    )
+    val Card = glyph(rect(3f, 5f, 18f, 14f, 2f), "M3 10h18", "M7 15h4")
 }
 
 /**

@@ -29,6 +29,11 @@ data class ProfileDto(
 data class PreferencesDto(
     val theme: String = "system",
     @SerialName("accent_color") val accentColor: String = "canopy",
+    val timezone: String = "UTC",
+    @SerialName("home_layout") val homeLayout: String? = null,
+    @SerialName("drawer_pins") val drawerPins: List<String>? = null,
+    @SerialName("drawer_recents") val drawerRecents: Boolean = true,
+    @SerialName("drawer_recents_limit") val drawerRecentsLimit: Int = 10,
 )
 
 /** `UpdatePreferencesRequest` in routes/profile.rs. */
@@ -36,6 +41,11 @@ data class PreferencesDto(
 data class UpdatePreferencesDto(
     val theme: String? = null,
     @SerialName("accent_color") val accentColor: String? = null,
+    val timezone: String? = null,
+    @SerialName("home_layout") val homeLayout: String? = null,
+    @SerialName("drawer_pins") val drawerPins: List<String>? = null,
+    @SerialName("drawer_recents") val drawerRecents: Boolean? = null,
+    @SerialName("drawer_recents_limit") val drawerRecentsLimit: Int? = null,
 )
 
 /**
@@ -56,9 +66,53 @@ data class CrewMemberDto(
 )
 
 @Serializable
+data class OutItemDto(
+    val kind: String,
+    val agent: String,
+    val title: String,
+    val detail: String,
+    @SerialName("session_id") val sessionId: String? = null,
+    val at: String,
+)
+
+@Serializable
+data class TodayItemDto(
+    val id: String,
+    @SerialName("run_at") val runAt: String,
+    val label: String,
+    val agent: String,
+    val recurrence: String? = null,
+)
+
+@Serializable
+data class PlanItemDto(
+    val kind: String,
+    val title: String,
+    val agent: String,
+    val done: Long,
+    val total: Long,
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class HomeSummaryDto(
+    val since: String = "",
+    val timezone: String = "UTC",
+    @SerialName("while_you_were_out") val whileYouWereOut: List<OutItemDto> = emptyList(),
+    val today: List<TodayItemDto> = emptyList(),
+    val plans: List<PlanItemDto> = emptyList(),
+    @SerialName("while_you_were_out_total") val whileYouWereOutTotal: Int = 0,
+    @SerialName("today_total") val todayTotal: Int = 0,
+    @SerialName("plans_total") val plansTotal: Int = 0,
+)
+
+@Serializable
 internal data class CrewResponse(val agents: List<CrewMemberDto>)
 
-/** `/api/profile`, `/api/agents` and `/api/preferences`: who the person is, their crew, and their appearance choices. */
+private const val HOME_SUMMARY_PATH = "/api/home"
+
+/** `/api/profile`, `/api/agents`, `/api/preferences` and `/api/home`: who the person is, their crew, appearance, and status. */
 interface HomeApi {
     suspend fun profile(): ProfileDto
     suspend fun crew(): List<CrewMemberDto>
@@ -67,6 +121,7 @@ interface HomeApi {
         theme = request.theme ?: "system",
         accentColor = request.accentColor ?: "canopy",
     )
+    suspend fun summary(): HomeSummaryDto = HomeSummaryDto()
 }
 
 class HttpHomeApi(private val client: HttpClient, private val config: ApiConfig) : HomeApi {
@@ -75,6 +130,8 @@ class HttpHomeApi(private val client: HttpClient, private val config: ApiConfig)
     override suspend fun crew(): List<CrewMemberDto> = get<CrewResponse>(CREW_PATH, "crew").agents
 
     override suspend fun preferences(): PreferencesDto = get(PREFERENCES_PATH, "preferences")
+
+    override suspend fun summary(): HomeSummaryDto = get(HOME_SUMMARY_PATH, "home summary")
 
     override suspend fun updatePreferences(request: UpdatePreferencesDto): PreferencesDto {
         val response = client.put(config.url(PREFERENCES_PATH)) {

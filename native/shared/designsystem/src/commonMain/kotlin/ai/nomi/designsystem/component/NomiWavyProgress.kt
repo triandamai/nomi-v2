@@ -17,12 +17,13 @@ fun NomiWavyProgress(
     progress: () -> Float,
     contentDescription: String,
     modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
 ) {
     val colors = MaterialTheme.colorScheme
     LinearWavyProgressIndicator(
         progress = progress,
         modifier = modifier.semantics { this.contentDescription = contentDescription },
-        color = colors.primary,
+        color = color,
         trackColor = colors.surfaceContainerHighest,
     )
 }

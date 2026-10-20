@@ -22,6 +22,7 @@ import ai.nomi.designsystem.theme.NomiTheme
 import ai.nomi.designsystem.theme.toFittedBrush
 import ai.nomi.network.CrewMemberDto
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -63,6 +65,7 @@ const val HOME_SCREEN_TAG = "home-screen"
 
 /** `.home__row--narrow`: the stage layout's centred column. */
 private val NarrowMaxWidth = 720.dp
+private val WideMaxWidth = 1180.dp
 private val PagePadding = 20.dp
 private val SectionGap = 36.dp
 private val AskGap = 20.dp
@@ -87,21 +90,29 @@ private const val DESKTOP_HINT = "Enter to send · Shift+Enter for a new line"
 private val Suggestions = listOf("Summarize this week’s spending", "Plan my Saturday", "Start a small website project", "Remind me to stretch at 4pm")
 
 @Composable
-fun HomeScreen(viewModel: HomeViewModel, onOpenChat: (String) -> Unit, onOpenChats: () -> Unit, modifier: Modifier = Modifier) {
+fun HomeScreen(
+    viewModel: HomeViewModel,
+    onOpenChat: (String) -> Unit,
+    onOpenChats: () -> Unit,
+    onOpenReminders: () -> Unit = {},
+    onOpenPlans: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     HomeContent(
-        state,
+        state = state,
         onDraftChange = viewModel::onDraftChange,
         onSend = { viewModel.startChat(onOpenChat) },
         onSuggestion = viewModel::useSuggestion,
         onOpenChat = onOpenChat,
         onOpenChats = onOpenChats,
+        onOpenReminders = onOpenReminders,
+        onOpenPlans = onOpenPlans,
         modifier = modifier,
     )
 }
 
-/** Home in the web's default "stage" layout: hero greeting and composer, the crew strip, then recent chats. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Configurable Home page supporting stage, classic, and today layouts. */
 @Composable
 fun HomeContent(
     state: HomeUiState,
@@ -111,17 +122,122 @@ fun HomeContent(
     onOpenChat: (String) -> Unit,
     onOpenChats: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenReminders: () -> Unit = {},
+    onOpenPlans: () -> Unit = {},
     nowMs: Long = Clock.System.now().toEpochMilliseconds(),
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).testTag(HOME_SCREEN_TAG)) {
         val heroSp = (maxWidth.value * HERO_WIDTH_SHARE).coerceIn(HERO_MIN_SP, HERO_MAX_SP)
+        val isWide = maxWidth >= 840.dp
         Column(
             Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).safeDrawingPadding().padding(PagePadding),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Column(Modifier.widthIn(max = NarrowMaxWidth).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SectionGap)) {
-                Hero(state, heroSp)
-                Column(verticalArrangement = Arrangement.spacedBy(AskGap)) {
+            when (state.homeLayout) {
+                "classic" -> ClassicLayout(
+                    state = state,
+                    isWide = isWide,
+                    nowMs = nowMs,
+                    onDraftChange = onDraftChange,
+                    onSend = onSend,
+                    onSuggestion = onSuggestion,
+                    onOpenChat = onOpenChat,
+                    onOpenChats = onOpenChats,
+                    onOpenReminders = onOpenReminders,
+                    onOpenPlans = onOpenPlans,
+                )
+                "today" -> TodayLayout(
+                    state = state,
+                    isWide = isWide,
+                    nowMs = nowMs,
+                    onDraftChange = onDraftChange,
+                    onSend = onSend,
+                    onOpenChat = onOpenChat,
+                    onOpenChats = onOpenChats,
+                    onOpenReminders = onOpenReminders,
+                    onOpenPlans = onOpenPlans,
+                )
+                else -> StageLayout(
+                    state = state,
+                    heroSp = heroSp,
+                    nowMs = nowMs,
+                    onDraftChange = onDraftChange,
+                    onSend = onSend,
+                    onSuggestion = onSuggestion,
+                    onOpenChat = onOpenChat,
+                    onOpenChats = onOpenChats,
+                    onOpenReminders = onOpenReminders,
+                    onOpenPlans = onOpenPlans,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StageLayout(
+    state: HomeUiState,
+    heroSp: Float,
+    nowMs: Long,
+    onDraftChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onSuggestion: (String) -> Unit,
+    onOpenChat: (String) -> Unit,
+    onOpenChats: () -> Unit,
+    onOpenReminders: () -> Unit,
+    onOpenPlans: () -> Unit,
+) {
+    Column(Modifier.widthIn(max = NarrowMaxWidth).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SectionGap)) {
+        Hero(state, heroSp)
+        Column(verticalArrangement = Arrangement.spacedBy(AskGap)) {
+            Composer(
+                value = state.draft,
+                onValueChange = onDraftChange,
+                onSend = onSend,
+                placeholder = PLACEHOLDER,
+                sendLabel = START_LABEL,
+                sending = state.sending,
+                hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
+            )
+            state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
+                Suggestions.forEach { NomiSuggestionChip(it, onClick = { onSuggestion(it) }) }
+            }
+        }
+        if (state.crew.isNotEmpty()) CrewStrip(state)
+        HomeStatusCards(
+            summary = state.summary,
+            onOpenReminders = onOpenReminders,
+            onOpenPlans = onOpenPlans,
+            onOpenChat = onOpenChat,
+        )
+        Recent(state.recent.take(5), nowMs, onOpenChat, onOpenChats)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ClassicLayout(
+    state: HomeUiState,
+    isWide: Boolean,
+    nowMs: Long,
+    onDraftChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onSuggestion: (String) -> Unit,
+    onOpenChat: (String) -> Unit,
+    onOpenChats: () -> Unit,
+    onOpenReminders: () -> Unit,
+    onOpenPlans: () -> Unit,
+) {
+    Column(Modifier.widthIn(max = WideMaxWidth).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SectionGap)) {
+        if (isWide) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(AskGap)) {
+                    LargeGreeting(state)
                     Composer(
                         value = state.draft,
                         onValueChange = onDraftChange,
@@ -132,14 +248,137 @@ fun HomeContent(
                         hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
                     )
                     state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
                         Suggestions.forEach { NomiSuggestionChip(it, onClick = { onSuggestion(it) }) }
                     }
                 }
-                if (state.crew.isNotEmpty()) CrewStrip(state)
-                Recent(state.recent, nowMs, onOpenChat, onOpenChats)
+                if (state.crew.isNotEmpty()) {
+                    Column(Modifier.weight(1f)) {
+                        CrewCardsGrid(state.crew.take(4))
+                    }
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(AskGap)) {
+                LargeGreeting(state)
+                Composer(
+                    value = state.draft,
+                    onValueChange = onDraftChange,
+                    onSend = onSend,
+                    placeholder = PLACEHOLDER,
+                    sendLabel = START_LABEL,
+                    sending = state.sending,
+                    hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
+                )
+                state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
+                    Suggestions.forEach { NomiSuggestionChip(it, onClick = { onSuggestion(it) }) }
+                }
+            }
+            if (state.crew.isNotEmpty()) {
+                CrewCardsGrid(state.crew.take(4))
             }
         }
+
+        HomeStatusCards(
+            summary = state.summary,
+            onOpenReminders = onOpenReminders,
+            onOpenPlans = onOpenPlans,
+            onOpenChat = onOpenChat,
+        )
+
+        RecentCardsGrid(
+            sessions = state.recent.take(6),
+            nowMs = nowMs,
+            onOpenChat = onOpenChat,
+            onOpenChats = onOpenChats,
+        )
+    }
+}
+
+@Composable
+private fun TodayLayout(
+    state: HomeUiState,
+    isWide: Boolean,
+    nowMs: Long,
+    onDraftChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onOpenChat: (String) -> Unit,
+    onOpenChats: () -> Unit,
+    onOpenReminders: () -> Unit,
+    onOpenPlans: () -> Unit,
+) {
+    Column(Modifier.widthIn(max = WideMaxWidth).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SectionGap)) {
+        LargeGreeting(state)
+
+        HomeStatusCards(
+            summary = state.summary,
+            onOpenReminders = onOpenReminders,
+            onOpenPlans = onOpenPlans,
+            onOpenChat = onOpenChat,
+        )
+
+        if (isWide) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                Column(Modifier.weight(1.4f), verticalArrangement = Arrangement.spacedBy(SectionGap)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AskGap)) {
+                        Composer(
+                            value = state.draft,
+                            onValueChange = onDraftChange,
+                            onSend = onSend,
+                            placeholder = PLACEHOLDER,
+                            sendLabel = START_LABEL,
+                            sending = state.sending,
+                            hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
+                        )
+                        state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                    }
+                    Recent(state.recent.take(5), nowMs, onOpenChat, onOpenChats)
+                }
+                if (state.crew.isNotEmpty()) {
+                    Column(Modifier.weight(1f)) {
+                        CrewCardsGrid(state.crew.take(6))
+                    }
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(AskGap)) {
+                Composer(
+                    value = state.draft,
+                    onValueChange = onDraftChange,
+                    onSend = onSend,
+                    placeholder = PLACEHOLDER,
+                    sendLabel = START_LABEL,
+                    sending = state.sending,
+                    hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
+                )
+                state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            }
+            if (state.crew.isNotEmpty()) {
+                CrewCardsGrid(state.crew.take(6))
+            }
+            Recent(state.recent.take(5), nowMs, onOpenChat, onOpenChats)
+        }
+    }
+}
+
+@Composable
+private fun LargeGreeting(state: HomeUiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            state.greeting,
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            state.subtitle,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -208,16 +447,29 @@ private fun CrewStrip(state: HomeUiState) {
 }
 
 @Composable
-private fun CrewCard(member: CrewMemberDto) {
+private fun CrewCardsGrid(crew: List<CrewMemberDto>) {
+    Column(verticalArrangement = Arrangement.spacedBy(CrewCardGap)) {
+        NomiSectionHeader("Your crew")
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            crew.forEach { member ->
+                CrewCard(member, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+private fun CrewCard(member: CrewMemberDto, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     val badge = when (member.state) {
         "waiting" -> "Needs you"
         "done" -> "Done"
         else -> null
     }
+    val defaultWidth = if (badge != null) CrewCardBadgedWidth else CrewCardWidth
     Row(
-        Modifier
-            .width(if (badge != null) CrewCardBadgedWidth else CrewCardWidth)
+        modifier
+            .then(if (modifier == Modifier) Modifier.width(defaultWidth) else Modifier)
             .clip(MaterialTheme.shapes.extraLarge)
             .background(colors.surfaceContainerLowest.copy(alpha = CREW_PANEL_ALPHA))
             .padding(start = CrewGap, top = CrewGap, bottom = CrewGap, end = CrewCardGap),
@@ -282,5 +534,92 @@ private fun Recent(sessions: List<Session>, nowMs: Long, onOpenChat: (String) ->
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RecentCardsGrid(
+    sessions: List<Session>,
+    nowMs: Long,
+    onOpenChat: (String) -> Unit,
+    onOpenChats: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(CrewCardGap)) {
+        NomiSectionHeader("Recent") {
+            NomiButton(onClick = onOpenChats, variant = NomiButtonVariant.Text, size = NomiButtonSize.Small) { Text("All chats") }
+        }
+        if (sessions.isEmpty()) {
+            Text("Nothing yet — your chats will show up here.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val isWide = maxWidth >= 540.dp
+                val columns = if (isWide) 2 else 1
+                val chunked = sessions.chunked(columns)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    chunked.forEach { rowSessions ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            rowSessions.forEach { session ->
+                                RecentCard(
+                                    session = session,
+                                    nowMs = nowMs,
+                                    onClick = { onOpenChat(session.id) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (rowSessions.size < columns) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentCard(
+    session: Session,
+    nowMs: Long,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.extraLarge)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AgentShape(NomiIdentity, 28.dp)
+            Text(
+                timeAgo(session.updatedAt, nowMs),
+                style = NomiTheme.metaStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            session.title.ifBlank { "New chat" },
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            session.lastMessagePreview.ifBlank { "No messages yet" },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

@@ -23,7 +23,14 @@ export default defineConfig({
 				// packages' browser builds: `ws`, which the ws-proxy tests use, throws in its own.
 				extends: true,
 				plugins: [svelte()],
-				resolve: { conditions: ['browser'] },
+				resolve: {
+					conditions: ['browser'],
+					// SvelteKit's virtual modules don't exist outside its Vite plugin; drawer components need one.
+					alias: {
+						'$app/state': fileURLToPath(new URL('./src/test-stubs/app-state.ts', import.meta.url)),
+						'$app/environment': fileURLToPath(new URL('./src/test-stubs/app-environment.ts', import.meta.url)),
+					},
+				},
 				test: {
 					name: 'components',
 					include: ['src/lib/components/**/*.test.ts'],

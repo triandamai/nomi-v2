@@ -39,14 +39,81 @@ class HomeApisTest {
     }
 
     @Test
-    fun preferencesReadsAndUpdatesThemeAndAccent() = runTest {
+    fun preferencesReadsAndUpdatesThemeAndAccentAndHomeLayout() = runTest {
         val paths = mutableListOf<String>()
-        val api = api("""{"theme":"dark","accent_color":"coral-reef","timezone":"UTC","language":"en","has_stored_timezone":true,"animated_backdrop":true,"drawer_recents":true,"drawer_recents_limit":10}""", paths = paths)
+        val api = api("""{"theme":"dark","accent_color":"coral-reef","timezone":"UTC","language":"en","has_stored_timezone":true,"animated_backdrop":true,"drawer_recents":true,"drawer_recents_limit":10,"home_layout":"classic","drawer_pins":["money","reminders"]}""", paths = paths)
         val loaded = api.preferences()
-        assertEquals(PreferencesDto(theme = "dark", accentColor = "coral-reef"), loaded)
-        val updated = api.updatePreferences(UpdatePreferencesDto(theme = "dark"))
+        assertEquals(PreferencesDto(theme = "dark", accentColor = "coral-reef", homeLayout = "classic", drawerPins = listOf("money", "reminders"), drawerRecents = true, drawerRecentsLimit = 10), loaded)
+        val updated = api.updatePreferences(UpdatePreferencesDto(theme = "dark", homeLayout = "classic"))
         assertEquals("coral-reef", updated.accentColor)
+        assertEquals("classic", updated.homeLayout)
         assertEquals(listOf("/api/preferences", "/api/preferences"), paths)
+    }
+
+    @Test
+    fun summaryReadsHomeStatusCards() = runTest {
+        val paths = mutableListOf<String>()
+        val summaryJson = """
+            {
+                "since": "2026-10-18T12:00:00Z",
+                "timezone": "America/New_York",
+                "while_you_were_out": [
+                    {"kind": "finished", "agent": "coding", "title": "Build complete", "detail": "App compiled successfully", "session_id": "s-1", "at": "2026-10-18T13:00:00Z"}
+                ],
+                "today": [
+                    {"id": "r-1", "run_at": "2026-10-18T14:00:00Z", "label": "Stretch at 4pm", "agent": "health", "recurrence": "daily"}
+                ],
+                "plans": [
+                    {"kind": "todo", "title": "Weekend chores", "agent": "planning", "done": 2, "total": 5, "session_id": "s-2", "updated_at": "2026-10-18T13:30:00Z"}
+                ],
+                "while_you_were_out_total": 1,
+                "today_total": 1,
+                "plans_total": 1
+            }
+        """.trimIndent()
+        val summary = api(summaryJson, paths = paths).summary()
+        assertEquals("America/New_York", summary.timezone)
+        assertEquals(1, summary.whileYouWereOut.size)
+        assertEquals("Build complete", summary.whileYouWereOut.first().title)
+        assertEquals("s-1", summary.whileYouWereOut.first().sessionId)
+        assertEquals(1, summary.today.size)
+        assertEquals("Stretch at 4pm", summary.today.first().label)
+        assertEquals(1, summary.plans.size)
+        assertEquals(2L, summary.plans.first().done)
+        assertEquals(listOf("/api/home"), paths)
+    }
+
+    @Test
+    fun usageApiReadsBrief() = runTest {
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            paths.add(request.url.encodedPath)
+            respond("""{"plan":{"name":"Pro","monthly_tokens":1000000},"month":"2026-10","tokens_used":420000,"can_upgrade":true}""", HttpStatusCode.OK, json)
+        }
+        val client = nomiHttpClient(engine, config, FakeTokenStore(Tokens("a", "r"))) {}
+        val usageApi = HttpUsageApi(client, config)
+        val brief = usageApi.brief()
+        assertEquals("Pro", brief.plan.name)
+        assertEquals(1000000L, brief.plan.monthlyTokens)
+        assertEquals(420000L, brief.tokensUsed)
+        assertEquals(true, brief.canUpgrade)
+        assertEquals(listOf("/api/usage/brief"), paths)
+    }
+
+    @Test
+    fun projectsApiListsProjects() = runTest {
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            paths.add(request.url.encodedPath)
+            respond("""{"org_id":"o1","projects":[{"id":"p1","session_id":"s1","name":"Alpha Web","description":"Website project","status":"building","created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-02T00:00:00Z","created_by":"Ana","open_issues":3}]}""", HttpStatusCode.OK, json)
+        }
+        val client = nomiHttpClient(engine, config, FakeTokenStore(Tokens("a", "r"))) {}
+        val projectsApi = HttpProjectsApi(client, config)
+        val list = projectsApi.list()
+        assertEquals(1, list.size)
+        assertEquals("Alpha Web", list.first().name)
+        assertEquals("building", list.first().status)
+        assertEquals(listOf("/api/projects"), paths)
     }
 
     @Test

@@ -31,26 +31,35 @@ import kotlin.test.assertNull
 class NavigationTest {
     @get:Rule val rule = createComposeRule()
 
-    private val graph = TestGraph()
+    private lateinit var graph: TestGraph
 
     @BeforeTest
     fun start() {
-        startKoin { modules(graph.modules) }
+        graph = TestGraph()
+        val app = startKoin { modules(graph.modules) }
+        app.koin.get<ai.nomi.data.SessionScope>().open()
     }
 
     @AfterTest
-    fun stop() = stopKoin()
+    fun stop() {
+        kotlinx.coroutines.runBlocking {
+            org.koin.mp.KoinPlatformTools.defaultContext().getOrNull()?.get<ai.nomi.data.SessionScope>()?.close()
+        }
+        stopKoin()
+    }
 
     @Test
     fun links_map_to_routes() {
         assertEquals(Chat("abc"), NomiRoute.fromLink("/chat/abc"))
         assertEquals(Chat("abc"), NomiRoute.fromLink("https://nomi.example/chat/abc?from=push"))
         assertEquals(Notifications, NomiRoute.fromLink("/notifications"))
-        assertEquals(Home, NomiRoute.fromLink("/projects/p1"))
+        assertEquals(ai.nomi.app.nav.Projects, NomiRoute.fromLink("/projects"))
+        assertEquals(ai.nomi.app.nav.Projects, NomiRoute.fromLink("/projects/p1"))
         assertEquals(Home, NomiRoute.fromLink("/"))
         assertNull(NomiRoute.fromLink(""))
         assertEquals(Chat("abc"), NomiRoute.fromLink("nomi://chat/abc"))
         assertEquals(Notifications, NomiRoute.fromLink("nomi://notifications"))
+        assertEquals(ai.nomi.app.nav.Projects, NomiRoute.fromLink("nomi://projects"))
         assertEquals(Home, NomiRoute.fromLink("nomi://"))
         assertEquals(Chat("a b/c"), NomiRoute.fromLink("/chat/a%20b%2Fc"))
         assertEquals(Chat("abc"), NomiRoute.fromLink("http://localhost:8080/chat/abc#latest"))

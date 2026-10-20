@@ -91,10 +91,11 @@ private const val EXPANDED_MAX_LINES = 4
 private const val CAPTURED_SCALE = 1.18f
 private const val NORMAL_SCALE = 1f
 private const val EXPANDED_HEAD_SCALE = 0.92f
-private const val LIQUID_DAMPING_RATIO = 0.72f
-private const val LIQUID_STIFFNESS = 420f
-private const val LIQUID_FADE_MS = 180
-private const val LIQUID_INITIAL_SCALE = 0.35f
+private const val LIQUID_DAMPING_RATIO = 0.76f
+private const val LIQUID_STIFFNESS = 520f
+private const val LIQUID_FADE_IN_MS = 140
+private const val LIQUID_FADE_OUT_MS = 160
+private const val LIQUID_INITIAL_SCALE = 0.68f
 private const val ORIGIN_START = 0f
 private const val ORIGIN_END = 1f
 private const val ORIGIN_TOP = 0f
@@ -150,10 +151,6 @@ fun MessengerBubble(
         dampingRatio = LIQUID_DAMPING_RATIO,
         stiffness = LIQUID_STIFFNESS,
     )
-    val liquidSizeSpec = spring<IntSize>(
-        dampingRatio = LIQUID_DAMPING_RATIO,
-        stiffness = LIQUID_STIFFNESS,
-    )
     val cardOrigin = TransformOrigin(
         pivotFractionX = if (dockedRight) ORIGIN_END else ORIGIN_START,
         pivotFractionY = ORIGIN_TOP,
@@ -175,12 +172,10 @@ fun MessengerBubble(
             if (dockedRight) {
                 AnimatedVisibility(
                     visible = state is CompanionUiState.Peeking && card != null,
-                    enter = fadeIn(tween(LIQUID_FADE_MS)) +
-                        scaleIn(liquidFloatSpec, initialScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
-                        expandIn(liquidSizeSpec, expandFrom = Alignment.CenterEnd, clip = false),
-                    exit = fadeOut(tween(LIQUID_FADE_MS)) +
-                        scaleOut(liquidFloatSpec, targetScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
-                        shrinkOut(liquidSizeSpec, shrinkTowards = Alignment.CenterEnd, clip = false),
+                    enter = fadeIn(tween(LIQUID_FADE_IN_MS)) +
+                        scaleIn(liquidFloatSpec, initialScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin),
+                    exit = fadeOut(tween(LIQUID_FADE_OUT_MS)) +
+                        scaleOut(liquidFloatSpec, targetScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin),
                 ) {
                     card?.let {
                         BubbleSpeechCard(
@@ -208,12 +203,10 @@ fun MessengerBubble(
             if (!dockedRight) {
                 AnimatedVisibility(
                     visible = state is CompanionUiState.Peeking && card != null,
-                    enter = fadeIn(tween(LIQUID_FADE_MS)) +
-                        scaleIn(liquidFloatSpec, initialScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
-                        expandIn(liquidSizeSpec, expandFrom = Alignment.CenterStart, clip = false),
-                    exit = fadeOut(tween(LIQUID_FADE_MS)) +
-                        scaleOut(liquidFloatSpec, targetScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin) +
-                        shrinkOut(liquidSizeSpec, shrinkTowards = Alignment.CenterStart, clip = false),
+                    enter = fadeIn(tween(LIQUID_FADE_IN_MS)) +
+                        scaleIn(liquidFloatSpec, initialScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin),
+                    exit = fadeOut(tween(LIQUID_FADE_OUT_MS)) +
+                        scaleOut(liquidFloatSpec, targetScale = LIQUID_INITIAL_SCALE, transformOrigin = speechOrigin),
                 ) {
                     card?.let {
                         BubbleSpeechCard(
@@ -227,27 +220,17 @@ fun MessengerBubble(
 
         AnimatedVisibility(
             visible = isExpanded,
-            enter = fadeIn(tween(LIQUID_FADE_MS)) +
+            enter = fadeIn(tween(LIQUID_FADE_IN_MS)) +
                 scaleIn(
                     animationSpec = liquidFloatSpec,
                     initialScale = LIQUID_INITIAL_SCALE,
                     transformOrigin = cardOrigin,
-                ) +
-                expandIn(
-                    animationSpec = liquidSizeSpec,
-                    expandFrom = if (dockedRight) Alignment.TopEnd else Alignment.TopStart,
-                    clip = false,
                 ),
-            exit = fadeOut(tween(LIQUID_FADE_MS)) +
+            exit = fadeOut(tween(LIQUID_FADE_OUT_MS)) +
                 scaleOut(
                     animationSpec = liquidFloatSpec,
                     targetScale = LIQUID_INITIAL_SCALE,
                     transformOrigin = cardOrigin,
-                ) +
-                shrinkOut(
-                    animationSpec = liquidSizeSpec,
-                    shrinkTowards = if (dockedRight) Alignment.TopEnd else Alignment.TopStart,
-                    clip = false,
                 ),
         ) {
             BubbleQuickChatCard(

@@ -2,11 +2,16 @@ package ai.nomi.app
 
 import ai.nomi.app.nav.Chat
 import ai.nomi.app.nav.Chats
+import ai.nomi.app.nav.Connections
 import ai.nomi.app.nav.Home
+import ai.nomi.app.nav.Memory
+import ai.nomi.app.nav.Money
 import ai.nomi.app.nav.NomiNavDisplay
 import ai.nomi.app.nav.NomiRoute
 import ai.nomi.app.nav.Notifications
+import ai.nomi.app.nav.Reminders
 import ai.nomi.app.nav.Settings
+import ai.nomi.app.nav.SidebarRoutes
 import ai.nomi.app.nav.SignIn
 import ai.nomi.app.nav.TopLevelRoutes
 import ai.nomi.app.nav.currentTopLevel
@@ -31,16 +36,24 @@ import ai.nomi.data.CompanionSignal
 import ai.nomi.data.NotificationRepository
 import ai.nomi.data.RealtimeSync
 import ai.nomi.data.SessionGate
+import ai.nomi.data.SessionRepository
 import ai.nomi.data.THEME_DARK
 import ai.nomi.data.THEME_LIGHT
+import ai.nomi.data.UsageRepository
 import ai.nomi.designsystem.component.ComposerPlatform
 import ai.nomi.designsystem.component.LocalComposerPlatform
 import ai.nomi.designsystem.component.NomiLoadingIndicator
 import ai.nomi.designsystem.component.NomiSnackbarHost
+import ai.nomi.designsystem.icon.NomiIcon
 import ai.nomi.designsystem.icon.NomiIcons
+import ai.nomi.designsystem.navigation.NomiAccount
+import ai.nomi.designsystem.navigation.NomiNavDrawerContent
 import ai.nomi.designsystem.navigation.NomiNavItem
-import ai.nomi.designsystem.navigation.NomiNavigationBar
+import ai.nomi.designsystem.navigation.NomiRecentChat
 import ai.nomi.designsystem.navigation.NomiSidebar
+import ai.nomi.designsystem.navigation.NomiUsageBrief
+import ai.nomi.designsystem.shape.AgentShape
+import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.theme.NomiTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -52,21 +65,40 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -107,7 +139,12 @@ private val DismissCaptureRadius = 72.dp
 private fun NomiRoute.navItem(unread: Int): NomiNavItem<NomiRoute>? = when (this) {
     Home -> NomiNavItem(this, "Home", NomiIcons.Home)
     Chats -> NomiNavItem(this, "Chats", NomiIcons.Chat)
+    ai.nomi.app.nav.Projects -> NomiNavItem(this, "Projects", NomiIcons.Folder)
+    Money -> NomiNavItem(this, "Money", NomiIcons.Wallet)
+    Reminders -> NomiNavItem(this, "Reminders", NomiIcons.Clock)
+    Memory -> NomiNavItem(this, "Memory", NomiIcons.Memory)
     Notifications -> NomiNavItem(this, "Inbox", NomiIcons.Bell, badge = unread)
+    Connections -> NomiNavItem(this, "Connections", NomiIcons.Link)
     Settings -> NomiNavItem(this, "Settings", NomiIcons.Settings)
     else -> null
 }
@@ -236,10 +273,41 @@ private fun NomiShell(signedIn: Boolean) {
         }
     }
 
-    val items = TopLevelRoutes.mapNotNull { it.navItem(unread) }
+    val sessionRepo = koinInject<SessionRepository>()
+    val allSessions by sessionRepo.observeAll().collectAsStateWithLifecycle(emptyList())
+    val usageRepo = koinInject<UsageRepository>()
+    val usageBriefDto by usageRepo.brief.collectAsStateWithLifecycle()
+    LaunchedEffect(inApp) {
+        if (inApp) usageRepo.refresh()
+    }
+    val appearanceRepo = koinInject<AppearanceRepository>()
+    val profile by appearanceRepo.profile.collectAsStateWithLifecycle()
+    val drawerRecentsEnabled by appearanceRepo.drawerRecents.collectAsStateWithLifecycle()
+    val drawerRecentsLimit by appearanceRepo.drawerRecentsLimit.collectAsStateWithLifecycle()
+    val recentChatItems = if (drawerRecentsEnabled) {
+        allSessions.take(drawerRecentsLimit).map { NomiRecentChat(it.id, it.title.ifBlank { "Untitled chat" }) }
+    } else emptyList()
+    val usageBrief = usageBriefDto?.let {
+        NomiUsageBrief(
+            planName = it.plan.name,
+            tokensUsed = it.tokensUsed,
+            monthlyTokens = it.plan.monthlyTokens,
+            canUpgrade = it.canUpgrade,
+        )
+    }
+    val accountData = profile?.let {
+        val name = it.displayName?.ifBlank { null } ?: it.username ?: it.email
+        NomiAccount(displayName = name, email = it.email, avatarUrl = it.avatarUrl)
+    }
+    val currentChatId = (backStack.lastOrNull() as? Chat)?.sessionId
+
+    val sidebarNavItems = SidebarRoutes.mapNotNull { it.navItem(unread) }
     var collapsed by rememberSaveable { mutableStateOf(false) }
     // Starting a conversation happens in Home's composer (the server saves a chat on its first message).
     val newChat = { backStack.selectTopLevel(Home) }
+
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val coroutineScope = rememberCoroutineScope()
 
     val showInAppBubble = platform == ComposerPlatform.Mobile &&
         bubbleEnabled &&
@@ -247,34 +315,135 @@ private fun NomiShell(signedIn: Boolean) {
         companionState !is CompanionUiState.Snoozed &&
         backStack.lastOrNull() !is Chat
 
-    Row(Modifier.fillMaxSize().background(NomiTheme.extendedColors.ground)) {
-        if (inApp && wide) {
-            NomiSidebar(
-                items, backStack.currentTopLevel, backStack::selectTopLevel,
-                onNewChat = newChat, collapsed = collapsed, onToggleCollapsed = { collapsed = !collapsed },
-            )
+    val mainAppContent: @Composable () -> Unit = {
+        Row(Modifier.fillMaxSize().background(NomiTheme.extendedColors.ground)) {
+            if (inApp && wide) {
+                NomiSidebar(
+                    items = sidebarNavItems,
+                    selected = backStack.currentTopLevel,
+                    onSelect = backStack::selectTopLevel,
+                    onNewChat = newChat,
+                    collapsed = collapsed,
+                    onToggleCollapsed = { collapsed = !collapsed },
+                    recents = recentChatItems,
+                    currentChatId = currentChatId,
+                    onOpenRecentChat = backStack::openChat,
+                    onSeeAllChats = { backStack.selectTopLevel(Chats) },
+                    usage = usageBrief,
+                    account = accountData,
+                    onOpenAccount = { backStack.selectTopLevel(Settings) },
+                )
+            }
+            Column(Modifier.weight(FILL).fillMaxHeight()) {
+                if (inApp && !wide && backStack.lastOrNull() !is Chat) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                                NomiIcon(NomiIcons.Menu, contentDescription = "Open navigation menu")
+                            }
+                            Row(
+                                modifier = Modifier.clickable { backStack.selectTopLevel(Home) },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                AgentShape(NomiIdentity, 28.dp, face = true)
+                                Text(
+                                    text = "nomi",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = (-0.045).em,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                        IconButton(onClick = { backStack.selectTopLevel(Notifications) }) {
+                            BadgedBox(
+                                badge = {
+                                    if (unread > 0) {
+                                        Badge { Text(if (unread > 99) "99+" else unread.toString()) }
+                                    }
+                                }
+                            ) {
+                                NomiIcon(NomiIcons.Bell, contentDescription = "Inbox")
+                            }
+                        }
+                    }
+                }
+                Box(Modifier.weight(FILL)) {
+                    NomiNavDisplay(backStack, Modifier.fillMaxSize(), wide = wide)
+                    if (showInAppBubble) {
+                        InAppFloatingBubbleOverlay(
+                            state = companionState,
+                            companion = companion,
+                            onDismissBubble = {
+                                dismissedInApp = true
+                                companion.stateMachine.clearUnread()
+                                companion.stateMachine.collapse()
+                            },
+                        )
+                    }
+                    NomiSnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(SnackbarPadding))
+                }
+            }
         }
-        Column(Modifier.weight(FILL).fillMaxHeight()) {
-            // A phone shows a chat full screen; the bar comes back when it is popped.
-            val bottomBar = inApp && !wide && backStack.lastOrNull() !is Chat
-            val consumed = if (bottomBar) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier
-            Box(Modifier.weight(FILL).then(consumed)) {
-                NomiNavDisplay(backStack, Modifier.fillMaxSize(), wide = wide)
-                if (showInAppBubble) {
-                    InAppFloatingBubbleOverlay(
-                        state = companionState,
-                        companion = companion,
-                        onDismissBubble = {
-                            dismissedInApp = true
-                            companion.stateMachine.clearUnread()
-                            companion.stateMachine.collapse()
+    }
+
+    if (inApp && !wide) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = backStack.lastOrNull() !is Chat,
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.width(300.dp),
+                ) {
+                    NomiNavDrawerContent(
+                        items = sidebarNavItems,
+                        selected = backStack.currentTopLevel,
+                        onSelect = { route ->
+                            coroutineScope.launch { drawerState.close() }
+                            backStack.selectTopLevel(route)
+                        },
+                        onNewChat = {
+                            coroutineScope.launch { drawerState.close() }
+                            newChat()
+                        },
+                        collapsed = false,
+                        onClose = { coroutineScope.launch { drawerState.close() } },
+                        recents = recentChatItems,
+                        currentChatId = currentChatId,
+                        onOpenRecentChat = { id ->
+                            coroutineScope.launch { drawerState.close() }
+                            backStack.openChat(id)
+                        },
+                        onSeeAllChats = {
+                            coroutineScope.launch { drawerState.close() }
+                            backStack.selectTopLevel(Chats)
+                        },
+                        usage = usageBrief,
+                        account = accountData,
+                        onOpenAccount = {
+                            coroutineScope.launch { drawerState.close() }
+                            backStack.selectTopLevel(Settings)
                         },
                     )
                 }
-                NomiSnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(SnackbarPadding))
-            }
-            if (bottomBar) NomiNavigationBar(items, backStack.currentTopLevel, backStack::selectTopLevel)
-        }
+            },
+            content = mainAppContent,
+        )
+    } else {
+        mainAppContent()
     }
 }
 

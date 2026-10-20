@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,10 +43,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import kotlinx.coroutines.delay
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -96,6 +102,10 @@ private const val BODY_LINE_HEIGHT = 1.6f
 private const val USER_SP = 15f
 private const val USER_LINE_HEIGHT = 1.5f
 private const val MINUTES_PAD = 2
+private val ActionIconSize = 24.dp
+private val ActionGlyphSize = 14.dp
+private val ActionGap = 6.dp
+private const val COPIED_RESET_MS = 2000L
 
 private val Suggestions = listOf("Plan my week", "What did I spend on food?", "Remind me to call mom tomorrow")
 
@@ -263,7 +273,7 @@ private fun Thread(
                     item.isUser() -> UserTurn((item as ThreadItem.Stored).message, if (lastInChain) clock(item.message.createdAt, timeZone) else null)
                     item is ThreadItem.Stored -> {
                         val message = item.message
-                        AssistantTurn(item.author(), chained, if (lastInChain) clock(message.createdAt, timeZone) else null, message.agentType) { identity ->
+                        AssistantTurn(item.author(), chained, if (lastInChain) clock(message.createdAt, timeZone) else null, message.agentType, messageContent = message.content) { identity ->
                             val blocks = remember(message.contentJson) { parseContentBlocks(message.contentJson) }
                             if (blocks.isEmpty()) {
                                 MessageText(message.content)
@@ -299,6 +309,14 @@ private fun clock(epochMs: Long, timeZone: TimeZone): String {
 /** `.message-bubble--user`: a primary bubble with the tight corner at the bottom end, up to 78% wide. */
 @Composable
 private fun UserTurn(message: Message, time: String?) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(COPIED_RESET_MS)
+            copied = false
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxBubble: Dp = maxWidth * UserBubbleShare
         Column(Modifier.align(Alignment.CenterEnd).widthIn(max = maxBubble), horizontalAlignment = Alignment.End) {
@@ -310,7 +328,27 @@ private fun UserTurn(message: Message, time: String?) {
                     .background(MaterialTheme.colorScheme.primary, NomiTheme.bubbleShapes.end)
                     .padding(horizontal = UserBubblePaddingH, vertical = UserBubblePaddingV),
             )
-            time?.let { Meta(it, Modifier.padding(top = ChainGap)) }
+            Row(
+                Modifier.padding(top = ChainGap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ActionGap),
+            ) {
+                time?.let { Meta(it) }
+                IconButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(message.content))
+                        copied = true
+                    },
+                    modifier = Modifier.size(ActionIconSize),
+                ) {
+                    NomiIcon(
+                        glyph = if (copied) NomiIcons.Check else NomiIcons.Copy,
+                        contentDescription = if (copied) "Copied" else "Copy message",
+                        size = ActionGlyphSize,
+                        tint = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
@@ -322,6 +360,7 @@ private fun AssistantTurn(
     chained: Boolean,
     time: String?,
     agentType: String?,
+    messageContent: String? = null,
     streaming: Boolean = false,
     body: @Composable (AgentIdentity) -> Unit,
 ) {
@@ -339,7 +378,37 @@ private fun AssistantTurn(
                 )
             }
             body(identity)
-            time?.let { Meta(it, Modifier.padding(top = ChainGap)) }
+            Row(
+                Modifier.padding(top = ChainGap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ActionGap),
+            ) {
+                time?.let { Meta(it) }
+                if (messageContent != null && !streaming) {
+                    val clipboard = LocalClipboardManager.current
+                    var copied by remember { mutableStateOf(false) }
+                    LaunchedEffect(copied) {
+                        if (copied) {
+                            delay(COPIED_RESET_MS)
+                            copied = false
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(messageContent))
+                            copied = true
+                        },
+                        modifier = Modifier.size(ActionIconSize),
+                    ) {
+                        NomiIcon(
+                            glyph = if (copied) NomiIcons.Check else NomiIcons.Copy,
+                            contentDescription = if (copied) "Copied" else "Copy message",
+                            size = ActionGlyphSize,
+                            tint = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }

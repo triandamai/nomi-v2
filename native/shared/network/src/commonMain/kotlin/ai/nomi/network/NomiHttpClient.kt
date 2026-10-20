@@ -5,6 +5,7 @@ import ai.nomi.network.dto.RefreshRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.plugins.HttpRedirect
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerAuthProvider
 import io.ktor.client.plugins.auth.providers.BearerTokens
@@ -52,6 +53,10 @@ fun nomiHttpClient(
     return HttpClient(engine) {
         install(ContentNegotiation) { json(apiJson) }
         install(WebSockets) { pingInterval = WEBSOCKET_PING_INTERVAL }
+        install(HttpRedirect) {
+            checkHttpMethod = false
+            allowHttpsDowngrade = false
+        }
         install(Auth) {
             bearer {
                 loadTokens { tokens.read()?.let { BearerTokens(it.access, it.refresh) } }

@@ -49,6 +49,8 @@ class KoinGraphTest {
         koin.get<ActivityRepository>()
         koin.get<ChatRepository>()
         koin.get<ForegroundChat>()
+        koin.get<ai.nomi.data.UsageRepository>()
+        koin.get<ai.nomi.data.ProjectsRepository>()
         koin.get<RealtimeSync>()
         koin.get<SessionGate>()
         koin.get<SignInViewModel>()
@@ -57,6 +59,7 @@ class KoinGraphTest {
         koin.get<ChatViewModel> { parametersOf("s1") }
         koin.get<NotificationsViewModel>()
         koin.get<SettingsViewModel>()
+        koin.get<ai.nomi.app.screens.projects.ProjectsViewModel>()
     }
 
     @Test

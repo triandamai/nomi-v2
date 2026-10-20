@@ -62,52 +62,52 @@ import androidx.compose.ui.unit.dp
 
 const val DYNAMIC_ISLAND_TAG = "dynamic-island"
 
-val IslandCollapsedWidth = 148.dp
-val IslandWorkingWidth = 256.dp
-val IslandExpandedWidth = 376.dp
-val IslandCollapsedHeight = 28.dp
-val IslandWorkingHeight = 38.dp
-val IslandExpandedMinHeight = 140.dp
-val IslandExpandedWithReplyHeight = 184.dp
+val IslandCollapsedWidth = 188.dp
+val IslandWorkingWidth = 248.dp
+val IslandExpandedWidth = 340.dp
+val IslandCollapsedHeight = 32.dp
+val IslandWorkingHeight = 36.dp
+val IslandExpandedMinHeight = 88.dp
+val IslandExpandedWithReplyHeight = 124.dp
 
 private const val NOTCH_BLACK_ARGB = 0xFF000000L
 private const val NOTCH_FG_ARGB = 0xFFF4F7F5L
 private val NotchBlack = Color(NOTCH_BLACK_ARGB)
 private val NotchForeground = Color(NOTCH_FG_ARGB)
 
-private const val NOTCH_ZOOM_DURATION_MS = 280
+private const val NOTCH_ZOOM_DURATION_MS = 260
 private const val ORIGIN_CENTER_X = 0.5f
 private const val ORIGIN_TOP_Y = 0f
-private const val MIN_ZOOM_SCALE = 0.2f
+private const val MIN_ZOOM_SCALE = 0.52f
 private const val FULL_ZOOM_SCALE = 1f
 private const val HIDDEN_ALPHA = 0f
 private const val VISIBLE_ALPHA = 1f
 private const val ACTIVE_VISIBILITY_THRESHOLD = 0.02f
 
 private val CollapsedCorner = 14.dp
-private val ExpandedCorner = 28.dp
+private val ExpandedCorner = 22.dp
 private val ZeroCorner = 0.dp
-private val PillShadow = 14.dp
+private val PillShadow = 12.dp
 private val BorderWidth = 1.dp
 private const val BORDER_ALPHA = 0.14f
 private const val MUTED_TEXT_ALPHA = 0.74f
 private const val INPUT_BG_ALPHA = 0.14f
-private val CompactAvatarSize = 22.dp
-private val ExpandedAvatarSize = 40.dp
+private val CompactAvatarSize = 20.dp
+private val ExpandedAvatarSize = 28.dp
 private val CompactHorizontalPadding = 12.dp
 private val CompactVerticalPadding = 4.dp
-private val ExpandedPadding = 16.dp
-private val NotchCameraClearance = 32.dp
-private val ItemGap = 12.dp
+private val ExpandedPadding = 12.dp
+private val NotchCameraClearance = 16.dp
+private val ItemGap = 8.dp
 private val SmallGap = 6.dp
 private val BadgeHorizontalPadding = 7.dp
 private val BadgeVerticalPadding = 2.dp
-private val QuickInputHeight = 38.dp
+private val QuickInputHeight = 32.dp
 private val QuickInputPadding = 12.dp
 private const val FILL = 1f
 private const val BRAND_WEIGHT = 800
 private const val TITLE_WEIGHT = 700
-private const val BODY_MAX_LINES = 2
+private const val BODY_MAX_LINES = 1
 
 /**
  * The Dynamic-Island-style companion pill: pure black notch surface that stays smaller than the physical Mac notch

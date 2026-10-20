@@ -12,4 +12,11 @@ kotlin {
         implementation(libs.coroutines.core)
         implementation(libs.datetime)
     }
+    sourceSets.named("desktopTest").configure {
+        dependencies {
+            implementation(compose.desktop.currentOs)
+            implementation(compose.desktop.uiTestJUnit4)
+            implementation(libs.junit4)
+        }
+    }
 }

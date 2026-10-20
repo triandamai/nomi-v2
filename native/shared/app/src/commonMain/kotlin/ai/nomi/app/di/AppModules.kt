@@ -25,15 +25,31 @@ import ai.nomi.feature.home.HomeViewModel
 import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
 import ai.nomi.network.AuthApi
-import ai.nomi.network.HttpMessagesApi
+import ai.nomi.network.ConnectionsApi
 import ai.nomi.network.HomeApi
+import ai.nomi.network.HttpConnectionsApi
 import ai.nomi.network.HttpHomeApi
+import ai.nomi.network.HttpMemoryApi
+import ai.nomi.network.HttpMessagesApi
+import ai.nomi.network.HttpMoneyApi
 import ai.nomi.network.HttpNotificationsApi
+import ai.nomi.network.HttpRemindersApi
 import ai.nomi.network.HttpSessionsApi
+import ai.nomi.network.MemoryApi
 import ai.nomi.network.MessagesApi
+import ai.nomi.network.MoneyApi
 import ai.nomi.network.NotificationsApi
+import ai.nomi.network.RemindersApi
 import ai.nomi.network.SessionsApi
 import ai.nomi.network.nomiHttpClient
+import ai.nomi.data.ConnectionsRepository
+import ai.nomi.data.MemoryRepository
+import ai.nomi.data.MoneyRepository
+import ai.nomi.data.RemindersRepository
+import ai.nomi.app.screens.connections.ConnectionsViewModel
+import ai.nomi.app.screens.memory.MemoryViewModel
+import ai.nomi.app.screens.money.MoneyViewModel
+import ai.nomi.app.screens.reminders.RemindersViewModel
 import ai.nomi.realtime.DefaultRealtimeHub
 import ai.nomi.realtime.KtorRealtimeTransport
 import ai.nomi.realtime.RealtimeHub
@@ -73,6 +89,12 @@ val coreModule: Module = module {
     single<MessagesApi> { HttpMessagesApi(get(), get()) }
     single<NotificationsApi> { HttpNotificationsApi(get(), get()) }
     single<HomeApi> { HttpHomeApi(get(), get()) }
+    single<MoneyApi> { HttpMoneyApi(get(), get()) }
+    single<RemindersApi> { HttpRemindersApi(get(), get()) }
+    single<MemoryApi> { HttpMemoryApi(get(), get()) }
+    single<ConnectionsApi> { HttpConnectionsApi(get(), get()) }
+    single<ai.nomi.network.UsageApi> { ai.nomi.network.HttpUsageApi(get(), get()) }
+    single<ai.nomi.network.ProjectsApi> { ai.nomi.network.HttpProjectsApi(get(), get()) }
     single<AuthRepository> { DefaultAuthRepository(get(), get()) }
 
     single<RealtimeTransport> { KtorRealtimeTransport(get(), get(), log = ::appLog) }
@@ -97,6 +119,12 @@ val coreModule: Module = module {
     single { ActivityRepository(get(), get()) }
     single { ForegroundChat() }
     single { ChatRepository(get(), get(), get(), get(), session = get(), clock = get(), log = ::appLog) }
+    single { MoneyRepository(get(), get()) }
+    single { RemindersRepository(get(), get()) }
+    single { MemoryRepository(get(), get()) }
+    single { ConnectionsRepository(get(), get()) }
+    single { ai.nomi.data.UsageRepository(get(), get()) }
+    single { ai.nomi.data.ProjectsRepository(get(), get()) }
     single { RealtimeSync(get(), get(), get(), get(), get(), session = get(), log = ::appLog) }
     single { CompanionController(get(AppScope), get(), get(), get(), sessionRepository = get(), log = ::appLog) }
     single {
@@ -116,11 +144,16 @@ val coreModule: Module = module {
 /** One ViewModel per screen; the chat's takes its session id as a parameter. */
 val featureModule: Module = module {
     viewModel { SignInViewModel(get()) }
-    viewModel { HomeViewModel(get(), get(), get(), log = ::appLog) }
+    viewModel { HomeViewModel(get(), get(), get(), getOrNull(), log = ::appLog) }
     viewModel { ChatsViewModel(get(), log = ::appLog) }
     viewModel { (sessionId: String) -> ChatViewModel(sessionId, get(), get(), get(), log = ::appLog) }
     viewModel { NotificationsViewModel(get(), log = ::appLog) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), log = ::appLog) }
+    viewModel { MoneyViewModel(get()) }
+    viewModel { RemindersViewModel(get()) }
+    viewModel { MemoryViewModel(get()) }
+    viewModel { ConnectionsViewModel(get()) }
+    viewModel { ai.nomi.app.screens.projects.ProjectsViewModel(get()) }
 }
 
 fun appModules(platformModule: Module): List<Module> = listOf(platformModule, coreModule, featureModule)

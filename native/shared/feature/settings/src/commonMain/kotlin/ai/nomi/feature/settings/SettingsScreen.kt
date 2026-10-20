@@ -79,10 +79,19 @@ private val AccentThemeOptions = listOf(
 )
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier,
+    onOpenConnections: () -> Unit = {},
+) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val theme by viewModel.theme.collectAsStateWithLifecycle()
     val accentColor by viewModel.accentColor.collectAsStateWithLifecycle()
+    val homeLayout by viewModel.homeLayout.collectAsStateWithLifecycle()
+    val drawerPins by viewModel.drawerPins.collectAsStateWithLifecycle()
+    val drawerRecents by viewModel.drawerRecents.collectAsStateWithLifecycle()
+    val drawerRecentsLimit by viewModel.drawerRecentsLimit.collectAsStateWithLifecycle()
+    val timezone by viewModel.timezone.collectAsStateWithLifecycle()
     val islandEnabled by viewModel.islandEnabled.collectAsStateWithLifecycle()
     val bubbleEnabled by viewModel.bubbleEnabled.collectAsStateWithLifecycle()
     SettingsContent(
@@ -93,14 +102,27 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
         accentColor = accentColor,
         onSelectTheme = viewModel::selectTheme,
         onSelectAccentColor = viewModel::selectAccentColor,
+        homeLayout = homeLayout,
+        onSelectHomeLayout = viewModel::selectHomeLayout,
+        drawerPins = drawerPins,
+        onMovePin = viewModel::movePin,
+        onUnpin = viewModel::togglePin,
+        onPin = viewModel::togglePin,
+        drawerRecents = drawerRecents,
+        onToggleDrawerRecents = viewModel::toggleDrawerRecents,
+        drawerRecentsLimit = drawerRecentsLimit,
+        onSelectDrawerRecentsLimit = viewModel::selectDrawerRecentsLimit,
+        timezone = timezone,
+        onSelectTimezone = viewModel::selectTimezone,
         islandEnabled = islandEnabled,
         onIslandEnabledChange = viewModel::setIslandEnabled,
         bubbleEnabled = bubbleEnabled,
         onBubbleEnabledChange = viewModel::setBubbleEnabled,
+        onOpenConnections = onOpenConnections,
     )
 }
 
-/** The account and preferences page: who is signed in, appearance, companion surfaces, and signing out. */
+/** The account and preferences page: who is signed in, appearance, home layout, companion surfaces, and signing out. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsContent(
@@ -111,10 +133,23 @@ fun SettingsContent(
     accentColor: String = DEFAULT_ACCENT_COLOR,
     onSelectTheme: (String) -> Unit = {},
     onSelectAccentColor: (String) -> Unit = {},
+    homeLayout: String = "stage",
+    onSelectHomeLayout: (String) -> Unit = {},
+    drawerPins: List<String> = emptyList(),
+    onMovePin: (from: Int, to: Int) -> Unit = { _, _ -> },
+    onUnpin: (String) -> Unit = {},
+    onPin: (String) -> Unit = {},
+    drawerRecents: Boolean = true,
+    onToggleDrawerRecents: (Boolean) -> Unit = {},
+    drawerRecentsLimit: Int = 10,
+    onSelectDrawerRecentsLimit: (Int) -> Unit = {},
+    timezone: String = "UTC",
+    onSelectTimezone: (String) -> Unit = {},
     islandEnabled: Boolean = true,
     onIslandEnabledChange: (Boolean) -> Unit = {},
     bubbleEnabled: Boolean = true,
     onBubbleEnabledChange: (Boolean) -> Unit = {},
+    onOpenConnections: () -> Unit = {},
 ) {
     NomiPage(title = "Settings", modifier = modifier.testTag(SETTINGS_SCREEN_TAG)) {
         Column(
@@ -132,30 +167,41 @@ fun SettingsContent(
                     onClick = null,
                     leading = { IconBadge(NomiIcons.Person, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) },
                 )
+                NomiRow(
+                    title = "Connections",
+                    line = "Connected accounts and integrations",
+                    onClick = onOpenConnections,
+                    leading = { IconBadge(NomiIcons.Link, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) },
+                )
             }
 
             NomiSectionHeader("Appearance")
-            NomiListPanel {
-                Column(Modifier.padding(AppearanceInnerPadding), verticalArrangement = Arrangement.spacedBy(AppearanceGap)) {
-                    NomiButtonGroup(
-                        options = ThemeModeOptions,
-                        selected = theme,
-                        onSelect = onSelectTheme,
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(ChipGap),
-                        verticalArrangement = Arrangement.spacedBy(ChipGap),
-                    ) {
-                        AccentThemeOptions.forEach { (value, label) ->
-                            NomiFilterChip(
-                                label = label,
-                                selected = accentColor == value,
-                                onClick = { onSelectAccentColor(value) },
-                            )
-                        }
-                    }
-                }
-            }
+            AppearancePicker(
+                mode = theme,
+                accentColor = accentColor,
+                onSelectMode = onSelectTheme,
+                onSelectAccentColor = onSelectAccentColor,
+            )
+
+            NomiSectionHeader("Home layout")
+            HomeLayoutPicker(
+                current = homeLayout,
+                onSelectLayout = onSelectHomeLayout,
+            )
+
+            NomiSectionHeader("Navigation drawer")
+            DrawerCustomizer(
+                pins = drawerPins,
+                onMovePin = onMovePin,
+                onUnpin = onUnpin,
+                onPin = onPin,
+                recentsEnabled = drawerRecents,
+                onToggleRecents = onToggleDrawerRecents,
+                recentsLimit = drawerRecentsLimit,
+                onSelectRecentsLimit = onSelectDrawerRecentsLimit,
+                currentTimezone = timezone,
+                onSelectTimezone = onSelectTimezone,
+            )
 
             NomiSectionHeader("Companion")
             NomiListPanel {
@@ -170,6 +216,16 @@ fun SettingsContent(
                     subtitle = "Floating bubble for live replies and quick chat",
                     checked = bubbleEnabled,
                     onCheckedChange = onBubbleEnabledChange,
+                )
+            }
+
+            NomiSectionHeader("Integrations")
+            NomiListPanel {
+                NomiRow(
+                    title = "Connections",
+                    line = "Google Workspace, Hevy and health integrations",
+                    onClick = onOpenConnections,
+                    leading = { IconBadge(NomiIcons.Link, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) },
                 )
             }
 

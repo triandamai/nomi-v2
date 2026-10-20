@@ -106,9 +106,11 @@
 		</div>
 	</div>
 
-	<NavList items={NAV} {rail} {isActive} label={m.admin_tag()} onnavigate={() => (mobileOpen = false)} />
-
-	<div class="flex-1"></div>
+	<!-- Scrolls on its own when the screen is shorter than the list, keeping the brand and the
+	     footer actions (appearance, back to app, log out) in place. -->
+	<div class="drawer-scroll" data-testid="admin-drawer-scroll">
+		<NavList items={NAV} {rail} {isActive} label={m.admin_tag()} onnavigate={() => (mobileOpen = false)} />
+	</div>
 
 	{#if rail}
 		<div class="hidden flex-col items-center gap-1 pb-4 md:flex">
@@ -144,6 +146,14 @@
 </aside>
 
 <style>
+	.drawer-scroll {
+		flex: 1;
+		min-height: 0;
+		width: 100%;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-width: thin;
+	}
 	.version {
 		display: block;
 		padding: 8px 14px 0;

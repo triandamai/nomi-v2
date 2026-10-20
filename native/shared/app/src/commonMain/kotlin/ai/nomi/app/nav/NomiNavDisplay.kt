@@ -14,6 +14,10 @@ import ai.nomi.feature.auth.SignInScreen
 import ai.nomi.feature.chat.ChatScreen
 import ai.nomi.feature.chats.ChatsScreen
 import ai.nomi.feature.home.HomeScreen
+import ai.nomi.app.screens.connections.ConnectionsScreen
+import ai.nomi.app.screens.memory.MemoryScreen
+import ai.nomi.app.screens.money.MoneyScreen
+import ai.nomi.app.screens.reminders.RemindersScreen
 import ai.nomi.feature.notifications.NotificationsScreen
 import ai.nomi.feature.settings.SettingsScreen
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +59,15 @@ fun NomiNavDisplay(
         sceneStrategies = listOf(listDetail),
         entryProvider = entryProvider {
             entry<SignIn> { SignInScreen(koinViewModel()) }
-            entry<Home> { HomeScreen(koinViewModel(), onOpenChat = backStack::openChat, onOpenChats = { backStack.selectTopLevel(Chats) }) }
+            entry<Home> {
+                HomeScreen(
+                    viewModel = koinViewModel(),
+                    onOpenChat = backStack::openChat,
+                    onOpenChats = { backStack.selectTopLevel(Chats) },
+                    onOpenReminders = { backStack.selectTopLevel(Reminders) },
+                    onOpenPlans = { backStack.selectTopLevel(Projects) },
+                )
+            }
             entry<Chats>(metadata = ListPaneMetadata) {
                 ChatsScreen(
                     koinViewModel(),
@@ -66,8 +78,13 @@ fun NomiNavDisplay(
             entry<Chat>(metadata = DetailPaneMetadata) { key ->
                 ChatScreen(koinViewModel(key = key.sessionId) { parametersOf(key.sessionId) }, onBack = { backStack.back() })
             }
+            entry<Projects> { ai.nomi.app.screens.projects.ProjectsScreen(koinViewModel(), onOpenChat = backStack::openChat) }
+            entry<Money> { MoneyScreen(koinViewModel()) }
+            entry<Reminders> { RemindersScreen(koinViewModel()) }
+            entry<Memory> { MemoryScreen(koinViewModel()) }
             entry<Notifications> { NotificationsScreen(koinViewModel(), onOpenLink = openLink) }
-            entry<Settings> { SettingsScreen(koinViewModel()) }
+            entry<Connections> { ConnectionsScreen(koinViewModel()) }
+            entry<Settings> { SettingsScreen(koinViewModel(), onOpenConnections = { backStack.open(Connections) }) }
         },
     )
 }

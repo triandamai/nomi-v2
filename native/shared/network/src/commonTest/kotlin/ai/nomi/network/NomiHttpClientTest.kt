@@ -215,4 +215,41 @@ class NomiHttpClientTest {
         assertEquals("wss://nomi.example/api/realtime/ws", ApiConfig("https://nomi.example").toWebSocketUrl("/api/realtime/ws"))
         assertEquals("ws://localhost:3000/x", ApiConfig("http://localhost:3000").toWebSocketUrl("/x"))
     }
+
+    @Test
+    fun apiConfigNormalizesInsecureProductionUrl() {
+        val config = ApiConfig("http://api-nomi.trian.space")
+        assertEquals("https://api-nomi.trian.space", config.baseUrl)
+        assertEquals("https://api-nomi.trian.space/api/auth/login", config.url("/api/auth/login"))
+        assertEquals("wss://api-nomi.trian.space/api/realtime/ws", config.toWebSocketUrl("/api/realtime/ws"))
+
+        val configWithSlash = ApiConfig("http://api-nomi.trian.space/")
+        assertEquals("https://api-nomi.trian.space/", configWithSlash.baseUrl)
+        assertEquals("https://api-nomi.trian.space/api/auth/login", configWithSlash.url("/api/auth/login"))
+    }
+
+    @Test
+    fun postFollowsPermanentRedirect308() = runTest {
+        val store = FakeTokenStore()
+        val redirectUrl = "http://redirect.example/api/auth/login"
+        val targetUrl = "https://redirect.example/api/auth/login"
+        val engine = MockEngine { request ->
+            when (request.url.toString()) {
+                redirectUrl -> respond(
+                    content = "",
+                    status = HttpStatusCode.PermanentRedirect,
+                    headers = headersOf(HttpHeaders.Location, targetUrl),
+                )
+                targetUrl -> respond("""{"access_token":"a","refresh_token":"r"}""", HttpStatusCode.OK, json)
+                else -> respond("", HttpStatusCode.NotFound)
+            }
+        }
+        val customConfig = ApiConfig("http://redirect.example")
+        val client = nomiHttpClient(engine, customConfig, store) {}
+        val api = AuthApi(client, customConfig, store)
+        val result = api.login("a@b.c", "pw")
+        assertEquals(SignInResult.SignedIn(Tokens("a", "r")), result)
+        assertEquals(Tokens("a", "r"), store.read())
+    }
 }
+

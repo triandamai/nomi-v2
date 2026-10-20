@@ -29,6 +29,11 @@ class SettingsViewModel(
 
     val theme: StateFlow<String> = appearance?.theme ?: MutableStateFlow(THEME_SYSTEM).asStateFlow()
     val accentColor: StateFlow<String> = appearance?.accentColor ?: MutableStateFlow(DEFAULT_ACCENT_COLOR).asStateFlow()
+    val homeLayout: StateFlow<String> = appearance?.homeLayout ?: MutableStateFlow("stage").asStateFlow()
+    val drawerPins: StateFlow<List<String>> = appearance?.drawerPins ?: MutableStateFlow(listOf("money", "reminders", "memory", "notifications")).asStateFlow()
+    val drawerRecents: StateFlow<Boolean> = appearance?.drawerRecents ?: MutableStateFlow(true).asStateFlow()
+    val drawerRecentsLimit: StateFlow<Int> = appearance?.drawerRecentsLimit ?: MutableStateFlow(10).asStateFlow()
+    val timezone: StateFlow<String> = appearance?.timezone ?: MutableStateFlow("UTC").asStateFlow()
     val islandEnabled: StateFlow<Boolean> = companionPreferences?.islandEnabled ?: MutableStateFlow(true).asStateFlow()
     val bubbleEnabled: StateFlow<Boolean> = companionPreferences?.bubbleEnabled ?: MutableStateFlow(true).asStateFlow()
 
@@ -51,6 +56,39 @@ class SettingsViewModel(
 
     fun selectAccentColor(accentColor: String) {
         appearance?.selectAccentColor(accentColor)
+    }
+
+    fun selectHomeLayout(layout: String) {
+        appearance?.selectHomeLayout(layout)
+    }
+
+    fun updateDrawerPins(pins: List<String>) {
+        appearance?.updateDrawerPins(pins)
+    }
+
+    fun togglePin(id: String) {
+        appearance?.togglePin(id)
+    }
+
+    fun movePin(from: Int, to: Int) {
+        val current = appearance?.drawerPins?.value ?: return
+        if (from == to || from < 0 || from >= current.size || to < 0 || to >= current.size) return
+        val next = current.toMutableList()
+        val item = next.removeAt(from)
+        next.add(to, item)
+        appearance.updateDrawerPins(next)
+    }
+
+    fun toggleDrawerRecents(enabled: Boolean) {
+        appearance?.toggleDrawerRecents(enabled)
+    }
+
+    fun selectDrawerRecentsLimit(limit: Int) {
+        appearance?.selectDrawerRecentsLimit(limit)
+    }
+
+    fun selectTimezone(timezone: String) {
+        appearance?.selectTimezone(timezone)
     }
 
     fun setIslandEnabled(enabled: Boolean) {

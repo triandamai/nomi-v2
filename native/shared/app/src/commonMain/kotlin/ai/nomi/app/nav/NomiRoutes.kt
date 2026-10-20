@@ -10,7 +10,13 @@ private const val SCHEME_SEPARATOR = "://"
 private val WEB_SCHEMES = setOf("http", "https")
 private const val PATH_SEPARATOR = '/'
 private const val SEGMENT_CHAT = "chat"
+private const val SEGMENT_PROJECTS = "projects"
 private const val SEGMENT_NOTIFICATIONS = "notifications"
+private const val SEGMENT_MONEY = "money"
+private const val SEGMENT_REMINDERS = "reminders"
+private const val SEGMENT_MEMORY = "memory"
+private const val SEGMENT_CONNECTIONS = "connections"
+private const val SEGMENT_SETTINGS = "settings"
 private const val CHAT_PATH_SEGMENTS = 2
 private const val CHAT_ID_SEGMENT = 1
 
@@ -38,7 +44,13 @@ sealed interface NomiRoute : NavKey {
             return when {
                 segments.size == CHAT_PATH_SEGMENTS && segments.first() == SEGMENT_CHAT ->
                     Chat(segments[CHAT_ID_SEGMENT].decodeURLPart())
+                segments.firstOrNull() == SEGMENT_PROJECTS -> Projects
                 segments.firstOrNull() == SEGMENT_NOTIFICATIONS -> Notifications
+                segments.firstOrNull() == SEGMENT_MONEY -> Money
+                segments.firstOrNull() == SEGMENT_REMINDERS -> Reminders
+                segments.firstOrNull() == SEGMENT_MEMORY -> Memory
+                segments.firstOrNull() == SEGMENT_CONNECTIONS -> Connections
+                segments.firstOrNull() == SEGMENT_SETTINGS -> Settings
                 else -> Home
             }
         }
@@ -53,9 +65,24 @@ sealed interface NomiRoute : NavKey {
 
 @Serializable data class Chat(val sessionId: String) : NomiRoute
 
+@Serializable data object Projects : NomiRoute
+
+@Serializable data object Money : NomiRoute
+
+@Serializable data object Reminders : NomiRoute
+
+@Serializable data object Memory : NomiRoute
+
 @Serializable data object Notifications : NomiRoute
+
+@Serializable data object Connections : NomiRoute
 
 @Serializable data object Settings : NomiRoute
 
-/** The destinations of the navigation bar / rail, in order. */
-val TopLevelRoutes: List<NomiRoute> = listOf(Home, Chats, Notifications, Settings)
+/** The destinations of the navigation bar on phones. */
+val TopLevelRoutes: List<NomiRoute> = listOf(Home, Chats, Projects, Money, Reminders, Settings)
+
+/** The full list of destinations shown in the wide-window sidebar and mobile drawer. */
+val SidebarRoutes: List<NomiRoute> = listOf(Home, Chats, Projects, Money, Reminders, Memory, Notifications, Connections, Settings)
+
+

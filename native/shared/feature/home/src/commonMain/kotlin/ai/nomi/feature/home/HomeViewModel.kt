@@ -1,11 +1,13 @@
 package ai.nomi.feature.home
 
 import ai.nomi.core.STATE_STOP_TIMEOUT_MS
+import ai.nomi.data.AppearanceRepository
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.Session
 import ai.nomi.data.SessionRepository
 import ai.nomi.network.CrewMemberDto
 import ai.nomi.network.HomeApi
+import ai.nomi.network.HomeSummaryDto
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -69,6 +71,8 @@ data class HomeUiState(
     val subtitle: String = subtitle(0),
     val crew: List<CrewMemberDto> = emptyList(),
     val recent: List<Session> = emptyList(),
+    val summary: HomeSummaryDto = HomeSummaryDto(),
+    val homeLayout: String = "stage",
     val draft: String = "",
     val sending: Boolean = false,
     val error: String? = null,
@@ -76,26 +80,34 @@ data class HomeUiState(
     val workingCount: Int get() = crew.count { it.state == "working" }
 }
 
-private data class HomeExtras(val displayName: String? = null, val crew: List<CrewMemberDto> = emptyList())
+private data class HomeExtras(
+    val displayName: String? = null,
+    val crew: List<CrewMemberDto> = emptyList(),
+    val summary: HomeSummaryDto = HomeSummaryDto(),
+)
 
 class HomeViewModel(
     private val sessions: SessionRepository,
     private val chats: ChatRepository,
     private val home: HomeApi,
+    private val appearance: AppearanceRepository? = null,
     private val hourOfDay: HourOfDay = SystemHourOfDay,
     private val log: (String) -> Unit = {},
 ) : ViewModel() {
     private val form = MutableStateFlow(HomeUiState())
     private val extras = MutableStateFlow(HomeExtras())
+    private val layoutFlow = appearance?.homeLayout ?: MutableStateFlow("stage")
 
     val state: StateFlow<HomeUiState> =
-        combine(form, extras, sessions.observeAll().map { it.take(HOME_RECENT_CHATS) }) { f, x, recent ->
+        combine(form, extras, layoutFlow, sessions.observeAll().map { it.take(6) }) { f, x, layout, recent ->
             val crew = crewByActivity(x.crew).take(HOME_CREW_LIMIT)
             f.copy(
                 greeting = greeting(hourOfDay(), x.displayName),
                 subtitle = subtitle(crew.count { it.state == "working" }),
                 crew = crew,
                 recent = recent,
+                summary = x.summary,
+                homeLayout = layout,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), HomeUiState(greeting = greeting(hourOfDay(), null)))
 
@@ -103,6 +115,7 @@ class HomeViewModel(
         viewModelScope.launch { attempt("refresh chats") { sessions.refresh() } }
         viewModelScope.launch { attempt("load profile") { extras.value = extras.value.copy(displayName = home.profile().displayName) } }
         viewModelScope.launch { attempt("load crew") { extras.value = extras.value.copy(crew = home.crew()) } }
+        viewModelScope.launch { attempt("load summary") { extras.value = extras.value.copy(summary = home.summary()) } }
     }
 
     fun onDraftChange(value: String) {

@@ -65,6 +65,7 @@ private const val BASE_SCALE = 1f
 private const val ZERO_FLOAT = 0f
 private const val ONE_FLOAT = 1f
 private const val ZERO_INT = 0
+private const val FOCUS_RELEASE_DELAY_MS = 220L
 
 private object ChoreographerFrameClock : MonotonicFrameClock {
     override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R =
@@ -164,7 +165,6 @@ class BubbleOverlayController(
 
         if (shouldShow) {
             ensureViewsAttached()
-            updateFocusableFlag(isExpanded = uiState is CompanionUiState.Expanded)
         } else {
             removeViews()
         }
@@ -267,8 +267,12 @@ class BubbleOverlayController(
                     else -> systemDark
                 }
 
-                LaunchedEffect(uiState is CompanionUiState.Expanded) {
-                    updateFocusableFlag(uiState is CompanionUiState.Expanded)
+                val isExpanded = uiState is CompanionUiState.Expanded
+                LaunchedEffect(isExpanded) {
+                    if (!isExpanded) {
+                        kotlinx.coroutines.delay(FOCUS_RELEASE_DELAY_MS)
+                    }
+                    updateFocusableFlag(isExpanded)
                 }
 
                 NomiTheme(accent = appearance.paletteKey(accentColor), dark = dark) {

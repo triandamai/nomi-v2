@@ -34,8 +34,7 @@ class DesktopCompanionTest {
 
         val notchedPlacement = computeIslandPlacement(primary, isExpanded = false)
         assertEquals(0, notchedPlacement.windowYDp)
-        assertTrue(notchedPlacement.collapsedPillWidthDp < 180)
-        assertEquals(ISLAND_COLLAPSED_WIDTH_DP, notchedPlacement.collapsedPillWidthDp)
+        assertEquals(180, notchedPlacement.collapsedPillWidthDp)
 
         val picked = selectDisplayForCursor(listOf(primary, external), cursorXDp = 2100, cursorYDp = 300)
         assertEquals(external, picked)

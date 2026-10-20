@@ -2,16 +2,15 @@ package ai.nomi.desktop
 
 import androidx.compose.ui.unit.IntRect
 
-const val ISLAND_COLLAPSED_WIDTH_DP = 148
-const val ISLAND_WORKING_WIDTH_DP = 264
-const val ISLAND_EXPANDED_WIDTH_DP = 408
-const val ISLAND_COLLAPSED_HEIGHT_DP = 28
-const val ISLAND_EXPANDED_HEIGHT_DP = 216
+const val ISLAND_COLLAPSED_WIDTH_DP = 188
+const val ISLAND_WORKING_WIDTH_DP = 256
+const val ISLAND_EXPANDED_WIDTH_DP = 340
+const val ISLAND_COLLAPSED_HEIGHT_DP = 32
+const val ISLAND_EXPANDED_HEIGHT_DP = 140
 const val ISLAND_WINDOW_PADDING_DP = 16
 const val ISLAND_TOP_GAP_DP = 6
-const val ISLAND_NOTCH_INSET_DP = 24
-const val MIN_NOTCH_PILL_WIDTH_DP = 120
-const val DEFAULT_MENU_BAR_HEIGHT_DP = 28
+const val MIN_NOTCH_PILL_WIDTH_DP = 160
+const val DEFAULT_MENU_BAR_HEIGHT_DP = 32
 const val DEFAULT_MAC_NOTCH_WIDTH_DP = 188
 private const val HALF = 2
 
@@ -55,8 +54,8 @@ fun selectDisplayForCursor(
 /**
  * Computes the island window placement and current pill hit rect on [display].
  *
- * - On a notched Mac (`notchWidthDp != null`), the island hugs `y = display.yDp` and its collapsed width is smaller
- *   than `notchWidthDp` so it stays tucked inside the notch until hovered.
+ * - On a notched Mac (`notchWidthDp != null`), the island hugs `y = display.yDp` and its collapsed width matches
+ *   `notchWidthDp` so it looks like a natural part of the Mac notch until hovered.
  * - On a non-notched screen, the island sits at `display.yDp + display.menuBarHeightDp + ISLAND_TOP_GAP_DP`.
  */
 fun computeIslandPlacement(
@@ -65,7 +64,7 @@ fun computeIslandPlacement(
     isWorking: Boolean = false,
 ): IslandPlacementDp {
     val collapsedWidth = display.notchWidthDp
-        ?.let { minOf(ISLAND_COLLAPSED_WIDTH_DP, (it - ISLAND_NOTCH_INSET_DP).coerceAtLeast(MIN_NOTCH_PILL_WIDTH_DP)) }
+        ?.coerceAtLeast(MIN_NOTCH_PILL_WIDTH_DP)
         ?: ISLAND_COLLAPSED_WIDTH_DP
     val activePillWidth = when {
         isExpanded -> ISLAND_EXPANDED_WIDTH_DP
