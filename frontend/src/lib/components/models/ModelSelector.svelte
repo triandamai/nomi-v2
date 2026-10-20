@@ -271,10 +271,19 @@
 			border-radius: 22px;
 		}
 	}
-	/* A narrow composer (a phone, a project's side column) keeps the name short. */
+	/* A narrow composer (a phone, a project's side column): the selector takes only the room the
+	   other controls leave, so Send never wraps onto a line of its own; the name truncates. */
 	@container (max-width: 480px) {
+		.selector {
+			flex: 1 1 0;
+		}
+		.trigger {
+			width: 100%;
+		}
 		.trigger__label {
-			max-width: 96px;
+			flex: 1 1 auto;
+			max-width: none;
+			text-align: left;
 		}
 	}
 	.panel {
