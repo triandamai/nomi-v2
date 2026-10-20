@@ -418,3 +418,90 @@ mod connections {
         assert_eq!(config.provider, ProviderKind::Anthropic, "falls back to Nomi's default");
     }
 }
+
+mod chat_model {
+    use super::*;
+    use nomi_server::bootstrap::resolve_llm_model_in_session;
+    use nomi_settings::model_choices::{set_session_model, ModelKey};
+    use nomi_settings::provider_connections::{create_connection, NewConnection, Scope};
+
+    async fn chat(pool: &PgPool) -> Uuid {
+        let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(pool).await.unwrap();
+        sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'web', $2) RETURNING id")
+            .bind(org_id)
+            .bind(Uuid::new_v4().to_string())
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn own_gateway(pool: &PgPool, owner: Uuid) -> Uuid {
+        create_connection(
+            pool,
+            Scope::User(owner),
+            NewConnection {
+                provider_id: "custom",
+                label: "Mine",
+                kind: "openai_compatible",
+                auth_type: "custom_endpoint",
+                api_key_encrypted: Some(crypto::encrypt(&SETTINGS_KEY, "owner-key")),
+                base_url: Some("https://gw.example.com/v1"),
+                headers_encrypted: None,
+                updated_by: owner,
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_chat_runs_on_the_nomi_model_picked_for_it(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        admin_model(&pool, user_id, "Default", "claude-haiku-4-5").await;
+        let opus = admin_model(&pool, user_id, "Opus", "claude-opus-5-5").await;
+        let session = chat(&pool).await;
+        set_session_model(&pool, session, &ModelKey::Admin(opus), None, user_id).await.unwrap();
+
+        let (config, tag) = resolve_llm_model_in_session(&pool, user_id, session, &SETTINGS_KEY).await;
+        assert_eq!(config.model_id, "claude-opus-5-5");
+        assert_eq!((tag.admin_model_id, tag.own_key), (Some(opus), false));
+
+        // Other chats keep the person's default.
+        let (config, _) = resolve_llm_model_in_session(&pool, user_id, chat(&pool).await, &SETTINGS_KEY).await;
+        assert_eq!(config.model_id, "claude-haiku-4-5");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_chat_runs_on_a_model_from_the_pickers_own_provider(pool: PgPool) {
+        let owner = insert_user(&pool).await;
+        admin_model(&pool, owner, "Default", "claude-haiku-4-5").await;
+        let gateway = own_gateway(&pool, owner).await;
+        let session = chat(&pool).await;
+        set_session_model(&pool, session, &ModelKey::Connection { connection_id: gateway, model_id: "meta/llama-4".to_string() }, Some("Llama"), owner).await.unwrap();
+
+        let (config, tag) = resolve_llm_model_in_session(&pool, owner, session, &SETTINGS_KEY).await;
+        assert_eq!((config.provider, config.model_id.as_str(), config.api_key.as_str()), (ProviderKind::OpenAiCompatible, "meta/llama-4", "owner-key"));
+        assert!(tag.own_key, "their own provider is never billed to their plan");
+        assert_eq!(tag.label, "Llama");
+
+        // Someone else writing in the same chat (a shared project) never runs on the owner's key.
+        let collaborator = insert_user(&pool).await;
+        let (config, tag) = resolve_llm_model_in_session(&pool, collaborator, session, &SETTINGS_KEY).await;
+        assert_eq!(config.model_id, "claude-haiku-4-5");
+        assert!(!tag.own_key);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn a_picked_model_an_admin_switched_off_falls_back_to_the_default(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        admin_model(&pool, user_id, "Default", "claude-haiku-4-5").await;
+        let opus = admin_model(&pool, user_id, "Opus", "claude-opus-5-5").await;
+        let session = chat(&pool).await;
+        set_session_model(&pool, session, &ModelKey::Admin(opus), None, user_id).await.unwrap();
+        sqlx::query("UPDATE admin_llm_models SET enabled = false WHERE id = $1").bind(opus).execute(&pool).await.unwrap();
+
+        let (config, _) = resolve_llm_model_in_session(&pool, user_id, session, &SETTINGS_KEY).await;
+        assert_eq!(config.model_id, "claude-haiku-4-5");
+    }
+}

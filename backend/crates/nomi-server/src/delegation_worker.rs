@@ -135,7 +135,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
             // Koda builds with the coding model; everyone else with the person's chat model.
             let purpose = crate::bootstrap::purpose_for_agent(&claimed.target_agent_type);
-            let provider = crate::bootstrap::build_llm_provider_for(&pool, claimed.user_id, &settings_key, http_client.clone(), purpose).await;
+            let provider = crate::bootstrap::build_llm_provider_in_session(&pool, claimed.user_id, claimed.session_id, &settings_key, http_client.clone(), purpose).await;
             let embedding_provider =
                 build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(claimed.user_id)).await;
 
