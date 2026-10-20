@@ -6,30 +6,41 @@
 	import ChatThread from '$lib/components/ChatThread.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import IconAgents from '$lib/components/icons/IconAgents.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
-	import MenuItem from '$lib/components/m3/MenuItem.svelte';
-	import ModelKeySheet from '$lib/components/ModelKeySheet.svelte';
-	import { connectionSelectionText } from '$lib/providers';
+	import Snackbar from '$lib/components/m3/Snackbar.svelte';
+	import ModelManager from '$lib/components/models/ModelManager.svelte';
+	import ModelSelector from '$lib/components/models/ModelSelector.svelte';
+	import { applyChanges, choiceFor, type ModelChange, type ModelChoice } from '$lib/modelPicker';
+	import { postAction } from '$lib/providerActions';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	let modelMenuOpen = $state(false);
 	let personalityMenuOpen = $state(false);
-	let modelSheetOpen = $state(false);
 
-	const activeModelLabel = $derived.by(() => {
-		const selection = data.models.selection;
-		if (!selection) return m.models_default();
-		if (selection.kind === 'admin') {
-			const match = data.models.admin_models.find((m) => m.id === selection.admin_model_id);
-			return match?.label ?? m.models_default();
+	// The composer's model picker. Both follow the page's data, and are moved ahead of the server
+	// while a change is on its way (a pick that fails is put back).
+	let modelGroups = $derived(data.modelOptions.groups);
+	let sessionModel = $derived(data.sessionModel);
+	let manageOpen = $state(false);
+	let modelErrorOpen = $state(false);
+
+	async function pickModel(key: string) {
+		const previous = sessionModel;
+		sessionModel = choiceFor(modelGroups, key) ?? previous;
+		const body = new FormData();
+		body.set('key', key);
+		const outcome = await postAction<{ sessionModel: ModelChoice }>('setSessionModel', body);
+		if (outcome.ok) {
+			sessionModel = outcome.data.sessionModel;
+		} else {
+			sessionModel = previous;
+			modelErrorOpen = true;
 		}
-		if (selection.kind === 'connection') return selection.label || selection.model_id;
-		return selection.label;
-	});
+	}
+
+	const modelsSaved = (changes: ModelChange[]) => (modelGroups = applyChanges(modelGroups, changes));
 
 	// What this chat replies in: its own personality, else the person's default.
 	const chatOwn = $derived(data.chatPersonality.chat);
@@ -51,66 +62,12 @@
 	glass={page.data.preferences?.animated_backdrop !== false}
 	thinkingLevel={data.thinkingLevel}
 >
+	{#snippet modelControl()}
+		{#if modelGroups.length > 0 || sessionModel}
+			<ModelSelector groups={modelGroups} selected={sessionModel} onselect={pickModel} onmanage={() => (manageOpen = true)} />
+		{/if}
+	{/snippet}
 	{#snippet extraControls()}
-		<Menu bind:open={modelMenuOpen}>
-			{#snippet trigger({ toggle })}
-				<IconButton onclick={toggle} aria-label={m.chatpage_model_label({ model: activeModelLabel })}>
-					<IconAgents size={18} />
-				</IconButton>
-			{/snippet}
-			<div class="w-full">
-				<p class="md-label-medium px-2 pt-1 pb-2" style="color: var(--md-sys-color-on-surface-variant)">
-					{m.chatpage_model_heading({ model: activeModelLabel })}
-				</p>
-				{#if form?.modelError}
-					<p class="md-body-small mb-2 px-2" style="color: var(--md-sys-color-error)">{form.modelError}</p>
-				{/if}
-				{#each data.models.admin_models as model (model.id)}
-					<form
-						method="POST"
-						action="?/selectAdminModel"
-						use:enhance={() => {
-							return async ({ update }) => {
-								await update();
-								modelMenuOpen = false;
-							};
-						}}
-					>
-						<input type="hidden" name="admin_model_id" value={model.id} />
-						<MenuItem
-							type="submit"
-							selected={data.models.selection?.kind === 'admin' &&
-								data.models.selection.admin_model_id === model.id}
-						>
-							{model.label}
-						</MenuItem>
-					</form>
-				{/each}
-
-				<p class="md-label-medium mt-3 mb-1 px-2" style="color: var(--md-sys-color-on-surface-variant)">
-					{m.prov_own_title()}
-				</p>
-				{#if data.models.selection?.kind === 'connection'}
-					<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
-						{connectionSelectionText(data.models.selection, data.connections, [])}
-					</p>
-				{:else if data.models.selection?.kind === 'custom'}
-					<p class="md-body-medium px-2 py-1" style="font-weight: 600; color: var(--md-sys-color-on-surface)">
-						{data.models.selection.label} ({data.models.selection.api_key_masked})
-					</p>
-				{/if}
-				<MenuItem
-					type="button"
-					onclick={() => {
-						modelMenuOpen = false;
-						modelSheetOpen = true;
-					}}
-				>
-					{data.models.selection?.kind === 'connection' ? m.prov_own_change() : m.prov_own_use()}
-				</MenuItem>
-			</div>
-		</Menu>
-		<ModelKeySheet bind:open={modelSheetOpen} connections={data.connections} selection={data.models.selection} />
 		<Menu bind:open={personalityMenuOpen}>
 			{#snippet trigger({ toggle })}
 				<IconButton onclick={toggle} aria-label={m.chatpage_personality_label({ personality: currentPersonalityLabel })}>
@@ -166,6 +123,10 @@
 		</Menu>
 	{/snippet}
 </ChatThread>
+
+<!-- Outside the thread: its composer is a form, and these hold forms of their own. -->
+<ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
+<Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
 
 <style>
 	.persona-now {

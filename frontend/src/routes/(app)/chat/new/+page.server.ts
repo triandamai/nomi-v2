@@ -1,14 +1,17 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { fail, isRedirect, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { loadModelOptions, saveModelVisibility, saveSessionModel } from '$lib/server/modelOptions';
+import { connectProvider, PERSONAL_CONNECTIONS } from '$lib/server/providers';
 import { saveThinkingLevel } from '$lib/server/thinking';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 // A new chat before anything is said: nothing exists yet, so leaving here leaves nothing behind.
-export const load: PageServerLoad = async () => ({ title: m.nav_new_chat() });
+// The model picker starts on the person's default.
+export const load: PageServerLoad = async ({ cookies, fetch }) => ({ title: m.nav_new_chat(), modelOptions: await loadModelOptions(fetch, cookies) });
 
 export const actions: Actions = {
-	// The first message creates the chat (with the thinking level picked here), then opens it.
+	// The first message creates the chat (with the thinking level and model picked here), then opens it.
 	sendMessage: async ({ request, cookies, fetch }) => {
 		const data = await request.formData();
 		const text = data.get('text');
@@ -29,6 +32,19 @@ export const actions: Actions = {
 			await saveThinkingLevel(fetch, cookies, session_id, level);
 		}
 
+		// Sent only when it isn't the person's default. Like the thinking level, a model that
+		// can't be set leaves the chat on the default rather than stopping the message.
+		const model = data.get('model');
+		if (typeof model === 'string' && model) {
+			const choice = new FormData();
+			choice.set('key', model);
+			try {
+				await saveSessionModel(fetch, cookies, session_id, choice);
+			} catch (e) {
+				if (isRedirect(e)) throw e;
+			}
+		}
+
 		const sent = await apiFetch(fetch, cookies, `/api/sessions/${session_id}/messages`, {
 			method: 'POST',
 			body: JSON.stringify({ text }),
@@ -39,4 +55,8 @@ export const actions: Actions = {
 		}
 		throw redirect(303, `/chat/${session_id}`);
 	},
+
+	// Manage models, from the model picker: which models it offers, and connecting a provider.
+	setModelVisibility: async ({ request, cookies, fetch }) => saveModelVisibility(fetch, cookies, await request.formData()),
+	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
 };

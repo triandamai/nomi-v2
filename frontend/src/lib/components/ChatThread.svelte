@@ -57,6 +57,8 @@
 		title = m.chat_title(),
 		context,
 		extraControls,
+		modelControl,
+		newChatModel = null,
 		compactHeader = false,
 		thinkingLevel = null,
 		unsaved = false,
@@ -75,8 +77,12 @@
 		title?: string;
 		/** Optional lead-in for the app bar's meta line, e.g. a project name. */
 		context?: string;
-		/** App-bar actions (model / personality menus). */
+		/** App-bar actions (the personality menu). */
 		extraControls?: Snippet;
+		/** The composer's model picker, beside the thinking level. */
+		modelControl?: Snippet;
+		/** A new chat's model when it isn't the person's default: sent with the first message. */
+		newChatModel?: string | null;
 		/** The page has its own header with the title (an open project): keep only the crew and
 		 * the controls here, in one slim row. */
 		compactHeader?: boolean;
@@ -932,7 +938,9 @@
 						></textarea>
 						<input type="hidden" name="text" value={composedText} />
 						{#if unsaved}<input type="hidden" name="thinking" value={level} />{/if}
+						{#if unsaved && newChatModel}<input type="hidden" name="model" value={newChatModel} />{/if}
 						<MicButton ontranscript={onTranscript} />
+						{@render modelControl?.()}
 						{#if thinkingLevel}
 							<ThinkingMenu {level} onchange={setThinking} />
 						{/if}
