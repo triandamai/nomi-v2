@@ -54,7 +54,7 @@ const groups: ModelGroup[] = [
 	},
 ];
 
-type Props = { onchange: (changes: ModelChange[]) => void | Promise<boolean>; onconnect: () => void };
+type Props = { groups: ModelGroup[]; onchange: (changes: ModelChange[]) => void | Promise<boolean>; onconnect: () => void };
 
 let component: ReturnType<typeof mount> | null = null;
 
