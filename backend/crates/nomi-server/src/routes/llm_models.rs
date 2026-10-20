@@ -483,7 +483,7 @@ pub struct UserModelOption {
 }
 
 /// A provider's display name from its stored kind ("gemini" → "Google").
-fn provider_display_name(kind: &str) -> String {
+pub(crate) fn provider_display_name(kind: &str) -> String {
     let catalog_id = if kind == "gemini" { "google" } else { kind };
     nomi_llm::catalog::provider(catalog_id).map(|p| p.name.clone()).unwrap_or_else(|| kind.to_string())
 }
