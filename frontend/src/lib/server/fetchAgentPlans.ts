@@ -3,21 +3,23 @@ import type { Cookies } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { renderMarkdown } from '$lib/server/markdown';
 import { planChecklist, planExcerpt, type ChecklistItem } from '$lib/planChecklist';
-import type { AgentPlansResponse } from '$lib/types';
+import type { AgentPlansResponse, PlanBuild, PlanState } from '$lib/types';
 import { m } from '$lib/paraglide/messages';
 
 /** Fetches every plan version for one agent_session and server-renders each version's markdown
  * body — mirrors fetchRenderedMessage.ts's pattern (raw content from the backend, HTML rendered
  * here before it ever reaches the client). A version whose content is `null` (an S3 read failure
  * on the backend) keeps `content_html: null` — the side sheet shows an inline "could not load
- * this version" state for that one entry rather than failing the whole list. */
+ * this version" state for that one entry rather than failing the whole list. Each version's
+ * `state` and the `build` that followed the newest one pass through as the backend reports them
+ * (missing from servers that don't). */
 export async function fetchAgentPlans(
 	fetch: typeof globalThis.fetch,
 	cookies: Cookies,
 	sessionId: string,
 	agentSessionId: string,
-): Promise<
-	{
+): Promise<{
+	plans: {
 		id: string;
 		title: string;
 		version: number;
@@ -26,22 +28,28 @@ export async function fetchAgentPlans(
 		checklist: ChecklistItem[];
 		excerpt: string;
 		created_at: string;
-	}[]
-> {
+		state?: PlanState;
+	}[];
+	build: PlanBuild | null;
+}> {
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}`);
 	if (!response.ok) {
 		throw error(response.status, m.err_load_plan());
 	}
-	const { plans } = (await response.json()) as AgentPlansResponse;
-	return Promise.all(
-		plans.map(async (plan) => ({
-			id: plan.id,
-			title: plan.title,
-			version: plan.version,
-			content_html: plan.content !== null ? await renderMarkdown(plan.content) : null,
-			checklist: plan.content !== null ? planChecklist(plan.content) : [],
-			excerpt: plan.content !== null ? planExcerpt(plan.content) : '',
-			created_at: plan.created_at,
-		})),
-	);
+	const { plans, build } = (await response.json()) as AgentPlansResponse;
+	return {
+		plans: await Promise.all(
+			plans.map(async (plan) => ({
+				id: plan.id,
+				title: plan.title,
+				version: plan.version,
+				content_html: plan.content !== null ? await renderMarkdown(plan.content) : null,
+				checklist: plan.content !== null ? planChecklist(plan.content) : [],
+				excerpt: plan.content !== null ? planExcerpt(plan.content) : '',
+				created_at: plan.created_at,
+				...(plan.state ? { state: plan.state } : {}),
+			})),
+		),
+		build: build ?? null,
+	};
 }

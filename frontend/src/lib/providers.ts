@@ -206,16 +206,3 @@ export function prefillFromCatalog(meta: ModelMetadata): { inputPrice: string; o
 		media: mediaFromInputs(meta.input),
 	};
 }
-
-/** "Using {model} from {provider}" for a person's selection of one of their connections' models. */
-export function connectionSelectionText(
-	selection: { connection_id: string; provider_id: string; label: string; model_id: string },
-	connections: ProviderConnection[],
-	providers: ProviderDefinition[],
-): string {
-	const connection = connections.find((c) => c.id === selection.connection_id);
-	const provider = connection
-		? connectionName(connection, providers)
-		: (providers.find((p) => p.id === selection.provider_id)?.name ?? selection.provider_id);
-	return m.prov_using({ model: selection.label || selection.model_id, provider });
-}

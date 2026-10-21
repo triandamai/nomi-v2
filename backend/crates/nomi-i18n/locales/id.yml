@@ -22,6 +22,7 @@ turn:
 error:
   tool_loop: "Sepertinya aku berputar-putar di situ, jadi aku hentikan dulu. Boleh dicoba dengan pertanyaan yang sedikit berbeda?"
   timed_out: "Yang tadi kelamaan, jadi aku hentikan dulu. Coba kirim lagi, ya."
+  repeated_failure: "Aku mendapat kegagalan yang sama dari %{tool} %{count} kali, jadi aku berhenti daripada terus menebak. Hasil terakhirnya:\n%{output}"
   approval_handled: "Persetujuan itu sudah ditangani, kok."
   internal: "Maaf, ada yang kurang beres di sisiku. Silakan kirim pesanmu sekali lagi."
   llm_unreachable: "Maaf, aku belum bisa menghubungi penyedia AI. Silakan periksa koneksi server, lalu kirim pesanmu lagi."
@@ -184,3 +185,13 @@ health:
   card_minutes: "%{count} mnt"
   card_set_one: "1 set"
   card_sets: "%{count} set"
+build:
+  verified: "✓ Sudah dicek pada file terakhir"
+  failing: "✗ Belum berjalan"
+  unverified: "Belum terverifikasi"
+  check_passed: "%{command} lolos"
+  check_failed: "%{command} gagal (exit %{code})"
+  check_timed_out: "%{command} tidak selesai"
+  check_stale: "%{command} dijalankan pada file lama"
+  check_not_run: "%{command} belum dijalankan"
+  unverified_hint: "Pengecekan berjalan saat proyek dibuka di browser kamu, dan yang gagal akan dikembalikan ke Koda."

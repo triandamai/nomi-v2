@@ -22,6 +22,7 @@ turn:
 error:
   tool_loop: "I went around in circles on that one and stopped. Try asking in a different way."
   timed_out: "That took too long, so I stopped. Please try again."
+  repeated_failure: "I got the same failure from %{tool} %{count} times, so I stopped rather than keep guessing. The last result:\n%{output}"
   approval_handled: "That approval was already handled."
   internal: "Something went wrong on my side. Send your message again."
   llm_unreachable: "I couldn't reach the AI provider. Check the server's connection, then send your message again."
@@ -184,3 +185,13 @@ health:
   card_minutes: "%{count} min"
   card_set_one: "1 set"
   card_sets: "%{count} sets"
+build:
+  verified: "✓ Checked on the final files"
+  failing: "✗ Not working yet"
+  unverified: "Not verified yet"
+  check_passed: "%{command} passed"
+  check_failed: "%{command} failed (exit %{code})"
+  check_timed_out: "%{command} didn't finish"
+  check_stale: "%{command} ran on older files"
+  check_not_run: "%{command} didn't run"
+  unverified_hint: "They run when the project is open in your browser, and anything that fails goes back to Koda."

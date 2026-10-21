@@ -864,3 +864,141 @@ async fn a_page_of_messages_never_starts_inside_a_thread(pool: PgPool) {
     assert_eq!(texts(&older), vec!["ask-1", "r1a", "r1b", "r1c"]);
     assert_eq!(older["has_more"], false);
 }
+
+/// (router, token, session, user) for the plan lifecycle tests.
+async fn plan_chat(pool: &PgPool, email: &str) -> (axum::Router, String, Uuid, Uuid) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), email).await;
+    let (_, created) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = Uuid::parse_str(created["session_id"].as_str().unwrap()).unwrap();
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = $1").bind(email).fetch_one(pool).await.unwrap();
+    (router, token, session_id, user_id)
+}
+
+async fn plan_version(pool: &PgPool, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, version: i32, content: &str, minutes_ago: i64) {
+    sqlx::query(
+        "INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version, created_at) \
+         VALUES ($1, $2, $3, 'Plan', $4, $5, now() - make_interval(mins => $6))",
+    )
+    .bind(session_id)
+    .bind(agent_session_id)
+    .bind(user_id)
+    .bind(content)
+    .bind(version)
+    .bind(minutes_ago as i32)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn handed_to(pool: &PgPool, session_id: Uuid, user_id: Uuid, target: &str, status: &str, report: Option<Value>, minutes_ago: i64) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO agent_delegations (session_id, user_id, requesting_agent_type, target_agent_type, task, status, report, error, created_at) \
+         VALUES ($1, $2, 'planning', $3, 'Project x: build plan version 1', $4, $5, CASE WHEN $4 = 'failed' THEN 'it broke' END, now() - make_interval(mins => $6)) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(target)
+    .bind(status)
+    .bind(report)
+    .bind(minutes_ago as i32)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn plans_of(router: &axum::Router, token: &str, session_id: Uuid, agent_session_id: Uuid) -> Value {
+    let (status, body) =
+        json_request(router.clone(), "GET", &format!("/api/sessions/{session_id}/agent-plans/{agent_session_id}"), Value::Null, Some(token)).await;
+    assert_eq!(status, StatusCode::OK);
+    body
+}
+
+fn states(body: &Value) -> Vec<String> {
+    body["plans"].as_array().unwrap().iter().map(|p| p["state"].as_str().unwrap().to_string()).collect()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_plan_nobody_has_acted_on_is_proposed_and_its_older_versions_updated(pool: PgPool) {
+    let (router, token, session_id, user_id) = plan_chat(&pool, "plan-proposed@example.com").await;
+    let rena = Uuid::new_v4();
+    plan_version(&pool, session_id, rena, user_id, 1, "# Bali\n- [ ] Pick dates", 10).await;
+    plan_version(&pool, session_id, rena, user_id, 2, "# Bali\n- [x] Pick dates\n- [ ] Book flights", 5).await;
+    // Something else Nomi did in the chat isn't a build of the plan.
+    handed_to(&pool, session_id, user_id, "money", "completed", None, 1).await;
+
+    let body = plans_of(&router, &token, session_id, rena).await;
+    assert_eq!(states(&body), vec!["updated", "proposed"]);
+    assert!(body["build"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_plan_the_person_ticked_off_is_completed(pool: PgPool) {
+    let (router, token, session_id, user_id) = plan_chat(&pool, "plan-ticked@example.com").await;
+    let rena = Uuid::new_v4();
+    plan_version(&pool, session_id, rena, user_id, 1, "# Bali\n- [x] Pick dates\n* [X] Book flights", 5).await;
+    assert_eq!(states(&plans_of(&router, &token, session_id, rena).await), vec!["completed"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_plan_follows_its_build_from_active_to_completed_or_blocked(pool: PgPool) {
+    let (router, token, session_id, user_id) = plan_chat(&pool, "plan-build@example.com").await;
+    let rena = Uuid::new_v4();
+    plan_version(&pool, session_id, rena, user_id, 1, "# Bakery\n- [ ] Home page", 10).await;
+    // A build from before this plan isn't this plan's.
+    handed_to(&pool, session_id, user_id, "coding", "completed", None, 20).await;
+    assert_eq!(states(&plans_of(&router, &token, session_id, rena).await), vec!["proposed"]);
+
+    let build = handed_to(&pool, session_id, user_id, "coding", "processing", None, 5).await;
+    let body = plans_of(&router, &token, session_id, rena).await;
+    assert_eq!(states(&body), vec!["active"]);
+    assert_eq!(body["build"]["delegation_id"], build.to_string());
+    assert_eq!(body["build"]["status"], "processing");
+
+    let set = |status: &'static str, report: Option<Value>| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query("UPDATE agent_delegations SET status = $2, report = $3, error = CASE WHEN $2 = 'failed' THEN 'it broke' END WHERE id = $1")
+                .bind(build)
+                .bind(status)
+                .bind(report)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    set("completed", Some(json!({ "status": "verified", "checks": [] }))).await;
+    let body = plans_of(&router, &token, session_id, rena).await;
+    assert_eq!(states(&body), vec!["completed"]);
+    assert_eq!(body["build"]["report"]["status"], "verified");
+
+    // Built, but not verified: still completed, and the report says what's missing.
+    set("completed", Some(json!({ "status": "unverified", "checks": [] }))).await;
+    assert_eq!(states(&plans_of(&router, &token, session_id, rena).await), vec!["completed"]);
+    // Built before reports existed: completed, with nothing claimed about checks.
+    set("completed", None).await;
+    let body = plans_of(&router, &token, session_id, rena).await;
+    assert_eq!(states(&body), vec!["completed"]);
+    assert!(body["build"]["report"].is_null());
+
+    set("completed", Some(json!({ "status": "failing", "checks": [] }))).await;
+    assert_eq!(states(&plans_of(&router, &token, session_id, rena).await), vec!["blocked"]);
+    set("failed", None).await;
+    let body = plans_of(&router, &token, session_id, rena).await;
+    assert_eq!(states(&body), vec!["blocked"]);
+    assert_eq!(body["build"]["error"], "it broke");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_build_belongs_to_the_newest_plan_before_it(pool: PgPool) {
+    let (router, token, session_id, user_id) = plan_chat(&pool, "plan-two@example.com").await;
+    let (trip, app) = (Uuid::new_v4(), Uuid::new_v4());
+    plan_version(&pool, session_id, trip, user_id, 1, "# Bali\n- [ ] Pick dates", 30).await;
+    plan_version(&pool, session_id, app, user_id, 1, "# Bakery\n- [ ] Home page", 20).await;
+    handed_to(&pool, session_id, user_id, "coding", "processing", None, 10).await;
+    // Koda's own notes during the build (under the chat's id) don't come between them.
+    plan_version(&pool, session_id, session_id, user_id, 1, "- [ ] refactor", 8).await;
+
+    assert_eq!(states(&plans_of(&router, &token, session_id, trip).await), vec!["proposed"]);
+    assert_eq!(states(&plans_of(&router, &token, session_id, app).await), vec!["active"]);
+}

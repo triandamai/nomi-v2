@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { refreshPlans } from '$lib/planRefresh.svelte';
 	import { touchScreen } from '$lib/touch';
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
@@ -432,6 +433,8 @@
 			const response = await fetch(buildMessageFetchUrl(page.url.pathname, id));
 			if (!response.ok) return;
 			const message: RenderedMessage = await response.json();
+			// A new version makes the earlier ones' bubbles say they've been updated.
+			if (message.content_blocks?.some((block) => block.kind === 'plan')) refreshPlans();
 			const index = localMessages.findIndex((m) => m.id === message.id);
 			if (index === -1) {
 				localMessages = [...localMessages, message];
@@ -603,6 +606,7 @@
 				invalidateAll(); // the personality menu shows the new one
 			} else if (envelope.kind === 'AgentDelegationUpdated') {
 				invalidateAll();
+				refreshPlans(); // a build starting or ending moves its plan on
 			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
 				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 			} else if (envelope.kind === 'AgentPhaseChanged') {

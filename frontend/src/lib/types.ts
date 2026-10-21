@@ -100,16 +100,50 @@ export interface ReplySource {
 	url: string;
 }
 
+/** Where a plan version stands, from what was done with it (see the backend's `plan_state`). */
+export type PlanState = 'proposed' | 'active' | 'updated' | 'completed' | 'blocked';
+
 export interface AgentPlanItem {
 	id: string;
 	title: string;
 	version: number;
 	content: string | null;
 	created_at: string;
+	/** Missing from servers that don't report it. */
+	state?: PlanState;
+}
+
+/** One check of a build, as it ran on (or missed) the final files. */
+export interface BuildCheck {
+	command: string;
+	outcome: 'passed' | 'failed' | 'timed_out' | 'stale' | 'not_run';
+	source: 'koda' | 'preview';
+	exit_code: number | null;
+	output_tail: string | null;
+}
+
+/** What a build's checks showed when it ended (nomi_agent_coding::report::BuildReport). */
+export interface BuildReport {
+	status: 'verified' | 'failing' | 'unverified';
+	files_version: number;
+	changed_files: string[];
+	deleted_files: string[];
+	checks: BuildCheck[];
+}
+
+/** The build handed over after a plan's newest version. */
+export interface PlanBuild {
+	delegation_id: string;
+	status: string;
+	report: BuildReport | null;
+	error: string | null;
+	updated_at: string;
 }
 
 export interface AgentPlansResponse {
 	plans: AgentPlanItem[];
+	/** Missing from servers that don't report it. */
+	build?: PlanBuild | null;
 }
 
 export interface RenderedMessage extends MessageItem {
@@ -125,18 +159,11 @@ export interface LlmAdminModelOption {
 	model_id: string;
 }
 
-export type LlmUserSelection =
-	| { kind: 'admin'; admin_model_id: string }
-	| { kind: 'custom'; label: string; provider: string; model_id: string; api_key_masked: string; base_url: string | null }
-	/** A model from one of the person's own provider connections (see $lib/providers). */
-	| { kind: 'connection'; connection_id: string; provider_id: string; label: string; model_id: string };
-
 /** Which model Koda builds the person's projects with. */
 export type LlmCodingSelection = { kind: 'default' } | { kind: 'same_as_chat' } | { kind: 'admin'; admin_model_id: string };
 
 export interface LlmModelsResponse {
 	admin_models: LlmAdminModelOption[];
-	selection: LlmUserSelection | null;
 	coding: LlmCodingSelection;
 	/** The coding model an admin picked (what 'default' means), if any. */
 	default_coding_model_id: string | null;

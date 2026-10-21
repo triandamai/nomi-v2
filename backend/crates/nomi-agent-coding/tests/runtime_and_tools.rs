@@ -132,6 +132,9 @@ async fn commands_wait_for_an_open_project_page(pool: PgPool) {
     let out = runtime::run_command(&mut conn, user_id, input).await.unwrap();
     page_task.await.unwrap();
     assert_eq!(out, "$ npm run check\nexit code 1\nsrc/routes/+page.svelte:3 Type error");
+    // The run remembers which files it checked.
+    let checked: Option<i64> = sqlx::query_scalar("SELECT files_version FROM project_runs WHERE project_id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(checked, Some(files_version(&pool, project_id).await));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

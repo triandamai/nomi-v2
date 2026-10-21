@@ -493,6 +493,27 @@ mod chat_model {
     }
 
     #[sqlx::test(migrations = "../../migrations")]
+    async fn koda_builds_with_the_model_picked_for_the_chat(pool: PgPool) {
+        use nomi_server::bootstrap::{resolve_llm_model_config_in_session_for, ModelPurpose};
+        use nomi_settings::llm_models::set_coding_admin_llm_model;
+
+        let user_id = insert_user(&pool).await;
+        admin_model(&pool, user_id, "Default", "claude-haiku-4-5").await;
+        let coding = admin_model(&pool, user_id, "Coding", "claude-sonnet-5-5").await;
+        let opus = admin_model(&pool, user_id, "Opus", "claude-opus-5-5").await;
+        set_coding_admin_llm_model(&pool, Some(coding)).await.unwrap();
+        let project_chat = chat(&pool).await;
+        set_session_model(&pool, project_chat, &ModelKey::Admin(opus), None, user_id).await.unwrap();
+
+        // An explicit pick in a chat is what everything in that chat runs on, Koda included.
+        let config = resolve_llm_model_config_in_session_for(&pool, user_id, project_chat, &SETTINGS_KEY, ModelPurpose::Coding).await;
+        assert_eq!(config.model_id, "claude-opus-5-5");
+        // Without a pick, Koda keeps the coding model.
+        let config = resolve_llm_model_config_in_session_for(&pool, user_id, chat(&pool).await, &SETTINGS_KEY, ModelPurpose::Coding).await;
+        assert_eq!(config.model_id, "claude-sonnet-5-5");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
     async fn a_picked_model_an_admin_switched_off_falls_back_to_the_default(pool: PgPool) {
         let user_id = insert_user(&pool).await;
         admin_model(&pool, user_id, "Default", "claude-haiku-4-5").await;

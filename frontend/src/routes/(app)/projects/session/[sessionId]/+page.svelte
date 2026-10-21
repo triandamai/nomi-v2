@@ -25,6 +25,11 @@
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import SheetFrame from '$lib/components/project/SheetFrame.svelte';
+	import Snackbar from '$lib/components/m3/Snackbar.svelte';
+	import ModelManager from '$lib/components/models/ModelManager.svelte';
+	import ModelSelector from '$lib/components/models/ModelSelector.svelte';
+	import { applyChanges, choiceFor, type ModelChange, type ModelChoice } from '$lib/modelPicker';
+	import { postAction } from '$lib/providerActions';
 	import IssuesPanel from '$lib/components/project/IssuesPanel.svelte';
 	import DeployPanel from '$lib/components/project/DeployPanel.svelte';
 	import MonitorPanel from '$lib/components/project/MonitorPanel.svelte';
@@ -39,6 +44,30 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let view = $state<'preview' | 'code' | 'terminal'>('preview');
+
+	// The composer's model picker, as on a chat (what this chat replies with, and what Koda builds
+	// the project with). Both follow the page's data, and are moved ahead of the server while a
+	// change is on its way (a pick that fails is put back).
+	let modelGroups = $derived(data.modelOptions.groups);
+	let sessionModel = $derived(data.sessionModel);
+	let manageOpen = $state(false);
+	let modelErrorOpen = $state(false);
+
+	async function pickModel(key: string) {
+		const previous = sessionModel;
+		sessionModel = choiceFor(modelGroups, key) ?? previous;
+		const body = new FormData();
+		body.set('key', key);
+		const outcome = await postAction<{ sessionModel: ModelChoice }>('setSessionModel', body);
+		if (outcome.ok) {
+			sessionModel = outcome.data.sessionModel;
+		} else {
+			sessionModel = previous;
+			modelErrorOpen = true;
+		}
+	}
+
+	const modelsSaved = (changes: ModelChange[]) => (modelGroups = applyChanges(modelGroups, changes));
 
 	// The project's tools open in full-screen sheets over the project, so its chat, code and
 	// running preview stay as they are underneath (closing one never restarts the install).
@@ -455,6 +484,18 @@
 	}
 </script>
 
+{#snippet modelControl()}
+	{#if modelGroups.length > 0 || sessionModel}
+		<ModelSelector
+			groups={modelGroups}
+			selected={sessionModel}
+			onselect={pickModel}
+			onmanage={() => (manageOpen = true)}
+			hint={m.msel_project_hint()}
+		/>
+	{/if}
+{/snippet}
+
 {#snippet paneToggle()}
 	{#if data.project}
 		<IconButton
@@ -522,6 +563,7 @@
 			thinkingLevel={data.thinkingLevel}
 			placeholder={m.composer_placeholder_project()}
 			project={{ status: data.project?.status ?? 'planning' }}
+			{modelControl}
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
 		/>
@@ -607,6 +649,10 @@
 	</section>
 </div>
 </div>
+
+<!-- Outside the thread: its composer is a form, and these hold forms of their own. -->
+<ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
+<Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
 
 {#if data.project && sheet}
 	{@const project = data.project}

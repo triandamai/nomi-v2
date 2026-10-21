@@ -8,6 +8,10 @@ pub enum TurnError {
     ToolLoopExceeded,
     #[error("this action is no longer pending approval")]
     ApprovalNoLongerPending,
+    /// The same tool call failed the same way `attempts` times (see
+    /// `SubAgent::repeated_failure_limit`); `output` is that failure.
+    #[error("{tool} failed the same way {attempts} times")]
+    RepeatedFailure { tool: String, attempts: u32, output: String },
     /// The turn ran past its time limit (a stalled model or tool) and was stopped.
     #[error("the turn took longer than {0:?} and was stopped")]
     TimedOut(std::time::Duration),
@@ -36,6 +40,14 @@ impl TurnError {
             TurnError::LlmCallFailed(e) => e.user_message_in(locale),
             TurnError::ToolLoopExceeded => locale.t("error.tool_loop"),
             TurnError::TimedOut(_) => locale.t("error.timed_out"),
+            TurnError::RepeatedFailure { tool, attempts, output } => {
+                let output = output.trim();
+                let clipped = match output.char_indices().nth(400) {
+                    Some((at, _)) => format!("{}…", &output[..at]),
+                    None => output.to_string(),
+                };
+                locale.tf("error.repeated_failure", &[("tool", tool), ("count", &attempts.to_string()), ("output", &clipped)])
+            }
             TurnError::ApprovalNoLongerPending => locale.t("error.approval_handled"),
             TurnError::Db(_) => locale.t("error.internal"),
         }

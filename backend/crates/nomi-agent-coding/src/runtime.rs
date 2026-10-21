@@ -134,7 +134,10 @@ pub async fn run_command(conn: &mut PoolConnection<Postgres>, user_id: Uuid, inp
     if !runner_online(conn, project_id).await.map_err(|e| e.to_string())? {
         return Ok(NOT_OPEN.to_string());
     }
-    let run_id: Uuid = sqlx::query_scalar("INSERT INTO project_runs (project_id, command, args) VALUES ($1, $2, $3) RETURNING id")
+    let run_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO project_runs (project_id, command, args, files_version) \
+         SELECT $1, $2, $3, files_version FROM projects WHERE id = $1 RETURNING id",
+    )
         .bind(project_id)
         .bind(&words[0])
         .bind(json!(words[1..]))

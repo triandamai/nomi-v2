@@ -6,9 +6,9 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use nomi_agent_core::prompts::PLANNING_SYSTEM_PROMPT;
+use nomi_agent_core::prompts::{PLANNING_APP_PLAYBOOK, PLANNING_SYSTEM_PROMPT};
 use nomi_agent_core::SubAgent;
-use nomi_llm::ToolDefinition;
+use nomi_llm::{ContentBlock, LlmMessage, LlmRole, ToolDefinition};
 
 pub const PLANNING_AGENT_TYPE: &str = "planning";
 
@@ -45,6 +45,33 @@ impl PlanningAgent {
 
 #[async_trait]
 impl SubAgent for PlanningAgent {
+    /// The app-building playbook (questions, create_project, the plan, handing it to Koda) only
+    /// when this is about building something: a project chat, or a conversation where the person
+    /// asked for an app, site or the like. Trips, schedules and other plans don't get it.
+    async fn domain_context(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        session_id: Uuid,
+        _user_id: Uuid,
+        messages: &[LlmMessage],
+    ) -> Option<String> {
+        let asked_to_build = messages
+            .iter()
+            .filter(|m| m.role == LlmRole::User)
+            .flat_map(|m| m.content.iter())
+            .any(|block| matches!(block, ContentBlock::Text { text } if nomi_agent_core::build_intent::wants_to_build(text)));
+        if asked_to_build {
+            return Some(PLANNING_APP_PLAYBOOK.to_string());
+        }
+        let project_chat: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM projects WHERE session_id = $1)")
+            .bind(session_id)
+            .fetch_one(&mut **conn)
+            .await
+            .unwrap_or(false);
+        project_chat.then(|| PLANNING_APP_PLAYBOOK.to_string())
+    }
+
     /// Remembers durable facts the user mentions here and recalls them in later turns.
     fn uses_memory(&self) -> bool {
         true

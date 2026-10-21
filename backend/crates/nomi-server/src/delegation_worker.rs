@@ -86,10 +86,9 @@ async fn post_with_blocks(conn: &mut sqlx::PgConnection, mqtt: &MqttPublisher, s
 }
 
 /// Planning's delegation task is always formatted "Project <uuid>: ..." (see
-/// nomi-agent-planning's system prompt) — this is the only place that convention needs parsing,
-/// since it's just used to know which project to mark ready, a UI/status nicety. A malformed or
-/// missing UUID here is silently ignored, not an error: the project simply stays "building" and
-/// nothing about the delegation itself fails over a status cosmetic.
+/// nomi-agent-planning's system prompt): which project a build was about, to report on its checks
+/// and mark it ready. A malformed or missing UUID here is silently ignored, not an error: there's
+/// simply no report, the project stays "building", and the delegation itself doesn't fail.
 fn extract_project_id(task: &str) -> Option<Uuid> {
     task.strip_prefix("Project ")?.split_once(':').map(|(id, _)| id.trim()).and_then(|id| id.parse().ok())
 }
@@ -176,21 +175,37 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             // A task can carry the user's files (the Files agent passes their tags along).
             nomi_agent_core::attachments::expand_messages(&mut conn, claimed.user_id, &mut messages).await;
 
-            let outcome = nomi_agent_core::run_agent_turn(
-                &mut conn,
-                Some((&mqtt, claimed.id)),
-                s3.as_ref(),
-                provider.as_ref(),
-                embedding_provider.as_ref(),
-                &registry,
-                agent.as_ref(),
-                claimed.session_id,
-                claimed.session_id,
-                claimed.user_id,
-                messages,
-                DELEGATED_MAX_TOKENS,
+            // A stalled model or command mustn't hold this worker (it runs one delegation at a
+            // time) forever.
+            let limit = nomi_turn::delegation_time_limit();
+            let outcome = match tokio::time::timeout(
+                limit,
+                nomi_agent_core::run_agent_turn(
+                    &mut conn,
+                    Some((&mqtt, claimed.id)),
+                    s3.as_ref(),
+                    provider.as_ref(),
+                    embedding_provider.as_ref(),
+                    &registry,
+                    agent.as_ref(),
+                    claimed.session_id,
+                    claimed.session_id,
+                    claimed.user_id,
+                    messages,
+                    DELEGATED_MAX_TOKENS,
+                ),
             )
-            .await;
+            .await
+            {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    // The run was dropped mid-step, maybe mid-query: carry on with a fresh connection.
+                    if let Ok(fresh) = pool.acquire().await {
+                        conn = fresh;
+                    }
+                    Err(nomi_agent_core::TurnError::TimedOut(limit))
+                }
+            };
 
             // The delegated run streamed its progress into the chat under the delegation's id;
             // close it so the chat stops showing it as working.
@@ -204,11 +219,30 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             let stopped = matches!(outcome, Ok(LoopOutcome::Cancelled));
             match outcome {
                 Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) | Ok(LoopOutcome::Posted { text, .. }) => {
+                    // A build ends with what its checks showed on the final files, whatever the
+                    // summary says (and the project is ready only if none of them failed).
+                    let build = match extract_project_id(&claimed.task) {
+                        Some(project_id) if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE => {
+                            nomi_agent_coding::report::finish_build(&mut conn, claimed.id, claimed.session_id, project_id)
+                                .await
+                                .map_err(|e| tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: couldn't report on the build"))
+                                .ok()
+                        }
+                        _ => None,
+                    };
+                    let checks = build.as_ref().map(|report| report.summary_line(locale));
+
                     // The agent's own answer, whole: rewording it through a short supervisor
                     // completion cut long plans and lists off mid-sentence. An answer that was a
                     // recording or a view is already in the chat.
                     if !text.trim().is_empty() && !posted {
-                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &text).await;
+                        let answer = match &checks {
+                            Some(checks) => format!("{}\n\n{checks}", text.trim_end()),
+                            None => text.clone(),
+                        };
+                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &answer).await;
+                    } else if let Some(checks) = &checks {
+                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), checks).await;
                     }
 
                     let _ = sqlx::query(
@@ -218,15 +252,6 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     .bind(&text)
                     .execute(&pool)
                     .await;
-
-                    if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE {
-                        if let Some(project_id) = extract_project_id(&claimed.task) {
-                            let _ = sqlx::query("UPDATE projects SET status = 'ready' WHERE id = $1 AND status = 'building'")
-                                .bind(project_id)
-                                .execute(&pool)
-                                .await;
-                        }
-                    }
 
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
@@ -303,6 +328,12 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
+                    // What the build got to before it stopped, for whoever picks it up.
+                    if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE {
+                        if let Some(project_id) = extract_project_id(&claimed.task) {
+                            let _ = nomi_agent_coding::report::save_report(&mut conn, claimed.id, claimed.session_id, project_id).await;
+                        }
+                    }
                     let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
                     // Out of allowance: the card says so and where to go next.
                     post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, e.notice_blocks()).await;

@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod build_intent;
 pub mod chat_title;
 pub mod content_block;
 pub mod context;
@@ -12,6 +13,7 @@ pub mod memory;
 pub mod notification;
 pub mod permissions;
 pub mod personality;
+pub mod plans;
 pub mod prompts;
 pub mod records;
 pub mod registry;

@@ -1974,3 +1974,209 @@ async fn text_written_after_a_recording_is_still_the_reply(pool: PgPool) {
 
     assert!(matches!(outcome, LoopOutcome::Reply { ref text, .. } if text == "https://example.com/recipe"), "{outcome:?}");
 }
+
+/// An agent with extra instructions for one kind of request only (Rena's app-building playbook).
+struct DomainAgent;
+
+#[async_trait::async_trait]
+impl SubAgent for DomainAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("domain")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("You plan things.")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: serde_json::Value) -> Result<ToolOutcome, String> {
+        Err("no tools".to_string())
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("domain")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("plans")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    async fn domain_context(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        _session_id: Uuid,
+        _user_id: Uuid,
+        messages: &[nomi_llm::LlmMessage],
+    ) -> Option<String> {
+        let asks_to_build = messages.iter().flat_map(|m| m.content.iter()).any(|b| matches!(b, ContentBlock::Text { text } if text.contains("build")));
+        asks_to_build.then(|| "APP PLAYBOOK".to_string())
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_domain_context_reaches_the_prompt_only_when_the_agent_says_it_applies(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let registry = AgentRegistry::new(vec![Box::new(DomainAgent)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let user = |text: &str| vec![nomi_llm::LlmMessage { role: nomi_llm::LlmRole::User, content: vec![ContentBlock::Text { text: text.to_string() }] }];
+
+    for (text, expect) in [("plan my trip to Bali", false), ("build me an app", true)] {
+        let provider = FakeLlmProvider::sequence(vec![text_response("ok", StopReason::EndTurn)]);
+        let mut conn = pool.acquire().await.unwrap();
+        run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &DomainAgent, session_id, agent_session_id, user_id, user(text), 100).await.unwrap();
+        let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+        assert_eq!(system.contains("APP PLAYBOOK"), expect, "{text}");
+        assert!(system.starts_with("You plan things."), "the agent's own prompt comes first");
+    }
+}
+
+/// Runs a check that keeps failing, like Koda's run_command (exit code in the output, not an error).
+struct StubbornAgent {
+    outputs: std::sync::Mutex<Vec<&'static str>>,
+}
+
+#[async_trait::async_trait]
+impl SubAgent for StubbornAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("stubborn")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![ToolDefinition { name: "check".to_string(), description: "Runs the checks".to_string(), input_schema: serde_json::json!({"type": "object"}) }]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        _name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        let mut outputs = self.outputs.lock().unwrap();
+        let output = if outputs.len() > 1 { outputs.remove(0) } else { outputs[0] };
+        Ok(ToolOutcome::text(output.to_string()))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("stubborn")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn max_tool_turns(&self) -> u32 {
+        20
+    }
+    fn tool_needs_approval(&self, _tool_name: &str) -> bool {
+        false
+    }
+    fn repeated_failure_limit(&self) -> Option<u32> {
+        Some(3)
+    }
+    fn tool_output_is_failure(&self, _tool_name: &str, output: &str) -> bool {
+        output.starts_with("exit code 1")
+    }
+}
+
+fn stubborn(outputs: Vec<&'static str>) -> StubbornAgent {
+    StubbornAgent { outputs: std::sync::Mutex::new(outputs) }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_same_failure_three_times_stops_the_run_instead_of_going_around(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let agent = stubborn(vec!["exit code 1\nsrc/app.ts:3 Type error"]);
+    let provider = FakeLlmProvider::sequence((0..10).map(|i| tool_use_response(&format!("t{i}"), "check", serde_json::json!({}))).collect());
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(stubborn(vec![""]))]);
+
+    let result = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &agent, session_id, agent_session_id, user_id, vec![], 100).await;
+
+    match result {
+        Err(TurnError::RepeatedFailure { tool, attempts, output }) => {
+            assert_eq!((tool.as_str(), attempts), ("check", 3));
+            assert!(output.contains("src/app.ts:3 Type error"));
+        }
+        other => panic!("expected the run to stop on the repeated failure, got {other:?}"),
+    }
+    assert_eq!(provider.received_requests.lock().unwrap().len(), 3, "no fourth try");
+    let message = TurnError::RepeatedFailure { tool: "check".to_string(), attempts: 3, output: "boom".to_string() }.user_message();
+    assert!(message.contains("3 times") && message.contains("boom"), "{message}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn failures_that_change_or_pass_are_progress_not_a_loop(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    // A different error each time, and the same passing output: never stuck.
+    let agent = stubborn(vec!["exit code 1\nerror A", "exit code 1\nerror B", "exit code 0\nok", "exit code 0\nok", "exit code 0\nok", "exit code 1\nerror C"]);
+    let mut responses: Vec<LlmResponse> = (0..6).map(|i| tool_use_response(&format!("t{i}"), "check", serde_json::json!({}))).collect();
+    responses.push(text_response("done", StopReason::EndTurn));
+    let provider = FakeLlmProvider::sequence(responses);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(stubborn(vec![""]))]);
+
+    let result = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &agent, session_id, agent_session_id, user_id, vec![], 100).await;
+    assert!(matches!(result, Ok(LoopOutcome::Reply { .. })), "{result:?}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn agents_that_dont_opt_in_keep_going_as_before(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    // TestAgent has no `nope` tool: the same error every time, and no repeated-failure limit.
+    let mut responses: Vec<LlmResponse> = (0..4).map(|i| tool_use_response(&format!("t{i}"), "nope", serde_json::json!({}))).collect();
+    responses.push(text_response("gave up", StopReason::EndTurn));
+    let provider = FakeLlmProvider::sequence(responses);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    sqlx::query("INSERT INTO tool_permission_rules (user_id, tool_name, decision) VALUES ($1, 'nope', 'allow')").bind(user_id).execute(&pool).await.unwrap();
+
+    let result = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100).await;
+    assert!(matches!(result, Ok(LoopOutcome::Reply { .. })), "{result:?}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_delegated_run_keeps_one_todo_list_of_its_own(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, _) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let todo_input = |status: &str| serde_json::json!({"items": [{"id": "1", "text": "Write the home page", "status": status}]});
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let todo_lists = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, String>(
+            "SELECT content_blocks->0->'items'->0->>'status' FROM messages WHERE session_id = $1 AND content_blocks @> '[{\"kind\": \"todo_list\"}]' ORDER BY created_at",
+        )
+        .bind(session_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+    };
+
+    // Delegated runs use the chat's own id as their agent session (there's no agent_sessions row).
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_use_response("t1", "update_todos", todo_input("in_progress")),
+        tool_use_response("t2", "update_todos", todo_input("done")),
+        text_response("built", StopReason::EndTurn),
+    ]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, session_id, user_id, vec![], 100).await.unwrap();
+    let requests = format!("{:?}", provider.received_requests.lock().unwrap()[2].messages);
+    assert!(!requests.contains("no rows"), "update_todos worked: {requests}");
+    assert_eq!(todo_lists(pool.clone()).await, vec!["done"], "one list, updated in place");
+
+    // The next build starts a list of its own.
+    let provider = FakeLlmProvider::sequence(vec![tool_use_response("t3", "update_todos", todo_input("pending")), text_response("again", StopReason::EndTurn)]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, session_id, user_id, vec![], 100).await.unwrap();
+    assert_eq!(todo_lists(pool.clone()).await, vec!["done", "pending"]);
+}
