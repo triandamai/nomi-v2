@@ -184,3 +184,13 @@ health:
   card_minutes: "%{count} min"
   card_set_one: "1 set"
   card_sets: "%{count} sets"
+build:
+  verified: "✓ Checked on the final files"
+  failing: "✗ Not working yet"
+  unverified: "Not verified yet"
+  check_passed: "%{command} passed"
+  check_failed: "%{command} failed (exit %{code})"
+  check_timed_out: "%{command} didn't finish"
+  check_stale: "%{command} ran on older files"
+  check_not_run: "%{command} didn't run"
+  unverified_hint: "They run when the project is open in your browser, and anything that fails goes back to Koda."

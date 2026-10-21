@@ -184,3 +184,13 @@ health:
   card_minutes: "%{count} mnt"
   card_set_one: "1 set"
   card_sets: "%{count} set"
+build:
+  verified: "✓ Sudah dicek pada file terakhir"
+  failing: "✗ Belum berjalan"
+  unverified: "Belum terverifikasi"
+  check_passed: "%{command} lolos"
+  check_failed: "%{command} gagal (exit %{code})"
+  check_timed_out: "%{command} tidak selesai"
+  check_stale: "%{command} dijalankan pada file lama"
+  check_not_run: "%{command} belum dijalankan"
+  unverified_hint: "Pengecekan berjalan saat proyek dibuka di browser kamu, dan yang gagal akan dikembalikan ke Koda."

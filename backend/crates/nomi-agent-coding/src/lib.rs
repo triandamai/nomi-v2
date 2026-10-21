@@ -5,6 +5,7 @@
 pub mod brief;
 pub mod files;
 pub mod guides;
+pub mod report;
 pub mod runtime;
 
 use std::borrow::Cow;

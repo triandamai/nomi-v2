@@ -1088,6 +1088,9 @@ pub struct AgentActivityItem {
     pub error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// What a build's checks showed on its final files (nomi_agent_coding::report::BuildReport);
+    /// null for every other delegation.
+    pub report: Option<serde_json::Value>,
 }
 
 pub async fn list_agent_activity(
@@ -1097,9 +1100,10 @@ pub async fn list_agent_activity(
 ) -> Result<Json<Vec<AgentActivityItem>>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
 
-    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>)> =
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>, Option<serde_json::Value>)> =
         sqlx::query_as(
-            "SELECT id, target_agent_type, task, status, result, error, created_at, completed_at \
+            "SELECT id, target_agent_type, task, status, result, error, created_at, completed_at, report \
              FROM agent_delegations WHERE session_id = $1 ORDER BY created_at DESC LIMIT 20",
         )
         .bind(session_id)
@@ -1112,8 +1116,8 @@ pub async fn list_agent_activity(
 
     let items = rows
         .into_iter()
-        .map(|(id, target_agent_type, task, status, result, error, created_at, completed_at)| AgentActivityItem {
-            id, target_agent_type, task, status, result, error, created_at, completed_at,
+        .map(|(id, target_agent_type, task, status, result, error, created_at, completed_at, report)| AgentActivityItem {
+            id, target_agent_type, task, status, result, error, created_at, completed_at, report,
         })
         .collect();
 

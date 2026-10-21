@@ -86,10 +86,9 @@ async fn post_with_blocks(conn: &mut sqlx::PgConnection, mqtt: &MqttPublisher, s
 }
 
 /// Planning's delegation task is always formatted "Project <uuid>: ..." (see
-/// nomi-agent-planning's system prompt) — this is the only place that convention needs parsing,
-/// since it's just used to know which project to mark ready, a UI/status nicety. A malformed or
-/// missing UUID here is silently ignored, not an error: the project simply stays "building" and
-/// nothing about the delegation itself fails over a status cosmetic.
+/// nomi-agent-planning's system prompt): which project a build was about, to report on its checks
+/// and mark it ready. A malformed or missing UUID here is silently ignored, not an error: there's
+/// simply no report, the project stays "building", and the delegation itself doesn't fail.
 fn extract_project_id(task: &str) -> Option<Uuid> {
     task.strip_prefix("Project ")?.split_once(':').map(|(id, _)| id.trim()).and_then(|id| id.parse().ok())
 }
@@ -204,11 +203,30 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             let stopped = matches!(outcome, Ok(LoopOutcome::Cancelled));
             match outcome {
                 Ok(LoopOutcome::Reply { text, .. }) | Ok(LoopOutcome::Completed { summary: text, .. }) | Ok(LoopOutcome::Posted { text, .. }) => {
+                    // A build ends with what its checks showed on the final files, whatever the
+                    // summary says (and the project is ready only if none of them failed).
+                    let build = match extract_project_id(&claimed.task) {
+                        Some(project_id) if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE => {
+                            nomi_agent_coding::report::finish_build(&mut conn, claimed.id, claimed.session_id, project_id)
+                                .await
+                                .map_err(|e| tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: couldn't report on the build"))
+                                .ok()
+                        }
+                        _ => None,
+                    };
+                    let checks = build.as_ref().map(|report| report.summary_line(locale));
+
                     // The agent's own answer, whole: rewording it through a short supervisor
                     // completion cut long plans and lists off mid-sentence. An answer that was a
                     // recording or a view is already in the chat.
                     if !text.trim().is_empty() && !posted {
-                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &text).await;
+                        let answer = match &checks {
+                            Some(checks) => format!("{}\n\n{checks}", text.trim_end()),
+                            None => text.clone(),
+                        };
+                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &answer).await;
+                    } else if let Some(checks) = &checks {
+                        post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), checks).await;
                     }
 
                     let _ = sqlx::query(
@@ -218,15 +236,6 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     .bind(&text)
                     .execute(&pool)
                     .await;
-
-                    if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE {
-                        if let Some(project_id) = extract_project_id(&claimed.task) {
-                            let _ = sqlx::query("UPDATE projects SET status = 'ready' WHERE id = $1 AND status = 'building'")
-                                .bind(project_id)
-                                .execute(&pool)
-                                .await;
-                        }
-                    }
 
                     let _ = mqtt.publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id }).await;
 
