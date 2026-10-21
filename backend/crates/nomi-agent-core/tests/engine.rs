@@ -1973,3 +1973,53 @@ async fn text_written_after_a_recording_is_still_the_reply(pool: PgPool) {
 
     assert!(matches!(outcome, LoopOutcome::Reply { ref text, .. } if text == "https://example.com/recipe"), "{outcome:?}");
 }
+
+/// An agent with extra instructions for one kind of request only (Rena's app-building playbook).
+struct DomainAgent;
+
+#[async_trait::async_trait]
+impl SubAgent for DomainAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("domain")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("You plan things.")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: serde_json::Value) -> Result<ToolOutcome, String> {
+        Err("no tools".to_string())
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("domain")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("plans")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    async fn domain_context(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, messages: &[nomi_llm::LlmMessage]) -> Option<String> {
+        let asks_to_build = messages.iter().flat_map(|m| m.content.iter()).any(|b| matches!(b, ContentBlock::Text { text } if text.contains("build")));
+        asks_to_build.then(|| "APP PLAYBOOK".to_string())
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_domain_context_reaches_the_prompt_only_when_the_agent_says_it_applies(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let registry = AgentRegistry::new(vec![Box::new(DomainAgent)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let user = |text: &str| vec![nomi_llm::LlmMessage { role: nomi_llm::LlmRole::User, content: vec![ContentBlock::Text { text: text.to_string() }] }];
+
+    for (text, expect) in [("plan my trip to Bali", false), ("build me an app", true)] {
+        let provider = FakeLlmProvider::sequence(vec![text_response("ok", StopReason::EndTurn)]);
+        let mut conn = pool.acquire().await.unwrap();
+        run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &DomainAgent, session_id, agent_session_id, user_id, user(text), 100).await.unwrap();
+        let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+        assert_eq!(system.contains("APP PLAYBOOK"), expect, "{text}");
+        assert!(system.starts_with("You plan things."), "the agent's own prompt comes first");
+    }
+}

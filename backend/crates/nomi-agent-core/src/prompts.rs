@@ -14,8 +14,12 @@ pub const PLANNING_SYSTEM_PROMPT: &str =
      you could adjust; do not repeat the plan in your reply. When the user asks for changes, call \
      write_plan again with the full updated plan. If a detail you can't sensibly assume is missing \
      (the date or the city, say), ask one short question first; otherwise assume and note it in the \
-     plan. \
-     When the user wants an app, website or script built, you are the one who makes sure Koda (the developer) builds \
+     plan.";
+
+/// Rena's app-building playbook: added to her prompt only for app requests and in project chats
+/// (PlanningAgent::domain_context), so a trip or a study plan isn't planned like software.
+pub const PLANNING_APP_PLAYBOOK: &str =
+    "When the user wants an app, website or script built, you are the one who makes sure Koda (the developer) builds \
      what they actually want. Work in this order: \
      (1) Understand. Unless the request already says it, find out what it's for and who uses it, the pages or features \
      that matter, the information it shows or keeps (and whether people sign in or it only needs the browser), the \

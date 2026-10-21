@@ -129,6 +129,14 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// Extra instructions for this chat and request only, added right after the agent's own
+    /// prompt: e.g. Rena's app-building playbook, which only an app request (or a project chat)
+    /// needs. `messages` is the conversation the turn starts from. `None` (the default) adds
+    /// nothing, so an agent's prompt stays as it was.
+    async fn domain_context(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _messages: &[nomi_llm::LlmMessage]) -> Option<String> {
+        None
+    }
+
     /// When true, run_agent_turn gives this agent `read_plan`: the latest plan drafted in this
     /// chat (by any agent), with its version, so it builds what was agreed.
     fn reads_plans(&self) -> bool {

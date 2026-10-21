@@ -595,13 +595,15 @@ pub async fn run_agent_turn(
         Vec::new()
     };
 
+    // The agent's own prompt, then anything only this kind of request needs (domain_context).
+    let base_prompt = match agent.domain_context(conn, session_id, &messages).await {
+        Some(context) => format!("{}\n\n{context}", agent.system_prompt()),
+        None => agent.system_prompt().to_string(),
+    };
     let system_prompt = if memories.is_empty() {
-        agent.system_prompt().to_string()
+        base_prompt
     } else {
-        let mut prompt = format!(
-            "{}\n\nWhat you remember about this person that matters here (use it only where it helps):\n",
-            agent.system_prompt()
-        );
+        let mut prompt = format!("{base_prompt}\n\nWhat you remember about this person that matters here (use it only where it helps):\n");
         for m in &memories {
             prompt.push_str(&format!("- ({}) {}\n", m.kind, m.content));
         }
