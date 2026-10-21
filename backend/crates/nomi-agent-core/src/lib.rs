@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod build_intent;
 pub mod chat_title;
 pub mod content_block;
 pub mod context;
