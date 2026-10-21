@@ -45,7 +45,7 @@ const sonnet: ModelChoice = {
 
 let component: ReturnType<typeof mount> | null = null;
 
-function render(props: { selected?: ModelChoice | null; onselect?: (key: string) => void; onmanage?: () => void } = {}) {
+function render(props: { selected?: ModelChoice | null; onselect?: (key: string) => void; onmanage?: () => void; hint?: string } = {}) {
 	const target = document.createElement('div');
 	document.body.append(target);
 	component = mount(ModelSelector, {
@@ -94,6 +94,15 @@ describe('ModelSelector', () => {
 		expect(trigger(target).querySelector('[data-logo="anthropic"]')).not.toBeNull();
 		expect(trigger(target).getAttribute('aria-label')).toBe('Model: Claude Sonnet');
 		expect(search(target)).toBeNull();
+	});
+
+	it("adds a page's one-line hint to the trigger's tooltip, and nothing without one", () => {
+		expect(trigger(render()).title).toBe('Anthropic · Claude Sonnet');
+		if (component) unmount(component);
+		document.body.innerHTML = '';
+		const target = render({ hint: 'Koda builds with it too.' });
+		expect(trigger(target).title).toBe('Anthropic · Claude Sonnet\nKoda builds with it too.');
+		expect(trigger(target).getAttribute('aria-label')).toBe('Model: Claude Sonnet');
 	});
 
 	it('opens on a focused search, models grouped under their providers', async () => {

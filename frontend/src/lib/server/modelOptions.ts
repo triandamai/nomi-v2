@@ -1,8 +1,10 @@
-// The chat pages' model picker on the server: the person's model options, the model a chat
-// uses, and the form actions that change them. Loads never break a chat: when the API can't
-// say, the picker just has nothing to show.
+// The model picker on the server: the person's model options, the model a chat uses, the
+// default for new chats, and the form actions that change them (shared by the chat, new-chat,
+// project chat and Model pages). Loads never break a chat: when the API can't say, the picker
+// just has nothing to show.
 import { fail, isRedirect, type Cookies } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { connectProvider, PERSONAL_CONNECTIONS } from '$lib/server/providers';
 import { parseModelKey, type ModelChange, type ModelChoice, type ModelOptions } from '$lib/modelPicker';
 import { m } from '$lib/paraglide/messages';
 
@@ -19,10 +21,16 @@ async function getJson<T>(fetchFn: Fetch, cookies: Cookies, path: string): Promi
 	}
 }
 
-export async function loadModelOptions(fetchFn: Fetch, cookies: Cookies): Promise<ModelOptions> {
+/** The person's model options; null when they can't be read (the Model page says so). */
+export async function fetchModelOptions(fetchFn: Fetch, cookies: Cookies): Promise<ModelOptions | null> {
 	const body = await getJson<Partial<ModelOptions>>(fetchFn, cookies, '/api/llm/model-options');
-	if (!body || !Array.isArray(body.groups)) return { groups: [], current: null };
+	if (!body || !Array.isArray(body.groups)) return null;
 	return { groups: body.groups, current: body.current ?? null };
+}
+
+/** The person's model options for a chat's picker; nothing to offer when they can't be read. */
+export async function loadModelOptions(fetchFn: Fetch, cookies: Cookies): Promise<ModelOptions> {
+	return (await fetchModelOptions(fetchFn, cookies)) ?? { groups: [], current: null };
 }
 
 /** The model this chat replies with; null when it can't be read. */
@@ -39,6 +47,16 @@ export async function saveSessionModel(fetchFn: Fetch, cookies: Cookies, session
 	if (!response.ok) return fail(response.status, { modelError: m.msel_pick_failed() });
 	const body = (await response.json()) as { model: ModelChoice };
 	return { sessionModel: body.model };
+}
+
+/** Shared `setDefaultModel` action body (the Model page): form field `key`, for new chats. */
+export async function saveDefaultModel(fetchFn: Fetch, cookies: Cookies, data: FormData) {
+	const key = String(data.get('key') ?? '');
+	if (!parseModelKey(key)) return fail(400, { modelError: m.msel_pick_failed() });
+	const response = await apiFetch(fetchFn, cookies, '/api/llm/default-model', { method: 'PUT', body: JSON.stringify({ key }) });
+	if (!response.ok) return fail(response.status, { modelError: m.msel_pick_failed() });
+	const body = (await response.json()) as { model: ModelChoice };
+	return { defaultModel: body.model };
 }
 
 function parseChanges(raw: unknown): ModelChange[] | null {
@@ -67,3 +85,18 @@ export async function saveModelVisibility(fetchFn: Fetch, cookies: Cookies, data
 	if (!response.ok) return fail(response.status, { modelError: m.msel_save_failed() });
 	return { modelsSaved: true };
 }
+
+type ActionEvent = { request: Request; cookies: Cookies; fetch: Fetch };
+
+/** Manage models, wherever the picker is: which models it offers, and connecting a provider in place. */
+export const manageModelActions = {
+	setModelVisibility: async ({ request, cookies, fetch }: ActionEvent) => saveModelVisibility(fetch, cookies, await request.formData()),
+	connect: async ({ request, cookies, fetch }: ActionEvent) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+};
+
+/** A chat page's picker (a chat, a project's chat): its model, plus Manage models. */
+export const sessionModelActions = {
+	...manageModelActions,
+	setSessionModel: async ({ request, params, cookies, fetch }: ActionEvent & { params: { sessionId: string } }) =>
+		saveSessionModel(fetch, cookies, params.sessionId, await request.formData()),
+};

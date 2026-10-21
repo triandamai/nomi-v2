@@ -65,8 +65,8 @@ pub async fn build_llm_provider_for(
     build_llm_provider(pool, user_id, None, settings_key, http_client, purpose).await
 }
 
-/// [`build_llm_provider_for`] for a turn in `session_id`: a chat turn runs on the model picked
-/// for that chat, when there is one it can use.
+/// [`build_llm_provider_for`] for a turn in `session_id`: it runs on the model picked for that
+/// chat, when there is one it can use.
 pub async fn build_llm_provider_in_session(
     pool: &PgPool,
     user_id: uuid::Uuid,
@@ -271,7 +271,8 @@ async fn resolve_for_purpose(
     settings_key: &[u8; 32],
     purpose: ModelPurpose,
 ) -> (ModelConfig, ModelTag, MediaSupport) {
-    if let (ModelPurpose::Chat, Some(session_id)) = (purpose, session_id) {
+    // A model picked in the chat is what everything in that chat runs on, Koda's building included.
+    if let Some(session_id) = session_id {
         if let Some(resolved) = session_model(pool, user_id, session_id, settings_key).await {
             return resolved;
         }
@@ -287,6 +288,17 @@ async fn resolve_for_purpose(
 /// The model a person's work for `purpose` runs on.
 pub async fn resolve_llm_model_config_for(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32], purpose: ModelPurpose) -> ModelConfig {
     resolve_for_purpose(pool, user_id, None, settings_key, purpose).await.0
+}
+
+/// The model this person's work for `purpose` in `session_id` runs on.
+pub async fn resolve_llm_model_config_in_session_for(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    session_id: uuid::Uuid,
+    settings_key: &[u8; 32],
+    purpose: ModelPurpose,
+) -> ModelConfig {
+    resolve_for_purpose(pool, user_id, Some(session_id), settings_key, purpose).await.0
 }
 
 /// The model this person's chat turn in `session_id` runs on, and how its usage is recorded.

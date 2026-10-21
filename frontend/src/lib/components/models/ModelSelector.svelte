@@ -20,12 +20,15 @@
 		onselect,
 		onmanage,
 		disabled = false,
+		hint,
 	}: {
 		groups: ModelGroup[];
 		selected: ModelChoice | null;
 		onselect: (key: string) => void;
 		onmanage: () => void;
 		disabled?: boolean;
+		/** A page's one line on what the pick also means, added to the trigger's tooltip. */
+		hint?: string;
 	} = $props();
 
 	const uid = $props.id();
@@ -44,6 +47,7 @@
 	const rowIndex = $derived(new Map(rows.map((row, index) => [row.model.key, index])));
 	const activeId = $derived(rows[highlighted] ? optionId(highlighted) : undefined);
 	const name = $derived(selected?.label || selected?.model_id || m.msel_choose());
+	const tooltip = $derived([selected ? `${selected.provider_label} · ${name}` : name, hint].filter(Boolean).join('\n'));
 
 	async function show() {
 		query = '';
@@ -145,7 +149,7 @@
 		aria-expanded={open}
 		aria-controls="{uid}-panel"
 		aria-label={selected ? m.msel_trigger_label({ model: name }) : name}
-		title={selected ? `${selected.provider_label} · ${name}` : name}
+		title={tooltip}
 		{disabled}
 		onclick={() => (open ? close() : show())}
 	>
