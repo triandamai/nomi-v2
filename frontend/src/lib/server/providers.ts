@@ -1,5 +1,5 @@
 // The form actions and loads every page that connects providers shares: the Providers pages
-// (personal and admin), and the Model page and chat page, which connect one in place.
+// (personal and admin), and the pages with a model picker, which connect one in place.
 // Failures carry the API's error code (`fail(status, { error, models })`) so the page can say
 // what went wrong with `connectionErrorMessage`.
 import { fail, isRedirect, type Cookies } from '@sveltejs/kit';
@@ -83,18 +83,4 @@ export async function listCatalogModels(fetchFn: Fetch, cookies: Cookies, data: 
 	if (!response.ok) return failFrom(response);
 	const body = (await response.json()) as { models?: ModelMetadata[] };
 	return { catalogModels: body.models ?? [] };
-}
-
-/** Makes one of the person's own connections' models the one Nomi replies with. */
-export async function selectConnectionModel(fetchFn: Fetch, cookies: Cookies, data: FormData) {
-	const connectionId = field(data, 'connection_id');
-	const modelId = field(data, 'model_id');
-	const label = field(data, 'label');
-	if (!connectionId || !modelId) return fail(400, { error: 'model_required', models: [] as string[] });
-	const response = await apiFetch(fetchFn, cookies, '/api/llm/selection', {
-		method: 'PUT',
-		body: JSON.stringify({ kind: 'connection', connection_id: connectionId, model_id: modelId, ...(label ? { label } : {}) }),
-	});
-	if (!response.ok) return failFrom(response);
-	return { modelSelected: true };
 }

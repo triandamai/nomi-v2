@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
+import { loadModelOptions, loadSessionModel, sessionModelActions } from '$lib/server/modelOptions';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
 import type { AgentStatus, MessageItem, ProjectDetail, RenderedMessage } from '$lib/types';
@@ -29,8 +30,14 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const projectResponse = await apiFetch(fetch, cookies, `/api/projects/by-session/${params.sessionId}`);
 	const project: ProjectDetail | null = projectResponse.ok ? await projectResponse.json() : null;
 
-	const thinkingLevel = await loadThinkingLevel(fetch, cookies, params.sessionId);
-	return { messages, hasOlder, agentActivity, agentStatus, project, thinkingLevel };
+	// The composer's model picker, as on a chat: what's on offer, and what this chat uses (which
+	// Koda builds with too). Neither can break the page.
+	const [thinkingLevel, modelOptions, sessionModel] = await Promise.all([
+		loadThinkingLevel(fetch, cookies, params.sessionId),
+		loadModelOptions(fetch, cookies),
+		loadSessionModel(fetch, cookies, params.sessionId),
+	]);
+	return { messages, hasOlder, agentActivity, agentStatus, project, thinkingLevel, modelOptions, sessionModel };
 };
 
 export const actions: Actions = {
@@ -65,6 +72,10 @@ export const actions: Actions = {
 		// A stop command is answered on the spot by the supervisor, so no turn is coming.
 		return { user_message, stopped: supervisor_reply !== undefined };
 	},
+
+	// The composer's model picker: this chat's model, which models it offers, and connecting a
+	// provider in place from Manage models.
+	...sessionModelActions,
 
 	feedback: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();

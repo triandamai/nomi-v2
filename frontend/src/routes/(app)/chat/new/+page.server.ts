@@ -1,7 +1,6 @@
 import { fail, isRedirect, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import { loadModelOptions, saveModelVisibility, saveSessionModel } from '$lib/server/modelOptions';
-import { connectProvider, PERSONAL_CONNECTIONS } from '$lib/server/providers';
+import { loadModelOptions, manageModelActions, saveSessionModel } from '$lib/server/modelOptions';
 import { saveThinkingLevel } from '$lib/server/thinking';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
@@ -57,6 +56,5 @@ export const actions: Actions = {
 	},
 
 	// Manage models, from the model picker: which models it offers, and connecting a provider.
-	setModelVisibility: async ({ request, cookies, fetch }) => saveModelVisibility(fetch, cookies, await request.formData()),
-	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+	...manageModelActions,
 };
