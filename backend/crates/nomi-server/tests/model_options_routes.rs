@@ -228,3 +228,50 @@ async fn a_chat_can_run_on_its_own_model(pool: PgPool) {
     let (status, _) = request(router, "PUT", &uri, json!({ "key": format!("admin:{haiku}") }), Some(&budi_token)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_model_page_sets_the_default_from_the_same_list(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (ana_token, ana) = sign_up(router.clone(), &pool, "ana@example.com").await;
+    let (_, budi) = sign_up(router.clone(), &pool, "budi@example.com").await;
+    admin_model(&pool, ana, "Haiku", "anthropic", "claude-haiku-4-5").await;
+    let opus = admin_model(&pool, ana, "Opus", "anthropic", "claude-opus-5-5").await;
+    let opencode = own_connection(&pool, ana, "opencode", "openai_compatible", None).await;
+    let budis = own_connection(&pool, budi, "openrouter", "openrouter", None).await;
+    let default_model = |router: axum::Router, key: String| {
+        let token = ana_token.clone();
+        async move { request(router, "PUT", "/api/llm/default-model", json!({ "key": key }), Some(&token)).await }
+    };
+
+    let (status, body) = default_model(router.clone(), format!("admin:{opus}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((body["model"]["key"].clone(), body["model"]["chat_only"].clone()), (json!(format!("admin:{opus}")), json!(false)));
+
+    // One of their own provider's models can be the default too, named from the catalog.
+    let free = format!("conn:{opencode}:big-pickle");
+    let (status, body) = default_model(router.clone(), free.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((body["model"]["key"].clone(), body["model"]["provider_label"].clone()), (json!(free), json!("OpenCode")));
+    assert_ne!(body["model"]["label"], "big-pickle", "the catalog's name, not the id");
+
+    // A new chat starts on it.
+    let token = ana_token_again(router.clone(), "ana@example.com").await;
+    let (_, options) = request(router.clone(), "GET", "/api/llm/model-options", Value::Null, Some(&token)).await;
+    assert_eq!(options["current"]["key"], free);
+    let chat = new_chat(router.clone(), &token).await;
+    let (_, body) = request(router.clone(), "GET", &format!("/api/sessions/{chat}/model"), Value::Null, Some(&token)).await;
+    assert_eq!(body["model"]["key"], free);
+
+    let (status, _) = default_model(router.clone(), format!("conn:{budis}:x/y")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE admin_llm_models SET enabled = false WHERE id = $1").bind(opus).execute(&pool).await.unwrap();
+    let (status, _) = default_model(router.clone(), format!("admin:{opus}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, body) = default_model(router, "claude".to_string()).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_key")));
+}
+
+async fn ana_token_again(router: axum::Router, email: &str) -> String {
+    let (_, login) = request(router, "POST", "/api/auth/login", json!({ "email": email, "password": "correct-password" }), None).await;
+    login["access_token"].as_str().unwrap().to_string()
+}

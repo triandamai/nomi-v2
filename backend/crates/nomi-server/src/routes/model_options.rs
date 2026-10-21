@@ -332,3 +332,34 @@ pub async fn set_chat_model(
     model_choices::set_session_model(&state.pool, session_id, &key, label.as_deref(), claims.sub).await.map_err(|e| server_error("failed to save the chat's model", e))?;
     Ok(Json(json!({ "model": chat_choice(&state, claims.sub, session_id).await? })))
 }
+
+/// `PUT /api/llm/default-model`: the model new chats start on (Models), from the same list.
+pub async fn set_default_model(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(req): Json<ChatModelRequest>) -> Result<Json<Value>, RouteError> {
+    let user_id = claims.sub;
+    let key = ModelKey::parse(req.key.trim()).ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_key"))?;
+    match &key {
+        ModelKey::Admin(id) => {
+            llm_models::get_admin_llm_model(&state.pool, *id)
+                .await
+                .map_err(|e| server_error("failed to load a model", e))?
+                .filter(|m| m.enabled)
+                .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_found"))?;
+            llm_models::set_user_llm_selection_admin(&state.pool, user_id, *id).await.map_err(|e| server_error("failed to save the default model", e))?;
+        }
+        ModelKey::Connection { connection_id, model_id } => {
+            let connection = connections::get_connection(&state.pool, Scope::User(user_id), *connection_id)
+                .await
+                .map_err(|e| server_error("failed to load a provider", e))?
+                .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_found"))?;
+            let label = catalog_model_name(&connection.provider_id, model_id).unwrap_or_else(|| model_id.clone());
+            let saved = llm_models::set_user_llm_selection_connection(&state.pool, user_id, *connection_id, model_id, &label)
+                .await
+                .map_err(|e| server_error("failed to save the default model", e))?;
+            if !saved {
+                return Err(error(StatusCode::NOT_FOUND, "not_found"));
+            }
+        }
+    }
+    let shared = shared_connections(&state).await?;
+    Ok(Json(json!({ "model": default_choice(&state, user_id, &shared).await? })))
+}
