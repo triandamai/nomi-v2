@@ -6,12 +6,18 @@
 		trigger,
 		children,
 		class: extraClass = '',
+		align = 'end',
 	}: {
 		open?: boolean;
 		trigger: Snippet<[{ toggle: () => void }]>;
 		children: Snippet;
 		class?: string;
+		/** Which of the anchor's edges the panel lines up with: `start` for a trigger on the left. */
+		align?: 'start' | 'end';
 	} = $props();
+
+	// Plain items and the radio items of a pick-one menu (see EffortMenu) both take the arrow keys.
+	const ITEMS = '[role="menuitem"], [role="menuitemradio"]';
 
 	let panelEl: HTMLDivElement | undefined = $state();
 	let anchorEl: HTMLDivElement | undefined = $state();
@@ -41,9 +47,10 @@
 			top = above >= VIEWPORT_MARGIN ? above : Math.max(VIEWPORT_MARGIN, viewportHeight - panelRect.height - VIEWPORT_MARGIN);
 		}
 
-		// Horizontal: prefer right-aligned to the anchor's right edge; slide left if that would
-		// overflow the left edge, right if it would overflow the right edge.
-		let right = viewportWidth - anchorRect.right;
+		// Horizontal: prefer right-aligned to the anchor's right edge (left-aligned to its left one
+		// with `align="start"`); slide left if that would overflow the left edge, right if it would
+		// overflow the right edge.
+		let right = align === 'start' ? viewportWidth - anchorRect.left - panelRect.width : viewportWidth - anchorRect.right;
 		if (viewportWidth - right - panelRect.width < VIEWPORT_MARGIN) {
 			right = viewportWidth - panelRect.width - VIEWPORT_MARGIN;
 		}
@@ -60,7 +67,8 @@
 		if (open) {
 			if (!panelEl.matches(':popover-open')) panelEl.showPopover();
 			positionPanel();
-			const first = panelEl.querySelector<HTMLElement>('[role="menuitem"]');
+			// A pick-one menu opens on what's picked; any other on its first item.
+			const first = panelEl.querySelector<HTMLElement>('[aria-checked="true"]') ?? panelEl.querySelector<HTMLElement>(ITEMS);
 			first?.focus();
 		} else if (panelEl.matches(':popover-open')) {
 			panelEl.hidePopover();
@@ -89,7 +97,7 @@
 	function handleKeydown(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-		const items = Array.from(panelEl?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+		const items = Array.from(panelEl?.querySelectorAll<HTMLElement>(ITEMS) ?? []);
 		if (items.length === 0) return;
 		const currentIndex = items.indexOf(document.activeElement as HTMLElement);
 		if (event.key === 'ArrowDown') {

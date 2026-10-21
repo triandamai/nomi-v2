@@ -1255,7 +1255,8 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
     }
 }
 
-const THINKING_LEVELS: [&str; 4] = ["off", "low", "medium", "high"];
+/// Default (medium), Low, High and Max, as the composer offers them.
+const THINKING_LEVELS: [&str; 4] = ["low", "medium", "high", "max"];
 
 #[derive(Serialize, Deserialize)]
 pub struct ThinkingLevel {

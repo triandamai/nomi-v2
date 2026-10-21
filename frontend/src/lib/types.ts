@@ -655,8 +655,8 @@ export interface ScheduledTask {
 	session_id: string;
 }
 
-/** A chat's thinking level (see ThinkingMenu). */
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
+/** A chat's thinking level (see EffortMenu): medium is the default. */
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'max';
 
 /** A Google service the Workspace agent can use. */
 export type WorkspaceService = 'gmail' | 'sheets' | 'docs' | 'drive' | 'calendar';

@@ -666,14 +666,11 @@ pub async fn run_agent_turn(
     let reasoning_effort = match thinking_level.as_str() {
         "low" => nomi_llm::ReasoningEffort::Low,
         "high" => nomi_llm::ReasoningEffort::High,
+        "max" => nomi_llm::ReasoningEffort::Max,
         _ => nomi_llm::ReasoningEffort::Medium,
     };
     // Thinking is shown in chat, so keep it to the point rather than a running monologue.
-    let system_prompt = if thinking_level != "off" {
-        format!("{system_prompt}\n\n{REASONING_STYLE}")
-    } else {
-        system_prompt
-    };
+    let system_prompt = format!("{system_prompt}\n\n{REASONING_STYLE}");
     let agent_type = agent.agent_type();
 
     // Whether this run already saved a plan draft, and already asked once for a missing answer.
@@ -702,7 +699,7 @@ pub async fn run_agent_turn(
             messages: messages.clone(),
             tools: tools.clone(),
             max_tokens,
-            enable_reasoning: thinking_level != "off",
+            enable_reasoning: true,
             reasoning_effort,
         };
 

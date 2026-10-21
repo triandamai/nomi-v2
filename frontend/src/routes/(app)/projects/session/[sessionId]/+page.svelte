@@ -561,6 +561,7 @@
 			agentStatus={data.agentStatus}
 			sendError={form?.error ?? null}
 			thinkingLevel={data.thinkingLevel}
+			placeholder={m.composer_placeholder_project()}
 			project={{ status: data.project?.status ?? 'planning' }}
 			{modelControl}
 			extraControls={paneToggle}

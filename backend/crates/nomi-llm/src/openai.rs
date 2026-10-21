@@ -132,7 +132,12 @@ impl OpenAiProvider {
         // OpenAI model a user might pick.
         if is_reasoning_model(&self.model) {
             // Not asked to reason: think as little as the model allows.
-            body["reasoning_effort"] = json!(if request.enable_reasoning { request.reasoning_effort.as_str() } else { "low" });
+            // OpenAI's own scale tops out at "high"; Max asks for that and the larger budget above.
+            let effort = match request.reasoning_effort {
+                crate::types::ReasoningEffort::Max => "high",
+                other => other.as_str(),
+            };
+            body["reasoning_effort"] = json!(if request.enable_reasoning { effort } else { "low" });
         }
         if stream {
             body["stream"] = json!(true);
