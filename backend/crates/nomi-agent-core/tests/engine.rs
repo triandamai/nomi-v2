@@ -1439,9 +1439,10 @@ async fn the_chats_thinking_level_reaches_the_model_request(pool: PgPool) {
     let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
 
     for (level, enabled, effort) in [
-        ("off", false, nomi_llm::ReasoningEffort::Medium),
         ("low", true, nomi_llm::ReasoningEffort::Low),
+        ("medium", true, nomi_llm::ReasoningEffort::Medium),
         ("high", true, nomi_llm::ReasoningEffort::High),
+        ("max", true, nomi_llm::ReasoningEffort::Max),
     ] {
         sqlx::query("UPDATE sessions SET thinking_level = $1 WHERE id = $2").bind(level).bind(session_id).execute(&pool).await.unwrap();
         let provider = FakeLlmProvider::sequence(vec![text_response("ok", StopReason::EndTurn)]);
@@ -1538,10 +1539,10 @@ async fn an_agent_keeps_private_records_that_other_agents_cannot_touch(pool: PgP
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn thinking_is_asked_to_stay_short_unless_it_is_off(pool: PgPool) {
+async fn thinking_is_asked_to_stay_short_at_every_level(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
-    for (level, expect_style) in [("medium", true), ("off", false)] {
+    for (level, expect_style) in [("low", true), ("max", true)] {
         sqlx::query("UPDATE sessions SET thinking_level = $1 WHERE id = $2").bind(level).bind(session_id).execute(&pool).await.unwrap();
         let mut conn = pool.acquire().await.unwrap();
         let provider = FakeLlmProvider::sequence(vec![text_response("Fine.", StopReason::EndTurn)]);

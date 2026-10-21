@@ -226,3 +226,22 @@ async fn a_reasoning_model_gets_max_completion_tokens_and_thinks_little_when_not
     let sent: serde_json::Value = server.received_requests().await.unwrap()[0].body_json().unwrap();
     assert!(sent.get("max_tokens").is_none());
 }
+
+#[tokio::test]
+async fn max_effort_thinks_longest_and_asks_openai_for_its_highest_effort() {
+    use nomi_llm::ReasoningEffort;
+    assert!(ReasoningEffort::Max.budget_tokens() > ReasoningEffort::High.budget_tokens());
+    assert_eq!(ReasoningEffort::Max.as_str(), "max");
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(body_partial_json(json!({ "reasoning_effort": "high" })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n", "text/event-stream"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = OpenAiProvider::new(reqwest::Client::new(), "k".to_string(), "o4-mini".to_string(), server.uri());
+    let request = LlmRequest { enable_reasoning: true, reasoning_effort: ReasoningEffort::Max, ..text_request() };
+    collect_stream(provider.complete_stream(request).await.unwrap()).await.unwrap();
+}

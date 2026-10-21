@@ -792,8 +792,13 @@ async fn a_chat_remembers_its_thinking_level(pool: PgPool) {
     let (_, level) = json_request(router.clone(), "GET", &uri, Value::Null, Some(&token)).await;
     assert_eq!(level["level"], "high");
 
-    let (status, _) = json_request(router.clone(), "PUT", &uri, json!({ "level": "maximum" }), Some(&token)).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Default (medium), Low, High and Max; thinking can no longer be switched off.
+    let (status, _) = json_request(router.clone(), "PUT", &uri, json!({ "level": "max" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    for level in ["maximum", "off"] {
+        let (status, _) = json_request(router.clone(), "PUT", &uri, json!({ "level": level }), Some(&token)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{level}");
+    }
 
     let stranger = register_and_login(router.clone(), "stranger@example.com").await;
     let (status, _) = json_request(router, "PUT", &uri, json!({ "level": "off" }), Some(&stranger)).await;

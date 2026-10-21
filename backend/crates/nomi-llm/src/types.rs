@@ -67,6 +67,8 @@ pub enum ReasoningEffort {
     #[default]
     Medium,
     High,
+    /// The most thinking a chat can ask for (the composer's "Max").
+    Max,
 }
 
 /// Room for the thinking a model does even when reasoning wasn't asked for. Gemini 2.5/3 think
@@ -81,6 +83,7 @@ impl ReasoningEffort {
             ReasoningEffort::Low => "low",
             ReasoningEffort::Medium => "medium",
             ReasoningEffort::High => "high",
+            ReasoningEffort::Max => "max",
         }
     }
 
@@ -92,6 +95,7 @@ impl ReasoningEffort {
             ReasoningEffort::Low => 1024,
             ReasoningEffort::Medium => 1024,
             ReasoningEffort::High => 2048,
+            ReasoningEffort::Max => 8192,
         }
     }
 }
