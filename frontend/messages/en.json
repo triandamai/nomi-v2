@@ -2115,5 +2115,19 @@
 	"prov_models_loading": "Loading models…",
 	"prov_label_optional": "Name (optional)",
 	"prov_use_model": "Use this model",
-	"prov_saving": "Saving…"
+	"prov_saving": "Saving…",
+	"msel_trigger_label": "Model: {model}",
+	"msel_choose": "Choose model",
+	"msel_search": "Search models",
+	"msel_list_label": "Models",
+	"msel_free": "Free",
+	"msel_none": "No models to pick yet.",
+	"msel_manage": "Manage models",
+	"msel_manage_lede": "Customize which models appear in the model selector.",
+	"msel_dialog_empty": "No models yet. Connect a provider to add some.",
+	"msel_unreachable": "Couldn't load this provider's models right now.",
+	"msel_toggle_group": "Show all {provider} models",
+	"msel_toggle_model": "Show {model} in the model selector",
+	"msel_save_failed": "Couldn't save your models. Try again.",
+	"msel_pick_failed": "Couldn't switch the model. Try again."
 }

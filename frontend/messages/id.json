@@ -2115,5 +2115,19 @@
 	"prov_models_loading": "Memuat model…",
 	"prov_label_optional": "Nama (opsional)",
 	"prov_use_model": "Pakai model ini",
-	"prov_saving": "Menyimpan…"
+	"prov_saving": "Menyimpan…",
+	"msel_trigger_label": "Model: {model}",
+	"msel_choose": "Pilih model",
+	"msel_search": "Cari model",
+	"msel_list_label": "Model",
+	"msel_free": "Gratis",
+	"msel_none": "Belum ada model yang bisa dipilih.",
+	"msel_manage": "Atur model",
+	"msel_manage_lede": "Pilih model mana saja yang muncul di pemilih model.",
+	"msel_dialog_empty": "Belum ada model. Hubungkan penyedia untuk menambahkannya.",
+	"msel_unreachable": "Model dari penyedia ini belum bisa dimuat sekarang.",
+	"msel_toggle_group": "Tampilkan semua model {provider}",
+	"msel_toggle_model": "Tampilkan {model} di pemilih model",
+	"msel_save_failed": "Pilihan model gagal disimpan. Coba lagi.",
+	"msel_pick_failed": "Model gagal diganti. Coba lagi."
 }

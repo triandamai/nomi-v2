@@ -3,7 +3,7 @@ use std::time::Duration;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
+use crate::bootstrap::build_embedding_provider_from_settings_or_env;
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 use nomi_turn::queue;
 
@@ -141,7 +141,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
             };
 
-            let provider = build_llm_provider_for_user(&pool, user_id, &settings_key, http_client.clone()).await;
+            let provider = crate::bootstrap::build_llm_provider_in_session(&pool, user_id, session_id, &settings_key, http_client.clone(), crate::bootstrap::ModelPurpose::Chat).await;
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
 
             let result = nomi_turn::resume_paused_turn(
@@ -207,7 +207,16 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
         }
     };
 
-    let provider = build_llm_provider_for_user(&turns.pool, user_id, &turns.settings_key, turns.http_client.clone()).await;
+    // The chat's own model when someone picked one in the chat, else the person's.
+    let provider = crate::bootstrap::build_llm_provider_in_session(
+        &turns.pool,
+        user_id,
+        claimed.session_id,
+        &turns.settings_key,
+        turns.http_client.clone(),
+        crate::bootstrap::ModelPurpose::Chat,
+    )
+    .await;
     let embedding_provider =
         build_embedding_provider_from_settings_or_env(&turns.pool, &turns.settings_key, turns.http_client.clone(), Some(user_id)).await;
 

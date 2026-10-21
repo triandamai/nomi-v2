@@ -1,10 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import { connectProvider, listConnectionModels, loadConnections, PERSONAL_CONNECTIONS, selectConnectionModel } from '$lib/server/providers';
+import { connectProvider, PERSONAL_CONNECTIONS } from '$lib/server/providers';
+import { loadModelOptions, loadSessionModel, saveModelVisibility, saveSessionModel } from '$lib/server/modelOptions';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
-import type { AgentStatus, ChatPersonality, LlmModelsResponse, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
+import type { AgentStatus, ChatPersonality, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
@@ -18,11 +19,6 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	}
 	const messages: RenderedMessage[] = firstPage.messages;
 	const hasOlder = firstPage.hasOlder;
-
-	const modelsResponse = await apiFetch(fetch, cookies, '/api/llm/models');
-	const models: LlmModelsResponse = modelsResponse.ok
-		? ((await modelsResponse.json()) as LlmModelsResponse)
-		: { admin_models: [], selection: null, coding: { kind: 'default' }, default_coding_model_id: null };
 
 	const personalityResponse = await apiFetch(fetch, cookies, '/api/personality/history');
 	const personality: PersonalityHistoryResponse = personalityResponse.ok
@@ -46,21 +42,22 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		: [];
 	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? m.nav_new_chat();
 
-	// The person's own providers, for the model menu; the catalog loads only if they connect one.
-	const [thinkingLevel, ownConnections] = await Promise.all([
+	// The composer's model picker: what's on offer, and what this chat uses. Neither can break
+	// the chat; the provider catalog loads only if the person connects one from there.
+	const [thinkingLevel, modelOptions, sessionModel] = await Promise.all([
 		loadThinkingLevel(fetch, cookies, params.sessionId),
-		loadConnections(fetch, cookies, PERSONAL_CONNECTIONS),
+		loadModelOptions(fetch, cookies),
+		loadSessionModel(fetch, cookies, params.sessionId),
 	]);
-	const connections = ownConnections ?? [];
-	return { messages, hasOlder, models, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel, connections };
+	return { messages, hasOlder, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel, modelOptions, sessionModel };
 };
 
 export const actions: Actions = {
 	rename: async ({ request, params, cookies, fetch }) => renameSession(fetch, cookies, params.sessionId, await request.formData()),
 	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
 
-	// Named (not `default`) because this actions object also has selectAdminModel and
-	// selectConnectionModel — SvelteKit forbids mixing a `default` action with named actions in the
+	// Named (not `default`) because this actions object also has setSessionModel and the rest —
+	// SvelteKit forbids mixing a `default` action with named actions in the
 	// same file (throws "When using named actions, the default action cannot be used" at request
 	// time), so the message-send form below must target this action explicitly.
 	sendMessage: async ({ request, params, cookies, fetch }) => {
@@ -92,31 +89,11 @@ export const actions: Actions = {
 		return { user_message, stopped: supervisor_reply !== undefined };
 	},
 
-	selectAdminModel: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const adminModelId = data.get('admin_model_id');
-
-		if (typeof adminModelId !== 'string') {
-			return fail(400, { modelError: m.err_invalid_model_selection() });
-		}
-
-		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
-			method: 'PUT',
-			body: JSON.stringify({ kind: 'admin', admin_model_id: adminModelId }),
-		});
-
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { modelError: message || m.err_select_model() });
-		}
-
-		return { modelSelected: true };
-	},
-
-	// The model sheet's own providers: connect one in place, list its models, use one.
+	// The composer's model picker: this chat's model, which models it offers, and connecting a
+	// provider in place from Manage models.
+	setSessionModel: async ({ request, params, cookies, fetch }) => saveSessionModel(fetch, cookies, params.sessionId, await request.formData()),
+	setModelVisibility: async ({ request, cookies, fetch }) => saveModelVisibility(fetch, cookies, await request.formData()),
 	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
-	connectionModels: async ({ request, cookies, fetch }) => listConnectionModels(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
-	selectConnectionModel: async ({ request, cookies, fetch }) => selectConnectionModel(fetch, cookies, await request.formData()),
 
 	feedback: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();

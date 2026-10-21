@@ -62,7 +62,31 @@ pub async fn build_llm_provider_for(
     http_client: reqwest::Client,
     purpose: ModelPurpose,
 ) -> Arc<dyn LlmProvider> {
-    let (mut model_config, mut tag, mut support) = resolve_for_purpose(pool, user_id, settings_key, purpose).await;
+    build_llm_provider(pool, user_id, None, settings_key, http_client, purpose).await
+}
+
+/// [`build_llm_provider_for`] for a turn in `session_id`: a chat turn runs on the model picked
+/// for that chat, when there is one it can use.
+pub async fn build_llm_provider_in_session(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    session_id: uuid::Uuid,
+    settings_key: &[u8; 32],
+    http_client: reqwest::Client,
+    purpose: ModelPurpose,
+) -> Arc<dyn LlmProvider> {
+    build_llm_provider(pool, user_id, Some(session_id), settings_key, http_client, purpose).await
+}
+
+async fn build_llm_provider(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    session_id: Option<uuid::Uuid>,
+    settings_key: &[u8; 32],
+    http_client: reqwest::Client,
+    purpose: ModelPurpose,
+) -> Arc<dyn LlmProvider> {
+    let (mut model_config, mut tag, mut support) = resolve_for_purpose(pool, user_id, session_id, settings_key, purpose).await;
 
     // Nomi's own models count toward the person's monthly allowance. Past it, the key they saved
     // answers instead; with none, nothing does.
@@ -240,7 +264,18 @@ async fn admin_model_config(pool: &PgPool, settings_key: &[u8; 32], model: setti
     }
 }
 
-async fn resolve_for_purpose(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32], purpose: ModelPurpose) -> (ModelConfig, ModelTag, MediaSupport) {
+async fn resolve_for_purpose(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    session_id: Option<uuid::Uuid>,
+    settings_key: &[u8; 32],
+    purpose: ModelPurpose,
+) -> (ModelConfig, ModelTag, MediaSupport) {
+    if let (ModelPurpose::Chat, Some(session_id)) = (purpose, session_id) {
+        if let Some(resolved) = session_model(pool, user_id, session_id, settings_key).await {
+            return resolved;
+        }
+    }
     if purpose == ModelPurpose::Coding {
         if let Some(resolved) = resolve_coding_model(pool, user_id, settings_key).await {
             return resolved;
@@ -251,7 +286,43 @@ async fn resolve_for_purpose(pool: &PgPool, user_id: uuid::Uuid, settings_key: &
 
 /// The model a person's work for `purpose` runs on.
 pub async fn resolve_llm_model_config_for(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32], purpose: ModelPurpose) -> ModelConfig {
-    resolve_for_purpose(pool, user_id, settings_key, purpose).await.0
+    resolve_for_purpose(pool, user_id, None, settings_key, purpose).await.0
+}
+
+/// The model this person's chat turn in `session_id` runs on, and how its usage is recorded.
+pub async fn resolve_llm_model_in_session(pool: &PgPool, user_id: uuid::Uuid, session_id: uuid::Uuid, settings_key: &[u8; 32]) -> (ModelConfig, ModelTag) {
+    let (config, tag, _) = resolve_for_purpose(pool, user_id, Some(session_id), settings_key, ModelPurpose::Chat).await;
+    (config, tag)
+}
+
+/// The model picked for the chat in the chat itself, when it can run this person's turn: one of
+/// Nomi's models that's still switched on, or a model from the picker's own provider — which
+/// only ever runs the picker's own turns, never a collaborator's in a shared chat.
+async fn session_model(pool: &PgPool, user_id: uuid::Uuid, session_id: uuid::Uuid, settings_key: &[u8; 32]) -> Option<(ModelConfig, ModelTag, MediaSupport)> {
+    use settings::model_choices::ModelKey;
+    let picked = settings::model_choices::get_session_model(pool, session_id)
+        .await
+        .map_err(|e| tracing::error!(%session_id, error = %e, "failed to load the chat's model"))
+        .ok()??;
+    match picked.key {
+        ModelKey::Admin(id) => {
+            let model = settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten().filter(|m| m.enabled)?;
+            let label = model.label.clone();
+            let support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
+            let config = admin_model_config(pool, settings_key, model).await?;
+            let tag = tag_for(&config, Some(id), false, label);
+            Some((config, tag, support))
+        }
+        ModelKey::Connection { connection_id, model_id } => {
+            if picked.set_by != Some(user_id) {
+                return None;
+            }
+            let config = connection_model_config(pool, settings_key, settings::provider_connections::Scope::User(user_id), connection_id, model_id).await?;
+            let tag = tag_for(&config, None, true, picked.label.unwrap_or_else(|| config.model_id.clone()));
+            let support = MediaSupport::infer(&config.provider, &config.model_id);
+            Some((config, tag, support))
+        }
+    }
 }
 
 pub async fn resolve_llm_model_config(pool: &PgPool, user_id: uuid::Uuid, settings_key: &[u8; 32]) -> ModelConfig {
