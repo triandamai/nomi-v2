@@ -187,6 +187,20 @@ impl SubAgent for CodingAgent {
         60
     }
 
+    /// The same failing command (or tool error) three times means the fixes aren't working:
+    /// stop and say so, rather than spend the rest of the 60 rounds on it.
+    fn repeated_failure_limit(&self) -> Option<u32> {
+        Some(3)
+    }
+
+    /// run_command reports a command that ran and failed as output ("exit code 1"), not an error.
+    fn tool_output_is_failure(&self, tool_name: &str, output: &str) -> bool {
+        tool_name == "run_command"
+            && output.lines().nth(1).is_some_and(|line| {
+                line.strip_prefix("exit code ").is_some_and(|code| code.trim() != "0") || line.starts_with("stopped waiting after")
+            })
+    }
+
     fn validate_delegation_task(&self, task: &str) -> Result<(), String> {
         if has_project_prefix(task) {
             Ok(())
@@ -204,6 +218,18 @@ impl SubAgent for CodingAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_that_exits_non_zero_or_never_finishes_is_a_failure() {
+        let agent = CodingAgent::new(nomi_storage::ProjectStore::at(std::env::temp_dir()));
+        assert_eq!(agent.repeated_failure_limit(), Some(3));
+        assert!(agent.tool_output_is_failure("run_command", "$ npm run check\nexit code 1\nType error"));
+        assert!(agent.tool_output_is_failure("run_command", "$ npm run build\nexit code ?\n"));
+        assert!(agent.tool_output_is_failure("run_command", "$ npm run build\nstopped waiting after 180s with no result."));
+        assert!(!agent.tool_output_is_failure("run_command", "$ npm run check\nexit code 0\n0 errors"));
+        assert!(!agent.tool_output_is_failure("run_command", runtime::NOT_OPEN));
+        assert!(!agent.tool_output_is_failure("read_file", "exit code 1"));
+    }
 
     #[test]
     fn every_tool_koda_has_is_named_and_defined() {

@@ -175,21 +175,37 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             // A task can carry the user's files (the Files agent passes their tags along).
             nomi_agent_core::attachments::expand_messages(&mut conn, claimed.user_id, &mut messages).await;
 
-            let outcome = nomi_agent_core::run_agent_turn(
-                &mut conn,
-                Some((&mqtt, claimed.id)),
-                s3.as_ref(),
-                provider.as_ref(),
-                embedding_provider.as_ref(),
-                &registry,
-                agent.as_ref(),
-                claimed.session_id,
-                claimed.session_id,
-                claimed.user_id,
-                messages,
-                DELEGATED_MAX_TOKENS,
+            // A stalled model or command mustn't hold this worker (it runs one delegation at a
+            // time) forever.
+            let limit = nomi_turn::delegation_time_limit();
+            let outcome = match tokio::time::timeout(
+                limit,
+                nomi_agent_core::run_agent_turn(
+                    &mut conn,
+                    Some((&mqtt, claimed.id)),
+                    s3.as_ref(),
+                    provider.as_ref(),
+                    embedding_provider.as_ref(),
+                    &registry,
+                    agent.as_ref(),
+                    claimed.session_id,
+                    claimed.session_id,
+                    claimed.user_id,
+                    messages,
+                    DELEGATED_MAX_TOKENS,
+                ),
             )
-            .await;
+            .await
+            {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    // The run was dropped mid-step, maybe mid-query: carry on with a fresh connection.
+                    if let Ok(fresh) = pool.acquire().await {
+                        conn = fresh;
+                    }
+                    Err(nomi_agent_core::TurnError::TimedOut(limit))
+                }
+            };
 
             // The delegated run streamed its progress into the chat under the delegation's id;
             // close it so the chat stops showing it as working.
@@ -312,6 +328,12 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
                 Err(e) => {
                     tracing::warn!(delegation_id = %claimed.id, error = %e, "delegation worker: delegated turn failed");
+                    // What the build got to before it stopped, for whoever picks it up.
+                    if claimed.target_agent_type == nomi_agent_coding::CODING_AGENT_TYPE {
+                        if let Some(project_id) = extract_project_id(&claimed.task) {
+                            let _ = nomi_agent_coding::report::save_report(&mut conn, claimed.id, claimed.session_id, project_id).await;
+                        }
+                    }
                     let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
                     // Out of allowance: the card says so and where to go next.
                     post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, e.notice_blocks()).await;

@@ -201,3 +201,25 @@ async fn a_finished_build_keeps_its_report_and_is_ready_only_if_nothing_failed(p
     let status: String = sqlx::query_scalar("SELECT status FROM projects WHERE id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
     assert_eq!(status, "ready");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_build_that_stopped_keeps_its_report_but_isnt_marked_ready(pool: PgPool) {
+    use nomi_agent_coding::report::save_report;
+
+    let (session_id, project_id, started) = seed(&pool, 1).await;
+    sqlx::query("UPDATE projects SET status = 'building' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    wrote(&pool, project_id, "src/app.ts").await;
+    let stopped = delegation(&pool, session_id, project_id, started).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let report = save_report(&mut conn, stopped, session_id, project_id).await.unwrap();
+    assert_eq!(report.status, BuildStatus::Unverified);
+    let (status, saved): (String, serde_json::Value) =
+        sqlx::query_as("SELECT p.status, d.report FROM projects p, agent_delegations d WHERE p.id = $1 AND d.id = $2")
+            .bind(project_id)
+            .bind(stopped)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "building");
+    assert_eq!(saved["changed_files"], json!(["src/app.ts"]));
+}

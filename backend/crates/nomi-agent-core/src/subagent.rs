@@ -92,6 +92,19 @@ pub trait SubAgent: Send + Sync {
         true
     }
 
+    /// Stops a run once the same tool call has failed the same way this many times (the agent
+    /// isn't getting anywhere, and more rounds only burn time): `TurnError::RepeatedFailure`.
+    /// `None` (the default) never stops early; the run is bounded by `max_tool_turns` alone.
+    fn repeated_failure_limit(&self) -> Option<u32> {
+        None
+    }
+
+    /// Whether a tool result that isn't an error still reports a failure (a command that ran and
+    /// exited non-zero), for `repeated_failure_limit`.
+    fn tool_output_is_failure(&self, _tool_name: &str, _output: &str) -> bool {
+        false
+    }
+
     /// When true, run_agent_turn posts a chat message for every tool call this agent makes
     /// (and for any text it writes alongside one, treated as its "thinking out loud") — so the
     /// user watching a long-running build sees each step as it happens, not just a final

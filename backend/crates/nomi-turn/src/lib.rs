@@ -85,8 +85,34 @@ pub async fn handle_inbound_message(
 /// Longest one turn may run (`TURN_TIME_LIMIT_SECS`, default 10 minutes). Long enough for a
 /// many-step task on a slow model; short enough that a stuck one doesn't hold the queue.
 pub fn turn_time_limit() -> std::time::Duration {
-    let secs = std::env::var("TURN_TIME_LIMIT_SECS").ok().and_then(|v| v.trim().parse::<u64>().ok()).filter(|s| *s > 0).unwrap_or(600);
+    time_limit(std::env::var("TURN_TIME_LIMIT_SECS").ok().as_deref(), 600)
+}
+
+/// Longest one background (delegated) run may take (`DELEGATION_TIME_LIMIT_SECS`, default 30
+/// minutes): a build writes, installs, checks and fixes, but one that stalls mustn't hold the
+/// delegation worker, which runs them one at a time, forever.
+pub fn delegation_time_limit() -> std::time::Duration {
+    time_limit(std::env::var("DELEGATION_TIME_LIMIT_SECS").ok().as_deref(), 1800)
+}
+
+/// Seconds from a setting, or `default_secs` when it's unset, unreadable or zero.
+fn time_limit(setting: Option<&str>, default_secs: u64) -> std::time::Duration {
+    let secs = setting.and_then(|v| v.trim().parse::<u64>().ok()).filter(|s| *s > 0).unwrap_or(default_secs);
     std::time::Duration::from_secs(secs)
+}
+
+#[cfg(test)]
+mod time_limit_tests {
+    use super::time_limit;
+    use std::time::Duration;
+
+    #[test]
+    fn a_time_limit_setting_needs_a_positive_number_of_seconds() {
+        assert_eq!(time_limit(Some(" 120 "), 1800), Duration::from_secs(120));
+        assert_eq!(time_limit(None, 1800), Duration::from_secs(1800));
+        assert_eq!(time_limit(Some("0"), 1800), Duration::from_secs(1800));
+        assert_eq!(time_limit(Some("soon"), 1800), Duration::from_secs(1800));
+    }
 }
 
 /// The worker's entry point (see backend/src/bin/worker.rs): processes an already-ingested

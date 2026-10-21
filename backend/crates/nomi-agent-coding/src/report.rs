@@ -152,10 +152,9 @@ pub async fn build_report(conn: &mut PgConnection, session_id: Uuid, project_id:
     Ok(BuildReport { status, files_version, changed_files, deleted_files, checks })
 }
 
-/// At the end of a delegated build: its report, kept on the delegation (covering everything since
-/// the delegation was picked up), and the project marked ready unless a check failed on the
-/// final files — it stays as it was until a later run gets them passing.
-pub async fn finish_build(conn: &mut PgConnection, delegation_id: Uuid, session_id: Uuid, project_id: Uuid) -> Result<BuildReport, sqlx::Error> {
+/// The report on a delegated build, covering everything since the delegation was picked up, kept
+/// on the delegation.
+pub async fn save_report(conn: &mut PgConnection, delegation_id: Uuid, session_id: Uuid, project_id: Uuid) -> Result<BuildReport, sqlx::Error> {
     let since: DateTime<Utc> = sqlx::query_scalar("SELECT COALESCE(claimed_at, created_at) FROM agent_delegations WHERE id = $1")
         .bind(delegation_id)
         .fetch_one(&mut *conn)
@@ -166,6 +165,14 @@ pub async fn finish_build(conn: &mut PgConnection, delegation_id: Uuid, session_
         .bind(report.to_json())
         .execute(&mut *conn)
         .await?;
+    Ok(report)
+}
+
+/// At the end of a delegated build that finished: its report (`save_report`), and the project
+/// marked ready unless a check failed on the final files — it stays as it was until a later run
+/// gets them passing.
+pub async fn finish_build(conn: &mut PgConnection, delegation_id: Uuid, session_id: Uuid, project_id: Uuid) -> Result<BuildReport, sqlx::Error> {
+    let report = save_report(conn, delegation_id, session_id, project_id).await?;
     if report.status != BuildStatus::Failing {
         sqlx::query("UPDATE projects SET status = 'ready' WHERE id = $1 AND status = 'building'")
             .bind(project_id)
