@@ -595,13 +595,15 @@ pub async fn run_agent_turn(
         Vec::new()
     };
 
+    // The agent's own prompt, then anything only this kind of request needs (domain_context).
+    let base_prompt = match agent.domain_context(conn, s3, session_id, user_id, &messages).await {
+        Some(context) => format!("{}\n\n{context}", agent.system_prompt()),
+        None => agent.system_prompt().to_string(),
+    };
     let system_prompt = if memories.is_empty() {
-        agent.system_prompt().to_string()
+        base_prompt
     } else {
-        let mut prompt = format!(
-            "{}\n\nWhat you remember about this person that matters here (use it only where it helps):\n",
-            agent.system_prompt()
-        );
+        let mut prompt = format!("{base_prompt}\n\nWhat you remember about this person that matters here (use it only where it helps):\n");
         for m in &memories {
             prompt.push_str(&format!("- ({}) {}\n", m.kind, m.content));
         }
@@ -678,6 +680,8 @@ pub async fn run_agent_turn(
     let mut wrote_plan = false;
     let mut asked_for_answer = false;
     let mut cut_off_retries = 0;
+    // How often each tool call has failed which way, for repeated_failure_limit.
+    let mut failures: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
     for _ in 0..agent.max_tool_turns() {
         if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
@@ -931,12 +935,46 @@ pub async fn run_agent_turn(
                 return Ok(LoopOutcome::HandOff { target_agent, task });
             }
             ToolBatchOutcome::Resolved(tool_results) => {
+                if let Some(stuck) = repeated_failure(agent, &pending_tool_use_blocks, &tool_results, &mut failures) {
+                    update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+                    return Err(stuck);
+                }
                 messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
             }
         }
     }
 
     Err(TurnError::ToolLoopExceeded)
+}
+
+/// Counts this round's failures (an error result, or output the agent says is a failure) by the
+/// call and what it returned. Once the same call has failed the same way
+/// `agent.repeated_failure_limit()` times, the run isn't getting anywhere: that's the error.
+fn repeated_failure(
+    agent: &dyn SubAgent,
+    tool_uses: &[ContentBlock],
+    results: &[ContentBlock],
+    failures: &mut std::collections::HashMap<String, u32>,
+) -> Option<TurnError> {
+    let limit = agent.repeated_failure_limit()?;
+    for result in results {
+        let ContentBlock::ToolResult { tool_use_id, content, is_error } = result else { continue };
+        let Some((name, input)) = tool_uses.iter().find_map(|b| match b {
+            ContentBlock::ToolUse { id, name, input, .. } if id == tool_use_id => Some((name, input)),
+            _ => None,
+        }) else {
+            continue;
+        };
+        if !*is_error && !agent.tool_output_is_failure(name, content) {
+            continue;
+        }
+        let seen = failures.entry(format!("{name}\u{0}{input}\u{0}{content}")).or_insert(0);
+        *seen += 1;
+        if *seen >= limit {
+            return Some(TurnError::RepeatedFailure { tool: name.clone(), attempts: *seen, output: content.clone() });
+        }
+    }
+    None
 }
 
 /// The result of resolving one response's worth of tool_use blocks.
@@ -1141,7 +1179,7 @@ pub async fn resolve_tool_batch(
                 }
             } else if name.as_str() == UPDATE_TODOS_TOOL_NAME {
                 match parse_todo_items(input) {
-                    Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, agent.display_name().as_ref(), items).await {
+                    Ok(items) => match upsert_todo_list(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, agent.display_name().as_ref(), conversation_so_far, items).await {
                         Ok(text) => (text, false, None),
                         Err(err) => (err, true, None),
                     },
@@ -1500,19 +1538,35 @@ async fn upsert_todo_list(
     session_id: Uuid,
     agent_session_id: Uuid,
     agent_display_name: &str,
+    conversation_so_far: &[LlmMessage],
     items: Vec<crate::content_block::TodoItem>,
 ) -> Result<String, String> {
     let display_text = todo_list_display_text(&items);
     let block = crate::content_block::ContentBlock::TodoList { items };
     let content_blocks = serde_json::json!([block]);
 
-    let existing_id: Option<Uuid> = sqlx::query_scalar(
+    let tracked: Option<Option<Uuid>> = sqlx::query_scalar(
         "SELECT (state->>'todo_message_id')::uuid FROM agent_sessions WHERE id = $1",
     )
     .bind(agent_session_id)
-    .fetch_one(&mut **conn)
+    .fetch_optional(&mut **conn)
     .await
     .map_err(|e| e.to_string())?;
+    let existing_id = match tracked {
+        Some(tracked) => tracked,
+        // Delegated and default-agent runs have no agent_sessions row (their agent_session_id is
+        // the chat's own id): the list is this run's, so it's the one it already posted, if any.
+        None if posted_todos_this_run(conversation_so_far) => sqlx::query_scalar(
+            "SELECT id FROM messages WHERE session_id = $1 AND agent_display_name = $2 \
+             AND content_blocks @> '[{\"kind\": \"todo_list\"}]' ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(session_id)
+        .bind(agent_display_name)
+        .fetch_optional(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?,
+        None => None,
+    };
 
     match existing_id {
         Some(message_id) => {
@@ -1553,6 +1607,22 @@ async fn upsert_todo_list(
     }
 
     Ok("todo list updated".to_string())
+}
+
+/// Whether an earlier update_todos call in this run (its tool calls are only in the run's own
+/// conversation, never in the chat history it started from) succeeded.
+fn posted_todos_this_run(conversation: &[LlmMessage]) -> bool {
+    let calls: Vec<&String> = conversation
+        .iter()
+        .flat_map(|m| m.content.iter())
+        .filter_map(|b| match b {
+            ContentBlock::ToolUse { id, name, .. } if name.as_str() == UPDATE_TODOS_TOOL_NAME => Some(id),
+            _ => None,
+        })
+        .collect();
+    conversation.iter().flat_map(|m| m.content.iter()).any(|b| {
+        matches!(b, ContentBlock::ToolResult { tool_use_id, is_error: false, .. } if calls.contains(&tool_use_id))
+    })
 }
 
 /// Templated, non-LLM description of a failed tool call — kept generic in the engine (unlike a

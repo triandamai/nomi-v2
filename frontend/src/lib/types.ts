@@ -100,16 +100,50 @@ export interface ReplySource {
 	url: string;
 }
 
+/** Where a plan version stands, from what was done with it (see the backend's `plan_state`). */
+export type PlanState = 'proposed' | 'active' | 'updated' | 'completed' | 'blocked';
+
 export interface AgentPlanItem {
 	id: string;
 	title: string;
 	version: number;
 	content: string | null;
 	created_at: string;
+	/** Missing from servers that don't report it. */
+	state?: PlanState;
+}
+
+/** One check of a build, as it ran on (or missed) the final files. */
+export interface BuildCheck {
+	command: string;
+	outcome: 'passed' | 'failed' | 'timed_out' | 'stale' | 'not_run';
+	source: 'koda' | 'preview';
+	exit_code: number | null;
+	output_tail: string | null;
+}
+
+/** What a build's checks showed when it ended (nomi_agent_coding::report::BuildReport). */
+export interface BuildReport {
+	status: 'verified' | 'failing' | 'unverified';
+	files_version: number;
+	changed_files: string[];
+	deleted_files: string[];
+	checks: BuildCheck[];
+}
+
+/** The build handed over after a plan's newest version. */
+export interface PlanBuild {
+	delegation_id: string;
+	status: string;
+	report: BuildReport | null;
+	error: string | null;
+	updated_at: string;
 }
 
 export interface AgentPlansResponse {
 	plans: AgentPlanItem[];
+	/** Missing from servers that don't report it. */
+	build?: PlanBuild | null;
 }
 
 export interface RenderedMessage extends MessageItem {

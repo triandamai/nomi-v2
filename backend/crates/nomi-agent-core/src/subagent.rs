@@ -92,6 +92,19 @@ pub trait SubAgent: Send + Sync {
         true
     }
 
+    /// Stops a run once the same tool call has failed the same way this many times (the agent
+    /// isn't getting anywhere, and more rounds only burn time): `TurnError::RepeatedFailure`.
+    /// `None` (the default) never stops early; the run is bounded by `max_tool_turns` alone.
+    fn repeated_failure_limit(&self) -> Option<u32> {
+        None
+    }
+
+    /// Whether a tool result that isn't an error still reports a failure (a command that ran and
+    /// exited non-zero), for `repeated_failure_limit`.
+    fn tool_output_is_failure(&self, _tool_name: &str, _output: &str) -> bool {
+        false
+    }
+
     /// When true, run_agent_turn posts a chat message for every tool call this agent makes
     /// (and for any text it writes alongside one, treated as its "thinking out loud") — so the
     /// user watching a long-running build sees each step as it happens, not just a final
@@ -127,6 +140,22 @@ pub trait SubAgent: Send + Sync {
     /// after which the turn pauses until the person answers.
     fn asks_questions(&self) -> bool {
         false
+    }
+
+    /// Extra instructions for this chat and request only, added right after the agent's own
+    /// prompt: e.g. Rena's app-building playbook, which only an app request (or a project chat)
+    /// needs, or Koda's brief for the project he's building. `messages` is the conversation the
+    /// turn starts from; anything read for `user_id` must be theirs to see. `None` (the default)
+    /// adds nothing, so an agent's prompt stays as it was.
+    async fn domain_context(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        _session_id: Uuid,
+        _user_id: Uuid,
+        _messages: &[nomi_llm::LlmMessage],
+    ) -> Option<String> {
+        None
     }
 
     /// When true, run_agent_turn gives this agent `read_plan`: the latest plan drafted in this

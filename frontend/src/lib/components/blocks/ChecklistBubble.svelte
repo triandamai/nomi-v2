@@ -17,6 +17,7 @@
 		children,
 		footer,
 		ontoggle,
+		working: workingNow,
 	}: {
 		/** Who posted it (display name or type); picks the shape and the tint. */
 		agent: string | null;
@@ -29,13 +30,16 @@
 		footer?: Snippet;
 		/** Makes each item a checkbox the person can tick; gets the item's index and new state. */
 		ontoggle?: (index: number, done: boolean) => void;
+		/** Whether someone is working on it right now, when that's known (a plan's build). By default
+		 * a list with a current item counts as being worked on (an agent's live to-do list). */
+		working?: boolean;
 	} = $props();
 
 
 	const look = $derived(agentLook(agent));
 	const tint = $derived(GRADIENT_STOPS[look.tone].at(-1));
 	const done = $derived(items.filter((item) => item.status === 'done').length);
-	const working = $derived(items.some((item) => item.status === 'in_progress'));
+	const working = $derived(workingNow ?? items.some((item) => item.status === 'in_progress'));
 	const shown = $derived(maxItems !== undefined ? items.slice(0, maxItems) : items);
 	const hidden = $derived(items.length - shown.length);
 </script>

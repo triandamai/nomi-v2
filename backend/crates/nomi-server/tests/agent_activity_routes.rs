@@ -140,6 +140,39 @@ async fn lists_delegations_for_a_session_the_caller_owns(pool: PgPool) {
     assert_eq!(items[0]["target_agent_type"], "money");
     assert_eq!(items[0]["status"], "completed");
     assert_eq!(items[0]["result"], "spent $42 on groceries");
+    // Only builds carry a report.
+    assert!(items[0]["report"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_builds_report_comes_with_its_delegation(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "activity-build@example.com").await;
+    let org_id = org_id_for(&pool, "activity-build@example.com").await;
+    let user_id = user_id_for(&pool, "activity-build@example.com").await;
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, user_id, channel, chat_id) VALUES ($1, $2, 'web', 'c-build') RETURNING id")
+        .bind(org_id)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let report = json!({ "status": "failing", "files_version": 4, "changed_files": ["src/app.ts"], "deleted_files": [],
+        "checks": [{ "command": "npm run build", "outcome": "failed", "source": "koda", "exit_code": 1, "output_tail": "boom" }] });
+    sqlx::query(
+        "INSERT INTO agent_delegations (session_id, user_id, requesting_agent_type, target_agent_type, task, status, result, report) \
+         VALUES ($1, $2, 'planning', 'coding', 'Project x: build', 'completed', 'Built it', $3)",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(&report)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) =
+        json_request(router, "GET", &format!("/api/sessions/{session_id}/agent-activity"), Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["report"], report);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
