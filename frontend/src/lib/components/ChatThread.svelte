@@ -13,25 +13,11 @@
 	import GlassBackdrop from '$lib/components/GlassBackdrop.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
-	import SendButton from '$lib/components/m3/SendButton.svelte';
-	import MicButton from '$lib/components/MicButton.svelte';
 	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
-	import Menu from '$lib/components/m3/Menu.svelte';
-	import MenuItem from '$lib/components/m3/MenuItem.svelte';
-	import ThinkingMenu from '$lib/components/ThinkingMenu.svelte';
+	import CompactChatInput from '$lib/components/composer/CompactChatInput.svelte';
 	import { deserialize } from '$app/forms';
-	import {
-		composeMessage,
-		discardUpload,
-		formatBytes,
-		refusal,
-		uploadFile,
-		voiceNoteName,
-		type AttachmentKind,
-		type UploadedFile,
-	} from '$lib/attachments';
+	import { composeMessage, discardUpload, refusal, uploadFile, voiceNoteName, type AttachmentKind, type ComposerFile } from '$lib/attachments';
 	import { provideChatSend } from '$lib/chatSend';
-	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { createChatLink } from '$lib/chatLink';
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
@@ -65,6 +51,7 @@
 		project = null,
 		hasOlder = false,
 		glass = false,
+		placeholder,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -79,7 +66,7 @@
 		context?: string;
 		/** App-bar actions (the personality menu). */
 		extraControls?: Snippet;
-		/** The composer's model picker, beside the thinking level. */
+		/** The composer's model picker, between the [+] and the thinking level. */
 		modelControl?: Snippet;
 		/** A new chat's model when it isn't the person's default: sent with the first message. */
 		newChatModel?: string | null;
@@ -94,6 +81,8 @@
 		project?: { status: 'planning' | 'building' | 'ready' } | null;
 		/** Sit on the frosted crew stage (GlassBackdrop): regular chats, not a project's. */
 		glass?: boolean;
+		/** The message field's placeholder ("Ask anything…" when not given). */
+		placeholder?: string;
 	} = $props();
 
 	// The chat's name: renamed in place by the person, or live when they ask the crew to.
@@ -158,23 +147,10 @@
 	// Composer state: the typed draft, attached files, and the chat's thinking level. Files
 	// upload as soon as they're picked; the message carries a reference to each (see
 	// $lib/attachments), so it can be sent once every upload is done.
-	interface ComposerFile {
-		key: string;
-		name: string;
-		size: number;
-		/** A guess until the upload says what it really is. */
-		kind: AttachmentKind;
-		progress: number;
-		uploaded: UploadedFile | null;
-		/** A local preview of an image, until the message is sent. */
-		thumb: string | null;
-		controller: AbortController;
-	}
 	let draft = $state('');
 	let attachments = $state<ComposerFile[]>([]);
 	let attachError = $state<string | null>(null);
-	let fileInput: HTMLInputElement | undefined = $state();
-	let attachMenuOpen = $state(false);
+	let composerForm: HTMLFormElement | undefined = $state();
 	let recordingVoice = $state(false);
 	let recordingSupported = $state(false);
 	let dragging = $state(false);
@@ -239,23 +215,9 @@
 		attachments = attachments.filter((f) => f.key !== key);
 	}
 
-	function onFilesPicked(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const files = [...(input.files ?? [])];
-		input.value = '';
-		addFiles(files);
-	}
-
 	function onDrop(event: DragEvent) {
 		dragging = false;
 		const files = [...(event.dataTransfer?.files ?? [])];
-		if (files.length === 0) return;
-		event.preventDefault();
-		addFiles(files);
-	}
-
-	function onPaste(event: ClipboardEvent) {
-		const files = [...(event.clipboardData?.files ?? [])];
 		if (files.length === 0) return;
 		event.preventDefault();
 		addFiles(files);
@@ -268,14 +230,16 @@
 		addFiles([file], { voice: true, transcript });
 		messageInput?.focus();
 	}
-	let dictationBase = '';
+	function startVoiceNote() {
+		attachError = null;
+		recordingVoice = true;
+	}
+
 	let level = $state<ThinkingLevel>('medium');
 	$effect(() => {
 		if (thinkingLevel) level = thinkingLevel;
 	});
 
-	const uploading = $derived(attachments.some((f) => !f.uploaded));
-	const canSend = $derived((draft.trim().length > 0 || attachments.length > 0) && !uploading);
 	const composedText = $derived(composeMessage(draft, attachments.flatMap((f) => (f.uploaded ? [f.uploaded.reference] : []))));
 
 	function removeAttachment(key: string) {
@@ -315,11 +279,6 @@
 		attachError = null;
 	}
 
-	function onTranscript(text: string, final: boolean) {
-		draft = dictationBase ? `${dictationBase} ${text}` : text;
-		if (final) dictationBase = draft;
-	}
-
 	async function setThinking(next: ThinkingLevel) {
 		const previous = level;
 		level = next;
@@ -353,7 +312,7 @@
 	// Cards in the thread (answers to an agent's questions) reply through this composer.
 	provideChatSend((text) => {
 		draft = text;
-		void tick().then(() => messageInput?.form?.requestSubmit());
+		void tick().then(() => composerForm?.requestSubmit());
 	});
 
 	let localMessages = $state(untrack(() => messages));
@@ -444,18 +403,6 @@
 
 	function onThreadScroll() {
 		if (messagesContainer && messagesContainer.scrollTop < 240) void loadOlder();
-	}
-
-	// The message box grows with what's typed (up to its max height) instead of scrolling inside
-	// three lines: browsers without `field-sizing` get it measured here.
-	function autoGrow(field: HTMLTextAreaElement, _value: string) {
-		const fit = () => {
-			if (CSS.supports('field-sizing', 'content')) return;
-			field.style.height = 'auto';
-			field.style.height = `${field.scrollHeight}px`;
-		};
-		fit();
-		return { update: () => requestAnimationFrame(fit) };
 	}
 
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -820,10 +767,10 @@
 
 			<div class="dock">
 				<form
+					bind:this={composerForm}
 					method="POST"
 					action="?/sendMessage"
 					class="composer"
-					class:composer--drop={dragging}
 					ondragover={(event) => {
 						if (!event.dataTransfer?.types.includes('Files')) return;
 						event.preventDefault();
@@ -846,7 +793,6 @@
 							await update({ reset: true });
 							if (result.type === 'success') {
 								draft = '';
-								dictationBase = '';
 								clearAttachments();
 								if (result.data?.stopped) settleAfterStop();
 							}
@@ -854,102 +800,32 @@
 						};
 					}}
 				>
-					{#if attachments.length > 0 || attachError || recordingVoice}
-						<div class="composer__files">
-							{#each attachments as file (file.key)}
-								<span class="file-chip" class:file-chip--voice={file.kind === 'voice'} class:file-chip--busy={!file.uploaded}>
-									{#if file.thumb}
-										<img class="file-chip__thumb" src={file.thumb} alt="" />
-									{:else}
-										<AttachmentIcon kind={file.kind} size={16} />
-									{/if}
-									<span class="file-chip__name">{file.name}</span>
-									<span class="file-chip__size">
-										{#if file.uploaded}
-											{formatBytes(file.size)}
-										{:else}
-											<span class="sr-only">{m.chat_uploading()}</span>{Math.round(file.progress * 100)}%
-										{/if}
-									</span>
-									{#if !file.uploaded}
-										<span class="file-chip__progress" style:--progress={file.progress} aria-hidden="true"></span>
-									{/if}
-									<button type="button" class="file-chip__remove" aria-label={m.chat_remove_file({ name: file.name })} onclick={() => removeAttachment(file.key)}>
-										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-									</button>
-								</span>
-							{/each}
-							{#if recordingVoice}
-								<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
-							{/if}
-							{#if attachError}
-								<p class="composer__error" role="alert">{attachError}</p>
-							{/if}
-						</div>
-					{/if}
-					<div class="composer__row">
-						<Menu bind:open={attachMenuOpen}>
-							{#snippet trigger({ toggle })}
-								<button type="button" class="composer__attach" aria-label={m.chat_attach()} title={m.chat_attach_title()} onclick={toggle}>
-									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" /></svg>
-								</button>
-							{/snippet}
-							<MenuItem
-								type="button"
-								onclick={() => {
-									attachMenuOpen = false;
-									fileInput?.click();
-								}}
-							>
-								<span class="attach-option">
-									<span class="attach-option__label">{m.chat_attach_files()}</span>
-									<span class="attach-option__hint">{m.chat_attach_files_hint()}</span>
-								</span>
-							</MenuItem>
-							{#if recordingSupported}
-								<MenuItem
-									type="button"
-									disabled={recordingVoice}
-									onclick={() => {
-										attachMenuOpen = false;
-										attachError = null;
-										recordingVoice = true;
-									}}
-								>
-									<span class="attach-option">
-										<span class="attach-option__label">{m.chat_record_voice()}</span>
-										<span class="attach-option__hint">{m.chat_record_voice_hint()}</span>
-									</span>
-								</MenuItem>
-							{/if}
-						</Menu>
-						<input bind:this={fileInput} type="file" multiple hidden onchange={onFilesPicked} />
-						<label for="chat-message" class="sr-only">{m.chat_message()}</label>
-						<textarea
-							id="chat-message"
-							bind:this={messageInput}
-							bind:value={draft}
-							rows="1"
-							placeholder={project ? m.project_placeholder() : m.chat_placeholder()}
-							class="composer__input"
-							use:autoGrow={draft}
-							onpaste={onPaste}
-							onfocus={() => (dictationBase = draft)}
-						></textarea>
-						<input type="hidden" name="text" value={composedText} />
-						{#if unsaved}<input type="hidden" name="thinking" value={level} />{/if}
-						{#if unsaved && newChatModel}<input type="hidden" name="model" value={newChatModel} />{/if}
-						<MicButton ontranscript={onTranscript} />
-						{@render modelControl?.()}
-						{#if thinkingLevel}
-							<ThinkingMenu {level} onchange={setThinking} />
-						{/if}
-						<SendButton
-							working={isWorking || stopping}
-							stopForm={stopping ? undefined : 'stop-crew'}
-							disabled={!canSend}
-						/>
-					</div>
+					<CompactChatInput
+						bind:value={draft}
+						bind:textarea={messageInput}
+						{placeholder}
+						thinkingLevel={thinkingLevel ? level : null}
+						onthinkingchange={setThinking}
+						{modelControl}
+						{attachments}
+						{attachError}
+						onremoveattachment={removeAttachment}
+						tray={recordingVoice ? voiceNote : undefined}
+						onsubmit={() => composerForm?.requestSubmit()}
+						onfiles={(files) => addFiles(files)}
+						onvoicenote={recordingSupported ? startVoiceNote : undefined}
+						recording={recordingVoice}
+						busy={isWorking || stopping}
+						stopForm={stopping ? undefined : 'stop-crew'}
+						glass={glass && !project}
+						dropping={dragging}
+					/>
+					{#snippet voiceNote()}
+						<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
+					{/snippet}
+					<input type="hidden" name="text" value={composedText} />
+					{#if unsaved}<input type="hidden" name="thinking" value={level} />{/if}
+					{#if unsaved && newChatModel}<input type="hidden" name="model" value={newChatModel} />{/if}
 				</form>
 				<!-- The in-flight send button submits this: the same "stop" a user could type. -->
 				<form
@@ -1334,9 +1210,8 @@
 	.dock {
 		padding: 8px clamp(12px, 3vw, 32px) 14px;
 	}
-	/* On the glass stage: the chat sits above it, and the composer is a frosted pane. Only the
-	   composer blurs what's behind it (a backdrop-filter over the whole thread would re-blur
-	   every frame the crew moves). */
+	/* On the glass stage the chat sits above it, and the message bar frosts itself (see
+	   CompactChatInput). */
 	.chat--glass {
 		position: relative;
 		isolation: isolate;
@@ -1346,204 +1221,9 @@
 		position: relative;
 		z-index: 1;
 	}
-	.chat--glass .composer {
-		background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent);
-		-webkit-backdrop-filter: blur(20px) saturate(1.5);
-		backdrop-filter: blur(20px) saturate(1.5);
-		box-shadow:
-			inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 55%, transparent),
-			0 18px 40px -28px color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
-	}
-	@media (prefers-reduced-transparency: reduce) {
-		.chat--glass .composer {
-			background: var(--md-sys-color-surface-container-lowest);
-			-webkit-backdrop-filter: none;
-			backdrop-filter: none;
-		}
-	}
+	/* The form only carries the message: the bar inside it is the box. */
 	.composer {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		container-type: inline-size;
 		max-width: 780px;
 		margin: 0 auto;
-		padding: 8px;
-		border-radius: var(--md-sys-shape-corner-extra-large-increased);
-		background: var(--md-sys-color-surface-container-lowest);
-		box-shadow:
-			0 1px 0 var(--md-sys-color-outline-variant),
-			0 18px 40px -28px color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
-	}
-	.composer__input {
-		flex: 1;
-		min-width: 0;
-		align-self: stretch;
-		max-height: 200px;
-		overflow-y: auto;
-		field-sizing: content;
-		padding: 12px 4px;
-		border: none;
-		resize: none;
-		outline: none;
-		background: transparent;
-		color: var(--md-sys-color-on-surface);
-		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: var(--md-sys-typescale-body-large-size);
-		line-height: 1.5;
-	}
-	.composer__input::placeholder {
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.composer__row {
-		display: flex;
-		align-items: flex-end;
-		gap: 6px;
-	}
-	/* The buttons sit at the bottom of the box, beside the last line, however long the message. */
-	.composer__row > :global(*) {
-		align-self: flex-end;
-	}
-	/* Bigger screens: a long message grows the box (to most of the screen) instead of scrolling. */
-	@media (min-width: 768px) {
-		.composer__input {
-			max-height: min(45vh, 420px);
-		}
-	}
-	/* A narrow box (a project's chat column dragged small) keeps the message a usable width: it
-	   takes its own line above the buttons rather than being squeezed between them. */
-	@container (max-width: 480px) {
-		.composer__row {
-			flex-wrap: wrap;
-		}
-		.composer__input {
-			flex: 1 1 100%;
-			order: -1;
-			min-width: 0;
-			padding-left: 8px;
-		}
-	}
-	@container (min-width: 481px) {
-		.composer__input {
-			min-width: 220px;
-		}
-	}
-	.composer__attach {
-		flex: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 44px;
-		height: 44px;
-		border: none;
-		border-radius: 22px;
-		background: var(--md-sys-color-surface-container-high);
-		color: var(--md-sys-color-on-surface);
-		cursor: pointer;
-		transition: border-radius var(--nomi-motion-spatial-fast);
-	}
-	.composer__attach:hover {
-		border-radius: var(--md-sys-shape-corner-medium);
-	}
-	.composer__attach:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.composer__files {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		padding: 4px 4px 0;
-	}
-	.composer__error {
-		flex-basis: 100%;
-		margin: 0;
-		font-size: 0.8125rem;
-		color: var(--md-sys-color-error);
-	}
-	.file-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		max-width: 100%;
-		height: 36px;
-		padding: 0 4px 0 10px;
-		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface-container);
-		color: var(--md-sys-color-on-surface);
-		font-size: 0.8125rem;
-	}
-	.file-chip {
-		position: relative;
-		overflow: hidden;
-	}
-	.file-chip--voice {
-		background: var(--md-sys-color-tertiary-container);
-		color: var(--md-sys-color-on-tertiary-container);
-	}
-	.file-chip--busy .file-chip__name {
-		opacity: 0.75;
-	}
-	.file-chip__thumb {
-		flex: none;
-		width: 26px;
-		height: 26px;
-		margin-left: -4px;
-		border-radius: var(--md-sys-shape-corner-small);
-		object-fit: cover;
-	}
-	/* Upload progress: a bar along the chip's bottom edge. */
-	.file-chip__progress {
-		position: absolute;
-		left: 0;
-		bottom: 0;
-		height: 3px;
-		width: calc(var(--progress) * 100%);
-		background: var(--md-sys-color-primary);
-		transition: width 160ms linear;
-	}
-	.composer--drop {
-		outline: 2px dashed var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.attach-option {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		text-align: left;
-	}
-	.attach-option__label {
-		font-weight: 650;
-	}
-	.attach-option__hint {
-		font-size: 0.8125rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.file-chip__name {
-		font-weight: 600;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 220px;
-	}
-	.file-chip__size {
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.file-chip__remove {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: transparent;
-		color: inherit;
-		cursor: pointer;
-	}
-	.file-chip__remove:hover {
-		background: var(--md-sys-color-surface-container-highest);
 	}
 </style>

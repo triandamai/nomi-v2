@@ -44,6 +44,20 @@ export interface UploadedFile {
 	reference: string;
 }
 
+/** A file in the composer: uploading as soon as it's picked, sent once every upload is done. */
+export interface ComposerFile {
+	key: string;
+	name: string;
+	size: number;
+	/** A guess until the upload says what it really is. */
+	kind: AttachmentKind;
+	progress: number;
+	uploaded: UploadedFile | null;
+	/** A local preview of an image, until the message is sent. */
+	thumb: string | null;
+	controller: AbortController;
+}
+
 const MB = 1024 * 1024;
 export const MAX_ATTACHMENTS = 10;
 export const MAX_FILE_BYTES = 10 * MB;

@@ -3,7 +3,8 @@ import { apiFetch } from '$lib/server/api';
 import type { ThinkingLevel } from '$lib/types';
 import { m } from '$lib/paraglide/messages';
 
-const LEVELS = ['off', 'low', 'medium', 'high'];
+// The backend's levels ("Default" in the picker is medium); `off` was retired.
+const LEVELS: readonly string[] = ['low', 'medium', 'high', 'max'] satisfies ThinkingLevel[];
 
 /** The chat's thinking level; null (the picker hides) if it can't be read. */
 export async function loadThinkingLevel(fetch: typeof globalThis.fetch, cookies: Cookies, sessionId: string): Promise<ThinkingLevel | null> {
