@@ -2000,7 +2000,14 @@ impl SubAgent for DomainAgent {
     fn is_default(&self) -> bool {
         true
     }
-    async fn domain_context(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, messages: &[nomi_llm::LlmMessage]) -> Option<String> {
+    async fn domain_context(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        _session_id: Uuid,
+        _user_id: Uuid,
+        messages: &[nomi_llm::LlmMessage],
+    ) -> Option<String> {
         let asks_to_build = messages.iter().flat_map(|m| m.content.iter()).any(|b| matches!(b, ContentBlock::Text { text } if text.contains("build")));
         asks_to_build.then(|| "APP PLAYBOOK".to_string())
     }

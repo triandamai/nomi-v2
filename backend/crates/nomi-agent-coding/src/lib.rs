@@ -2,6 +2,7 @@
 //! SvelteKit first) from his guides, writes the code into the project's storage, and runs
 //! commands in the project's live preview in the user's browser.
 
+pub mod brief;
 pub mod files;
 pub mod guides;
 pub mod runtime;
@@ -123,6 +124,19 @@ impl SubAgent for CodingAgent {
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         execute(conn, &self.storage, user_id, name, input).await
+    }
+
+    /// The project, its files, Rena's plan and the stack's guides, so a build starts from them
+    /// (see `brief`).
+    async fn domain_context(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        s3: Option<&nomi_storage::S3Config>,
+        session_id: Uuid,
+        user_id: Uuid,
+        messages: &[nomi_llm::LlmMessage],
+    ) -> Option<String> {
+        brief::task_brief(conn, s3, session_id, user_id, messages).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

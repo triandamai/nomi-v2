@@ -48,7 +48,14 @@ impl SubAgent for PlanningAgent {
     /// The app-building playbook (questions, create_project, the plan, handing it to Koda) only
     /// when this is about building something: a project chat, or a conversation where the person
     /// asked for an app, site or the like. Trips, schedules and other plans don't get it.
-    async fn domain_context(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, messages: &[LlmMessage]) -> Option<String> {
+    async fn domain_context(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        session_id: Uuid,
+        _user_id: Uuid,
+        messages: &[LlmMessage],
+    ) -> Option<String> {
         let asked_to_build = messages
             .iter()
             .filter(|m| m.role == LlmRole::User)

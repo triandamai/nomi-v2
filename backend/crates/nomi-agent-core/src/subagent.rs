@@ -131,9 +131,17 @@ pub trait SubAgent: Send + Sync {
 
     /// Extra instructions for this chat and request only, added right after the agent's own
     /// prompt: e.g. Rena's app-building playbook, which only an app request (or a project chat)
-    /// needs. `messages` is the conversation the turn starts from. `None` (the default) adds
-    /// nothing, so an agent's prompt stays as it was.
-    async fn domain_context(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _messages: &[nomi_llm::LlmMessage]) -> Option<String> {
+    /// needs, or Koda's brief for the project he's building. `messages` is the conversation the
+    /// turn starts from; anything read for `user_id` must be theirs to see. `None` (the default)
+    /// adds nothing, so an agent's prompt stays as it was.
+    async fn domain_context(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        _session_id: Uuid,
+        _user_id: Uuid,
+        _messages: &[nomi_llm::LlmMessage],
+    ) -> Option<String> {
         None
     }
 

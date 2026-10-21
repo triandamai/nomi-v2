@@ -596,7 +596,7 @@ pub async fn run_agent_turn(
     };
 
     // The agent's own prompt, then anything only this kind of request needs (domain_context).
-    let base_prompt = match agent.domain_context(conn, session_id, &messages).await {
+    let base_prompt = match agent.domain_context(conn, s3, session_id, user_id, &messages).await {
         Some(context) => format!("{}\n\n{context}", agent.system_prompt()),
         None => agent.system_prompt().to_string(),
     };

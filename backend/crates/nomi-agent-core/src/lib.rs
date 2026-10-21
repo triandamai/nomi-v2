@@ -13,6 +13,7 @@ pub mod memory;
 pub mod notification;
 pub mod permissions;
 pub mod personality;
+pub mod plans;
 pub mod prompts;
 pub mod records;
 pub mod registry;
