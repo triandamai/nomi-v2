@@ -2,11 +2,13 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import SideSheet from '$lib/components/m3/SideSheet.svelte';
 	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
 	import type { ChecklistItem } from '$lib/planChecklist';
-	import type { ContentBlock } from '$lib/types';
+	import { planRefresh } from '$lib/planRefresh.svelte';
+	import { planStatusLine } from '$lib/planStatus';
+	import type { BuildCheck, ContentBlock, PlanBuild, PlanState } from '$lib/types';
 	import ChecklistBubble from './ChecklistBubble.svelte';
 
 	let { block, agent = null }: { block: Extract<ContentBlock, { kind: 'plan' }>; agent?: string | null } = $props();
@@ -19,13 +21,22 @@
 		checklist: ChecklistItem[];
 		excerpt: string;
 		created_at: string;
+		/** Missing from servers that don't report it. */
+		state?: PlanState;
 	};
+	type PlanVersions = { plans: PlanVersion[]; build?: PlanBuild | null };
 
 	let sheetOpen = $state(false);
 	let loading = $state(false);
 	let versions = $state<PlanVersion[]>([]);
+	let build = $state<PlanBuild | null>(null);
 	let activeVersion = $state<number | null>(null);
 	let loadError = $state<string | null>(null);
+
+	function apply(data: PlanVersions) {
+		versions = data.plans;
+		build = data.build ?? null;
+	}
 
 	async function loadVersions() {
 		if (versions.length > 0 || loading) return;
@@ -34,13 +45,38 @@
 		try {
 			const response = await fetch(buildAgentPlansFetchUrl(page.url.pathname, block.agent_session_id));
 			if (!response.ok) throw new Error('failed to load');
-			const data = (await response.json()) as { plans: PlanVersion[] };
-			versions = data.plans;
+			apply((await response.json()) as PlanVersions);
 			activeVersion = block.version;
 		} catch {
 			loadError = m.err_load_plan();
 		} finally {
 			loading = false;
+		}
+	}
+
+	// Something in the chat may have moved this plan on (a build started or ended, a new version
+	// came): look again, quietly, keeping what's shown until the answer is in.
+	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let seenRevision = untrack(() => planRefresh.revision);
+	$effect(() => {
+		const revision = planRefresh.revision;
+		if (revision === seenRevision) return;
+		seenRevision = revision;
+		if (refreshTimer) clearTimeout(refreshTimer);
+		refreshTimer = setTimeout(reload, 300);
+	});
+	onDestroy(() => {
+		if (refreshTimer) clearTimeout(refreshTimer);
+	});
+
+	async function reload() {
+		refreshTimer = null;
+		if (versions.length === 0) return loadVersions();
+		try {
+			const response = await fetch(buildAgentPlansFetchUrl(page.url.pathname, block.agent_session_id));
+			if (response.ok) apply((await response.json()) as PlanVersions);
+		} catch {
+			// Best-effort: the bubble keeps what it showed, and the next change tries again.
 		}
 	}
 
@@ -55,6 +91,26 @@
 	const shownVersion = $derived(versions.find((v) => v.version === block.version) ?? null);
 
 	const active = $derived(versions.find((v) => v.version === activeVersion) ?? null);
+
+	const latestVersion = $derived(versions.reduce((latest, v) => Math.max(latest, v.version), 0));
+	// The build only ever follows the newest version.
+	const status = $derived(shownVersion ? planStatusLine(shownVersion.state, shownVersion.version === latestVersion ? build : null, latestVersion) : null);
+	const sheetBuild = $derived(active && active.version === latestVersion ? build : null);
+
+	function checkOutcome(check: BuildCheck): string {
+		switch (check.outcome) {
+			case 'passed':
+				return m.plan_build_passed();
+			case 'failed':
+				return m.plan_build_failed({ code: check.exit_code === null ? '?' : String(check.exit_code) });
+			case 'timed_out':
+				return m.plan_build_timed_out();
+			case 'stale':
+				return m.plan_build_stale();
+			default:
+				return m.plan_build_not_run();
+		}
+	}
 
 	// Ticking a step saves it into this version's plan; the bubble updates straight away and
 	// takes it back if the save fails.
@@ -72,7 +128,7 @@
 				body: JSON.stringify({ planId: plan.id, index, done }),
 			});
 			if (!response.ok) throw new Error('failed to save');
-			versions = ((await response.json()) as { plans: PlanVersion[] }).plans;
+			apply((await response.json()) as PlanVersions);
 		} catch {
 			versions = before;
 			saveError = m.err_save_plan_item();
@@ -92,8 +148,20 @@
 	}
 </script>
 
-<ChecklistBubble {agent} heading={m.plan_draft({ agent: agent ?? 'Nomi' })} items={shownVersion?.checklist ?? []} maxItems={6} ontoggle={toggleItem}>
+<ChecklistBubble
+	{agent}
+	heading={m.plan_draft({ agent: agent ?? 'Nomi' })}
+	items={shownVersion?.checklist ?? []}
+	maxItems={6}
+	ontoggle={toggleItem}
+	working={status ? status.tone === 'working' : undefined}
+>
 	<p class="m3-plan-title">{block.title}</p>
+	{#if status}
+		<p class="m3-plan-status" data-tone={status.tone} role="status">
+			<span class="m3-plan-status__label">{status.label}</span>{status.detail ? ` · ${status.detail}` : ''}
+		</p>
+	{/if}
 	{#if shownVersion && shownVersion.checklist.length === 0 && shownVersion.excerpt}
 		<p class="m3-plan-excerpt">{shownVersion.excerpt}</p>
 	{/if}
@@ -131,6 +199,24 @@
 			{:else}
 				<p class="md-body-medium" style="color: var(--md-sys-color-error)">{m.plan_version_failed()}</p>
 			{/if}
+			{#if sheetBuild?.report}
+				<section class="m3-plan-build" aria-label={m.plan_build_heading()}>
+					<h3 class="md-title-small">{m.plan_build_heading()}</h3>
+					<ul class="m3-plan-build__checks">
+						{#each sheetBuild.report.checks as check (check.command)}
+							<li data-outcome={check.outcome}>{m.plan_build_check({ command: check.command, outcome: checkOutcome(check) })}</li>
+						{/each}
+					</ul>
+					{#if sheetBuild.report.changed_files.length > 0}
+						<details class="m3-plan-build__files">
+							<summary>{m.plan_build_changed({ count: String(sheetBuild.report.changed_files.length) })}</summary>
+							<ul>
+								{#each sheetBuild.report.changed_files as path (path)}<li><code>{path}</code></li>{/each}
+							</ul>
+						</details>
+					{/if}
+				</section>
+			{/if}
 		{/if}
 	{/if}
 </SideSheet>
@@ -146,6 +232,64 @@
 		font-size: 0.9375rem;
 		line-height: 1.5;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-plan-status {
+		margin: 0;
+		font-size: 0.8125rem;
+		line-height: 1.4;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-plan-status__label {
+		font-weight: 650;
+		color: var(--md-sys-color-on-surface);
+	}
+	.m3-plan-status[data-tone='done'] .m3-plan-status__label {
+		color: var(--md-sys-color-primary);
+	}
+	.m3-plan-status[data-tone='error'],
+	.m3-plan-status[data-tone='error'] .m3-plan-status__label {
+		color: var(--md-sys-color-error);
+	}
+	.m3-plan-status[data-tone='muted'] .m3-plan-status__label {
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-plan-build {
+		margin-top: 20px;
+		padding-top: 16px;
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.m3-plan-build h3 {
+		margin: 0 0 8px;
+		color: var(--md-sys-color-on-surface);
+	}
+	.m3-plan-build__checks {
+		margin: 0;
+		padding-left: 18px;
+		font-size: 0.875rem;
+		line-height: 1.6;
+		color: var(--md-sys-color-on-surface);
+	}
+	.m3-plan-build__checks li[data-outcome='failed'] {
+		color: var(--md-sys-color-error);
+	}
+	.m3-plan-build__files {
+		margin-top: 10px;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.m3-plan-build__files summary {
+		cursor: pointer;
+		min-height: 44px;
+		display: flex;
+		align-items: center;
+	}
+	.m3-plan-build__files summary:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.m3-plan-build__files ul {
+		margin: 0;
+		padding-left: 18px;
 	}
 	.m3-plan-error {
 		margin: 0;
