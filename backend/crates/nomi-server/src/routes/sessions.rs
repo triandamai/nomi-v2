@@ -486,11 +486,48 @@ pub struct AgentPlanItem {
     pub version: i32,
     pub content: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Where this version stands, from what's been done with it: "updated" once a newer version
+    /// follows it, else "proposed", "active", "completed" or "blocked" (see `plan_state`).
+    pub state: &'static str,
+}
+
+/// The build that followed the newest version (a coding delegation handed over after it, before
+/// any other plan in the chat), as it stands.
+#[derive(Serialize)]
+pub struct PlanBuild {
+    pub delegation_id: Uuid,
+    pub status: String,
+    /// What its checks showed on the final files (nomi_agent_coding::report::BuildReport);
+    /// null while it runs and for builds from before reports.
+    pub report: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
 pub struct ListAgentPlansResponse {
     pub plans: Vec<AgentPlanItem>,
+    pub build: Option<PlanBuild>,
+}
+
+/// Where the newest version of a plan stands. With a build: running is active, failed, stopped or
+/// failing its checks is blocked, and finished is completed (its report says whether the checks
+/// passed). Without one, it's completed once the person has ticked off every step, else proposed.
+pub fn plan_state(build: Option<(&str, Option<&str>)>, content: Option<&str>) -> &'static str {
+    match build {
+        Some(("completed", Some("failing"))) => "blocked",
+        Some(("completed", _)) => "completed",
+        Some(("failed" | "cancelled", _)) => "blocked",
+        Some(_) => "active",
+        None => {
+            let (done, total) = content.map(nomi_agent_core::plans::checklist_progress).unwrap_or((0, 0));
+            if total > 0 && done == total {
+                "completed"
+            } else {
+                "proposed"
+            }
+        }
+    }
 }
 
 pub async fn list_agent_plans(
@@ -510,8 +547,31 @@ pub async fn list_agent_plans(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch plans"))?;
 
+    // The build handed over after the newest version, unless another plan in the chat (not one
+    // written under the chat's own id, as delegated runs do) came between them.
+    let newest_at = rows.last().map(|row| row.5);
+    let build = match newest_at {
+        Some(newest_at) => sqlx::query_as::<_, (Uuid, String, Option<serde_json::Value>, Option<String>, DateTime<Utc>)>(
+            "SELECT d.id, d.status, d.report, d.error, COALESCE(d.completed_at, d.claimed_at, d.created_at) FROM agent_delegations d \
+             WHERE d.session_id = $1 AND d.target_agent_type = $2 AND d.created_at >= $3 \
+               AND NOT EXISTS (SELECT 1 FROM agent_plans o WHERE o.session_id = $1 AND o.agent_session_id NOT IN ($1, $4) \
+                               AND o.created_at > $3 AND o.created_at <= d.created_at) \
+             ORDER BY d.created_at DESC LIMIT 1",
+        )
+        .bind(session_id)
+        .bind(nomi_agent_coding::CODING_AGENT_TYPE)
+        .bind(newest_at)
+        .bind(agent_session_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch plans"))?
+        .map(|(delegation_id, status, report, error, updated_at)| PlanBuild { delegation_id, status, report, error, updated_at }),
+        None => None,
+    };
+
+    let newest = rows.len().saturating_sub(1);
     let mut plans = Vec::with_capacity(rows.len());
-    for (id, title, version, content, content_s3_key, created_at) in rows {
+    for (index, (id, title, version, content, content_s3_key, created_at)) in rows.into_iter().enumerate() {
         let resolved_content = match (content, content_s3_key) {
             (Some(inline), _) => Some(inline),
             (None, Some(key)) => match &state.s3 {
@@ -520,11 +580,18 @@ pub async fn list_agent_plans(
             },
             (None, None) => None,
         };
-        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at });
+        let plan_state = if index < newest {
+            "updated"
+        } else {
+            let report_status = build.as_ref().and_then(|b| b.report.as_ref()).and_then(|r| r.get("status")).and_then(|s| s.as_str());
+            plan_state(build.as_ref().map(|b| (b.status.as_str(), report_status)), resolved_content.as_deref())
+        };
+        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at, state: plan_state });
     }
 
-    Ok(Json(ListAgentPlansResponse { plans }))
+    Ok(Json(ListAgentPlansResponse { plans, build }))
 }
+
 
 /// Ticks or unticks the `index`-th task-list item (`- [ ]` / `- [x]`) in a plan's markdown,
 /// counting items the way the chat's checklist does. `None` when there's no such item.
@@ -534,26 +601,15 @@ pub fn set_plan_item_done(markdown: &str, index: usize, done: bool) -> Option<St
     let lines: Vec<String> = markdown
         .split('\n')
         .map(|line| {
-            let indent = line.len() - line.trim_start().len();
-            let rest = &line[indent..];
-            let is_task = rest.starts_with(['-', '*', '+'])
-                && rest[1..].starts_with(char::is_whitespace)
-                && {
-                    let after = rest[1..].trim_start();
-                    (after.starts_with("[ ]") || after.starts_with("[x]") || after.starts_with("[X]"))
-                        && after[3..].starts_with(char::is_whitespace)
-                        && !after[3..].trim().is_empty()
-                };
-            if !is_task {
+            let Some((box_at, _)) = nomi_agent_core::plans::task_item(line) else {
                 return line.to_string();
-            }
+            };
             let this = seen;
             seen += 1;
             if this != index {
                 return line.to_string();
             }
             changed = true;
-            let box_at = indent + 1 + (rest[1..].len() - rest[1..].trim_start().len());
             let mark = if done { "[x]" } else { "[ ]" };
             format!("{}{}{}", &line[..box_at], mark, &line[box_at + 3..])
         })

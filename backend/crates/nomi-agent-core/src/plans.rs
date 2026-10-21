@@ -43,12 +43,36 @@ pub async fn latest_plan_by(
 pub fn open_checklist_items(content: &str) -> Vec<&str> {
     content
         .lines()
-        .filter_map(|line| {
-            let line = line.trim_start();
-            line.strip_prefix("- [ ]").or_else(|| line.strip_prefix("* [ ]")).map(str::trim)
+        .filter_map(|line| match task_item(line) {
+            Some((box_at, false)) => Some(line[box_at + 3..].trim()),
+            _ => None,
         })
-        .filter(|item| !item.is_empty())
         .collect()
+}
+
+/// (ticked, all) task-list items in a plan's markdown, as the chat's checklist counts them.
+pub fn checklist_progress(markdown: &str) -> (usize, usize) {
+    markdown.split('\n').filter_map(task_item).fold((0, 0), |(done, all), (_, ticked)| (done + usize::from(ticked), all + 1))
+}
+
+/// For a task-list line (`- [ ] …`, `* [x] …`, `+ [X] …`): where its box starts, and whether it's
+/// ticked.
+pub fn task_item(line: &str) -> Option<(usize, bool)> {
+    let indent = line.len() - line.trim_start().len();
+    let rest = &line[indent..];
+    if !(rest.starts_with(['-', '*', '+']) && rest[1..].starts_with(char::is_whitespace)) {
+        return None;
+    }
+    let after = rest[1..].trim_start();
+    let ticked = match after.get(..3) {
+        Some("[ ]") => false,
+        Some("[x]" | "[X]") => true,
+        _ => return None,
+    };
+    if !after[3..].starts_with(char::is_whitespace) || after[3..].trim().is_empty() {
+        return None;
+    }
+    Some((indent + 1 + (rest[1..].len() - after.len()), ticked))
 }
 
 #[cfg(test)]
@@ -57,7 +81,8 @@ mod tests {
 
     #[test]
     fn only_unticked_items_are_left_to_do() {
-        let plan = "## Steps\n- [x] Pick the colours\n- [ ] Home shows the menu\n  * [ ] Contact page\n- [ ]\nSome prose - [ ] not an item";
-        assert_eq!(open_checklist_items(plan), vec!["Home shows the menu", "Contact page"]);
+        let plan = "## Steps\n- [x] Pick the colours\n- [ ] Home shows the menu\n  * [ ] Contact page\n+  [ ]  Gallery \n- [ ]\n-[ ] no space\nSome prose - [ ] not an item";
+        assert_eq!(open_checklist_items(plan), vec!["Home shows the menu", "Contact page", "Gallery"]);
+        assert_eq!(checklist_progress(plan), (1, 4));
     }
 }
