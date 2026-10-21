@@ -1,49 +1,23 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import {
-	connectProvider,
-	listConnectionModels,
-	loadCatalog,
-	loadConnections,
-	PERSONAL_CONNECTIONS,
-	selectConnectionModel,
-} from '$lib/server/providers';
+import { fetchModelOptions, manageModelActions, saveDefaultModel } from '$lib/server/modelOptions';
 import type { LlmModelsResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
+// The Model page: the default model for new chats (the same picker and Manage models as a
+// chat's composer) and the model Koda builds with, a setting of its own.
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const [response, connections, providers] = await Promise.all([
-		apiFetch(fetch, cookies, '/api/llm/models'),
-		loadConnections(fetch, cookies, PERSONAL_CONNECTIONS),
-		loadCatalog(fetch, cookies),
-	]);
+	const [response, modelOptions] = await Promise.all([apiFetch(fetch, cookies, '/api/llm/models'), fetchModelOptions(fetch, cookies)]);
 	const models: LlmModelsResponse = response.ok
 		? ((await response.json()) as LlmModelsResponse)
-		: { admin_models: [], selection: null, coding: { kind: 'default' }, default_coding_model_id: null };
-	return { models, connections: connections ?? [], providers: providers ?? [] };
+		: { admin_models: [], coding: { kind: 'default' }, default_coding_model_id: null };
+	return { models, modelOptions };
 };
 
 export const actions: Actions = {
-	selectAdminModel: async ({ request, cookies, fetch }) => {
-		const data = await request.formData();
-		const adminModelId = data.get('admin_model_id');
-
-		if (typeof adminModelId !== 'string') {
-			return fail(400, { error: m.err_invalid_model_selection() });
-		}
-
-		const response = await apiFetch(fetch, cookies, '/api/llm/selection', {
-			method: 'PUT',
-			body: JSON.stringify({ kind: 'admin', admin_model_id: adminModelId }),
-		});
-
-		if (!response.ok) {
-			const message = await response.text();
-			return fail(response.status, { error: message || m.err_select_model() });
-		}
-		return { success: true };
-	},
+	/** The model new chats start on (each chat can switch in its composer). */
+	setDefaultModel: async ({ request, cookies, fetch }) => saveDefaultModel(fetch, cookies, await request.formData()),
 
 	/** Which model Koda builds their projects with: 'default', 'same_as_chat' or one of Nomi's models. */
 	selectCodingModel: async ({ request, cookies, fetch }) => {
@@ -60,8 +34,6 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	// Your own providers: connect one in place, list its models, use one.
-	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
-	connectionModels: async ({ request, cookies, fetch }) => listConnectionModels(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
-	selectConnectionModel: async ({ request, cookies, fetch }) => selectConnectionModel(fetch, cookies, await request.formData()),
+	// Manage models: which models the picker offers, and connecting a provider in place.
+	...manageModelActions,
 };

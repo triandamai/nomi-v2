@@ -159,18 +159,11 @@ export interface LlmAdminModelOption {
 	model_id: string;
 }
 
-export type LlmUserSelection =
-	| { kind: 'admin'; admin_model_id: string }
-	| { kind: 'custom'; label: string; provider: string; model_id: string; api_key_masked: string; base_url: string | null }
-	/** A model from one of the person's own provider connections (see $lib/providers). */
-	| { kind: 'connection'; connection_id: string; provider_id: string; label: string; model_id: string };
-
 /** Which model Koda builds the person's projects with. */
 export type LlmCodingSelection = { kind: 'default' } | { kind: 'same_as_chat' } | { kind: 'admin'; admin_model_id: string };
 
 export interface LlmModelsResponse {
 	admin_models: LlmAdminModelOption[];
-	selection: LlmUserSelection | null;
 	coding: LlmCodingSelection;
 	/** The coding model an admin picked (what 'default' means), if any. */
 	default_coding_model_id: string | null;

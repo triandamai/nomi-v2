@@ -153,6 +153,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/llm/fetch-models", post(llm_models_routes::fetch_user_models))
         .route("/api/llm/model-options", get(crate::routes::model_options::list_options).put(crate::routes::model_options::set_visibility))
         .route("/api/sessions/:id/model", get(crate::routes::model_options::get_chat_model).put(crate::routes::model_options::set_chat_model))
+        .route("/api/llm/default-model", put(crate::routes::model_options::set_default_model))
         .route("/api/llm/providers", get(provider_connections_routes::list_providers))
         .route("/api/llm/providers/:id/models", get(provider_connections_routes::list_provider_catalog_models))
         .route("/api/llm/connections", get(provider_connections_routes::list_own).post(provider_connections_routes::connect_own))

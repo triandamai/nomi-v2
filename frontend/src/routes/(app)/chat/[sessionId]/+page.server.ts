@@ -1,7 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import { connectProvider, PERSONAL_CONNECTIONS } from '$lib/server/providers';
-import { loadModelOptions, loadSessionModel, saveModelVisibility, saveSessionModel } from '$lib/server/modelOptions';
+import { loadModelOptions, loadSessionModel, sessionModelActions } from '$lib/server/modelOptions';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
@@ -56,7 +55,7 @@ export const actions: Actions = {
 	rename: async ({ request, params, cookies, fetch }) => renameSession(fetch, cookies, params.sessionId, await request.formData()),
 	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
 
-	// Named (not `default`) because this actions object also has setSessionModel and the rest —
+	// Named (not `default`) because this actions object also has the model picker's and the rest —
 	// SvelteKit forbids mixing a `default` action with named actions in the
 	// same file (throws "When using named actions, the default action cannot be used" at request
 	// time), so the message-send form below must target this action explicitly.
@@ -91,9 +90,7 @@ export const actions: Actions = {
 
 	// The composer's model picker: this chat's model, which models it offers, and connecting a
 	// provider in place from Manage models.
-	setSessionModel: async ({ request, params, cookies, fetch }) => saveSessionModel(fetch, cookies, params.sessionId, await request.formData()),
-	setModelVisibility: async ({ request, cookies, fetch }) => saveModelVisibility(fetch, cookies, await request.formData()),
-	connect: async ({ request, cookies, fetch }) => connectProvider(fetch, cookies, PERSONAL_CONNECTIONS, await request.formData()),
+	...sessionModelActions,
 
 	feedback: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();

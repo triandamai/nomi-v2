@@ -9,7 +9,6 @@ import {
 	logoUrl,
 	mediaFromInputs,
 	prefillFromCatalog,
-	connectionSelectionText,
 	parseApiError,
 	searchProviders,
 	stepHighlight,
@@ -204,21 +203,5 @@ describe('prefillFromCatalog', () => {
 	it('leaves unknown prices blank', () => {
 		const meta = { id: 'x', name: 'X', input: ['text'], cost: { input: null, output: 0, cache_read: null }, context: null };
 		expect(prefillFromCatalog(meta)).toEqual({ inputPrice: '', outputPrice: '0', cachedPrice: '', media: [] });
-	});
-});
-
-describe('connectionSelectionText', () => {
-	const selection = { kind: 'connection' as const, connection_id: 'c1', provider_id: 'openai', label: 'GPT-5', model_id: 'gpt-5' };
-
-	it('says which model, from which provider', () => {
-		expect(connectionSelectionText(selection, [connection()], catalog)).toBe('Using GPT-5 from OpenAI');
-		expect(connectionSelectionText({ ...selection, label: '' }, [connection()], catalog)).toBe('Using gpt-5 from OpenAI');
-	});
-
-	it("names a custom endpoint by its label, and copes with a connection that's gone", () => {
-		const office = connection({ id: 'c2', provider_id: 'custom', label: 'Office vLLM' });
-		expect(connectionSelectionText({ ...selection, connection_id: 'c2', provider_id: 'custom' }, [office], catalog)).toBe('Using GPT-5 from Office vLLM');
-		expect(connectionSelectionText(selection, [], catalog)).toBe('Using GPT-5 from OpenAI');
-		expect(connectionSelectionText({ ...selection, provider_id: 'mystery' }, [], [])).toBe('Using GPT-5 from mystery');
 	});
 });
