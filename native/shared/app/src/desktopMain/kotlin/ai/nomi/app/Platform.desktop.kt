@@ -12,10 +12,13 @@ import io.ktor.client.engine.HttpClientEngine
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
-/** `-Dnomi.apiUrl=…` wins over the `NOMI_API_URL` environment variable; both fall back to the local backend. */
+/**
+ * `-Dnomi.apiUrl=…` wins over the `NOMI_API_URL` environment variable; both fall back to the hosted API. For local
+ * development point either at your backend, e.g. `NOMI_API_URL=http://localhost:8080`.
+ */
 const val API_URL_PROPERTY = "nomi.apiUrl"
 const val API_URL_ENV = "NOMI_API_URL"
-const val DEFAULT_DESKTOP_API_URL = "http://localhost:8080"
+const val DEFAULT_DESKTOP_API_URL = "https://api-nomi.trian.space"
 
 fun desktopApiUrl(): String =
     System.getProperty(API_URL_PROPERTY)?.takeIf { it.isNotBlank() }
