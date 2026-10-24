@@ -104,6 +104,8 @@ jobs:
         run: python3 .github/scripts/junit-summary.py native "Native tests — iOS simulator" >> "$GITHUB_STEP_SUMMARY"
 
       # The Xcode project's build phase compiles the Kotlin framework itself (embedAndSignAppleFrameworkForXcode).
+      # arm64 only: the app ships the Apple-silicon simulator framework (iosSimulatorArm64), and a generic
+      # simulator destination would otherwise also ask for x86_64.
       - name: Build the iOS app for the simulator
         run: |
           xcodebuild \
@@ -112,6 +114,8 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ios \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
 
