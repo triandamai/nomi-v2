@@ -84,7 +84,8 @@ private const val QUIET_ALPHA = 0.8f
 
 /**
  * A message's content blocks, in order (`ContentBlockView.svelte`). Any kind this build doesn't draw shows once, as
- * a quiet card carrying the message's own text ([fallbackText]).
+ * a quiet card carrying the message's own text ([fallbackText]). Views and questions that answer for the person send
+ * through [onSend]; [answered] (the person replied since) settles them.
  */
 @Composable
 fun MessageBlocks(
@@ -95,6 +96,9 @@ fun MessageBlocks(
     approval: ApprovalState?,
     onResolveApproval: (approve: Boolean, remember: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    answered: Boolean = false,
+    onSend: ((String) -> Unit)? = null,
+    timeZone: kotlinx.datetime.TimeZone = kotlinx.datetime.TimeZone.currentSystemDefault(),
 ) {
     val firstUnknown = blocks.indexOfFirst { it is ContentBlock.Unknown }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(BlockGap)) {
@@ -105,6 +109,8 @@ fun MessageBlocks(
                 is ContentBlock.Plan -> PlanCard(block, agent, identity)
                 is ContentBlock.FileChange -> FileChangeCard(block, identity)
                 is ContentBlock.Reasoning -> ReasoningDisclosure(block.text)
+                is ContentBlock.View -> ai.nomi.feature.chat.views.ChatViewBlock(block.view, agent, answered, onSend, timeZone)
+                is ContentBlock.Questions -> ai.nomi.feature.chat.views.QuestionsBlock(block.block, agent, answered, onSend)
                 is ContentBlock.Unknown -> if (index == firstUnknown) FallbackCard(fallbackText)
             }
         }

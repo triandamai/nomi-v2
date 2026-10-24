@@ -101,6 +101,27 @@ class ChatViewModel(
     /** Puts a suggestion in the composer (the person still sends it). */
     fun useSuggestion(text: String) = onDraftChange(text)
 
+    /**
+     * Sends an answer a view gave for the person (a picked suggestion, decision, form or questions answers) as their
+     * message. The composer's draft is left alone.
+     */
+    fun sendAnswer(text: String) {
+        val answer = text.trim()
+        if (answer.isEmpty()) return
+        mutableComposer.value = mutableComposer.value.copy(sending = true, error = null)
+        viewModelScope.launch {
+            mutableComposer.value = try {
+                chats.send(sessionId, answer)
+                mutableComposer.value.copy(sending = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("chat: sending an answer failed: $e")
+                mutableComposer.value.copy(sending = false, error = MESSAGE_SEND_FAILED)
+            }
+        }
+    }
+
     fun send() {
         val current = mutableComposer.value
         val text = current.draft.trim()
