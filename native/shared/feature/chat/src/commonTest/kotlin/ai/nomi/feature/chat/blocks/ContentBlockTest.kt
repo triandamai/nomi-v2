@@ -101,13 +101,41 @@ class ContentBlockTest {
 
     @Test fun unknownAndMalformedBlocksFallBack() {
         val blocks = parseContentBlocks(
-            """[{"kind":"table","variant":"data","columns":[],"rows":[]},{"kind":"plan","title":"no ids"},{"no":"kind"},42,
-               {"kind":"reasoning","text":"kept"}]""",
+            """[{"kind":"quota_notice","reason":"limit"},{"kind":"plan","title":"no ids"},{"no":"kind"},42,
+               {"kind":"view","view":"hologram"},{"kind":"reasoning","text":"kept"}]""",
         )
         assertEquals(
-            listOf(ContentBlock.Unknown("table"), ContentBlock.Unknown("plan"), ContentBlock.Unknown("unknown"), ContentBlock.Reasoning("kept")),
+            listOf(
+                ContentBlock.Unknown("quota_notice"),
+                ContentBlock.Unknown("plan"),
+                ContentBlock.Unknown("unknown"),
+                ContentBlock.Unknown("view"),
+                ContentBlock.Reasoning("kept"),
+            ),
             blocks,
         )
+    }
+
+    @Test fun viewBlockBecomesItsView() {
+        val blocks = parseContentBlocks("""[{"kind":"view","view":"answer","label":"Left","value":1350000,"format":"money","tone":"positive"}]""")
+        assertEquals(
+            listOf(ContentBlock.View(ai.nomi.feature.chat.views.ChatView.Answer("Left", ai.nomi.feature.chat.views.Scalar.Num(1350000.0), ai.nomi.feature.chat.views.ValueFormat.Money, null, ai.nomi.feature.chat.views.Tone.Positive))),
+            blocks,
+        )
+    }
+
+    @Test fun olderTableBlockDrawsAsATableView() {
+        val block = parseContentBlocks("""[{"kind":"table","variant":"data","columns":[{"key":"what","label":"What"}],"rows":[{"what":"Lunch"}]}]""").single()
+        val view = (block as ContentBlock.View).view as ai.nomi.feature.chat.views.ChatView.Table
+        assertEquals(listOf(mapOf("what" to ai.nomi.feature.chat.views.Scalar.Text("Lunch"))), view.rows)
+    }
+
+    @Test fun questionsBlock() {
+        val block = parseContentBlocks(
+            """[{"kind":"questions","intro":null,"questions":[{"question":"Which day?","options":[{"label":"Sat"},{"label":"Sun","detail":"rain"}],"multiple":true}]}]""",
+        ).single() as ContentBlock.Questions
+        assertEquals(null, block.block.intro)
+        assertEquals(ai.nomi.feature.chat.views.Question("Which day?", listOf("Sat" to null, "Sun" to "rain"), multiple = true), block.block.questions.single())
     }
 
     @Test fun diffStatsCountsChangedLines() {

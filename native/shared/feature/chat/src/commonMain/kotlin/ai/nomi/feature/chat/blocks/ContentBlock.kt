@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 
@@ -38,6 +39,12 @@ sealed interface ContentBlock {
     /** The model's thinking. */
     data class Reasoning(val text: String) : ContentBlock
 
+    /** A view — a list, table, chart, form… (`{kind: "view"}`, see the views package). */
+    data class View(val view: ai.nomi.feature.chat.views.ChatView) : ContentBlock
+
+    /** Questions to answer by tapping options (`questions`). */
+    data class Questions(val block: ai.nomi.feature.chat.views.Questions) : ContentBlock
+
     /** A kind this build doesn't draw (or one that arrived malformed). */
     data class Unknown(val kind: String) : ContentBlock
 }
@@ -65,6 +72,9 @@ private const val KIND_FILE_WRITE = "file_write"
 private const val KIND_FILE_WRITES = "file_writes"
 private const val KIND_FILE_DELETE = "file_delete"
 private const val KIND_REASONING = "reasoning"
+private const val KIND_VIEW = "view"
+private const val KIND_TABLE = "table"
+private const val KIND_QUESTIONS = "questions"
 private const val UNNAMED_KIND = "unknown"
 
 private val lenient = Json { ignoreUnknownKeys = true }
@@ -90,6 +100,10 @@ private fun parseBlock(block: JsonObject): List<ContentBlock> {
         KIND_FILE_WRITES -> block.fileWrites()
         KIND_FILE_DELETE -> block.string("path")?.let { listOf(ContentBlock.FileChange(it, FileAction.Deleted, null, block.string("previous_content"))) }
         KIND_REASONING -> block.string("text")?.let { listOf(ContentBlock.Reasoning(it)) }
+        KIND_VIEW -> ai.nomi.feature.chat.views.parseView(block)?.let { listOf(ContentBlock.View(it)) }
+        // The older table block draws as a table view (its values are already formatted text).
+        KIND_TABLE -> ai.nomi.feature.chat.views.parseView(JsonObject(block + ("view" to JsonPrimitive(KIND_TABLE))))?.let { listOf(ContentBlock.View(it)) }
+        KIND_QUESTIONS -> block.questions()?.let { listOf(ContentBlock.Questions(it)) }
         else -> null
     }
     return parsed ?: listOf(ContentBlock.Unknown(kind))
@@ -135,6 +149,15 @@ private fun JsonObject.fileWrite(): ContentBlock.FileChange? {
 private fun JsonObject.fileWrites(): List<ContentBlock>? {
     val files = this["files"] as? JsonArray ?: return null
     return files.mapNotNull { (it as? JsonObject)?.fileWrite() }
+}
+
+private fun JsonObject.questions(): ai.nomi.feature.chat.views.Questions? {
+    val questions = (this["questions"] as? JsonArray)?.mapNotNull { element ->
+        val q = element as? JsonObject ?: return@mapNotNull null
+        val options = (q["options"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let { o -> o.string("label")?.let { l -> l to o.string("detail") } } }
+        ai.nomi.feature.chat.views.Question(q.string("question") ?: return@mapNotNull null, options, (q["multiple"] as? JsonPrimitive)?.booleanOrNull == true)
+    } ?: return null
+    return ai.nomi.feature.chat.views.Questions(string("intro"), questions)
 }
 
 /** A string field; JSON null, a missing key or a non-string value is null. */

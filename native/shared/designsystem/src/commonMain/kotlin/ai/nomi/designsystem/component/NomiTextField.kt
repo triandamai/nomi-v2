@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 /** The web's `.m3-field__input`: 48px tall, 1.5px outline, 2px primary when focused, 14px inside. */
 private val FieldHeight = 48.dp
 private val FieldPadding = 14.dp
+private val FieldPaddingMultiline = 12.dp
 private val OutlineWidth = 1.5.dp
 private val FocusedOutlineWidth = 2.dp
 private val LabelGap = 4.dp
@@ -53,6 +54,8 @@ fun NomiTextField(
     isError: Boolean = false,
     enabled: Boolean = true,
     singleLine: Boolean = true,
+    /** Lines a multi-line field shows before it grows (a textarea's `rows`). */
+    minLines: Int = 1,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
@@ -79,6 +82,7 @@ fun NomiTextField(
             onValueChange = onValueChange,
             enabled = enabled,
             singleLine = singleLine,
+            minLines = if (singleLine) 1 else minLines,
             textStyle = textStyle,
             cursorBrush = SolidColor(if (isError) colors.error else colors.primary),
             keyboardOptions = keyboardOptions,
@@ -95,7 +99,7 @@ fun NomiTextField(
                         .heightIn(min = FieldHeight)
                         .background(colors.surface, shape)
                         .border(outlineWidth, outline, shape)
-                        .padding(horizontal = FieldPadding),
+                        .padding(horizontal = FieldPadding, vertical = if (singleLine) 0.dp else FieldPaddingMultiline),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     if (value.isEmpty() && placeholder != null) {

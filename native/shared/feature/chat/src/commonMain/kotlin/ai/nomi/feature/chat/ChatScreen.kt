@@ -141,6 +141,7 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier, onBack: 
         modifier = modifier,
         approvals = approvals,
         onResolveApproval = viewModel::resolveApproval,
+        onSendAnswer = viewModel::sendAnswer,
     )
 }
 
@@ -158,6 +159,8 @@ fun ChatContent(
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
     approvals: Map<String, ApprovalState> = emptyMap(),
     onResolveApproval: (messageId: String, approve: Boolean, remember: Boolean) -> Unit = { _, _, _ -> },
+    /** Sends what a view answered for the person (a suggestion, decision, form…); null leaves views read-only. */
+    onSendAnswer: ((String) -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).testTag(CHAT_SCREEN_TAG)) {
         val phone = maxWidth < PhoneBreakpoint
@@ -167,7 +170,7 @@ fun ChatContent(
                 when {
                     chat == null -> NomiLoadingIndicator(Modifier.align(Alignment.Center), contentDescription = "Loading messages")
                     chat.messages.isEmpty() && chat.draft == null && chat.activeAgent == null -> EmptyThread(onSuggestion, Modifier.align(Alignment.Center))
-                    else -> Thread(chat, timeZone, approvals, onResolveApproval)
+                    else -> Thread(chat, timeZone, approvals, onResolveApproval, onSendAnswer)
                 }
             }
             Column(
@@ -251,7 +254,10 @@ private fun Thread(
     timeZone: TimeZone,
     approvals: Map<String, ApprovalState>,
     onResolveApproval: (messageId: String, approve: Boolean, remember: Boolean) -> Unit,
+    onSendAnswer: ((String) -> Unit)?,
 ) {
+    // A message the person has replied after is settled: its questions, decisions and forms show as answered.
+    val lastUserIndex = chat.messages.indexOfLast { it.role == ROLE_USER }
     val items = chat.messages.map { ThreadItem.Stored(it) } +
         listOfNotNull(chat.draft?.let { ThreadItem.Streaming(it.turnJobId, it.text, chat.activeAgent?.agentType) })
     val list = rememberLazyListState()
@@ -278,9 +284,13 @@ private fun Thread(
                             if (blocks.isEmpty()) {
                                 MessageText(message.content)
                             } else {
-                                MessageBlocks(blocks, item.author(), identity, message.content, approvals[message.id], { approve, remember ->
-                                    onResolveApproval(message.id, approve, remember)
-                                })
+                                MessageBlocks(
+                                    blocks, item.author(), identity, message.content, approvals[message.id],
+                                    { approve, remember -> onResolveApproval(message.id, approve, remember) },
+                                    answered = i < lastUserIndex,
+                                    onSend = onSendAnswer,
+                                    timeZone = timeZone,
+                                )
                             }
                         }
                     }
