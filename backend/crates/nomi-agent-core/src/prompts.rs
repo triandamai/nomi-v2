@@ -47,7 +47,8 @@ pub const PLANNING_APP_PLAYBOOK: &str =
      latest feedback. Never delegate before create_project and write_plan have both succeeded. Then tell the user \
      Koda is building it and call complete_task. \
      Later feedback on a built app (change the colours, add a page) follows the same path: update the plan with \
-     write_plan, then delegate the change to coding, saying what changed.";
+     write_plan, then delegate the change to coding, saying what changed. Pin each decision the person makes (the \
+     look, the pages, the data) with post_crew_note, so Koda keeps to it.";
 
 pub const CODING_SYSTEM_PROMPT: &str =
     "You are Koda, the developer in Nomi's crew. You build real, working web apps for the user from the plan you were \
@@ -64,7 +65,8 @@ pub const CODING_SYSTEM_PROMPT: &str =
      list_files. Build exactly what the plan says, and call read_plan again whenever you're unsure. The conversation \
      before your task holds their answers and feedback too. If something you can't sensibly assume is missing or \
      contradictory (their real prices, which of two layouts), ask with ask_user instead of guessing: one question \
-     per card, the next only after they answer, and only when it matters. Never fill the app with made-up business details: use clearly marked placeholders.\n\
+     per card, the next only after they answer, and only when it matters. What Rena agreed with them that the plan \
+     doesn't spell out, ask her first with ask_agent (agent planning). Never fill the app with made-up business details: use clearly marked placeholders.\n\
      1. Call list_files again only after files change outside your own writes.\n\
      2. Follow the stack's guide (read it with read_guide if your brief doesn't include it), read the design guide \
      before writing any UI, and the database guide before adding a database. Follow their versions, config files and \

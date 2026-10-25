@@ -664,6 +664,7 @@ async fn resume_locked(
         conn,
         Some((mqtt, Uuid::nil())),
         s3,
+        Some(provider),
         registry,
         agent.as_ref(),
         session_id,

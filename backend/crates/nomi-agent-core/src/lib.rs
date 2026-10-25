@@ -4,6 +4,7 @@ pub mod chat_title;
 pub mod content_block;
 pub mod context;
 pub mod crew;
+pub mod crew_talk;
 pub mod delegation;
 pub mod dynamic_agent;
 pub mod engine;

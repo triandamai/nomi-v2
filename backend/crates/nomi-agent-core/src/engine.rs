@@ -319,7 +319,7 @@ fn parse_questions(input: &serde_json::Value) -> Result<(crate::content_block::C
 }
 
 /// The latest plan drafted in this chat, as the agent should read it.
-async fn read_latest_plan(conn: &mut PoolConnection<Postgres>, s3: Option<&nomi_storage::S3Config>, session_id: Uuid) -> String {
+pub(crate) async fn read_latest_plan(conn: &mut PoolConnection<Postgres>, s3: Option<&nomi_storage::S3Config>, session_id: Uuid) -> String {
     let row: Option<(String, i32, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT title, version, content, content_s3_key FROM agent_plans WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1",
     )
@@ -427,6 +427,8 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
         rename_chat_tool_definition(),
         update_todos_tool_definition(),
         write_plan_tool_definition(),
+        crate::crew_talk::ask_agent_tool_definition(&registry.reminder_target_agent_types()),
+        crate::crew_talk::note_tool_definition(),
     ];
     tools.extend(crate::records::record_tool_definitions());
     let targets = registry.reminder_target_agent_types();
@@ -481,6 +483,9 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
+        // Talking with the crew stays in the chat.
+        && tool_name != crate::crew_talk::ASK_AGENT_TOOL_NAME
+        && tool_name != crate::crew_talk::NOTE_TOOL_NAME
         // Reading the public web, or the user's own files, changes nothing.
         && !crate::web::is_web_tool(tool_name)
         && tool_name != crate::attachments::READ_ATTACHMENT_TOOL_NAME
@@ -549,6 +554,11 @@ pub async fn run_agent_turn(
     }
     tools.push(crate::views::show_tool_definition());
     tools.push(rename_chat_tool_definition());
+    let crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
+    if !crew.is_empty() {
+        tools.push(crate::crew_talk::ask_agent_tool_definition(&crew));
+    }
+    tools.push(crate::crew_talk::note_tool_definition());
     if agent.supports_todos() {
         tools.push(update_todos_tool_definition());
     }
@@ -646,6 +656,11 @@ pub async fn run_agent_turn(
     // Every agent sees what the rest of the crew is doing in this chat, so two never work the
     // same task or talk over each other.
     let system_prompt = match crate::crew::crew_board(&mut **conn, session_id, agent.agent_type().as_ref()).await {
+        Some(board) => format!("{system_prompt}\n\n{board}"),
+        None => system_prompt,
+    };
+    // And the notes the crew pinned for each other here.
+    let system_prompt = match crate::crew_talk::notes_board(&mut **conn, session_id).await {
         Some(board) => format!("{system_prompt}\n\n{board}"),
         None => system_prompt,
     };
@@ -924,7 +939,7 @@ pub async fn run_agent_turn(
             }
         }
 
-        match resolve_tool_batch(conn, mqtt, s3, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
+        match resolve_tool_batch(conn, mqtt, s3, Some(provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => {
                 let summary = if written.is_empty() { summary } else { written };
@@ -1006,6 +1021,8 @@ pub async fn resolve_tool_batch(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
     s3: Option<&nomi_storage::S3Config>,
+    // For asking another crew member (ask_agent).
+    provider: Option<&dyn LlmProvider>,
     registry: &AgentRegistry,
     agent: &dyn SubAgent,
     session_id: Uuid,
@@ -1169,6 +1186,16 @@ pub async fn resolve_tool_batch(
                 }
             } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {
                 match crate::attachments::read_attachment(conn, user_id, input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::crew_talk::ASK_AGENT_TOOL_NAME {
+                match crate::crew_talk::ask(conn, mqtt.map(|(p, _)| p), s3, provider, registry, agent, session_id, user_id, input, conversation_so_far).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::crew_talk::NOTE_TOOL_NAME {
+                match crate::crew_talk::write_note(conn, session_id, agent.agent_type().as_ref(), input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
@@ -1389,7 +1416,7 @@ async fn answer_posted_since(
 /// Inserts an activity message (an agent's "thought", or a description of a tool call it just
 /// made) so a user watching a long-running build sees it appear like any other chat message —
 /// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
-async fn post_activity_message(
+pub(crate) async fn post_activity_message(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,
     session_id: Uuid,
