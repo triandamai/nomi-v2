@@ -21,11 +21,17 @@ use nomi_llm::ContentBlock as LlmContentBlock;
 use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
-/// A chat's latest messages, sent in full; older ones reach agents as the chat's running summary.
-const SUBAGENT_HISTORY_LIMIT: i64 = nomi_agent_core::working_memory::RECENT_MESSAGES;
-/// Of those, the newest are sent whole; earlier ones are clipped to `OLDER_MESSAGE_CHARS`.
+// A chat's latest messages (`working_memory::recent_window`) are sent; older ones reach agents as
+// the chat's running summary. Of those, the newest are sent whole and earlier ones clipped, and
+// the whole history stays within a character budget (about 4 characters a token), oldest
+// dropped first. A project's chat is held tighter: its agents get the plan and files from their
+// brief, and its messages are long (build reports, summaries of what changed).
 const WHOLE_RECENT_MESSAGES: usize = 6;
 const OLDER_MESSAGE_CHARS: usize = 4_000;
+const HISTORY_CHAR_BUDGET: usize = 48_000;
+const PROJECT_WHOLE_RECENT_MESSAGES: usize = 4;
+const PROJECT_OLDER_MESSAGE_CHARS: usize = 1_500;
+const PROJECT_HISTORY_CHAR_BUDGET: usize = 24_000;
 /// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
 /// plans, drafts and tables need far more than a chat line.
 const SUBAGENT_MAX_TOKENS: u32 = 8192;
@@ -99,6 +105,20 @@ pub fn delegation_time_limit() -> std::time::Duration {
 fn time_limit(setting: Option<&str>, default_secs: u64) -> std::time::Duration {
     let secs = setting.and_then(|v| v.trim().parse::<u64>().ok()).filter(|s| *s > 0).unwrap_or(default_secs);
     std::time::Duration::from_secs(secs)
+}
+
+#[cfg(test)]
+mod history_budget_tests {
+    use super::within_budget;
+
+    #[test]
+    fn the_oldest_go_first_and_the_newest_always_stays() {
+        let said = |n: usize| (true, "x".repeat(n));
+        assert_eq!(within_budget(vec![said(5), said(5), said(5)], 10).len(), 2);
+        assert_eq!(within_budget(vec![said(5), said(5), said(5)], 15).len(), 3);
+        assert_eq!(within_budget(vec![said(5), said(50)], 10), vec![said(50)]);
+        assert!(within_budget(vec![], 10).is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -735,6 +755,7 @@ pub async fn fetch_recent_messages(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
 ) -> Result<Vec<LlmMessage>, TurnError> {
+    let project_chat = nomi_agent_core::working_memory::is_project_chat(&mut **conn, session_id).await?;
     // Only what was actually said: shown thinking (🧠) and progress notes (💭) are a window
     // into the work, not replies, and fed back as replies they confuse the next agent.
     let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(&format!(
@@ -746,19 +767,45 @@ pub async fn fetch_recent_messages(
         nomi_agent_core::working_memory::SAID_IN_CHAT
     ))
     .bind(session_id)
-    .bind(SUBAGENT_HISTORY_LIMIT)
+    .bind(nomi_agent_core::working_memory::recent_window(project_chat))
     .fetch_all(&mut **conn)
     .await?;
 
     // The newest few go in whole; long ones before them are clipped (a pasted file or a long
     // build report is still there in the chat, and the crew can be asked about it).
-    let whole_from = rows.len().saturating_sub(WHOLE_RECENT_MESSAGES);
-    Ok(merge_turns(rows.into_iter().enumerate().map(|(i, (sender, content, _id))| LlmMessage {
-        role: if sender.is_some() { LlmRole::User } else { LlmRole::Assistant },
-        content: vec![ContentBlock::Text {
-            text: if i < whole_from { nomi_agent_core::context::clip_older_message(content, OLDER_MESSAGE_CHARS) } else { content },
-        }],
+    let (whole_recent, older_chars, budget) = if project_chat {
+        (PROJECT_WHOLE_RECENT_MESSAGES, PROJECT_OLDER_MESSAGE_CHARS, PROJECT_HISTORY_CHAR_BUDGET)
+    } else {
+        (WHOLE_RECENT_MESSAGES, OLDER_MESSAGE_CHARS, HISTORY_CHAR_BUDGET)
+    };
+    let whole_from = rows.len().saturating_sub(whole_recent);
+    let said: Vec<(bool, String)> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, (sender, content, _id))| {
+            (sender.is_some(), if i < whole_from { nomi_agent_core::context::clip_older_message(content, older_chars) } else { content })
+        })
+        .collect();
+    Ok(merge_turns(within_budget(said, budget).into_iter().map(|(from_person, text)| LlmMessage {
+        role: if from_person { LlmRole::User } else { LlmRole::Assistant },
+        content: vec![ContentBlock::Text { text }],
     })))
+}
+
+/// The newest messages that fit in `budget` characters, oldest dropped first. The newest one
+/// always stays, however long: it's what the turn answers.
+fn within_budget(messages: Vec<(bool, String)>, budget: usize) -> Vec<(bool, String)> {
+    let mut used = 0;
+    let mut keep_from = messages.len();
+    for (i, (_, text)) in messages.iter().enumerate().rev() {
+        let size = text.chars().count();
+        if keep_from < messages.len() && used + size > budget {
+            break;
+        }
+        used += size;
+        keep_from = i;
+    }
+    messages.into_iter().skip(keep_from).collect()
 }
 
 /// Runs of messages from the same side become one turn. Turns must alternate for some providers
