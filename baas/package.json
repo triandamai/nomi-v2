@@ -1,0 +1,20 @@
+{
+  "name": "nomi-baas-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": ["sdk/js", "cli"],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "check": "npm run check --workspaces",
+    "test": "npm run test --workspaces",
+    "next-version": "node scripts/next-version.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
