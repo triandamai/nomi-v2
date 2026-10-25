@@ -1,20 +1,28 @@
-name: Test
+name: Backend
 
-# Runs on pull requests (opened, new commits, reopened) and when a PR is
-# merged into main — not on every branch push. Also called by release.yml so
-# a tagged build can never publish an image without a green run of this exact
-# same job first.
+# The Rust backend under backend/: cargo test against Postgres and EMQX, with a report in the job summary.
+# Runs on pull requests and merges to main only when one of the paths below changed, so a change
+# elsewhere in the repo doesn't run it. Also called
+# by release.yml, which always runs it, so a tagged build never publishes without a green run.
 on:
   pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+      - '.github/scripts/cargo-test-summary.py'
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+      - '.github/scripts/cargo-test-summary.py'
   workflow_call:
+  workflow_dispatch:
 
-# A new commit on a PR cancels that PR's still-running check. Runs on main and
-# tag releases get a group per ref+commit, so they never cancel or queue
-# behind each other (a tag on the same commit as a merge stays independent).
+# A new commit on a PR cancels that PR's still-running check. Runs on main and tag releases get
+# a group per ref+commit, so they never cancel or queue behind each other.
 concurrency:
-  group: test-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}@{1}', github.ref, github.sha) }}
+  group: backend-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}@{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -84,50 +92,3 @@ jobs:
           if [ -f backend/cargo-test.log ]; then
             python3 .github/scripts/cargo-test-summary.py backend/cargo-test.log >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  frontend:
-    name: Frontend (check + unit tests + build)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: npm ci
-        working-directory: frontend
-        run: npm ci
-
-      - name: Type check
-        working-directory: frontend
-        run: npm run check
-
-      - name: Unit tests
-        working-directory: frontend
-        run: npm run test:unit
-
-      - name: Build
-        working-directory: frontend
-        run: npm run build
-
-  native-tokens:
-    name: Native design tokens (generator tests + freshness)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Generator tests
-        run: node --test native/scripts/*.test.mjs
-
-      # Fails when material3.css or shapes.ts changed without regenerating NomiTokens.kt.
-      - name: Generated tokens are up to date
-        run: node native/scripts/gen-tokens.mjs --check

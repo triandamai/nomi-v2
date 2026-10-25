@@ -1,0 +1,136 @@
+name: BaaS
+
+# Tests the BaaS packages (baas/sdk/js → nomi-baas, baas/cli → nomi-baas-cli) on every pull request
+# that touches baas/, and on every merge to main that does, publishes both to npm with the next
+# version and records that version back on main.
+#
+# Versions: both packages share one. Each release raises the patch number of what npm has; to
+# release a minor or major, set the new version in both package.json files in the PR.
+#
+# Publishing needs either the NOMI_NPM_TOKEN repository secret (an npm automation or granular token
+# with publish rights), or npm trusted publishing set up for this workflow on both packages.
+on:
+  pull_request:
+    paths:
+      - 'baas/**'
+      - '!baas/README.md'
+      - '.github/workflows/baas.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'baas/**'
+      - '!baas/README.md'
+      - '.github/workflows/baas.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: baas-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: baas
+
+jobs:
+  test:
+    name: Test (check + unit tests + build + pack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: baas/package-lock.json
+
+      - run: npm ci
+      - name: Type check
+        run: npm run check
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Package contents
+        run: npm pack --dry-run --workspaces
+      - name: CLI runs from its build
+        run: node cli/dist/cli.js --version
+
+  release:
+    name: Publish to npm
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # One release at a time, and never cancel one halfway through publishing.
+    concurrency:
+      group: baas-release
+      cancel-in-progress: false
+    permissions:
+      contents: write # push the version commit and tag
+      id-token: write # npm provenance and trusted publishing
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: baas/package-lock.json
+
+      - run: npm ci
+
+      - name: Choose the version
+        id: version
+        run: echo "version=$(node scripts/next-version.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish nomi-baas and nomi-baas-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NOMI_NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::notice::NOMI_NPM_TOKEN is not set; relying on npm trusted publishing for this workflow."
+          fi
+          npm publish --workspace sdk/js --provenance --access public
+          npm publish --workspace cli --provenance --access public
+
+      # Records the published version on the latest main (another merge may have landed while
+      # this ran). Pushes made with GITHUB_TOKEN don't start workflows, so this can't loop.
+      - name: Record the version on main
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          recorded=no
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git checkout -f -B main origin/main
+            node scripts/next-version.mjs --set "$VERSION" > /dev/null
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+            git add sdk/js/package.json sdk/js/src/version.ts cli/package.json package-lock.json
+            git commit -m "baas: release $VERSION [skip ci]" || { echo "version already recorded"; recorded=yes; break; }
+            git tag -f "baas-v$VERSION"
+            if git push origin main && git push -f origin "baas-v$VERSION"; then recorded=yes; break; fi
+            echo "push raced another commit; retrying ($attempt)"
+            git tag -d "baas-v$VERSION"
+          done
+          if [ "$recorded" != yes ]; then
+            echo "::error::Published $VERSION to npm but couldn't record it on main; set both package.json files to $VERSION by hand."
+            exit 1
+          fi
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "### Published $VERSION"
+            echo "- https://www.npmjs.com/package/nomi-baas/v/$VERSION"
+            echo "- https://www.npmjs.com/package/nomi-baas-cli/v/$VERSION"
+          } >> "$GITHUB_STEP_SUMMARY"

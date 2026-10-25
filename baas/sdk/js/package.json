@@ -1,0 +1,38 @@
+{
+  "name": "nomi-baas",
+  "version": "0.1.0",
+  "description": "Client for Nomi BaaS: data, auth, storage, realtime and functions for apps Nomi builds.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/triandamai/nomi-v2.git",
+    "directory": "baas/sdk/js"
+  },
+  "keywords": ["nomi", "baas", "postgrest", "auth", "realtime", "storage"],
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./functions": {
+      "types": "./dist/functions/index.d.ts",
+      "default": "./dist/functions/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
