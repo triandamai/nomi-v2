@@ -350,6 +350,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id", get(projects_routes::get_project).delete(crate::routes::deploy::delete_project))
         .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
         .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
+        .route(
+            "/api/projects/:id/agent-permissions",
+            get(crate::routes::agent_permissions::list).put(crate::routes::agent_permissions::set),
+        )
+        .route("/api/projects/:id/agent-permissions/:permission_id", delete(crate::routes::agent_permissions::remove))
         .route("/api/projects/:id/deploy", get(crate::routes::deploy::overview))
         .route("/api/projects/:id/showcase", get(crate::routes::showcase::get).put(crate::routes::showcase::put))
         .route("/api/projects/:id/deploy/publish", post(crate::routes::deploy::publish))

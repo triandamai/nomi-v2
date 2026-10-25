@@ -9,6 +9,7 @@ export const CREW_NAMES: Record<string, string> = {
 	coding: 'Koda',
 	workspace: 'Tara',
 	health: 'Raga',
+	inspector: 'Iris',
 };
 
 /** The crew name for an agent_type (its type when it has none). */

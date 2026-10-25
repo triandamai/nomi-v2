@@ -16,6 +16,7 @@ use uuid::Uuid;
 use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
+use crate::project_ops::ShipyardAccess;
 use crate::routes::deploy::{client, internal, require_admin, shipyard_error, ApiError};
 
 const MAX_ROWS: usize = 500;
@@ -45,15 +46,15 @@ pub struct DatabaseInfo {
 }
 
 /// The owner login of the chosen database. The development one is created when missing.
-async fn owner_url(state: &AppState, project_id: Uuid, source: Source) -> Result<String, ApiError> {
+pub(crate) async fn owner_url(state: &impl ShipyardAccess, project_id: Uuid, source: Source) -> Result<String, ApiError> {
     let client = client(state)?;
-    let target = crate::shipyard::load_target(&state.pool, project_id)
+    let target = crate::shipyard::load_target(state.pool(), project_id)
         .await
         .map_err(internal("failed to load project"))?
         .ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
     match source {
         Source::Development => {
-            let app = crate::shipyard::ensure_app(&state.pool, &client, &target).await.map_err(|e| match e {
+            let app = crate::shipyard::ensure_app(state.pool(), &client, &target).await.map_err(|e| match e {
                 crate::shipyard::EnsureError::Shipyard(e) => shipyard_error(e),
                 crate::shipyard::EnsureError::Db(e) => internal("failed to prepare the database")(e),
             })?;
@@ -99,7 +100,7 @@ fn describe(url: &str, source: Source) -> DatabaseInfo {
     }
 }
 
-async fn connect(url: &str) -> Result<sqlx::PgConnection, ApiError> {
+pub(crate) async fn connect(url: &str) -> Result<sqlx::PgConnection, ApiError> {
     match tokio::time::timeout(Duration::from_secs(10), sqlx::PgConnection::connect(url)).await {
         Ok(Ok(conn)) => Ok(conn),
         Ok(Err(e)) => {
@@ -157,7 +158,12 @@ pub async fn tables(
 ) -> Result<Json<Vec<Table>>, ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let url = owner_url(&state, project_id, query.source).await?;
-    let mut conn = connect(&url).await?;
+    Ok(Json(list_tables(&url).await?))
+}
+
+/// The tables in the database at `url`.
+pub(crate) async fn list_tables(url: &str) -> Result<Vec<Table>, ApiError> {
+    let mut conn = connect(url).await?;
     let tables: Vec<Table> = sqlx::query_as(
         "SELECT n.nspname AS schema, c.relname AS name, c.reltuples::bigint AS rows_estimate \
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
@@ -168,7 +174,7 @@ pub async fn tables(
     .fetch_all(&mut conn)
     .await
     .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
-    Ok(Json(tables))
+    Ok(tables)
 }
 
 #[derive(Deserialize)]
@@ -215,7 +221,24 @@ pub async fn run_query(
         return Err((StatusCode::BAD_REQUEST, "write a query first".to_string()));
     }
     let url = owner_url(&state, project_id, req.source).await?;
-    let mut conn = connect(&url).await?;
+    Ok(Json(execute_sql(&url, &sql, Access::ReadWrite).await?))
+}
+
+/// Whether a statement may change data. Agents only ever read: the database refuses writes in a
+/// read-only transaction, whatever the statement is.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Access {
+    ReadWrite,
+    ReadOnly,
+}
+
+/// Runs `sql` on the database at `url`: reads return up to `MAX_ROWS` rows, statements time out
+/// after `STATEMENT_TIMEOUT_SECS`.
+pub(crate) async fn execute_sql(url: &str, sql: &str, access: Access) -> Result<QueryResult, ApiError> {
+    if access == Access::ReadOnly && !reads_rows(sql) {
+        return Err((StatusCode::UNPROCESSABLE_ENTITY, "only reads are allowed here (SELECT, WITH, TABLE or VALUES)".to_string()));
+    }
+    let mut conn = connect(url).await?;
     let started = Instant::now();
     let sql_error = |e: sqlx::Error| match e {
         sqlx::Error::Database(db) => (StatusCode::UNPROCESSABLE_ENTITY, db.message().to_string()),
@@ -225,9 +248,12 @@ pub async fn run_query(
     tx.execute(format!("SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT_SECS}s'").as_str())
         .await
         .map_err(sql_error)?;
+    if access == Access::ReadOnly {
+        tx.execute("SET TRANSACTION READ ONLY").await.map_err(sql_error)?;
+    }
     let mut result = QueryResult::default();
-    if reads_rows(&sql) {
-        let described = (&mut *tx).describe(sql.as_str()).await.map_err(sql_error)?;
+    if reads_rows(sql) {
+        let described = (&mut *tx).describe(sql).await.map_err(sql_error)?;
         result.columns = described.columns().iter().map(|c| sqlx::Column::name(c).to_string()).collect();
         let wrapped = format!("SELECT row_to_json(t)::text FROM ({sql}) t LIMIT {}", MAX_ROWS + 1);
         let rows = sqlx::query(&wrapped).fetch_all(&mut *tx).await.map_err(sql_error)?;
@@ -238,12 +264,12 @@ pub async fn run_query(
             result.rows.push(result.columns.iter().map(|c| object.get(c).cloned().unwrap_or(Value::Null)).collect());
         }
     } else {
-        let done = tx.execute(sql.as_str()).await.map_err(sql_error)?;
+        let done = tx.execute(sql).await.map_err(sql_error)?;
         result.rows_affected = Some(done.rows_affected());
     }
     tx.commit().await.map_err(sql_error)?;
     result.took_ms = started.elapsed().as_millis();
-    Ok(Json(result))
+    Ok(result)
 }
 
 #[cfg(test)]

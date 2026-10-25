@@ -1,3 +1,4 @@
+pub mod agent_permissions;
 pub mod agents;
 pub mod admin_access;
 pub mod admin_dashboard;

@@ -14,6 +14,7 @@
 	import { projectApi } from '$lib/projectApi';
 	import ImportCode from '$lib/components/project/ImportCode.svelte';
 	import SecretsSection from '$lib/components/project/SecretsSection.svelte';
+	import AgentAccessSection from '$lib/components/project/AgentAccessSection.svelte';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { formatTransferNoticeParams } from '$lib/projectTransfer';
 	import type { TransferOrgSummary } from '$lib/types';
@@ -178,6 +179,8 @@
 </section>
 
 <SecretsSection projectId={deploy.projectId} />
+
+<AgentAccessSection projectId={deploy.projectId} {isAdmin} />
 
 <section class="block">
 	<h3 class="block__title">{m.import_title()}</h3>

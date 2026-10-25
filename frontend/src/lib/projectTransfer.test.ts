@@ -90,6 +90,12 @@ describe('projectTransfer helpers', () => {
 	});
 
 	describe('proxy route ALLOWED_PROJECT_API_PATHS pattern', () => {
+		it('allows the agent permissions and one of them', () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions/4f2c1a7e-9b3d-4c8e-a1f0-2b3c4d5e6f70')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions/x')).toBe(false);
+		});
+
 		it('allows transfer and transfer/orgs', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('transfer')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('transfer/orgs')).toBe(true);

@@ -2896,6 +2896,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-inspector"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-money"
 version = "0.1.0"
 dependencies = [
@@ -3129,6 +3142,7 @@ dependencies = [
  "nomi-agent-core",
  "nomi-agent-files",
  "nomi-agent-health",
+ "nomi-agent-inspector",
  "nomi-agent-money",
  "nomi-agent-personality",
  "nomi-agent-planning",
