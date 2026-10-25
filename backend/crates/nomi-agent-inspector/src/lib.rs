@@ -159,7 +159,7 @@ fn source_of(input: &Value) -> Result<DataSource, String> {
 
 /// Whether Iris may see `permission`'s contents on the project.
 async fn allowed(conn: &mut PoolConnection<Postgres>, project_id: Uuid, permission: &str) -> bool {
-    matches!(agent_permissions::scope_for(&mut **conn, INSPECTOR_AGENT_TYPE, project_id, permission).await, Ok(Some(Scope::Allow)))
+    matches!(agent_permissions::scope_for(conn, INSPECTOR_AGENT_TYPE, project_id, permission).await, Ok(Some(Scope::Allow)))
 }
 
 /// How a log line reads: an error, a warning, or neither.
@@ -243,7 +243,7 @@ fn rows_for_model(result: &QueryRows) -> String {
         .collect();
     let more = result.rows.len().saturating_sub(MAX_ROWS_FOR_MODEL);
     let tail = if more > 0 || result.truncated { "\n(more rows matched than are shown)" } else { "" };
-    format!("{} row(s):\n{}{tail}", result.rows.len(), nomi_llm::redact::redacted(&lines.join("\n")))
+    format!("{} row(s):\n{}{tail}", result.rows.len(), nomi_llm::redact::redacted(lines.join("\n")))
 }
 
 #[async_trait]
@@ -280,7 +280,7 @@ impl SubAgent for InspectorAgent {
                     return Ok(ToolOutcome::text("The app printed nothing in that window."));
                 }
                 if allowed(conn, project_id, READ_LOGS).await {
-                    return Ok(ToolOutcome::text(nomi_llm::redact::redacted(&logs.join("\n"))));
+                    return Ok(ToolOutcome::text(nomi_llm::redact::redacted(logs.join("\n"))));
                 }
                 Ok(ToolOutcome { display_text: blind_log_summary(&logs), block: Some(log_table(&logs)) })
             }
@@ -309,10 +309,10 @@ impl SubAgent for InspectorAgent {
                 if permission != READ_LOGS && permission != READ_DATA {
                     return Err("permission is read_logs or read_data".to_string());
                 }
-                if !agent_permissions::can_decide(&mut **conn, project_id, user_id).await.map_err(|e| format!("couldn't check the project: {e}"))? {
+                if !agent_permissions::can_decide(conn, project_id, user_id).await.map_err(|e| format!("couldn't check the project: {e}"))? {
                     return Err("Only the project's admins can allow this; ask one of them.".to_string());
                 }
-                agent_permissions::set_for_project(&mut **conn, INSPECTOR_AGENT_TYPE, project_id, permission, Scope::Allow, user_id)
+                agent_permissions::set_for_project(conn, INSPECTOR_AGENT_TYPE, project_id, permission, Scope::Allow, user_id)
                     .await
                     .map_err(|e| format!("couldn't save the permission: {e}"))?;
                 Ok(ToolOutcome::text(format!("Allowed: you can now {}. Run the call again to see it.", access_phrase(permission))))

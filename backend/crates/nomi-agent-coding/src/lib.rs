@@ -243,8 +243,13 @@ mod tests {
     fn every_tool_koda_has_is_named_and_defined() {
         let agent = CodingAgent::new(nomi_storage::ProjectStore::at(std::env::temp_dir()));
         let names: Vec<String> = agent.tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, TOOL_NAMES);
+        // Publishing is his too, but stays out of TOOL_NAMES: it asks first, and isn't a tool
+        // custom agents can be given.
+        let mut expected: Vec<&str> = TOOL_NAMES.to_vec();
+        expected.push(PUBLISH_TOOL_NAME);
+        assert_eq!(names, expected);
         assert!(TOOL_NAMES.iter().all(|n| tool_definition(n).is_some()));
+        assert!(agent.tool_needs_approval(PUBLISH_TOOL_NAME));
     }
 
     #[test]
