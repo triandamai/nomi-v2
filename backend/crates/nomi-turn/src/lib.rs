@@ -180,7 +180,8 @@ pub async fn process_turn(
             // working forever.
             settle_agent_phases(&mut conn, Some(mqtt), session_id).await;
             // Best-effort: an MQTT publish failure never changes the turn's outcome.
-            let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err).await;
+            let retry = nomi_agent_core::content_block::RetryTarget::Turn { turn_job_id };
+            let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err, retry).await;
             let _ = mqtt
                 .publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id, error: explanation })
                 .await;
@@ -569,7 +570,8 @@ pub async fn resume_paused_turn(
                 .execute(&mut *conn)
                 .await;
             settle_agent_phases(&mut conn, Some(mqtt), session_id).await;
-            let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err).await;
+            let retry = nomi_agent_core::content_block::RetryTarget::LastMessage;
+            let explanation = post_failure_notice(&mut conn, mqtt, session_id, &err, retry).await;
             let _ = mqtt.publish(session_id, &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: explanation }).await;
             release_lock_ignoring_errors(&mut conn, session_id).await;
             Err(err)
@@ -802,7 +804,13 @@ async fn settle_agent_phases(conn: &mut PoolConnection<Postgres>, mqtt: Option<&
     }
 }
 
-async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPublisher, session_id: Uuid, err: &TurnError) -> String {
+async fn post_failure_notice(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: &MqttPublisher,
+    session_id: Uuid,
+    err: &TurnError,
+    retry: nomi_agent_core::content_block::RetryTarget,
+) -> String {
     let locale = session_owner_locale(conn, session_id).await;
     let explanation = err.user_message_in(locale);
     let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
@@ -810,7 +818,7 @@ async fn post_failure_notice(conn: &mut PoolConnection<Postgres>, mqtt: &MqttPub
     )
     .bind(session_id)
     .bind(&explanation)
-    .bind(err.notice_blocks())
+    .bind(err.notice_blocks(Some(retry)))
     .fetch_one(&mut **conn)
     .await;
     if let Ok(message_id) = inserted {

@@ -2154,5 +2154,9 @@
 	"secrets_save": "Simpan",
 	"secrets_saved": "{name} disimpan. Publikasikan untuk memakainya.",
 	"secrets_removed": "{name} dihapus. Publikasikan untuk mengeluarkannya dari aplikasi.",
-	"secrets_remove_confirm": "Hapus {name}? Aplikasi kehilangan nilai ini pada publikasi berikutnya."
+	"secrets_remove_confirm": "Hapus {name}? Aplikasi kehilangan nilai ini pada publikasi berikutnya.",
+	"run_failed_retry": "Coba lagi",
+	"run_failed_retrying": "Mencoba lagi…",
+	"run_failed_retry_error": "Belum bisa mencoba lagi. Kirim ulang pesanmu saja.",
+	"chat_send_retry": "Kirim ulang"
 }

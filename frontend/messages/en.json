@@ -2154,5 +2154,9 @@
 	"secrets_save": "Save",
 	"secrets_saved": "{name} saved. Publish to use it.",
 	"secrets_removed": "{name} removed. Publish to take it out of the app.",
-	"secrets_remove_confirm": "Remove {name}? The app loses it on its next publish."
+	"secrets_remove_confirm": "Remove {name}? The app loses it on its next publish.",
+	"run_failed_retry": "Try again",
+	"run_failed_retrying": "Trying again…",
+	"run_failed_retry_error": "Couldn't try again. Send your message again instead.",
+	"chat_send_retry": "Send again"
 }

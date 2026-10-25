@@ -3,6 +3,7 @@ use std::time::Duration;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use nomi_agent_core::content_block::RetryTarget;
 use nomi_agent_core::LoopOutcome;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
@@ -335,8 +336,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         }
                     }
                     let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
-                    // Out of allowance: the card says so and where to go next.
-                    post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, e.notice_blocks()).await;
+                    // An error bubble that can hand the same task back (or, out of allowance, the
+                    // card saying where to go next).
+                    post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, Some(e.notice_blocks(Some(RetryTarget::Delegation { delegation_id: claimed.id })))).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }
             }

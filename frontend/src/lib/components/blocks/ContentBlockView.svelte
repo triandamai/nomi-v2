@@ -11,6 +11,7 @@
 	import ConnectorConnectCard from './ConnectorConnectCard.svelte';
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
+	import RunFailedCard from './RunFailedCard.svelte';
 	import QuestionsCard from './QuestionsCard.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
@@ -21,7 +22,9 @@
 		messageId,
 		agent = null,
 		fresh = false,
-		answered = false
+		answered = false,
+		text = '',
+		onremove
 	}: {
 		block: ContentBlock;
 		messageId: string;
@@ -30,6 +33,10 @@
 		fresh?: boolean;
 		/** The person has replied since this message. */
 		answered?: boolean;
+		/** The message's own text, for blocks that show it (an error bubble). */
+		text?: string;
+		/** The block took its message away (a failed run, tried again). */
+		onremove?: () => void;
 	} = $props();
 
 	// Which component draws each kind of block. Each gets the same props (the block and where it
@@ -46,6 +53,7 @@
 		project_link: ProjectLinkCard,
 		questions: QuestionsCard,
 		quota_notice: QuotaNoticeCard,
+		run_failed: RunFailedCard,
 		voice: VoiceBlock,
 		view: ViewBlock
 	};
@@ -72,7 +80,7 @@
 {:else if block.kind === 'reasoning'}
 	<ReasoningDisclosure steps={[block.text]} />
 {:else if Block}
-	<Block {block} {messageId} {agent} {fresh} {answered} />
+	<Block {block} {messageId} {agent} {fresh} {answered} {text} {onremove} />
 {/if}
 
 <style>

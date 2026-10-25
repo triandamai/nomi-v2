@@ -33,6 +33,8 @@ export type ContentBlock =
 	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
+	/** Something stopped the crew; `retry` is set when Try again can rerun it. */
+	| { kind: 'run_failed'; retry?: { target: 'turn' | 'delegation' | 'last_message' } }
 	/** A view: a list, a timeline, a chart, a form… (see $lib/views). */
 	| ({ kind: 'view' } & import('$lib/views/types').View)
 	| {

@@ -10,6 +10,7 @@
 	import { mergeReloaded, prependOlder } from '$lib/mergeMessages';
 	import CrewPanel from '$lib/components/CrewPanel.svelte';
 	import MessageBubble from '$lib/components/MessageBubble.svelte';
+	import ErrorBubble from '$lib/components/blocks/ErrorBubble.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import GlassBackdrop from '$lib/components/GlassBackdrop.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -758,13 +759,15 @@
 						</div>
 					{/if}
 					{#if turnError}
-						<p class="thread__notice" role="alert">{m.chat_turn_error()}</p>
+						<div class="thread__notice"><ErrorBubble text={m.chat_turn_error()} /></div>
 					{/if}
 					{#if sendError}
-						<p class="thread__notice" role="alert">{sendError}</p>
+						<div class="thread__notice">
+							<ErrorBubble text={sendError} onretry={composedText.trim() ? () => composerForm?.requestSubmit() : undefined} retrying={submitting} />
+						</div>
 					{/if}
 					{#if connectionLost}
-						<p class="thread__notice" role="alert">{m.chat_connection_lost()}</p>
+						<div class="thread__notice"><ErrorBubble text={m.chat_connection_lost()} /></div>
 					{/if}
 				</div>
 			</div>
@@ -1201,14 +1204,10 @@
 		font-size: 0.9375rem;
 		color: var(--md-sys-color-on-surface-variant);
 	}
+	/* Errors with no message of their own (a send that didn't go, a dropped connection), lined up
+	   with the crew's replies. */
 	.thread__notice {
-		margin: 14px 0 0;
-		padding: 12px 14px;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-error-container);
-		color: var(--md-sys-color-on-error-container);
-		font-family: var(--md-sys-typescale-body-medium-font);
-		font-size: var(--md-sys-typescale-body-medium-size);
+		margin: 14px 0 0 48px;
 	}
 
 	.dock {

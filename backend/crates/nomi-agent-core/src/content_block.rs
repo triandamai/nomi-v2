@@ -41,6 +41,18 @@ pub enum ApprovalStatus {
     Cancelled,
 }
 
+/// What a failed run's Try again button reruns (see `ContentBlock::RunFailed`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "target", rename_all = "snake_case")]
+pub enum RetryTarget {
+    /// The chat turn that failed: queued again with the same message.
+    Turn { turn_job_id: Uuid },
+    /// A specialist's background run (a build, a plan): handed to it again with the same task.
+    Delegation { delegation_id: Uuid },
+    /// A turn with no job of its own (resuming after an approval): the person's latest message again.
+    LastMessage,
+}
+
 /// One question an agent asks with `ask_user`, with ready answers to tap.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Question {
@@ -161,6 +173,12 @@ pub enum ContentBlock {
     QuotaNotice {
         /// "used_up".
         reason: String,
+    },
+    /// Something stopped the crew (the provider failed, a turn ran too long, a build broke): an
+    /// error bubble instead of plain text, with a Try again button when `retry` says what to rerun.
+    RunFailed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry: Option<RetryTarget>,
     },
     /// A request to build something moved to its own project chat: a card linking to it.
     ProjectLink {
