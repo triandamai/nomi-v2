@@ -243,6 +243,69 @@ async fn publishing_follows_webhooks_and_rolls_back(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn secrets_go_to_shipyard_and_are_bound_by_name_on_publish(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("PUT"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "ref": "sec-1" }, "error": null })))
+        .mount(&shipyard)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "deleted": true }, "error": null })))
+        .mount(&shipyard)
+        .await;
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/production/publish$"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+            "data": { "publish_id": "pub-1", "status": "running", "url": "https://todo.apps.test", "warnings": [] }, "error": null
+        })))
+        .mount(&shipyard)
+        .await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let secrets = format!("/api/projects/{project_id}/secrets");
+
+    let (status, body) = request(router.clone(), "PUT", &format!("{secrets}/DATABASE_URL"), Some(&token), Some(json!({ "value": "x" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, _) = request(router.clone(), "PUT", &format!("{secrets}/stripe"), Some(&token), Some(json!({ "value": "x" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    for name in ["STRIPE_KEY", "OPENAI_API_KEY"] {
+        let (status, body) = request(router.clone(), "PUT", &format!("{secrets}/{name}"), Some(&token), Some(json!({ "value": "sk_live_123" }))).await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    }
+    // The value went to Shipyard, for every environment of the app.
+    let received = shipyard.received_requests().await.unwrap();
+    let put = received.iter().find(|r| r.url.path().ends_with("/secrets/STRIPE_KEY")).unwrap();
+    let sent: Value = serde_json::from_slice(&put.body).unwrap();
+    assert_eq!(sent["value"], "sk_live_123");
+    assert_eq!(sent["environment"], Value::Null);
+
+    // Only the names come back.
+    let (status, listed) = request(router.clone(), "GET", &secrets, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["can_edit"], true);
+    assert_eq!(listed["secrets"].as_array().unwrap().len(), 2);
+    assert_eq!(listed["secrets"][1]["name"], "STRIPE_KEY");
+    assert!(!listed.to_string().contains("sk_live_123"));
+
+    let (status, _) = request(router.clone(), "DELETE", &format!("{secrets}/OPENAI_API_KEY"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = request(router.clone(), "POST", &format!("/api/projects/{project_id}/deploy/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let received = shipyard.received_requests().await.unwrap();
+    let publish_request = received.iter().find(|r| r.url.path().ends_with("/publish")).unwrap();
+    let (manifest, _) = publish_parts(&publish_request.body);
+    let env = &manifest["services"][0]["env"];
+    assert_eq!(env["STRIPE_KEY"], json!({ "secret": "STRIPE_KEY" }));
+    assert!(env.get("OPENAI_API_KEY").is_none());
+    assert!(!String::from_utf8_lossy(&publish_request.body).contains("sk_live_123"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn publishing_without_shipyard_is_unavailable(pool: PgPool) {
     let router = build_router(test_state(pool.clone(), None));
     let token = register(router.clone(), "ana@acme.test").await;

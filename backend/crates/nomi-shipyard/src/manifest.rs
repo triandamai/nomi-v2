@@ -92,9 +92,6 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
         }
         Database::None => {}
     }
-    for name in secret_names {
-        env.entry(name.clone()).or_insert_with(|| json!({ "secret": name }));
-    }
     let mut manifest = json!({
         "services": [{
             "name": "web",
@@ -109,7 +106,29 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
     if database == Database::Postgres {
         manifest["database"] = json!({ "engine": "postgres" });
     }
+    bind_secrets(&mut manifest, secret_names);
     manifest
+}
+
+/// Binds each secret, by name, into the `web` service's environment. A name the manifest
+/// already sets itself (DATABASE_URL, PORT) keeps its own value.
+pub fn bind_secrets(manifest: &mut Value, secret_names: &[String]) {
+    let Some(env) = manifest
+        .get_mut("services")
+        .and_then(Value::as_array_mut)
+        .and_then(|services| services.iter_mut().find(|s| s.get("name").and_then(Value::as_str) == Some("web")))
+        .and_then(|web| {
+            if web.get("env").map_or(true, |e| !e.is_object()) {
+                web["env"] = json!({});
+            }
+            web.get_mut("env").and_then(Value::as_object_mut)
+        })
+    else {
+        return;
+    };
+    for name in secret_names {
+        env.entry(name.clone()).or_insert_with(|| json!({ "secret": name }));
+    }
 }
 
 #[cfg(test)]
@@ -137,6 +156,15 @@ mod tests {
         assert_eq!(env["DATABASE_URL"], json!({ "database": "url" }));
         assert_eq!(env["STRIPE_KEY"], json!({ "secret": "STRIPE_KEY" }));
         assert_eq!(manifest["services"][0]["port"], 3000);
+    }
+
+    #[test]
+    fn a_rollback_gets_todays_secrets_but_keeps_its_own_env() {
+        let mut manifest = build(Database::Postgres, &[]);
+        bind_secrets(&mut manifest, &["OPENAI_API_KEY".to_string(), "DATABASE_URL".to_string()]);
+        let env = &manifest["services"][0]["env"];
+        assert_eq!(env["OPENAI_API_KEY"], json!({ "secret": "OPENAI_API_KEY" }));
+        assert_eq!(env["DATABASE_URL"], json!({ "database": "url" }));
     }
 
     #[test]

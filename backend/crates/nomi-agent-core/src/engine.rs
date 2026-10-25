@@ -233,20 +233,24 @@ fn update_todos_tool_definition() -> ToolDefinition {
 fn ask_user_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: ASK_USER_TOOL_NAME.to_string(),
-        description: "Ask the person what you need to know before you go on, as a card in the chat with \
-                      answers they can tap (and room for their own). Ask everything you need at once: up to 4 \
-                      questions, each with 2-5 short options (add a one-line detail where a label alone \
-                      isn't clear, e.g. what a design direction looks like). Your turn ends here; their answer \
-                      arrives as their next message. Call it on its own, not alongside other tools, and \
-                      don't repeat the questions in your reply.".to_string(),
+        description: "Ask the person something you need to know before you act, as a card in the chat with \
+                      answers they can tap (and room for their own). Use it whenever the request is missing \
+                      a detail you can't sensibly assume (when, how much, which one, one-time or repeating), \
+                      instead of guessing. One question per card, with 2-5 short options (add a one-line \
+                      detail where a label alone isn't clear, e.g. what a design direction looks like): ask \
+                      the most important one first, and the next one only after they answer, one step at a \
+                      time, until you have what you need. Skip what they already told you. Your turn ends \
+                      here; their answer arrives as their next message. Call it on its own, not alongside \
+                      other tools, and don't repeat the question in your reply.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "intro": {"type": "string", "description": "One short line before the questions, optional"},
                 "questions": {
                     "type": "array",
+                    "description": "Exactly one question; ask the next after they answer",
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": 1,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -293,15 +297,17 @@ fn parse_questions(input: &serde_json::Value) -> Result<(crate::content_block::C
             .map_err(|e| format!("questions must be a list of {{question, options}}: {e}"))?,
     };
     let crate::content_block::ContentBlock::Questions { intro, questions } = &block else { unreachable!() };
-    if questions.is_empty() || questions.len() > 4 {
-        return Err("ask between 1 and 4 questions".to_string());
+    match questions.len() {
+        0 => return Err("ask a question".to_string()),
+        1 => {}
+        _ => return Err("ask one question at a time: the most important one now, the next after they answer".to_string()),
     }
     let mut text = intro.clone().map(|i| format!("{i}\n\n")).unwrap_or_default();
-    for (i, q) in questions.iter().enumerate() {
+    for q in questions {
         if q.question.trim().is_empty() {
-            return Err("every question needs its text".to_string());
+            return Err("the question needs its text".to_string());
         }
-        text.push_str(&format!("{}. {}\n", i + 1, q.question.trim()));
+        text.push_str(&format!("{}\n", q.question.trim()));
         for option in &q.options {
             match &option.detail {
                 Some(detail) => text.push_str(&format!("   - {}: {}\n", option.label, detail)),
@@ -313,7 +319,7 @@ fn parse_questions(input: &serde_json::Value) -> Result<(crate::content_block::C
 }
 
 /// The latest plan drafted in this chat, as the agent should read it.
-async fn read_latest_plan(conn: &mut PoolConnection<Postgres>, s3: Option<&nomi_storage::S3Config>, session_id: Uuid) -> String {
+pub(crate) async fn read_latest_plan(conn: &mut PoolConnection<Postgres>, s3: Option<&nomi_storage::S3Config>, session_id: Uuid) -> String {
     let row: Option<(String, i32, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT title, version, content, content_s3_key FROM agent_plans WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1",
     )
@@ -360,7 +366,9 @@ fn create_reminder_tool_definition(targets: &[String]) -> ToolDefinition {
         description: "Schedule a reminder to fire at a specific future time. Resolve any \
                        relative time the user gives (\"tomorrow\", \"in an hour\") to an \
                        absolute ISO 8601 datetime yourself, using the current date/time and the \
-                       user's timezone given in your system prompt.".to_string(),
+                       user's timezone given in your system prompt. Before you set it, make sure you \
+                       know what it's for, when, and whether it's one-time or repeating (and how \
+                       often): ask with ask_user for whatever they didn't say, one question at a time.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -419,6 +427,8 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
         rename_chat_tool_definition(),
         update_todos_tool_definition(),
         write_plan_tool_definition(),
+        crate::crew_talk::ask_agent_tool_definition(&registry.reminder_target_agent_types()),
+        crate::crew_talk::note_tool_definition(),
     ];
     tools.extend(crate::records::record_tool_definitions());
     let targets = registry.reminder_target_agent_types();
@@ -473,6 +483,9 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
+        // Talking with the crew stays in the chat.
+        && tool_name != crate::crew_talk::ASK_AGENT_TOOL_NAME
+        && tool_name != crate::crew_talk::NOTE_TOOL_NAME
         // Reading the public web, or the user's own files, changes nothing.
         && !crate::web::is_web_tool(tool_name)
         && tool_name != crate::attachments::READ_ATTACHMENT_TOOL_NAME
@@ -541,6 +554,11 @@ pub async fn run_agent_turn(
     }
     tools.push(crate::views::show_tool_definition());
     tools.push(rename_chat_tool_definition());
+    let crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
+    if !crew.is_empty() {
+        tools.push(crate::crew_talk::ask_agent_tool_definition(&crew));
+    }
+    tools.push(crate::crew_talk::note_tool_definition());
     if agent.supports_todos() {
         tools.push(update_todos_tool_definition());
     }
@@ -638,6 +656,11 @@ pub async fn run_agent_turn(
     // Every agent sees what the rest of the crew is doing in this chat, so two never work the
     // same task or talk over each other.
     let system_prompt = match crate::crew::crew_board(&mut **conn, session_id, agent.agent_type().as_ref()).await {
+        Some(board) => format!("{system_prompt}\n\n{board}"),
+        None => system_prompt,
+    };
+    // And the notes the crew pinned for each other here.
+    let system_prompt = match crate::crew_talk::notes_board(&mut **conn, session_id).await {
         Some(board) => format!("{system_prompt}\n\n{board}"),
         None => system_prompt,
     };
@@ -916,7 +939,7 @@ pub async fn run_agent_turn(
             }
         }
 
-        match resolve_tool_batch(conn, mqtt, s3, registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
+        match resolve_tool_batch(conn, mqtt, s3, Some(provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
             ToolBatchOutcome::Completed { status, summary } => {
                 let summary = if written.is_empty() { summary } else { written };
@@ -998,6 +1021,8 @@ pub async fn resolve_tool_batch(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
     s3: Option<&nomi_storage::S3Config>,
+    // For asking another crew member (ask_agent).
+    provider: Option<&dyn LlmProvider>,
     registry: &AgentRegistry,
     agent: &dyn SubAgent,
     session_id: Uuid,
@@ -1161,6 +1186,16 @@ pub async fn resolve_tool_batch(
                 }
             } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {
                 match crate::attachments::read_attachment(conn, user_id, input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::crew_talk::ASK_AGENT_TOOL_NAME {
+                match crate::crew_talk::ask(conn, mqtt.map(|(p, _)| p), s3, provider, registry, agent, session_id, user_id, input, conversation_so_far).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::crew_talk::NOTE_TOOL_NAME {
+                match crate::crew_talk::write_note(conn, session_id, agent.agent_type().as_ref(), input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
@@ -1381,7 +1416,7 @@ async fn answer_posted_since(
 /// Inserts an activity message (an agent's "thought", or a description of a tool call it just
 /// made) so a user watching a long-running build sees it appear like any other chat message —
 /// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
-async fn post_activity_message(
+pub(crate) async fn post_activity_message(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,
     session_id: Uuid,

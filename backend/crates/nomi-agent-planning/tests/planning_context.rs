@@ -25,7 +25,7 @@ async fn chat(pool: &PgPool) -> Uuid {
 #[test]
 fn rena_still_plans_anything_with_the_same_tools() {
     let prompt = PlanningAgent.system_prompt();
-    for kept in ["trips and itineraries", "schedules", "write_plan", "'- [ ]' checklist items", "ask one short question"] {
+    for kept in ["trips and itineraries", "schedules", "write_plan", "'- [ ]' checklist items", "question per card"] {
         assert!(prompt.contains(kept), "general planning keeps {kept:?}");
     }
     // Nothing is taken away: every tool she had is still offered, in every chat.

@@ -93,6 +93,22 @@ pub async fn task_brief(
         brief.push('\n');
     }
 
+    // Names only: the values stay with Shipyard.
+    let secrets: Vec<String> = sqlx::query_scalar("SELECT name FROM project_secrets WHERE project_id = $1 ORDER BY name")
+        .bind(project_id)
+        .fetch_all(&mut **conn)
+        .await
+        .unwrap_or_default();
+    if !secrets.is_empty() {
+        brief.push_str(&format!(
+            "## Secrets
+The person stored these for the published app, read on the server from the environment \
+             (process.env, or $env/dynamic/private in SvelteKit): {}. Never put their values in code or ask for them; \
+             in the preview they're missing, so handle that plainly.\n\n",
+            secrets.join(", ")
+        ));
+    }
+
     // Only a check of the files as they are now says anything about them.
     if check_ok == Some(false) && checked_version == Some(files_version) {
         if let Some(output) = check_output.filter(|o| !o.trim().is_empty()) {

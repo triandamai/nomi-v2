@@ -155,10 +155,6 @@ impl SubAgent for CodingAgent {
         false
     }
 
-    fn asks_questions(&self) -> bool {
-        true
-    }
-
     fn reads_plans(&self) -> bool {
         true
     }
