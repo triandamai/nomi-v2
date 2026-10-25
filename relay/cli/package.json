@@ -1,6 +1,6 @@
 {
   "name": "nomi-relay-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Command line for Nomi Relay: migrations, linting and functions.",
   "type": "module",
   "license": "MIT",
@@ -9,11 +9,19 @@
     "url": "git+https://github.com/triandamai/nomi-v2.git",
     "directory": "relay/cli"
   },
-  "keywords": ["nomi", "baas", "migrations", "cli"],
+  "keywords": [
+    "nomi",
+    "baas",
+    "migrations",
+    "cli"
+  ],
   "bin": {
     "nomi-relay": "dist/cli.js"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "check": "tsc -p tsconfig.json --noEmit",
