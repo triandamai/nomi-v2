@@ -12,6 +12,7 @@
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import RunFailedCard from './RunFailedCard.svelte';
+	import SuggestionsBlock from './SuggestionsBlock.svelte';
 	import QuestionsCard from './QuestionsCard.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
@@ -54,6 +55,7 @@
 		questions: QuestionsCard,
 		quota_notice: QuotaNoticeCard,
 		run_failed: RunFailedCard,
+		suggestions: SuggestionsBlock,
 		voice: VoiceBlock,
 		view: ViewBlock
 	};

@@ -232,6 +232,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         _ => None,
                     };
                     let checks = build.as_ref().map(|report| report.summary_line(locale));
+                    // Next steps it offered become buttons after the answer, not part of it.
+                    let (text, suggestions) = if posted { (text, Vec::new()) } else { nomi_agent_core::suggestions::split_suggestions(&text) };
 
                     // The agent's own answer, whole: rewording it through a short supervisor
                     // completion cut long plans and lists off mid-sentence. An answer that was a
@@ -245,6 +247,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     } else if let Some(checks) = &checks {
                         post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), checks).await;
                     }
+                    nomi_agent_core::suggestions::post_suggestions(&mut conn, Some(&mqtt), claimed.session_id, agent.display_name().as_ref(), suggestions).await;
 
                     let _ = sqlx::query(
                         "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1 AND status = 'processing'",

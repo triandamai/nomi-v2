@@ -174,6 +174,11 @@ pub enum ContentBlock {
         /// "used_up".
         reason: String,
     },
+    /// What the person might want next, when the crew finished (see `crate::suggestions`):
+    /// buttons that send their text as the person's next message.
+    Suggestions {
+        items: Vec<String>,
+    },
     /// Something stopped the crew (the provider failed, a turn ran too long, a build broke): an
     /// error bubble instead of plain text, with a Try again button when `retry` says what to rerun.
     RunFailed {

@@ -21,6 +21,7 @@ pub mod registry;
 pub mod scheduled_jobs;
 pub mod stop;
 pub mod subagent;
+pub mod suggestions;
 pub mod tool_catalog;
 pub mod tools;
 pub mod views;

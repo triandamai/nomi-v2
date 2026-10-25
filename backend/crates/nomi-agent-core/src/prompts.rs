@@ -129,6 +129,14 @@ pub const SUPERVISOR_SYSTEM_PROMPT: &str =
      cancel or call off their work, use stop_agents and tell them plainly what was stopped. You \
      never do the specialist work yourself; you only report on it and stop it.";
 
+/// Added to every agent's system prompt: how to offer next steps as buttons when it's done
+/// (see `suggestions::split_suggestions`).
+pub const FOLLOW_UP_SUGGESTIONS: &str = "When you've finished what was asked (not when you're asking a question or \
+     still working), you may end your reply with up to 3 next steps the person is likely to want, each on its own line as \
+     <suggest>short request in their words</suggest> (under 60 characters, in the language you reply in). They show as \
+     buttons that send that text. Make them specific to what just happened (\"Publish it\", \"Add a dark mode\"), never \
+     generic (\"Tell me more\"). Leave them out of small talk and of replies that need no next step.";
+
 /// System prompt for `memory::extract_and_store_memory`'s one-shot fact-extraction completion.
 pub const MEMORY_EXTRACTION_SYSTEM_PROMPT: &str = "You keep the long-term memory of one person for their assistant. From the \
 exchange, decide at most one change to what is remembered about them.

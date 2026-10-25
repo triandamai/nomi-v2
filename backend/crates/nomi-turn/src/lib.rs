@@ -455,6 +455,8 @@ async fn finish_agent_turn(
     match outcome {
         nomi_agent_core::LoopOutcome::Reply { text: reply_text, memory_ids_used, input_tokens, output_tokens }
         | nomi_agent_core::LoopOutcome::Posted { text: reply_text, memory_ids_used, input_tokens, output_tokens, .. } => {
+            // Next steps it offered become buttons after the reply, not part of it.
+            let (reply_text, suggestions) = nomi_agent_core::suggestions::split_suggestions(&reply_text);
             let mut tx = conn.begin().await?;
             let reply_message_id: Uuid = match posted {
                 Some(message_id) => message_id,
@@ -496,9 +498,13 @@ async fn finish_agent_turn(
                 .execute(&mut *tx)
                 .await?;
             tx.commit().await?;
+            if posted.is_none() {
+                nomi_agent_core::suggestions::post_suggestions(&mut **conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), suggestions).await;
+            }
             Ok((reply_text, Some(reply_message_id)))
         }
         nomi_agent_core::LoopOutcome::Completed { status, summary } => {
+            let (summary, suggestions) = nomi_agent_core::suggestions::split_suggestions(&summary);
             // Finishing with nothing more to say (what it did is already in the chat, e.g. as a
             // view) posts no empty bubble.
             let message_id: Option<Uuid> = if summary.trim().is_empty() {
@@ -516,6 +522,9 @@ async fn finish_agent_turn(
                 )
             };
 
+            if message_id.is_some() {
+                nomi_agent_core::suggestions::post_suggestions(&mut **conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), suggestions).await;
+            }
             routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, agent.agent_type().as_ref(), &status, &summary).await?;
 
             Ok((summary, message_id))

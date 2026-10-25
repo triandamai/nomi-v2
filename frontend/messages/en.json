@@ -2158,5 +2158,6 @@
 	"run_failed_retry": "Try again",
 	"run_failed_retrying": "Trying again…",
 	"run_failed_retry_error": "Couldn't try again. Send your message again instead.",
-	"chat_send_retry": "Send again"
+	"chat_send_retry": "Send again",
+	"suggestions_label": "Suggested next steps"
 }

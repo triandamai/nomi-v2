@@ -2158,5 +2158,6 @@
 	"run_failed_retry": "Coba lagi",
 	"run_failed_retrying": "Mencoba lagi…",
 	"run_failed_retry_error": "Belum bisa mencoba lagi. Kirim ulang pesanmu saja.",
-	"chat_send_retry": "Kirim ulang"
+	"chat_send_retry": "Kirim ulang",
+	"suggestions_label": "Saran langkah berikutnya"
 }
