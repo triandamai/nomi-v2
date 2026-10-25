@@ -86,20 +86,21 @@ impl ProjectOps for ServerProjectOps {
     async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
         let row = crate::routes::deploy::start_publish(self, project_id, user_id, environment).await.map_err(message)?;
-        Ok(match row.url {
-            Some(url) => format!(
-                "Publishing to {} started (files version {}). It takes a few minutes; it will be live at {url}. \
-                 The Deployment sheet shows the progress.",
-                row.environment, row.files_version
-            ),
-            None => format!("Publishing to {} started. It takes a few minutes; the Deployment sheet shows the progress.", row.environment),
-        })
+        // Accepted isn't live: the address only works once Shipyard says the publish succeeded,
+        // and Nomi posts it in the chat then (or why it failed).
+        Ok(format!(
+            "Publishing files version {} to {} started. It takes a few minutes. Don't give the person a link yet: \
+             Nomi posts the live address in this chat when it's up, or why it failed. The Deployment sheet shows the progress.",
+            row.files_version, row.environment
+        ))
     }
 
     async fn status(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
         project_role(&self.pool, project_id, user_id).await.map_err(message)?;
-        let publishes: Vec<(String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT environment, status, url, error, created_at FROM project_publishes WHERE project_id = $1 AND environment = $2 \
+        let publishes: Vec<(String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+            "SELECT environment, status, url, error, created_at, \
+                    NULLIF(concat_ws(' ', failure->>'phase', failure->>'step', failure->>'message'), '') \
+             FROM project_publishes WHERE project_id = $1 AND environment = $2 \
              ORDER BY created_at DESC LIMIT $3",
         )
         .bind(project_id)
@@ -112,13 +113,16 @@ impl ProjectOps for ServerProjectOps {
         if publishes.is_empty() {
             lines.push(format!("Never published to {environment}."));
         }
-        for (env, status, url, error, created_at) in &publishes {
+        for (env, status, url, error, created_at, failure) in &publishes {
             let mut line = format!("Publish to {env} at {}: {status}", created_at.to_rfc3339());
             if let Some(url) = url {
                 line.push_str(&format!(", {url}"));
             }
             if let Some(error) = error {
                 line.push_str(&format!(" ({})", nomi_llm::redact::redacted(error)));
+            }
+            if let Some(failure) = failure {
+                line.push_str(&format!(" [failed at: {}]", nomi_llm::redact::redacted(failure)));
             }
             lines.push(line);
         }

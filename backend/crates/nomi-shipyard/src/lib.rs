@@ -85,11 +85,28 @@ fn unwrap_envelope(status: u16, body: &str) -> Result<Value, ShipyardError> {
     let code = error.and_then(|e| e.get("code")).and_then(Value::as_str).unwrap_or_default().to_string();
     match status {
         200..=299 => Ok(parsed.get("data").cloned().unwrap_or(parsed)),
-        401 | 403 => Err(ShipyardError::Unauthorized(message)),
+        401 => Err(ShipyardError::Unauthorized(message)),
+        // 403 is a missing scope, but also a plan limit or a billing state that doesn't allow
+        // deploys: Shipyard's own words say which, and they're for the person.
+        403 => Err(ShipyardError::Rejected { status, code, message }),
         404 => Err(ShipyardError::NotFound(message)),
         400..=499 => Err(ShipyardError::Rejected { status, code, message }),
         _ => Err(ShipyardError::Unavailable(message)),
     }
+}
+
+/// Why a deployment failed (`failure` on a deployment): which step of which phase (`validate`,
+/// `build`, `configure`, `deploy`, `finalize`), Shipyard's message, and the end of its log.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeploymentFailure {
+    #[serde(default)]
+    pub step: String,
+    #[serde(default)]
+    pub phase: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub tail: Vec<String>,
 }
 
 /// A publish Shipyard accepted (`202`).
@@ -262,6 +279,38 @@ impl<'a> Shipyard<'a> {
     pub async fn get_deployment(&self, org: &str, app: &str, env: &str, deployment_id: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::GET, &format!("{}/deployments/{}", Self::env_path(org, app, env), seg(deployment_id)), None)
             .await
+    }
+
+    /// Why a deployment failed, without its log (`None` when it didn't fail).
+    pub async fn deployment_failure(&self, org: &str, app: &str, env: &str, deployment_id: &str) -> Result<Option<DeploymentFailure>, ShipyardError> {
+        let data = self
+            .call(reqwest::Method::GET, &format!("{}/deployments/{}?logs=false", Self::env_path(org, app, env), seg(deployment_id)), None)
+            .await?;
+        Ok(data.get("failure").filter(|f| !f.is_null()).and_then(|f| serde_json::from_value(f.clone()).ok()))
+    }
+
+    /// Recent deployments, newest first, optionally of one service.
+    pub async fn list_deployments(&self, org: &str, app: &str, env: &str, service: Option<&str>, limit: u32) -> Result<Value, ShipyardError> {
+        let mut path = format!("{}/deployments?limit={}", Self::env_path(org, app, env), limit.clamp(1, 100));
+        if let Some(service) = service {
+            path.push_str(&format!("&service={}", seg(service)));
+        }
+        self.call(reqwest::Method::GET, &path, None).await
+    }
+
+    /// Restarts every service with its current env (after a secret it uses changed).
+    pub async fn restart_env(&self, org: &str, app: &str, env: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::POST, &format!("{}/restart", Self::env_path(org, app, env)), None).await
+    }
+
+    /// Runs an earlier successful image of the service again, without a rebuild (the one before
+    /// the current when `deployment_id` is None). Migrations aren't undone.
+    pub async fn rollback_service(&self, org: &str, app: &str, env: &str, service: &str, deployment_id: Option<&str>) -> Result<Value, ShipyardError> {
+        let body = match deployment_id {
+            Some(id) => json!({ "deployment_id": id }),
+            None => json!({}),
+        };
+        self.call(reqwest::Method::POST, &format!("{}/services/{}/rollback", Self::env_path(org, app, env), seg(service)), Some(body)).await
     }
 
     /// Runtime output of a service's replicas: `{ service, lines: ["<time> <line>"] }`.
@@ -454,6 +503,10 @@ mod tests {
         let err = unwrap_envelope(400, r#"{"data":null,"error":{"code":"BAD_REQUEST","message":"Missing secret STRIPE_KEY"}}"#).unwrap_err();
         assert_eq!(err, ShipyardError::Rejected { status: 400, code: "BAD_REQUEST".into(), message: "Missing secret STRIPE_KEY".into() });
         assert!(matches!(unwrap_envelope(503, "down"), Err(ShipyardError::Unavailable(_))));
+        assert!(matches!(unwrap_envelope(401, r#"{"data":null,"error":{"code":"UNAUTHORIZED","message":"bad key"}}"#), Err(ShipyardError::Unauthorized(_))));
+        // A plan or billing refusal is Shipyard's answer for the person, not a broken key.
+        let billing = unwrap_envelope(403, r#"{"data":null,"error":{"code":"FORBIDDEN","message":"billing is past due"}}"#).unwrap_err();
+        assert_eq!(billing, ShipyardError::Rejected { status: 403, code: "FORBIDDEN".into(), message: "billing is past due".into() });
         assert_eq!(unwrap_envelope(200, r#"{"data":{"a":1},"error":null}"#).unwrap(), json!({ "a": 1 }));
     }
 
@@ -482,6 +535,26 @@ mod tests {
         let body = String::from_utf8_lossy(&received.body);
         assert!(body.contains("name=\"manifest\""));
         assert!(body.contains("name=\"source\""));
+    }
+
+    #[tokio::test]
+    async fn a_failed_deployment_says_where_and_why() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orgs/org-1/apps/todo/envs/production/deployments/d1"))
+            .and(wiremock::matchers::query_param("logs", "false"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "deployment_id": "d1", "status": "failed",
+                          "failure": { "step": "build_image", "phase": "build", "message": "npm run build exited with code 1", "tail": ["error during build"] } },
+                "error": null
+            })))
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let failure = Shipyard::new(&http, &config).deployment_failure("org-1", "todo", "production", "d1").await.unwrap().unwrap();
+        assert_eq!(failure.phase, "build");
+        assert_eq!(failure.tail, vec!["error during build"]);
     }
 
     #[tokio::test]

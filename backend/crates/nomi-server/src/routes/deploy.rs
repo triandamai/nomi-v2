@@ -35,6 +35,9 @@ pub(crate) fn internal<E: std::fmt::Display>(context: &'static str) -> impl Fn(E
 
 pub(crate) fn shipyard_error(e: ShipyardError) -> ApiError {
     match e {
+        // Busy (a publish is running, the name is taken) is a conflict; anything else Shipyard
+        // refused (a bad manifest, a missing secret, a plan or billing limit) can't be done as asked.
+        ShipyardError::Rejected { status: 409, message, .. } => (StatusCode::CONFLICT, message),
         ShipyardError::Rejected { message, .. } => (StatusCode::UNPROCESSABLE_ENTITY, message),
         ShipyardError::NotFound(message) => (StatusCode::NOT_FOUND, message),
         ShipyardError::Unauthorized(message) => {
@@ -128,12 +131,14 @@ pub struct PublishRow {
     pub created_by: Option<String>,
     pub created_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
+    /// Where a failed publish broke (`shipyard::PublishFailure`), when Shipyard said.
+    pub failure: Option<Value>,
 }
 
 const PUBLISH_COLUMNS: &str = "pp.id, pp.environment, pp.status, pp.url, pp.error, pp.files_version, pp.rollback_of, \
      (pp.source_key IS NOT NULL) AS can_roll_back, \
      COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
-     pp.created_at, pp.finished_at \
+     pp.created_at, pp.finished_at, pp.failure \
      FROM project_publishes pp \
      LEFT JOIN user_profiles up ON up.user_id = pp.created_by \
      LEFT JOIN web_credentials w ON w.user_id = pp.created_by \
@@ -344,7 +349,8 @@ pub(crate) async fn start_publish(state: &impl ShipyardAccess, project_id: Uuid,
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
     let secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
-    let manifest = manifest::build(database, &secrets);
+    let mut manifest = manifest::build(database, &secrets);
+    manifest::label(&mut manifest, &project_id.to_string(), &target.stack, target.files_version);
     let source = nomi_shipyard::bundle::zip(&files).map_err(internal("failed to pack the project"))?;
 
     let app = nomi_shipyard_side::ensure_app(state.pool(), &client, &target).await.map_err(ensure_error)?;
@@ -687,8 +693,11 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
         }
     };
     let pool = state.pool.clone();
+    let http = state.http_client.clone();
+    let config = config.clone();
     tokio::spawn(async move {
-        if let Err(e) = nomi_shipyard_side::apply_event(&pool, project_id, &event).await {
+        let client = Shipyard::new(&http, &config);
+        if let Err(e) = nomi_shipyard_side::apply_event(&pool, Some(&client), project_id, &event).await {
             tracing::error!(error = %e, event = %event.id, "failed to apply a Shipyard event");
         }
     });

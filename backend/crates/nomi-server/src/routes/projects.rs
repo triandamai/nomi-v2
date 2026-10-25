@@ -714,7 +714,8 @@ async fn move_shipyard_app(state: &AppState, project_id: Uuid, from_org: Uuid, t
         Err(nomi_shipyard::ShipyardError::Rejected { status: 409, message, .. }) => {
             Err((StatusCode::CONFLICT, format!("Shipyard can't move the app ({message}), so the project wasn't moved")))
         }
-        Err(nomi_shipyard::ShipyardError::Unauthorized(message)) => {
+        // The destination's plan can't hold the app, or its billing doesn't allow deploys.
+        Err(nomi_shipyard::ShipyardError::Rejected { status: 403, message, .. }) => {
             Err((StatusCode::FORBIDDEN, format!("Shipyard won't move the app to this organization: {message}")))
         }
         Err(e) => Err(crate::routes::deploy::shipyard_error(e)),

@@ -2173,5 +2173,12 @@
 	"plan_sheet_version_latest": "Versi {version} (terbaru)",
 	"plan_sheet_progress": "{done} dari {total} langkah selesai",
 	"plan_sheet_build": "Build terakhir",
-	"plan_sheet_files_changed": "{count} file berubah"
+	"plan_sheet_files_changed": "{count} file berubah",
+	"pj_failure_where": "Gagal saat {phase}, di {step}",
+	"pj_failure_runtime": "Yang ditampilkan aplikasi",
+	"pj_phase_validate": "memeriksa pengaturan",
+	"pj_phase_build": "membangun",
+	"pj_phase_configure": "menyiapkan",
+	"pj_phase_deploy": "menjalankan aplikasi",
+	"pj_phase_finalize": "menyelesaikan"
 }

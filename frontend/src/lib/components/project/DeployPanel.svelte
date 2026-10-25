@@ -129,6 +129,18 @@
 			.catch(() => null);
 	});
 
+	// Shipyard's phases of a deployment, in the person's words.
+	const PHASES: Record<string, () => string> = {
+		validate: m.pj_phase_validate,
+		build: m.pj_phase_build,
+		configure: m.pj_phase_configure,
+		deploy: m.pj_phase_deploy,
+		finalize: m.pj_phase_finalize,
+	};
+	function phaseLabel(phase: string): string {
+		return PHASES[phase]?.() ?? phase;
+	}
+
 	let rollbackTarget = $state<ProjectPublish | null>(null);
 	let rollbackOpen = $state(false);
 
@@ -220,6 +232,18 @@
 					</div>
 					{#if open}
 						<div class="publish__detail">
+							{#if publish.failure}
+								{@const failure = publish.failure}
+								<div class="failure" role="alert">
+									<p class="failure__what">{m.pj_failure_where({ phase: phaseLabel(failure.phase), step: failure.step })}</p>
+									{#if failure.message}<p class="failure__message">{failure.message}</p>{/if}
+									{#if failure.tail.length > 0}<pre class="failure__log">{failure.tail.join('\n')}</pre>{/if}
+									{#if failure.runtime_logs.length > 0}
+										<p class="failure__label">{m.pj_failure_runtime()}</p>
+										<pre class="failure__log">{failure.runtime_logs.join('\n')}</pre>
+									{/if}
+								</div>
+							{/if}
 							{#if detailError}<p class="error">{detailError}</p>{/if}
 							{#if detail && detail.deployments && detail.deployments.length > 1}
 								<div class="services" role="tablist" aria-label={m.pj_services()}>
@@ -420,6 +444,38 @@
 	.publish__meta {
 		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.8125rem;
+	}
+	.failure {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-bottom: 12px;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-on-error-container);
+	}
+	.failure__what {
+		margin: 0;
+		font-weight: 650;
+	}
+	.failure__message,
+	.failure__label {
+		margin: 0;
+		font-size: 0.875rem;
+	}
+	.failure__log {
+		margin: 0;
+		max-height: 220px;
+		overflow: auto;
+		padding: 8px 10px;
+		border-radius: var(--md-sys-shape-corner-small);
+		background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent);
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.75rem;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 	.publish__error {
 		color: var(--md-sys-color-error);

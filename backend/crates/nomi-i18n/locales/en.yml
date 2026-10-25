@@ -166,6 +166,18 @@ deploy:
   crashed_body: "The published app stopped unexpectedly (exit code %{detail}). Shipyard restarts it; the runtime log shows why."
   resource_title: "%{name} is running hot"
   resource_body: "Shipyard reported %{detail} use. Check the monitor in the project to see whether it needs more room."
+  chat_published: "Published to %{env}. It's live at %{url}"
+  chat_failed: "Publishing to %{env} failed while %{phase} (`%{step}`): %{message}"
+  chat_failed_plain: "Publishing to %{env} failed: %{message}"
+  chat_failed_log: "The end of the build log:"
+  chat_runtime_log: "What the app printed:"
+  chat_failed_still_up: "The version that was live keeps running."
+  suggest_fix: "Fix it and publish again"
+  phase_validate: "checking the setup"
+  phase_build: "building"
+  phase_configure: "setting it up"
+  phase_deploy: "starting the app"
+  phase_finalize: "finishing"
 
 project:
   transferred_title: "%{name} was moved to %{org}"
