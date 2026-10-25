@@ -24,18 +24,18 @@ async fn chat(pool: &PgPool) -> Uuid {
 
 #[test]
 fn rena_still_plans_anything_with_the_same_tools() {
-    let prompt = PlanningAgent.system_prompt();
+    let prompt = PlanningAgent::new().system_prompt();
     for kept in ["trips and itineraries", "schedules", "write_plan", "'- [ ]' checklist items", "question per card"] {
         assert!(prompt.contains(kept), "general planning keeps {kept:?}");
     }
     // Nothing is taken away: every tool she had is still offered, in every chat.
-    let tools: Vec<String> = PlanningAgent.tools().into_iter().map(|t| t.name).collect();
-    assert_eq!(tools, ["create_project"]);
+    let tools: Vec<String> = PlanningAgent::new().tools().into_iter().map(|t| t.name).collect();
+    assert_eq!(tools, ["create_project", "publish_project"]);
 }
 
 #[test]
 fn renas_own_prompt_no_longer_carries_the_app_playbook() {
-    let prompt = PlanningAgent.system_prompt();
+    let prompt = PlanningAgent::new().system_prompt();
     assert!(!prompt.contains("delegate_to_agent"), "the playbook comes only with app requests");
     assert!(!prompt.contains("Project <project_id>"));
 }
@@ -45,7 +45,7 @@ async fn a_trip_plan_gets_no_app_building_playbook(pool: PgPool) {
     let session_id = chat(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
     let messages = vec![said(LlmRole::User, "Plan a 3-day trip to Bali for two, mid-range budget")];
-    assert_eq!(PlanningAgent.domain_context(&mut conn, None, session_id, Uuid::nil(), &messages).await, None);
+    assert_eq!(PlanningAgent::new().domain_context(&mut conn, None, session_id, Uuid::nil(), &messages).await, None);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -53,7 +53,7 @@ async fn an_app_request_gets_the_playbook(pool: PgPool) {
     let session_id = chat(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
     let messages = vec![said(LlmRole::User, "Can you build me a website for my bakery?")];
-    let playbook = PlanningAgent.domain_context(&mut conn, None, session_id, Uuid::nil(), &messages).await.expect("a build request");
+    let playbook = PlanningAgent::new().domain_context(&mut conn, None, session_id, Uuid::nil(), &messages).await.expect("a build request");
     for step in ["create_project", "write_plan", "ask_user", "delegate_to_agent", "'Project <project_id>: '"] {
         assert!(playbook.contains(step), "the playbook still says {step:?}");
     }
@@ -69,7 +69,7 @@ async fn the_playbook_stays_for_the_rest_of_an_app_conversation(pool: PgPool) {
         said(LlmRole::Assistant, "A few questions first."),
         said(LlmRole::User, "Editorial"),
     ];
-    assert!(PlanningAgent.domain_context(&mut conn, None, session_id, Uuid::nil(), &messages).await.is_some());
+    assert!(PlanningAgent::new().domain_context(&mut conn, None, session_id, Uuid::nil(), &messages).await.is_some());
 
     // In a project chat it's always there, whatever was said.
     let project_chat = chat(&pool).await;
@@ -82,5 +82,5 @@ async fn the_playbook_stays_for_the_rest_of_an_app_conversation(pool: PgPool) {
     .await
     .unwrap();
     let messages = vec![said(LlmRole::User, "Editorial")];
-    assert!(PlanningAgent.domain_context(&mut conn, None, project_chat, Uuid::nil(), &messages).await.is_some());
+    assert!(PlanningAgent::new().domain_context(&mut conn, None, project_chat, Uuid::nil(), &messages).await.is_some());
 }
