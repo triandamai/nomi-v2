@@ -91,7 +91,7 @@ export class RealtimeClient {
   }
 
   private connect(): void {
-    if (!this.WebSocketImpl) throw new Error('nomi-baas: no WebSocket in this runtime; pass realtime.WebSocket to createClient');
+    if (!this.WebSocketImpl) throw new Error('nomi-relay: no WebSocket in this runtime; pass realtime.WebSocket to createClient');
     const url = new URL(this.baseUrl.replace(/^http/, 'ws') + '/realtime');
     url.searchParams.set('apikey', this.key);
     const socket = new this.WebSocketImpl(url.toString());

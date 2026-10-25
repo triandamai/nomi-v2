@@ -52,8 +52,8 @@ function hasMarker(statement: Statement, marker: string): boolean {
 }
 
 /**
- * Checks migrations the way the BaaS does before applying them. This is an early check for the
- * editor and CI; the BaaS runs the authoritative one.
+ * Checks migrations the way Relay does before applying them. This is an early check for the
+ * editor and CI; Relay runs the authoritative one.
  */
 export function lintMigrations(files: MigrationFile[]): Issue[] {
   const issues: Issue[] = [];

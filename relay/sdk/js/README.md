@@ -1,15 +1,15 @@
-# nomi-baas
+# nomi-relay
 
-The client for Nomi BaaS: the backend every app Nomi builds gets ready-made. One client covers
+The client for Nomi Relay: the backend every app Nomi builds gets ready-made. One client covers
 the database (through a REST API guarded by row-level security), sign-in, file storage, live
 updates and hosted functions.
 
 ```sh
-npm install nomi-baas
+npm install nomi-relay
 ```
 
 ```ts
-import { createClient } from 'nomi-baas';
+import { createClient } from 'nomi-relay';
 import type { Database } from '$lib/nomi.types'; // written by Nomi after each migration
 
 export const nomi = createClient<Database>(import.meta.env.PUBLIC_NOMI_URL, import.meta.env.PUBLIC_NOMI_KEY);
@@ -77,7 +77,7 @@ const { data, error } = await nomi.functions.invoke('place-order', { body: { car
 Write one in `nomi/functions/place-order.ts`:
 
 ```ts
-import { defineFunction } from 'nomi-baas/functions';
+import { defineFunction } from 'nomi-relay/functions';
 
 export default defineFunction(async (req, ctx) => {
   if (!ctx.user) return new Response('sign in first', { status: 401 });
@@ -93,5 +93,5 @@ and `ctx.env` holds the project's secrets.
 
 ESM only, with no runtime dependencies. Works in browsers, Node 20+, Deno and Bun.
 
-Use the command line, [`nomi-baas-cli`](https://www.npmjs.com/package/nomi-baas-cli), for
+Use the command line, [`nomi-relay-cli`](https://www.npmjs.com/package/nomi-relay-cli), for
 migrations and functions.

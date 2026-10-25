@@ -43,7 +43,7 @@ export type NomiFunction<DB extends DatabaseDef = AnyDatabase> = FunctionHandler
 /**
  * ```ts
  * // nomi/functions/place-order.ts
- * import { defineFunction } from 'nomi-baas/functions';
+ * import { defineFunction } from 'nomi-relay/functions';
  * export default defineFunction(async (req, ctx) => Response.json({ hello: ctx.user?.id }));
  * ```
  */
@@ -76,7 +76,7 @@ function decodeClaims(header: string | null): Claims {
 
 /**
  * Builds the `ctx` a handler gets, from the request the gateway forwarded. The functions router
- * calls this; it's exported for `nomi-baas functions serve` and for tests.
+ * calls this; it's exported for `nomi-relay functions serve` and for tests.
  */
 export function createFunctionContext<DB extends DatabaseDef = AnyDatabase>(
   req: Request,
@@ -86,7 +86,7 @@ export function createFunctionContext<DB extends DatabaseDef = AnyDatabase>(
   const anonKey = env.NOMI_ANON_KEY;
   const serviceKey = env.NOMI_SERVICE_KEY;
   if (!url || !anonKey || !serviceKey) {
-    throw new Error('nomi-baas: NOMI_URL, NOMI_ANON_KEY and NOMI_SERVICE_KEY must be set for functions');
+    throw new Error('nomi-relay: NOMI_URL, NOMI_ANON_KEY and NOMI_SERVICE_KEY must be set for functions');
   }
   const claims = decodeClaims(req.headers.get(CLAIMS_HEADER));
   const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');

@@ -1,13 +1,13 @@
 {
-  "name": "nomi-baas",
+  "name": "nomi-relay",
   "version": "0.1.0",
-  "description": "Client for Nomi BaaS: data, auth, storage, realtime and functions for apps Nomi builds.",
+  "description": "Client for Nomi Relay: data, auth, storage, realtime and functions for apps Nomi builds.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/triandamai/nomi-v2.git",
-    "directory": "baas/sdk/js"
+    "directory": "relay/sdk/js"
   },
   "keywords": ["nomi", "baas", "postgrest", "auth", "realtime", "storage"],
   "sideEffects": false,

@@ -31,8 +31,8 @@ export class NomiClient<DB extends DatabaseDef = AnyDatabase> {
   private readonly http: HttpContext;
 
   constructor(url: string, key: string, options: ClientOptions = {}) {
-    if (!url) throw new Error('nomi-baas: createClient needs the project URL (is PUBLIC_NOMI_URL set?)');
-    if (!key) throw new Error('nomi-baas: createClient needs a key (is PUBLIC_NOMI_KEY set?)');
+    if (!url) throw new Error('nomi-relay: createClient needs the project URL (is PUBLIC_NOMI_URL set?)');
+    if (!key) throw new Error('nomi-relay: createClient needs a key (is PUBLIC_NOMI_KEY set?)');
     const baseUrl = new URL(url).toString().replace(/\/+$/, '');
     const fixedToken = options.accessToken;
 
@@ -75,7 +75,7 @@ export class NomiClient<DB extends DatabaseDef = AnyDatabase> {
 
 /**
  * ```ts
- * import { createClient } from 'nomi-baas';
+ * import { createClient } from 'nomi-relay';
  * import type { Database } from '$lib/nomi.types';
  * export const nomi = createClient<Database>(import.meta.env.PUBLIC_NOMI_URL, import.meta.env.PUBLIC_NOMI_KEY);
  * ```

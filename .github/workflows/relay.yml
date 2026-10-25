@@ -1,35 +1,36 @@
-name: BaaS
+name: Relay
 
-# Tests the BaaS packages (baas/sdk/js → nomi-baas, baas/cli → nomi-baas-cli) on every pull request
-# that touches baas/, and on every merge to main that does, publishes both to npm with the next
+# Tests the Relay packages (relay/sdk/js → nomi-relay, relay/cli → nomi-relay-cli) on every pull request
+# that touches relay/, and on every merge to main that does, publishes both to npm with the next
 # version and records that version back on main.
 #
 # Versions: both packages share one. Each release raises the patch number of what npm has; to
 # release a minor or major, set the new version in both package.json files in the PR.
 #
-# Publishing needs either the NOMI_NPM_TOKEN repository secret (an npm automation or granular token
-# with publish rights), or npm trusted publishing set up for this workflow on both packages.
+# Publishing uses npm trusted publishing (set up for this workflow on both packages; see
+# "Publishing" in relay/README.md, including the one-time first publish by hand). npm tries that
+# first and falls back to the NOMI_NPM_TOKEN secret when it's set.
 on:
   pull_request:
     paths:
-      - 'baas/**'
-      - '!baas/README.md'
-      - '.github/workflows/baas.yml'
+      - 'relay/**'
+      - '!relay/README.md'
+      - '.github/workflows/relay.yml'
   push:
     branches: [main]
     paths:
-      - 'baas/**'
-      - '!baas/README.md'
-      - '.github/workflows/baas.yml'
+      - 'relay/**'
+      - '!relay/README.md'
+      - '.github/workflows/relay.yml'
   workflow_dispatch:
 
 concurrency:
-  group: baas-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  group: relay-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
-    working-directory: baas
+    working-directory: relay
 
 jobs:
   test:
@@ -42,7 +43,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: baas/package-lock.json
+          cache-dependency-path: relay/package-lock.json
 
       - run: npm ci
       - name: Type check
@@ -63,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     # One release at a time, and never cancel one halfway through publishing.
     concurrency:
-      group: baas-release
+      group: relay-release
       cancel-in-progress: false
     permissions:
       contents: write # push the version commit and tag
@@ -78,7 +79,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: npm
-          cache-dependency-path: baas/package-lock.json
+          cache-dependency-path: relay/package-lock.json
 
       - run: npm ci
 
@@ -89,12 +90,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish nomi-baas and nomi-baas-cli
+      - name: Publish nomi-relay and nomi-relay-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NOMI_NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::notice::NOMI_NPM_TOKEN is not set; relying on npm trusted publishing for this workflow."
+            echo "::notice::Publishing through npm trusted publishing (no NOMI_NPM_TOKEN set)."
           fi
           npm publish --workspace sdk/js --provenance --access public
           npm publish --workspace cli --provenance --access public
@@ -114,11 +115,11 @@ jobs:
             node scripts/next-version.mjs --set "$VERSION" > /dev/null
             npm install --package-lock-only --ignore-scripts --no-audit --no-fund
             git add sdk/js/package.json sdk/js/src/version.ts cli/package.json package-lock.json
-            git commit -m "baas: release $VERSION [skip ci]" || { echo "version already recorded"; recorded=yes; break; }
-            git tag -f "baas-v$VERSION"
-            if git push origin main && git push -f origin "baas-v$VERSION"; then recorded=yes; break; fi
+            git commit -m "relay: release $VERSION [skip ci]" || { echo "version already recorded"; recorded=yes; break; }
+            git tag -f "relay-v$VERSION"
+            if git push origin main && git push -f origin "relay-v$VERSION"; then recorded=yes; break; fi
             echo "push raced another commit; retrying ($attempt)"
-            git tag -d "baas-v$VERSION"
+            git tag -d "relay-v$VERSION"
           done
           if [ "$recorded" != yes ]; then
             echo "::error::Published $VERSION to npm but couldn't record it on main; set both package.json files to $VERSION by hand."
@@ -131,6 +132,6 @@ jobs:
         run: |
           {
             echo "### Published $VERSION"
-            echo "- https://www.npmjs.com/package/nomi-baas/v/$VERSION"
-            echo "- https://www.npmjs.com/package/nomi-baas-cli/v/$VERSION"
+            echo "- https://www.npmjs.com/package/nomi-relay/v/$VERSION"
+            echo "- https://www.npmjs.com/package/nomi-relay-cli/v/$VERSION"
           } >> "$GITHUB_STEP_SUMMARY"

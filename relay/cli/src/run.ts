@@ -8,7 +8,7 @@ import { nextMigrationFile, readMigrations, slug } from './migrations.js';
 const EXIT_OK = 0;
 export const EXIT_PROBLEMS = 1;
 const EXIT_USAGE = 2;
-/** Shown checksums are cut to this many characters; the full one is what the BaaS compares. */
+/** Shown checksums are cut to this many characters; the full one is what Relay compares. */
 const SHORT_CHECKSUM_LENGTH = 12;
 
 export interface Io {
@@ -17,9 +17,9 @@ export interface Io {
   err: (line: string) => void;
 }
 
-const HELP = `nomi-baas: command line for Nomi BaaS
+const HELP = `nomi-relay: command line for Nomi Relay
 
-Usage: nomi-baas <command> [options]
+Usage: nomi-relay <command> [options]
 
 Commands
   init                      Create nomi/backend.json, nomi/migrations and nomi/functions
@@ -29,7 +29,7 @@ Commands
   migrate status            List local migrations with their checksums
   functions new <name>      Write nomi/functions/<name>.ts from a starter
 
-Coming with the hosted BaaS
+Coming with the hosted Relay
   login, link, migrate apply, types, functions serve, functions deploy, secrets set
 
 Options
@@ -51,7 +51,7 @@ const FIRST_MIGRATION = `-- Plain SQL, applied once, in order. Never edit a migr
 `;
 
 function functionStarter(name: string): string {
-  return `import { defineFunction } from 'nomi-baas/functions';
+  return `import { defineFunction } from 'nomi-relay/functions';
 
 // Called at /functions/${name}, or nomi.functions.invoke('${name}', { body }).
 export default defineFunction(async (req, ctx) => {
@@ -120,7 +120,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
   const functionsDir = join(nomiDir, 'functions');
 
   if (COMING_SOON.has(command) || COMING_SOON.has(`${command} ${sub}`)) {
-    io.err(`"${[command, sub].filter(Boolean).join(' ')}" needs the hosted Nomi BaaS and isn't available in this release yet.`);
+    io.err(`"${[command, sub].filter(Boolean).join(' ')}" needs the hosted Nomi Relay and isn't available in this release yet.`);
     return EXIT_USAGE;
   }
 
@@ -136,7 +136,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     case 'migrate new': {
       const name = rest.join(' ');
       if (!slug(name)) {
-        io.err('Usage: nomi-baas migrate new <name>');
+        io.err('Usage: nomi-relay migrate new <name>');
         return EXIT_USAGE;
       }
       const { migrations } = await readMigrations(migrationsDir);
@@ -156,7 +156,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
     case 'migrate status': {
       const { migrations, problems } = await readMigrations(migrationsDir);
-      if (migrations.length === 0) io.out('no migrations yet: run "nomi-baas migrate new <name>"');
+      if (migrations.length === 0) io.out('no migrations yet: run "nomi-relay migrate new <name>"');
       for (const migration of migrations) io.out(`${migration.file}  ${migration.checksum.slice(0, SHORT_CHECKSUM_LENGTH)}`);
       for (const problem of problems) io.err(`${problem.file}: ${problem.message}`);
       return problems.length === 0 ? EXIT_OK : EXIT_PROBLEMS;
@@ -165,7 +165,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     case 'functions new': {
       const name = slug(rest.join(' ')).replace(/_/g, '-');
       if (!name) {
-        io.err('Usage: nomi-baas functions new <name>');
+        io.err('Usage: nomi-relay functions new <name>');
         return EXIT_USAGE;
       }
       const created = await writeNew(join(functionsDir, `${name}.ts`), functionStarter(name), io);
@@ -173,7 +173,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     }
 
     default:
-      io.err(`Unknown command "${positionals.join(' ')}". Run "nomi-baas --help".`);
+      io.err(`Unknown command "${positionals.join(' ')}". Run "nomi-relay --help".`);
       return EXIT_USAGE;
   }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Picks the next version for the BaaS packages and writes it into them.
+// Picks the next version for Relay packages and writes it into them.
 //
 // Both packages share one version. The next one is:
 //   - the version in the package.json files, when it's ahead of what npm has (a deliberate

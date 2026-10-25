@@ -61,7 +61,7 @@ export interface AuthOptions {
 }
 
 export interface OAuthOptions {
-  /** Where the BaaS sends the browser after sign-in. Must be one of the project's `redirect_urls`. */
+  /** Where Relay sends the browser after sign-in. Must be one of the project's `redirect_urls`. */
   redirectTo?: string;
   scopes?: string[];
   /** Return the URL instead of navigating to it, e.g. to open it in a popup. */
@@ -205,7 +205,7 @@ export class AuthClient {
     return { data: { session: this.session }, error: null, status: HTTP_OK };
   }
 
-  /** Asks the BaaS for the signed-in user, so the answer reflects removals and changes made elsewhere. */
+  /** Asks Relay for the signed-in user, so the answer reflects removals and changes made elsewhere. */
   async getUser(): Promise<Result<{ user: User }>> {
     const { data, error, status } = await this.getSession();
     if (error) return { data: null, error, status };
@@ -259,7 +259,7 @@ export class AuthClient {
     return { data: { url: result.data.url, provider }, error: null, status: result.status };
   }
 
-  /** Removes a sign-in method. The BaaS refuses to remove a user's last one. */
+  /** Removes a sign-in method. Relay refuses to remove a user's last one. */
   async unlinkIdentity(identityId: string): Promise<Result<null>> {
     const result = await request<null>(this.http, `/auth/identities/${encodeURIComponent(identityId)}`, { method: 'DELETE' });
     if (!result.error && this.session) {
