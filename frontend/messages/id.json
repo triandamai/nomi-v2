@@ -2166,5 +2166,12 @@
 	"agent_access_logs_hint": "Dia bisa mengutip pesan error untuk menjelaskan apa yang rusak.",
 	"agent_access_data": "Melihat isi database-nya",
 	"agent_access_data_hint": "Dia bisa membaca baris yang dikembalikan kuerinya.",
-	"agent_access_org_wide": "Berlaku untuk semua proyek di organisasi ini."
+	"agent_access_org_wide": "Berlaku untuk semua proyek di organisasi ini.",
+	"plan_sheet_meta": "Rencana {agent}, versi {version}",
+	"plan_sheet_version": "Versi",
+	"plan_sheet_version_option": "Versi {version}",
+	"plan_sheet_version_latest": "Versi {version} (terbaru)",
+	"plan_sheet_progress": "{done} dari {total} langkah selesai",
+	"plan_sheet_build": "Build terakhir",
+	"plan_sheet_files_changed": "{count} file berubah"
 }

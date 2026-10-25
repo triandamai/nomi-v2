@@ -2166,5 +2166,12 @@
 	"agent_access_logs_hint": "She can quote error messages to explain what broke.",
 	"agent_access_data": "See the values in its database",
 	"agent_access_data_hint": "She can read the rows her queries return.",
-	"agent_access_org_wide": "Set for every project in this organization."
+	"agent_access_org_wide": "Set for every project in this organization.",
+	"plan_sheet_meta": "{agent}’s plan, version {version}",
+	"plan_sheet_version": "Version",
+	"plan_sheet_version_option": "Version {version}",
+	"plan_sheet_version_latest": "Version {version} (latest)",
+	"plan_sheet_progress": "{done} of {total} steps done",
+	"plan_sheet_build": "Last build",
+	"plan_sheet_files_changed": "{count} files changed"
 }
