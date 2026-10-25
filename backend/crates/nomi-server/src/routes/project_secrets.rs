@@ -102,7 +102,20 @@ pub async fn set(
     let client = client(&state)?;
     let target = target(&state, project_id).await?;
     let app = crate::shipyard::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
+    let existed: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM project_secrets WHERE project_id = $1 AND name = $2)")
+        .bind(project_id)
+        .bind(&name)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(internal("failed to look up the secret"))?;
     client.set_secret(&target.org_key(), &app, &name, Some(&body.value), None).await.map_err(shipyard_error)?;
+    // A changed value reaches the running app on its next start; a new secret only on the next
+    // publish, which binds it. Best-effort: the value is saved either way.
+    if existed && published(&state.pool, project_id).await {
+        if let Err(e) = client.restart_env(&target.org_key(), &app, LIVE_ENV).await {
+            tracing::warn!(error = %e, %project_id, "couldn't restart the app after a secret changed");
+        }
+    }
     sqlx::query(
         "INSERT INTO project_secrets (project_id, name, updated_by) VALUES ($1, $2, $3) \
          ON CONFLICT (project_id, name) DO UPDATE SET updated_by = $3, updated_at = now()",
@@ -115,6 +128,19 @@ pub async fn set(
     .map_err(internal("failed to save the secret"))?;
     tracing::info!(%project_id, user = %claims.sub, secret = %name, "project secret set");
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The environment a changed secret restarts.
+const LIVE_ENV: &str = "production";
+
+/// Whether the project has a version live in production.
+async fn published(pool: &sqlx::PgPool, project_id: Uuid) -> bool {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM project_publishes WHERE project_id = $1 AND environment = $2 AND status = 'succeeded')")
+        .bind(project_id)
+        .bind(LIVE_ENV)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false)
 }
 
 /// `DELETE /api/projects/:id/secrets/:name`: removes it from Shipyard and from the app's next

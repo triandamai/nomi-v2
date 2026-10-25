@@ -166,6 +166,18 @@ deploy:
   crashed_body: "Aplikasi yang dipublikasikan berhenti tiba-tiba (kode keluar %{detail}). Shipyard menjalankannya lagi; log runtime menunjukkan penyebabnya."
   resource_title: "%{name} bekerja terlalu berat"
   resource_body: "Shipyard melaporkan pemakaian %{detail}. Periksa monitor di proyek untuk melihat apakah perlu ruang lebih."
+  chat_published: "Sudah terbit di %{env}. Aplikasinya aktif di %{url}"
+  chat_failed: "Publikasi ke %{env} gagal saat %{phase} (`%{step}`): %{message}"
+  chat_failed_plain: "Publikasi ke %{env} gagal: %{message}"
+  chat_failed_log: "Bagian akhir log build:"
+  chat_runtime_log: "Yang ditampilkan aplikasi:"
+  chat_failed_still_up: "Versi yang sedang aktif tetap berjalan."
+  suggest_fix: "Perbaiki dan terbitkan lagi"
+  phase_validate: "memeriksa pengaturan"
+  phase_build: "membangun"
+  phase_configure: "menyiapkan"
+  phase_deploy: "menjalankan aplikasi"
+  phase_finalize: "menyelesaikan"
 
 project:
   transferred_title: "%{name} dipindahkan ke %{org}"

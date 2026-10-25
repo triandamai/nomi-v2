@@ -1,6 +1,7 @@
 //! Nomi's side of Shipyard: making a project's organization and app exist there, the webhook
 //! endpoint Nomi registers for itself, and what Shipyard's events change in Nomi (a publish's
-//! status, and a note to the project's admins when something goes wrong).
+//! status, a note to the project's admins when something goes wrong, and, in the project's
+//! chat, where the app is live or why its publish failed, so Koda can fix it).
 
 use serde_json::Value;
 use sqlx::PgPool;
@@ -229,8 +230,109 @@ fn error_text(data: &Value) -> Option<String> {
     }
 }
 
-/// What an event changes: a publish's status, and a note to the admins when something broke.
-pub async fn apply_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Result<(), sqlx::Error> {
+/// Where a failed publish broke, from its failed deployment (see `nomi_shipyard::DeploymentFailure`),
+/// with what the app printed when it failed while starting.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct PublishFailure {
+    pub service: String,
+    pub deployment_id: String,
+    pub step: String,
+    pub phase: String,
+    pub message: String,
+    pub tail: Vec<String>,
+    pub runtime_logs: Vec<String>,
+}
+
+/// Lines of the app's own output kept when it failed while starting.
+const FAILURE_RUNTIME_LOG_LINES: u32 = 60;
+/// Log lines quoted in the chat.
+const FAILURE_LOG_LINES_IN_CHAT: usize = 30;
+
+/// The failed deployment of a failed publish: from the event's `deployments`, or by asking for
+/// the publish when the event didn't list them.
+async fn publish_failure(pool: &PgPool, client: &Shipyard<'_>, project_id: Uuid, event: &Event) -> Option<PublishFailure> {
+    let target = load_target(pool, project_id).await.ok()??;
+    let app = target.shipyard_app.as_deref()?;
+    let env = event.environment.as_deref()?;
+    let mut deployments = event.data.get("deployments").and_then(Value::as_array).cloned().unwrap_or_default();
+    if deployments.is_empty() {
+        let publish_id = event.data.get("publish_id").and_then(Value::as_str)?;
+        let publish = client.get_publish(&target.org_key(), app, env, publish_id).await.ok()?;
+        deployments = publish.get("deployments").and_then(Value::as_array).cloned().unwrap_or_default();
+    }
+    let failed = deployments.iter().find(|d| d.get("status").and_then(Value::as_str) == Some("failed"))?;
+    let service = failed.get("service").and_then(Value::as_str).unwrap_or_default().to_string();
+    let deployment_id = failed.get("deployment_id").and_then(Value::as_str)?.to_string();
+    let found = client.deployment_failure(&target.org_key(), app, env, &deployment_id).await.ok()??;
+    // The image built but the app didn't come up: what it printed says why.
+    let runtime_logs = if matches!(found.phase.as_str(), "deploy" | "finalize") && !service.is_empty() {
+        client
+            .service_logs(&target.org_key(), app, env, &service, FAILURE_RUNTIME_LOG_LINES, None)
+            .await
+            .ok()
+            .and_then(|logs| logs.get("lines").and_then(Value::as_array).cloned())
+            .map(|lines| lines.iter().filter_map(|l| l.as_str().map(str::to_string)).collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    Some(PublishFailure { service, deployment_id, step: found.step, phase: found.phase, message: found.message, tail: found.tail, runtime_logs })
+}
+
+/// What the project's chat says about a failed publish: where it broke and the end of the log,
+/// in the project owner's language. It's an ordinary message, so the crew reads it.
+pub fn failure_chat_text(locale: nomi_i18n::Locale, environment: &str, why: &str, failure: Option<&PublishFailure>) -> String {
+    let Some(failure) = failure else {
+        return locale.tf("deploy.chat_failed_plain", &[("env", environment), ("message", why)]);
+    };
+    let phase = locale.t(&format!("deploy.phase_{}", failure.phase));
+    let message = if failure.message.is_empty() { why } else { &failure.message };
+    let mut text = locale.tf("deploy.chat_failed", &[("env", environment), ("phase", &phase), ("step", &failure.step), ("message", message)]);
+    let quote = |title: String, lines: &[String]| {
+        let shown = &lines[lines.len().saturating_sub(FAILURE_LOG_LINES_IN_CHAT)..];
+        format!("\n\n{title}\n\n```\n{}\n```", shown.join("\n"))
+    };
+    if !failure.tail.is_empty() {
+        text.push_str(&quote(locale.t("deploy.chat_failed_log"), &failure.tail));
+    }
+    if !failure.runtime_logs.is_empty() {
+        text.push_str(&quote(locale.t("deploy.chat_runtime_log"), &failure.runtime_logs));
+    }
+    text.push_str("\n\n");
+    text.push_str(&locale.t("deploy.chat_failed_still_up"));
+    text
+}
+
+/// Posts into the project's chat, live, as Nomi; with next-step buttons when given.
+async fn post_to_project_chat(pool: &PgPool, project_id: Uuid, text: &str, suggestions: Vec<String>) {
+    let Ok(Some(session_id)) = sqlx::query_scalar::<_, Uuid>("SELECT session_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(pool).await else {
+        return;
+    };
+    let Ok(mut conn) = pool.acquire().await else { return };
+    let message_id: Option<Uuid> = sqlx::query_scalar("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id")
+        .bind(session_id)
+        .bind(text)
+        .fetch_one(&mut *conn)
+        .await
+        .ok();
+    let mqtt = crate::project_events::publisher();
+    if let (Some(message_id), Some(mqtt)) = (message_id, mqtt) {
+        let _ = mqtt.publish(session_id, &nomi_realtime::StreamEnvelope::MessageCreated { message_id }).await;
+    }
+    nomi_agent_core::suggestions::post_suggestions(&mut conn, mqtt, session_id, "Nomi", suggestions).await;
+}
+
+/// The project owner's language, for what Nomi says in the project's chat.
+async fn project_locale(pool: &PgPool, project_id: Uuid) -> nomi_i18n::Locale {
+    match sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(pool).await {
+        Ok(Some(owner)) => person_locale(pool, owner).await,
+        _ => nomi_i18n::Locale::from_code_or_default(None),
+    }
+}
+
+/// What an event changes: a publish's status, a note to the admins when something broke, and
+/// the outcome in the project's chat. `client` looks up why a publish failed.
+pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_id: Uuid, event: &Event) -> Result<(), sqlx::Error> {
     let publish_id = event.data.get("publish_id").and_then(Value::as_str);
     match event.kind.as_str() {
         "publish.succeeded" | "publish.failed" => {
@@ -252,9 +354,27 @@ pub async fn apply_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Resu
             }
             // The open pages update now, before the admins' notifications go out.
             crate::project_events::changed(project_id, &event.kind);
+            let environment = event.environment.as_deref().unwrap_or("production");
+            let locale = project_locale(pool, project_id).await;
             if status == "failed" {
                 let why = error_text(&event.data).unwrap_or_default();
+                let failure = match client {
+                    Some(client) => publish_failure(pool, client, project_id, event).await,
+                    None => None,
+                };
+                if let (Some(publish_id), Some(failure)) = (publish_id, &failure) {
+                    sqlx::query("UPDATE project_publishes SET failure = $2 WHERE shipyard_publish_id = $1")
+                        .bind(publish_id)
+                        .bind(serde_json::to_value(failure).unwrap_or_default())
+                        .execute(pool)
+                        .await?;
+                    crate::project_events::changed(project_id, "publish.failure");
+                }
+                let text = failure_chat_text(locale, environment, &why, failure.as_ref());
+                post_to_project_chat(pool, project_id, &text, vec![locale.t("deploy.suggest_fix")]).await;
                 notify_admins(pool, project_id, "publish_failed", &why).await;
+            } else if let Some(url) = url {
+                post_to_project_chat(pool, project_id, &locale.tf("deploy.chat_published", &[("env", environment), ("url", url)]), Vec::new()).await;
             }
         }
         "service.crashed" => {
@@ -380,7 +500,7 @@ pub async fn catch_up(pool: &PgPool, client: &Shipyard<'_>) -> Result<CatchUp, s
                 // Old events are only recorded: a first catch-up shouldn't send stale alerts.
                 let recent = event.created_at > chrono::Utc::now() - chrono::Duration::hours(1);
                 if let Some(project_id) = store_event(pool, &event).await?.filter(|_| recent) {
-                    if let Err(e) = apply_event(pool, project_id, &event).await {
+                    if let Err(e) = apply_event(pool, Some(client), project_id, &event).await {
                         tracing::warn!(error = %e, event = %event.id, "failed to apply a caught-up Shipyard event");
                     }
                 }
@@ -431,6 +551,27 @@ pub async fn sync_org_name(pool: &PgPool, client: &Shipyard<'_>, org_id: Uuid) -
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_failed_publish_reads_as_where_it_broke_and_the_log() {
+        let failure = PublishFailure {
+            service: "web".into(),
+            deployment_id: "d1".into(),
+            step: "build_image".into(),
+            phase: "build".into(),
+            message: "npm run build exited with code 1".into(),
+            tail: vec!["src/routes/+page.svelte:12:5 'x' is not defined".into()],
+            runtime_logs: vec![],
+        };
+        let text = failure_chat_text(nomi_i18n::Locale::En, "production", "web failed", Some(&failure));
+        assert!(text.starts_with("Publishing to production failed while building (`build_image`): npm run build exited with code 1"), "{text}");
+        assert!(text.contains("```\nsrc/routes/+page.svelte:12:5 'x' is not defined\n```"), "{text}");
+        assert!(text.ends_with("The version that was live keeps running."), "{text}");
+        assert_eq!(
+            failure_chat_text(nomi_i18n::Locale::En, "staging", "missing secret STRIPE_KEY", None),
+            "Publishing to staging failed: missing secret STRIPE_KEY"
+        );
+    }
     use super::*;
     use serde_json::json;
 

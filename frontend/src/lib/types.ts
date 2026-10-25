@@ -806,6 +806,20 @@ export interface ProjectPublish {
 	created_by: string | null;
 	created_at: string;
 	finished_at: string | null;
+	/** Where a failed publish broke, when Shipyard said. */
+	failure?: PublishFailure | null;
+}
+
+/** The failed deployment of a publish (backend `shipyard::PublishFailure`). */
+export interface PublishFailure {
+	service: string;
+	deployment_id: string;
+	step: string;
+	phase: 'validate' | 'build' | 'configure' | 'deploy' | 'finalize' | string;
+	message: string;
+	tail: string[];
+	/** What the app printed, when it failed while starting. */
+	runtime_logs: string[];
 }
 
 export interface ShipyardService {

@@ -110,6 +110,16 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
     manifest
 }
 
+/// Labels Shipyard shows next to the environment, so support can tell which Nomi project and
+/// which version of its files it runs (keys under `nomi.app/`; Shipyard owns `shipyard.io/`).
+pub fn label(manifest: &mut Value, project_id: &str, stack: &str, files_version: i64) {
+    manifest["labels"] = json!({
+        "nomi.app/project": project_id,
+        "nomi.app/stack": stack,
+        "nomi.app/files-version": files_version.to_string(),
+    });
+}
+
 /// Binds each secret, by name, into the `web` service's environment. A name the manifest
 /// already sets itself (DATABASE_URL, PORT) keeps its own value.
 pub fn bind_secrets(manifest: &mut Value, secret_names: &[String]) {
@@ -188,5 +198,12 @@ mod tests {
         assert!(spa.contains("npm install\n"));
         assert!(spa.contains("serve\", \"-s\""));
         assert!(!dockerfile("sveltekit", &[]).contains("drizzle"));
+    }
+
+    #[test]
+    fn labels_say_which_nomi_project_and_files_it_runs() {
+        let mut manifest = build(Database::None, &[]);
+        label(&mut manifest, "p1", "sveltekit", 7);
+        assert_eq!(manifest["labels"], json!({ "nomi.app/project": "p1", "nomi.app/stack": "sveltekit", "nomi.app/files-version": "7" }));
     }
 }

@@ -15,6 +15,11 @@ pub fn init(broker_host: &str, broker_port: u16) {
     let _ = PUBLISHER.get_or_init(|| MqttPublisher::connect(broker_host, broker_port, &format!("nomi-project-events-{}", Uuid::new_v4())));
 }
 
+/// The shared publisher, once connected: also for posting into a project's chat.
+pub fn publisher() -> Option<&'static MqttPublisher> {
+    PUBLISHER.get()
+}
+
 pub fn topic(project_id: Uuid) -> String {
     format!("project/{project_id}/stream")
 }
