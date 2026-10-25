@@ -13,6 +13,7 @@
 	import IconGroup from '$lib/components/icons/IconGroup.svelte';
 	import { projectApi } from '$lib/projectApi';
 	import ImportCode from '$lib/components/project/ImportCode.svelte';
+	import SecretsSection from '$lib/components/project/SecretsSection.svelte';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { formatTransferNoticeParams } from '$lib/projectTransfer';
 	import type { TransferOrgSummary } from '$lib/types';
@@ -175,6 +176,8 @@
 	{#if showcaseError}<p class="error" role="alert">{showcaseError}</p>{/if}
 	{#if showcaseSaved && !showcaseError}<p class="block__hint" role="status">{showcase?.showcase ? m.showcase_on() : m.showcase_off()}</p>{/if}
 </section>
+
+<SecretsSection projectId={deploy.projectId} />
 
 <section class="block">
 	<h3 class="block__title">{m.import_title()}</h3>

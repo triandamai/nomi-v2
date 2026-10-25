@@ -382,6 +382,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/database/credentials", post(crate::routes::project_database::credentials))
         .route("/api/projects/:id/database/tables", get(crate::routes::project_database::tables))
         .route("/api/projects/:id/database/query", post(crate::routes::project_database::run_query))
+        .route("/api/projects/:id/secrets", get(crate::routes::project_secrets::list))
+        .route(
+            "/api/projects/:id/secrets/:name",
+            put(crate::routes::project_secrets::set).delete(crate::routes::project_secrets::remove),
+        )
         .route("/api/hooks/shipyard", post(crate::routes::deploy::webhook))
         .route(
             "/api/projects/:id/issues",

@@ -47,7 +47,7 @@ pub(crate) fn shipyard_error(e: ShipyardError) -> ApiError {
     }
 }
 
-fn ensure_error(e: EnsureError) -> ApiError {
+pub(crate) fn ensure_error(e: EnsureError) -> ApiError {
     match e {
         EnsureError::Shipyard(e) => shipyard_error(e),
         EnsureError::Db(e) => internal("failed to prepare the project on Shipyard")(e),
@@ -336,7 +336,8 @@ pub async fn publish(
         let dockerfile = manifest::dockerfile(&target.stack, &files);
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
-    let manifest = manifest::build(database, &[]);
+    let secrets = crate::routes::project_secrets::names(&state.pool, project_id).await?;
+    let manifest = manifest::build(database, &secrets);
     let source = nomi_shipyard::bundle::zip(&files).map_err(internal("failed to pack the project"))?;
 
     let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
@@ -361,7 +362,9 @@ pub async fn rollback(
     .fetch_optional(&state.pool)
     .await
     .map_err(internal("failed to load publish"))?;
-    let (environment, manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    let (environment, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    // The code goes back; the secrets stay as they are now.
+    manifest::bind_secrets(&mut manifest, &crate::routes::project_secrets::names(&state.pool, project_id).await?);
     let source_key = source_key.ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
     let source = state
         .project_storage

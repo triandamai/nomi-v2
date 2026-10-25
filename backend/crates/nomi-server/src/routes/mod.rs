@@ -32,6 +32,7 @@ pub mod project_import;
 pub mod project_issues;
 pub mod project_members;
 pub mod project_runtime;
+pub mod project_secrets;
 pub mod realtime;
 pub mod projects;
 pub mod profile;

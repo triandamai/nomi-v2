@@ -116,6 +116,18 @@ async fn the_brief_says_when_the_last_check_on_these_files_failed(pool: PgPool) 
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn the_brief_names_the_projects_secrets(pool: PgPool) {
+    let seeded = seed(&pool).await;
+    let messages = vec![said(&format!("(Handed to you to do now: Project {}: add payments)", seeded.project_id))];
+    let mut conn = pool.acquire().await.unwrap();
+    let brief = agent().domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.unwrap();
+    assert!(!brief.contains("## Secrets"), "nothing to say before any are stored");
+    sqlx::query("INSERT INTO project_secrets (project_id, name) VALUES ($1, 'STRIPE_KEY')").bind(seeded.project_id).execute(&pool).await.unwrap();
+    let brief = agent().domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.unwrap();
+    assert!(brief.contains("## Secrets") && brief.contains("STRIPE_KEY"), "{brief}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn there_is_no_brief_without_a_project(pool: PgPool) {
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
     let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(&pool).await.unwrap();
