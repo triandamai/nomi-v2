@@ -1,0 +1,54 @@
+name: Frontend
+
+# The SvelteKit frontend under frontend/: type check, unit tests and a production build.
+# Runs on pull requests and merges to main only when one of the paths below changed, so a change
+# elsewhere in the repo doesn't run it. Also called
+# by release.yml, which always runs it, so a tagged build never publishes without a green run.
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  workflow_call:
+  workflow_dispatch:
+
+# A new commit on a PR cancels that PR's still-running check. Runs on main and tag releases get
+# a group per ref+commit, so they never cancel or queue behind each other.
+concurrency:
+  group: frontend-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}@{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend:
+    name: Frontend (check + unit tests + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npm run check
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm run test:unit
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build

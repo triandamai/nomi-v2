@@ -1,7 +1,8 @@
 name: Release
 
 # Deploy: only version tags trigger a build+push+deploy — PRs and merges to main only
-# run Test (see test.yml). Push a tag like v1.2.3 to publish images, then roll out the
+# run the Backend and Frontend checks (backend.yml, frontend.yml), each when its own folder changed.
+# Here both always run first. Push a tag like v1.2.3 to publish images, then roll out the
 # backend first (it runs the database migrations) and the frontend after it, each through
 # its deploy webhook (SHIPYARD_BACKEND_DEPLOY_HOOK, SHIPYARD_FRONTEND_DEPLOY_HOOK).
 on:
@@ -9,13 +10,17 @@ on:
     tags: ['v*.*.*']
 
 jobs:
-  test:
-    name: Test
-    uses: ./.github/workflows/test.yml
+  backend:
+    name: Backend
+    uses: ./.github/workflows/backend.yml
+
+  frontend:
+    name: Frontend
+    uses: ./.github/workflows/frontend.yml
 
   build-and-push:
     name: Build and push images
-    needs: test
+    needs: [backend, frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
