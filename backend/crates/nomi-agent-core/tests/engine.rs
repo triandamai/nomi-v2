@@ -1828,11 +1828,23 @@ impl SubAgent for AskingAgent {
     fn is_default(&self) -> bool {
         true
     }
-    fn asks_questions(&self) -> bool {
-        true
-    }
+    // asks_questions is on by default for every agent.
     fn reads_plans(&self) -> bool {
         true
+    }
+}
+
+fn ask_user_call(id: &str, questions: serde_json::Value) -> LlmResponse {
+    LlmResponse {
+        content: vec![ContentBlock::ToolUse {
+            id: id.to_string(),
+            name: "ask_user".to_string(),
+            input: serde_json::json!({"intro": "Before I plan it:", "questions": questions}),
+            thought_signature: None,
+        }],
+        stop_reason: StopReason::ToolUse,
+        input_tokens: 1,
+        output_tokens: 1,
     }
 }
 
@@ -1841,23 +1853,10 @@ async fn ask_user_posts_a_questions_card_and_waits_for_the_answer(pool: PgPool) 
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
-    let provider = FakeLlmProvider::sequence(vec![LlmResponse {
-        content: vec![ContentBlock::ToolUse {
-            id: "q1".to_string(),
-            name: "ask_user".to_string(),
-            input: serde_json::json!({
-                "intro": "A few things before I plan it:",
-                "questions": [
-                    {"question": "Which look?", "options": [{"label": "Editorial", "detail": "serif, warm paper"}, {"label": "Bold graphic"}]},
-                    {"question": "Which pages?", "options": [{"label": "Menu"}, {"label": "Location"}], "multiple": true}
-                ]
-            }),
-            thought_signature: None,
-        }],
-        stop_reason: StopReason::ToolUse,
-        input_tokens: 1,
-        output_tokens: 1,
-    }]);
+    let provider = FakeLlmProvider::sequence(vec![ask_user_call(
+        "q1",
+        serde_json::json!([{"question": "Which look?", "options": [{"label": "Editorial", "detail": "serif, warm paper"}, {"label": "Bold graphic"}], "multiple": true}]),
+    )]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(AskingAgent)]);
 
@@ -1866,13 +1865,45 @@ async fn ask_user_posts_a_questions_card_and_waits_for_the_answer(pool: PgPool) 
         .unwrap();
 
     let LoopOutcome::AwaitingAnswer { message_id, text } = outcome else { panic!("expected to wait for an answer, got {outcome:?}") };
-    assert!(text.contains("1. Which look?") && text.contains("- Editorial: serif, warm paper") && text.contains("2. Which pages?"), "{text}");
+    assert!(text.contains("Which look?") && text.contains("- Editorial: serif, warm paper"), "{text}");
     let blocks: serde_json::Value = sqlx::query_scalar("SELECT content_blocks FROM messages WHERE id = $1").bind(message_id).fetch_one(&pool).await.unwrap();
     assert_eq!(blocks[0]["kind"], "questions");
-    assert_eq!(blocks[0]["questions"][1]["multiple"], true);
+    assert_eq!(blocks[0]["questions"].as_array().unwrap().len(), 1);
+    assert_eq!(blocks[0]["questions"][0]["multiple"], true);
     assert_eq!(blocks[0]["questions"][0]["options"][0]["detail"], "serif, warm paper");
-    // Only one model call: the turn stops at the questions.
+    // Only one model call: the turn stops at the question.
     assert_eq!(provider.received_requests.lock().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ask_user_takes_one_question_at_a_time(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    // Asked two at once, the agent is told to ask one, and asks the most important one.
+    let provider = FakeLlmProvider::sequence(vec![
+        ask_user_call(
+            "q1",
+            serde_json::json!([
+                {"question": "Just once, or repeating?", "options": [{"label": "Just once"}, {"label": "Every day"}]},
+                {"question": "What time?", "options": [{"label": "Morning"}, {"label": "Evening"}]}
+            ]),
+        ),
+        ask_user_call("q2", serde_json::json!([{"question": "Just once, or repeating?", "options": [{"label": "Just once"}, {"label": "Every day"}]}])),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(AskingAgent)]);
+
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &AskingAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let LoopOutcome::AwaitingAnswer { text, .. } = outcome else { panic!("expected to wait for an answer, got {outcome:?}") };
+    assert!(text.contains("Just once, or repeating?") && !text.contains("What time?"), "{text}");
+    let requests = provider.received_requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    let told = serde_json::to_string(&requests[1].messages).unwrap();
+    assert!(told.contains("ask one question at a time"), "{told}");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -128,10 +128,6 @@ impl SubAgent for PlanningAgent {
         false
     }
 
-    fn asks_questions(&self) -> bool {
-        true
-    }
-
     fn supports_todos(&self) -> bool {
         true
     }

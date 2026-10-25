@@ -233,20 +233,24 @@ fn update_todos_tool_definition() -> ToolDefinition {
 fn ask_user_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: ASK_USER_TOOL_NAME.to_string(),
-        description: "Ask the person what you need to know before you go on, as a card in the chat with \
-                      answers they can tap (and room for their own). Ask everything you need at once: up to 4 \
-                      questions, each with 2-5 short options (add a one-line detail where a label alone \
-                      isn't clear, e.g. what a design direction looks like). Your turn ends here; their answer \
-                      arrives as their next message. Call it on its own, not alongside other tools, and \
-                      don't repeat the questions in your reply.".to_string(),
+        description: "Ask the person something you need to know before you act, as a card in the chat with \
+                      answers they can tap (and room for their own). Use it whenever the request is missing \
+                      a detail you can't sensibly assume (when, how much, which one, one-time or repeating), \
+                      instead of guessing. One question per card, with 2-5 short options (add a one-line \
+                      detail where a label alone isn't clear, e.g. what a design direction looks like): ask \
+                      the most important one first, and the next one only after they answer, one step at a \
+                      time, until you have what you need. Skip what they already told you. Your turn ends \
+                      here; their answer arrives as their next message. Call it on its own, not alongside \
+                      other tools, and don't repeat the question in your reply.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "intro": {"type": "string", "description": "One short line before the questions, optional"},
                 "questions": {
                     "type": "array",
+                    "description": "Exactly one question; ask the next after they answer",
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": 1,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -293,15 +297,17 @@ fn parse_questions(input: &serde_json::Value) -> Result<(crate::content_block::C
             .map_err(|e| format!("questions must be a list of {{question, options}}: {e}"))?,
     };
     let crate::content_block::ContentBlock::Questions { intro, questions } = &block else { unreachable!() };
-    if questions.is_empty() || questions.len() > 4 {
-        return Err("ask between 1 and 4 questions".to_string());
+    match questions.len() {
+        0 => return Err("ask a question".to_string()),
+        1 => {}
+        _ => return Err("ask one question at a time: the most important one now, the next after they answer".to_string()),
     }
     let mut text = intro.clone().map(|i| format!("{i}\n\n")).unwrap_or_default();
-    for (i, q) in questions.iter().enumerate() {
+    for q in questions {
         if q.question.trim().is_empty() {
-            return Err("every question needs its text".to_string());
+            return Err("the question needs its text".to_string());
         }
-        text.push_str(&format!("{}. {}\n", i + 1, q.question.trim()));
+        text.push_str(&format!("{}\n", q.question.trim()));
         for option in &q.options {
             match &option.detail {
                 Some(detail) => text.push_str(&format!("   - {}: {}\n", option.label, detail)),
@@ -360,7 +366,9 @@ fn create_reminder_tool_definition(targets: &[String]) -> ToolDefinition {
         description: "Schedule a reminder to fire at a specific future time. Resolve any \
                        relative time the user gives (\"tomorrow\", \"in an hour\") to an \
                        absolute ISO 8601 datetime yourself, using the current date/time and the \
-                       user's timezone given in your system prompt.".to_string(),
+                       user's timezone given in your system prompt. Before you set it, make sure you \
+                       know what it's for, when, and whether it's one-time or repeating (and how \
+                       often): ask with ask_user for whatever they didn't say, one question at a time.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {

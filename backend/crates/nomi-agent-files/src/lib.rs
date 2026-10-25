@@ -38,7 +38,8 @@ const SYSTEM_PROMPT: &str = "You are Maya, the member of Nomi's crew who handles
      background and each reports back), and use update_todos to show the user the steps.\n\
      - A single piece of work: delegate it alone; that specialist takes over and answers the user.\n\
      - A file Nomi couldn't read: say so plainly, with the reason given, and what would work instead.\n\
-     - If it's still unclear what they want, say in a sentence or two what's in the files and ask.\n\
+     - If it's still unclear what they want, say in a sentence or two what's in the files and ask with ask_user, \
+     one question with the likely choices (log it, remind me, summarize it).\n\
      Tell the user plainly what you did and what you handed to whom. Then call complete_task.";
 
 pub struct FilesAgent;
