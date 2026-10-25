@@ -14,6 +14,9 @@ use nomi_llm::{ContentBlock, LlmMessage, LlmProvider, LlmRequest, LlmRole};
 
 /// How many of a chat's latest messages agents see in full.
 pub const RECENT_MESSAGES: i64 = 20;
+/// The same for a project's chat: its agents read the plan, the files and the crew's notes from
+/// their brief, so a long build's back-and-forth would mostly repeat what they already have.
+pub const PROJECT_RECENT_MESSAGES: i64 = 10;
 /// How many older messages have to pile up before they're folded into the summary.
 pub const SWEEP_EVERY: i64 = 20;
 /// The most messages folded in one go (a long chat catches up over a few sweeps).
@@ -35,6 +38,20 @@ questions or unfinished tasks. Drop greetings, small talk, and anything settled 
 matters. At most 200 words, as short plain lines, in the language of the chat. Reply with the \
 summary only.";
 
+/// Whether a chat is a project's chat.
+pub async fn is_project_chat<'c, E: sqlx::PgExecutor<'c>>(executor: E, session_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM projects WHERE session_id = $1)").bind(session_id).fetch_one(executor).await
+}
+
+/// How many of the chat's latest messages its agents see in full.
+pub fn recent_window(project_chat: bool) -> i64 {
+    if project_chat {
+        PROJECT_RECENT_MESSAGES
+    } else {
+        RECENT_MESSAGES
+    }
+}
+
 /// Chats with enough unsummarized older messages to fold, and whose they are. Only chats active
 /// in the past week are looked at.
 pub async fn sessions_to_summarize(pool: &PgPool, limit: i64) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
@@ -43,14 +60,16 @@ pub async fn sessions_to_summarize(pool: &PgPool, limit: i64) -> Result<Vec<(Uui
          WHERE s.user_id IS NOT NULL \
            AND EXISTS (SELECT 1 FROM messages r WHERE r.session_id = s.id AND r.created_at > now() - interval '7 days') \
            AND (SELECT count(*) FROM ( \
-                    SELECT created_at FROM messages WHERE session_id = s.id AND {SAID_IN_CHAT} \
-                    ORDER BY created_at DESC, id DESC OFFSET $1 \
-                ) older WHERE older.created_at > COALESCE(s.summary_through, '-infinity'::timestamptz)) >= $2 \
+                    SELECT created_at, row_number() OVER (ORDER BY created_at DESC, id DESC) AS newest_first FROM messages \
+                    WHERE session_id = s.id AND {SAID_IN_CHAT} \
+                ) older WHERE older.newest_first > (CASE WHEN EXISTS (SELECT 1 FROM projects p WHERE p.session_id = s.id) THEN $4 ELSE $1 END) \
+                  AND older.created_at > COALESCE(s.summary_through, '-infinity'::timestamptz)) >= $2 \
          LIMIT $3"
     ))
     .bind(RECENT_MESSAGES)
     .bind(SWEEP_EVERY)
     .bind(limit)
+    .bind(PROJECT_RECENT_MESSAGES)
     .fetch_all(pool)
     .await
 }
@@ -60,6 +79,7 @@ pub async fn sessions_to_summarize(pool: &PgPool, limit: i64) -> Result<Vec<(Uui
 pub async fn summarize_session(pool: &PgPool, provider: &dyn LlmProvider, session_id: Uuid) -> Result<bool, sqlx::Error> {
     let (summary, through): (Option<String>, Option<chrono::DateTime<chrono::Utc>>) =
         sqlx::query_as("SELECT summary, summary_through FROM sessions WHERE id = $1").bind(session_id).fetch_one(pool).await?;
+    let window = recent_window(is_project_chat(pool, session_id).await?);
     let older: Vec<(Option<Uuid>, Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(&format!(
         "SELECT sender_channel_identity_id, agent_display_name, content, created_at FROM ( \
              SELECT sender_channel_identity_id, agent_display_name, content, created_at, id FROM messages \
@@ -69,7 +89,7 @@ pub async fn summarize_session(pool: &PgPool, provider: &dyn LlmProvider, sessio
          ORDER BY created_at ASC, id ASC LIMIT $4"
     ))
     .bind(session_id)
-    .bind(RECENT_MESSAGES)
+    .bind(window)
     .bind(through)
     .bind(FOLD_LIMIT)
     .fetch_all(pool)

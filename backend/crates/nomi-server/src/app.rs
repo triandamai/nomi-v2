@@ -1,5 +1,7 @@
 use axum::{routing::{delete, get, patch, post, put}, Router};
 use sqlx::PgPool;
+use axum::http::HeaderName;
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
 
 use nomi_auth::extractor::AuthClaims;
@@ -97,6 +99,7 @@ pub fn build_router(state: AppState) -> Router {
             get(sessions_routes::get_message).delete(crate::routes::message_delete::delete_message),
         )
         .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
+        .route("/api/sessions/:id/messages/:message_id/retry", post(crate::routes::message_retry::retry_failed_run))
         .route(
             "/api/sessions/:id/agent-plans/:agent_session_id",
             get(sessions_routes::list_agent_plans),
@@ -349,6 +352,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id", get(projects_routes::get_project).delete(crate::routes::deploy::delete_project))
         .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
         .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
+        .route(
+            "/api/projects/:id/agent-permissions",
+            get(crate::routes::agent_permissions::list).put(crate::routes::agent_permissions::set),
+        )
+        .route("/api/projects/:id/agent-permissions/:permission_id", delete(crate::routes::agent_permissions::remove))
         .route("/api/projects/:id/deploy", get(crate::routes::deploy::overview))
         .route("/api/projects/:id/showcase", get(crate::routes::showcase::get).put(crate::routes::showcase::put))
         .route("/api/projects/:id/deploy/publish", post(crate::routes::deploy::publish))
@@ -409,6 +417,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/snapshot", get(crate::routes::project_runtime::snapshot))
         .route("/api/projects/:id/preview", get(projects_routes::preview_project_index))
         .route("/api/projects/:id/preview/*path", get(projects_routes::preview_project_file))
+        // Outermost last: every request gets an id (kept when the caller sent one), every
+        // response carries it back, and errors become problem details for clients that ask
+        // (see crate::problem).
         .layer(TraceLayer::new_for_http())
+        .layer(PropagateRequestIdLayer::new(HeaderName::from_static(crate::problem::REQUEST_ID_HEADER)))
+        .layer(SetRequestIdLayer::new(HeaderName::from_static(crate::problem::REQUEST_ID_HEADER), MakeRequestUuid))
+        .layer(axum::middleware::from_fn(crate::problem::problem_details))
         .with_state(state)
 }

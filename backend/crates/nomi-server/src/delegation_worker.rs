@@ -3,6 +3,7 @@ use std::time::Duration;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use nomi_agent_core::content_block::RetryTarget;
 use nomi_agent_core::LoopOutcome;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
@@ -111,7 +112,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
     }
     tracing::info!("delegation worker: listening for new agent delegations");
 
-    let registry = crate::build_agent_registry(project_storage);
+    let registry = crate::build_agent_registry(&pool, project_storage);
 
     loop {
         let _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, listener.recv()).await;
@@ -231,6 +232,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         _ => None,
                     };
                     let checks = build.as_ref().map(|report| report.summary_line(locale));
+                    // Next steps it offered become buttons after the answer, not part of it.
+                    let (text, suggestions) = if posted { (text, Vec::new()) } else { nomi_agent_core::suggestions::split_suggestions(&text) };
 
                     // The agent's own answer, whole: rewording it through a short supervisor
                     // completion cut long plans and lists off mid-sentence. An answer that was a
@@ -244,6 +247,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     } else if let Some(checks) = &checks {
                         post(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), checks).await;
                     }
+                    nomi_agent_core::suggestions::post_suggestions(&mut conn, Some(&mqtt), claimed.session_id, agent.display_name().as_ref(), suggestions).await;
 
                     let _ = sqlx::query(
                         "UPDATE agent_delegations SET status = 'completed', completed_at = now(), result = $2 WHERE id = $1 AND status = 'processing'",
@@ -335,8 +339,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         }
                     }
                     let sorry = locale.tf("turn.agent_failed", &[("agent", &claimed.target_agent_type), ("reason", &e.user_message_in(locale))]);
-                    // Out of allowance: the card says so and where to go next.
-                    post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, e.notice_blocks()).await;
+                    // An error bubble that can hand the same task back (or, out of allowance, the
+                    // card saying where to go next).
+                    post_with_blocks(&mut conn, &mqtt, claimed.session_id, agent.display_name().as_ref(), &sorry, Some(e.notice_blocks(Some(RetryTarget::Delegation { delegation_id: claimed.id })))).await;
                     fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, &e.to_string()).await;
                 }
             }

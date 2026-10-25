@@ -30,6 +30,7 @@ nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
 nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
 nomi-agent-planning = { path = "../nomi-agent-planning" }
+nomi-agent-inspector = { path = "../nomi-agent-inspector" }
 nomi-agent-coding = { path = "../nomi-agent-coding" }
 nomi-turn = { path = "../nomi-turn" }
 nomi-storage = { path = "../nomi-storage" }
@@ -51,7 +52,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 jsonwebtoken = "9"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-tower-http = { version = "0.7.0", features = ["trace"] }
+tower-http = { version = "0.7.0", features = ["trace", "request-id"] }
 rumqttc = "0.25.1"
 
 [dev-dependencies]

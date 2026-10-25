@@ -41,6 +41,8 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'transfer/orgs',
 			'import/github',
 			'import/files',
+			'agent-permissions',
+			`agent-permissions/${UUID}`,
 		].join('|') +
 		')$',
 );

@@ -16,6 +16,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
+use nomi_agent_core::project_ops::{publish_from_tool, publish_tool_definition, NoProjectOps, SharedProjectOps, PUBLISH_TOOL_NAME};
 use nomi_agent_core::prompts::CODING_SYSTEM_PROMPT;
 use nomi_agent_core::{SubAgent, ToolOutcome};
 use nomi_llm::ToolDefinition;
@@ -78,11 +79,18 @@ fn has_project_prefix(task: &str) -> bool {
 
 pub struct CodingAgent {
     storage: ProjectStore,
+    project_ops: SharedProjectOps,
 }
 
 impl CodingAgent {
     pub fn new(storage: ProjectStore) -> Self {
-        Self { storage }
+        Self { storage, project_ops: std::sync::Arc::new(NoProjectOps) }
+    }
+
+    /// Publishing (`publish_project`) through the server's Shipyard access.
+    pub fn with_project_ops(mut self, project_ops: SharedProjectOps) -> Self {
+        self.project_ops = project_ops;
+        self
     }
 }
 
@@ -112,6 +120,7 @@ impl SubAgent for CodingAgent {
             edit_file_tool_definition(),
             delete_file_tool_definition(),
             runtime::run_command_tool_definition(),
+            publish_tool_definition(),
         ]
     }
 
@@ -124,6 +133,9 @@ impl SubAgent for CodingAgent {
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
+        if name == PUBLISH_TOOL_NAME {
+            return publish_from_tool(self.project_ops.as_ref(), user_id, &input).await.map(ToolOutcome::text);
+        }
         execute(conn, &self.storage, user_id, name, input).await
     }
 
@@ -231,8 +243,13 @@ mod tests {
     fn every_tool_koda_has_is_named_and_defined() {
         let agent = CodingAgent::new(nomi_storage::ProjectStore::at(std::env::temp_dir()));
         let names: Vec<String> = agent.tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, TOOL_NAMES);
+        // Publishing is his too, but stays out of TOOL_NAMES: it asks first, and isn't a tool
+        // custom agents can be given.
+        let mut expected: Vec<&str> = TOOL_NAMES.to_vec();
+        expected.push(PUBLISH_TOOL_NAME);
+        assert_eq!(names, expected);
         assert!(TOOL_NAMES.iter().all(|n| tool_definition(n).is_some()));
+        assert!(agent.tool_needs_approval(PUBLISH_TOOL_NAME));
     }
 
     #[test]

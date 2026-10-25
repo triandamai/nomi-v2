@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use nomi_agent_core::project_ops::{publish_from_tool, publish_tool_definition, NoProjectOps, SharedProjectOps, PUBLISH_TOOL_NAME};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -35,11 +36,19 @@ pub fn create_project_tool_definition() -> ToolDefinition {
     }
 }
 
-pub struct PlanningAgent;
+pub struct PlanningAgent {
+    project_ops: SharedProjectOps,
+}
 
 impl PlanningAgent {
     pub fn new() -> Self {
-        Self
+        Self { project_ops: std::sync::Arc::new(NoProjectOps) }
+    }
+
+    /// Publishing (`publish_project`) through the server's Shipyard access.
+    pub fn with_project_ops(mut self, project_ops: SharedProjectOps) -> Self {
+        self.project_ops = project_ops;
+        self
     }
 }
 
@@ -86,7 +95,7 @@ impl SubAgent for PlanningAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![create_project_tool_definition()]
+        vec![create_project_tool_definition(), publish_tool_definition()]
     }
 
     async fn execute_tool(
@@ -100,6 +109,7 @@ impl SubAgent for PlanningAgent {
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
             "create_project" => create_project(conn, session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
+            PUBLISH_TOOL_NAME => publish_from_tool(self.project_ops.as_ref(), user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
     }

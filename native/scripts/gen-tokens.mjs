@@ -76,6 +76,7 @@ const AGENT_LOOKS = {
   files: { shape: 'soft-square', tone: 'slate', motion: 'wobble' },
   workspace: { shape: 'puffy7', tone: 'sky', motion: 'bounce' },
   health: { shape: 'burst16', tone: 'bloom', motion: 'pulse' },
+  inspector: { shape: 'clover3', tone: 'dusk', motion: 'orbit' },
 };
 
 // agentLook's matching order in shapes.ts: first rule that hits wins; 'contains' is a substring test
@@ -90,6 +91,7 @@ const AGENT_RULES = [
   { kind: 'exact', needles: ['files'], agent: 'files' },
   { kind: 'exact', needles: ['workspace'], agent: 'workspace' },
   { kind: 'exact', needles: ['health'], agent: 'health' },
+  { kind: 'exact', needles: ['inspector'], agent: 'inspector' },
 ];
 
 /** crewNames.ts CREW_NAMES -> { lowercased crew name: agent_type } (CREW_TYPE_BY_NAME). */

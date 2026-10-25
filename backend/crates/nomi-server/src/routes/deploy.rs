@@ -18,6 +18,7 @@ use nomi_auth::extractor::AuthClaims;
 use nomi_shipyard::{manifest, Shipyard, ShipyardError};
 
 use crate::app::AppState;
+use crate::project_ops::ShipyardAccess;
 use crate::shipyard::{self as nomi_shipyard_side, EnsureError, ProjectTarget};
 
 pub type ApiError = (StatusCode, String);
@@ -81,16 +82,15 @@ pub(crate) async fn require_admin(pool: &sqlx::PgPool, project_id: Uuid, user_id
     }
 }
 
-pub(crate) fn client(state: &AppState) -> Result<Shipyard<'_>, ApiError> {
+pub(crate) fn client(state: &impl ShipyardAccess) -> Result<Shipyard<'_>, ApiError> {
     state
-        .shipyard
-        .as_ref()
-        .map(|config| Shipyard::new(&state.http_client, config))
+        .shipyard()
+        .map(|config| Shipyard::new(state.http_client(), config))
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "publishing isn't set up on this Nomi".to_string()))
 }
 
-pub(crate) async fn target(state: &AppState, project_id: Uuid) -> Result<ProjectTarget, ApiError> {
-    nomi_shipyard_side::load_target(&state.pool, project_id)
+pub(crate) async fn target(state: &impl ShipyardAccess, project_id: Uuid) -> Result<ProjectTarget, ApiError> {
+    nomi_shipyard_side::load_target(state.pool(), project_id)
         .await
         .map_err(internal("failed to load project"))?
         .ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))
@@ -165,10 +165,10 @@ pub struct DeployOverview {
 }
 
 /// The project's files, as Shipyard gets them (without excluded paths).
-async fn project_files(state: &AppState, project_id: Uuid) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
+async fn project_files(state: &impl ShipyardAccess, project_id: Uuid) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
     let paths: Vec<String> = sqlx::query_scalar("SELECT path FROM project_files WHERE project_id = $1 ORDER BY path")
         .bind(project_id)
-        .fetch_all(&state.pool)
+        .fetch_all(state.pool())
         .await
         .map_err(internal("failed to list project files"))?;
     let mut files = Vec::with_capacity(paths.len());
@@ -177,7 +177,7 @@ async fn project_files(state: &AppState, project_id: Uuid) -> Result<Vec<(String
             continue;
         }
         let key = nomi_agent_coding::project_file_key(project_id, &path);
-        if let Some(bytes) = state.project_storage.get_bytes(&key).await.map_err(internal("failed to read project files"))? {
+        if let Some(bytes) = state.project_storage().get_bytes(&key).await.map_err(internal("failed to read project files"))? {
             files.push((path, bytes));
         }
     }
@@ -245,7 +245,7 @@ pub struct PublishRequest {
 /// Sends `source` with `manifest` and records the publish. The row is kept even when Shipyard
 /// refuses it, with Shipyard's words, so the history shows what happened.
 async fn send_publish(
-    state: &AppState,
+    state: &impl ShipyardAccess,
     target: &ProjectTarget,
     app: &str,
     environment: &str,
@@ -257,7 +257,7 @@ async fn send_publish(
     let id = Uuid::new_v4();
     let source_key = format!("publishes/{}/{id}.zip", target.id);
     state
-        .project_storage
+        .project_storage()
         .put_bytes(&source_key, source.clone(), "application/zip")
         .await
         .map_err(internal("failed to keep the published source"))?;
@@ -273,7 +273,7 @@ async fn send_publish(
     .bind(target.files_version)
     .bind(rollback_of)
     .bind(user_id)
-    .execute(&state.pool)
+    .execute(state.pool())
     .await
     .map_err(internal("failed to record the publish"))?;
 
@@ -284,7 +284,7 @@ async fn send_publish(
                 .bind(id)
                 .bind(&accepted.publish_id)
                 .bind(&accepted.url)
-                .execute(&state.pool)
+                .execute(state.pool())
                 .await
                 .map_err(internal("failed to record the publish"))?;
         }
@@ -292,13 +292,13 @@ async fn send_publish(
             sqlx::query("UPDATE project_publishes SET status = 'failed', error = $2, finished_at = now() WHERE id = $1")
                 .bind(id)
                 .bind(e.to_string())
-                .execute(&state.pool)
+                .execute(state.pool())
                 .await
                 .map_err(internal("failed to record the publish"))?;
             return Err(shipyard_error(e));
         }
     }
-    publish_row(&state.pool, target.id, id).await
+    publish_row(state.pool(), target.id, id).await
 }
 
 /// `POST /api/projects/:id/deploy/publish`: zips the project (adding a Dockerfile for its stack
@@ -311,23 +311,30 @@ pub async fn publish(
 ) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let environment = body.and_then(|Json(b)| b.environment).unwrap_or_else(|| DEFAULT_ENV.to_string());
-    valid_env(&environment)?;
-    let client = client(&state)?;
+    let row = start_publish(&state, project_id, claims.sub, &environment).await?;
+    Ok((StatusCode::ACCEPTED, Json(row)))
+}
+
+/// Publishes the project's current files to `environment` as `user_id` (whose right to was
+/// checked by the caller): the Deploy sheet's Publish, and agents' `publish_project`.
+pub(crate) async fn start_publish(state: &impl ShipyardAccess, project_id: Uuid, user_id: Uuid, environment: &str) -> Result<PublishRow, ApiError> {
+    valid_env(environment)?;
+    let client = client(state)?;
     let running: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM project_publishes WHERE project_id = $1 AND environment = $2 AND status = 'running' \
          AND created_at > now() - interval '30 minutes')",
     )
     .bind(project_id)
-    .bind(&environment)
-    .fetch_one(&state.pool)
+    .bind(environment)
+    .fetch_one(state.pool())
     .await
     .map_err(internal("failed to check publishes"))?;
     if running {
         return Err((StatusCode::CONFLICT, "a publish is already running".to_string()));
     }
 
-    let target = target(&state, project_id).await?;
-    let mut files = project_files(&state, project_id).await?;
+    let target = target(state, project_id).await?;
+    let mut files = project_files(state, project_id).await?;
     if !files.iter().any(|(p, _)| p == "package.json" || p == "index.html") {
         return Err((StatusCode::UNPROCESSABLE_ENTITY, "there's nothing to publish yet".to_string()));
     }
@@ -336,13 +343,12 @@ pub async fn publish(
         let dockerfile = manifest::dockerfile(&target.stack, &files);
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
-    let secrets = crate::routes::project_secrets::names(&state.pool, project_id).await?;
+    let secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
     let manifest = manifest::build(database, &secrets);
     let source = nomi_shipyard::bundle::zip(&files).map_err(internal("failed to pack the project"))?;
 
-    let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
-    let row = send_publish(&state, &target, &app, &environment, manifest, source, None, claims.sub).await?;
-    Ok((StatusCode::ACCEPTED, Json(row)))
+    let app = nomi_shipyard_side::ensure_app(state.pool(), &client, &target).await.map_err(ensure_error)?;
+    send_publish(state, &target, &app, environment, manifest, source, None, user_id).await
 }
 
 /// `POST /api/projects/:id/deploy/publishes/:publish_id/rollback`: publishes that publish's

@@ -75,6 +75,22 @@
 	const SHEETS: Sheet[] = ['deploy', 'domain', 'monitor', 'database', 'members', 'issues', 'settings'];
 	let sheet = $state<Sheet | null>(null);
 	let sheetOpen = $state(false);
+	// Sheets open below the toolbar, which stays in view: where its bottom edge is.
+	let topbar: HTMLElement | undefined = $state();
+	let sheetTop = $state(0);
+	$effect(() => {
+		if (!topbar || !sheetOpen) return;
+		const bar = topbar;
+		const measure = () => (sheetTop = Math.max(0, Math.round(bar.getBoundingClientRect().bottom)));
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(bar);
+		window.addEventListener('resize', measure);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measure);
+		};
+	});
 	onMount(() => {
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
@@ -512,7 +528,7 @@
 <div class="project-app">
 {#if data.project}
 	{@const project = data.project}
-	<header class="topbar">
+	<header class="topbar" bind:this={topbar}>
 		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face /></a>
 		<div class="topbar__titles">
 			<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
@@ -656,7 +672,7 @@
 
 {#if data.project && sheet}
 	{@const project = data.project}
-	<BottomSheet bind:open={sheetOpen} full label={SHEET_TITLE[sheet]()}>
+	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
 		<SheetFrame title={SHEET_TITLE[sheet]()} subtitle={project.name} onclose={() => (sheetOpen = false)}>
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />

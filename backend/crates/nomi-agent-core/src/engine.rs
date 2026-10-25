@@ -693,7 +693,7 @@ pub async fn run_agent_turn(
         _ => nomi_llm::ReasoningEffort::Medium,
     };
     // Thinking is shown in chat, so keep it to the point rather than a running monologue.
-    let system_prompt = format!("{system_prompt}\n\n{REASONING_STYLE}");
+    let system_prompt = format!("{system_prompt}\n\n{REASONING_STYLE}\n\n{}", crate::prompts::FOLLOW_UP_SUGGESTIONS);
     let agent_type = agent.agent_type();
 
     // Whether this run already saved a plan draft, and already asked once for a missing answer.

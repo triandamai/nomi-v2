@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { retryRun } from '$lib/server/retryRun';
 import { loadModelOptions, loadSessionModel, sessionModelActions } from '$lib/server/modelOptions';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
@@ -113,6 +114,9 @@ export const actions: Actions = {
 		}
 		return { success: true };
 	},
+
+	/** Try again on a failed run's error bubble. */
+	retryRun: async ({ request, params, cookies, fetch }) => retryRun(fetch, cookies, params.sessionId, await request.formData()),
 
 	resolveApproval: async ({ request, params, cookies, fetch }) => {
 		const data = await request.formData();

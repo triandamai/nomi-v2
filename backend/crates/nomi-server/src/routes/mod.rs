@@ -1,3 +1,4 @@
+pub mod agent_permissions;
 pub mod agents;
 pub mod admin_access;
 pub mod admin_dashboard;
@@ -26,6 +27,7 @@ pub mod voice;
 pub mod personality;
 pub mod plans;
 pub mod message_delete;
+pub mod message_retry;
 pub mod message_steps;
 pub mod project_database;
 pub mod project_import;

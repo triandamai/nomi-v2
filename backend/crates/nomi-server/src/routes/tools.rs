@@ -143,7 +143,7 @@ pub async fn list_tools(State(state): State<AppState>, AuthClaims(claims): AuthC
         }
     };
 
-    let registry = crate::build_agent_registry(state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
     let mut listed: HashSet<String> = HashSet::new();
     let mut groups = Vec::new();
 
@@ -188,7 +188,7 @@ enum Switchable {
 /// Whether the page offers a switch for `name`: crew tools and the tools custom agents can be
 /// granted do; a built-in agent's own tools are part of that agent and don't.
 fn switchable(state: &AppState, name: &str) -> Switchable {
-    let registry = crate::build_agent_registry(state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
     if nomi_agent_core::crew_tool_definitions(&registry).iter().any(|d| d.name == name) || state.tool_catalog.known_tool_names().contains(&name) {
         Switchable::Yes
     } else if registry.agents().iter().any(|a| a.tools().iter().any(|d| d.name == name)) {

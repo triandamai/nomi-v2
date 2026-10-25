@@ -222,7 +222,7 @@ pub async fn run(
     notification: Arc<dyn NotificationDelivery>,
 ) {
     tracing::info!("scheduler worker: polling for due reminders every {:?}", POLL_INTERVAL);
-    let registry = crate::build_agent_registry(project_storage);
+    let registry = crate::build_agent_registry(&pool, project_storage);
 
     loop {
         tokio::time::sleep(POLL_INTERVAL).await;

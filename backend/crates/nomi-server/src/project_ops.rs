@@ -1,0 +1,169 @@
+//! The server's side of `nomi_agent_core::project_ops`: agents publish a project and look into
+//! its running app through the same code the Deploy, Monitor and Database sheets use, as the
+//! person they work for (with the same checks), from the web server or a worker.
+
+use async_trait::async_trait;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::routes::deploy::{client, project_role, require_admin, shipyard_error, target, ApiError};
+use crate::routes::project_database::{self as database, Access};
+
+/// How many recent publishes the status names.
+const STATUS_PUBLISHES: i64 = 3;
+/// The most of Shipyard's environment description passed on.
+const MAX_ENV_DESCRIPTION_CHARS: usize = 4000;
+
+fn message((_, message): ApiError) -> String {
+    message
+}
+
+fn database_source(source: DataSource) -> database::Source {
+    match source {
+        DataSource::Development => database::Source::Development,
+        DataSource::Production => database::Source::Production,
+    }
+}
+
+use nomi_agent_core::project_ops::{DataSource, ProjectOps, QueryRows, SharedProjectOps, TableInfo};
+use nomi_shipyard::ShipyardConfig;
+use nomi_storage::ProjectStore;
+
+/// What reaching a project on Shipyard takes, without the rest of the web server's state.
+pub(crate) trait ShipyardAccess {
+    fn pool(&self) -> &PgPool;
+    fn project_storage(&self) -> &ProjectStore;
+    fn http_client(&self) -> &reqwest::Client;
+    fn shipyard(&self) -> Option<&ShipyardConfig>;
+}
+
+impl ShipyardAccess for crate::app::AppState {
+    fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+    fn project_storage(&self) -> &ProjectStore {
+        &self.project_storage
+    }
+    fn http_client(&self) -> &reqwest::Client {
+        &self.http_client
+    }
+    fn shipyard(&self) -> Option<&ShipyardConfig> {
+        self.shipyard.as_ref()
+    }
+}
+
+pub struct ServerProjectOps {
+    pool: PgPool,
+    project_storage: ProjectStore,
+    http_client: reqwest::Client,
+    shipyard: Option<ShipyardConfig>,
+}
+
+impl ShipyardAccess for ServerProjectOps {
+    fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+    fn project_storage(&self) -> &ProjectStore {
+        &self.project_storage
+    }
+    fn http_client(&self) -> &reqwest::Client {
+        &self.http_client
+    }
+    fn shipyard(&self) -> Option<&ShipyardConfig> {
+        self.shipyard.as_ref()
+    }
+}
+
+impl ServerProjectOps {
+    /// Shipyard from the environment (SHIPYARD_*), like the web server's own.
+    pub fn shared(pool: PgPool, project_storage: ProjectStore) -> SharedProjectOps {
+        std::sync::Arc::new(Self { pool, project_storage, http_client: crate::http_client(), shipyard: ShipyardConfig::from_env() })
+    }
+}
+
+#[async_trait]
+impl ProjectOps for ServerProjectOps {
+    async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
+        require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
+        let row = crate::routes::deploy::start_publish(self, project_id, user_id, environment).await.map_err(message)?;
+        Ok(match row.url {
+            Some(url) => format!(
+                "Publishing to {} started (files version {}). It takes a few minutes; it will be live at {url}. \
+                 The Deployment sheet shows the progress.",
+                row.environment, row.files_version
+            ),
+            None => format!("Publishing to {} started. It takes a few minutes; the Deployment sheet shows the progress.", row.environment),
+        })
+    }
+
+    async fn status(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
+        project_role(&self.pool, project_id, user_id).await.map_err(message)?;
+        let publishes: Vec<(String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+            "SELECT environment, status, url, error, created_at FROM project_publishes WHERE project_id = $1 AND environment = $2 \
+             ORDER BY created_at DESC LIMIT $3",
+        )
+        .bind(project_id)
+        .bind(environment)
+        .bind(STATUS_PUBLISHES)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("couldn't read the publishes: {e}"))?;
+        let mut lines = Vec::new();
+        if publishes.is_empty() {
+            lines.push(format!("Never published to {environment}."));
+        }
+        for (env, status, url, error, created_at) in &publishes {
+            let mut line = format!("Publish to {env} at {}: {status}", created_at.to_rfc3339());
+            if let Some(url) = url {
+                line.push_str(&format!(", {url}"));
+            }
+            if let Some(error) = error {
+                line.push_str(&format!(" ({})", nomi_llm::redact::redacted(error)));
+            }
+            lines.push(line);
+        }
+        let target = target(self, project_id).await.map_err(message)?;
+        if let Some(app) = target.shipyard_app.as_deref() {
+            match client(self).map_err(message)?.get_env(&target.org_key(), app, environment).await {
+                Ok(live) => {
+                    let described = nomi_llm::redact::redacted(live.to_string());
+                    let clipped: String = described.chars().take(MAX_ENV_DESCRIPTION_CHARS).collect();
+                    lines.push(format!("Running now (from Shipyard): {clipped}"));
+                }
+                Err(e) => lines.push(format!("Nothing running in {environment}: {}", message(shipyard_error(e)))),
+            }
+        }
+        Ok(lines.join("\n"))
+    }
+
+    async fn logs(&self, user_id: Uuid, project_id: Uuid, environment: &str, tail: u32) -> Result<Vec<String>, String> {
+        project_role(&self.pool, project_id, user_id).await.map_err(message)?;
+        let target = target(self, project_id).await.map_err(message)?;
+        let app = target.shipyard_app.as_deref().ok_or("this project hasn't been published yet")?;
+        let logs = client(self)
+            .map_err(message)?
+            .service_logs(&target.org_key(), app, environment, "web", tail, None)
+            .await
+            .map_err(|e| message(shipyard_error(e)))?;
+        Ok(logs
+            .get("lines")
+            .and_then(serde_json::Value::as_array)
+            .map(|lines| lines.iter().filter_map(|l| l.as_str().map(str::to_string)).collect())
+            .unwrap_or_default())
+    }
+
+    async fn tables(&self, user_id: Uuid, project_id: Uuid, source: DataSource) -> Result<Vec<TableInfo>, String> {
+        require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
+        let url = database::owner_url(self, project_id, database_source(source)).await.map_err(message)?;
+        let tables = database::list_tables(&url).await.map_err(message)?;
+        Ok(tables.into_iter().map(|t| TableInfo { schema: t.schema, name: t.name, rows_estimate: t.rows_estimate }).collect())
+    }
+
+    async fn query(&self, user_id: Uuid, project_id: Uuid, source: DataSource, sql: &str) -> Result<QueryRows, String> {
+        require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
+        let sql = sql.trim().trim_end_matches(';').trim();
+        let url = database::owner_url(self, project_id, database_source(source)).await.map_err(message)?;
+        let result = database::execute_sql(&url, sql, Access::ReadOnly).await.map_err(message)?;
+        Ok(QueryRows { columns: result.columns, rows: result.rows, truncated: result.truncated })
+    }
+}

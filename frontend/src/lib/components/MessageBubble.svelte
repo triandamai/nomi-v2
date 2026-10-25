@@ -52,6 +52,12 @@
 		ondelete?: (ids: string[]) => void;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
+	// Buttons or an error bubble the crew posted on their own: no copy, share or rating for them,
+	// and next-step buttons go once the person has moved on.
+	const blockKinds = $derived((message.content_blocks ?? []).map((block) => block.kind));
+	const onlyBlocks = (kinds: string[]) => blockKinds.length > 0 && blockKinds.every((kind) => kinds.includes(kind));
+	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed']));
+	const spentSuggestions = $derived(answered && onlyBlocks(['suggestions']));
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
 	const fresh = untrack(() => Date.now() - Date.parse(message.created_at) < 30_000);
 	const sources = $derived(message.sources ?? []);
@@ -238,6 +244,7 @@
 	}
 </script>
 
+{#if !spentSuggestions}
 <div
 	class="message"
 	class:message--user={message.sender === 'user'}
@@ -285,7 +292,7 @@
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} text={message.content} onremove={() => ondelete?.([message.id])} />
 					{/each}
 				</div>
 			{:else if attached && attached.files.length > 0}
@@ -296,6 +303,7 @@
 			{/if}
 		</div>
 
+		{#if !statusOnly}
 		<div class="message__actions">
 			<button
 				type="button"
@@ -352,6 +360,7 @@
 				<span class="message__time">{formattedTime}</span>
 			{/if}
 		</div>
+		{/if}
 		{#if message.sender === 'assistant' && message.memory_count > 0}
 			<button type="button" class="message-memories" onclick={showMemories} aria-label={m.used_chip_label({ count: message.memory_count })}>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="8" r="3" /><circle cx="10" cy="18" r="3" /><path d="M8.5 7.5 15 8M7.5 8.5l1.7 7M16.4 10.4l-4.6 5.4" /></svg>
@@ -361,6 +370,7 @@
 		{/if}
 	</div>
 </div>
+{/if}
 
 {#if ondelete}
 	<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />

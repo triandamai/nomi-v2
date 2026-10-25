@@ -7,6 +7,7 @@
 		children,
 		class: extraClass = '',
 		full = false,
+		top = null,
 		label,
 	}: {
 		open?: boolean;
@@ -15,8 +16,13 @@
 		/** Covers the whole screen (a little below the top on bigger screens): for whole tools
 		 * opened over a page that must keep running underneath. */
 		full?: boolean;
+		/** Docks the sheet below whatever sits above `top` (px from the top of the screen, e.g. a
+		 * page's toolbar): it fills the rest of the screen with square corners, and the toolbar
+		 * stays visible and usable, so it isn't modal. */
+		top?: number | null;
 		label?: string;
 	} = $props();
+	const docked = $derived(top !== null);
 
 	// A drag past this fraction of the sheet's own height counts as "dismiss"; anything
 	// less snaps back. 0.25 matches MD3's own bottom-sheet dismissal threshold.
@@ -67,7 +73,8 @@
 	$effect(() => {
 		if (!dialogEl) return;
 		if (open && !dialogEl.open) {
-			dialogEl.showModal();
+			if (docked) dialogEl.show();
+			else dialogEl.showModal();
 			// showModal() focuses the first focusable thing inside, the drag handle, which then
 			// wears a focus ring before anyone has touched the keyboard. Start on the sheet itself:
 			// Tab still reaches the handle and everything in the sheet.
@@ -100,6 +107,14 @@
 	function handleCancel(event: Event) {
 		event.preventDefault();
 		open = false;
+	}
+
+	// A docked sheet isn't modal, so the browser doesn't close it on Escape by itself.
+	function handleKeydown(event: KeyboardEvent) {
+		if (docked && event.key === 'Escape') {
+			event.preventDefault();
+			open = false;
+		}
 	}
 
 	function handleDialogClick(event: MouseEvent) {
@@ -158,7 +173,11 @@
 	class="m3-bottom-sheet {extraClass}"
 	class:m3-bottom-sheet--closing={closing}
 	class:m3-bottom-sheet--full={full}
+	class:m3-bottom-sheet--docked={docked}
+	style={docked ? `--sheet-top: ${top}px` : undefined}
 	aria-label={label}
+	aria-modal={docked ? 'false' : undefined}
+	onkeydown={handleKeydown}
 	onclose={handleClose}
 	oncancel={handleCancel}
 	onclick={handleDialogClick}
@@ -171,6 +190,7 @@
 		class:m3-bottom-sheet__panel--expanded={expanded}
 	>
 		<div
+			hidden={docked}
 			class="m3-bottom-sheet__handle-area"
 			role="button"
 			tabindex="0"
@@ -319,6 +339,27 @@
 			max-height: 100dvh;
 			padding-top: env(safe-area-inset-top);
 		}
+	}
+
+	/* Docked below a toolbar: the rest of the screen, square at the top where it meets the bar. */
+	.m3-bottom-sheet--docked {
+		z-index: 40;
+		top: var(--sheet-top);
+		inset-block-start: var(--sheet-top);
+		height: auto;
+		max-width: 100%;
+		margin: 0;
+	}
+	.m3-bottom-sheet--docked .m3-bottom-sheet__panel,
+	.m3-bottom-sheet--docked.m3-bottom-sheet--full .m3-bottom-sheet__panel {
+		height: calc(100dvh - var(--sheet-top));
+		max-height: calc(100dvh - var(--sheet-top));
+		padding-top: 0;
+		border-radius: 0;
+		box-shadow: var(--md-sys-elevation-shadow-level1);
+	}
+	.m3-bottom-sheet--docked .m3-bottom-sheet__handle-area[hidden] {
+		display: none;
 	}
 
 	.m3-bottom-sheet__body {

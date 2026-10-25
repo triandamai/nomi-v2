@@ -46,8 +46,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
         return;
     }
 
-    let registry = crate::build_agent_registry(project_storage.clone());
-    let turn_registry = crate::build_agent_registry(project_storage.clone());
+    let registry = crate::build_agent_registry(&pool, project_storage.clone());
+    let turn_registry = crate::build_agent_registry(&pool, project_storage.clone());
     let catalog = crate::build_tool_catalog(project_storage);
     let turns = std::sync::Arc::new(Turns {
         pool: pool.clone(),

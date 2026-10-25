@@ -10,12 +10,15 @@
 		title = '',
 		children,
 		class: extraClass = '',
+		wide = false,
 	}: {
 		open?: boolean;
 		/** Shown in the sheet's header, beside the close button. */
 		title?: string;
 		children: Snippet;
 		class?: string;
+		/** A reading width (a document), rather than a panel of controls. */
+		wide?: boolean;
 	} = $props();
 
 	// Matches --md-sys-motion-duration-short4, the duration the panel/backdrop transitions
@@ -69,6 +72,7 @@
 	bind:this={dialogEl}
 	class="m3-side-sheet {extraClass}"
 	class:m3-side-sheet--closing={closing}
+	class:m3-side-sheet--wide={wide}
 	onclose={handleClose}
 	oncancel={handleCancel}
 	onclick={handleDialogClick}
@@ -101,6 +105,10 @@
 		   with directly, so it isn't a meaningful focus target to indicate; the actual form
 		   fields/buttons inside keep their own normal focus-visible styling untouched. */
 		outline: none;
+	}
+
+	.m3-side-sheet--wide {
+		max-width: min(760px, 100%);
 	}
 
 	.m3-side-sheet::backdrop {
