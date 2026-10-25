@@ -1,17 +1,17 @@
 {
-  "name": "nomi-baas-cli",
+  "name": "nomi-relay-cli",
   "version": "0.1.0",
-  "description": "Command line for Nomi BaaS: migrations, linting and functions.",
+  "description": "Command line for Nomi Relay: migrations, linting and functions.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/triandamai/nomi-v2.git",
-    "directory": "baas/cli"
+    "directory": "relay/cli"
   },
   "keywords": ["nomi", "baas", "migrations", "cli"],
   "bin": {
-    "nomi-baas": "dist/cli.js"
+    "nomi-relay": "dist/cli.js"
   },
   "files": ["dist", "README.md"],
   "scripts": {

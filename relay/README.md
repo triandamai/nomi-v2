@@ -1,7 +1,9 @@
-# Nomi BaaS: a ready backend for every app Nomi builds
+# Nomi Relay: a ready backend for every app Nomi builds
 
-**Status:** the client (`sdk/js`, published as `nomi-baas`) and the CLI (`cli`, published as
-`nomi-baas-cli`) are started; the service itself isn't built yet. This folder holds the BaaS
+Relay is Nomi's backend-as-a-service (BaaS).
+
+**Status:** the client (`sdk/js`, published as `nomi-relay`) and the CLI (`cli`, published as
+`nomi-relay-cli`) are started; the service itself isn't built yet. This folder holds the Relay
 service, its SDK, its CLI and its docs. It stays separate from `backend/` (Nomi itself) and
 `frontend/`.
 
@@ -50,11 +52,11 @@ Today each app carries its own backend, written fresh by Koda every time:
             Nomi backend (backend/)                         App (preview or published)
     ┌───────────────────────────────┐                ┌──────────────────────────────┐
     │ Koda's tools, project sheets  │                │ UI + its own server code     │
-    │ publish, secrets              │                │ nomi-baas client             │
+    │ publish, secrets              │                │ nomi-relay client            │
     └──────────────┬────────────────┘                └──────────────┬───────────────┘
                    │ control API (service-to-service)               │ public API (keys)
             ┌──────▼────────────────────────────────────────────────▼──────┐
-            │                        BaaS (baas/)                          │
+            │                        Relay (relay/)                        │
             │  control plane │ gateway: rest · auth · storage · realtime   │
             │                │          · functions (proxy)                │
             └──────┬───────────────────┬──────────────────┬──────────┬─────┘
@@ -65,7 +67,7 @@ Today each app carries its own backend, written fresh by Koda every time:
 ```
 
 - **One service, many tenants.** It's a Rust/axum service, the same stack as `backend/`, with
-  its own crates under `baas/crates/`. Every project shares it, and the hostname picks the
+  its own crates under `relay/crates/`. Every project shares it, and the hostname picks the
   project. Shipyard runs it as an ordinary app.
 - **Paid projects get a database per environment.** This uses the databases Shipyard already
   makes: the app's `dev` database and its production environment database. A separate database
@@ -77,7 +79,7 @@ Today each app carries its own backend, written fresh by Koda every time:
   schema. Migrations are the same SQL either way: `create table task` lands in `public` on a
   paid project and in `app_<project>` on a free one. Grants keep each project's roles inside
   their own schema.
-- **The `nomi` schema** holds the BaaS's own tables: `nomi.users`, `nomi.identities`,
+- **The `nomi` schema** holds Relay's own tables: `nomi.users`, `nomi.identities`,
   `nomi.sessions`, `nomi.migrations` and `nomi.buckets`. Every row has a `project_id`. In a
   paid project's database it's always the same value; in a shared database, row-level security
   on these tables (`project_id = nomi.project_id()`) keeps each project to its own users. User
@@ -143,10 +145,10 @@ alter table task enable row level security;
 create policy "own tasks" on task using (owner = nomi.uid()) with check (owner = nomi.uid());
 ```
 
-The app uses the client from the SDK, `baas/sdk/js`, published on npm as `nomi-baas`:
+The app uses the client from the SDK, `relay/sdk/js`, published on npm as `nomi-relay`:
 
 ```ts
-import { createClient } from 'nomi-baas';
+import { createClient } from 'nomi-relay';
 import type { Database } from '$lib/nomi.types'; // written by Nomi after each migration
 
 export const nomi = createClient<Database>(import.meta.env.PUBLIC_NOMI_URL, import.meta.env.PUBLIC_NOMI_KEY);
@@ -183,7 +185,7 @@ sign-in methods; each is a row in `nomi.identities` (`provider`, `provider_user_
 }
 ```
 
-- **Email code.** A six-digit code, sent by the BaaS. It works with no setup, so it's the
+- **Email code.** A six-digit code, sent by Relay. It works with no setup, so it's the
   default for every new project.
   - **Sender.** By default, codes go out through Nomi's shared sender, from a Nomi address with
     the app's name. A project can set its own SMTP server in `auth.smtp` instead, to send from
@@ -193,9 +195,9 @@ sign-in methods; each is a row in `nomi.identities` (`provider`, `provider_user_
   - The shared sender has stricter per-project rate limits than a custom SMTP server, to keep
     its reputation clean for everyone.
 - **Google, GitHub, Apple.** Built-in providers, each with the right scopes and profile mapping.
-  Apple's client secret is a short-lived JWT; the BaaS signs it from the project's `.p8` key, so
+  Apple's client secret is a short-lived JWT; Relay signs it from the project's `.p8` key, so
   nobody has to rotate it by hand.
-- **Any OpenID Connect provider.** Configured by issuer URL; the BaaS reads its discovery
+- **Any OpenID Connect provider.** Configured by issuer URL; Relay reads its discovery
   document. This covers Microsoft, GitLab, Auth0, Keycloak and company logins without new code.
 
 **Provider credentials are project secrets.** The client ID can sit in `backend.json`; the
@@ -207,10 +209,10 @@ is asked for it instead of finding out at sign-in.
 **The OAuth flow.**
 1. `signInWithOAuth('github')` sends the browser to
    `https://<app>.api.<apps-domain>/auth/authorize/github`, with PKCE and a `state` value.
-2. Every provider's callback URL is the BaaS's own,
+2. Every provider's callback URL is Relay's own,
    `https://<app>.api.<apps-domain>/auth/callback/<provider>`. The user registers that one URL
    with GitHub, Google or Apple, once, and it never changes, even when the preview's origin does.
-3. The BaaS swaps the code for the provider's tokens, finds or creates the user, and sends the
+3. Relay swaps the code for the provider's tokens, finds or creates the user, and sends the
    browser back to the app's `redirectTo`, which must match `redirect_urls` (Nomi's preview
    origins are always allowed against `dev`). The app gets a one-time code and the SDK trades it
    for a session.
@@ -261,7 +263,7 @@ a standard `Request` and returns a `Response`:
 
 ```ts
 // nomi/functions/place-order.ts
-import { defineFunction } from 'nomi-baas/functions';
+import { defineFunction } from 'nomi-relay/functions';
 
 export default defineFunction(async (req, ctx) => {
   if (!ctx.user) return new Response('sign in first', { status: 401 });
@@ -284,7 +286,7 @@ export default defineFunction(async (req, ctx) => {
 
 **How it runs.** Shipyard runs functions the way it runs any app service, on the Deno runtime:
 
-1. Nomi bundles `nomi/functions/` into one Deno entry point: a small router the BaaS provides,
+1. Nomi bundles `nomi/functions/` into one Deno entry point: a small router Relay provides,
    plus every handler. One service per project and environment, not one per function, so a
    project with ten functions costs the same as one with one.
 2. Shipyard builds and runs that bundle as a service in the project's environment, with the
@@ -323,25 +325,25 @@ Two public packages, published from this repo under the owner's npm account:
 
 | Package | What it is |
 |---|---|
-| `nomi-baas` | The client: `createClient`, auth, data, storage, realtime, `functions.invoke`, plus `nomi-baas/functions` for writing handlers. ESM, typed, no runtime dependencies, works in browsers, Node, Deno and Bun |
-| `nomi-baas-cli` | The command line, installed as the `nomi-baas` command (`npx nomi-baas-cli …`) |
+| `nomi-relay` | The client: `createClient`, auth, data, storage, realtime, `functions.invoke`, plus `nomi-relay/functions` for writing handlers. ESM, typed, no runtime dependencies, works in browsers, Node, Deno and Bun |
+| `nomi-relay-cli` | The command line, installed as the `nomi-relay` command (`npx nomi-relay-cli …`) |
 
 The names are unscoped because the `@nomi` org on npm belongs to someone else. (A free npm
 account can publish public scoped packages under its own user scope too, e.g.
-`@<username>/baas`, if we'd rather group them later.)
+`@<username>/relay`, if we'd rather group them later.)
 
-**What the CLI does**, so the BaaS is usable outside Nomi as well as inside it:
+**What the CLI does**, so Relay is usable outside Nomi as well as inside it:
 
 ```
-nomi-baas login                       # opens Nomi in the browser, stores a personal access token
-nomi-baas link <project>              # ties this folder to a Nomi project
-nomi-baas migrate new <name>          # writes nomi/migrations/000N_<name>.sql
-nomi-baas migrate apply [--env dev]   # lints and applies pending migrations
-nomi-baas migrate status              # what each environment has applied
-nomi-baas types > src/lib/nomi.types.ts
-nomi-baas functions serve             # runs nomi/functions locally on Deno, against dev
-nomi-baas functions deploy [--env dev]
-nomi-baas secrets set NAME            # reads the value from stdin; never echoed
+nomi-relay login                       # opens Nomi in the browser, stores a personal access token
+nomi-relay link <project>              # ties this folder to a Nomi project
+nomi-relay migrate new <name>          # writes nomi/migrations/000N_<name>.sql
+nomi-relay migrate apply [--env dev]   # lints and applies pending migrations
+nomi-relay migrate status              # what each environment has applied
+nomi-relay types > src/lib/nomi.types.ts
+nomi-relay functions serve             # runs nomi/functions locally on Deno, against dev
+nomi-relay functions deploy [--env dev]
+nomi-relay secrets set NAME            # reads the value from stdin; never echoed
 ```
 
 The CLI never talks to the control plane directly. It calls the Nomi backend with the user's
@@ -349,16 +351,41 @@ personal access token, and the backend checks the user can act on that project b
 the call on. The control plane stays service-to-service only.
 
 **Versions and releases.**
-- Both packages share one semver version. `.github/workflows/baas.yml` tests every pull
-  request that touches `baas/`. Every merge to main that touches it publishes both packages with
+- Both packages share one semver version. `.github/workflows/relay.yml` tests every pull
+  request that touches `relay/`. Every merge to main that touches it publishes both packages with
   npm provenance: the next patch after what npm has, or the version in the package.json files
   when a PR raised it (that's how a minor or major goes out). The workflow then commits the
-  version back to main and tags it `baas-v<version>`. The npm token lives in the repo's secrets
-  (`NOMI_NPM_TOKEN`), not on anyone's machine.
+  version back to main and tags it `relay-v<version>`.
+- CI publishes through npm trusted publishing: npm trusts this repo's `relay.yml` workflow
+  directly, so there is no long-lived token to leak or rotate. npm only allows that on a package
+  that already exists, so the very first version goes out by hand (see *Publishing* below).
+  The `NOMI_NPM_TOKEN` secret is a fallback; npm refuses tokens that bypass 2FA for publishing.
 - The client sends its version in a header; the gateway keeps old minor versions working, and a
   breaking change is a new major version of the package and a new `/v2` API path.
 - Apps Nomi builds pin the package's minor version, and Nomi bumps it when it updates the
   template.
+
+## Publishing
+
+**The first time** (once per package name, from a maintainer's machine, with 2FA):
+
+```sh
+npm login
+cd relay && npm ci && npm run build
+npm publish -w sdk/js --access public
+npm publish -w cli --access public
+```
+
+Then, on npmjs.com, open each package's settings (`nomi-relay` and `nomi-relay-cli`) and add a
+**trusted publisher**: GitHub Actions, repository `triandamai/nomi-v2`, workflow `relay.yml`. After
+that, delete the `NOMI_NPM_TOKEN` secret if it exists.
+
+**Every time after that,** merge a change under `relay/` to main. The workflow publishes the next
+patch (0.1.0 → 0.1.1) and commits the version back. For a minor or major, set the new version in
+both `relay/sdk/js/package.json` and `relay/cli/package.json` in the PR.
+
+**If a release fails** after publishing (the version commit couldn't be pushed), set both
+package.json files to the published version by hand; the next run continues from what npm has.
 
 ## How it fits Nomi
 
@@ -370,7 +397,7 @@ holds the values.
 - `NOMI_SERVICE_KEY` is for the server and functions only.
 
 **Koda's tools and brief.**
-- A new guide, `guides/baas.md`, replaces `database.md` for new projects. It covers migrations,
+- A new guide, `guides/relay.md`, replaces `database.md` for new projects. It covers migrations,
   auth setup, and when to reach for a function instead of SQL.
 - A new `apply_migrations` tool runs the migrations against `dev` and reports SQL errors back
   to Koda, the same way `npm run check` output does now. Writing a file under
@@ -393,7 +420,7 @@ holds the values.
   - `drop table` or `drop column` without `-- nomi: destructive`;
   - statements that reach outside the project's own schemas.
 
-**Preview.** The app in the WebContainer calls the BaaS over HTTPS, so the preview runs on a
+**Preview.** The app in the WebContainer calls Relay over HTTPS, so the preview runs on a
 real Postgres. That's the same engine as production, and the PGlite switch goes away.
 - The dev key only works against `dev`.
 - CORS, and OAuth redirects, allow Nomi's preview origins against `dev`.
@@ -446,19 +473,19 @@ REST API and row-level security, and trusted server code through hosted function
 ## Existing projects
 
 Projects built on Drizzle keep working as they are: `detect_database` and the current manifest
-stay. The BaaS is the default for new projects. An existing project can switch over when Koda
+stay. Relay is the default for new projects. An existing project can switch over when Koda
 moves its schema into `nomi/migrations/` and its queries onto the client. The data stays where
 it is, because it's the same Shipyard database.
 
 ## Phases
 
-1. **Control plane and migrations.** The service skeleton in `baas/`, a backend per project
+1. **Control plane and migrations.** The service skeleton in `relay/`, a backend per project
    (own database for paid, a schema in the shared database for free), the `nomi` schema, `apply_migrations` against `dev` and at publish, the linter, generated
-   types, and Koda's `baas.md` guide.
+   types, and Koda's `relay.md` guide.
 2. **Data API, auth and SDK.** The gateway in front of PostgREST, with row-level security,
    email-code sign-in (shared sender and custom SMTP),
    Google, GitHub, Apple and generic OIDC, sessions with rotating refresh tokens, and the preview
-   on the real dev database. First release of `nomi-baas` and `nomi-baas-cli` (login, link,
+   on the real dev database. First release of `nomi-relay` and `nomi-relay-cli` (login, link,
    migrate, types) on npm.
 3. **Storage and realtime** (`LISTEN/NOTIFY` triggers and the gateway's WebSocket fan-out).
 4. **Hosted functions.** The Deno router and bundler, the per-project Shipyard service, the

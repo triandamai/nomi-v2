@@ -1,5 +1,5 @@
 {
-  "name": "nomi-baas-workspace",
+  "name": "nomi-relay-workspace",
   "private": true,
   "type": "module",
   "workspaces": ["sdk/js", "cli"],

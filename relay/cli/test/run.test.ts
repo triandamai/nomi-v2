@@ -10,13 +10,13 @@ let err: string[];
 const cli = (...argv: string[]) => run(argv, { cwd, out: (line) => out.push(line), err: (line) => err.push(line) });
 
 beforeEach(async () => {
-  cwd = await mkdtemp(join(tmpdir(), 'nomi-baas-cli-'));
+  cwd = await mkdtemp(join(tmpdir(), 'nomi-relay-cli-'));
   out = [];
   err = [];
 });
 afterEach(() => rm(cwd, { recursive: true, force: true }));
 
-describe('nomi-baas', () => {
+describe('nomi-relay', () => {
   it('prints its version', async () => {
     expect(await cli('--version')).toBe(0);
     expect(out[0]).toMatch(/^\d+\.\d+\.\d+/);
@@ -62,11 +62,11 @@ describe('nomi-baas', () => {
 
   it('functions new writes a starter once', async () => {
     expect(await cli('functions', 'new', 'Place Order')).toBe(0);
-    expect(await readFile(join(cwd, 'nomi/functions/place-order.ts'), 'utf8')).toContain("from 'nomi-baas/functions'");
+    expect(await readFile(join(cwd, 'nomi/functions/place-order.ts'), 'utf8')).toContain("from 'nomi-relay/functions'");
     expect(await cli('functions', 'new', 'place-order')).toBe(1);
   });
 
-  it('says plainly which commands need the hosted BaaS', async () => {
+  it('says plainly which commands need the hosted Relay', async () => {
     expect(await cli('migrate', 'apply')).toBe(2);
     expect(err[0]).toMatch(/isn't available in this release/);
   });

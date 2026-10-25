@@ -44,7 +44,7 @@ describe('functions.invoke', () => {
   });
 });
 
-describe('nomi-baas/functions', () => {
+describe('nomi-relay/functions', () => {
   const env = { NOMI_URL: URL_BASE, NOMI_ANON_KEY: 'anon', NOMI_SERVICE_KEY: 'service', STRIPE_SECRET: 's' };
 
   it('marks handlers made with defineFunction', () => {
