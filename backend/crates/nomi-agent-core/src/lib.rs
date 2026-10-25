@@ -15,6 +15,7 @@ pub mod notification;
 pub mod permissions;
 pub mod personality;
 pub mod plans;
+pub mod project_ops;
 pub mod prompts;
 pub mod records;
 pub mod registry;

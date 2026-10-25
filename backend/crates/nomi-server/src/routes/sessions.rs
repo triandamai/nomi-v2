@@ -844,7 +844,7 @@ async fn try_stop_command(
         tracing::error!(error = %e, "bootstrap failed");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to ingest message")
     })?;
-    let registry = crate::build_agent_registry(state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
     let outcome = nomi_agent_supervisor::stop::handle_stop_message(
         &state.pool,
         &registry,

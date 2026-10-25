@@ -112,7 +112,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
     }
     tracing::info!("delegation worker: listening for new agent delegations");
 
-    let registry = crate::build_agent_registry(project_storage);
+    let registry = crate::build_agent_registry(&pool, project_storage);
 
     loop {
         let _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, listener.recv()).await;
