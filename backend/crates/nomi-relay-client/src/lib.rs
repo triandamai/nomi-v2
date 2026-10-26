@@ -169,6 +169,16 @@ impl<'a> Relay<'a> {
         serde_json::from_value(data.clone()).map_err(|e| RelayError::Unavailable(format!("Relay's answer wasn't a backend ({e}): {data}")))
     }
 
+    /// Relay's settings (database URLs without passwords) and whether each part answers.
+    pub async fn settings(&self) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::GET, "/control/settings", None, REQUEST_TIMEOUT).await
+    }
+
+    /// Checks and saves Relay's settings; a refusal names each check that failed (in `details`).
+    pub async fn save_settings(&self, settings: &Value) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::PUT, "/control/settings", Some(settings.clone()), REQUEST_TIMEOUT).await
+    }
+
     /// Drops exactly the project's database objects and rows.
     pub async fn delete_backend(&self, project_id: Uuid) -> Result<Value, RelayError> {
         self.call(reqwest::Method::DELETE, &Self::project_path(project_id), None, REQUEST_TIMEOUT).await
