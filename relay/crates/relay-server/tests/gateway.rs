@@ -9,7 +9,7 @@ use http_body_util::BodyExt;
 use relay_control::backend::{ensure_backend, BackendKeys};
 use relay_control::Relay;
 use relay_core::{Env, Tier};
-use relay_server::app::{router, GatewaySettings, MAX_BODY_BYTES};
+use relay_server::app::{router, MAX_BODY_BYTES};
 use serde_json::Value;
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -28,15 +28,16 @@ struct World {
 
 async fn world(pool: &PgPool) -> World {
     let shared = HashMap::from([(Env::Dev, pool.clone()), (Env::Production, pool.clone())]);
-    let relay = Arc::new(Relay::new(pool.clone(), shared, [9u8; 32], DOMAIN.into()));
-    let keys = ensure_backend(&relay, Uuid::new_v4(), "Bakery", Tier::Free, None).await.unwrap();
     let postgrest = MockServer::start().await;
-    let gateway = GatewaySettings {
-        postgrest: HashMap::from([(Env::Dev, postgrest.uri()), (Env::Production, postgrest.uri())]),
-        jwt_secret: PGRST_SECRET.into(),
-        preview_origins: vec![".preview.nomi.test".into()],
-    };
-    World { router: router(relay, "control-key".into(), Some(gateway)), postgrest, keys }
+    let uri = postgrest.uri();
+    let relay = Arc::new(Relay::new(pool.clone(), shared, [9u8; 32], DOMAIN.into()).with_settings(|s| {
+        s.postgrest_dev_url = uri.clone();
+        s.postgrest_production_url = uri.clone();
+        s.postgrest_jwt_secret = PGRST_SECRET.into();
+        s.preview_origins = vec![".preview.nomi.test".into()];
+    }));
+    let keys = ensure_backend(&relay, Uuid::new_v4(), "Bakery", Tier::Free, None).await.unwrap();
+    World { router: router(relay, "control-key".into()), postgrest, keys }
 }
 
 impl World {

@@ -11,7 +11,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
-use relay_control::{migrations, schema, Relay};
+use relay_control::{migrations, schema, settings, Relay};
 use relay_core::{Env, Tier};
 use relay_migrate::MigrationFile;
 use serde::Deserialize;
@@ -22,7 +22,7 @@ use tower::ServiceExt;
 
 use crate::envelope::{ok, Answer, Failure};
 use crate::gateway::Gateway;
-pub use crate::gateway::{GatewaySettings, MAX_BODY_BYTES};
+pub use crate::gateway::MAX_BODY_BYTES;
 
 #[derive(Clone)]
 struct AppState {
@@ -93,24 +93,31 @@ async fn get_types(State(state): State<AppState>, Path((project, env_name)): Pat
     Ok(ok(json!({ "types": schema::types(&state.relay, project, env(&env_name)?).await? })))
 }
 
+async fn get_settings(State(state): State<AppState>) -> Answer {
+    ok(settings::view(&state.relay).await)
+}
+
+async fn put_settings(State(state): State<AppState>, Json(body): Json<settings::SettingsInput>) -> Result<Answer> {
+    Ok(ok(settings::save(&state.relay, body).await?))
+}
+
 async fn health() -> Answer {
     ok(json!({ "ok": true }))
 }
 
-/// Relay's whole surface: a project host (`<slug>[-dev].<domain>`) goes to the gateway when one
-/// is configured, every other host to the control plane.
-pub fn router(relay: Arc<Relay>, control_key: String, gateway: Option<GatewaySettings>) -> Router {
+/// Relay's whole surface: a project host (`<slug>[-dev].<domain>`, by the saved public domain)
+/// goes to the gateway, every other host to the control plane.
+pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
     let control = control_router(relay.clone(), control_key);
-    let Some(settings) = gateway else { return control };
-    let domain = relay.public_domain.clone();
-    let gateway = Arc::new(Gateway { relay, settings, http: reqwest::Client::new() });
+    let gateway = Arc::new(Gateway { relay: relay.clone(), http: reqwest::Client::new() });
     Router::new().fallback(move |request: Request| {
         let control = control.clone();
         let gateway = gateway.clone();
-        let domain = domain.clone();
+        let relay = relay.clone();
         async move {
             let host = request.headers().get(HOST).and_then(|v| v.to_str().ok()).unwrap_or_default();
-            match relay_gateway::host::route(host, &domain) {
+            let project = relay.live().ok().and_then(|live| relay_gateway::host::route(host, &live.settings.public_domain));
+            match project {
                 Some((slug, env)) => gateway.handle(slug, env, request).await,
                 None => control.oneshot(request).await.unwrap_or_else(|never| match never {}),
             }
@@ -121,6 +128,7 @@ pub fn router(relay: Arc<Relay>, control_key: String, gateway: Option<GatewaySet
 fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
     let state = AppState { relay, control_key: Arc::new(control_key) };
     let control = Router::new()
+        .route("/control/settings", get(get_settings).put(put_settings))
         .route("/control/projects/:id", get(get_project).put(put_project).delete(delete_project))
         .route("/control/projects/:id/environments/:env/migrations", post(post_migrations))
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))

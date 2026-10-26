@@ -2,7 +2,6 @@
 //! project and who's calling, then hands the request to that environment's PostgREST as the
 //! project's own database role, in the project's schema, whatever schema the client asked for.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use relay_control::{state, Relay};
 use relay_core::names::schema_for;
+use relay_core::settings::Settings;
 use relay_core::{Env, Tier};
 use relay_gateway::auth::{internal_token, resolve, Refusal};
 use relay_gateway::cors;
@@ -31,17 +31,10 @@ const ALLOWED_METHODS: &str = "GET, HEAD, POST, PATCH, PUT, DELETE, OPTIONS";
 const ALLOWED_HEADERS: &str = "authorization, apikey, content-type, prefer, range, range-unit, accept, x-client-info";
 const EXPOSED_HEADERS: &str = "content-range, location, preference-applied";
 
-/// Where each environment's PostgREST is and the secret it trusts.
-#[derive(Clone)]
-pub struct GatewaySettings {
-    pub postgrest: HashMap<Env, String>,
-    pub jwt_secret: String,
-    pub preview_origins: Vec<String>,
-}
-
+/// Reads Relay's current settings on every request, so saving them in Nomi's admin takes effect
+/// at once.
 pub struct Gateway {
     pub relay: Arc<Relay>,
-    pub settings: GatewaySettings,
     pub http: reqwest::Client,
 }
 
@@ -80,8 +73,12 @@ fn refusal_response(refusal: Refusal) -> Response {
 
 impl Gateway {
     pub async fn handle(&self, slug: String, env: Env, request: Request) -> Response {
+        let live = match self.relay.live() {
+            Ok(live) => live,
+            Err(_) => return refuse(StatusCode::SERVICE_UNAVAILABLE, "RELAY_NOT_CONFIGURED", "Relay isn't set up yet."),
+        };
         let origin = header_text(request.headers(), "origin").map(str::to_string);
-        let mut cors = cors_headers(env, origin.as_deref(), &self.settings.preview_origins);
+        let mut cors = cors_headers(env, origin.as_deref(), &live.settings.preview_origins);
         let mut response = if request.method() == Method::OPTIONS {
             if cors.contains_key(header::ACCESS_CONTROL_ALLOW_ORIGIN) {
                 cors.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static(ALLOWED_METHODS));
@@ -90,13 +87,13 @@ impl Gateway {
             }
             StatusCode::NO_CONTENT.into_response()
         } else {
-            self.forward(&slug, env, request).await
+            self.forward(&live.settings, &slug, env, request).await
         };
         response.headers_mut().extend(cors);
         response
     }
 
-    async fn forward(&self, slug: &str, env: Env, request: Request) -> Response {
+    async fn forward(&self, settings: &Settings, slug: &str, env: Env, request: Request) -> Response {
         let Some(rest) = request.uri().path().strip_prefix(REST_PREFIX).filter(|p| p.is_empty() || p.starts_with('/')) else {
             return refuse(StatusCode::NOT_FOUND, "RELAY_NOT_FOUND", "Nothing here: the data API is under /rest.");
         };
@@ -124,7 +121,10 @@ impl Gateway {
         if too_big {
             return self.too_big();
         }
-        let Some(base) = self.settings.postgrest.get(&env) else { return self.failed(format!("no PostgREST for {}", env.as_str())) };
+        let base = settings.postgrest_url(env);
+        if base.is_empty() || settings.postgrest_jwt_secret.is_empty() {
+            return self.failed(format!("no PostgREST set for {}", env.as_str()));
+        }
         let query = request.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
         let url = format!("{}{rest}{query}", base.trim_end_matches('/'));
         let method = request.method().clone();
@@ -136,7 +136,7 @@ impl Gateway {
                 upstream.append(HeaderName::from_static(name), value.clone());
             }
         }
-        let token = internal_token(&self.settings.jwt_secret, project, &caller, now());
+        let token = internal_token(&settings.postgrest_jwt_secret, project, &caller, now());
         let (Ok(auth), Ok(schema)) = (HeaderValue::from_str(&format!("Bearer {token}")), HeaderValue::from_str(&schema_for(project, environment.tier))) else {
             return self.failed("unsendable header".into());
         };

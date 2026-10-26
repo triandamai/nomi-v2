@@ -16,7 +16,7 @@ const KEY: &str = "control-key";
 
 fn router(pool: &PgPool) -> axum::Router {
     let shared = HashMap::from([(Env::Dev, pool.clone()), (Env::Production, pool.clone())]);
-    relay_server::app::router(Arc::new(Relay::new(pool.clone(), shared, [9u8; 32], "api.relay.test".into())), KEY.into(), None)
+    relay_server::app::router(Arc::new(Relay::new(pool.clone(), shared, [9u8; 32], "api.relay.test".into())), KEY.into())
 }
 
 async fn call(router: &axum::Router, method: &str, path: &str, key: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
@@ -107,4 +107,33 @@ async fn reading_a_project_answers_its_keys_without_making_one(pool: PgPool) {
     let (status, read) = call(&router, "GET", &path, Some(KEY), None).await;
     assert_eq!(status, StatusCode::OK, "{read}");
     assert_eq!(read["data"], made["data"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn until_its_settings_are_saved_relay_answers_not_configured(pool: PgPool) {
+    let router = relay_server::app::router(Arc::new(Relay::unconfigured(pool.clone(), [9u8; 32])), KEY.into());
+    let (status, settings) = call(&router, "GET", "/control/settings", Some(KEY), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["data"]["configured"], false);
+    let (status, body) = call(&router, "PUT", &format!("/control/projects/{}", Uuid::new_v4()), Some(KEY), Some(json!({ "name": "x" }))).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"]["code"], "NOT_CONFIGURED");
+    assert_eq!(call(&router, "GET", "/control/settings", None, None).await.0, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn settings_that_dont_work_answer_422_with_each_check(pool: PgPool) {
+    let router = relay_server::app::router(Arc::new(Relay::unconfigured(pool.clone(), [9u8; 32])), KEY.into());
+    let body = json!({
+        "public_domain": "api.relay.test",
+        "shared_dev_url": "postgres://nobody:x@127.0.0.1:9/none",
+        "shared_production_url": "postgres://nobody:x@127.0.0.1:9/none",
+        "postgrest_dev_url": "http://127.0.0.1:9",
+        "postgrest_production_url": "http://127.0.0.1:9",
+        "postgrest_role": "authenticator"
+    });
+    let (status, answer) = call(&router, "PUT", "/control/settings", Some(KEY), Some(body)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{answer}");
+    assert_eq!(answer["error"]["code"], "SETTINGS_INVALID");
+    assert_eq!(answer["error"]["details"]["checks"].as_array().unwrap().len(), 4);
 }
