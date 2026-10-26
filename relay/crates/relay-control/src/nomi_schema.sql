@@ -107,3 +107,20 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- Announces a change to a realtime table on the nomi_realtime channel: the project (the
+-- trigger's first argument), schema, table, operation and primary key (the other arguments name
+-- its columns). Never the row: notifications stop at 8000 bytes, and each subscriber reads it
+-- back through row-level security.
+CREATE OR REPLACE FUNCTION nomi.realtime_notify() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    changed jsonb;
+    key jsonb := '{}';
+BEGIN
+    IF TG_OP = 'DELETE' THEN changed := to_jsonb(OLD); ELSE changed := to_jsonb(NEW); END IF;
+    FOR i IN 1 .. TG_NARGS - 1 LOOP
+        key := key || jsonb_build_object(TG_ARGV[i], changed -> TG_ARGV[i]);
+    END LOOP;
+    PERFORM pg_notify('nomi_realtime', jsonb_build_object('p', TG_ARGV[0], 's', TG_TABLE_SCHEMA, 't', TG_TABLE_NAME, 'op', lower(TG_OP), 'k', key)::text);
+    RETURN NULL;
+END $$;

@@ -2,6 +2,7 @@
 //! can have, the names of a project's database objects, its API keys, and the encryption of
 //! what Relay keeps secret.
 
+pub mod backend;
 pub mod config;
 pub mod crypto;
 pub mod keys;

@@ -41,11 +41,11 @@ pub struct BackendKeys {
 }
 
 /// Identifiers Relay makes are always plain (`app_<hex>_<kind>`, `public`); quoting is still done.
-fn quoted(identifier: &str) -> String {
+pub(crate) fn quoted(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
-async fn install_nomi_schema(pool: &PgPool) -> Result<(), RelayError> {
+pub(crate) async fn install_nomi_schema(pool: &PgPool) -> Result<(), RelayError> {
     sqlx::raw_sql(NOMI_SCHEMA_SQL).execute(pool).await?;
     Ok(())
 }

@@ -4,9 +4,11 @@
 pub mod backend;
 pub mod migrations;
 pub mod postgrest;
+pub mod realtime;
 pub mod schema;
 pub mod settings;
 pub mod state;
+pub mod storage;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
