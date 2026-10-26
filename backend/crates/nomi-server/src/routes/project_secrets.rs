@@ -138,12 +138,9 @@ pub(crate) async fn store(state: &impl crate::project_ops::ShipyardAccess, proje
     Ok(())
 }
 
-/// A Relay project's sign-in secrets (`NOMI_SMTP_PASSWORD`, `NOMI_OAUTH_*`) are used by Relay
-/// itself, at sign-in, so they go there too.
+/// A Relay project's secrets go to Relay too: it uses the sign-in ones (`NOMI_SMTP_PASSWORD`,
+/// `NOMI_OAUTH_*`) itself, and hands every one to the project's functions as `ctx.env`.
 async fn forward_to_relay(state: &AppState, project_id: Uuid, name: &str, value: Option<&str>) -> Result<(), ApiError> {
-    if !nomi_relay_client::is_sign_in_secret(name) {
-        return Ok(());
-    }
     let backend: Option<String> = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
         .bind(project_id)
         .fetch_optional(&state.pool)
@@ -155,7 +152,7 @@ async fn forward_to_relay(state: &AppState, project_id: Uuid, name: &str, value:
     let config = crate::relay_connection::load(&state.pool, Some(&state.settings_key))
         .await
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
-    nomi_relay_client::Relay::new(&state.http_client, &config).put_auth_secret(project_id, name, value).await.map(|_| ()).map_err(crate::relay_ops::relay_error)
+    nomi_relay_client::Relay::new(&state.http_client, &config).put_secret(project_id, name, value).await.map(|_| ()).map_err(crate::relay_ops::relay_error)
 }
 
 /// The environment a changed secret restarts.

@@ -13,10 +13,11 @@ use uuid::Uuid;
 
 pub const APPLY_MIGRATIONS_TOOL_NAME: &str = "apply_migrations";
 pub const DESCRIBE_BACKEND_TOOL_NAME: &str = "describe_backend";
+pub const DEPLOY_FUNCTIONS_TOOL_NAME: &str = "deploy_functions";
 
 /// The tools Koda gets for a project whose backend is Relay. They act on the project's own dev
 /// backend, so they don't ask first.
-pub const RELAY_TOOL_NAMES: &[&str] = &[APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME];
+pub const RELAY_TOOL_NAMES: &[&str] = &[APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME, DEPLOY_FUNCTIONS_TOOL_NAME];
 
 /// Which of a project's Relay environments: `dev`, which the preview uses, or `production`,
 /// which the published app uses.
@@ -67,8 +68,10 @@ pub trait RelayOps: Send + Sync {
     /// The backend's tables, columns, policies, buckets, auth providers and functions, as text.
     async fn describe_backend(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String>;
 
-    /// Builds and deploys the project's functions to `env`.
-    async fn deploy_functions(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String>;
+    /// Checks and deploys the project's functions (every file of `nomi/functions/`) to `env`, with
+    /// each function's settings from `backend.json`'s `functions`. Answers what's served, or the
+    /// error with its file and line; a failed deploy leaves the running functions as they were.
+    async fn deploy_functions(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile], settings: &Value) -> Result<String, String>;
 
     /// `src/lib/nomi.types.ts` for `env`'s schema.
     async fn types(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String>;
@@ -107,7 +110,7 @@ impl RelayOps for NoRelayOps {
     async fn describe_backend(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv) -> Result<String, String> {
         Err(NOT_SET_UP.to_string())
     }
-    async fn deploy_functions(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv, _files: &[ProjectFile]) -> Result<String, String> {
+    async fn deploy_functions(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv, _files: &[ProjectFile], _settings: &Value) -> Result<String, String> {
         Err(NOT_SET_UP.to_string())
     }
     async fn types(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv) -> Result<String, String> {
@@ -153,6 +156,24 @@ pub fn describe_backend_tool_definition() -> ToolDefinition {
     }
 }
 
+pub fn deploy_functions_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: DEPLOY_FUNCTIONS_TOOL_NAME.to_string(),
+        description: "Deploy the project's hosted functions (nomi/functions/*.ts, with _shared/ helpers) to its Relay dev backend, \
+             the one the preview calls. Relay type-checks them first and answers which functions are served, or the exact error \
+             with its file and line; a failed deploy leaves the running functions as they were. Writing a file under \
+             nomi/functions/ already does this; call it to deploy again."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "The project's id."}
+            },
+            "required": ["project_id"]
+        }),
+    }
+}
+
 /// The `project_id` of a Relay tool call.
 pub fn project_id_from(input: &Value) -> Result<Uuid, String> {
     input
@@ -185,7 +206,7 @@ mod tests {
         assert_eq!(ops.ensure_backend(user, project).await.unwrap_err(), NOT_SET_UP);
         assert_eq!(ops.apply_migrations(user, project, RelayEnv::Dev, &[]).await.unwrap_err(), NOT_SET_UP);
         assert_eq!(ops.describe_backend(user, project, RelayEnv::Dev).await.unwrap_err(), NOT_SET_UP);
-        assert_eq!(ops.deploy_functions(user, project, RelayEnv::Dev, &[]).await.unwrap_err(), NOT_SET_UP);
+        assert_eq!(ops.deploy_functions(user, project, RelayEnv::Dev, &[], &json!({})).await.unwrap_err(), NOT_SET_UP);
         assert_eq!(ops.types(user, project, RelayEnv::Production).await.unwrap_err(), NOT_SET_UP);
     }
 
@@ -201,12 +222,12 @@ mod tests {
 
     #[test]
     fn koda_s_relay_tools_need_a_project() {
-        for definition in [apply_migrations_tool_definition(), describe_backend_tool_definition()] {
+        for definition in [apply_migrations_tool_definition(), describe_backend_tool_definition(), deploy_functions_tool_definition()] {
             assert_eq!(definition.input_schema["required"], json!(["project_id"]));
         }
         assert_eq!(apply_migrations_tool_definition().name, APPLY_MIGRATIONS_TOOL_NAME);
         assert_eq!(describe_backend_tool_definition().name, DESCRIBE_BACKEND_TOOL_NAME);
-        assert_eq!(RELAY_TOOL_NAMES, &[APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME]);
+        assert_eq!(RELAY_TOOL_NAMES, &[APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME, DEPLOY_FUNCTIONS_TOOL_NAME]);
     }
 
     #[test]

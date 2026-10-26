@@ -8,8 +8,8 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::relay_ops::{
-    apply_migrations_tool_definition, describe_backend_tool_definition, environment_from, ProjectFile, RelayEnv, RelayOps,
-    APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME,
+    apply_migrations_tool_definition, deploy_functions_tool_definition, describe_backend_tool_definition, environment_from, ProjectFile, RelayEnv,
+    RelayOps, APPLY_MIGRATIONS_TOOL_NAME, DEPLOY_FUNCTIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME,
 };
 use nomi_llm::{LlmMessage, ToolDefinition};
 use nomi_storage::ProjectStore;
@@ -23,6 +23,10 @@ use crate::files::{owned_project_id, project_file_key, write_file};
 pub const MIGRATIONS_DIR: &str = "nomi/migrations/";
 /// The project's backend settings: `auth` (sign-in), `storage` (buckets) and `realtime` (tables).
 pub const BACKEND_JSON_PATH: &str = "nomi/backend.json";
+/// The project's hosted functions: one file per function, helpers in `_shared/`.
+pub const FUNCTIONS_DIR: &str = "nomi/functions/";
+/// What a functions build is made of.
+const FUNCTION_SOURCE_EXTENSIONS: [&str; 5] = [".ts", ".js", ".mts", ".mjs", ".json"];
 /// Where the TypeScript for the project's tables goes, rewritten after every migration.
 pub const TYPES_PATH: &str = "src/lib/nomi.types.ts";
 pub(crate) const BACKEND_RELAY: &str = "relay";
@@ -31,6 +35,10 @@ const WRITING_TOOLS: [&str; 4] = ["write_file", "write_files", "edit_file", "del
 
 fn is_migration(path: &str) -> bool {
     path.starts_with(MIGRATIONS_DIR) && path.ends_with(".sql")
+}
+
+fn is_function_source(path: &str) -> bool {
+    path.starts_with(FUNCTIONS_DIR) && FUNCTION_SOURCE_EXTENSIONS.iter().any(|ext| path.ends_with(ext))
 }
 
 /// The paths a file tool's input touches.
@@ -52,7 +60,7 @@ pub(crate) async fn chat_tools(conn: &mut PoolConnection<Postgres>, session_id: 
     if backend_of(conn, project_id).await.as_deref() != Some(BACKEND_RELAY) {
         return Vec::new();
     }
-    vec![apply_migrations_tool_definition(), describe_backend_tool_definition()]
+    vec![apply_migrations_tool_definition(), describe_backend_tool_definition(), deploy_functions_tool_definition()]
 }
 
 /// The project's migration files, in the order they apply.
@@ -65,6 +73,34 @@ async fn migration_files(conn: &mut PoolConnection<Postgres>, storage: &ProjectS
     .fetch_all(&mut **conn)
     .await
     .map_err(|e| e.to_string())?;
+    read_files(storage, project_id, paths).await
+}
+
+/// Every source file under `nomi/functions/`, helpers included.
+async fn function_files(conn: &mut PoolConnection<Postgres>, storage: &ProjectStore, project_id: Uuid) -> Result<Vec<ProjectFile>, String> {
+    let paths: Vec<String> = sqlx::query_scalar("SELECT path FROM project_files WHERE project_id = $1 AND starts_with(path, $2) ORDER BY path")
+        .bind(project_id)
+        .bind(FUNCTIONS_DIR)
+        .fetch_all(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Byte order, the same everywhere (the database's collation may skip the `_` of `_shared`).
+    let mut paths: Vec<String> = paths.into_iter().filter(|p| is_function_source(p)).collect();
+    paths.sort();
+    read_files(storage, project_id, paths).await
+}
+
+/// Deploys `nomi/functions/` to dev with `backend.json`'s settings for each function.
+async fn deploy_to_dev(conn: &mut PoolConnection<Postgres>, storage: &ProjectStore, relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> Result<String, String> {
+    let files = function_files(conn, storage, project_id).await?;
+    if files.is_empty() {
+        return Ok(format!("{FUNCTIONS_DIR} is empty, so there's nothing to deploy."));
+    }
+    let settings = read_backend_json(storage, project_id).await?.and_then(|b| b.get(FUNCTIONS_BLOCK).cloned()).unwrap_or_else(|| serde_json::json!({}));
+    relay.deploy_functions(user_id, project_id, RelayEnv::Dev, &files, &settings).await
+}
+
+async fn read_files(storage: &ProjectStore, project_id: Uuid, paths: Vec<String>) -> Result<Vec<ProjectFile>, String> {
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
         let content = storage.get_object(&project_file_key(project_id, &path)).await.map_err(|e| e.to_string())?.unwrap_or_default();
@@ -102,7 +138,8 @@ pub(crate) async fn after_write(
     let paths = touched_paths(input);
     let migrations = paths.iter().any(|p| is_migration(p));
     let backend_json = paths.iter().any(|p| p == BACKEND_JSON_PATH);
-    if !WRITING_TOOLS.contains(&name) || !(migrations || backend_json) {
+    let functions = paths.iter().any(|p| is_function_source(p));
+    if !WRITING_TOOLS.contains(&name) || !(migrations || backend_json || functions) {
         return outcome;
     }
     let Ok(project_id) = owned_project_id(conn, user_id, input).await else { return outcome };
@@ -131,6 +168,14 @@ pub(crate) async fn after_write(
     if backend_json && name != "delete_file" {
         said.extend(backend_to_dev(storage, relay, user_id, project_id).await);
     }
+    // New function code, or new settings for the functions there are.
+    let settings_changed = backend_json && read_backend_json(storage, project_id).await.ok().flatten().is_some_and(|b| b.get(FUNCTIONS_BLOCK).is_some());
+    if functions || settings_changed {
+        let has_functions = functions || !function_files(conn, storage, project_id).await.unwrap_or_default().is_empty();
+        if has_functions {
+            said.push(block_outcome(FUNCTIONS_BLOCK, deploy_to_dev(conn, storage, relay, user_id, project_id).await));
+        }
+    }
     for line in said {
         outcome.display_text = format!("{}\n\n{line}", outcome.display_text);
     }
@@ -140,6 +185,7 @@ pub(crate) async fn after_write(
 const AUTH_BLOCK: &str = "auth";
 const STORAGE_BLOCK: &str = "storage";
 const REALTIME_BLOCK: &str = "realtime";
+const FUNCTIONS_BLOCK: &str = "functions";
 
 /// `nomi/backend.json`, parsed; `None` when the project has none.
 async fn read_backend_json(storage: &ProjectStore, project_id: Uuid) -> Result<Option<Value>, String> {
@@ -201,6 +247,7 @@ pub(crate) async fn execute(
     match name {
         APPLY_MIGRATIONS_TOOL_NAME => apply_to_dev(conn, storage, relay, user_id, project_id).await,
         DESCRIBE_BACKEND_TOOL_NAME => relay.describe_backend(user_id, project_id, environment_from(input)?).await,
+        DEPLOY_FUNCTIONS_TOOL_NAME => deploy_to_dev(conn, storage, relay, user_id, project_id).await,
         other => Err(format!("unknown tool: {other}")),
     }
 }
