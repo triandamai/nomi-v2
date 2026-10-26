@@ -16,7 +16,7 @@
 	let backdropForm: HTMLFormElement | undefined = $state();
 	let backdropOn = $state(true);
 	$effect.pre(() => {
-		backdropOn = data.preferences.animated_backdrop !== false;
+		backdropOn = data.preferences.animated_backdrop === true;
 	});
 	// Recents in the drawer: the switch and the size save as soon as either changes.
 	const RECENTS_LIMIT_OPTIONS = RECENTS_LIMITS.map((limit) => ({ value: String(limit), label: String(limit) }));

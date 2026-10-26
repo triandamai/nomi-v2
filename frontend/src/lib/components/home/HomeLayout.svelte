@@ -25,8 +25,8 @@
 		notice?: Snippet;
 	} = $props();
 
-	// The glass stage, unless the person turned the animated background off (Preferences).
-	const glass = $derived(layout.backdrop === 'glass' && home.preferences.animated_backdrop !== false);
+	// The glass stage, only when the person turned the animated background on (Preferences).
+	const glass = $derived(layout.backdrop === 'glass' && home.preferences.animated_backdrop === true);
 	// A hero greeting already shows Nomi's mark; the stage then holds the rest of the crew.
 	const hasHeroMark = $derived(layout.rows.some((row) => row.columns.flat().some((item) => item.block === 'greeting' && item.size === 'hero')));
 	const crewBusy = $derived(home.crew.some((member) => member.state === 'working'));

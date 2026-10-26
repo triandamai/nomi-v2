@@ -26,7 +26,7 @@
 	messages={[]}
 	agentActivity={[]}
 	sendError={form?.error ?? null}
-	glass={page.data.preferences?.animated_backdrop !== false}
+	glass={page.data.preferences?.animated_backdrop === true}
 	thinkingLevel="medium"
 	{newChatModel}
 >
