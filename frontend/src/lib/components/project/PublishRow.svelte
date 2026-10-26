@@ -131,7 +131,8 @@
 		margin-top: 6px;
 		padding: 8px 10px;
 		border-radius: 10px;
-		background: color-mix(in srgb, var(--md-sys-color-error-container) 70%, transparent);
+		/* Blended into the card so it reads as a note, not an alarm, in dark mode too. */
+		background: color-mix(in srgb, var(--md-sys-color-error-container) 50%, var(--md-sys-color-surface-container-lowest));
 		color: var(--md-sys-color-on-error-container);
 		font-size: 0.8125rem;
 		line-height: 1.4;

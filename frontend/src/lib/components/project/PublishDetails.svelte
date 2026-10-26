@@ -255,7 +255,7 @@
 	.callout {
 		padding: 14px 16px;
 		border-radius: var(--md-sys-shape-corner-large);
-		background: color-mix(in srgb, var(--md-sys-color-error-container) 75%, var(--md-sys-color-surface-container-lowest));
+		background: color-mix(in srgb, var(--md-sys-color-error-container) 55%, var(--md-sys-color-surface-container-lowest));
 		color: var(--md-sys-color-on-error-container);
 	}
 	.callout p {
@@ -412,25 +412,26 @@
 		font-size: 0.8125rem;
 		overflow-wrap: anywhere;
 	}
+	/* The same log look as Monitor's: a tinted surface that follows the theme. */
 	.log {
 		max-height: 420px;
 		margin: 0;
 		padding: 14px 16px;
 		overflow: auto;
 		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-inverse-surface);
-		color: var(--md-sys-color-inverse-on-surface);
-		font: 0.78rem/1.55 ui-monospace, 'JetBrains Mono', Menlo, monospace;
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface);
+		font: 0.78rem/1.55 var(--md-ref-typeface-mono);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 	}
 	.log__time {
-		opacity: 0.6;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.log__line--error {
-		color: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-error);
 	}
 	.log__line--warn {
-		color: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-tertiary);
 	}
 </style>

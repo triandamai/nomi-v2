@@ -95,19 +95,28 @@
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
 	});
+	// The open sheet is kept in the address (`?sheet=`) so a link opens it. While the page is
+	// still starting (a link that opens a sheet), SvelteKit's router can't change the address yet,
+	// and throwing then would leave the router broken; the address is already right then anyway.
+	function keepSheetInAddress(which: Sheet | null) {
+		const url = new URL(page.url);
+		if (which) url.searchParams.set('sheet', which);
+		else url.searchParams.delete('sheet');
+		try {
+			replaceState(url, {});
+		} catch {
+			// Before the router started: nothing to change.
+		}
+	}
 	function openSheet(which: Sheet) {
 		sheet = which;
 		sheetOpen = true;
-		const url = new URL(page.url);
-		url.searchParams.set('sheet', which);
-		replaceState(url, {});
+		keepSheetInAddress(which);
 	}
 	$effect(() => {
 		if (sheetOpen) return;
 		if (!page.url.searchParams.has('sheet')) return;
-		const url = new URL(page.url);
-		url.searchParams.delete('sheet');
-		replaceState(url, {});
+		keepSheetInAddress(null);
 	});
 
 	let deploy = $state<ProjectDeploy | null>(null);
@@ -666,14 +675,6 @@
 </div>
 </div>
 
-{#snippet publishAction()}
-	{#if deploy}
-		<Button variant="filled" size="s" disabled={deploy.busy || deploy.running} onclick={() => deploy?.publish()}>
-			{deploy.running ? m.pj_publishing() : m.pj_publish()}
-		</Button>
-	{/if}
-{/snippet}
-
 <!-- Outside the thread: its composer is a form, and these hold forms of their own. -->
 <ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
 <Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
@@ -681,12 +682,7 @@
 {#if data.project && sheet}
 	{@const project = data.project}
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
-		<SheetFrame
-			title={SHEET_TITLE[sheet]()}
-			subtitle={project.name}
-			onclose={() => (sheetOpen = false)}
-			actions={sheet === 'deploy' && deploy?.overview?.available && deploy.isAdmin ? publishAction : undefined}
-		>
+		<SheetFrame title={SHEET_TITLE[sheet]()} subtitle={project.name} onclose={() => (sheetOpen = false)}>
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
