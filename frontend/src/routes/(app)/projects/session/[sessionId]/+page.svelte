@@ -666,6 +666,14 @@
 </div>
 </div>
 
+{#snippet publishAction()}
+	{#if deploy}
+		<Button variant="filled" size="s" disabled={deploy.busy || deploy.running} onclick={() => deploy?.publish()}>
+			{deploy.running ? m.pj_publishing() : m.pj_publish()}
+		</Button>
+	{/if}
+{/snippet}
+
 <!-- Outside the thread: its composer is a form, and these hold forms of their own. -->
 <ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
 <Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
@@ -673,11 +681,16 @@
 {#if data.project && sheet}
 	{@const project = data.project}
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
-		<SheetFrame title={SHEET_TITLE[sheet]()} subtitle={project.name} onclose={() => (sheetOpen = false)}>
+		<SheetFrame
+			title={SHEET_TITLE[sheet]()}
+			subtitle={project.name}
+			onclose={() => (sheetOpen = false)}
+			actions={sheet === 'deploy' && deploy?.overview?.available && deploy.isAdmin ? publishAction : undefined}
+		>
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
-				<DeployPanel {deploy} />
+				<DeployPanel {deploy} onaskfix={sendToChat} />
 			{:else if sheet === 'domain' && deploy}
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}

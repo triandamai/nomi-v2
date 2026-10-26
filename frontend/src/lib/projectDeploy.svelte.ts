@@ -88,8 +88,9 @@ export class ProjectDeploy {
 		await this.refresh();
 	}
 
-	async publish(): Promise<boolean> {
-		return this.#act(() => projectApi(this.projectId, 'deploy/publish', { method: 'POST', body: {} }));
+	/** Publishes the project's files to `environment` (production unless given). */
+	async publish(environment?: string): Promise<boolean> {
+		return this.#act(() => projectApi(this.projectId, 'deploy/publish', { method: 'POST', body: environment ? { environment } : {} }));
 	}
 
 	async rollback(publishId: string): Promise<boolean> {
