@@ -29,6 +29,8 @@ percent-encoding = "2"
 futures = "0.3"
 bytes = "1"
 base64 = "0.22"
+chrono = "0.4"
+croner = "2"
 
 [dev-dependencies]
 base64 = "0.22"
