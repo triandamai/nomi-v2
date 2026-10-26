@@ -83,9 +83,9 @@ impl ServerProjectOps {
 
 #[async_trait]
 impl ProjectOps for ServerProjectOps {
-    async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
+    async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str, agent: Option<&str>) -> Result<String, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
-        let row = crate::routes::deploy::start_publish(self, project_id, user_id, environment).await.map_err(message)?;
+        let row = crate::routes::deploy::start_publish(self, project_id, user_id, environment, agent).await.map_err(message)?;
         // Accepted isn't live: the address only works once Shipyard says the publish succeeded,
         // and Nomi posts it in the chat then (or why it failed).
         Ok(format!(
