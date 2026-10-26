@@ -8,7 +8,7 @@ use axum::http::header::HOST;
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
 use relay_control::{migrations, schema, Relay};
