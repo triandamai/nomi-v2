@@ -2322,3 +2322,75 @@ async fn crew_notes_reach_every_agent_in_the_chat(pool: PgPool) {
     let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
     assert!(system.contains("Crew notes in this chat") && system.contains("- Test: Budget is 5 million rupiah"), "{system}");
 }
+
+/// An agent whose tools depend on the chat it's in: it has `project_tool` only when the chat's
+/// session id is the one it was given.
+struct ChatToolsAgent(Uuid);
+
+#[async_trait::async_trait]
+impl SubAgent for ChatToolsAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builder")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builds")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn chat_tools(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        session_id: Uuid,
+        _user_id: Uuid,
+        _messages: &[nomi_llm::LlmMessage],
+    ) -> Vec<ToolDefinition> {
+        if session_id != self.0 {
+            return vec![];
+        }
+        vec![ToolDefinition { name: "project_tool".into(), description: "only here".into(), input_schema: serde_json::json!({"type": "object"}) }]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builder")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builds")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agent_gets_the_tools_its_chat_calls_for_and_only_there(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let offered = |agent: ChatToolsAgent| {
+        let pool = pool.clone();
+        let embedding_provider = &embedding_provider;
+        async move {
+            let registry = AgentRegistry::new(vec![Box::new(ChatToolsAgent(agent.0))]);
+            let provider = FakeLlmProvider::sequence(vec![text_response("Done", StopReason::EndTurn)]);
+            let mut conn = pool.acquire().await.unwrap();
+            run_agent_turn(&mut conn, None, None, &provider, embedding_provider, &registry, &agent, session_id, agent_session_id, user_id, vec![], 100)
+                .await
+                .unwrap();
+            let requests = provider.received_requests.lock().unwrap();
+            requests[0].tools.iter().any(|t| t.name == "project_tool")
+        }
+    };
+    assert!(offered(ChatToolsAgent(session_id)).await);
+    assert!(!offered(ChatToolsAgent(Uuid::new_v4())).await);
+}

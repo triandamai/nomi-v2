@@ -160,6 +160,19 @@ pub trait SubAgent: Send + Sync {
         None
     }
 
+    /// Tools this agent has only in this chat, on top of `tools()`: e.g. Koda's Relay tools for a
+    /// project whose backend is Relay. Looked up at the start of each turn; anything read for
+    /// `user_id` must be theirs to see. They count as the agent's own tools. Empty by default.
+    async fn chat_tools(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _user_id: Uuid,
+        _messages: &[nomi_llm::LlmMessage],
+    ) -> Vec<ToolDefinition> {
+        Vec::new()
+    }
+
     /// When true, run_agent_turn gives this agent `read_plan`: the latest plan drafted in this
     /// chat (by any agent), with its version, so it builds what was agreed.
     fn reads_plans(&self) -> bool {

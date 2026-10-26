@@ -17,7 +17,7 @@ const MAX_CHECK_OUTPUT: usize = 3000;
 /// The project named by the newest "Project <uuid>:" in what the person (or the agent handing
 /// the task over) said, else the newest project in this chat — `None` when there's neither, or
 /// the person can't open it.
-async fn project_for(conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, messages: &[LlmMessage]) -> Option<Uuid> {
+pub(crate) async fn project_for(conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, messages: &[LlmMessage]) -> Option<Uuid> {
     let named = messages
         .iter()
         .filter(|m| m.role == LlmRole::User)
