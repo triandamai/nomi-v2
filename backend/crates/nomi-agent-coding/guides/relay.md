@@ -94,6 +94,38 @@ nomi.realtime.on('task', (change) => (change.event === 'resync' ? reload() : app
 
 Every call returns `{ data, error }` and never throws for a failed request: check `error`.
 
+## Sign-in
+
+Email codes work with no setup. Other methods are switched on in `nomi/backend.json`; writing it
+saves them to dev right away (publishing saves them to production), and the result says which
+secrets are still missing.
+
+```json
+{
+  "auth": {
+    "methods": ["email_code", "google", "github"],
+    "google": { "client_id": "1234.apps.googleusercontent.com" },
+    "github": { "client_id": "Iv1.abc123" },
+    "redirect_urls": ["https://myapp.example.com"]
+  }
+}
+```
+
+- Methods: `email_code`, `google`, `github`, `apple` (`"apple": { "client_id", "team_id",
+  "key_id" }`), and company logins as `oidc:<id>` with `"oidc": [{ "id", "issuer", "client_id" }]`.
+- Client IDs go in the file; **secrets never do**. Ask the person to add them in the project's
+  Secrets: `NOMI_OAUTH_GOOGLE_SECRET`, `NOMI_OAUTH_GITHUB_SECRET`, `NOMI_OAUTH_APPLE_KEY` (the
+  `.p8` file's text), `NOMI_OAUTH_OIDC_<ID>_SECRET`. You never see their values.
+- The provider's callback URL is Relay's, one per provider:
+  `<PUBLIC_NOMI_URL>/auth/callback/<provider>`. Tell the person to register that exact URL with
+  the provider (the dev one and the production one).
+- `redirect_urls` are the app's own addresses OAuth may send people back to; the preview and
+  `localhost` are always allowed on dev.
+- A user who signs in with a provider that verified their email joins the account that already
+  has that email. `nomi.auth.linkIdentity('github')` adds a method to the signed-in user.
+- To send codes from the app's own domain, add `"smtp": { "host", "port", "user", "from" }` and
+  ask for `NOMI_SMTP_PASSWORD`.
+
 Server code (SvelteKit `+page.server.ts`, endpoints) uses the same client with the service key,
 read from the environment, never sent to the browser:
 

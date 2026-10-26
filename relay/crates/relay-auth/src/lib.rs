@@ -4,7 +4,9 @@
 
 pub mod codes;
 pub mod config;
+pub mod flows;
 pub mod mail;
+pub mod oauth;
 pub mod sessions;
 pub mod users;
 

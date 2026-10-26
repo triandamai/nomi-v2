@@ -177,3 +177,66 @@ pub(crate) async fn signed_in_by_email(pool: &PgPool, project: Uuid, email: &str
 pub(crate) async fn exists_by_email(pool: &PgPool, project: Uuid, email: &str) -> Result<bool, AuthError> {
     Ok(sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM nomi.users WHERE project_id = $1 AND email = $2)").bind(project).bind(email).fetch_one(pool).await?)
 }
+
+/// The user an outside sign-in belongs to: the identity's owner; else, when linking, the user
+/// being linked; else the user with that verified email; else a new user (with the email only
+/// when the provider verified it and nobody has it).
+pub(crate) async fn signed_in_by_identity(pool: &PgPool, project: Uuid, provider: &str, profile: &crate::oauth::Profile, link_user: Option<Uuid>) -> Result<Uuid, AuthError> {
+    let owner: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM nomi.identities WHERE project_id = $1 AND provider = $2 AND provider_user_id = $3")
+        .bind(project)
+        .bind(provider)
+        .bind(&profile.provider_user_id)
+        .fetch_optional(pool)
+        .await?;
+    let user = match (owner, link_user) {
+        (Some(owner), Some(linking)) if owner != linking => {
+            return Err(AuthError::bad("IDENTITY_TAKEN", "That account already signs in to another user of this app."));
+        }
+        (Some(owner), _) => owner,
+        (None, Some(linking)) => linking,
+        (None, None) => {
+            let verified_email = profile.email.as_deref().filter(|_| profile.email_verified);
+            let joined: Option<Uuid> = match verified_email {
+                Some(email) => sqlx::query_scalar("SELECT id FROM nomi.users WHERE project_id = $1 AND email = $2 AND email_verified")
+                    .bind(project)
+                    .bind(email)
+                    .fetch_optional(pool)
+                    .await?,
+                None => None,
+            };
+            match joined {
+                Some(id) => id,
+                None => {
+                    let made: Option<Uuid> = sqlx::query_scalar(
+                        "INSERT INTO nomi.users (project_id, email, email_verified) VALUES ($1, $2, $3) ON CONFLICT (project_id, email) DO NOTHING RETURNING id",
+                    )
+                    .bind(project)
+                    .bind(verified_email)
+                    .bind(verified_email.is_some())
+                    .fetch_optional(pool)
+                    .await?;
+                    match made {
+                        Some(id) => id,
+                        None => sqlx::query_scalar("INSERT INTO nomi.users (project_id) VALUES ($1) RETURNING id").bind(project).fetch_one(pool).await?,
+                    }
+                }
+            }
+        }
+    };
+    add_identity(pool, project, user, provider, &profile.provider_user_id, profile.email.as_deref()).await?;
+    sqlx::query("UPDATE nomi.users SET last_sign_in_at = now() WHERE id = $1").bind(user).execute(pool).await?;
+    Ok(user)
+}
+
+/// Removes one of a user's sign-in methods; never their last.
+pub async fn unlink(pool: &PgPool, project: Uuid, user: Uuid, identity: Uuid) -> Result<(), AuthError> {
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM nomi.identities WHERE project_id = $1 AND user_id = $2").bind(project).bind(user).fetch_one(pool).await?;
+    if count <= 1 {
+        return Err(AuthError::bad("LAST_IDENTITY", "That's this user's only way to sign in, so it stays."));
+    }
+    let removed = sqlx::query("DELETE FROM nomi.identities WHERE project_id = $1 AND user_id = $2 AND id = $3").bind(project).bind(user).bind(identity).execute(pool).await?.rows_affected();
+    if removed == 0 {
+        return Err(AuthError::NotFound("No such sign-in method on this user.".into()));
+    }
+    Ok(())
+}

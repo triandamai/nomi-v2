@@ -169,18 +169,23 @@ impl Gateway {
         response
     }
 
-    /// The project the hostname names, its environment, and who's calling.
-    pub(crate) async fn target(&self, slug: &str, env: Env, headers: &HeaderMap) -> Result<Target, Response> {
+    /// The project the hostname names and its environment.
+    pub(crate) async fn locate(&self, slug: &str, env: Env) -> Result<(uuid::Uuid, relay_control::state::EnvironmentRow), Response> {
         let project = match state::by_slug(&self.relay, slug).await {
             Ok(Some(project)) => project,
             Ok(None) => return Err(refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address.")),
             Err(e) => return Err(self.failed(e.to_string())),
         };
-        let environment = match state::environment(&self.relay, project, env).await {
-            Ok(Some(row)) => row,
-            Ok(None) => return Err(refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address.")),
-            Err(e) => return Err(self.failed(e.to_string())),
-        };
+        match state::environment(&self.relay, project, env).await {
+            Ok(Some(row)) => Ok((project, row)),
+            Ok(None) => Err(refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address.")),
+            Err(e) => Err(self.failed(e.to_string())),
+        }
+    }
+
+    /// The project the hostname names, its environment, and who's calling.
+    pub(crate) async fn target(&self, slug: &str, env: Env, headers: &HeaderMap) -> Result<Target, Response> {
+        let (project, environment) = self.locate(slug, env).await?;
         let bearer = header_text(headers, "authorization").and_then(|v| v.strip_prefix("Bearer "));
         let caller = resolve(&environment.signing_secret, project, env, header_text(headers, "apikey"), bearer, now()).map_err(refusal_response)?;
         Ok(Target { project, environment, caller })
