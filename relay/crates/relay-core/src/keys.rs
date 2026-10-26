@@ -51,8 +51,14 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
 }
 
-pub fn api_key(secret: &str, project: Uuid, env: Env, role: ApiRole) -> String {
-    let issued = now();
+/// The current time, for a new environment's `issued_at`.
+pub fn issued_now() -> u64 {
+    now()
+}
+
+/// A key for `role`, issued at `issued_at`: the same inputs always give the same key.
+pub fn api_key(secret: &str, project: Uuid, env: Env, role: ApiRole, issued_at: u64) -> String {
+    let issued = issued_at;
     let claims = Claims { role: role.as_str().to_string(), r#ref: project, env: env.as_str().to_string(), iat: issued, exp: issued + API_KEY_LIFETIME_SECONDS };
     encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret.as_bytes())).expect("HS256 signing can't fail")
 }
@@ -73,12 +79,13 @@ mod tests {
         assert_ne!(secret, other);
         assert!(secret.len() >= MIN_SECRET_HEX_LEN);
         let project = Uuid::new_v4();
-        let key = api_key(&secret, project, Env::Dev, ApiRole::Anon);
+        let key = api_key(&secret, project, Env::Dev, ApiRole::Anon, issued_now());
+        assert_eq!(api_key(&secret, project, Env::Dev, ApiRole::Anon, 100), api_key(&secret, project, Env::Dev, ApiRole::Anon, 100));
         let claims = verify(&secret, &key).unwrap();
         assert_eq!(claims.role, "anon");
         assert_eq!(claims.r#ref, project);
         assert_eq!(claims.env, "dev");
         assert!(verify(&other, &key).is_err());
-        assert_eq!(verify(&secret, &api_key(&secret, project, Env::Production, ApiRole::Service)).unwrap().role, "service");
+        assert_eq!(verify(&secret, &api_key(&secret, project, Env::Production, ApiRole::Service, issued_now())).unwrap().role, "service");
     }
 }
