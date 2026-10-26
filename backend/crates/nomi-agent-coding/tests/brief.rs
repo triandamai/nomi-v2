@@ -151,3 +151,45 @@ fn kodas_prompt_starts_from_the_brief_and_still_knows_the_way_without_one() {
     assert!(prompt.contains("Start from your brief"));
     assert!(prompt.contains("Without a brief, call read_plan, then list_files"));
 }
+
+async fn published(pool: &PgPool, project_id: Uuid, status: &str, failure: Option<serde_json::Value>, seconds_later: i32) {
+    sqlx::query(
+        "INSERT INTO project_publishes (project_id, environment, status, manifest, failure, created_at) \
+         VALUES ($1, 'production', $2, '{}'::jsonb, $3, now() + make_interval(secs => $4))",
+    )
+    .bind(project_id)
+    .bind(status)
+    .bind(failure)
+    .bind(seconds_later)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn brief_of(pool: &PgPool, seeded: &Seeded) -> String {
+    let messages = vec![said(&format!("Project {}: fix it", seeded.project_id))];
+    let mut conn = pool.acquire().await.unwrap();
+    agent().domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.expect("a brief")
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_brief_names_the_last_failed_publish(pool: PgPool) {
+    let seeded = seed(&pool).await;
+    published(&pool, seeded.project_id, "succeeded", None, 0).await;
+    let failure = serde_json::json!({ "service": "web", "deployment_id": "d1", "step": "build_image", "phase": "build", "message": "npm run build exited with code 1", "tail": [], "runtime_logs": [] });
+    published(&pool, seeded.project_id, "failed", Some(failure), 1).await;
+
+    let brief = brief_of(&pool, &seeded).await;
+
+    assert!(brief.contains("The last publish to production failed at build › build_image: npm run build exited with code 1"), "{brief}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_later_successful_publish_clears_the_failure(pool: PgPool) {
+    let seeded = seed(&pool).await;
+    let failure = serde_json::json!({ "service": "web", "deployment_id": "d1", "step": "build_image", "phase": "build", "message": "boom", "tail": [], "runtime_logs": [] });
+    published(&pool, seeded.project_id, "failed", Some(failure), 0).await;
+    published(&pool, seeded.project_id, "succeeded", None, 1).await;
+
+    assert!(!brief_of(&pool, &seeded).await.contains("The last publish to"));
+}

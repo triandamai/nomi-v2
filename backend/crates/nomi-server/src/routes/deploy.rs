@@ -395,15 +395,19 @@ pub async fn rollback(
 ) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let client = client(&state)?;
-    let old: Option<(String, Value, Option<String>)> = sqlx::query_as(
-        "SELECT environment, manifest, source_key FROM project_publishes WHERE project_id = $1 AND id = $2",
+    let old: Option<(String, String, Value, Option<String>)> = sqlx::query_as(
+        "SELECT environment, status, manifest, source_key FROM project_publishes WHERE project_id = $1 AND id = $2",
     )
     .bind(project_id)
     .bind(publish_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(internal("failed to load publish"))?;
-    let (environment, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    let (environment, status, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    // Going back to code that never went live would only fail again.
+    if status != "succeeded" {
+        return Err((StatusCode::CONFLICT, "only a publish that succeeded can be rolled back to".to_string()));
+    }
     // The code goes back; the secrets stay as they are now.
     manifest::bind_secrets(&mut manifest, &crate::routes::project_secrets::names(&state.pool, project_id).await?);
     let source_key = source_key.ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;

@@ -435,3 +435,19 @@ async fn a_rollback_row_names_the_version_it_returned_to_and_who_started_it(pool
     assert_eq!(publish_in(&overview, by_koda)["started_by_agent"], json!("Koda"));
     assert_eq!(publish_in(&overview, first)["started_by_agent"], Value::Null);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn rolling_back_to_a_failed_publish_is_refused(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("POST")).and(path_regex(r"/publish$")).respond_with(ResponseTemplate::new(202)).expect(0).mount(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "nope@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let broke = seed_publish(&pool, project_id, "production", "failed", 1, None, None).await;
+    sqlx::query("UPDATE project_publishes SET source_key = 'publishes/x.zip' WHERE id = $1").bind(broke).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router, "POST", &format!("/api/projects/{project_id}/deploy/publishes/{broke}/rollback"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}
