@@ -68,7 +68,7 @@ mod rena_chooses {
 
     #[async_trait]
     impl RelayOps for FakeRelay {
-        fn is_available(&self) -> bool {
+        async fn is_available(&self) -> bool {
             self.available
         }
         async fn ensure_backend(&self, _user_id: Uuid, project_id: Uuid) -> Result<Uuid, String> {

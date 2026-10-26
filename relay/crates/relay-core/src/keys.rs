@@ -33,13 +33,22 @@ impl ApiRole {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
+    /// `anon` or `service` for a key, `authenticated` for a signed-in user's token.
     pub role: String,
     /// The project the key belongs to.
     pub r#ref: Uuid,
     pub env: String,
     pub iat: u64,
     pub exp: u64,
+    /// The signed-in user, on a user's token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
+
+/// The role on a signed-in user's access token.
+pub const AUTHENTICATED: &str = "authenticated";
 
 pub fn new_signing_secret() -> String {
     let mut bytes = [0u8; SECRET_BYTES];
@@ -59,12 +68,43 @@ pub fn issued_now() -> u64 {
 /// A key for `role`, issued at `issued_at`: the same inputs always give the same key.
 pub fn api_key(secret: &str, project: Uuid, env: Env, role: ApiRole, issued_at: u64) -> String {
     let issued = issued_at;
-    let claims = Claims { role: role.as_str().to_string(), r#ref: project, env: env.as_str().to_string(), iat: issued, exp: issued + API_KEY_LIFETIME_SECONDS };
+    let claims = Claims {
+        role: role.as_str().to_string(),
+        r#ref: project,
+        env: env.as_str().to_string(),
+        iat: issued,
+        exp: issued + API_KEY_LIFETIME_SECONDS,
+        sub: None,
+        email: None,
+    };
     encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret.as_bytes())).expect("HS256 signing can't fail")
 }
 
+/// A signed-in user's access token, valid for `lifetime_seconds` from `issued_at`.
+pub fn user_token(secret: &str, project: Uuid, env: Env, user: Uuid, email: Option<&str>, issued_at: u64, lifetime_seconds: u64) -> String {
+    let claims = Claims {
+        role: AUTHENTICATED.to_string(),
+        r#ref: project,
+        env: env.as_str().to_string(),
+        iat: issued_at,
+        exp: issued_at + lifetime_seconds,
+        sub: Some(user),
+        email: email.map(str::to_string),
+    };
+    encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret.as_bytes())).expect("HS256 signing can't fail")
+}
+
+/// Checks the signature only; the caller decides what time it is (see `verify_at`).
 pub fn verify(secret: &str, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &Validation::new(Algorithm::HS256)).map(|data| data.claims)
+}
+
+/// Checks the signature and that the token hasn't expired at `now`.
+pub fn verify_at(secret: &str, token: &str, now: u64) -> Option<Claims> {
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = false;
+    let claims = decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation).ok()?.claims;
+    (claims.exp > now).then_some(claims)
 }
 #[cfg(test)]
 mod tests {

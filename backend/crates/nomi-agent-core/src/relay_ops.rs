@@ -54,7 +54,7 @@ pub struct ProjectFile {
 #[async_trait]
 pub trait RelayOps: Send + Sync {
     /// Whether this Nomi has Relay at all. Without it, projects are built on Drizzle.
-    fn is_available(&self) -> bool;
+    async fn is_available(&self) -> bool;
 
     /// Makes the project's Relay backend if it doesn't have one yet, as `user_id` (who must be
     /// able to open the project), and answers Relay's id for it.
@@ -79,7 +79,7 @@ pub struct NoRelayOps;
 
 #[async_trait]
 impl RelayOps for NoRelayOps {
-    fn is_available(&self) -> bool {
+    async fn is_available(&self) -> bool {
         false
     }
     async fn ensure_backend(&self, _user_id: Uuid, _project_id: Uuid) -> Result<Uuid, String> {
@@ -165,7 +165,7 @@ mod tests {
     async fn without_relay_every_call_says_it_isnt_set_up() {
         let ops = NoRelayOps;
         let (user, project) = (Uuid::nil(), Uuid::nil());
-        assert!(!ops.is_available());
+        assert!(!ops.is_available().await);
         assert_eq!(ops.ensure_backend(user, project).await.unwrap_err(), NOT_SET_UP);
         assert_eq!(ops.apply_migrations(user, project, RelayEnv::Dev, &[]).await.unwrap_err(), NOT_SET_UP);
         assert_eq!(ops.describe_backend(user, project, RelayEnv::Dev).await.unwrap_err(), NOT_SET_UP);

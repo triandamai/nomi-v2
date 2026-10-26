@@ -48,7 +48,7 @@ struct FakeRelay {
 
 #[async_trait]
 impl RelayOps for FakeRelay {
-    fn is_available(&self) -> bool {
+    async fn is_available(&self) -> bool {
         true
     }
     async fn ensure_backend(&self, _: Uuid, _: Uuid) -> Result<Uuid, String> {

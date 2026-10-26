@@ -1,34 +1,28 @@
-//! Relay's settings, from its environment.
+//! What Relay needs from its environment to start: its state database, the key its saved secrets
+//! are sealed with, and the key Nomi calls it with. Everything else is set from Nomi's admin and
+//! kept in its state (see `settings`).
 
 pub const ENV_DATABASE_URL: &str = "RELAY_DATABASE_URL";
-pub const ENV_SHARED_DEV_URL: &str = "RELAY_SHARED_DEV_URL";
-pub const ENV_SHARED_PRODUCTION_URL: &str = "RELAY_SHARED_PRODUCTION_URL";
 pub const ENV_CONTROL_KEY: &str = "RELAY_CONTROL_KEY";
 pub const ENV_ENCRYPTION_KEY: &str = "RELAY_ENCRYPTION_KEY";
-pub const ENV_PUBLIC_DOMAIN: &str = "RELAY_PUBLIC_DOMAIN";
 pub const ENV_BIND: &str = "RELAY_BIND";
 pub const DEFAULT_BIND: &str = "0.0.0.0:8080";
 const KEY_BYTES: usize = 32;
 
 #[derive(Clone)]
 pub struct Config {
-    /// Relay's own state: projects, environments, sealed secrets.
+    /// Relay's own state: projects, environments, settings, sealed secrets.
     pub database_url: String,
-    /// The shared databases free projects live in, one per environment.
-    pub shared_dev_url: String,
-    pub shared_production_url: String,
     /// What the Nomi backend sends as `Authorization: Bearer …` on control-plane calls.
     pub control_key: String,
     pub encryption_key: [u8; KEY_BYTES],
-    /// Apps reach their backend at `https://<slug>.<public_domain>`.
-    pub public_domain: String,
     pub bind: String,
 }
 
-/// Shows where Relay runs without printing its keys or database passwords.
+/// Shows where Relay listens without printing its keys or database password.
 impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Config").field("public_domain", &self.public_domain).field("bind", &self.bind).finish_non_exhaustive()
+        f.debug_struct("Config").field("bind", &self.bind).finish_non_exhaustive()
     }
 }
 
@@ -38,7 +32,8 @@ impl Config {
     }
 
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
-        let need = |name: &str| get(name).map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} must be set"));
+        let optional = |name: &str| get(name).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let need = |name: &str| optional(name).ok_or_else(|| format!("{name} must be set"));
         let key_hex = need(ENV_ENCRYPTION_KEY)?;
         let encryption_key: [u8; KEY_BYTES] = hex::decode(&key_hex)
             .ok()
@@ -46,15 +41,13 @@ impl Config {
             .ok_or_else(|| format!("{ENV_ENCRYPTION_KEY} must be {KEY_BYTES} bytes of hex"))?;
         Ok(Self {
             database_url: need(ENV_DATABASE_URL)?,
-            shared_dev_url: need(ENV_SHARED_DEV_URL)?,
-            shared_production_url: need(ENV_SHARED_PRODUCTION_URL)?,
             control_key: need(ENV_CONTROL_KEY)?,
             encryption_key,
-            public_domain: need(ENV_PUBLIC_DOMAIN)?,
-            bind: get(ENV_BIND).filter(|v| !v.trim().is_empty()).unwrap_or_else(|| DEFAULT_BIND.to_string()),
+            bind: optional(ENV_BIND).unwrap_or_else(|| DEFAULT_BIND.to_string()),
         })
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,11 +55,8 @@ mod tests {
     fn values() -> Vec<(&'static str, &'static str)> {
         vec![
             (ENV_DATABASE_URL, "postgres://relay@localhost/relay"),
-            (ENV_SHARED_DEV_URL, "postgres://relay@localhost/shared_dev"),
-            (ENV_SHARED_PRODUCTION_URL, "postgres://relay@localhost/shared_prod"),
             (ENV_CONTROL_KEY, "control-key"),
             (ENV_ENCRYPTION_KEY, "0707070707070707070707070707070707070707070707070707070707070707"),
-            (ENV_PUBLIC_DOMAIN, "api.relay.test"),
         ]
     }
 
@@ -79,7 +69,13 @@ mod tests {
         let config = Config::from_lookup(lookup(values())).unwrap();
         assert_eq!(config.encryption_key, [7u8; 32]);
         assert_eq!(config.bind, DEFAULT_BIND);
-        assert_eq!(config.public_domain, "api.relay.test");
+    }
+
+    #[test]
+    fn three_variables_are_enough() {
+        let config = Config::from_lookup(lookup(values())).unwrap();
+        assert_eq!(config.database_url, "postgres://relay@localhost/relay");
+        assert_eq!(config.control_key, "control-key");
     }
 
     #[test]

@@ -127,3 +127,61 @@ async fn deleting_removes_exactly_that_projects_backend(pool: PgPool) {
     let state: i64 = sqlx::query_scalar("SELECT count(*) FROM relay.projects WHERE id = $1").bind(gone).fetch_one(&pool).await.unwrap();
     assert_eq!(state, 0);
 }
+
+const AUTHENTICATOR: &str = "relay_test_authenticator";
+
+/// PostgREST's login role, made once per cluster (tests run side by side).
+async fn postgrest_relay(pool: &PgPool) -> Relay {
+    if let Err(e) = sqlx::query(&format!("CREATE ROLE {AUTHENTICATOR} NOLOGIN NOINHERIT")).execute(pool).await {
+        let code = e.as_database_error().and_then(|d| d.code()).map(|c| c.to_string());
+        assert!(matches!(code.as_deref(), Some("42710") | Some("23505")), "{e}");
+    }
+    relay(pool).with_postgrest_role(AUTHENTICATOR)
+}
+
+/// The settings `role` has in this database (`name=value`).
+async fn settings(pool: &PgPool, role: &str) -> Vec<String> {
+    let rows: Option<Vec<String>> = sqlx::query_scalar(
+        "SELECT s.setconfig FROM pg_db_role_setting s JOIN pg_roles r ON r.oid = s.setrole \
+         WHERE r.rolname = $1 AND s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database())) \
+         ORDER BY s.setdatabase DESC LIMIT 1",
+    )
+    .bind(role)
+    .fetch_optional(pool)
+    .await
+    .unwrap();
+    rows.unwrap_or_default()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn postgrest_can_switch_to_the_projects_roles_with_a_time_limit(pool: PgPool) {
+    use relay_core::names::{role, RoleKind};
+    let relay = postgrest_relay(&pool).await;
+    let project = Uuid::new_v4();
+    ensure_backend(&relay, project, "Bakery", Tier::Free, None).await.unwrap();
+    for kind in [RoleKind::Anon, RoleKind::Authenticated, RoleKind::Owner] {
+        let member: bool = sqlx::query_scalar("SELECT pg_has_role($1, $2, 'MEMBER')").bind(AUTHENTICATOR).bind(role(project, kind)).fetch_one(&pool).await.unwrap();
+        assert!(member, "{kind:?}");
+    }
+    for kind in [RoleKind::Anon, RoleKind::Authenticated] {
+        assert!(settings(&pool, &role(project, kind)).await.iter().any(|s| s.starts_with("statement_timeout=")), "{kind:?}");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn postgrest_serves_exactly_the_free_projects_in_its_database(pool: PgPool) {
+    let relay = postgrest_relay(&pool).await;
+    let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+    ensure_backend(&relay, a, "A", Tier::Free, None).await.unwrap();
+    ensure_backend(&relay, b, "B", Tier::Free, None).await.unwrap();
+    let schemas = |list: &[Uuid]| {
+        let mut names: Vec<String> = list.iter().map(|p| relay_core::names::schema_for(*p, Tier::Free)).collect();
+        names.sort();
+        format!("pgrst.db_schemas={}", names.join(", "))
+    };
+    assert!(settings(&pool, AUTHENTICATOR).await.contains(&schemas(&[a, b])), "{:?}", settings(&pool, AUTHENTICATOR).await);
+    delete_backend(&relay, a).await.unwrap();
+    assert!(settings(&pool, AUTHENTICATOR).await.contains(&schemas(&[b])), "{:?}", settings(&pool, AUTHENTICATOR).await);
+    delete_backend(&relay, b).await.unwrap();
+    assert!(!settings(&pool, AUTHENTICATOR).await.iter().any(|s| s.starts_with("pgrst.db_schemas=")));
+}

@@ -97,3 +97,43 @@ async fn an_unknown_environment_or_project_is_not_found(pool: PgPool) {
     assert_eq!(call(&router, "GET", &format!("{base}/environments/staging/schema"), Some(KEY), None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(call(&router, "GET", &format!("{base}/environments/dev/schema"), Some(KEY), None).await.0, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn reading_a_project_answers_its_keys_without_making_one(pool: PgPool) {
+    let router = router(&pool);
+    let path = format!("/control/projects/{}", Uuid::new_v4());
+    assert_eq!(call(&router, "GET", &path, Some(KEY), None).await.0, StatusCode::NOT_FOUND);
+    let (_, made) = call(&router, "PUT", &path, Some(KEY), Some(json!({ "name": "Todo" }))).await;
+    let (status, read) = call(&router, "GET", &path, Some(KEY), None).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["data"], made["data"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn until_its_settings_are_saved_relay_answers_not_configured(pool: PgPool) {
+    let router = relay_server::app::router(Arc::new(Relay::unconfigured(pool.clone(), [9u8; 32])), KEY.into());
+    let (status, settings) = call(&router, "GET", "/control/settings", Some(KEY), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["data"]["configured"], false);
+    let (status, body) = call(&router, "PUT", &format!("/control/projects/{}", Uuid::new_v4()), Some(KEY), Some(json!({ "name": "x" }))).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"]["code"], "NOT_CONFIGURED");
+    assert_eq!(call(&router, "GET", "/control/settings", None, None).await.0, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn settings_that_dont_work_answer_422_with_each_check(pool: PgPool) {
+    let router = relay_server::app::router(Arc::new(Relay::unconfigured(pool.clone(), [9u8; 32])), KEY.into());
+    let body = json!({
+        "public_domain": "api.relay.test",
+        "shared_dev_url": "postgres://nobody:x@127.0.0.1:9/none",
+        "shared_production_url": "postgres://nobody:x@127.0.0.1:9/none",
+        "postgrest_dev_url": "http://127.0.0.1:9",
+        "postgrest_production_url": "http://127.0.0.1:9",
+        "postgrest_role": "authenticator"
+    });
+    let (status, answer) = call(&router, "PUT", "/control/settings", Some(KEY), Some(body)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{answer}");
+    assert_eq!(answer["error"]["code"], "SETTINGS_INVALID");
+    assert_eq!(answer["error"]["details"]["checks"].as_array().unwrap().len(), 4);
+}

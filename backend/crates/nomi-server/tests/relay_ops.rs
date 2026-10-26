@@ -1,6 +1,6 @@
 use nomi_agent_core::relay_ops::{ProjectFile, RelayEnv, RelayOps, NOT_SET_UP};
 use nomi_relay_client::RelayConfig;
-use nomi_server::relay_ops::ServerRelayOps;
+use nomi_server::relay_ops::{preview_access, ServerRelayOps};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -67,7 +67,7 @@ fn envelope(data: serde_json::Value) -> ResponseTemplate {
 async fn without_relay_configured_nothing_is_available(pool: PgPool) {
     let (user_id, project_id) = seed_project(&pool).await;
     let ops = ServerRelayOps::new(pool, reqwest::Client::new(), None);
-    assert!(!ops.is_available());
+    assert!(!ops.is_available().await);
     assert_eq!(ops.ensure_backend(user_id, project_id).await.unwrap_err(), NOT_SET_UP);
 }
 
@@ -263,4 +263,44 @@ async fn a_drizzle_project_publishes_without_relay_and_a_relay_one_needs_it(pool
     assert!(nomi_server::relay_ops::apply_before_publish(&pool, &http, None, project_id, &publish_files()).await.is_ok());
     set_backend(&pool, project_id, "relay").await;
     assert!(nomi_server::relay_ops::apply_before_publish(&pool, &http, None, project_id, &publish_files()).await.is_err());
+}
+
+fn relay_config(server: &MockServer) -> RelayConfig {
+    RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key")).unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_preview_gets_dev_access_and_only_admins_get_the_service_key(pool: PgPool) {
+    let (owner, project_id) = seed_project(&pool).await;
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let member = add_member(&pool, project_id).await;
+    let server = MockServer::start().await;
+    Mock::given(method("GET")).and(path(format!("/control/projects/{project_id}"))).respond_with(envelope(backend(project_id))).mount(&server).await;
+    let http = reqwest::Client::new();
+    let config = relay_config(&server);
+
+    let admin = preview_access(&pool, &http, Some(&config), project_id, owner).await.unwrap();
+    assert_eq!(admin.url, "https://todo-4f2c1a-dev.api.relay.test");
+    assert_eq!(admin.anon_key, "dev-anon");
+    assert_eq!(admin.service_key.as_deref(), Some("dev-service"));
+
+    let member = preview_access(&pool, &http, Some(&config), project_id, member).await.unwrap();
+    assert_eq!(member.anon_key, "dev-anon");
+    assert_eq!(member.service_key, None);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn strangers_and_projects_off_relay_get_no_preview_access(pool: PgPool) {
+    let (owner, project_id) = seed_project(&pool).await;
+    let stranger: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("GET")).respond_with(envelope(backend(project_id))).expect(0).mount(&server).await;
+    let http = reqwest::Client::new();
+    let config = relay_config(&server);
+
+    let off_relay = preview_access(&pool, &http, Some(&config), project_id, owner).await.unwrap_err();
+    assert_eq!(off_relay.0, axum::http::StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let stranger = preview_access(&pool, &http, Some(&config), project_id, stranger).await.unwrap_err();
+    assert_eq!(stranger.0, axum::http::StatusCode::NOT_FOUND);
 }

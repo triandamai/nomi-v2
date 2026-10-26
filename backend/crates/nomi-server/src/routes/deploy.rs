@@ -378,7 +378,8 @@ pub(crate) async fn start_publish(
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
     // A Relay project's production database gets its new migrations before the new code goes out.
-    crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), nomi_relay_client::RelayConfig::from_env().as_ref(), project_id, &files).await?;
+    let relay = crate::relay_connection::load(state.pool(), crate::relay_connection::settings_key_from_env().as_ref()).await;
+    crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), relay.as_ref(), project_id, &files).await?;
     let secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
     let mut manifest = manifest::build(database, &secrets);
     manifest::label(&mut manifest, &project_id.to_string(), &target.stack, target.files_version);

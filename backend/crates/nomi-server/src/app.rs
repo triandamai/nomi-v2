@@ -225,6 +225,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/support/keys", get(crate::routes::support::list_keys).post(crate::routes::support::create_key))
         .route("/api/admin/support/keys/:id", delete(crate::routes::support::revoke_key))
         .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
+        .route("/api/admin/relay", get(crate::routes::admin_relay::get))
+        .route("/api/admin/relay/connection", put(crate::routes::admin_relay::put_connection))
+        .route("/api/admin/relay/settings", put(crate::routes::admin_relay::put_settings))
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
@@ -398,6 +401,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/database/credentials", post(crate::routes::project_database::credentials))
         .route("/api/projects/:id/database/tables", get(crate::routes::project_database::tables))
         .route("/api/projects/:id/database/query", post(crate::routes::project_database::run_query))
+        .route("/api/projects/:id/relay/preview", get(crate::routes::project_relay::preview))
         .route("/api/projects/:id/secrets", get(crate::routes::project_secrets::list))
         .route(
             "/api/projects/:id/secrets/:name",

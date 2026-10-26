@@ -1,22 +1,28 @@
-//! The control plane's routes. Only the Nomi backend calls them, with `RELAY_CONTROL_KEY`.
+//! The control plane's routes (only the Nomi backend calls them, with `RELAY_CONTROL_KEY`), and
+//! the hostname dispatch that sends an app's requests to the gateway instead.
 
 use std::sync::Arc;
 
 use axum::extract::{Path, Request, State};
+use axum::http::header::HOST;
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use axum::{Json, Router};
-use relay_control::backend::{delete_backend, ensure_backend, Databases};
-use relay_control::{migrations, schema, Relay};
+use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
+use relay_control::{migrations, schema, settings, Relay};
 use relay_core::{Env, Tier};
 use relay_migrate::MigrationFile;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use tower::ServiceExt;
+
 use crate::envelope::{ok, Answer, Failure};
+use crate::gateway::Gateway;
+pub use crate::gateway::MAX_BODY_BYTES;
 
 #[derive(Clone)]
 struct AppState {
@@ -65,6 +71,10 @@ async fn put_project(State(state): State<AppState>, Path(project): Path<Uuid>, J
     Ok(ok(ensure_backend(&state.relay, project, &body.name, tier, body.databases).await?))
 }
 
+async fn get_project(State(state): State<AppState>, Path(project): Path<Uuid>) -> Result<Answer> {
+    Ok(ok(backend_keys(&state.relay, project).await?))
+}
+
 async fn delete_project(State(state): State<AppState>, Path(project): Path<Uuid>) -> Result<Answer> {
     delete_backend(&state.relay, project).await?;
     Ok(ok(json!({ "deleted": project })))
@@ -83,14 +93,43 @@ async fn get_types(State(state): State<AppState>, Path((project, env_name)): Pat
     Ok(ok(json!({ "types": schema::types(&state.relay, project, env(&env_name)?).await? })))
 }
 
+async fn get_settings(State(state): State<AppState>) -> Answer {
+    ok(settings::view(&state.relay).await)
+}
+
+async fn put_settings(State(state): State<AppState>, Json(body): Json<settings::SettingsInput>) -> Result<Answer> {
+    Ok(ok(settings::save(&state.relay, body).await?))
+}
+
 async fn health() -> Answer {
     ok(json!({ "ok": true }))
 }
 
+/// Relay's whole surface: a project host (`<slug>[-dev].<domain>`, by the saved public domain)
+/// goes to the gateway, every other host to the control plane.
 pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
+    let control = control_router(relay.clone(), control_key);
+    let gateway = Arc::new(Gateway { relay: relay.clone(), http: reqwest::Client::new() });
+    Router::new().fallback(move |request: Request| {
+        let control = control.clone();
+        let gateway = gateway.clone();
+        let relay = relay.clone();
+        async move {
+            let host = request.headers().get(HOST).and_then(|v| v.to_str().ok()).unwrap_or_default();
+            let project = relay.live().ok().and_then(|live| relay_gateway::host::route(host, &live.settings.public_domain));
+            match project {
+                Some((slug, env)) => gateway.handle(slug, env, request).await,
+                None => control.oneshot(request).await.unwrap_or_else(|never| match never {}),
+            }
+        }
+    })
+}
+
+fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
     let state = AppState { relay, control_key: Arc::new(control_key) };
     let control = Router::new()
-        .route("/control/projects/:id", put(put_project).delete(delete_project))
+        .route("/control/settings", get(get_settings).put(put_settings))
+        .route("/control/projects/:id", get(get_project).put(put_project).delete(delete_project))
         .route("/control/projects/:id/environments/:env/migrations", post(post_migrations))
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))
         .route("/control/projects/:id/environments/:env/types", get(get_types))

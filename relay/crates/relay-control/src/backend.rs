@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{state, Relay, RelayError};
+use crate::{postgrest, state, Relay, RelayError};
 
 const NOMI_SCHEMA_SQL: &str = include_str!("nomi_schema.sql");
 /// Postgres' "duplicate object", raised when two calls create the same role at once.
@@ -109,8 +109,6 @@ pub async fn ensure_backend(relay: &Relay, project: Uuid, name: &str, tier: Tier
     }
     state::record(relay, project, name, tier, databases.as_ref().map(|d| (d.dev.as_str(), d.production.as_str()))).await?;
 
-    let mut environments = BTreeMap::new();
-    let mut slug = String::new();
     for env in Env::ALL {
         let row = state::environment(relay, project, env).await?.ok_or_else(|| RelayError::Internal("environment wasn't recorded".into()))?;
         let pool = match &row.database_url {
@@ -118,15 +116,33 @@ pub async fn ensure_backend(relay: &Relay, project: Uuid, name: &str, tier: Tier
             None => relay.shared(env)?,
         };
         provision(&pool, project, row.tier).await?;
+        if let Some(authenticator) = relay.live()?.settings.postgrest_role() {
+            postgrest::open_project(&pool, authenticator, project).await?;
+            if row.tier == Tier::Free {
+                postgrest::refresh_schemas(&pool, authenticator).await?;
+            }
+        }
+    }
+    backend_keys(relay, project).await
+}
+
+/// `project`'s address and keys per environment, changing nothing.
+pub async fn backend_keys(relay: &Relay, project: Uuid) -> Result<BackendKeys, RelayError> {
+    let mut environments = BTreeMap::new();
+    let mut slug = String::new();
+    let mut tier = Tier::Free;
+    for env in Env::ALL {
+        let row = state::environment(relay, project, env).await?.ok_or_else(|| RelayError::NotFound("no backend for this project".into()))?;
         environments.insert(
             env.as_str().to_string(),
             EnvironmentKeys {
-                url: public_url(&relay.public_domain, &row.slug, env),
+                url: public_url(&relay.live()?.settings.public_domain, &row.slug, env),
                 anon_key: api_key(&row.signing_secret, project, env, ApiRole::Anon, row.keys_issued_at),
                 service_key: api_key(&row.signing_secret, project, env, ApiRole::Service, row.keys_issued_at),
             },
         );
         slug = row.slug;
+        tier = row.tier;
     }
     Ok(BackendKeys { id: project, slug, tier: tier.as_str(), environments })
 }
@@ -160,6 +176,11 @@ pub async fn delete_backend(relay: &Relay, project: Uuid) -> Result<(), RelayErr
     }
     for name in &roles {
         sqlx::query(&format!("DROP ROLE IF EXISTS {}", quoted(name))).execute(&pools[0].pool).await?;
+    }
+    if let Some(authenticator) = relay.live()?.settings.postgrest_role() {
+        for placement in pools.iter().filter(|p| p.tier == Tier::Free) {
+            postgrest::refresh_schemas(&placement.pool, authenticator).await?;
+        }
     }
     state::forget(relay, project).await
 }

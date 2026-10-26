@@ -1,0 +1,67 @@
+//! Opening projects to PostgREST: it logs in as one role (the authenticator) and switches to the
+//! project's role per request, so the authenticator is granted each project's roles; it serves
+//! the schemas listed in its `pgrst.db_schemas` setting for that database, which Relay keeps
+//! equal to the free projects' schemas there.
+
+use relay_core::names::{role, RoleKind};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::RelayError;
+
+/// The longest a single app request may run in the database.
+pub const REQUEST_STATEMENT_TIMEOUT: &str = "8s";
+/// Serialises rewrites of `pgrst.db_schemas`, so two projects made at once both end up listed.
+const SCHEMAS_LOCK: i64 = 0x7265_6c61_7900_0001;
+/// A free project's schema: `app_` and its id without dashes.
+const FREE_SCHEMA_PATTERN: &str = "^app_[0-9a-f]{32}$";
+
+fn quoted(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+async fn require_role(pool: &PgPool, authenticator: &str) -> Result<(), RelayError> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)").bind(authenticator).fetch_one(pool).await?;
+    if exists {
+        Ok(())
+    } else {
+        Err(RelayError::Internal(format!("PostgREST's role {authenticator} doesn't exist in this database's cluster")))
+    }
+}
+
+/// Lets PostgREST switch to `project`'s roles and limits how long their requests may run.
+pub async fn open_project(pool: &PgPool, authenticator: &str, project: Uuid) -> Result<(), RelayError> {
+    require_role(pool, authenticator).await?;
+    for kind in [RoleKind::Anon, RoleKind::Authenticated, RoleKind::Owner] {
+        sqlx::query(&format!("GRANT {} TO {}", quoted(&role(project, kind)), quoted(authenticator))).execute(pool).await?;
+    }
+    for kind in [RoleKind::Anon, RoleKind::Authenticated] {
+        sqlx::query(&format!("ALTER ROLE {} SET statement_timeout = '{REQUEST_STATEMENT_TIMEOUT}'", quoted(&role(project, kind)))).execute(pool).await?;
+    }
+    Ok(())
+}
+
+/// Sets the authenticator's `pgrst.db_schemas` in this database to every free project's schema
+/// here, and tells PostgREST to reload.
+pub async fn refresh_schemas(pool: &PgPool, authenticator: &str) -> Result<(), RelayError> {
+    require_role(pool, authenticator).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)").bind(SCHEMAS_LOCK).execute(&mut *tx).await?;
+    let database: String = sqlx::query_scalar("SELECT current_database()").fetch_one(&mut *tx).await?;
+    let schemas: Vec<String> = sqlx::query_scalar("SELECT nspname::text FROM pg_namespace WHERE nspname ~ $1 ORDER BY nspname")
+        .bind(FREE_SCHEMA_PATTERN)
+        .fetch_all(&mut *tx)
+        .await?;
+    let target = format!("ROLE {} IN DATABASE {}", quoted(authenticator), quoted(&database));
+    let statement = if schemas.is_empty() {
+        format!("ALTER {target} RESET pgrst.db_schemas")
+    } else {
+        // Schema names match FREE_SCHEMA_PATTERN, so they're safe inside the literal.
+        format!("ALTER {target} SET pgrst.db_schemas = '{}'", schemas.join(", "))
+    };
+    sqlx::query(&statement).execute(&mut *tx).await?;
+    sqlx::query("NOTIFY pgrst, 'reload config'").execute(&mut *tx).await?;
+    sqlx::query("NOTIFY pgrst, 'reload schema'").execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
+}

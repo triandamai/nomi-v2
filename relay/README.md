@@ -106,14 +106,30 @@ Today each app carries its own backend, written fresh by Koda every time:
     project's schema, and drops any the client sent, so a request can't pick another schema.
   - PostgREST only trusts tokens from the gateway. After checking the app's token, the gateway
     signs a short-lived internal token with the PostgREST instance's key, carrying the project's
-    role (`app_<project>_authenticated`, `_anon` or `_service`) and the user's claims. PostgREST
-    sets the role and `request.jwt.claims`, and row-level security decides what the request can
-    see.
+    role in `db_role` (`app_<project>_anon`, `_authenticated`, or `_owner` for the service key,
+    which bypasses the project's own row-level security and nothing else) and the user's claims.
+    PostgREST sets the role and `request.jwt.claims`, and row-level security decides what the
+    request can see.
+  - PostgREST is started with nothing but its database URL. Relay writes what it needs onto its
+    login role in each shared database (`ALTER ROLE … IN DATABASE … SET pgrst.*`, read because
+    `db-config` is on by default): the JWT secret, which Relay makes and nobody types;
+    `jwt_role_claim_key = .db_role`; and `db_schemas`, kept equal to the free projects' schemas
+    there. Relay grants each project's roles to that login role.
   - After each migration, and when a free project is added to or removed from a shared database,
     the control plane sends `NOTIFY pgrst, 'reload schema'` (and `'reload config'` when the
     schema list changes).
-  - Every PostgREST runs with a statement timeout, `db-max-rows`, and request-size limits set
-    from the project's plan.
+  - For now the gateway caps request bodies at 1 MB and app roles at an 8-second statement
+    timeout; per-plan limits come later.
+
+### Setting Relay up
+
+Relay reads three variables from its environment: `RELAY_DATABASE_URL` (its state),
+`RELAY_ENCRYPTION_KEY` (32 bytes of hex; seals what it keeps) and `RELAY_CONTROL_KEY` (what Nomi
+calls it with), plus an optional `RELAY_BIND`. Everything else is set in Nomi's admin (Relay page)
+and kept sealed in Relay's state: the public domain, the shared dev and production database URLs,
+each PostgREST's URL, PostgREST's login role, and the preview origins allowed to call a dev
+backend from the browser. Saving checks every database and PostgREST first; until saved, Relay
+answers `503 NOT_CONFIGURED`.
 
 ## What Koda writes
 

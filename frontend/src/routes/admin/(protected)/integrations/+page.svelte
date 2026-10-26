@@ -15,6 +15,7 @@
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import RelayIntegration from '$lib/components/admin/RelayIntegration.svelte';
 	import { adminApi } from '$lib/adminApi';
 	import { can } from '$lib/permissions';
 	import type { PageData } from './$types';
@@ -633,6 +634,8 @@
 		{/if}
 	{/if}
 </section>
+
+<RelayIntegration {canManage} />
 
 <BottomSheet bind:open={sheetOpen} label={current?.name}>
 	{#if current}
