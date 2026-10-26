@@ -738,6 +738,8 @@ pub async fn send_message(
             })?;
 
     if let Some(response) = try_stop_command(&state, &claims, &channel, &chat_type, &chat_id, &req.text).await? {
+        let said = [Some(response.user_message.id), response.supervisor_reply.as_ref().map(|r| r.id)];
+        announce_sent(&state.pool, claims.sub, session_id, title.clone(), said.into_iter().flatten()).await;
         return Ok((StatusCode::OK, Json(response)));
     }
 
@@ -793,6 +795,8 @@ pub async fn send_message(
             (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch persisted user message")
         })?;
 
+    announce_sent(&state.pool, claims.sub, session_id, title, [ingested.user_message_id]).await;
+
     let user_message = MessageItem {
         id: ingested.user_message_id,
         sender: "user".to_string(),
@@ -809,6 +813,30 @@ pub async fn send_message(
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
+}
+
+/// What was just said in a chat reaches the person's other devices: the messages go to the
+/// chat's own topic, so a device with the chat open shows them (the device that sent them
+/// already has them, and ignores the copy), and every device hears the chat moved on, so its
+/// chat list does too. Best effort: a missed event is caught up the next time the chat loads.
+async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, title: Option<String>, message_ids: impl IntoIterator<Item = Uuid>) {
+    let Some(publisher) = crate::project_events::publisher() else { return };
+    let chat_topic = format!("chat/{session_id}/stream");
+    for message_id in message_ids {
+        if let Err(e) = publisher.try_publish_to(&chat_topic, &nomi_realtime::StreamEnvelope::MessageCreated { message_id }) {
+            tracing::debug!(error = %e, %session_id, "couldn't announce a sent message");
+        }
+    }
+    let project_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1")
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let chat_updated = nomi_realtime::UserEnvelope::ChatUpdated { session_id, project_id, title };
+    if let Err(e) = publisher.try_publish_to(&nomi_realtime::user_topic(user_id), &chat_updated) {
+        tracing::debug!(error = %e, %session_id, "couldn't tell the person's other devices about a chat");
+    }
 }
 
 async fn fetch_message_created_at(pool: &sqlx::PgPool, message_id: Uuid) -> Result<DateTime<Utc>, (StatusCode, &'static str)> {

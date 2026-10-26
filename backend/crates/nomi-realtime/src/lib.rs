@@ -81,4 +81,8 @@ pub enum UserEnvelope {
         /// Who answered last.
         agent: Option<String>,
     },
+    /// Something new was said in one of the person's chats from one of their devices (the
+    /// message itself goes to the chat's own topic): their other devices move that chat to the
+    /// top of their chat lists. `project_id` is set for a project's chat.
+    ChatUpdated { session_id: Uuid, project_id: Option<Uuid>, title: Option<String> },
 }

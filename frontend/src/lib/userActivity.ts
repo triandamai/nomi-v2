@@ -5,6 +5,8 @@ import { showSnackbar } from '$lib/snackbars.svelte';
 // it open while it's open, beside the open chat's own connection, so whatever the crew finishes
 // anywhere reaches it: a chat left mid-work, a hand-off finishing later, a project in another
 // tab. Each event becomes a snackbar with a way back, unless that chat is already on screen.
+// Chat lists (the drawer's recent chats) also hear when a chat moved on, here or on another of
+// the person's devices, so they stay in order without a reload.
 
 /** One chat the crew is done with for now (backend: nomi_turn::activity). */
 export interface ChatActivity {
@@ -15,6 +17,25 @@ export interface ChatActivity {
 	outcome: 'done' | 'failed' | 'waiting';
 	waiting: Waiting | null;
 	agent: string | null;
+}
+
+/** Something was said in one of the person's chats from one of their devices (backend:
+ * nomi_realtime::UserEnvelope::ChatUpdated). */
+export interface ChatUpdated {
+	kind: 'ChatUpdated';
+	session_id: string;
+	project_id: string | null;
+	title: string | null;
+}
+
+type UserEvent = ChatActivity | ChatUpdated;
+
+const chatsChanged = new Set<(sessionId: string) => void>();
+
+/** Calls `listener` with a chat's id whenever that chat moved on; returns the function that stops it. */
+export function onChatsChanged(listener: (sessionId: string) => void): () => void {
+	chatsChanged.add(listener);
+	return () => chatsChanged.delete(listener);
 }
 
 /** Signed out or not allowed: reconnecting won't help. */
@@ -32,7 +53,10 @@ function outcomeOf(event: ChatActivity): ChatOutcome {
 }
 
 /** What to do with one event from the feed. */
-export function handleActivity(event: ChatActivity) {
+export function handleActivity(event: UserEvent) {
+	if (event.kind === 'ChatUpdated' || event.kind === 'ChatActivity') {
+		for (const listener of chatsChanged) listener(event.session_id);
+	}
 	if (event.kind !== 'ChatActivity') return;
 	const href = chatHref(event);
 	// Already looking at it, or this tab is in the background (the tab in front shows it).
@@ -53,7 +77,7 @@ export function connectUserActivity(): () => void {
 		socket.addEventListener('open', () => (retryDelay = 1000));
 		socket.addEventListener('message', (message: MessageEvent<string>) => {
 			try {
-				handleActivity(JSON.parse(message.data) as ChatActivity);
+				handleActivity(JSON.parse(message.data) as UserEvent);
 			} catch {
 				// Not an event this build knows.
 			}
