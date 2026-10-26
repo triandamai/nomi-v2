@@ -29,6 +29,19 @@ pub struct Settings {
     /// answers that it isn't set up.
     #[serde(default)]
     pub storage: Option<StorageSettings>,
+    /// The functions runtime (`relay/functions-runtime`) projects' functions run in; without it,
+    /// functions answer that they aren't set up.
+    #[serde(default)]
+    pub functions: Option<FunctionsRuntime>,
+}
+
+/// Where the functions runtime is and the secret it and Relay share (its
+/// `RELAY_FUNCTIONS_SECRET`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct FunctionsRuntime {
+    pub url: String,
+    #[serde(default)]
+    pub secret: String,
 }
 
 /// An S3-compatible bucket (AWS, R2, MinIO, …).

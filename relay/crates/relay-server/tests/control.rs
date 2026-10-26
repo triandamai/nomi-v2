@@ -162,3 +162,38 @@ async fn buckets_and_realtime_tables_are_saved_and_described(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{refused}");
     assert_eq!(refused["error"]["code"], "BACKEND_INVALID");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn functions_are_deployed_rolled_back_and_described(pool: PgPool) {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let runtime = MockServer::start().await;
+    Mock::given(method("PUT")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true }))).mount(&runtime).await;
+    let shared = HashMap::from([(Env::Dev, pool.clone()), (Env::Production, pool.clone())]);
+    let uri = runtime.uri();
+    let relay = Relay::new(pool.clone(), shared, [9u8; 32], "api.relay.test".into())
+        .with_settings(|s| s.functions = Some(relay_core::settings::FunctionsRuntime { url: uri, secret: "s".into() }));
+    let router = relay_server::app::router(Arc::new(relay), KEY.into());
+    let project = Uuid::new_v4();
+    let base = format!("/control/projects/{project}");
+    call(&router, "PUT", &base, Some(KEY), Some(json!({ "name": "Shop" }))).await;
+    let deploy = |text: &str| json!({ "files": [{ "path": "nomi/functions/hello.ts", "content": text }], "functions": { "hello": { "auth": "public" } } });
+
+    let (status, first) = call(&router, "POST", &format!("{base}/environments/dev/functions"), Some(KEY), Some(deploy("export default () => new Response('1')"))).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["data"]["version"], 1);
+    call(&router, "POST", &format!("{base}/environments/dev/functions"), Some(KEY), Some(deploy("export default () => new Response('2')"))).await;
+
+    let (status, back) = call(&router, "POST", &format!("{base}/environments/dev/functions/rollback"), Some(KEY), Some(json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "{back}");
+    assert_eq!(back["data"]["version"], 1);
+    let (_, described) = call(&router, "GET", &format!("{base}/environments/dev/schema"), Some(KEY), None).await;
+    assert_eq!(described["data"]["functions"]["version"], 1);
+    assert_eq!(described["data"]["functions"]["functions"]["hello"]["auth"], "public");
+
+    let (status, saved) = call(&router, "PUT", &format!("{base}/secrets/STRIPE_SECRET"), Some(KEY), Some(json!({ "value": "sk_test" }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let (status, _) = call(&router, "PUT", &format!("{base}/secrets/not-a-name"), Some(KEY), Some(json!({ "value": "x" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(call(&router, "DELETE", &format!("{base}/secrets/STRIPE_SECRET"), Some(KEY), None).await.0, StatusCode::OK);
+}

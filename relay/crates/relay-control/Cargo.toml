@@ -15,6 +15,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 object_store = { version = "0.11", features = ["aws"] }
 futures = "0.3"
+croner = "2"
+chrono = "0.4"
 
 [dev-dependencies]
 wiremock = "0.6"
