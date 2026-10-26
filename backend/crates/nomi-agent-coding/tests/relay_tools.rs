@@ -43,6 +43,7 @@ async fn seed_project(pool: &PgPool, backend: &str) -> Seeded {
 #[derive(Default)]
 struct FakeRelay {
     applied: Mutex<Vec<(Uuid, RelayEnv, Vec<String>)>>,
+    auth: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
     fails: bool,
 }
 
@@ -72,6 +73,10 @@ impl RelayOps for FakeRelay {
     }
     async fn types(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {
         Ok("export interface Database { tables: {}; functions: Record<string, never> }\n".into())
+    }
+    async fn apply_auth(&self, _: Uuid, _: Uuid, env: RelayEnv, auth: &serde_json::Value) -> Result<String, String> {
+        self.auth.lock().unwrap().push((env, auth.clone()));
+        Ok("Sign-in settings saved to dev. Still needs the project secret NOMI_OAUTH_GITHUB_SECRET.".into())
     }
 }
 
@@ -243,4 +248,27 @@ async fn a_relay_projects_brief_has_its_tables_and_the_relay_guide(pool: PgPool)
     assert!(brief.contains("task (id, title)"), "{brief}");
     assert!(brief.contains("# Building on Nomi Relay"), "the relay guide, preloaded");
     assert!(!brief.contains("# Databases with Drizzle"), "not the Drizzle guide");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writing_backend_json_sends_its_sign_in_settings_to_dev(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay::default());
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+    let backend = json!({ "auth": { "methods": ["email_code", "github"], "github": { "client_id": "gh" }, "redirect_urls": ["http://localhost:5173"] } });
+    let said = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": "nomi/backend.json", "content": backend.to_string()}))
+        .await
+        .unwrap();
+    assert!(said.display_text.contains("NOMI_OAUTH_GITHUB_SECRET"), "{}", said.display_text);
+    let sent = relay.auth.lock().unwrap().clone();
+    assert_eq!(sent, vec![(RelayEnv::Dev, backend["auth"].clone())]);
+
+    let broken = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": "nomi/backend.json", "content": "{ not json"}))
+        .await
+        .unwrap();
+    assert!(broken.display_text.contains("isn't valid JSON"), "{}", broken.display_text);
+    assert_eq!(relay.auth.lock().unwrap().len(), 1);
 }

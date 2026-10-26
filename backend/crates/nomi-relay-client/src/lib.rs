@@ -13,6 +13,10 @@ use uuid::Uuid;
 
 pub const ENV_CONTROL_URL: &str = "RELAY_CONTROL_URL";
 pub const ENV_CONTROL_KEY: &str = "RELAY_CONTROL_KEY";
+/// The project secrets Relay keeps for sign-in: forwarded when an admin sets them.
+pub fn is_sign_in_secret(name: &str) -> bool {
+    name == "NOMI_SMTP_PASSWORD" || name.starts_with("NOMI_OAUTH_")
+}
 
 /// Most control-plane calls are quick lookups or small writes.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -204,6 +208,25 @@ impl<'a> Relay<'a> {
             .ok_or_else(|| RelayError::Unavailable(format!("Relay answered without types: {data}")))
     }
 
+    /// Replaces `env`'s sign-in settings (`nomi/backend.json`'s `auth`).
+    pub async fn put_auth(&self, project_id: Uuid, env: &str, auth: &Value) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::PUT, &format!("{}/auth", Self::env_path(project_id, env)), Some(auth.clone()), REQUEST_TIMEOUT).await
+    }
+
+    /// `env`'s sign-in settings, without secrets, and `missing_secrets`.
+    pub async fn auth(&self, project_id: Uuid, env: &str) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::GET, &format!("{}/auth", Self::env_path(project_id, env)), None, REQUEST_TIMEOUT).await
+    }
+
+    /// Sets (or, with `None`, removes) one of the project's sign-in secrets.
+    pub async fn put_auth_secret(&self, project_id: Uuid, name: &str, value: Option<&str>) -> Result<Value, RelayError> {
+        let path = format!("{}/auth/secrets/{name}", Self::project_path(project_id));
+        match value {
+            Some(value) => self.call(reqwest::Method::PUT, &path, Some(json!({ "value": value })), REQUEST_TIMEOUT).await,
+            None => self.call(reqwest::Method::DELETE, &path, None, REQUEST_TIMEOUT).await,
+        }
+    }
+
     /// Builds and deploys the project's functions to `env`.
     pub async fn deploy_functions(&self, project_id: Uuid, env: &str, files: &[SourceFile]) -> Result<Value, RelayError> {
         let path = format!("{}/functions", Self::env_path(project_id, env));
@@ -290,6 +313,28 @@ mod tests {
         let relay = Relay::new(&http, &config);
         assert_eq!(relay.backend(made).await.unwrap().environment("dev").unwrap().anon_key, "dev-anon");
         assert!(matches!(relay.backend(missing).await, Err(RelayError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn sign_in_settings_and_secrets_go_to_the_project() {
+        let server = MockServer::start().await;
+        let project = Uuid::new_v4();
+        let auth = json!({ "methods": ["email_code", "github"], "github": { "client_id": "gh" } });
+        Mock::given(method("PUT")).and(path(format!("/control/projects/{project}/environments/dev/auth"))).and(body_json(auth.clone())).respond_with(envelope(json!({ "saved": true }))).expect(1).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/control/projects/{project}/environments/dev/auth")))
+            .respond_with(envelope(json!({ "methods": ["email_code", "github"], "missing_secrets": ["NOMI_OAUTH_GITHUB_SECRET"] })))
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT")).and(path(format!("/control/projects/{project}/auth/secrets/NOMI_OAUTH_GITHUB_SECRET"))).and(body_json(json!({ "value": "s3cret" }))).respond_with(envelope(json!({}))).expect(1).mount(&server).await;
+        Mock::given(method("DELETE")).and(path(format!("/control/projects/{project}/auth/secrets/NOMI_OAUTH_GITHUB_SECRET"))).respond_with(envelope(json!({}))).expect(1).mount(&server).await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let relay = Relay::new(&http, &config);
+        relay.put_auth(project, "dev", &auth).await.unwrap();
+        assert_eq!(relay.auth(project, "dev").await.unwrap()["missing_secrets"][0], "NOMI_OAUTH_GITHUB_SECRET");
+        relay.put_auth_secret(project, "NOMI_OAUTH_GITHUB_SECRET", Some("s3cret")).await.unwrap();
+        relay.put_auth_secret(project, "NOMI_OAUTH_GITHUB_SECRET", None).await.unwrap();
     }
 
     #[tokio::test]

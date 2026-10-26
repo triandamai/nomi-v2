@@ -21,6 +21,8 @@ use crate::files::{owned_project_id, project_file_key, write_file};
 
 /// Where a project's migrations live, as plain SQL files named `0001_init.sql`, `0002_…`.
 pub const MIGRATIONS_DIR: &str = "nomi/migrations/";
+/// The project's backend settings; its `auth` block is the app's sign-in settings.
+pub const BACKEND_JSON_PATH: &str = "nomi/backend.json";
 /// Where the TypeScript for the project's tables goes, rewritten after every migration.
 pub const TYPES_PATH: &str = "src/lib/nomi.types.ts";
 pub(crate) const BACKEND_RELAY: &str = "relay";
@@ -97,21 +99,43 @@ pub(crate) async fn after_write(
     input: &Value,
     mut outcome: ToolOutcome,
 ) -> ToolOutcome {
-    if !WRITING_TOOLS.contains(&name) || !touched_paths(input).iter().any(|p| is_migration(p)) {
+    let paths = touched_paths(input);
+    let migrations = paths.iter().any(|p| is_migration(p));
+    let backend_json = paths.iter().any(|p| p == BACKEND_JSON_PATH);
+    if !WRITING_TOOLS.contains(&name) || !(migrations || backend_json) {
         return outcome;
     }
     let Ok(project_id) = owned_project_id(conn, user_id, input).await else { return outcome };
     if backend_of(conn, project_id).await.as_deref() != Some(BACKEND_RELAY) {
         return outcome;
     }
-    let said = match apply_to_dev(conn, storage, relay, user_id, project_id).await {
-        Ok(applied) => format!("Relay dev: {applied}"),
-        Err(e) => format!(
-            "Relay dev couldn't apply the migrations: {e}. Fix that file if it never applied; if it was applied before, write the next migration instead."
-        ),
-    };
-    outcome.display_text = format!("{}\n\n{said}", outcome.display_text);
+    if migrations {
+        let said = match apply_to_dev(conn, storage, relay, user_id, project_id).await {
+            Ok(applied) => format!("Relay dev: {applied}"),
+            Err(e) => format!(
+                "Relay dev couldn't apply the migrations: {e}. Fix that file if it never applied; if it was applied before, write the next migration instead."
+            ),
+        };
+        outcome.display_text = format!("{}\n\n{said}", outcome.display_text);
+    }
+    if backend_json && name != "delete_file" {
+        let said = match sign_in_to_dev(storage, relay, user_id, project_id).await {
+            Ok(said) => format!("Relay dev sign-in: {said}"),
+            Err(e) => format!("Relay dev sign-in settings weren't saved: {e}"),
+        };
+        outcome.display_text = format!("{}\n\n{said}", outcome.display_text);
+    }
     outcome
+}
+
+/// Sends `nomi/backend.json`'s `auth` block to the dev backend.
+async fn sign_in_to_dev(storage: &ProjectStore, relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> Result<String, String> {
+    let text = storage.get_object(&project_file_key(project_id, BACKEND_JSON_PATH)).await.map_err(|e| e.to_string())?.unwrap_or_default();
+    let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("{BACKEND_JSON_PATH} isn't valid JSON ({e}); fix it and write it again"))?;
+    match parsed.get("auth") {
+        Some(auth) => relay.apply_auth(user_id, project_id, RelayEnv::Dev, auth).await,
+        None => Ok(format!("{BACKEND_JSON_PATH} has no auth block, so sign-in stays as it is (email codes).")),
+    }
 }
 
 /// Runs `apply_migrations` or `describe_backend` for a project the person can open, on Relay.
