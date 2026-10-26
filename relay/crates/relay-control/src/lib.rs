@@ -3,6 +3,7 @@
 
 pub mod backend;
 pub mod migrations;
+pub mod schema;
 pub mod state;
 
 use std::collections::HashMap;
