@@ -544,7 +544,12 @@ pub async fn run_agent_turn(
     max_tokens: u32,
 ) -> Result<LoopOutcome, TurnError> {
     let mut tools = agent.tools();
-    let own_tools = always_on_own_tools(agent);
+    let mut own_tools = always_on_own_tools(agent);
+    let chat_tools = agent.chat_tools(conn, session_id, user_id, &messages).await;
+    if !agent.own_tools_switchable() {
+        own_tools.extend(chat_tools.iter().map(|t| t.name.clone()));
+    }
+    tools.extend(chat_tools);
     tools.push(complete_task_tool_definition());
     if agent.can_delegate() {
         let targets = registry.delegatable_agent_types(agent.agent_type().as_ref());

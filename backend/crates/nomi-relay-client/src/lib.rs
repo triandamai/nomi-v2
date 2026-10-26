@@ -1,0 +1,296 @@
+//! Nomi's client for Nomi Relay's control plane (see relay/README.md): making and deleting a
+//! project's backend, applying its migrations, reading its schema and types, and deploying its
+//! functions. Only the Nomi server calls it, with the service credential `RELAY_CONTROL_KEY`;
+//! apps talk to Relay's gateway with their own keys instead.
+
+use std::time::Duration;
+
+use serde::Serialize;
+use serde_json::{json, Value};
+use uuid::Uuid;
+
+pub const ENV_CONTROL_URL: &str = "RELAY_CONTROL_URL";
+pub const ENV_CONTROL_KEY: &str = "RELAY_CONTROL_KEY";
+
+/// Most control-plane calls are quick lookups or small writes.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Applying migrations or building functions can take a while.
+const LONG_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+/// How much of an unparseable answer is kept for the error.
+const MAX_RAW_ERROR_CHARS: usize = 300;
+
+/// How Nomi reaches Relay, from the server's environment.
+#[derive(Debug, Clone)]
+pub struct RelayConfig {
+    /// `https://<relay>`, without a trailing slash.
+    pub control_url: String,
+    pub control_key: String,
+}
+
+impl RelayConfig {
+    /// `None` when Relay isn't set up: projects are then built on Drizzle.
+    pub fn from_env() -> Option<Self> {
+        Self::from_values(std::env::var(ENV_CONTROL_URL).ok().as_deref(), std::env::var(ENV_CONTROL_KEY).ok().as_deref())
+    }
+
+    pub fn from_values(control_url: Option<&str>, control_key: Option<&str>) -> Option<Self> {
+        let url = control_url.map(str::trim).filter(|v| !v.is_empty())?;
+        let key = control_key.map(str::trim).filter(|v| !v.is_empty())?;
+        Some(Self { control_url: url.trim_end_matches('/').to_string(), control_key: key.to_string() })
+    }
+}
+
+/// What went wrong talking to Relay.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RelayError {
+    /// Relay refused the request (a migration failed, a lint rule, a conflict): its own words,
+    /// and where it went wrong when it says (`{ "file", "line" }` for a migration).
+    Rejected { status: u16, code: String, message: String, details: Value },
+    NotFound(String),
+    /// The control key is wrong or revoked.
+    Unauthorized(String),
+    /// Couldn't reach it, or it failed (5xx).
+    Unavailable(String),
+}
+
+impl std::fmt::Display for RelayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RelayError::Rejected { message, .. } => write!(f, "Relay refused it: {message}"),
+            RelayError::NotFound(message) => write!(f, "Relay has no such thing: {message}"),
+            RelayError::Unauthorized(message) => write!(f, "Relay rejected Nomi's key: {message}"),
+            RelayError::Unavailable(message) => write!(f, "couldn't reach Relay: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for RelayError {}
+
+/// Relay's `{ data, error }` envelope, unwrapped.
+fn unwrap_envelope(status: u16, body: &str) -> Result<Value, RelayError> {
+    let parsed: Value = serde_json::from_str(body).unwrap_or_else(|_| json!({ "raw": body.chars().take(MAX_RAW_ERROR_CHARS).collect::<String>() }));
+    let error = parsed.get("error").filter(|e| !e.is_null());
+    let message = error
+        .and_then(|e| e.get("message"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| body.chars().take(MAX_RAW_ERROR_CHARS).collect());
+    match status {
+        200..=299 => Ok(parsed.get("data").cloned().unwrap_or(parsed)),
+        401 | 403 => Err(RelayError::Unauthorized(message)),
+        404 => Err(RelayError::NotFound(message)),
+        400..=499 => Err(RelayError::Rejected {
+            status,
+            code: error.and_then(|e| e.get("code")).and_then(Value::as_str).unwrap_or_default().to_string(),
+            message,
+            details: error.and_then(|e| e.get("details")).cloned().unwrap_or(Value::Null),
+        }),
+        _ => Err(RelayError::Unavailable(message)),
+    }
+}
+
+/// One file of a project's `nomi/migrations/` or `nomi/functions/`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SourceFile {
+    pub path: String,
+    pub content: String,
+}
+
+pub struct Relay<'a> {
+    pub http: &'a reqwest::Client,
+    pub config: &'a RelayConfig,
+}
+
+impl<'a> Relay<'a> {
+    pub fn new(http: &'a reqwest::Client, config: &'a RelayConfig) -> Self {
+        Self { http, config }
+    }
+
+    async fn call(&self, method: reqwest::Method, path: &str, body: Option<Value>, timeout: Duration) -> Result<Value, RelayError> {
+        let mut request = self
+            .http
+            .request(method, format!("{}{path}", self.config.control_url))
+            .timeout(timeout)
+            .bearer_auth(&self.config.control_key)
+            .header("accept", "application/json");
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let response = request.send().await.map_err(|e| RelayError::Unavailable(e.to_string()))?;
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        unwrap_envelope(status, &body)
+    }
+
+    fn project_path(project_id: Uuid) -> String {
+        format!("/control/projects/{project_id}")
+    }
+
+    /// `env` is `dev` or `production`; it's one of Relay's names, so it's used as is.
+    fn env_path(project_id: Uuid, env: &str) -> String {
+        format!("{}/environments/{env}", Self::project_path(project_id))
+    }
+
+    /// Makes the project's backend (database objects, `nomi` schema, keys), or does nothing if it
+    /// exists. Idempotent. Answers Relay's id for it.
+    pub async fn ensure_backend(&self, project_id: Uuid, name: &str) -> Result<Uuid, RelayError> {
+        let data = self.call(reqwest::Method::PUT, &Self::project_path(project_id), Some(json!({ "name": name })), REQUEST_TIMEOUT).await?;
+        data.get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| id.parse().ok())
+            .ok_or_else(|| RelayError::Unavailable(format!("Relay answered without a backend id: {data}")))
+    }
+
+    /// Drops exactly the project's database objects and rows.
+    pub async fn delete_backend(&self, project_id: Uuid) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::DELETE, &Self::project_path(project_id), None, REQUEST_TIMEOUT).await
+    }
+
+    /// Lints and applies the migrations `env` doesn't have yet. Answers what ran.
+    pub async fn apply_migrations(&self, project_id: Uuid, env: &str, files: &[SourceFile]) -> Result<Value, RelayError> {
+        let path = format!("{}/migrations", Self::env_path(project_id, env));
+        self.call(reqwest::Method::POST, &path, Some(json!({ "files": files })), LONG_REQUEST_TIMEOUT).await
+    }
+
+    /// The backend's tables, columns, policies, buckets, auth providers and functions.
+    pub async fn describe(&self, project_id: Uuid, env: &str) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::GET, &format!("{}/schema", Self::env_path(project_id, env)), None, REQUEST_TIMEOUT).await
+    }
+
+    /// `src/lib/nomi.types.ts` for `env`'s schema.
+    pub async fn types(&self, project_id: Uuid, env: &str) -> Result<String, RelayError> {
+        let data = self.call(reqwest::Method::GET, &format!("{}/types", Self::env_path(project_id, env)), None, REQUEST_TIMEOUT).await?;
+        data.get("types")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| RelayError::Unavailable(format!("Relay answered without types: {data}")))
+    }
+
+    /// Builds and deploys the project's functions to `env`.
+    pub async fn deploy_functions(&self, project_id: Uuid, env: &str, files: &[SourceFile]) -> Result<Value, RelayError> {
+        let path = format!("{}/functions", Self::env_path(project_id, env));
+        self.call(reqwest::Method::POST, &path, Some(json!({ "files": files })), LONG_REQUEST_TIMEOUT).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use wiremock::matchers::{body_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn config(base: &str) -> RelayConfig {
+        RelayConfig { control_url: base.to_string(), control_key: "relay_control_key".into() }
+    }
+
+    fn envelope(data: serde_json::Value) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(json!({ "data": data, "error": null }))
+    }
+
+    #[test]
+    fn config_needs_both_url_and_key() {
+        assert!(RelayConfig::from_values(Some("https://relay.test/"), None).is_none());
+        assert!(RelayConfig::from_values(None, Some("k")).is_none());
+        assert!(RelayConfig::from_values(Some("  "), Some("k")).is_none());
+        let config = RelayConfig::from_values(Some("https://relay.test/"), Some(" k ")).unwrap();
+        assert_eq!(config.control_url, "https://relay.test");
+        assert_eq!(config.control_key, "k");
+    }
+
+    #[tokio::test]
+    async fn ensure_backend_puts_the_project_and_answers_relay_s_id() {
+        let server = MockServer::start().await;
+        let project = Uuid::new_v4();
+        let relay_id = Uuid::new_v4();
+        Mock::given(method("PUT"))
+            .and(path(format!("/control/projects/{project}")))
+            .and(header("authorization", "Bearer relay_control_key"))
+            .and(body_json(json!({ "name": "Todo" })))
+            .respond_with(envelope(json!({ "id": relay_id })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        assert_eq!(Relay::new(&http, &config).ensure_backend(project, "Todo").await.unwrap(), relay_id);
+    }
+
+    #[tokio::test]
+    async fn migrations_go_to_the_environment_and_come_back_as_relay_said() {
+        let server = MockServer::start().await;
+        let project = Uuid::new_v4();
+        Mock::given(method("POST"))
+            .and(path(format!("/control/projects/{project}/environments/dev/migrations")))
+            .and(body_json(json!({ "files": [{ "path": "nomi/migrations/0001_init.sql", "content": "create table t (id int);" }] })))
+            .respond_with(envelope(json!({ "applied": ["0001_init.sql"] })))
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let files = [SourceFile { path: "nomi/migrations/0001_init.sql".into(), content: "create table t (id int);".into() }];
+        let answer = Relay::new(&http, &config).apply_migrations(project, "dev", &files).await.unwrap();
+        assert_eq!(answer, json!({ "applied": ["0001_init.sql"] }));
+    }
+
+    #[tokio::test]
+    async fn a_failed_migration_keeps_relay_s_words_and_where_it_failed() {
+        let server = MockServer::start().await;
+        let project = Uuid::new_v4();
+        Mock::given(method("POST"))
+            .and(path(format!("/control/projects/{project}/environments/dev/migrations")))
+            .respond_with(ResponseTemplate::new(422).set_body_json(json!({
+                "data": null,
+                "error": { "code": "MIGRATION_FAILED", "message": "relation \"task\" already exists", "details": { "file": "0002_task.sql", "line": 3 } }
+            })))
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let err = Relay::new(&http, &config).apply_migrations(project, "dev", &[]).await.unwrap_err();
+        assert_eq!(
+            err,
+            RelayError::Rejected {
+                status: 422,
+                code: "MIGRATION_FAILED".into(),
+                message: "relation \"task\" already exists".into(),
+                details: json!({ "file": "0002_task.sql", "line": 3 }),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn types_and_schema_are_read_per_environment() {
+        let server = MockServer::start().await;
+        let project = Uuid::new_v4();
+        Mock::given(method("GET"))
+            .and(path(format!("/control/projects/{project}/environments/production/types")))
+            .respond_with(envelope(json!({ "types": "export interface Database {}" })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/control/projects/{project}/environments/dev/schema")))
+            .respond_with(envelope(json!({ "tables": [] })))
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let relay = Relay::new(&http, &config);
+        assert_eq!(relay.types(project, "production").await.unwrap(), "export interface Database {}");
+        assert_eq!(relay.describe(project, "dev").await.unwrap(), json!({ "tables": [] }));
+    }
+
+    #[test]
+    fn errors_say_whose_fault_it_is() {
+        assert!(matches!(unwrap_envelope(401, r#"{"data":null,"error":{"code":"UNAUTHORIZED","message":"bad key"}}"#), Err(RelayError::Unauthorized(_))));
+        assert!(matches!(unwrap_envelope(404, r#"{"data":null,"error":{"code":"NOT_FOUND","message":"no such project"}}"#), Err(RelayError::NotFound(_))));
+        assert!(matches!(unwrap_envelope(502, "upstream down"), Err(RelayError::Unavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_relay_is_unavailable() {
+        let http = reqwest::Client::new();
+        let config = config("http://127.0.0.1:9");
+        assert!(matches!(Relay::new(&http, &config).describe(Uuid::new_v4(), "dev").await, Err(RelayError::Unavailable(_))));
+    }
+}
