@@ -1,7 +1,7 @@
 //! The server's side of `nomi_agent_core::relay_ops`: agents reach a project's Nomi Relay backend
 //! through Relay's control plane (`nomi-relay-client`), as the person they work for, with the
 //! same project checks the Deploy sheet uses. Anyone who can open the project works on its `dev`
-//! backend; only its admins change `production`.
+//! backend; only its admins read or change `production`, as with its production database.
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
@@ -71,7 +71,7 @@ impl ServerRelayOps {
         self.config.as_ref().map(|config| Relay::new(&self.http_client, config)).ok_or_else(|| NOT_SET_UP.to_string())
     }
 
-    /// Anyone who can open the project works on `dev`; `production` is its admins'.
+    /// Anyone who can open the project works on `dev`; `production`, read or changed, is its admins'.
     async fn check_access(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<(), String> {
         match env {
             RelayEnv::Dev => project_role(&self.pool, project_id, user_id).await.map(|_| ()).map_err(message),
@@ -122,7 +122,7 @@ impl RelayOps for ServerRelayOps {
 
     async fn describe_backend(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {
         let relay = self.relay()?;
-        self.check_access(user_id, project_id, RelayEnv::Dev).await?;
+        self.check_access(user_id, project_id, env).await?;
         let schema = relay.describe(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))?;
         serde_json::to_string_pretty(&schema).map_err(|e| e.to_string())
     }
@@ -136,7 +136,7 @@ impl RelayOps for ServerRelayOps {
 
     async fn types(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {
         let relay = self.relay()?;
-        self.check_access(user_id, project_id, RelayEnv::Dev).await?;
+        self.check_access(user_id, project_id, env).await?;
         relay.types(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))
     }
 }

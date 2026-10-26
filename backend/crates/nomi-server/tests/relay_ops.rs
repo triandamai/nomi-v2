@@ -26,6 +26,22 @@ async fn seed_project(pool: &PgPool) -> (Uuid, Uuid) {
     (user_id, project_id)
 }
 
+/// Someone in the project's organization who was added to the project as a member (not an admin):
+/// they can open it.
+async fn add_member(pool: &PgPool, project_id: Uuid) -> Uuid {
+    let member: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Team') RETURNING id").fetch_one(pool).await.unwrap();
+    sqlx::query("UPDATE projects SET org_id = $1 WHERE id = $2").bind(org_id).bind(project_id).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')").bind(org_id).bind(member).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'member')")
+        .bind(project_id)
+        .bind(member)
+        .execute(pool)
+        .await
+        .unwrap();
+    member
+}
+
 fn ops(pool: &PgPool, server: &MockServer) -> ServerRelayOps {
     ServerRelayOps::new(pool.clone(), reqwest::Client::new(), RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key")))
 }
@@ -100,16 +116,16 @@ async fn applied_migrations_are_named_and_a_failure_says_where(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn only_an_admin_changes_production(pool: PgPool) {
     let (owner, project_id) = seed_project(&pool).await;
-    let member: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
-    sqlx::query("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'member')")
-        .bind(project_id)
-        .bind(member)
-        .execute(&pool)
-        .await
-        .unwrap();
+    let member = add_member(&pool, project_id).await;
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(format!("/control/projects/{project_id}/environments/production/migrations")))
+        .respond_with(envelope(json!({ "applied": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(format!("/control/projects/{project_id}/environments/dev/migrations")))
         .respond_with(envelope(json!({ "applied": [] })))
         .expect(1)
         .mount(&server)
@@ -118,4 +134,19 @@ async fn only_an_admin_changes_production(pool: PgPool) {
 
     assert!(ops.apply_migrations(member, project_id, RelayEnv::Production, &[]).await.is_err());
     assert!(ops.apply_migrations(owner, project_id, RelayEnv::Production, &[]).await.is_ok());
+    assert!(ops.apply_migrations(member, project_id, RelayEnv::Dev, &[]).await.is_ok());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn only_an_admin_reads_production(pool: PgPool) {
+    let (owner, project_id) = seed_project(&pool).await;
+    let member = add_member(&pool, project_id).await;
+    let server = MockServer::start().await;
+    Mock::given(method("GET")).respond_with(envelope(json!({ "tables": [], "types": "" }))).mount(&server).await;
+    let ops = ops(&pool, &server);
+
+    assert!(ops.describe_backend(member, project_id, RelayEnv::Production).await.is_err());
+    assert!(ops.types(member, project_id, RelayEnv::Production).await.is_err());
+    assert!(ops.describe_backend(member, project_id, RelayEnv::Dev).await.is_ok());
+    assert!(ops.describe_backend(owner, project_id, RelayEnv::Production).await.is_ok());
 }
