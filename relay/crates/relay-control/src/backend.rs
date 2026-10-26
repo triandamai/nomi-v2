@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{state, Relay, RelayError};
+use crate::{postgrest, state, Relay, RelayError};
 
 const NOMI_SCHEMA_SQL: &str = include_str!("nomi_schema.sql");
 /// Postgres' "duplicate object", raised when two calls create the same role at once.
@@ -118,6 +118,12 @@ pub async fn ensure_backend(relay: &Relay, project: Uuid, name: &str, tier: Tier
             None => relay.shared(env)?,
         };
         provision(&pool, project, row.tier).await?;
+        if let Some(authenticator) = &relay.postgrest_role {
+            postgrest::open_project(&pool, authenticator, project).await?;
+            if row.tier == Tier::Free {
+                postgrest::refresh_schemas(&pool, authenticator).await?;
+            }
+        }
         environments.insert(
             env.as_str().to_string(),
             EnvironmentKeys {
@@ -160,6 +166,11 @@ pub async fn delete_backend(relay: &Relay, project: Uuid) -> Result<(), RelayErr
     }
     for name in &roles {
         sqlx::query(&format!("DROP ROLE IF EXISTS {}", quoted(name))).execute(&pools[0].pool).await?;
+    }
+    if let Some(authenticator) = &relay.postgrest_role {
+        for placement in pools.iter().filter(|p| p.tier == Tier::Free) {
+            postgrest::refresh_schemas(&placement.pool, authenticator).await?;
+        }
     }
     state::forget(relay, project).await
 }

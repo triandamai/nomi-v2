@@ -3,6 +3,7 @@
 
 pub mod backend;
 pub mod migrations;
+pub mod postgrest;
 pub mod schema;
 pub mod state;
 
@@ -55,6 +56,8 @@ pub struct Relay {
     pub encryption_key: [u8; 32],
     pub public_domain: String,
     dedicated: Mutex<HashMap<String, PgPool>>,
+    /// The role PostgREST logs in as; when set, projects are opened to it as they're made.
+    pub postgrest_role: Option<String>,
 }
 
 /// Where one environment of a project lives: the database and the schema its tables are in.
@@ -66,7 +69,12 @@ pub struct Placement {
 
 impl Relay {
     pub fn new(state: PgPool, shared: HashMap<Env, PgPool>, encryption_key: [u8; 32], public_domain: String) -> Self {
-        Self { state, shared, encryption_key, public_domain, dedicated: Mutex::new(HashMap::new()) }
+        Self { state, shared, encryption_key, public_domain, dedicated: Mutex::new(HashMap::new()), postgrest_role: None }
+    }
+
+    pub fn with_postgrest_role(mut self, role: impl Into<String>) -> Self {
+        self.postgrest_role = Some(role.into());
+        self
     }
 
     pub(crate) fn shared(&self, env: Env) -> Result<PgPool, RelayError> {

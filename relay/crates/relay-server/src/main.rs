@@ -22,7 +22,7 @@ async fn main() {
         (Env::Dev, connect(config.shared_dev_url.clone()).await),
         (Env::Production, connect(config.shared_production_url.clone()).await),
     ]);
-    let relay = Arc::new(Relay::new(state, shared, config.encryption_key, config.public_domain.clone()));
+    let relay = Arc::new(Relay::new(state, shared, config.encryption_key, config.public_domain.clone()).with_postgrest_role(config.postgrest_role.clone()));
     let gateway = relay_server::app::GatewaySettings {
         postgrest: HashMap::from([(Env::Dev, config.postgrest_dev_url.clone()), (Env::Production, config.postgrest_production_url.clone())]),
         jwt_secret: config.postgrest_jwt_secret.clone(),
