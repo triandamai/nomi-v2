@@ -14,14 +14,31 @@ use nomi_agent_core::relay_ops::{
 use nomi_llm::{LlmMessage, ToolDefinition};
 use nomi_storage::ProjectStore;
 
+use nomi_agent_core::ToolOutcome;
+
 use crate::brief::project_for;
-use crate::files::{owned_project_id, project_file_key};
+use crate::files::{owned_project_id, project_file_key, write_file};
 
 /// Where a project's migrations live, as plain SQL files named `0001_init.sql`, `0002_…`.
 pub const MIGRATIONS_DIR: &str = "nomi/migrations/";
-const BACKEND_RELAY: &str = "relay";
+/// Where the TypeScript for the project's tables goes, rewritten after every migration.
+pub const TYPES_PATH: &str = "src/lib/nomi.types.ts";
+pub(crate) const BACKEND_RELAY: &str = "relay";
+/// File tools whose writes can change a migration.
+const WRITING_TOOLS: [&str; 4] = ["write_file", "write_files", "edit_file", "delete_file"];
 
-async fn backend_of(conn: &mut PoolConnection<Postgres>, project_id: Uuid) -> Option<String> {
+fn is_migration(path: &str) -> bool {
+    path.starts_with(MIGRATIONS_DIR) && path.ends_with(".sql")
+}
+
+/// The paths a file tool's input touches.
+fn touched_paths(input: &Value) -> Vec<String> {
+    let single = input.get("path").and_then(Value::as_str).map(str::to_string);
+    let many = input.get("files").and_then(Value::as_array).into_iter().flatten().filter_map(|f| f.get("path").and_then(Value::as_str).map(str::to_string));
+    single.into_iter().chain(many).collect()
+}
+
+pub(crate) async fn backend_of(conn: &mut PoolConnection<Postgres>, project_id: Uuid) -> Option<String> {
     sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1").bind(project_id).fetch_optional(&mut **conn).await.ok().flatten()
 }
 
@@ -54,6 +71,49 @@ async fn migration_files(conn: &mut PoolConnection<Postgres>, storage: &ProjectS
     Ok(files)
 }
 
+/// Applies the project's migrations to dev and, when they applied, rewrites the types file.
+/// Answers what to tell Koda either way: a failure is something for him to fix, not a tool error.
+async fn apply_to_dev(conn: &mut PoolConnection<Postgres>, storage: &ProjectStore, relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> Result<String, String> {
+    let files = migration_files(conn, storage, project_id).await?;
+    let applied = relay.apply_migrations(user_id, project_id, RelayEnv::Dev, &files).await?;
+    match relay.types(user_id, project_id, RelayEnv::Dev).await {
+        Ok(types) => {
+            let input = serde_json::json!({ "project_id": project_id.to_string(), "path": TYPES_PATH, "content": types });
+            write_file(conn, storage, user_id, input).await?;
+            Ok(format!("{applied} {TYPES_PATH} is up to date."))
+        }
+        Err(e) => Ok(format!("{applied} (Couldn't refresh {TYPES_PATH}: {e})")),
+    }
+}
+
+/// After a file tool wrote under `nomi/migrations/` in a Relay project: applies the migrations to
+/// dev and adds the outcome to what the tool says, the way `npm run check` output comes back.
+pub(crate) async fn after_write(
+    conn: &mut PoolConnection<Postgres>,
+    storage: &ProjectStore,
+    relay: &dyn RelayOps,
+    user_id: Uuid,
+    name: &str,
+    input: &Value,
+    mut outcome: ToolOutcome,
+) -> ToolOutcome {
+    if !WRITING_TOOLS.contains(&name) || !touched_paths(input).iter().any(|p| is_migration(p)) {
+        return outcome;
+    }
+    let Ok(project_id) = owned_project_id(conn, user_id, input).await else { return outcome };
+    if backend_of(conn, project_id).await.as_deref() != Some(BACKEND_RELAY) {
+        return outcome;
+    }
+    let said = match apply_to_dev(conn, storage, relay, user_id, project_id).await {
+        Ok(applied) => format!("Relay dev: {applied}"),
+        Err(e) => format!(
+            "Relay dev couldn't apply the migrations: {e}. Fix that file if it never applied; if it was applied before, write the next migration instead."
+        ),
+    };
+    outcome.display_text = format!("{}\n\n{said}", outcome.display_text);
+    outcome
+}
+
 /// Runs `apply_migrations` or `describe_backend` for a project the person can open, on Relay.
 pub(crate) async fn execute(
     conn: &mut PoolConnection<Postgres>,
@@ -71,10 +131,7 @@ pub(crate) async fn execute(
         ));
     }
     match name {
-        APPLY_MIGRATIONS_TOOL_NAME => {
-            let files = migration_files(conn, storage, project_id).await?;
-            relay.apply_migrations(user_id, project_id, RelayEnv::Dev, &files).await
-        }
+        APPLY_MIGRATIONS_TOOL_NAME => apply_to_dev(conn, storage, relay, user_id, project_id).await,
         DESCRIBE_BACKEND_TOOL_NAME => relay.describe_backend(user_id, project_id, environment_from(input)?).await,
         other => Err(format!("unknown tool: {other}")),
     }

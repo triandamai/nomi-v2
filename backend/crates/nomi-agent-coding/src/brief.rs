@@ -9,6 +9,7 @@ use nomi_agent_core::plans::{latest_plan_by, open_checklist_items};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
+use nomi_agent_core::relay_ops::{RelayEnv, RelayOps};
 
 /// More files than this are summarised as a count: list_files shows them all.
 const MAX_LISTED_FILES: usize = 150;
@@ -58,6 +59,36 @@ fn failed_publish_line(environment: &str, failure: Option<&serde_json::Value>, e
     }
 }
 
+/// What a Relay project's backend has: its dev tables with their columns, from Relay itself.
+async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> String {
+    let mut section = String::from(
+        "## Backend: Nomi Relay\nThis project's database, sign-in and storage come from Relay (guide below): write migrations in \
+         nomi/migrations/, use the nomi-relay client, and never add Drizzle or your own auth.\n",
+    );
+    match relay.describe_backend(user_id, project_id, RelayEnv::Dev).await {
+        Ok(described) => {
+            let tables: Vec<String> = serde_json::from_str::<serde_json::Value>(&described)
+                .ok()
+                .and_then(|schema| schema.get("tables").and_then(serde_json::Value::as_array).cloned())
+                .unwrap_or_default()
+                .iter()
+                .map(|table| {
+                    let name = table.get("name").and_then(serde_json::Value::as_str).unwrap_or("?");
+                    let columns: Vec<&str> = table.get("columns").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(|c| c.get("name").and_then(serde_json::Value::as_str)).collect();
+                    format!("- {name} ({})", columns.join(", "))
+                })
+                .collect();
+            if tables.is_empty() {
+                section.push_str("No tables in dev yet: the first migration is nomi/migrations/0001_init.sql.\n\n");
+            } else {
+                section.push_str(&format!("Tables in dev now:\n{}\n\n", tables.join("\n")));
+            }
+        }
+        Err(e) => section.push_str(&format!("(Couldn't read the dev backend: {e}. Call describe_backend.)\n\n")),
+    }
+    section
+}
+
 fn clip(text: &str, max: usize) -> &str {
     match text.char_indices().nth(max) {
         Some((at, _)) => &text[..at],
@@ -71,6 +102,7 @@ pub async fn task_brief(
     session_id: Uuid,
     user_id: Uuid,
     messages: &[LlmMessage],
+    relay: &dyn RelayOps,
 ) -> Option<String> {
     let project_id = project_for(conn, session_id, user_id, messages).await?;
     let (name, stack, files_version, checked_version, check_ok, check_output): (String, String, i64, Option<i64>, Option<bool>, Option<String>) =
@@ -173,8 +205,17 @@ The person stored these for the published app, read on the server from the envir
         ),
     }
 
+    let on_relay = crate::relay::backend_of(conn, project_id).await.as_deref() == Some(crate::relay::BACKEND_RELAY);
+    if on_relay {
+        brief.push_str(&relay_section(relay, user_id, project_id).await);
+    }
+
     let stack_guide = guides::guide_for_stack(&stack).unwrap_or("sveltekit");
-    for topic in [stack_guide, "preview"] {
+    let mut topics = vec![stack_guide, "preview"];
+    if on_relay {
+        topics.push("relay");
+    }
+    for topic in topics {
         if let Some((_, _, content)) = guides::GUIDES.iter().find(|(name, _, _)| *name == topic) {
             brief.push_str(&format!("## Guide: {topic} (already read for you)\n{content}\n\n"));
         }
