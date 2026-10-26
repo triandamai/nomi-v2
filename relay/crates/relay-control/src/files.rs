@@ -39,3 +39,17 @@ pub fn bucket_prefix(project: Uuid, env: Env, bucket: &str) -> Path {
 pub fn object_path(project: Uuid, env: Env, bucket: &str, path: &str) -> Path {
     Path::from(format!("{project}/{}/{bucket}/{path}", env.as_str()))
 }
+
+/// Deletes every file `project` has, in both environments.
+pub async fn delete_project_files(store: &dyn ObjectStore, project: Uuid) -> Result<(), String> {
+    use futures::TryStreamExt;
+    let prefix = Path::from(project.to_string());
+    let files: Vec<_> = store.list(Some(&prefix)).map_ok(|meta| meta.location).try_collect().await.map_err(|e| e.to_string())?;
+    for location in files {
+        match store.delete(&location).await {
+            Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}

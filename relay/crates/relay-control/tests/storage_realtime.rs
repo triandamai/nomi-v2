@@ -105,3 +105,24 @@ async fn missing_tables_and_tables_without_a_key_are_refused(pool: PgPool) {
     let triggers: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_trigger WHERE tgname = 'nomi_realtime'").fetch_one(&pool).await.unwrap();
     assert_eq!(triggers, 0, "nothing changes when any table is refused");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn deleting_a_backend_deletes_its_files_and_nobody_elses(pool: PgPool) {
+    use object_store::{memory::InMemory, ObjectStore, PutPayload};
+    let store = std::sync::Arc::new(InMemory::new());
+    let shared = HashMap::from([(Env::Dev, pool.clone()), (Env::Production, pool.clone())]);
+    let relay = Relay::new(pool.clone(), shared, [9u8; 32], "api.relay.test".to_string()).with_store(store.clone());
+    let (doomed, kept) = (Uuid::new_v4(), Uuid::new_v4());
+    for project in [doomed, kept] {
+        ensure_backend(&relay, project, "Files", Tier::Free, None).await.unwrap();
+        for env in [Env::Dev, Env::Production] {
+            store.put(&relay_control::files::object_path(project, env, "docs", "a/b.txt"), PutPayload::from_static(b"x")).await.unwrap();
+        }
+    }
+
+    relay_control::backend::delete_backend(&relay, doomed).await.unwrap();
+
+    let left: Vec<String> = futures::TryStreamExt::try_collect::<Vec<_>>(store.list(None)).await.unwrap().into_iter().map(|o| o.location.to_string()).collect();
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(left.iter().all(|p| p.starts_with(&kept.to_string())), "{left:?}");
+}

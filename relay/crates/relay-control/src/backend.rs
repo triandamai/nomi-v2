@@ -147,7 +147,8 @@ pub async fn backend_keys(relay: &Relay, project: Uuid) -> Result<BackendKeys, R
     Ok(BackendKeys { id: project, slug, tier: tier.as_str(), environments })
 }
 
-/// Drops exactly `project`'s database objects, its rows in `nomi`, its roles and Relay's record.
+/// Drops exactly `project`'s database objects, its rows in `nomi`, its roles, its files and
+/// Relay's record.
 pub async fn delete_backend(relay: &Relay, project: Uuid) -> Result<(), RelayError> {
     let mut pools = Vec::new();
     for env in Env::ALL {
@@ -181,6 +182,9 @@ pub async fn delete_backend(relay: &Relay, project: Uuid) -> Result<(), RelayErr
         for placement in pools.iter().filter(|p| p.tier == Tier::Free) {
             postgrest::refresh_schemas(&placement.pool, authenticator).await?;
         }
+    }
+    if let Some(store) = relay.store() {
+        crate::files::delete_project_files(store.as_ref(), project).await.map_err(RelayError::Internal)?;
     }
     state::forget(relay, project).await
 }
