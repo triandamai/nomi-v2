@@ -179,7 +179,8 @@ pub async fn save(relay: &Relay, input: SettingsInput) -> Result<SettingsView, R
         postgrest_production_url: input.postgrest_production_url.trim().trim_end_matches('/').to_string(),
         postgrest_role: keep_or(input.postgrest_role, &stored.postgrest_role),
         preview_origins: input.preview_origins.into_iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect(),
-        postgrest_jwt_secret: Some(stored.postgrest_jwt_secret).filter(|s| !s.is_empty()).unwrap_or_else(new_signing_secret),
+        postgrest_jwt_secret: Some(stored.postgrest_jwt_secret.clone()).filter(|s| !s.is_empty()).unwrap_or_else(new_signing_secret),
+        shared_smtp: stored.shared_smtp.clone(),
     };
     let mut pools = HashMap::new();
     for env in Env::ALL {

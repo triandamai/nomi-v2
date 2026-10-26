@@ -2,5 +2,6 @@
 //! hostname.
 
 pub mod app;
+mod auth_routes;
 pub mod envelope;
 pub mod gateway;

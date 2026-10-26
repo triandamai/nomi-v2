@@ -45,6 +45,8 @@ pub struct Caller {
     pub kind: Kind,
     pub sub: Option<Uuid>,
     pub email: Option<String>,
+    /// The session a signed-in user's token belongs to.
+    pub sid: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,13 +76,13 @@ pub fn resolve(secret: &str, project: Uuid, env: Env, apikey: Option<&str>, bear
     let key = verify_at(secret, apikey, now).filter(|c| belongs(c, project, env) && c.sub.is_none()).ok_or(Refusal::BadKey)?;
     let key_kind = if key.role == "service" { Kind::Service } else { Kind::Anon };
     let Some(bearer) = bearer.filter(|b| !b.is_empty() && *b != apikey) else {
-        return Ok(Caller { kind: key_kind, sub: None, email: None });
+        return Ok(Caller { kind: key_kind, sub: None, email: None, sid: None });
     };
     let token = verify_at(secret, bearer, now).filter(|c| belongs(c, project, env)).ok_or(Refusal::BadToken)?;
     match (token.role.as_str(), token.sub) {
-        (AUTHENTICATED, Some(sub)) => Ok(Caller { kind: Kind::Authenticated, sub: Some(sub), email: token.email }),
-        ("service", None) => Ok(Caller { kind: Kind::Service, sub: None, email: None }),
-        ("anon", None) => Ok(Caller { kind: key_kind, sub: None, email: None }),
+        (AUTHENTICATED, Some(sub)) => Ok(Caller { kind: Kind::Authenticated, sub: Some(sub), email: token.email, sid: token.sid }),
+        ("service", None) => Ok(Caller { kind: Kind::Service, sub: None, email: None, sid: None }),
+        ("anon", None) => Ok(Caller { kind: key_kind, sub: None, email: None, sid: None }),
         _ => Err(Refusal::BadToken),
     }
 }
@@ -163,7 +165,7 @@ mod tests {
     fn postgrest_gets_a_short_token_naming_the_database_role() {
         let project = Uuid::new_v4();
         let user = Uuid::new_v4();
-        let caller = Caller { kind: Kind::Authenticated, sub: Some(user), email: None };
+        let caller = Caller { kind: Kind::Authenticated, sub: Some(user), email: None, sid: None };
         let token = internal_token("pgrst-secret", project, &caller, NOW);
         let claims: serde_json::Value = jsonwebtoken::decode::<serde_json::Value>(
             &token,
@@ -181,7 +183,7 @@ mod tests {
         assert_eq!(claims["sub"], user.to_string());
         assert_eq!(claims["ref"], project.to_string());
         assert!(claims["exp"].as_u64().unwrap() <= NOW + INTERNAL_TOKEN_SECONDS);
-        let service = Caller { kind: Kind::Service, sub: None, email: None };
+        let service = Caller { kind: Kind::Service, sub: None, email: None, sid: None };
         let token = internal_token("pgrst-secret", project, &service, NOW);
         let mut insecure = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
         insecure.insecure_disable_signature_validation();

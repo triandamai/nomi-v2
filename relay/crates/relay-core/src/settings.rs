@@ -22,6 +22,9 @@ pub struct Settings {
     /// Signs the gateway's tokens for PostgREST. Relay makes it and writes it where PostgREST
     /// reads it (its role's `pgrst.jwt_secret`); nobody types it.
     pub postgrest_jwt_secret: String,
+    /// Nomi's shared sender for sign-in codes; projects without their own SMTP use it.
+    #[serde(default)]
+    pub shared_smtp: Option<Smtp>,
 }
 
 /// An SMTP server email goes out through: Relay's shared sender, or a project's own.

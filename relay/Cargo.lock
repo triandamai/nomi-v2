@@ -1715,6 +1715,7 @@ dependencies = [
 name = "relay-control"
 version = "0.1.0"
 dependencies = [
+ "relay-auth",
  "relay-core",
  "relay-migrate",
  "reqwest",
@@ -1772,6 +1773,7 @@ dependencies = [
  "axum",
  "http-body-util",
  "jsonwebtoken",
+ "relay-auth",
  "relay-control",
  "relay-core",
  "relay-gateway",
