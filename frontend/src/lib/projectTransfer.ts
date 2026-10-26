@@ -41,6 +41,9 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'transfer/orgs',
 			'import/github',
 			'import/files',
+			// Secret names as the backend takes them (project_secrets::check_name).
+			'secrets',
+			'secrets/[A-Z_][A-Z0-9_]{0,63}',
 			'agent-permissions',
 			`agent-permissions/${UUID}`,
 		].join('|') +
