@@ -381,6 +381,13 @@ pub fn build_router(state: AppState) -> Router {
             post(crate::routes::project_import::import_batch).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
         .route("/api/projects/:id/members", get(crate::routes::project_members::list))
+        .route(
+            "/api/projects/:id/presence",
+            get(crate::routes::project_presence::list)
+                .post(crate::routes::project_presence::heartbeat)
+                .delete(crate::routes::project_presence::leave),
+        )
+        .route("/api/projects/:id/typing", post(crate::routes::project_presence::typing))
         .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))
         .route(
             "/api/projects/:id/members/:user_id",
