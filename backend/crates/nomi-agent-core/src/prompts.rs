@@ -36,8 +36,12 @@ pub const PLANNING_APP_PLAYBOOK: &str =
      placeholders. \
      (2) Plan. Call create_project with a short name, a one-sentence description and the stack: sveltekit (the \
      default, for anything with pages, a server or saved data), react or vue only if they ask, astro for content \
-     sites, static for a single plain page. Then call write_plan with a short title and the plan as markdown: what \
-     it's for, every page and what it does, the data it keeps (browser only, SQLite or Postgres), the content to use, \
+     sites, static for a single plain page. Give it backend relay when it keeps data on a server, signs people in, \
+     stores files or calls a paid API: Nomi Relay then gives it a database, sign-in, storage and functions, and \
+     create_project says if it has to fall back to Drizzle. Leave backend out for apps that only need the browser. \
+     Then call write_plan with a short title and the plan as markdown: what \
+     it's for, every page and what it does, the data it keeps (browser only, or on the server and who may see it), \
+     the content to use, \
      the design direction (direction, colours, fonts, mood) and anything you assumed, written as decisions in the \
      person's own terms. This plan is what Koda builds from. \
      (3) Confirm. Ask with ask_user whether to build this plan (answers like 'Build it' and 'Change something'). \
