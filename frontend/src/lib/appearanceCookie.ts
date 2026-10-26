@@ -3,6 +3,8 @@
 // frame instead of the default one until the app starts. The app layout refreshes it from the
 // saved preferences on every load, and the appearance picker on every change.
 
+import { DEFAULT_THEME } from '$lib/appearance';
+
 export const APPEARANCE_COOKIE = 'nomi_appearance';
 const MAX_AGE = 60 * 60 * 24 * 365;
 const SAFE = /^[a-z-]{1,32}$/;
@@ -23,9 +25,9 @@ export function formatAppearance(theme: string, color: string): string | null {
 	return SAFE.test(theme) && SAFE.test(color) ? `${theme}.${color}` : null;
 }
 
-/** The attributes for <html>. */
+/** The attributes for <html>; with nothing saved, the default theme (Lagoon) and the system mode. */
 export function appearanceAttributes(appearance: Appearance | null): string {
-	return appearance ? `data-theme="${appearance.theme}" data-color="${appearance.color}"` : '';
+	return appearance ? `data-theme="${appearance.theme}" data-color="${appearance.color}"` : `data-color="${DEFAULT_THEME}"`;
 }
 
 /** In the browser: remember a pick at once, for the next load. */

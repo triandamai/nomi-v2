@@ -144,7 +144,7 @@ export const MODES: { value: Theme; label: string }[] = [
 	},
 ];
 
-export const DEFAULT_THEME: AccentColor = 'canopy';
+export const DEFAULT_THEME: AccentColor = 'lagoon';
 
 export function isThemeName(value: unknown): value is AccentColor {
 	return typeof value === 'string' && THEMES.some((t) => t.value === value);

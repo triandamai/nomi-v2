@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { isThemeName } from '$lib/appearance';
+import { DEFAULT_THEME, isThemeName } from '$lib/appearance';
 import { isPinnable } from '$lib/drawerPins';
 import { parseRecentsForm } from '$lib/drawerRecents';
 import { isHomeLayoutId } from '$lib/homeLayouts';
@@ -13,7 +13,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	const response = await apiFetch(fetch, cookies, '/api/preferences');
 	const preferences: Preferences = response.ok
 		? ((await response.json()) as Preferences)
-		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
+		: { theme: 'system', accent_color: DEFAULT_THEME, timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
 	return { preferences };
 };
 

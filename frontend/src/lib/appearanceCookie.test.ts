@@ -12,6 +12,9 @@ describe('appearance cookie', () => {
 		expect(parseAppearance('dark')).toBeNull();
 		expect(parseAppearance(undefined)).toBeNull();
 		expect(formatAppearance('dark', '<script>')).toBeNull();
-		expect(appearanceAttributes(null)).toBe('');
+	});
+
+	it('starts people with no saved appearance on Lagoon', () => {
+		expect(appearanceAttributes(null)).toBe('data-color="lagoon"');
 	});
 });

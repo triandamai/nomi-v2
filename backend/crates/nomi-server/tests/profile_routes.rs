@@ -149,7 +149,7 @@ async fn preferences_default_to_system_theme(pool: PgPool) {
     let (status, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["theme"], "system");
-    assert_eq!(body["accent_color"], "canopy");
+    assert_eq!(body["accent_color"], "lagoon");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -160,7 +160,7 @@ async fn setting_accent_color_does_not_clobber_theme_and_vice_versa(pool: PgPool
     let (status, put_body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(put_body["theme"], "dark");
-    assert_eq!(put_body["accent_color"], "canopy");
+    assert_eq!(put_body["accent_color"], "lagoon");
 
     let (status, put_body) =
         json_request(router.clone(), "PUT", "/api/preferences", json!({ "accent_color": "phantom" }), Some(&token)).await;
@@ -404,21 +404,25 @@ async fn home_layout_is_unset_until_picked_and_only_takes_a_slug(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn animated_backdrop_is_on_until_turned_off(pool: PgPool) {
+async fn animated_backdrop_is_off_until_turned_on(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "bea@example.com").await;
 
     let (_, body) = json_request(router.clone(), "GET", "/api/preferences", Value::Null, Some(&token)).await;
-    assert_eq!(body["animated_backdrop"], true);
-
-    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "animated_backdrop": false }), Some(&token)).await;
     assert_eq!(body["animated_backdrop"], false);
 
-    // Other preference saves leave it alone.
+    // Saving something else first stores a row without choosing: still off.
     let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "dark" }), Some(&token)).await;
     assert_eq!(body["animated_backdrop"], false);
+
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "animated_backdrop": true }), Some(&token)).await;
+    assert_eq!(body["animated_backdrop"], true);
+
+    // Other preference saves leave it alone.
+    let (_, body) = json_request(router.clone(), "PUT", "/api/preferences", json!({ "theme": "light" }), Some(&token)).await;
+    assert_eq!(body["animated_backdrop"], true);
     let (_, body) = json_request(router, "GET", "/api/preferences", Value::Null, Some(&token)).await;
-    assert_eq!(body["animated_backdrop"], false);
+    assert_eq!(body["animated_backdrop"], true);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
