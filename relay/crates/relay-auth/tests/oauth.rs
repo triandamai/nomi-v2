@@ -185,3 +185,11 @@ fn a_provider_must_be_switched_on_and_have_its_secret() {
     assert!(matches!(Provider::resolve(&config, &secrets, "oidc:acme"), Ok(Provider::Oidc(_))));
     assert_eq!(config.missing_secrets(&Secrets::default()), vec!["NOMI_OAUTH_GITHUB_SECRET".to_string(), "NOMI_OAUTH_OIDC_ACME_SECRET".to_string()]);
 }
+
+#[test]
+fn a_backend_json_auth_block_can_leave_out_what_has_a_default() {
+    let config: AuthConfig = serde_json::from_value(json!({ "github": { "client_id": "gh" } })).unwrap();
+    assert_eq!(config.methods, vec!["email_code".to_string()]);
+    assert_eq!(config.session_ttl_days, relay_auth::config::DEFAULT_SESSION_DAYS);
+    assert_eq!(config.github.unwrap().client_id, "gh");
+}

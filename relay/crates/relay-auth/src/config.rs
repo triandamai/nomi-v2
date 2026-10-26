@@ -76,9 +76,11 @@ pub fn secret_name(provider: &str) -> String {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuthConfig {
+    #[serde(default = "default_methods")]
     pub methods: Vec<String>,
     #[serde(default)]
     pub redirect_urls: Vec<String>,
+    #[serde(default = "default_session_days")]
     pub session_ttl_days: u32,
     /// The project's own sender; `None` uses Relay's shared one.
     #[serde(default)]
@@ -93,12 +95,20 @@ pub struct AuthConfig {
     pub oidc: Vec<OidcConfig>,
 }
 
+fn default_methods() -> Vec<String> {
+    vec![EMAIL_CODE.to_string()]
+}
+
+fn default_session_days() -> u32 {
+    DEFAULT_SESSION_DAYS
+}
+
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            methods: vec![EMAIL_CODE.to_string()],
+            methods: default_methods(),
             redirect_urls: Vec::new(),
-            session_ttl_days: DEFAULT_SESSION_DAYS,
+            session_ttl_days: default_session_days(),
             smtp: None,
             google: None,
             github: None,
