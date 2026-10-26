@@ -7,6 +7,16 @@ export interface RelayCheck {
 	message?: string;
 }
 
+/** An SMTP server, as Relay answers it (never with its password). */
+export interface RelaySmtp {
+	host: string;
+	port: number;
+	user: string;
+	password: string;
+	from: string;
+	security: string;
+}
+
 /** Relay's settings as it answers them: database URLs without their passwords. */
 export interface RelaySettings {
 	configured: boolean;
@@ -17,6 +27,7 @@ export interface RelaySettings {
 	postgrest_production_url: string;
 	postgrest_role: string;
 	preview_origins: string[];
+	shared_smtp: RelaySmtp | null;
 	checks: RelayCheck[];
 }
 
@@ -42,7 +53,17 @@ export interface RelaySettingsForm {
 	postgrest_production_url: string;
 	postgrest_role: string;
 	preview_origins: string;
+	/** The shared sender for sign-in codes; the password starts empty and stays as stored. */
+	smtp_host: string;
+	smtp_port: string;
+	smtp_security: string;
+	smtp_user: string;
+	smtp_password: string;
+	smtp_from: string;
 }
+
+/** Port 587 with STARTTLS: what most providers (Resend, Postmark, SES) take. */
+export const DEFAULT_SMTP_PORT = 587;
 
 export function originsFromText(text: string): string[] {
 	return text
@@ -51,8 +72,11 @@ export function originsFromText(text: string): string[] {
 		.filter(Boolean);
 }
 
-/** What `PUT /api/admin/relay/settings` takes: database URLs only when typed, so stored ones stay. */
-export function settingsBody(form: RelaySettingsForm): Record<string, unknown> {
+/**
+ * What `PUT /api/admin/relay/settings` takes: database URLs only when typed, so stored ones stay;
+ * the shared sender when a host is typed, or with an empty host to remove one that was stored.
+ */
+export function settingsBody(form: RelaySettingsForm, hadSender: boolean): Record<string, unknown> {
 	const body: Record<string, unknown> = {
 		public_domain: form.public_domain.trim(),
 		postgrest_dev_url: form.postgrest_dev_url.trim(),
@@ -62,6 +86,16 @@ export function settingsBody(form: RelaySettingsForm): Record<string, unknown> {
 	};
 	if (form.shared_dev_url.trim()) body.shared_dev_url = form.shared_dev_url.trim();
 	if (form.shared_production_url.trim()) body.shared_production_url = form.shared_production_url.trim();
+	if (form.smtp_host.trim() || hadSender) {
+		body.shared_smtp = {
+			host: form.smtp_host.trim(),
+			port: Number(form.smtp_port) || DEFAULT_SMTP_PORT,
+			security: form.smtp_security,
+			user: form.smtp_user.trim(),
+			password: form.smtp_password,
+			from: form.smtp_from.trim(),
+		};
+	}
 	return body;
 }
 

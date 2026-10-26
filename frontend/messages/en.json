@@ -2260,5 +2260,14 @@
 	"relay_admin_saved": "Saved: every check passed.",
 	"relay_admin_checks": "Checks",
 	"relay_admin_check_ok": "Answers",
-	"relay_admin_view_only": "Only admins who manage integrations can change these."
+	"relay_admin_view_only": "Only admins who manage integrations can change these.",
+	"relay_admin_sender_title": "Shared sender for sign-in codes",
+	"relay_admin_sender_hint": "Apps without their own SMTP server send sign-in codes through this one, from this address with the app's name. Leave the server empty to switch it off.",
+	"relay_admin_smtp_host": "SMTP server",
+	"relay_admin_smtp_port": "Port",
+	"relay_admin_smtp_security": "Security",
+	"relay_admin_smtp_none": "None (local only)",
+	"relay_admin_smtp_from": "From",
+	"relay_admin_smtp_user": "Username",
+	"relay_admin_smtp_password": "Password"
 }

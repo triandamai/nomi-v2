@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use relay_core::crypto::{decrypt, encrypt};
 use relay_core::keys::new_signing_secret;
-use relay_core::settings::{mask_database_url, Settings};
+use relay_auth::mail::Outbox;
+use relay_core::settings::{mask_database_url, Settings, Smtp};
 use relay_core::Env;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,6 +23,7 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// The claim in the gateway's token that names the database role.
 const ROLE_CLAIM_KEY: &str = ".db_role";
 pub const SETTINGS_INVALID: &str = "SETTINGS_INVALID";
+const SHARED_SENDER: &str = "shared sender";
 
 /// What the admin sends. Database URLs left out (or empty) keep the stored ones: the form never
 /// has their passwords.
@@ -38,6 +40,10 @@ pub struct SettingsInput {
     pub postgrest_role: Option<String>,
     #[serde(default)]
     pub preview_origins: Vec<String>,
+    /// Left out keeps the stored sender; an empty host removes it; an empty password keeps the
+    /// stored one.
+    #[serde(default)]
+    pub shared_smtp: Option<Smtp>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -59,6 +65,8 @@ pub struct SettingsView {
     pub postgrest_production_url: String,
     pub postgrest_role: String,
     pub preview_origins: Vec<String>,
+    /// Without its password.
+    pub shared_smtp: Option<Smtp>,
     pub checks: Vec<Check>,
 }
 
@@ -107,7 +115,7 @@ fn check(name: String, result: Result<(), String>) -> Check {
     Check { name, ok: result.is_ok(), message: result.err() }
 }
 
-async fn checks(settings: &Settings, pools: &HashMap<Env, PgPool>) -> Vec<Check> {
+async fn checks(settings: &Settings, pools: &HashMap<Env, PgPool>, outbox: &dyn Outbox) -> Vec<Check> {
     let http = reqwest::Client::new();
     let role = settings.postgrest_role().unwrap_or_default();
     let mut out = Vec::new();
@@ -119,6 +127,9 @@ async fn checks(settings: &Settings, pools: &HashMap<Env, PgPool>) -> Vec<Check>
         };
         out.push(check(database_name(env), database));
         out.push(check(postgrest_name(env), check_postgrest(&http, settings.postgrest_url(env)).await));
+    }
+    if let Some(smtp) = &settings.shared_smtp {
+        out.push(check(SHARED_SENDER.to_string(), outbox.check(smtp).await));
     }
     out
 }
@@ -133,6 +144,7 @@ fn view_of(settings: &Settings, configured: bool, checks: Vec<Check>) -> Setting
         postgrest_production_url: settings.postgrest_production_url.clone(),
         postgrest_role: settings.postgrest_role.clone(),
         preview_origins: settings.preview_origins.clone(),
+        shared_smtp: settings.shared_smtp.clone().map(|smtp| Smtp { password: String::new(), ..smtp }),
         checks,
     }
 }
@@ -140,13 +152,22 @@ fn view_of(settings: &Settings, configured: bool, checks: Vec<Check>) -> Setting
 /// The settings as they are now, checked live.
 pub async fn view(relay: &Relay) -> SettingsView {
     match relay.live() {
-        Ok(live) => view_of(&live.settings, true, checks(&live.settings, &live.shared).await),
+        Ok(live) => view_of(&live.settings, true, checks(&live.settings, &live.shared, relay.outbox.as_ref()).await),
         Err(_) => view_of(&Settings::default(), false, Vec::new()),
     }
 }
 
 fn keep_or(given: Option<String>, stored: &str) -> String {
     given.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).unwrap_or_else(|| stored.to_string())
+}
+
+fn merge_sender(given: Option<Smtp>, stored: Option<Smtp>) -> Option<Smtp> {
+    let Some(given) = given else { return stored };
+    if given.host.trim().is_empty() {
+        return None;
+    }
+    let password = if given.password.is_empty() { stored.map(|s| s.password).unwrap_or_default() } else { given.password };
+    Some(Smtp { host: given.host.trim().to_string(), from: given.from.trim().to_string(), password, ..given })
 }
 
 fn quoted(identifier: &str) -> String {
@@ -180,7 +201,7 @@ pub async fn save(relay: &Relay, input: SettingsInput) -> Result<SettingsView, R
         postgrest_role: keep_or(input.postgrest_role, &stored.postgrest_role),
         preview_origins: input.preview_origins.into_iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect(),
         postgrest_jwt_secret: Some(stored.postgrest_jwt_secret.clone()).filter(|s| !s.is_empty()).unwrap_or_else(new_signing_secret),
-        shared_smtp: stored.shared_smtp.clone(),
+        shared_smtp: merge_sender(input.shared_smtp, stored.shared_smtp.clone()),
     };
     let mut pools = HashMap::new();
     for env in Env::ALL {
@@ -192,7 +213,7 @@ pub async fn save(relay: &Relay, input: SettingsInput) -> Result<SettingsView, R
             pools.insert(env, pool);
         }
     }
-    let mut found = checks(&settings, &pools).await;
+    let mut found = checks(&settings, &pools, relay.outbox.as_ref()).await;
     if settings.public_domain.is_empty() {
         found.push(Check { name: "public domain".into(), ok: false, message: Some("not set".into()) });
     }
