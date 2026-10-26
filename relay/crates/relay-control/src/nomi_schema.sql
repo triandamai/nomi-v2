@@ -34,6 +34,20 @@ CREATE TABLE IF NOT EXISTS nomi.sessions (
     expires_at         TIMESTAMPTZ NOT NULL,
     revoked_at         TIMESTAMPTZ
 );
+-- Email sign-in codes, hashed; a code dies after its tries or its minutes, whichever is first.
+CREATE TABLE IF NOT EXISTS nomi.codes (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID NOT NULL,
+    email       TEXT NOT NULL,
+    code_hash   TEXT NOT NULL,
+    create_user BOOLEAN NOT NULL DEFAULT true,
+    attempts    INT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS codes_by_email ON nomi.codes (project_id, email, created_at);
+CREATE INDEX IF NOT EXISTS sessions_by_hash ON nomi.sessions (refresh_token_hash);
 CREATE TABLE IF NOT EXISTS nomi.migrations (
     project_id UUID NOT NULL,
     name       TEXT NOT NULL,
@@ -69,7 +83,7 @@ $$;
 DO $$
 DECLARE t text;
 BEGIN
-    FOREACH t IN ARRAY ARRAY['users', 'identities', 'sessions', 'migrations', 'buckets'] LOOP
+    FOREACH t IN ARRAY ARRAY['users', 'identities', 'sessions', 'codes', 'migrations', 'buckets'] LOOP
         EXECUTE format('ALTER TABLE nomi.%I ENABLE ROW LEVEL SECURITY', t);
         IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'nomi' AND tablename = t AND policyname = 'own project') THEN
             EXECUTE format('CREATE POLICY "own project" ON nomi.%I USING (project_id = nomi.project_id()) WITH CHECK (project_id = nomi.project_id())', t);

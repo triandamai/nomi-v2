@@ -28,8 +28,15 @@ const FORWARDED_REQUEST_HEADERS: [&str; 5] = ["accept", "content-type", "prefer"
 /// What PostgREST may tell the client.
 const FORWARDED_RESPONSE_HEADERS: [&str; 4] = ["content-type", "content-range", "location", "preference-applied"];
 const ALLOWED_METHODS: &str = "GET, HEAD, POST, PATCH, PUT, DELETE, OPTIONS";
-const ALLOWED_HEADERS: &str = "authorization, apikey, content-type, prefer, range, range-unit, accept, x-client-info";
+const ALLOWED_HEADERS: &str = "authorization, apikey, content-type, prefer, range, range-unit, accept, x-client-info, x-nomi-client";
 const EXPOSED_HEADERS: &str = "content-range, location, preference-applied";
+
+/// The project and environment a request is for, and who's calling.
+pub(crate) struct Target {
+    pub project: uuid::Uuid,
+    pub environment: relay_control::state::EnvironmentRow,
+    pub caller: relay_gateway::auth::Caller,
+}
 
 /// Reads Relay's current settings on every request, so saving them in Nomi's admin takes effect
 /// at once.
@@ -39,7 +46,7 @@ pub struct Gateway {
 }
 
 /// A refusal in PostgREST's own error shape, so the SDK reads it the same way.
-fn refuse(status: StatusCode, code: &str, message: &str) -> Response {
+pub(crate) fn refuse(status: StatusCode, code: &str, message: &str) -> Response {
     (status, Json(json!({ "message": message, "code": code, "details": null, "hint": null }))).into_response()
 }
 
@@ -86,6 +93,8 @@ impl Gateway {
                 cors.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from(PREFLIGHT_MAX_AGE_SECONDS));
             }
             StatusCode::NO_CONTENT.into_response()
+        } else if request.uri().path().starts_with(crate::auth_routes::AUTH_PREFIX) {
+            crate::auth_routes::handle(self, &live.settings, &slug, env, request).await
         } else {
             self.forward(&live.settings, &slug, env, request).await
         };
@@ -98,25 +107,14 @@ impl Gateway {
             return refuse(StatusCode::NOT_FOUND, "RELAY_NOT_FOUND", "Nothing here: the data API is under /rest.");
         };
         let rest = if rest.is_empty() { "/" } else { rest };
-        let project = match state::by_slug(&self.relay, slug).await {
-            Ok(Some(project)) => project,
-            Ok(None) => return refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address."),
-            Err(e) => return self.failed(e.to_string()),
-        };
-        let environment = match state::environment(&self.relay, project, env).await {
-            Ok(Some(row)) => row,
-            Ok(None) => return refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address."),
-            Err(e) => return self.failed(e.to_string()),
+        let Target { project, environment, caller } = match self.target(slug, env, request.headers()).await {
+            Ok(target) => target,
+            Err(response) => return response,
         };
         if environment.tier == Tier::Dedicated {
             return refuse(StatusCode::NOT_IMPLEMENTED, "RELAY_DEDICATED", "Dedicated backends aren't served by the gateway yet.");
         }
         let headers = request.headers();
-        let bearer = header_text(headers, "authorization").and_then(|v| v.strip_prefix("Bearer "));
-        let caller = match resolve(&environment.signing_secret, project, env, header_text(headers, "apikey"), bearer, now()) {
-            Ok(caller) => caller,
-            Err(refusal) => return refusal_response(refusal),
-        };
         let too_big = header_text(headers, "content-length").and_then(|v| v.parse::<usize>().ok()).is_some_and(|n| n > MAX_BODY_BYTES);
         if too_big {
             return self.too_big();
@@ -171,11 +169,28 @@ impl Gateway {
         response
     }
 
+    /// The project the hostname names, its environment, and who's calling.
+    pub(crate) async fn target(&self, slug: &str, env: Env, headers: &HeaderMap) -> Result<Target, Response> {
+        let project = match state::by_slug(&self.relay, slug).await {
+            Ok(Some(project)) => project,
+            Ok(None) => return Err(refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address.")),
+            Err(e) => return Err(self.failed(e.to_string())),
+        };
+        let environment = match state::environment(&self.relay, project, env).await {
+            Ok(Some(row)) => row,
+            Ok(None) => return Err(refuse(StatusCode::NOT_FOUND, "RELAY_NO_PROJECT", "No project lives at this address.")),
+            Err(e) => return Err(self.failed(e.to_string())),
+        };
+        let bearer = header_text(headers, "authorization").and_then(|v| v.strip_prefix("Bearer "));
+        let caller = resolve(&environment.signing_secret, project, env, header_text(headers, "apikey"), bearer, now()).map_err(refusal_response)?;
+        Ok(Target { project, environment, caller })
+    }
+
     fn too_big(&self) -> Response {
         refuse(StatusCode::PAYLOAD_TOO_LARGE, "RELAY_TOO_LARGE", "The request body is over the gateway's 1 MB limit.")
     }
 
-    fn failed(&self, message: String) -> Response {
+    pub(crate) fn failed(&self, message: String) -> Response {
         tracing::error!(%message, "gateway request failed");
         refuse(StatusCode::INTERNAL_SERVER_ERROR, "RELAY_INTERNAL", "Relay couldn't do that right now.")
     }

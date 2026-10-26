@@ -48,6 +48,7 @@ fn input(url: &str, postgrest: &str) -> SettingsInput {
         postgrest_production_url: postgrest.into(),
         postgrest_role: Some(AUTHENTICATOR.into()),
         preview_origins: vec![".preview.nomi.test".into()],
+        shared_smtp: None,
     }
 }
 
@@ -146,4 +147,30 @@ async fn postgrest_gets_its_secret_and_claim_key_from_the_database(pool: PgPool)
     let settings = role_settings(&pool).await;
     assert!(settings.contains(&format!("pgrst.jwt_secret={secret}")), "{settings:?}");
     assert!(settings.contains(&"pgrst.jwt_role_claim_key=.db_role".to_string()), "{settings:?}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_shared_sender_is_kept_masked_and_its_password_stays_when_left_out(pool: PgPool) {
+    use relay_core::settings::Smtp;
+    ensure_authenticator(&pool).await;
+    let url = own_url(&pool).await;
+    let pgrst = postgrest().await;
+    let relay = Relay::unconfigured(pool.clone(), KEY).with_outbox(std::sync::Arc::new(relay_auth::mail::RecordingOutbox::default()));
+    let sender = Smtp { host: "smtp.nomi.test".into(), port: 587, user: "codes".into(), password: "smtp-secret".into(), from: "Nomi <codes@nomi.test>".into(), security: "starttls".into() };
+    let mut first = input(&url, &pgrst.uri());
+    first.shared_smtp = Some(sender.clone());
+    let saved = save(&relay, first).await.unwrap();
+    assert!(saved.checks.iter().any(|c| c.name == "shared sender" && c.ok), "{:?}", saved.checks);
+    let shown = serde_json::to_string(&saved).unwrap();
+    assert!(shown.contains("smtp.nomi.test") && !shown.contains("smtp-secret"), "{shown}");
+
+    let mut again = input(&url, &pgrst.uri());
+    again.shared_smtp = Some(Smtp { password: String::new(), from: "Nomi codes <codes@nomi.test>".into(), ..sender });
+    save(&relay, again).await.unwrap();
+    let kept = relay.live().unwrap().settings.shared_smtp.clone().unwrap();
+    assert_eq!(kept.password, "smtp-secret");
+    assert_eq!(kept.from, "Nomi codes <codes@nomi.test>");
+
+    save(&relay, input(&url, &pgrst.uri())).await.unwrap();
+    assert!(relay.live().unwrap().settings.shared_smtp.is_some(), "leaving the sender out keeps it");
 }

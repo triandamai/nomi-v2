@@ -11,6 +11,7 @@ pub mod state;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use relay_auth::mail::{Outbox, SmtpOutbox};
 use relay_core::settings::Settings;
 use relay_core::{Env, Tier};
 use sqlx::postgres::PgPoolOptions;
@@ -71,6 +72,8 @@ pub struct Relay {
     pub encryption_key: [u8; 32],
     live: RwLock<Option<Arc<Live>>>,
     dedicated: Mutex<HashMap<String, PgPool>>,
+    /// Where sign-in codes go out (SMTP; a recording outbox in tests).
+    pub outbox: Arc<dyn Outbox>,
 }
 
 /// Relay's settings and the shared databases they name. Swapped whole when settings are saved.
@@ -99,12 +102,12 @@ impl Relay {
     /// A Relay already pointed at `shared`, as the tests (and only they) make one.
     pub fn new(state: PgPool, shared: HashMap<Env, PgPool>, encryption_key: [u8; 32], public_domain: String) -> Self {
         let live = Live { settings: Settings { public_domain, ..Settings::default() }, shared };
-        Self { state, encryption_key, live: RwLock::new(Some(Arc::new(live))), dedicated: Mutex::new(HashMap::new()) }
+        Self { state, encryption_key, live: RwLock::new(Some(Arc::new(live))), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox) }
     }
 
     /// A Relay whose settings haven't been saved yet.
     pub fn unconfigured(state: PgPool, encryption_key: [u8; 32]) -> Self {
-        Self { state, encryption_key, live: RwLock::new(None), dedicated: Mutex::new(HashMap::new()) }
+        Self { state, encryption_key, live: RwLock::new(None), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox) }
     }
 
     /// Relay as its saved settings describe it, or unconfigured when there are none.
@@ -126,6 +129,11 @@ impl Relay {
                 *live = Some(Arc::new(Live { settings, shared: current.shared.clone() }));
             }
         }
+        self
+    }
+
+    pub fn with_outbox(mut self, outbox: Arc<dyn Outbox>) -> Self {
+        self.outbox = outbox;
         self
     }
 

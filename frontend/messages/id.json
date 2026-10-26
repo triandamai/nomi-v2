@@ -2260,5 +2260,14 @@
 	"relay_admin_saved": "Tersimpan: semua pemeriksaan lolos.",
 	"relay_admin_checks": "Pemeriksaan",
 	"relay_admin_check_ok": "Menjawab",
-	"relay_admin_view_only": "Hanya admin yang mengelola integrasi yang bisa mengubahnya."
+	"relay_admin_view_only": "Hanya admin yang mengelola integrasi yang bisa mengubahnya.",
+	"relay_admin_sender_title": "Pengirim bersama untuk kode login",
+	"relay_admin_sender_hint": "Aplikasi tanpa server SMTP sendiri mengirim kode login lewat server ini, dari alamat ini dengan nama aplikasinya. Kosongkan server untuk mematikannya.",
+	"relay_admin_smtp_host": "Server SMTP",
+	"relay_admin_smtp_port": "Port",
+	"relay_admin_smtp_security": "Keamanan",
+	"relay_admin_smtp_none": "Tanpa (hanya lokal)",
+	"relay_admin_smtp_from": "Dari",
+	"relay_admin_smtp_user": "Nama pengguna",
+	"relay_admin_smtp_password": "Kata sandi"
 }

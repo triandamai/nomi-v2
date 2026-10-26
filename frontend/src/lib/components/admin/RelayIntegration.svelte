@@ -6,8 +6,9 @@
 	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import Select from '$lib/components/m3/Select.svelte';
 	import { adminApi } from '$lib/adminApi';
-	import { readRefusal, settingsBody, type RelayCheck, type RelayOverview, type RelaySettingsForm } from '$lib/relaySettings';
+	import { DEFAULT_SMTP_PORT, readRefusal, settingsBody, type RelayCheck, type RelayOverview, type RelaySettingsForm } from '$lib/relaySettings';
 
 	let { canManage }: { canManage: boolean } = $props();
 
@@ -27,7 +28,18 @@
 		postgrest_production_url: '',
 		postgrest_role: 'authenticator',
 		preview_origins: '',
+		smtp_host: '',
+		smtp_port: String(DEFAULT_SMTP_PORT),
+		smtp_security: 'starttls',
+		smtp_user: '',
+		smtp_password: '',
+		smtp_from: '',
 	});
+	const securityOptions = [
+		{ value: 'starttls', label: 'STARTTLS' },
+		{ value: 'tls', label: 'TLS' },
+		{ value: 'none', label: m.relay_admin_smtp_none() },
+	];
 
 	const connected = $derived(!!overview && overview.connection.source !== 'none');
 	const status = $derived.by(() => {
@@ -50,6 +62,12 @@
 			postgrest_production_url: relay?.postgrest_production_url ?? '',
 			postgrest_role: relay?.postgrest_role || 'authenticator',
 			preview_origins: (relay?.preview_origins.length ? relay.preview_origins : next.default_preview_origins).join('\n'),
+			smtp_host: relay?.shared_smtp?.host ?? '',
+			smtp_port: String(relay?.shared_smtp?.port ?? DEFAULT_SMTP_PORT),
+			smtp_security: relay?.shared_smtp?.security || 'starttls',
+			smtp_user: relay?.shared_smtp?.user ?? '',
+			smtp_password: '',
+			smtp_from: relay?.shared_smtp?.from ?? '',
 		};
 		checks = relay?.checks ?? [];
 	}
@@ -82,7 +100,7 @@
 		busy = 'settings';
 		error = notice = null;
 		try {
-			await adminApi('relay/settings', { method: 'PUT', body: settingsBody(form) });
+			await adminApi('relay/settings', { method: 'PUT', body: settingsBody(form, !!overview?.relay?.shared_smtp) });
 			await load();
 			notice = m.relay_admin_saved();
 		} catch (e) {
@@ -164,6 +182,26 @@
 					<textarea bind:value={form.preview_origins} rows="3" disabled={!canManage}></textarea>
 					<span class="area__hint">{m.relay_admin_origins_hint()}</span>
 				</label>
+
+				<fieldset class="sender">
+					<legend class="sender__title">{m.relay_admin_sender_title()}</legend>
+					<p class="muted small">{m.relay_admin_sender_hint()}</p>
+					<div class="grid">
+						<TextField label={m.relay_admin_smtp_host()} bind:value={form.smtp_host} placeholder="smtp.resend.com" disabled={!canManage} />
+						<TextField label={m.relay_admin_smtp_port()} bind:value={form.smtp_port} type="number" inputmode="numeric" min="1" max="65535" disabled={!canManage} />
+						<Select label={m.relay_admin_smtp_security()} name="smtp_security" options={securityOptions} bind:value={form.smtp_security} />
+						<TextField label={m.relay_admin_smtp_from()} bind:value={form.smtp_from} placeholder="Nomi <codes@your-domain.com>" disabled={!canManage} />
+						<TextField label={m.relay_admin_smtp_user()} bind:value={form.smtp_user} autocomplete="off" disabled={!canManage} />
+						<TextField
+							label={m.relay_admin_smtp_password()}
+							bind:value={form.smtp_password}
+							type="password"
+							autocomplete="off"
+							supportingText={overview.relay?.shared_smtp ? m.relay_admin_key_keep() : undefined}
+							disabled={!canManage}
+						/>
+					</div>
+				</fieldset>
 
 				{#if checks.length}
 					<div class="checks">
@@ -276,6 +314,22 @@
 		outline: none;
 		border: 2px solid var(--md-sys-color-primary);
 		padding: 11.5px 13.5px;
+	}
+	.sender {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		min-width: 0;
+		margin: 0;
+		padding: 12px 0 0;
+		border: none;
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.sender__title {
+		padding: 0;
+		font-size: 0.875rem;
+		font-weight: 700;
+		color: var(--md-sys-color-on-surface);
 	}
 	.checks {
 		display: flex;

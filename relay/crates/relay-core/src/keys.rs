@@ -45,7 +45,13 @@ pub struct Claims {
     pub sub: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
+    /// The session a user's token belongs to, so signing out can end it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sid: Option<Uuid>,
 }
+
+/// How long a signed-in user's access token works; the refresh token gets the next one.
+pub const ACCESS_TOKEN_SECONDS: u64 = 15 * 60;
 
 /// The role on a signed-in user's access token.
 pub const AUTHENTICATED: &str = "authenticated";
@@ -76,12 +82,15 @@ pub fn api_key(secret: &str, project: Uuid, env: Env, role: ApiRole, issued_at: 
         exp: issued + API_KEY_LIFETIME_SECONDS,
         sub: None,
         email: None,
+        sid: None,
     };
     encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret.as_bytes())).expect("HS256 signing can't fail")
 }
 
-/// A signed-in user's access token, valid for `lifetime_seconds` from `issued_at`.
-pub fn user_token(secret: &str, project: Uuid, env: Env, user: Uuid, email: Option<&str>, issued_at: u64, lifetime_seconds: u64) -> String {
+/// A signed-in user's access token for one of their sessions, valid for `lifetime_seconds` from
+/// `issued_at`.
+#[allow(clippy::too_many_arguments)]
+pub fn user_token(secret: &str, project: Uuid, env: Env, user: Uuid, session: Uuid, email: Option<&str>, issued_at: u64, lifetime_seconds: u64) -> String {
     let claims = Claims {
         role: AUTHENTICATED.to_string(),
         r#ref: project,
@@ -90,6 +99,7 @@ pub fn user_token(secret: &str, project: Uuid, env: Env, user: Uuid, email: Opti
         exp: issued_at + lifetime_seconds,
         sub: Some(user),
         email: email.map(str::to_string),
+        sid: Some(session),
     };
     encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret.as_bytes())).expect("HS256 signing can't fail")
 }
@@ -127,5 +137,15 @@ mod tests {
         assert_eq!(claims.env, "dev");
         assert!(verify(&other, &key).is_err());
         assert_eq!(verify(&secret, &api_key(&secret, project, Env::Production, ApiRole::Service, issued_now())).unwrap().role, "service");
+    }
+
+    #[test]
+    fn a_users_token_names_them_and_their_session_until_it_expires() {
+        let secret = new_signing_secret();
+        let (project, user, session) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let token = user_token(&secret, project, Env::Dev, user, session, Some("a@b.test"), 1_000, ACCESS_TOKEN_SECONDS);
+        let claims = verify_at(&secret, &token, 1_000 + ACCESS_TOKEN_SECONDS - 1).unwrap();
+        assert_eq!((claims.sub, claims.sid, claims.role.as_str()), (Some(user), Some(session), AUTHENTICATED));
+        assert!(verify_at(&secret, &token, 1_000 + ACCESS_TOKEN_SECONDS).is_none());
     }
 }

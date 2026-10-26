@@ -93,6 +93,34 @@ async fn get_types(State(state): State<AppState>, Path((project, env_name)): Pat
     Ok(ok(json!({ "types": schema::types(&state.relay, project, env(&env_name)?).await? })))
 }
 
+/// A project's sign-in settings for an environment, with its SMTP password left out.
+async fn get_auth(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>) -> Result<Answer> {
+    let mut found = relay_auth::config::load(&state.relay.state, &state.relay.encryption_key, project, env(&env_name)?).await.map_err(auth_failure)?;
+    if let Some(smtp) = found.smtp.as_mut() {
+        smtp.password = String::new();
+    }
+    Ok(ok(found))
+}
+
+/// Replaces them; an SMTP password left empty keeps the stored one.
+async fn put_auth(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>, Json(mut body): Json<relay_auth::config::AuthConfig>) -> Result<Answer> {
+    let env = env(&env_name)?;
+    relay_control::state::environment(&state.relay, project, env).await?.ok_or_else(|| Failure::new(StatusCode::NOT_FOUND, "NOT_FOUND", "no backend for this project"))?;
+    let stored = relay_auth::config::load(&state.relay.state, &state.relay.encryption_key, project, env).await.map_err(auth_failure)?;
+    if let (Some(smtp), Some(old)) = (body.smtp.as_mut(), stored.smtp) {
+        if smtp.password.is_empty() {
+            smtp.password = old.password;
+        }
+    }
+    relay_auth::config::save(&state.relay.state, &state.relay.encryption_key, project, env, &body).await.map_err(auth_failure)?;
+    Ok(ok(json!({ "saved": true })))
+}
+
+fn auth_failure(e: relay_auth::AuthError) -> Failure {
+    tracing::error!(error = ?e, "auth settings");
+    Failure::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Relay couldn't do that right now")
+}
+
 async fn get_settings(State(state): State<AppState>) -> Answer {
     ok(settings::view(&state.relay).await)
 }
@@ -133,6 +161,7 @@ fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
         .route("/control/projects/:id/environments/:env/migrations", post(post_migrations))
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))
         .route("/control/projects/:id/environments/:env/types", get(get_types))
+        .route("/control/projects/:id/environments/:env/auth", get(get_auth).put(put_auth))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_control_key));
     Router::new().route("/health", get(health)).merge(control).with_state(state)
 }
