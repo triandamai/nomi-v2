@@ -116,7 +116,7 @@ pub async fn ensure_backend(relay: &Relay, project: Uuid, name: &str, tier: Tier
             None => relay.shared(env)?,
         };
         provision(&pool, project, row.tier).await?;
-        if let Some(authenticator) = &relay.postgrest_role {
+        if let Some(authenticator) = relay.live()?.settings.postgrest_role() {
             postgrest::open_project(&pool, authenticator, project).await?;
             if row.tier == Tier::Free {
                 postgrest::refresh_schemas(&pool, authenticator).await?;
@@ -136,7 +136,7 @@ pub async fn backend_keys(relay: &Relay, project: Uuid) -> Result<BackendKeys, R
         environments.insert(
             env.as_str().to_string(),
             EnvironmentKeys {
-                url: public_url(&relay.public_domain, &row.slug, env),
+                url: public_url(&relay.live()?.settings.public_domain, &row.slug, env),
                 anon_key: api_key(&row.signing_secret, project, env, ApiRole::Anon, row.keys_issued_at),
                 service_key: api_key(&row.signing_secret, project, env, ApiRole::Service, row.keys_issued_at),
             },
@@ -177,7 +177,7 @@ pub async fn delete_backend(relay: &Relay, project: Uuid) -> Result<(), RelayErr
     for name in &roles {
         sqlx::query(&format!("DROP ROLE IF EXISTS {}", quoted(name))).execute(&pools[0].pool).await?;
     }
-    if let Some(authenticator) = &relay.postgrest_role {
+    if let Some(authenticator) = relay.live()?.settings.postgrest_role() {
         for placement in pools.iter().filter(|p| p.tier == Tier::Free) {
             postgrest::refresh_schemas(&placement.pool, authenticator).await?;
         }

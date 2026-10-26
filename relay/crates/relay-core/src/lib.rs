@@ -6,6 +6,7 @@ pub mod config;
 pub mod crypto;
 pub mod keys;
 pub mod names;
+pub mod settings;
 
 pub use config::Config;
 pub use names::{Env, Tier};
