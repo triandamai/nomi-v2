@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "start": "deno run --unstable-worker-options --allow-net --allow-env --allow-read --allow-write --allow-run --allow-import main.ts",
+    "test": "deno test --unstable-worker-options --allow-net --allow-env --allow-read --allow-write --allow-run --allow-import"
+  },
+  "compilerOptions": { "lib": ["deno.window", "deno.worker"] }
+}
