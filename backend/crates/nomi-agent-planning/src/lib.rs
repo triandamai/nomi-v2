@@ -275,7 +275,7 @@ async fn choose_backend(
         )));
     }
     let note = if backend == BACKEND_RELAY {
-        if !relay.is_available() {
+        if !relay.is_available().await {
             return Ok(Some("Relay isn't set up on this Nomi, so it's built on Drizzle.".to_string()));
         }
         if let Err(e) = relay.ensure_backend(user_id, project_id).await {

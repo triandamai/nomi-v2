@@ -67,7 +67,7 @@ fn envelope(data: serde_json::Value) -> ResponseTemplate {
 async fn without_relay_configured_nothing_is_available(pool: PgPool) {
     let (user_id, project_id) = seed_project(&pool).await;
     let ops = ServerRelayOps::new(pool, reqwest::Client::new(), None);
-    assert!(!ops.is_available());
+    assert!(!ops.is_available().await);
     assert_eq!(ops.ensure_backend(user_id, project_id).await.unwrap_err(), NOT_SET_UP);
 }
 

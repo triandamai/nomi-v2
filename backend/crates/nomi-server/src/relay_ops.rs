@@ -147,16 +147,28 @@ impl ShipyardAccess for ShipyardHandle {
     }
 }
 
+/// Where the Relay connection comes from: fixed (tests), or the admin's stored one read on every
+/// call, with the environment's as the fallback.
+enum Connection {
+    Fixed(Option<RelayConfig>),
+    Stored { settings_key: Option<[u8; 32]>, fallback: Option<RelayConfig> },
+}
+
 pub struct ServerRelayOps {
     pool: PgPool,
     http_client: reqwest::Client,
-    config: Option<RelayConfig>,
+    connection: Connection,
     shipyard: Option<ShipyardHandle>,
 }
 
 impl ServerRelayOps {
     pub fn new(pool: PgPool, http_client: reqwest::Client, config: Option<RelayConfig>) -> Self {
-        Self { pool, http_client, config, shipyard: None }
+        Self { pool, http_client, connection: Connection::Fixed(config), shipyard: None }
+    }
+
+    /// Reads the connection saved in the admin on every call, falling back to `fallback`.
+    pub fn stored(pool: PgPool, http_client: reqwest::Client, settings_key: Option<[u8; 32]>, fallback: Option<RelayConfig>) -> Self {
+        Self { pool, http_client, connection: Connection::Stored { settings_key, fallback }, shipyard: None }
     }
 
     /// Where Relay's keys are kept for the published app. Without it (a Nomi without Shipyard),
@@ -166,9 +178,9 @@ impl ServerRelayOps {
         self
     }
 
-    /// Relay and Shipyard from the environment (RELAY_CONTROL_URL, RELAY_CONTROL_KEY, SHIPYARD_*).
+    /// Relay as set in the admin (or RELAY_CONTROL_URL / RELAY_CONTROL_KEY), Shipyard from SHIPYARD_*.
     pub fn shared(pool: PgPool, project_storage: ProjectStore) -> SharedRelayOps {
-        let ops = Self::new(pool, crate::http_client(), RelayConfig::from_env());
+        let ops = Self::stored(pool, crate::http_client(), crate::relay_connection::settings_key_from_env(), RelayConfig::from_env());
         let ops = match ShipyardConfig::from_env() {
             Some(config) => ops.with_shipyard(project_storage, config),
             None => ops,
@@ -176,8 +188,15 @@ impl ServerRelayOps {
         std::sync::Arc::new(ops)
     }
 
-    fn relay(&self) -> Result<Relay<'_>, String> {
-        self.config.as_ref().map(|config| Relay::new(&self.http_client, config)).ok_or_else(|| NOT_SET_UP.to_string())
+    async fn config(&self) -> Option<RelayConfig> {
+        match &self.connection {
+            Connection::Fixed(config) => config.clone(),
+            Connection::Stored { settings_key, fallback } => crate::relay_connection::load_or(&self.pool, settings_key.as_ref(), fallback.clone()).await,
+        }
+    }
+
+    async fn require_config(&self) -> Result<RelayConfig, String> {
+        self.config().await.ok_or_else(|| NOT_SET_UP.to_string())
     }
 
     /// Anyone who can open the project works on `dev`; `production`, read or changed, is its admins'.
@@ -191,12 +210,13 @@ impl ServerRelayOps {
 
 #[async_trait]
 impl RelayOps for ServerRelayOps {
-    fn is_available(&self) -> bool {
-        self.config.is_some()
+    async fn is_available(&self) -> bool {
+        self.config().await.is_some()
     }
 
     async fn ensure_backend(&self, user_id: Uuid, project_id: Uuid) -> Result<Uuid, String> {
-        let relay = self.relay()?;
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, RelayEnv::Dev).await?;
         let name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
             .bind(project_id)
@@ -223,7 +243,8 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn apply_migrations(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {
-        let relay = self.relay()?;
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         let answer = relay.apply_migrations(project_id, env.as_str(), &source_files(files)).await.map_err(|e| message(relay_error(e)))?;
         let applied: Vec<&str> = answer
@@ -239,21 +260,24 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn describe_backend(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {
-        let relay = self.relay()?;
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         let schema = relay.describe(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))?;
         serde_json::to_string_pretty(&schema).map_err(|e| e.to_string())
     }
 
     async fn deploy_functions(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {
-        let relay = self.relay()?;
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         let answer = relay.deploy_functions(project_id, env.as_str(), &source_files(files)).await.map_err(|e| message(relay_error(e)))?;
         serde_json::to_string_pretty(&answer).map_err(|e| e.to_string())
     }
 
     async fn types(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {
-        let relay = self.relay()?;
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         relay.types(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))
     }
