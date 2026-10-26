@@ -43,6 +43,7 @@ pub(crate) struct Target {
 pub struct Gateway {
     pub relay: Arc<Relay>,
     pub http: reqwest::Client,
+    pub hub: crate::realtime::Hub,
 }
 
 /// A refusal in PostgREST's own error shape, so the SDK reads it the same way.
@@ -95,6 +96,8 @@ impl Gateway {
             StatusCode::NO_CONTENT.into_response()
         } else if request.uri().path().starts_with(crate::auth_routes::AUTH_PREFIX) {
             crate::auth_routes::handle(self, &live.settings, &slug, env, request).await
+        } else if request.uri().path() == crate::realtime::REALTIME_PATH {
+            crate::realtime::upgrade(self, &slug, env, request).await
         } else if request.uri().path().starts_with(crate::storage_routes::STORAGE_PREFIX) {
             crate::storage_routes::handle(self, &slug, env, request).await
         } else {

@@ -14,7 +14,7 @@ relay-migrate = { path = "../relay-migrate" }
 relay-gateway = { path = "../relay-gateway" }
 relay-auth = { path = "../relay-auth" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "migrate"] }
@@ -38,3 +38,5 @@ jsonwebtoken = "9"
 wiremock = "0.6"
 http-body-util = "0.1"
 tower = { version = "0.4", features = ["util"] }
+tokio-tungstenite = "0.24"
+futures = "0.3"

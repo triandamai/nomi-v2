@@ -193,7 +193,7 @@ async fn health() -> Answer {
 /// goes to the gateway, every other host to the control plane.
 pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
     let control = control_router(relay.clone(), control_key);
-    let gateway = Arc::new(Gateway { relay: relay.clone(), http: reqwest::Client::new() });
+    let gateway = Arc::new(Gateway { relay: relay.clone(), http: reqwest::Client::new(), hub: Default::default() });
     Router::new().fallback(move |request: Request| {
         let control = control.clone();
         let gateway = gateway.clone();
