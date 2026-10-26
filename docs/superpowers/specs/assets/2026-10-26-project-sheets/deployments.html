@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployments sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #0b6b4a; --on-primary: #fff; --primary-container: #b9f5c8; --on-primary-container: #00391f;
+    --error: #ba1a1a; --error-container: #ffdad6; --on-error-container: #93000a;
+    --surface: #f4f7f2; --on-surface: #0f1a14; --on-surface-variant: #47544b;
+    --lowest: color-mix(in srgb, #0b6b4a 3%, #ffffff); --low: #edf2ea; --container: #e6ede3; --high: #dde6da;
+    --outline-variant: #c3cfc4; --ground: #e6ede3;
+    --running: #6b5a00; --running-container: #f6e7a6;
+    --brand: 'Bricolage Grotesque', system-ui, sans-serif; --plain: 'Instrument Sans', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #7ce0a3; --on-primary: #00391f; --primary-container: #0b5236; --on-primary-container: #b9f5c8;
+      --error: #ffb4ab; --error-container: #93000a; --on-error-container: #ffdad6;
+      --surface: #0d1511; --on-surface: #e3ede5; --on-surface-variant: #b4c2b8;
+      --lowest: #08100c; --low: #131c17; --container: #1a251e; --high: #24302a; --outline-variant: #3f4c44; --ground: #0d1511;
+      --running: #e9d27a; --running-container: #4b4000;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--on-surface); font-family: var(--plain); }
+  .q { max-width: 1240px; margin: 0 auto; padding: 20px 24px 0; }
+  .q h1 { font-family: var(--brand); font-size: 1.25rem; margin: 0 0 4px; }
+  .q p { margin: 0; color: var(--on-surface-variant); font-size: .9rem; }
+  .stage { max-width: 1240px; margin: 16px auto 40px; padding: 0 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+  .label { font-size: .75rem; color: var(--on-surface-variant); margin: 0 0 6px 4px; }
+  .sheet { background: var(--surface); border-radius: 28px 28px 0 0; min-height: 640px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--outline-variant); }
+  .handle { width: 32px; height: 4px; border-radius: 2px; background: var(--outline-variant); margin: 10px auto 6px; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 4px 16px 12px 22px; border-bottom: 1px solid var(--outline-variant); }
+  .bar h2 { margin: 0; font-family: var(--brand); font-size: 1.1875rem; letter-spacing: -0.01em; }
+  .bar .sub { margin: 2px 0 0; font-size: .8125rem; color: var(--on-surface-variant); }
+  .grow { flex: 1; min-width: 0; }
+  .btn { border: 0; border-radius: 999px; padding: 10px 18px; font: 600 .875rem var(--plain); cursor: pointer; }
+  .btn-filled { background: var(--primary); color: var(--on-primary); }
+  .btn-tonal { background: var(--primary-container); color: var(--on-primary-container); }
+  .btn-text { background: transparent; color: var(--primary); padding: 10px 12px; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 999px; border: 0; background: transparent; color: var(--on-surface-variant); font-size: 1.1rem; cursor: pointer; }
+  .body { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* live summary */
+  .live { background: var(--lowest); border-radius: 16px; padding: 16px 18px; display: flex; align-items: center; gap: 16px; }
+  .live h3 { margin: 0 0 2px; font-size: 1rem; }
+  .live a { color: var(--primary); font-size: .875rem; text-decoration: none; }
+  .meta { color: var(--on-surface-variant); font-size: .8125rem; }
+  .env-tabs { display: flex; gap: 8px; }
+  .chip { border: 1px solid var(--outline-variant); background: transparent; border-radius: 8px; padding: 6px 12px; font: 500 .8125rem var(--plain); color: var(--on-surface-variant); }
+  .chip.on { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+
+  /* list of publishes */
+  .list { background: var(--lowest); border-radius: 16px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--low); cursor: pointer; }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: var(--low); }
+  .row.sel { background: var(--low); }
+  .row .title { font-weight: 600; font-size: .9375rem; }
+  .row .err { margin-top: 6px; background: var(--error-container); color: var(--on-error-container); border-radius: 10px; padding: 8px 10px; font-size: .8125rem; line-height: 1.35; }
+  .status { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-size: .875rem; font-weight: 700; }
+  .s-ok { background: var(--primary-container); color: var(--on-primary-container); }
+  .s-fail { background: var(--error-container); color: var(--on-error-container); }
+  .s-run { background: var(--running-container); color: var(--running); }
+  .tag { font-size: .75rem; font-weight: 600; border-radius: 6px; padding: 2px 8px; background: var(--high); color: var(--on-surface-variant); margin-left: 8px; vertical-align: 1px; }
+  .tag.live-tag { background: var(--primary-container); color: var(--on-primary-container); }
+
+  /* detail */
+  .steps { background: var(--lowest); border-radius: 16px; padding: 6px 0; }
+  .step { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; padding: 10px 18px; font-size: .875rem; }
+  .step .n { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font-size: .75rem; font-weight: 700; }
+  .step.open { background: var(--low); }
+  .phase { font-size: .75rem; color: var(--on-surface-variant); padding: 10px 18px 2px; }
+  .log { background: #0f1a14; color: #d7e4da; border-radius: 16px; padding: 14px 16px; font: .78rem/1.55 'JetBrains Mono', ui-monospace, monospace; overflow-x: auto; white-space: pre; }
+  .log .bad { color: #ffb4ab; }
+  .callout { background: var(--error-container); color: var(--on-error-container); border-radius: 16px; padding: 14px 16px; font-size: .875rem; line-height: 1.45; }
+  .callout b { display: block; margin-bottom: 2px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="q">
+    <h1>Deployments: does this direction feel right?</h1>
+    <p>Left: the sheet you open. Right: what opens when you tap a publish (here, the failed one). Built only from Nomi's theme tokens; try dark mode too.</p>
+  </div>
+
+  <div class="stage">
+    <div>
+      <p class="label">1 · Deployments sheet</p>
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="bar">
+          <div class="grow"><h2>Deployments</h2><p class="sub">Bakery site · production</p></div>
+          <button class="btn btn-filled">Publish</button>
+          <button class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="body">
+          <div class="env-tabs"><span class="chip on">Production</span><span class="chip">Staging</span></div>
+          <div class="live">
+            <div class="grow">
+              <h3>Live since 2 days ago</h3>
+              <a href="#">bakery-site.apps.nomi.dev ↗</a>
+              <div class="meta">Version 41 · published by Trian</div>
+            </div>
+            <button class="btn btn-tonal">Open</button>
+          </div>
+
+          <div class="list">
+            <div class="row">
+              <div class="status s-run">…</div>
+              <div><div class="title">Version 44 <span class="tag">Running</span></div><div class="meta">Building · started 1 min ago by Koda</div></div>
+              <span class="meta">›</span>
+            </div>
+            <div class="row sel">
+              <div class="status s-fail">!</div>
+              <div>
+                <div class="title">Version 43 <span class="tag">Failed</span></div>
+                <div class="meta">Today 09:12 · by Trian · broke at Build › npm run build</div>
+                <div class="err">Cannot find module '$lib/server/db' imported from src/routes/+page.server.ts</div>
+              </div>
+              <span class="meta">›</span>
+            </div>
+            <div class="row">
+              <div class="status s-fail">!</div>
+              <div>
+                <div class="title">Version 42 <span class="tag">Failed</span></div>
+                <div class="meta">Yesterday 17:40 · by Koda · broke at Deploy › health check</div>
+                <div class="err">The app didn't answer on port 3000 within 60s.</div>
+              </div>
+              <span class="meta">›</span>
+            </div>
+            <div class="row">
+              <div class="status s-ok">✓</div>
+              <div><div class="title">Version 41 <span class="tag live-tag">Live</span></div><div class="meta">2 days ago · by Trian · 2m 14s</div></div>
+              <span class="meta">›</span>
+            </div>
+            <div class="row">
+              <div class="status s-ok">✓</div>
+              <div><div class="title">Version 40</div><div class="meta">4 days ago · by Koda · 1m 58s</div></div>
+              <span class="meta">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="label">2 · Publish details (opens over it)</p>
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="bar">
+          <button class="icon-btn" aria-label="Back">←</button>
+          <div class="grow"><h2>Version 43</h2><p class="sub">Failed · today 09:12 · production</p></div>
+          <button class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="body">
+          <div class="callout">
+            <b>Broke at Build › npm run build</b>
+            Cannot find module '$lib/server/db'. Version 41 is still live. Koda has been told in the project chat.
+          </div>
+          <div class="actions">
+            <button class="btn btn-filled">Ask Koda to fix it</button>
+            <button class="btn btn-text">Publish again</button>
+          </div>
+
+          <div class="steps">
+            <div class="phase">Validate</div>
+            <div class="step"><span class="n s-ok">✓</span><span>Read manifest</span><span class="meta">0.4s</span></div>
+            <div class="phase">Build</div>
+            <div class="step"><span class="n s-ok">✓</span><span>npm ci</span><span class="meta">38s</span></div>
+            <div class="step open"><span class="n s-fail">!</span><span><b>npm run build</b></span><span class="meta">12s</span></div>
+            <div class="phase">Deploy</div>
+            <div class="step"><span class="n" style="background:var(--high);color:var(--on-surface-variant)">–</span><span class="meta">Start service</span><span class="meta">skipped</span></div>
+          </div>
+
+          <div class="log">&gt; vite build
+vite v6.3.5 building SSR bundle for production...
+✓ 412 modules transformed.
+<span class="bad">[vite]: Rollup failed to resolve import "$lib/server/db"
+from "src/routes/+page.server.ts".</span>
+<span class="bad">error during build:
+Error: Cannot find module '$lib/server/db'</span>
+npm error Lifecycle script `build` failed with error: code 1</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
