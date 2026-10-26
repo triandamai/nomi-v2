@@ -66,6 +66,11 @@ pub async fn environment(relay: &Relay, project: Uuid, env: Env) -> Result<Optio
     }))
 }
 
+/// The project an app's hostname names.
+pub async fn by_slug(relay: &Relay, slug: &str) -> Result<Option<Uuid>, RelayError> {
+    Ok(sqlx::query_scalar("SELECT id FROM relay.projects WHERE slug = $1").bind(slug).fetch_optional(&relay.state).await?)
+}
+
 pub async fn forget(relay: &Relay, project: Uuid) -> Result<(), RelayError> {
     sqlx::query("DELETE FROM relay.projects WHERE id = $1").bind(project).execute(&relay.state).await?;
     Ok(())

@@ -163,6 +163,12 @@ impl<'a> Relay<'a> {
         serde_json::from_value(data.clone()).map_err(|e| RelayError::Unavailable(format!("Relay's answer wasn't a backend ({e}): {data}")))
     }
 
+    /// The project's backend as it is, changing nothing: `NotFound` when it has none.
+    pub async fn backend(&self, project_id: Uuid) -> Result<Backend, RelayError> {
+        let data = self.call(reqwest::Method::GET, &Self::project_path(project_id), None, REQUEST_TIMEOUT).await?;
+        serde_json::from_value(data.clone()).map_err(|e| RelayError::Unavailable(format!("Relay's answer wasn't a backend ({e}): {data}")))
+    }
+
     /// Drops exactly the project's database objects and rows.
     pub async fn delete_backend(&self, project_id: Uuid) -> Result<Value, RelayError> {
         self.call(reqwest::Method::DELETE, &Self::project_path(project_id), None, REQUEST_TIMEOUT).await
@@ -249,6 +255,31 @@ mod tests {
         assert_eq!(production.anon_key, "prod-anon");
         assert_eq!(production.service_key, "prod-service");
         assert!(backend.environment("staging").is_none());
+    }
+
+    #[tokio::test]
+    async fn backend_reads_the_keys_and_a_missing_one_is_not_found() {
+        let server = MockServer::start().await;
+        let (made, missing) = (Uuid::new_v4(), Uuid::new_v4());
+        Mock::given(method("GET"))
+            .and(path(format!("/control/projects/{made}")))
+            .and(header("authorization", "Bearer relay_control_key"))
+            .respond_with(envelope(json!({
+                "id": made,
+                "environments": { "dev": { "url": "https://todo-dev.api.relay.test", "anon_key": "dev-anon", "service_key": "dev-service" } }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/control/projects/{missing}")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({ "data": null, "error": { "code": "NOT_FOUND", "message": "no backend for this project", "details": null } })))
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let relay = Relay::new(&http, &config);
+        assert_eq!(relay.backend(made).await.unwrap().environment("dev").unwrap().anon_key, "dev-anon");
+        assert!(matches!(relay.backend(missing).await, Err(RelayError::NotFound(_))));
     }
 
     #[tokio::test]

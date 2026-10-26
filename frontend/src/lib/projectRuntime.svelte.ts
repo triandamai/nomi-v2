@@ -8,7 +8,7 @@
 
 import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import { m } from '$lib/paraglide/messages';
-import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, scriptsOf, toFileTree, type ManifestEntry } from '$lib/projectRuntime';
+import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree, type ManifestEntry, type RelayPreviewAccess } from '$lib/projectRuntime';
 
 export type RuntimePhase =
 	| 'unsupported'
@@ -78,6 +78,9 @@ export class ProjectRuntime {
 	#stopped = false;
 	#abort = new AbortController();
 	#checked = false;
+	/** The environment the project's commands and dev server run with (a Relay project's dev backend added once known). */
+	#env: Record<string, string> = PREVIEW_ENV;
+	#relayLoaded = false;
 
 	constructor(projectId: string) {
 		this.#projectId = projectId;
@@ -207,7 +210,7 @@ export class ProjectRuntime {
 	async #run(command: string, args: string[]): Promise<{ code: number | null; output: string }> {
 		const line = [command, ...args].join(' ');
 		this.#append(`\n$ ${line}\n`);
-		const proc = await this.#wc!.spawn(command, args, { env: PREVIEW_ENV });
+		const proc = await this.#wc!.spawn(command, args, { env: this.#env });
 		let output = '';
 		void proc.output.pipeTo(
 			new WritableStream({
@@ -227,6 +230,13 @@ export class ProjectRuntime {
 		return { code: result, output: cleanOutput(output) };
 	}
 
+	/** A Relay project's dev backend for the preview's environment; nothing for other projects. */
+	async #loadRelayAccess() {
+		const response = await this.#api('relay/preview').catch(() => null);
+		if (!response?.ok) return;
+		this.#env = previewEnv(PREVIEW_ENV, (await response.json()) as RelayPreviewAccess);
+	}
+
 	async #packageJson(): Promise<string | undefined> {
 		try {
 			return await this.#wc!.fs.readFile('package.json', 'utf-8');
@@ -241,6 +251,10 @@ export class ProjectRuntime {
 		if (!packageJson) {
 			this.phase = 'waiting';
 			return;
+		}
+		if (!this.#relayLoaded) {
+			this.#relayLoaded = true;
+			await this.#loadRelayAccess();
 		}
 		this.phase = 'installing';
 		const install = await this.#run('npm', ['install']);
@@ -275,7 +289,7 @@ export class ProjectRuntime {
 		this.previewUrl = null;
 		this.phase = 'starting';
 		this.#append('\n$ npm run dev\n');
-		const proc = await this.#wc!.spawn('npm', ['run', 'dev'], { env: PREVIEW_ENV });
+		const proc = await this.#wc!.spawn('npm', ['run', 'dev'], { env: this.#env });
 		this.#dev = proc;
 		void proc.output.pipeTo(new WritableStream({ write: (chunk) => this.#append(chunk) }));
 		void proc.exit.then((code) => {

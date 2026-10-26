@@ -106,14 +106,24 @@ Today each app carries its own backend, written fresh by Koda every time:
     project's schema, and drops any the client sent, so a request can't pick another schema.
   - PostgREST only trusts tokens from the gateway. After checking the app's token, the gateway
     signs a short-lived internal token with the PostgREST instance's key, carrying the project's
-    role (`app_<project>_authenticated`, `_anon` or `_service`) and the user's claims. PostgREST
-    sets the role and `request.jwt.claims`, and row-level security decides what the request can
-    see.
+    role in `db_role` (`app_<project>_anon`, `_authenticated`, or `_owner` for the service key,
+    which bypasses the project's own row-level security and nothing else) and the user's claims.
+    PostgREST runs with `jwt-role-claim-key = .db_role`, sets the role and `request.jwt.claims`,
+    and row-level security decides what the request can see.
+  - Relay grants each project's roles to PostgREST's login role (`RELAY_POSTGREST_ROLE`,
+    `authenticator` by default, which must exist and be one Relay can alter) and keeps that
+    role's `pgrst.db_schemas` for each shared database equal to the free projects' schemas there
+    (PostgREST reads it with `db-config = true`).
   - After each migration, and when a free project is added to or removed from a shared database,
     the control plane sends `NOTIFY pgrst, 'reload schema'` (and `'reload config'` when the
     schema list changes).
   - Every PostgREST runs with a statement timeout, `db-max-rows`, and request-size limits set
-    from the project's plan.
+    from the project's plan. For now the gateway caps request bodies at 1 MB and app roles at an
+    8-second statement timeout.
+  - The gateway's settings: `RELAY_POSTGREST_DEV_URL`, `RELAY_POSTGREST_PRODUCTION_URL`,
+    `RELAY_POSTGREST_JWT_SECRET` (PostgREST's `jwt-secret`), and `RELAY_PREVIEW_ORIGINS`
+    (comma-separated host suffixes of Nomi's previews, which may call a dev backend from the
+    browser; production answers any origin).
 
 ## What Koda writes
 
