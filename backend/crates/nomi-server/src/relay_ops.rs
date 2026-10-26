@@ -58,6 +58,33 @@ fn with_location(message: &str, details: &Value) -> String {
     }
 }
 
+/// Before a publish of a Relay project: applies the production migrations it doesn't have yet,
+/// from the files being published. A failure stops the publish (the running version keeps
+/// serving) and says which file and line. A project not on Relay passes straight through.
+pub async fn apply_before_publish(
+    pool: &PgPool,
+    http_client: &reqwest::Client,
+    config: Option<&RelayConfig>,
+    project_id: Uuid,
+    files: &[(String, Vec<u8>)],
+) -> Result<(), ApiError> {
+    let backend: String = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the project: {e}")))?;
+    if backend != "relay" {
+        return Ok(());
+    }
+    let config = config.ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    let migrations: Vec<SourceFile> = files
+        .iter()
+        .filter(|(path, _)| path.starts_with("nomi/migrations/") && path.ends_with(".sql"))
+        .map(|(path, bytes)| SourceFile { path: path.clone(), content: String::from_utf8_lossy(bytes).into_owned() })
+        .collect();
+    Relay::new(http_client, config).apply_migrations(project_id, PRODUCTION, &migrations).await.map(|_| ()).map_err(relay_error)
+}
+
 fn source_files(files: &[ProjectFile]) -> Vec<SourceFile> {
     files.iter().map(|f| SourceFile { path: f.path.clone(), content: f.content.clone() }).collect()
 }

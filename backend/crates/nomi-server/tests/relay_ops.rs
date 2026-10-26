@@ -206,3 +206,61 @@ async fn the_production_keys_become_the_apps_secrets_on_shipyard(pool: PgPool) {
     let names: Vec<String> = sqlx::query_scalar("SELECT name FROM project_secrets WHERE project_id = $1 ORDER BY name").bind(project_id).fetch_all(&pool).await.unwrap();
     assert_eq!(names, vec!["NOMI_ANON_KEY", "NOMI_SERVICE_KEY", "NOMI_URL"]);
 }
+
+async fn set_backend(pool: &PgPool, project_id: Uuid, backend: &str) {
+    sqlx::query("UPDATE projects SET backend = $1 WHERE id = $2").bind(backend).bind(project_id).execute(pool).await.unwrap();
+}
+
+fn publish_files() -> Vec<(String, Vec<u8>)> {
+    vec![
+        ("package.json".into(), b"{}".to_vec()),
+        ("nomi/migrations/0001_init.sql".into(), b"create table t (id int);".to_vec()),
+        ("nomi/backend.json".into(), b"{}".to_vec()),
+    ]
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn publishing_a_relay_project_applies_its_production_migrations_first(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    set_backend(&pool, project_id, "relay").await;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/control/projects/{project_id}/environments/production/migrations")))
+        .and(body_json(json!({ "files": [{ "path": "nomi/migrations/0001_init.sql", "content": "create table t (id int);" }] })))
+        .respond_with(envelope(json!({ "applied": ["0001_init.sql"] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key"));
+
+    nomi_server::relay_ops::apply_before_publish(&pool, &reqwest::Client::new(), config.as_ref(), project_id, &publish_files()).await.unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failed_production_migration_stops_the_publish_and_says_where(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    set_backend(&pool, project_id, "relay").await;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({
+            "data": null,
+            "error": { "code": "MIGRATION_FAILED", "message": "column \"x\" does not exist", "details": { "file": "0002_x.sql", "line": 4 } }
+        })))
+        .mount(&server)
+        .await;
+    let config = RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key"));
+
+    let (status, message) = nomi_server::relay_ops::apply_before_publish(&pool, &reqwest::Client::new(), config.as_ref(), project_id, &publish_files()).await.unwrap_err();
+
+    assert_eq!(status.as_u16(), 422);
+    assert!(message.contains("0002_x.sql line 4"), "{message}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_drizzle_project_publishes_without_relay_and_a_relay_one_needs_it(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    let http = reqwest::Client::new();
+    assert!(nomi_server::relay_ops::apply_before_publish(&pool, &http, None, project_id, &publish_files()).await.is_ok());
+    set_backend(&pool, project_id, "relay").await;
+    assert!(nomi_server::relay_ops::apply_before_publish(&pool, &http, None, project_id, &publish_files()).await.is_err());
+}
