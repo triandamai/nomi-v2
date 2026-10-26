@@ -32,6 +32,7 @@ pub mod message_steps;
 pub mod project_database;
 pub mod project_import;
 pub mod project_issues;
+pub mod project_activity;
 pub mod project_members;
 pub mod project_presence;
 pub mod project_runtime;

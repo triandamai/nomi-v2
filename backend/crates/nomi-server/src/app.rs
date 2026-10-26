@@ -388,6 +388,7 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(crate::routes::project_presence::leave),
         )
         .route("/api/projects/:id/typing", post(crate::routes::project_presence::typing))
+        .route("/api/projects/:id/activity", get(crate::routes::project_activity::list))
         .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))
         .route(
             "/api/projects/:id/members/:user_id",
