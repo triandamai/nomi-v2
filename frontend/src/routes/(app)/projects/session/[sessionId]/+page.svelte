@@ -690,7 +690,7 @@
 			{:else if sheet === 'domain' && deploy}
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}
-				<MonitorPanel projectId={project.id} {published} />
+				<MonitorPanel projectId={project.id} {published} {deploy} />
 			{:else if sheet === 'database'}
 				<DatabasePanel projectId={project.id} {published} />
 			{:else if sheet === 'members'}

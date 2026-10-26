@@ -1,22 +1,38 @@
 <script lang="ts">
-	// The published app while it runs: CPU and memory of each container (sampled every few
-	// seconds while this is open), what the app prints, and what Shipyard warned about.
+	// The published app while it runs: whether it's up, CPU and memory of each container (sampled
+	// every few seconds while this is open), what Shipyard reported, and what the app prints.
+	// Visitors, requests and history wait for Shipyard to report them (docs/shipyard-todo.md):
+	// nothing here is shown that Nomi can't back.
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import Button from '$lib/components/m3/Button.svelte';
-	import IconRefresh from '$lib/components/icons/IconRefresh.svelte';
+	import StatusSquare from '$lib/components/project/StatusSquare.svelte';
+	import { chartPaths, eventTone, filterLogs, liveSince, logLevel, orderContainers, peak, type LogFilter } from '$lib/monitorView';
 	import { ago, bytes, projectApi } from '$lib/projectApi';
+	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import type { ContainerUsage, ShipyardEvent } from '$lib/types';
 
-	let { projectId, published }: { projectId: string; published: boolean } = $props();
+	let { projectId, published, deploy = null }: { projectId: string; published: boolean; deploy?: ProjectDeploy | null } = $props();
 
 	const locale = getLocale();
+	/** Samples kept per container: about three minutes at one every few seconds. */
 	const SAMPLES = 40;
+	const SAMPLE_MS = 5000;
+	const LOG_MS = 5000;
+	const LOG_TAIL = 400;
+	const EVENTS_SHOWN = 20;
+	const CHART_WIDTH = 300;
+	const CHART_HEIGHT = 80;
+	/** Shipyard events worth a line here. */
+	const EVENTS = ['service.crashed', 'service.resource_alert', 'deployment.failed', 'publish.failed', 'publish.succeeded'];
+
+	const services = $derived(deploy?.overview?.live?.services ?? []);
+	const upSince = $derived(liveSince(services));
 
 	let containers = $state<ContainerUsage[]>([]);
 	// Recent CPU and memory per container, oldest first.
 	let history = $state<Record<string, { cpu: number[]; memory: number[] }>>({});
 	let usageError = $state<string | null>(null);
+	const shownContainers = $derived(orderContainers(containers));
 
 	async function sample() {
 		try {
@@ -39,26 +55,28 @@
 	}
 
 	let lines = $state<string[]>([]);
-	let logsError = $state<string | null>(null);
+	let logsNote = $state<string | null>(null);
 	let follow = $state(true);
+	let level = $state<LogFilter>('all');
+	let query = $state('');
 	let logBox = $state<HTMLPreElement | null>(null);
+	const shownLines = $derived(filterLogs(lines, level, query));
 
 	async function loadLogs() {
 		try {
-			const logs = await projectApi<{ lines: string[]; note?: string }>(projectId, 'deploy/logs?tail=400');
+			const logs = await projectApi<{ lines: string[]; note?: string }>(projectId, `deploy/logs?tail=${LOG_TAIL}`);
 			lines = logs.lines;
-			logsError = logs.note ?? null;
+			logsNote = logs.note ?? null;
 			if (follow && logBox) requestAnimationFrame(() => logBox && (logBox.scrollTop = logBox.scrollHeight));
 		} catch (e) {
-			logsError = (e as Error).message;
+			logsNote = (e as Error).message;
 		}
 	}
 
 	let events = $state<ShipyardEvent[]>([]);
-	const ALERTS = ['service.crashed', 'service.resource_alert', 'deployment.failed', 'publish.failed'];
 	async function loadEvents() {
 		const all = await projectApi<ShipyardEvent[]>(projectId, 'deploy/events?limit=200').catch(() => []);
-		events = all.filter((e) => ALERTS.includes(e.type)).slice(0, 20);
+		events = all.filter((e) => EVENTS.includes(e.type)).slice(0, EVENTS_SHOWN);
 	}
 
 	$effect(() => {
@@ -66,25 +84,19 @@
 		void sample();
 		void loadLogs();
 		void loadEvents();
-		const usageTimer = setInterval(() => !document.hidden && void sample(), 5000);
-		const logTimer = setInterval(() => follow && !document.hidden && void loadLogs(), 5000);
+		const usageTimer = setInterval(() => !document.hidden && void sample(), SAMPLE_MS);
+		const logTimer = setInterval(() => follow && !document.hidden && void loadLogs(), LOG_MS);
 		return () => {
 			clearInterval(usageTimer);
 			clearInterval(logTimer);
 		};
 	});
 
-	function sparkline(values: number[]): string {
-		if (values.length < 2) return '';
-		const max = Math.max(100, ...values);
-		return values.map((v, i) => `${((i / (SAMPLES - 1)) * 100).toFixed(1)},${(30 - (v / max) * 28).toFixed(1)}`).join(' ');
-	}
-
 	function percent(value: number): string {
 		return `${new Intl.NumberFormat(locale, { maximumFractionDigits: value < 10 ? 1 : 0 }).format(value)}%`;
 	}
 
-	function alertText(event: ShipyardEvent): string {
+	function eventText(event: ShipyardEvent): string {
 		const data = event.data as Record<string, unknown>;
 		switch (event.type) {
 			case 'service.crashed':
@@ -95,206 +107,296 @@
 					value: typeof data.value === 'number' ? percent(data.value) : '?',
 					threshold: typeof data.threshold === 'number' ? percent(data.threshold) : '?',
 				});
+			case 'publish.succeeded':
+				return m.pj_mon_event_live();
 			default:
 				return m.pj_alert_failed({ error: String(data.error ?? '') });
 		}
 	}
+
+	const FILTERS: { value: LogFilter; label: () => string }[] = [
+		{ value: 'all', label: m.pj_mon_all },
+		{ value: 'warn', label: m.pj_mon_warnings },
+		{ value: 'error', label: m.pj_mon_errors },
+	];
 </script>
 
 {#if !published}
 	<p class="muted">{m.pj_monitor_unpublished()}</p>
 {:else}
-	<h3 class="section-title">{m.pj_resources()}</h3>
-	{#if usageError}<p class="error">{usageError}</p>{/if}
-	{#if containers.length === 0 && !usageError}
+	<section class="card health" aria-label={m.pj_mon_health()}>
+		<StatusSquare status={services.length === 0 ? 'pending' : services.some((s) => s.running < s.replicas) ? 'failed' : 'succeeded'} />
+		<div class="health__text">
+			<h3 class="health__title">
+				{#if upSince}{m.pj_mon_up_since({ when: ago(upSince, locale) })}{:else}{m.pj_no_containers()}{/if}
+			</h3>
+			{#each services as service (service.service_id)}
+				<p class="meta">{m.pj_mon_replicas({ service: service.name, running: service.running, replicas: service.replicas })}</p>
+			{/each}
+		</div>
+	</section>
+
+	<p class="later">{m.pj_mon_metrics_later()}</p>
+
+	{#if usageError}<p class="error" role="alert">{usageError}</p>{/if}
+	{#if shownContainers.length === 0 && !usageError}
 		<p class="muted">{m.pj_no_containers()}</p>
 	{/if}
-	<div class="containers">
-		{#each containers as c (c.container_id)}
-			{@const h = history[c.container_id]}
-			<article class="container">
-				<header class="container__head">
-					<span class="container__name">{c.service}</span>
-					<span class="container__id">{c.container_id.slice(0, 12)}</span>
-				</header>
-				{#if c.stats}
-					<div class="meters">
-						<div class="meter">
-							<div class="meter__label"><span>{m.pj_cpu()}</span><span class="meter__value">{percent(c.stats.cpu_percent)}</span></div>
-							<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-								<polyline points={sparkline(h?.cpu ?? [])} />
-							</svg>
-							{#if c.limits.cpu}<span class="meter__limit">{m.pj_cpu_limit({ cpu: c.limits.cpu })}</span>{/if}
+	{#each shownContainers as c (c.container_id)}
+		{@const h = history[c.container_id]}
+		{@const cpu = h ? chartPaths(h.cpu, CHART_WIDTH, CHART_HEIGHT) : null}
+		{@const memory = h ? chartPaths(h.memory, CHART_WIDTH, CHART_HEIGHT) : null}
+		<section class="resources">
+			<h3 class="section-title">{c.service}</h3>
+			{#if c.stats}
+				<div class="charts">
+					<article class="card chart">
+						<div class="chart__head">
+							<span class="chart__title">{m.pj_cpu()}</span>
+							<span class="meta">{m.pj_mon_now_peak({ now: percent(c.stats.cpu_percent), peak: percent(peak(h?.cpu ?? []) ?? c.stats.cpu_percent) })}</span>
 						</div>
-						<div class="meter">
-							<div class="meter__label">
-								<span>{m.pj_memory()}</span>
-								<span class="meter__value">{bytes(c.stats.memory_usage_bytes, locale)} / {bytes(c.stats.memory_limit_bytes, locale)}</span>
-							</div>
-							<div class="bar" role="progressbar" aria-label={m.pj_memory()} aria-valuenow={Math.round(c.stats.memory_percent)} aria-valuemin={0} aria-valuemax={100}>
-								<span class="bar__fill" class:bar__fill--high={c.stats.memory_percent > 85} style="width: {Math.min(100, c.stats.memory_percent)}%"></span>
-							</div>
+						<svg class="chart__svg" viewBox="0 0 {CHART_WIDTH} {CHART_HEIGHT}" preserveAspectRatio="none" aria-hidden="true">
+							<line class="chart__base" x1="0" y1={CHART_HEIGHT} x2={CHART_WIDTH} y2={CHART_HEIGHT} />
+							{#if cpu}<path class="chart__area" d={cpu.area} /><path class="chart__line" d={cpu.line} />{/if}
+						</svg>
+						<span class="caption">{m.pj_mon_since_open()}{#if c.limits.cpu}&nbsp;· {m.pj_cpu_limit({ cpu: c.limits.cpu })}{/if}</span>
+					</article>
+					<article class="card chart">
+						<div class="chart__head">
+							<span class="chart__title">{m.pj_memory()}</span>
+							<span class="meta">{m.pj_mon_memory_now({ used: bytes(c.stats.memory_usage_bytes, locale), limit: bytes(c.stats.memory_limit_bytes, locale) })}</span>
 						</div>
-					</div>
-					<p class="container__io">
-						{m.pj_network({ rx: bytes(c.stats.net_rx_bytes, locale), tx: bytes(c.stats.net_tx_bytes, locale) })} ·
-						{m.pj_disk({ read: bytes(c.stats.block_read_bytes, locale), write: bytes(c.stats.block_write_bytes, locale) })}
-					</p>
-				{:else}
-					<p class="muted">{m.pj_stats_unavailable()}</p>
-				{/if}
-			</article>
-		{/each}
-	</div>
+						<svg class="chart__svg" viewBox="0 0 {CHART_WIDTH} {CHART_HEIGHT}" preserveAspectRatio="none" aria-hidden="true">
+							<line class="chart__base" x1="0" y1={CHART_HEIGHT} x2={CHART_WIDTH} y2={CHART_HEIGHT} />
+							{#if memory}<path class="chart__area" d={memory.area} /><path class="chart__line" d={memory.line} />{/if}
+						</svg>
+						<span class="caption">{m.pj_mon_since_open()} · {m.pj_mon_now_peak({ now: percent(c.stats.memory_percent), peak: percent(peak(h?.memory ?? []) ?? c.stats.memory_percent) })}</span>
+					</article>
+				</div>
+			{:else}
+				<p class="muted">{m.pj_stats_unavailable()}</p>
+			{/if}
+		</section>
+	{/each}
 
 	{#if events.length > 0}
-		<h3 class="section-title">{m.pj_alerts()}</h3>
-		<ul class="alerts">
+		<h3 class="section-title">{m.pj_mon_events()}</h3>
+		<ul class="card list">
 			{#each events as event (event.id)}
-				<li class="alert">
-					<span class="alert__text">{alertText(event)}</span>
-					<span class="alert__when">{event.service ?? ''} · {ago(event.created_at, locale)}</span>
+				<li class="event">
+					<StatusSquare status={eventTone(event.type)} size={28} />
+					<span class="event__text">{eventText(event)}</span>
+					<span class="meta">{event.service ? `${event.service} · ` : ''}{ago(event.created_at, locale)}</span>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 
-	<div class="logs-head">
-		<h3 class="section-title">{m.pj_runtime_logs()}</h3>
-		<label class="follow"><input type="checkbox" bind:checked={follow} />{m.pj_follow()}</label>
-		<Button variant="text" size="s" onclick={loadLogs}><IconRefresh size={16} />{m.pj_refresh()}</Button>
-	</div>
-	{#if logsError}<p class="muted">{logsError}</p>{/if}
-	<pre class="log" bind:this={logBox}>{lines.length ? lines.join('\n') : m.pj_log_empty()}</pre>
+	<section class="card logs">
+		<div class="logs__head">
+			<h3 class="section-title logs__title">{m.pj_mon_logs()}</h3>
+			<div class="segmented" role="radiogroup" aria-label={m.pj_mon_log_level()}>
+				{#each FILTERS as filter (filter.value)}
+					<button type="button" role="radio" aria-checked={level === filter.value} onclick={() => (level = filter.value)}>{filter.label()}</button>
+				{/each}
+			</div>
+		</div>
+		<div class="logs__tools">
+			<input class="search" type="search" placeholder={m.pj_mon_search()} aria-label={m.pj_mon_search()} bind:value={query} />
+			<label class="follow"><input type="checkbox" bind:checked={follow} />{m.pj_mon_follow()}</label>
+		</div>
+		{#if logsNote}<p class="muted">{logsNote}</p>{/if}
+		<pre class="log" bind:this={logBox}>{#if lines.length === 0}{m.pj_log_empty()}{:else if shownLines.length === 0}{m.pj_mon_no_matches()}{:else}{#each shownLines as line, i (i)}<span class="log__line log__line--{logLevel(line)}">{line}
+</span>{/each}{/if}</pre>
+	</section>
 {/if}
 
 <style>
+	.card {
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.muted {
+		margin: 8px 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
+	.error {
+		margin: 8px 0;
+		color: var(--md-sys-color-error);
+		font-size: 0.875rem;
+	}
+	.meta,
+	.caption {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+	}
+	.caption {
+		font-size: 0.75rem;
+	}
 	.section-title {
 		margin: 20px 0 8px;
 		color: var(--md-sys-color-on-surface);
 		font-size: 0.9375rem;
 		font-weight: 700;
 	}
-	.section-title:first-child {
-		margin-top: 0;
-	}
-	.muted {
-		margin: 8px 0;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.error {
-		margin: 8px 0;
-		color: var(--md-sys-color-error);
-	}
-	.containers {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-		gap: 12px;
-	}
-	.container {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		padding: 14px 16px;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-surface-container);
-	}
-	.container__head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.container__name {
-		font-weight: 700;
-	}
-	.container__id {
-		color: var(--md-sys-color-on-surface-variant);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-	}
-	.meters {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-	.meter__label {
-		display: flex;
-		justify-content: space-between;
-		gap: 8px;
-		margin-bottom: 4px;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
-	}
-	.meter__value {
-		color: var(--md-sys-color-on-surface);
-		font-variant-numeric: tabular-nums;
-		font-weight: 600;
-	}
-	.meter__limit {
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.75rem;
-	}
-	.spark {
-		display: block;
-		width: 100%;
-		height: 36px;
-		border-radius: 4px;
-		background: var(--md-sys-color-surface-container-high);
-	}
-	.spark polyline {
-		fill: none;
-		stroke: var(--nomi-chart, var(--md-sys-color-primary));
-		stroke-width: 1.6;
-		vector-effect: non-scaling-stroke;
-	}
-	.bar {
-		height: 8px;
-		overflow: hidden;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-surface-container-highest);
-	}
-	.bar__fill {
-		display: block;
-		height: 100%;
-		border-radius: inherit;
-		background: var(--nomi-chart, var(--md-sys-color-primary));
-		transition: width 400ms ease-out;
-	}
-	.bar__fill--high {
-		background: var(--md-sys-color-error);
-	}
-	.container__io {
-		margin: 0;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.75rem;
-	}
-	.alerts {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.alert {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: space-between;
-		gap: 4px 12px;
-		padding: 10px 0;
-		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-		font-size: 0.875rem;
-	}
-	.alert__when {
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
-	}
-	.logs-head {
+	.health {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		margin-top: 12px;
+		gap: 14px;
+		padding: 16px 18px;
 	}
-	.logs-head .section-title {
-		margin: 0 auto 0 0;
+	.health__text {
+		min-width: 0;
+	}
+	.health__title {
+		margin: 0 0 2px;
+		color: var(--md-sys-color-on-surface);
+		font-size: 1rem;
+		font-weight: 600;
+	}
+	.later {
+		margin: 12px 0 0;
+		padding: 10px 14px;
+		border: 1px dashed var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-medium);
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+	}
+	.charts {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+	}
+	@media (max-width: 600px) {
+		.charts {
+			grid-template-columns: 1fr;
+		}
+	}
+	.chart {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 14px 16px;
+	}
+	.chart__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 10px;
+	}
+	.chart__title {
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.9375rem;
+		font-weight: 600;
+	}
+	.chart__svg {
+		width: 100%;
+		height: 96px;
+	}
+	.chart__base {
+		stroke: var(--md-sys-color-outline-variant);
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
+	}
+	.chart__line {
+		fill: none;
+		stroke: var(--nomi-chart, var(--md-sys-color-primary));
+		stroke-width: 2;
+		vector-effect: non-scaling-stroke;
+	}
+	.chart__area {
+		fill: var(--nomi-chart, var(--md-sys-color-primary));
+		opacity: 0.14;
+	}
+	.list {
+		margin: 0;
+		padding: 0 16px;
+		list-style: none;
+	}
+	.event {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		gap: 12px;
+		align-items: center;
+		min-height: 52px;
+		padding: 8px 0;
+		border-top: 1px solid var(--md-sys-color-surface-container-low);
+		font-size: 0.875rem;
+	}
+	.event:first-child {
+		border-top: 0;
+	}
+	.event__text {
+		min-width: 0;
+		color: var(--md-sys-color-on-surface);
+		overflow-wrap: anywhere;
+	}
+	.logs {
+		margin-top: 20px;
+		padding: 14px 16px 16px;
+	}
+	.logs__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px 12px;
+	}
+	.logs__title {
+		margin: 0;
+	}
+	.segmented {
+		display: flex;
+		gap: 2px;
+		padding: 3px;
+		border-radius: 999px;
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.segmented button {
+		min-height: 32px;
+		padding: 4px 12px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		font: 500 0.8125rem var(--md-ref-typeface-plain);
+		cursor: pointer;
+	}
+	.segmented button:hover {
+		color: var(--md-sys-color-on-surface);
+	}
+	.segmented button:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	.segmented button[aria-checked='true'] {
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+		font-weight: 600;
+	}
+	.logs__tools {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 14px;
+		margin: 12px 0 10px;
+	}
+	.search {
+		flex: 1;
+		min-width: 180px;
+		min-height: 40px;
+		padding: 8px 14px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: 999px;
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		font: 0.875rem var(--md-ref-typeface-plain);
+	}
+	.search:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
 	}
 	.follow {
 		display: inline-flex;
@@ -302,24 +404,25 @@
 		gap: 6px;
 		min-height: 44px;
 		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
+		font-size: 0.875rem;
 		cursor: pointer;
 	}
-	.follow input {
-		accent-color: var(--md-sys-color-primary);
-	}
 	.log {
-		height: min(52vh, 520px);
-		margin: 8px 0 0;
+		height: min(48vh, 460px);
+		margin: 0;
 		padding: 12px 14px;
 		overflow: auto;
-		border-radius: 8px;
+		border-radius: var(--md-sys-shape-corner-medium);
 		background: var(--md-sys-color-surface-container-highest);
 		color: var(--md-sys-color-on-surface);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		line-height: 1.55;
+		font: 0.78rem/1.55 var(--md-ref-typeface-mono);
 		white-space: pre-wrap;
-		word-break: break-word;
+		overflow-wrap: anywhere;
+	}
+	.log__line--error {
+		color: var(--md-sys-color-error);
+	}
+	.log__line--warn {
+		color: var(--md-sys-color-tertiary);
 	}
 </style>
