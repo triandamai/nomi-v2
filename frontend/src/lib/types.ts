@@ -803,6 +803,12 @@ export interface ProjectPublish {
 	/** The publish this one rolled back to. */
 	rollback_of: string | null;
 	can_roll_back: boolean;
+	/** The version the publish this one rolled back to had. */
+	rollback_of_version: number | null;
+	/** The crew member who published for the person ("Koda"), when it wasn't them. */
+	started_by_agent: string | null;
+	/** What runs in its environment now: the newest publish there that succeeded. */
+	is_live: boolean;
 	created_by: string | null;
 	created_at: string;
 	finished_at: string | null;
@@ -856,8 +862,25 @@ export interface DeploymentDetail {
 	image: string | null;
 	created_at: string;
 	finished_at: string | null;
-	steps: { name: string; status: string; started_at: string | null; finished_at: string | null }[];
-	logs: { level: string; message: string; at: string }[];
+	steps: DeploymentStep[];
+	logs: LogLine[];
+}
+
+/** One step of a Shipyard deployment. Status: succeeded, failed, running, pending or skipped. */
+export interface DeploymentStep {
+	name: string;
+	/** validate, build, configure, deploy or finalize. */
+	phase: string;
+	status: string;
+	started_at: string | null;
+	finished_at: string | null;
+	error?: string | null;
+}
+
+export interface LogLine {
+	level: string;
+	message: string;
+	at: string;
 }
 
 export interface ContainerUsage {

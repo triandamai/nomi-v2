@@ -381,3 +381,73 @@ async fn a_project_can_be_limited_to_its_members(pool: PgPool) {
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
     assert_eq!(left, 0);
 }
+
+/// A publish row as Shipyard's webhooks would have left it.
+async fn seed_publish(pool: &PgPool, project_id: Uuid, environment: &str, status: &str, files_version: i64, rollback_of: Option<Uuid>, agent: Option<&str>) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO project_publishes (project_id, environment, status, manifest, files_version, rollback_of, started_by_agent, created_at) \
+         VALUES ($1, $2, $3, '{}'::jsonb, $4, $5, $6, now() + make_interval(secs => $4)) RETURNING id",
+    )
+    .bind(project_id)
+    .bind(environment)
+    .bind(status)
+    .bind(files_version)
+    .bind(rollback_of)
+    .bind(agent)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+fn publish_in<'a>(overview: &'a Value, id: Uuid) -> &'a Value {
+    overview["publishes"].as_array().unwrap().iter().find(|p| p["id"] == json!(id)).unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn overview_marks_the_newest_success_per_environment_live(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "live@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let worked = seed_publish(&pool, project_id, "production", "succeeded", 1, None, None).await;
+    let broke = seed_publish(&pool, project_id, "production", "failed", 2, None, None).await;
+    let staging = seed_publish(&pool, project_id, "staging", "succeeded", 3, None, None).await;
+
+    let (status, overview) = request(router, "GET", &format!("/api/projects/{project_id}/deploy"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(publish_in(&overview, worked)["is_live"], json!(true));
+    assert_eq!(publish_in(&overview, broke)["is_live"], json!(false));
+    assert_eq!(publish_in(&overview, staging)["is_live"], json!(true));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_rollback_row_names_the_version_it_returned_to_and_who_started_it(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "rolled@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let first = seed_publish(&pool, project_id, "production", "succeeded", 1, None, None).await;
+    let by_koda = seed_publish(&pool, project_id, "production", "succeeded", 2, None, Some("Koda")).await;
+    let back = seed_publish(&pool, project_id, "production", "succeeded", 3, Some(first), None).await;
+
+    let (_, overview) = request(router, "GET", &format!("/api/projects/{project_id}/deploy"), Some(&token), None).await;
+
+    assert_eq!(publish_in(&overview, back)["rollback_of_version"], json!(1));
+    assert_eq!(publish_in(&overview, by_koda)["started_by_agent"], json!("Koda"));
+    assert_eq!(publish_in(&overview, first)["started_by_agent"], Value::Null);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn rolling_back_to_a_failed_publish_is_refused(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("POST")).and(path_regex(r"/publish$")).respond_with(ResponseTemplate::new(202)).expect(0).mount(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "nope@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let broke = seed_publish(&pool, project_id, "production", "failed", 1, None, None).await;
+    sqlx::query("UPDATE project_publishes SET source_key = 'publishes/x.zip' WHERE id = $1").bind(broke).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router, "POST", &format!("/api/projects/{project_id}/deploy/publishes/{broke}/rollback"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}

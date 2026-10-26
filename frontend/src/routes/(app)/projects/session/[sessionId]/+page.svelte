@@ -95,19 +95,28 @@
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
 	});
+	// The open sheet is kept in the address (`?sheet=`) so a link opens it. While the page is
+	// still starting (a link that opens a sheet), SvelteKit's router can't change the address yet,
+	// and throwing then would leave the router broken; the address is already right then anyway.
+	function keepSheetInAddress(which: Sheet | null) {
+		const url = new URL(page.url);
+		if (which) url.searchParams.set('sheet', which);
+		else url.searchParams.delete('sheet');
+		try {
+			replaceState(url, {});
+		} catch {
+			// Before the router started: nothing to change.
+		}
+	}
 	function openSheet(which: Sheet) {
 		sheet = which;
 		sheetOpen = true;
-		const url = new URL(page.url);
-		url.searchParams.set('sheet', which);
-		replaceState(url, {});
+		keepSheetInAddress(which);
 	}
 	$effect(() => {
 		if (sheetOpen) return;
 		if (!page.url.searchParams.has('sheet')) return;
-		const url = new URL(page.url);
-		url.searchParams.delete('sheet');
-		replaceState(url, {});
+		keepSheetInAddress(null);
 	});
 
 	let deploy = $state<ProjectDeploy | null>(null);
@@ -677,7 +686,7 @@
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
-				<DeployPanel {deploy} />
+				<DeployPanel {deploy} onaskfix={sendToChat} />
 			{:else if sheet === 'domain' && deploy}
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}

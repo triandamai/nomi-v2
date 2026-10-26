@@ -47,6 +47,17 @@ pub(crate) async fn project_for(conn: &mut PoolConnection<Postgres>, session_id:
     can_open.then_some(project_id)
 }
 
+/// "The last publish to production failed at build › build_image: <message>", from Shipyard's
+/// failure when it said where, else from the publish's error.
+fn failed_publish_line(environment: &str, failure: Option<&serde_json::Value>, error: Option<&str>) -> String {
+    let field = |name: &str| failure.and_then(|f| f.get(name)).and_then(serde_json::Value::as_str).filter(|v| !v.is_empty());
+    let message = field("message").or(error).unwrap_or("no reason given");
+    match (field("phase"), field("step")) {
+        (Some(phase), Some(step)) => format!("The last publish to {environment} failed at {phase} › {step}: {message}"),
+        _ => format!("The last publish to {environment} failed: {message}"),
+    }
+}
+
 fn clip(text: &str, max: usize) -> &str {
     match text.char_indices().nth(max) {
         Some((at, _)) => &text[..at],
@@ -107,6 +118,22 @@ The person stored these for the published app, read on the server from the envir
              in the preview they're missing, so handle that plainly.\n\n",
             secrets.join(", ")
         ));
+    }
+
+    // A publish that failed, until a later one to that environment worked: it's the first thing
+    // to know when the person asks for a fix (Nomi also posted it in the chat).
+    let latest_publishes: Vec<(String, String, Option<serde_json::Value>, Option<String>)> = sqlx::query_as(
+        "SELECT DISTINCT ON (environment) environment, status, failure, error FROM project_publishes \
+         WHERE project_id = $1 AND status <> 'running' ORDER BY environment, created_at DESC",
+    )
+    .bind(project_id)
+    .fetch_all(&mut **conn)
+    .await
+    .unwrap_or_default();
+    for (environment, status, failure, error) in latest_publishes {
+        if status == "failed" {
+            brief.push_str(&format!("## {}\n\n", failed_publish_line(&environment, failure.as_ref(), error.as_deref())));
+        }
     }
 
     // Only a check of the files as they are now says anything about them.

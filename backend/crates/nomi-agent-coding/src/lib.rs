@@ -143,7 +143,7 @@ impl SubAgent for CodingAgent {
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         if name == PUBLISH_TOOL_NAME {
-            return publish_from_tool(self.project_ops.as_ref(), user_id, &input).await.map(ToolOutcome::text);
+            return publish_from_tool(self.project_ops.as_ref(), user_id, &self.display_name(), &input).await.map(ToolOutcome::text);
         }
         if RELAY_TOOL_NAMES.contains(&name) {
             return relay::execute(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input).await.map(ToolOutcome::text);

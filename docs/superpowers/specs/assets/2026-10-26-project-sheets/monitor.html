@@ -1,0 +1,131 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"><style>
+  :root {
+    --primary: #0b6b4a; --on-primary: #fff; --primary-container: #b9f5c8; --on-primary-container: #00391f;
+    --error: #ba1a1a; --error-container: #ffdad6; --on-error-container: #93000a;
+    --surface: #f4f7f2; --on-surface: #0f1a14; --on-surface-variant: #47544b;
+    --lowest: color-mix(in srgb, #0b6b4a 3%, #ffffff); --low: #edf2ea; --container: #e6ede3; --high: #dde6da;
+    --outline-variant: #c3cfc4; --ground: #e6ede3;
+    --running: #6b5a00; --running-container: #f6e7a6;
+    --brand: 'Bricolage Grotesque', system-ui, sans-serif; --plain: 'Instrument Sans', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #7ce0a3; --on-primary: #00391f; --primary-container: #0b5236; --on-primary-container: #b9f5c8;
+      --error: #ffb4ab; --error-container: #93000a; --on-error-container: #ffdad6;
+      --surface: #0d1511; --on-surface: #e3ede5; --on-surface-variant: #b4c2b8;
+      --lowest: #08100c; --low: #131c17; --container: #1a251e; --high: #24302a; --outline-variant: #3f4c44; --ground: #0d1511;
+      --running: #e9d27a; --running-container: #4b4000;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--on-surface); font-family: var(--plain); }
+  .q { max-width: 1240px; margin: 0 auto; padding: 20px 24px 0; }
+  .q h1 { font-family: var(--brand); font-size: 1.25rem; margin: 0 0 4px; }
+  .q p { margin: 0; color: var(--on-surface-variant); font-size: .9rem; }
+  .stage { max-width: 1240px; margin: 16px auto 40px; padding: 0 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+  .label { font-size: .75rem; color: var(--on-surface-variant); margin: 0 0 6px 4px; }
+  .sheet { background: var(--surface); border-radius: 28px 28px 0 0; min-height: 640px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--outline-variant); }
+  .handle { width: 32px; height: 4px; border-radius: 2px; background: var(--outline-variant); margin: 10px auto 6px; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 4px 16px 12px 22px; border-bottom: 1px solid var(--outline-variant); }
+  .bar h2 { margin: 0; font-family: var(--brand); font-size: 1.1875rem; letter-spacing: -0.01em; }
+  .bar .sub { margin: 2px 0 0; font-size: .8125rem; color: var(--on-surface-variant); }
+  .grow { flex: 1; min-width: 0; }
+  .btn { border: 0; border-radius: 999px; padding: 10px 18px; font: 600 .875rem var(--plain); cursor: pointer; }
+  .btn-filled { background: var(--primary); color: var(--on-primary); }
+  .btn-tonal { background: var(--primary-container); color: var(--on-primary-container); }
+  .btn-text { background: transparent; color: var(--primary); padding: 10px 12px; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 999px; border: 0; background: transparent; color: var(--on-surface-variant); font-size: 1.1rem; cursor: pointer; }
+  .body { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* live summary */
+  .live { background: var(--lowest); border-radius: 16px; padding: 16px 18px; display: flex; align-items: center; gap: 16px; }
+  .live h3 { margin: 0 0 2px; font-size: 1rem; }
+  .live a { color: var(--primary); font-size: .875rem; text-decoration: none; }
+  .meta { color: var(--on-surface-variant); font-size: .8125rem; }
+  .env-tabs { display: flex; gap: 8px; }
+  .chip { border: 1px solid var(--outline-variant); background: transparent; border-radius: 8px; padding: 6px 12px; font: 500 .8125rem var(--plain); color: var(--on-surface-variant); }
+  .chip.on { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+
+  /* list of publishes */
+  .list { background: var(--lowest); border-radius: 16px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--low); cursor: pointer; }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: var(--low); }
+  .row.sel { background: var(--low); }
+  .row .title { font-weight: 600; font-size: .9375rem; }
+  .row .err { margin-top: 6px; background: var(--error-container); color: var(--on-error-container); border-radius: 10px; padding: 8px 10px; font-size: .8125rem; line-height: 1.35; }
+  .status { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-size: .875rem; font-weight: 700; }
+  .s-ok { background: var(--primary-container); color: var(--on-primary-container); }
+  .s-fail { background: var(--error-container); color: var(--on-error-container); }
+  .s-run { background: var(--running-container); color: var(--running); }
+  .tag { font-size: .75rem; font-weight: 600; border-radius: 6px; padding: 2px 8px; background: var(--high); color: var(--on-surface-variant); margin-left: 8px; vertical-align: 1px; }
+  .tag.live-tag { background: var(--primary-container); color: var(--on-primary-container); }
+
+  /* detail */
+  .steps { background: var(--lowest); border-radius: 16px; padding: 6px 0; }
+  .step { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; padding: 10px 18px; font-size: .875rem; }
+  .step .n { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font-size: .75rem; font-weight: 700; }
+  .step.open { background: var(--low); }
+  .phase { font-size: .75rem; color: var(--on-surface-variant); padding: 10px 18px 2px; }
+  .log { background: #0f1a14; color: #d7e4da; border-radius: 16px; padding: 14px 16px; font: .78rem/1.55 'JetBrains Mono', ui-monospace, monospace; overflow-x: auto; white-space: pre; }
+  .log .bad { color: #ffb4ab; }
+  .callout { background: var(--error-container); color: var(--on-error-container); border-radius: 16px; padding: 14px 16px; font-size: .875rem; line-height: 1.45; }
+  .callout b { display: block; margin-bottom: 2px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .stage.one { grid-template-columns: 1fr; max-width: 900px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi { background: var(--lowest); border-radius: 16px; padding: 14px 16px; }
+  .kpi .v { font-family: var(--brand); font-size: 1.5rem; font-weight: 700; margin-top: 2px; }
+  .kpi .d { font-size: .75rem; color: var(--on-surface-variant); }
+  .kpi .need { display:inline-block; margin-top: 6px; font-size: .6875rem; border: 1px dashed var(--outline-variant); border-radius: 6px; padding: 1px 6px; color: var(--on-surface-variant); }
+  .card { background: var(--lowest); border-radius: 16px; padding: 16px 18px; }
+  .card h3 { margin: 0 0 2px; font-size: .9375rem; }
+  .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+  .seg { display: flex; gap: 4px; background: var(--low); border-radius: 999px; padding: 3px; }
+  .seg span { font-size: .75rem; padding: 4px 10px; border-radius: 999px; color: var(--on-surface-variant); }
+  .seg span.on { background: var(--lowest); color: var(--on-surface); font-weight: 600; }
+  svg text { fill: var(--on-surface-variant); font: 11px var(--plain); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .loglines { white-space: pre; overflow-x: auto; font: .75rem/1.6 'JetBrains Mono', ui-monospace, monospace; background: #0f1a14; color: #d7e4da; border-radius: 12px; padding: 10px 12px; }
+  .loglines .w { color: #e9d27a; } .loglines .e { color: #ffb4ab; } .loglines .t { color: #7d9184; }
+  .search { flex: 1; border: 1px solid var(--outline-variant); background: transparent; border-radius: 999px; padding: 8px 14px; color: var(--on-surface); font: .8125rem var(--plain); }
+  .event { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--low); font-size: .875rem; }
+  .event:first-of-type { border-top: 0; }
+</style>
+</head><body>
+<div class="q"><h1>Monitor: does this answer "how is my app doing?"</h1><p>Dashed tags mark numbers Shipyard doesn't give Nomi yet; they'd go on a Shipyard to-do list.</p></div>
+<div class="stage one"><div><div class="sheet">
+<div class="handle"></div>
+<div class="bar"><div class="grow"><h2>Monitor</h2><p class="sub">Bakery site · production · running · up 2 days</p></div><div class="seg"><span>1h</span><span class="on">24h</span><span>7d</span></div><button class="icon-btn">✕</button></div>
+<div class="body">
+ <div class="kpis">
+  <div class="kpi"><div class="d">Visitors</div><div class="v">412</div><div class="d">+18% vs yesterday</div><span class="need">needs Shipyard</span></div>
+  <div class="kpi"><div class="d">Requests</div><div class="v">9.8k</div><div class="d">3 a second at peak</div><span class="need">needs Shipyard</span></div>
+  <div class="kpi"><div class="d">Errors</div><div class="v">0.4%</div><div class="d">38 failed requests</div><span class="need">needs Shipyard</span></div>
+  <div class="kpi"><div class="d">Response time</div><div class="v">120ms</div><div class="d">95% under 310ms</div><span class="need">needs Shipyard</span></div>
+ </div>
+ <div class="card"><div class="head"><h3>Visitors</h3><span class="meta">per hour</span></div><svg viewBox="0 0 384 128" width="100%" height="140" preserveAspectRatio="none"><rect x="2" y="106" width="12" height="6" rx="3" fill="var(--primary)"/><rect x="18" y="109" width="12" height="3" rx="3" fill="var(--primary)"/><rect x="34" y="109" width="12" height="3" rx="3" fill="var(--primary)"/><rect x="50" y="112" width="12" height="0" rx="3" fill="var(--primary)"/><rect x="66" y="109" width="12" height="3" rx="3" fill="var(--primary)"/><rect x="82" y="103" width="12" height="9" rx="3" fill="var(--primary)"/><rect x="98" y="88" width="12" height="24" rx="3" fill="var(--primary)"/><rect x="114" y="70" width="12" height="42" rx="3" fill="var(--primary)"/><rect x="130" y="46" width="12" height="66" rx="3" fill="var(--primary)"/><rect x="146" y="22" width="12" height="90" rx="3" fill="var(--primary)"/><rect x="162" y="10" width="12" height="102" rx="3" fill="var(--primary)"/><rect x="178" y="19" width="12" height="93" rx="3" fill="var(--primary)"/><rect x="194" y="28" width="12" height="84" rx="3" fill="var(--primary)"/><rect x="210" y="13" width="12" height="99" rx="3" fill="var(--primary)"/><rect x="226" y="1" width="12" height="111" rx="3" fill="var(--primary)"/><rect x="242" y="7" width="12" height="105" rx="3" fill="var(--primary)"/><rect x="258" y="25" width="12" height="87" rx="3" fill="var(--primary)"/><rect x="274" y="40" width="12" height="72" rx="3" fill="var(--primary)"/><rect x="290" y="55" width="12" height="57" rx="3" fill="var(--primary)"/><rect x="306" y="67" width="12" height="45" rx="3" fill="var(--primary)"/><rect x="322" y="76" width="12" height="36" rx="3" fill="var(--primary)"/><rect x="338" y="85" width="12" height="27" rx="3" fill="var(--primary)"/><rect x="354" y="94" width="12" height="18" rx="3" fill="var(--primary)"/><rect x="370" y="100" width="12" height="12" rx="3" fill="var(--primary)"/><line x1="0" y1="112" x2="384" y2="112" stroke="var(--outline-variant)"/><text x="0" y="126">24h ago</text><text x="384" y="126" text-anchor="end">now</text></svg></div>
+ <div class="grid2">
+  <div class="card"><div class="head"><h3>CPU</h3><span class="meta">now 21% · peak 41%</span></div><svg viewBox="0 0 380 136" width="100%" height="140"><line x1="0" y1="112" x2="380" y2="112" stroke="var(--outline-variant)"/><polygon points="0,112 0,100 17,97 33,101 50,93 66,89 83,92 99,86 116,80 132,83 149,87 165,91 182,93 198,85 215,77 231,69 248,72 264,81 281,84 297,89 314,92 330,88 347,82 363,85 380,90 380,112" fill="var(--primary)" opacity=".14"/><polyline points="0,100 17,97 33,101 50,93 66,89 83,92 99,86 116,80 132,83 149,87 165,91 182,93 198,85 215,77 231,69 248,72 264,81 281,84 297,89 314,92 330,88 347,82 363,85 380,90" fill="none" stroke="var(--primary)" stroke-width="2"/><text x="0" y="132">24h ago</text><text x="380" y="132" text-anchor="end">now</text></svg></div>
+  <div class="card"><div class="head"><h3>Memory</h3><span class="meta">now 60% of 512 MB</span></div><svg viewBox="0 0 380 136" width="100%" height="140"><line x1="0" y1="112" x2="380" y2="112" stroke="var(--outline-variant)"/><polygon points="0,112 0,62 17,62 33,61 50,60 66,59 83,59 99,58 116,57 132,57 149,56 165,56 182,55 198,55 215,54 231,54 248,53 264,53 281,53 297,52 314,52 330,52 347,51 363,51 380,50 380,112" fill="var(--primary)" opacity=".14"/><polyline points="0,62 17,62 33,61 50,60 66,59 83,59 99,58 116,57 132,57 149,56 165,56 182,55 198,55 215,54 231,54 248,53 264,53 281,53 297,52 314,52 330,52 347,51 363,51 380,50" fill="none" stroke="var(--primary)" stroke-width="2"/><text x="0" y="132">24h ago</text><text x="380" y="132" text-anchor="end">now</text></svg></div>
+ </div>
+ <div class="card"><div class="head"><h3>Events</h3></div>
+  <div class="event"><span class="status s-fail" style="width:28px;height:28px">!</span><span>The app crashed and restarted (exit code 137, out of memory)</span><span class="meta">yesterday 22:10</span></div>
+  <div class="event"><span class="status s-run" style="width:28px;height:28px">↑</span><span>Memory above 90% for 5 minutes</span><span class="meta">yesterday 22:04</span></div>
+  <div class="event"><span class="status s-ok" style="width:28px;height:28px">✓</span><span>Version 41 went live</span><span class="meta">2 days ago</span></div>
+ </div>
+ <div class="card"><div class="head"><h3 class="grow">Logs</h3><div class="seg"><span class="on">All</span><span>Warnings</span><span>Errors</span></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:10px"><input class="search" placeholder="Search logs"><button class="btn btn-text">Follow live</button></div>
+  <div class="loglines"><span class="t">10:41:02</span> GET /menu 200 18ms
+<span class="t">10:41:05</span> GET /api/orders 200 41ms
+<span class="t">10:41:09</span> <span class="w">warn</span> slow query: select * from orders (612ms)
+<span class="t">10:41:12</span> POST /api/orders 201 88ms
+<span class="t">10:41:20</span> <span class="e">error</span> Payment provider timed out after 10s
+<span class="t">10:41:21</span> POST /api/checkout 502 10.1s</div>
+ </div>
+</div></div></div></div></body></html>

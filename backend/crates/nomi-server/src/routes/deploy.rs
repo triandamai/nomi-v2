@@ -133,13 +133,22 @@ pub struct PublishRow {
     pub finished_at: Option<DateTime<Utc>>,
     /// Where a failed publish broke (`shipyard::PublishFailure`), when Shipyard said.
     pub failure: Option<Value>,
+    /// The `files_version` of the publish this one rolled back to.
+    pub rollback_of_version: Option<i64>,
+    /// The crew member who started it through `publish_project`, when it wasn't the person.
+    pub started_by_agent: Option<String>,
+    /// The newest successful publish of its environment: what runs there now. Only the deploy
+    /// overview works it out; a single publish says false.
+    #[sqlx(default)]
+    pub is_live: bool,
 }
 
 const PUBLISH_COLUMNS: &str = "pp.id, pp.environment, pp.status, pp.url, pp.error, pp.files_version, pp.rollback_of, \
      (pp.source_key IS NOT NULL) AS can_roll_back, \
      COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
-     pp.created_at, pp.finished_at, pp.failure \
+     pp.created_at, pp.finished_at, pp.failure, rb.files_version AS rollback_of_version, pp.started_by_agent \
      FROM project_publishes pp \
+     LEFT JOIN project_publishes rb ON rb.id = pp.rollback_of \
      LEFT JOIN user_profiles up ON up.user_id = pp.created_by \
      LEFT JOIN web_credentials w ON w.user_id = pp.created_by \
      LEFT JOIN google_identities g ON g.user_id = pp.created_by";
@@ -217,12 +226,13 @@ pub async fn overview(
 ) -> Result<Json<DeployOverview>, ApiError> {
     let role = project_role(&state.pool, project_id, claims.sub).await?;
     let target = target(&state, project_id).await?;
-    let publishes: Vec<PublishRow> =
+    let mut publishes: Vec<PublishRow> =
         sqlx::query_as(&format!("SELECT {PUBLISH_COLUMNS} WHERE pp.project_id = $1 ORDER BY pp.created_at DESC LIMIT 30"))
             .bind(project_id)
             .fetch_all(&state.pool)
             .await
             .map_err(internal("failed to list publishes"))?;
+    mark_live(&mut publishes);
     let url = publishes
         .iter()
         .find(|p| p.environment == DEFAULT_ENV && p.status == "succeeded" && p.url.is_some())
@@ -242,6 +252,16 @@ pub async fn overview(
     }))
 }
 
+/// Marks the newest successful publish of each environment as live (`publishes` is newest first).
+fn mark_live(publishes: &mut [PublishRow]) {
+    let mut seen = std::collections::HashSet::new();
+    for publish in publishes.iter_mut() {
+        if publish.status == "succeeded" && seen.insert(publish.environment.clone()) {
+            publish.is_live = true;
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 pub struct PublishRequest {
     pub environment: Option<String>,
@@ -258,6 +278,7 @@ async fn send_publish(
     source: Vec<u8>,
     rollback_of: Option<Uuid>,
     user_id: Uuid,
+    agent: Option<&str>,
 ) -> Result<PublishRow, ApiError> {
     let id = Uuid::new_v4();
     let source_key = format!("publishes/{}/{id}.zip", target.id);
@@ -267,8 +288,8 @@ async fn send_publish(
         .await
         .map_err(internal("failed to keep the published source"))?;
     sqlx::query(
-        "INSERT INTO project_publishes (id, project_id, environment, manifest, source_key, files_version, rollback_of, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO project_publishes (id, project_id, environment, manifest, source_key, files_version, rollback_of, created_by, started_by_agent) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(id)
     .bind(target.id)
@@ -278,6 +299,7 @@ async fn send_publish(
     .bind(target.files_version)
     .bind(rollback_of)
     .bind(user_id)
+    .bind(agent)
     .execute(state.pool())
     .await
     .map_err(internal("failed to record the publish"))?;
@@ -316,13 +338,20 @@ pub async fn publish(
 ) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let environment = body.and_then(|Json(b)| b.environment).unwrap_or_else(|| DEFAULT_ENV.to_string());
-    let row = start_publish(&state, project_id, claims.sub, &environment).await?;
+    let row = start_publish(&state, project_id, claims.sub, &environment, None).await?;
     Ok((StatusCode::ACCEPTED, Json(row)))
 }
 
 /// Publishes the project's current files to `environment` as `user_id` (whose right to was
 /// checked by the caller): the Deploy sheet's Publish, and agents' `publish_project`.
-pub(crate) async fn start_publish(state: &impl ShipyardAccess, project_id: Uuid, user_id: Uuid, environment: &str) -> Result<PublishRow, ApiError> {
+/// `agent` is the crew member publishing for `user_id` through `publish_project`, if any.
+pub(crate) async fn start_publish(
+    state: &impl ShipyardAccess,
+    project_id: Uuid,
+    user_id: Uuid,
+    environment: &str,
+    agent: Option<&str>,
+) -> Result<PublishRow, ApiError> {
     valid_env(environment)?;
     let client = client(state)?;
     let running: bool = sqlx::query_scalar(
@@ -354,7 +383,7 @@ pub(crate) async fn start_publish(state: &impl ShipyardAccess, project_id: Uuid,
     let source = nomi_shipyard::bundle::zip(&files).map_err(internal("failed to pack the project"))?;
 
     let app = nomi_shipyard_side::ensure_app(state.pool(), &client, &target).await.map_err(ensure_error)?;
-    send_publish(state, &target, &app, environment, manifest, source, None, user_id).await
+    send_publish(state, &target, &app, environment, manifest, source, None, user_id, agent).await
 }
 
 /// `POST /api/projects/:id/deploy/publishes/:publish_id/rollback`: publishes that publish's
@@ -366,15 +395,19 @@ pub async fn rollback(
 ) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let client = client(&state)?;
-    let old: Option<(String, Value, Option<String>)> = sqlx::query_as(
-        "SELECT environment, manifest, source_key FROM project_publishes WHERE project_id = $1 AND id = $2",
+    let old: Option<(String, String, Value, Option<String>)> = sqlx::query_as(
+        "SELECT environment, status, manifest, source_key FROM project_publishes WHERE project_id = $1 AND id = $2",
     )
     .bind(project_id)
     .bind(publish_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(internal("failed to load publish"))?;
-    let (environment, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    let (environment, status, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    // Going back to code that never went live would only fail again.
+    if status != "succeeded" {
+        return Err((StatusCode::CONFLICT, "only a publish that succeeded can be rolled back to".to_string()));
+    }
     // The code goes back; the secrets stay as they are now.
     manifest::bind_secrets(&mut manifest, &crate::routes::project_secrets::names(&state.pool, project_id).await?);
     let source_key = source_key.ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
@@ -386,7 +419,7 @@ pub async fn rollback(
         .ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
     let target = target(&state, project_id).await?;
     let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
-    let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub).await?;
+    let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub, None).await?;
     Ok((StatusCode::ACCEPTED, Json(row)))
 }
 
