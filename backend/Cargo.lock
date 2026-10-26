@@ -3124,6 +3124,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-relay-client"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
 name = "nomi-server"
 version = "0.1.0"
 dependencies = [
@@ -3156,6 +3168,7 @@ dependencies = [
  "nomi-llm",
  "nomi-mail",
  "nomi-realtime",
+ "nomi-relay-client",
  "nomi-settings",
  "nomi-shipyard",
  "nomi-storage",
