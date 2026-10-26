@@ -19,6 +19,7 @@ pub mod plans;
 pub mod project_ops;
 pub mod prompts;
 pub mod records;
+pub mod relay_ops;
 pub mod registry;
 pub mod scheduled_jobs;
 pub mod stop;
