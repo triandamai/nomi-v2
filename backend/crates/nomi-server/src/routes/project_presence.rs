@@ -28,6 +28,8 @@ pub struct PresentPerson {
 
 #[derive(Serialize)]
 pub struct Presence {
+    /// Who's asking, so their page can tell its own typing pings from others'.
+    pub me: Uuid,
     /// Everyone else who has the project open, longest-present first.
     pub people: Vec<PresentPerson>,
 }
@@ -103,7 +105,7 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
     .fetch_all(&state.pool)
     .await
     .map_err(internal("failed to list presence"))?;
-    Ok(Json(Presence { people }))
+    Ok(Json(Presence { me: claims.sub, people }))
 }
 
 /// `POST /api/projects/:id/typing`: this person is writing in the project's chat. The pages

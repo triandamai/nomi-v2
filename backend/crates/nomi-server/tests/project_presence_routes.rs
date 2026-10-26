@@ -110,6 +110,8 @@ async fn a_heartbeat_puts_someone_in_here_now_for_everyone_else(pool: PgPool) {
 
     assert_eq!(names(&seen_by_ben), vec!["ana"]);
     assert_eq!(names(&seen_by_ana), vec!["ben"]);
+    // So the page can tell its own typing pings from others'.
+    assert_eq!(seen_by_ben["me"], json!(user_id(&pool, "ben@acme.test").await));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
