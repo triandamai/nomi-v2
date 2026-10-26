@@ -2189,7 +2189,6 @@
 	"pj_phase_title_deploy": "Deploy",
 	"pj_phase_title_finalize": "Finalize",
 	"pj_mon_health": "Health",
-	"pj_mon_up_since": "Running · up since {when}",
 	"pj_mon_replicas": "{service}: {running} of {replicas} running",
 	"pj_mon_metrics_later": "Visitors, requests, errors and response time show here once Shipyard reports them.",
 	"pj_mon_since_open": "Since you opened this",
@@ -2204,5 +2203,6 @@
 	"pj_mon_search": "Search logs",
 	"pj_mon_follow": "Follow live",
 	"pj_mon_no_matches": "No lines match.",
-	"pj_mon_log_level": "Show"
+	"pj_mon_log_level": "Show",
+	"pj_mon_deployed": "Running · deployed {when}"
 }

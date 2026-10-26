@@ -26,6 +26,7 @@
 	const EVENTS = ['service.crashed', 'service.resource_alert', 'deployment.failed', 'publish.failed', 'publish.succeeded'];
 
 	const services = $derived(deploy?.overview?.live?.services ?? []);
+	// When the web service last deployed (not uptime: a crash restarts it without a deploy).
 	const upSince = $derived(liveSince(services));
 
 	let containers = $state<ContainerUsage[]>([]);
@@ -128,7 +129,7 @@
 		<StatusSquare status={services.length === 0 ? 'pending' : services.some((s) => s.running < s.replicas) ? 'failed' : 'succeeded'} />
 		<div class="health__text">
 			<h3 class="health__title">
-				{#if upSince}{m.pj_mon_up_since({ when: ago(upSince, locale) })}{:else}{m.pj_no_containers()}{/if}
+				{#if upSince}{m.pj_mon_deployed({ when: ago(upSince, locale) })}{:else}{m.pj_no_containers()}{/if}
 			</h3>
 			{#each services as service (service.service_id)}
 				<p class="meta">{m.pj_mon_replicas({ service: service.name, running: service.running, replicas: service.replicas })}</p>
