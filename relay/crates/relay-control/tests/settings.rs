@@ -2,6 +2,7 @@
 //! and written onto PostgREST's role in each shared database.
 use relay_control::settings::{save, view, SettingsInput};
 use relay_control::{Relay, RelayError};
+use relay_core::settings::StorageSettings;
 use relay_core::Env;
 use sqlx::PgPool;
 use wiremock::matchers::method;
@@ -49,6 +50,26 @@ fn input(url: &str, postgrest: &str) -> SettingsInput {
         postgrest_role: Some(AUTHENTICATOR.into()),
         preview_origins: vec![".preview.nomi.test".into()],
         shared_smtp: None,
+        storage: None,
+    }
+}
+
+/// An S3 stand-in answering every request with `status` (an empty listing when it's 200).
+async fn s3(status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    let body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Name>files</Name><Prefix></Prefix><KeyCount>0</KeyCount><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated></ListBucketResult>";
+    Mock::given(method("GET")).respond_with(ResponseTemplate::new(status).set_body_string(body).insert_header("content-type", "application/xml")).mount(&server).await;
+    server
+}
+
+fn file_storage(endpoint: &str, secret: &str) -> StorageSettings {
+    StorageSettings {
+        endpoint: endpoint.into(),
+        region: "us-east-1".into(),
+        bucket: "files".into(),
+        access_key_id: "AKIATEST".into(),
+        secret_access_key: secret.into(),
+        path_style: true,
     }
 }
 
@@ -173,4 +194,48 @@ async fn the_shared_sender_is_kept_masked_and_its_password_stays_when_left_out(p
 
     save(&relay, input(&url, &pgrst.uri())).await.unwrap();
     assert!(relay.live().unwrap().settings.shared_smtp.is_some(), "leaving the sender out keeps it");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn file_storage_is_checked_and_kept_without_showing_its_secret(pool: PgPool) {
+    ensure_authenticator(&pool).await;
+    let url = own_url(&pool).await;
+    let pgrst = postgrest().await;
+    let bucket = s3(200).await;
+    let relay = Relay::unconfigured(pool.clone(), KEY);
+    assert!(relay.store().is_none(), "no storage before it's set");
+
+    let saved = save(&relay, SettingsInput { storage: Some(file_storage(&bucket.uri(), "s3cret")), ..input(&url, &pgrst.uri()) }).await.unwrap();
+
+    let shown = saved.storage.as_ref().unwrap();
+    assert_eq!(shown.bucket, "files");
+    assert_eq!(shown.secret_access_key, "", "the secret is never shown");
+    assert!(saved.checks.iter().any(|c| c.name == "file storage" && c.ok), "{:?}", saved.checks);
+    assert!(relay.store().is_some());
+
+    // Saving again with the secret left empty keeps it.
+    save(&relay, SettingsInput { storage: Some(file_storage(&bucket.uri(), "")), ..input(&url, &pgrst.uri()) }).await.unwrap();
+    let kept = relay_control::settings::load(&relay).await.unwrap().unwrap();
+    assert_eq!(kept.storage.unwrap().secret_access_key, "s3cret");
+
+    // Left out keeps it; an empty bucket removes it.
+    save(&relay, input(&url, &pgrst.uri())).await.unwrap();
+    assert!(relay.store().is_some());
+    save(&relay, SettingsInput { storage: Some(StorageSettings { bucket: String::new(), ..file_storage(&bucket.uri(), "") }), ..input(&url, &pgrst.uri()) }).await.unwrap();
+    assert!(relay.store().is_none());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn file_storage_that_refuses_is_named_and_nothing_is_saved(pool: PgPool) {
+    ensure_authenticator(&pool).await;
+    let url = own_url(&pool).await;
+    let pgrst = postgrest().await;
+    let bucket = s3(403).await;
+    let relay = Relay::unconfigured(pool.clone(), KEY);
+
+    let refused = save(&relay, SettingsInput { storage: Some(file_storage(&bucket.uri(), "wrong")), ..input(&url, &pgrst.uri()) }).await.unwrap_err();
+
+    let RelayError::Rejected { message, .. } = refused else { panic!("not a refusal") };
+    assert!(message.contains("file storage"), "{message}");
+    assert!(relay.live().is_err());
 }

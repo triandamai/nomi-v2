@@ -7,7 +7,7 @@ use uuid::Uuid;
 /// An upload's size limit when the bucket doesn't set one.
 pub const DEFAULT_MAX_SIZE_MB: u32 = 50;
 /// The largest limit a bucket may set.
-pub const MAX_SIZE_MB_CAP: u32 = 500;
+pub const MAX_SIZE_MB_CAP: u32 = 100;
 const BYTES_PER_MB: u64 = 1024 * 1024;
 /// Bucket names: lowercase letters, digits, `-` and `_`, starting with a letter.
 const MAX_NAME_LEN: usize = 63;

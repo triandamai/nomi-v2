@@ -116,11 +116,58 @@ pub fn verify_at(secret: &str, token: &str, now: u64) -> Option<Claims> {
     let claims = decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation).ok()?.claims;
     (claims.exp > now).then_some(claims)
 }
+
+/// What a signed file URL's token names: one file of one bucket, in one project environment.
+/// It has no `role`, so it never passes as an API key or a user's token.
+#[derive(Debug, Serialize, Deserialize)]
+struct FileClaims {
+    r#use: String,
+    r#ref: Uuid,
+    env: String,
+    bucket: String,
+    path: String,
+    exp: u64,
+}
+
+const FILE_USE: &str = "file";
+
+/// The token of a signed URL for `bucket`/`path`, good until `now + seconds`.
+pub fn file_token(secret: &str, project: Uuid, env: Env, bucket: &str, path: &str, now: u64, seconds: u64) -> String {
+    let claims = FileClaims { r#use: FILE_USE.into(), r#ref: project, env: env.as_str().into(), bucket: bucket.into(), path: path.into(), exp: now + seconds };
+    encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret.as_bytes())).expect("HS256 signing can't fail")
+}
+
+/// Whether `token` opens exactly this file now.
+pub fn file_token_opens(secret: &str, token: &str, project: Uuid, env: Env, bucket: &str, path: &str, now: u64) -> bool {
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = false;
+    let Ok(data) = decode::<FileClaims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation) else { return false };
+    let c = data.claims;
+    c.r#use == FILE_USE && c.r#ref == project && c.env == env.as_str() && c.bucket == bucket && c.path == path && c.exp > now
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::names::Env;
     use uuid::Uuid;
+
+    #[test]
+    fn a_file_token_opens_only_its_own_file_until_it_expires() {
+        let secret = new_signing_secret();
+        let project = Uuid::new_v4();
+        let token = file_token(&secret, project, Env::Dev, "docs", "a/b.pdf", 1000, 60);
+        assert!(file_token_opens(&secret, &token, project, Env::Dev, "docs", "a/b.pdf", 1059));
+        assert!(!file_token_opens(&secret, &token, project, Env::Dev, "docs", "a/b.pdf", 1060), "expired");
+        assert!(!file_token_opens(&secret, &token, project, Env::Dev, "docs", "a/c.pdf", 1001));
+        assert!(!file_token_opens(&secret, &token, project, Env::Dev, "other", "a/b.pdf", 1001));
+        assert!(!file_token_opens(&secret, &token, project, Env::Production, "docs", "a/b.pdf", 1001));
+        assert!(!file_token_opens(&secret, &token, Uuid::new_v4(), Env::Dev, "docs", "a/b.pdf", 1001));
+        assert!(!file_token_opens(&new_signing_secret(), &token, project, Env::Dev, "docs", "a/b.pdf", 1001));
+        assert!(verify_at(&secret, &token, 1001).is_none(), "never an API key");
+        let key = api_key(&secret, project, Env::Dev, ApiRole::Anon, 1000);
+        assert!(!file_token_opens(&secret, &key, project, Env::Dev, "docs", "a/b.pdf", 1001), "an API key never opens a file");
+    }
 
     #[test]
     fn an_api_key_says_whose_it_is_and_only_its_secret_opens_it() {

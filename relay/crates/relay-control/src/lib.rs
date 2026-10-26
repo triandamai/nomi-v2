@@ -2,6 +2,7 @@
 //! deleting a project's backend, applying its migrations, reading its schema and types.
 
 pub mod backend;
+pub mod files;
 pub mod migrations;
 pub mod postgrest;
 pub mod realtime;
@@ -13,6 +14,7 @@ pub mod storage;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use object_store::ObjectStore;
 use relay_auth::mail::{Outbox, SmtpOutbox};
 use relay_core::settings::Settings;
 use relay_core::{Env, Tier};
@@ -82,6 +84,8 @@ pub struct Relay {
 pub struct Live {
     pub settings: Settings,
     shared: HashMap<Env, PgPool>,
+    /// Where files go; `None` until file storage is set.
+    store: Option<Arc<dyn ObjectStore>>,
 }
 
 impl Live {
@@ -92,7 +96,11 @@ impl Live {
             let pool = PgPoolOptions::new().max_connections(SHARED_POOL_SIZE).connect_lazy(settings.shared_url(env))?;
             shared.insert(env, pool);
         }
-        Ok(Self { settings, shared })
+        let store = match &settings.storage {
+            Some(storage) => Some(files::store_for(storage).map_err(RelayError::Internal)?),
+            None => None,
+        };
+        Ok(Self { settings, shared, store })
     }
 
     pub fn shared(&self, env: Env) -> Result<PgPool, RelayError> {
@@ -103,7 +111,7 @@ impl Live {
 impl Relay {
     /// A Relay already pointed at `shared`, as the tests (and only they) make one.
     pub fn new(state: PgPool, shared: HashMap<Env, PgPool>, encryption_key: [u8; 32], public_domain: String) -> Self {
-        let live = Live { settings: Settings { public_domain, ..Settings::default() }, shared };
+        let live = Live { settings: Settings { public_domain, ..Settings::default() }, shared, store: None };
         Self { state, encryption_key, live: RwLock::new(Some(Arc::new(live))), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox) }
     }
 
@@ -128,10 +136,26 @@ impl Relay {
             if let Some(current) = live.take() {
                 let mut settings = current.settings.clone();
                 change(&mut settings);
-                *live = Some(Arc::new(Live { settings, shared: current.shared.clone() }));
+                *live = Some(Arc::new(Live { settings, shared: current.shared.clone(), store: current.store.clone() }));
             }
         }
         self
+    }
+
+    /// Files go to `store` (tests use an in-memory one).
+    pub fn with_store(self, store: Arc<dyn ObjectStore>) -> Self {
+        {
+            let mut live = self.live.write().expect("settings lock");
+            if let Some(current) = live.take() {
+                *live = Some(Arc::new(Live { settings: current.settings.clone(), shared: current.shared.clone(), store: Some(store) }));
+            }
+        }
+        self
+    }
+
+    /// Where files go, when file storage is set.
+    pub fn store(&self) -> Option<Arc<dyn ObjectStore>> {
+        self.live().ok().and_then(|live| live.store.clone())
     }
 
     pub fn with_outbox(mut self, outbox: Arc<dyn Outbox>) -> Self {

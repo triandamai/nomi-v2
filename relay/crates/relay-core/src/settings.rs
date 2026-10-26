@@ -25,6 +25,26 @@ pub struct Settings {
     /// Nomi's shared sender for sign-in codes; projects without their own SMTP use it.
     #[serde(default)]
     pub shared_smtp: Option<Smtp>,
+    /// The S3 bucket every project's files go in, each under its own prefix; without it, storage
+    /// answers that it isn't set up.
+    #[serde(default)]
+    pub storage: Option<StorageSettings>,
+}
+
+/// An S3-compatible bucket (AWS, R2, MinIO, …).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct StorageSettings {
+    /// Empty for AWS itself.
+    #[serde(default)]
+    pub endpoint: String,
+    pub region: String,
+    pub bucket: String,
+    pub access_key_id: String,
+    #[serde(default)]
+    pub secret_access_key: String,
+    /// `endpoint/bucket/key` instead of `bucket.endpoint/key` (MinIO and most self-hosted).
+    #[serde(default)]
+    pub path_style: bool,
 }
 
 /// An SMTP server email goes out through: Relay's shared sender, or a project's own.
