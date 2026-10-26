@@ -120,7 +120,8 @@
 	function status(item: ActivityItem): string | null {
 		if (item.kind === 'publish_failed' || item.kind === 'build_failed') return 'failed';
 		if (item.kind === 'published' || item.kind === 'build_finished') return 'succeeded';
-		if (item.kind === 'publishing' || item.kind === 'build_started') return 'running';
+		// A build's start is history once it finished: only a publish still going reads as running.
+		if (item.kind === 'publishing') return 'running';
 		if (item.kind === 'rolled_back') return item.status === 'failed' ? 'failed' : 'succeeded';
 		return null;
 	}
