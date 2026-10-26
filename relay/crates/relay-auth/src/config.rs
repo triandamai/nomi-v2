@@ -150,3 +150,43 @@ pub async fn save(state: &PgPool, key: &[u8; 32], project: Uuid, env: Env, confi
     .await?;
     Ok(())
 }
+
+/// The project's sign-in secrets.
+pub async fn load_secrets(state: &PgPool, key: &[u8; 32], project: Uuid) -> Result<Secrets, AuthError> {
+    let rows: Vec<(String, Vec<u8>)> = sqlx::query_as("SELECT name, sealed FROM relay.auth_secrets WHERE project_id = $1").bind(project).fetch_all(state).await?;
+    let mut secrets = BTreeMap::new();
+    for (name, sealed) in rows {
+        secrets.insert(name, decrypt(key, &sealed).map_err(|e| AuthError::Internal(e.to_string()))?);
+    }
+    Ok(Secrets(secrets))
+}
+
+/// Sets a secret, or removes it when `value` is `None`.
+pub async fn set_secret(state: &PgPool, key: &[u8; 32], project: Uuid, name: &str, value: Option<&str>) -> Result<(), AuthError> {
+    match value {
+        Some(value) => {
+            sqlx::query("INSERT INTO relay.auth_secrets (project_id, name, sealed) VALUES ($1, $2, $3) ON CONFLICT (project_id, name) DO UPDATE SET sealed = EXCLUDED.sealed")
+                .bind(project)
+                .bind(name)
+                .bind(encrypt(key, value))
+                .execute(state)
+                .await?;
+        }
+        None => {
+            sqlx::query("DELETE FROM relay.auth_secrets WHERE project_id = $1 AND name = $2").bind(project).bind(name).execute(state).await?;
+        }
+    }
+    Ok(())
+}
+
+impl AuthConfig {
+    /// The project's own SMTP server with its password from the secrets when backend.json has none.
+    pub fn smtp_with(&self, secrets: &Secrets) -> Option<Smtp> {
+        self.smtp.clone().map(|mut smtp| {
+            if smtp.password.is_empty() {
+                smtp.password = secrets.get(SMTP_PASSWORD_SECRET).unwrap_or_default().to_string();
+            }
+            smtp
+        })
+    }
+}

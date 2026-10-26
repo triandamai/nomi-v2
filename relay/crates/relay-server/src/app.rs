@@ -93,13 +93,47 @@ async fn get_types(State(state): State<AppState>, Path((project, env_name)): Pat
     Ok(ok(json!({ "types": schema::types(&state.relay, project, env(&env_name)?).await? })))
 }
 
-/// A project's sign-in settings for an environment, with its SMTP password left out.
+/// A project's sign-in settings for an environment, with its SMTP password left out, and the
+/// secrets its switched-on methods still need.
 async fn get_auth(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>) -> Result<Answer> {
     let mut found = relay_auth::config::load(&state.relay.state, &state.relay.encryption_key, project, env(&env_name)?).await.map_err(auth_failure)?;
+    let secrets = relay_auth::config::load_secrets(&state.relay.state, &state.relay.encryption_key, project).await.map_err(auth_failure)?;
+    let missing = found.missing_secrets(&secrets);
     if let Some(smtp) = found.smtp.as_mut() {
         smtp.password = String::new();
     }
-    Ok(ok(found))
+    let mut answer = serde_json::to_value(found).unwrap_or_default();
+    answer["missing_secrets"] = json!(missing);
+    Ok(ok(answer))
+}
+
+#[derive(Deserialize)]
+struct SecretValue {
+    value: String,
+}
+
+/// Sign-in secrets Nomi forwards when an admin sets them (`NOMI_SMTP_PASSWORD`, `NOMI_OAUTH_*`).
+fn sign_in_secret(name: &str) -> Result<()> {
+    let known = name == relay_auth::config::SMTP_PASSWORD_SECRET || name.starts_with("NOMI_OAUTH_");
+    let shaped = name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+    if known && shaped {
+        Ok(())
+    } else {
+        Err(Failure::new(StatusCode::BAD_REQUEST, "BAD_REQUEST", "only NOMI_SMTP_PASSWORD and NOMI_OAUTH_* secrets are kept by Relay"))
+    }
+}
+
+async fn put_auth_secret(State(state): State<AppState>, Path((project, name)): Path<(Uuid, String)>, Json(body): Json<SecretValue>) -> Result<Answer> {
+    sign_in_secret(&name)?;
+    relay_control::state::environment(&state.relay, project, Env::Dev).await?.ok_or_else(|| Failure::new(StatusCode::NOT_FOUND, "NOT_FOUND", "no backend for this project"))?;
+    relay_auth::config::set_secret(&state.relay.state, &state.relay.encryption_key, project, &name, Some(&body.value)).await.map_err(auth_failure)?;
+    Ok(ok(json!({ "saved": name })))
+}
+
+async fn delete_auth_secret(State(state): State<AppState>, Path((project, name)): Path<(Uuid, String)>) -> Result<Answer> {
+    sign_in_secret(&name)?;
+    relay_auth::config::set_secret(&state.relay.state, &state.relay.encryption_key, project, &name, None).await.map_err(auth_failure)?;
+    Ok(ok(json!({ "removed": name })))
 }
 
 /// Replaces them; an SMTP password left empty keeps the stored one.
@@ -162,6 +196,7 @@ fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))
         .route("/control/projects/:id/environments/:env/types", get(get_types))
         .route("/control/projects/:id/environments/:env/auth", get(get_auth).put(put_auth))
+        .route("/control/projects/:id/auth/secrets/:name", axum::routing::put(put_auth_secret).delete(delete_auth_secret))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_control_key));
     Router::new().route("/health", get(health)).merge(control).with_state(state)
 }
