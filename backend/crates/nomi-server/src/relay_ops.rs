@@ -87,12 +87,32 @@ pub async fn apply_before_publish(
             relay.put_auth(project_id, PRODUCTION, auth).await.map_err(relay_error)?;
         }
     }
+    let backend: Option<Value> = files.iter().find(|(path, _)| path == BACKEND_JSON).and_then(|(_, bytes)| serde_json::from_slice(bytes).ok());
+    if let Some(storage) = backend.as_ref().and_then(|b| b.get("storage")) {
+        relay.put_storage(project_id, PRODUCTION, storage).await.map_err(relay_error)?;
+    }
     let migrations: Vec<SourceFile> = files
         .iter()
         .filter(|(path, _)| path.starts_with("nomi/migrations/") && path.ends_with(".sql"))
         .map(|(path, bytes)| SourceFile { path: path.clone(), content: String::from_utf8_lossy(bytes).into_owned() })
         .collect();
-    relay.apply_migrations(project_id, PRODUCTION, &migrations).await.map(|_| ()).map_err(relay_error)
+    relay.apply_migrations(project_id, PRODUCTION, &migrations).await.map_err(relay_error)?;
+    // After the migrations, so every listed table exists.
+    if let Some(tables) = backend.as_ref().and_then(|b| b.get("realtime")) {
+        relay.put_realtime(project_id, PRODUCTION, tables).await.map_err(relay_error)?;
+    }
+    Ok(())
+}
+
+/// The names in `backend.json`'s `storage` block, for telling Koda what was saved.
+fn bucket_names(storage: &Value) -> String {
+    let names: Vec<&str> = storage.get("buckets").and_then(Value::as_array).into_iter().flatten().filter_map(|b| b.get("name").and_then(Value::as_str)).collect();
+    if names.is_empty() { "none".to_string() } else { names.join(", ") }
+}
+
+fn table_names(tables: &Value) -> String {
+    let names: Vec<&str> = tables.as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    if names.is_empty() { "no tables".to_string() } else { names.join(", ") }
 }
 
 /// What to tell Koda after sign-in settings were saved to `env`.
@@ -317,5 +337,21 @@ impl RelayOps for ServerRelayOps {
         relay.put_auth(project_id, env.as_str(), auth).await.map_err(|e| message(relay_error(e)))?;
         let status = relay.auth(project_id, env.as_str()).await.unwrap_or(Value::Null);
         Ok(sign_in_summary(env.as_str(), &status))
+    }
+
+    async fn apply_storage(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, storage: &Value) -> Result<String, String> {
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
+        self.check_access(user_id, project_id, env).await?;
+        relay.put_storage(project_id, env.as_str(), storage).await.map_err(|e| message(relay_error(e)))?;
+        Ok(format!("Buckets saved to {}: {}.", env.as_str(), bucket_names(storage)))
+    }
+
+    async fn apply_realtime(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, tables: &Value) -> Result<String, String> {
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
+        self.check_access(user_id, project_id, env).await?;
+        relay.put_realtime(project_id, env.as_str(), tables).await.map_err(|e| message(relay_error(e)))?;
+        Ok(format!("Live changes are on in {} for: {}.", env.as_str(), table_names(tables)))
     }
 }

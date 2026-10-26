@@ -21,7 +21,7 @@ use crate::files::{owned_project_id, project_file_key, write_file};
 
 /// Where a project's migrations live, as plain SQL files named `0001_init.sql`, `0002_…`.
 pub const MIGRATIONS_DIR: &str = "nomi/migrations/";
-/// The project's backend settings; its `auth` block is the app's sign-in settings.
+/// The project's backend settings: `auth` (sign-in), `storage` (buckets) and `realtime` (tables).
 pub const BACKEND_JSON_PATH: &str = "nomi/backend.json";
 /// Where the TypeScript for the project's tables goes, rewritten after every migration.
 pub const TYPES_PATH: &str = "src/lib/nomi.types.ts";
@@ -109,33 +109,77 @@ pub(crate) async fn after_write(
     if backend_of(conn, project_id).await.as_deref() != Some(BACKEND_RELAY) {
         return outcome;
     }
+    let mut said = Vec::new();
     if migrations {
-        let said = match apply_to_dev(conn, storage, relay, user_id, project_id).await {
-            Ok(applied) => format!("Relay dev: {applied}"),
-            Err(e) => format!(
+        match apply_to_dev(conn, storage, relay, user_id, project_id).await {
+            Ok(applied) => {
+                said.push(format!("Relay dev: {applied}"));
+                // A table listed in `realtime` before its migration gets its trigger now.
+                if !backend_json {
+                    if let Ok(Some(backend)) = read_backend_json(storage, project_id).await {
+                        if let Some(tables) = backend.get(REALTIME_BLOCK) {
+                            said.push(block_outcome(REALTIME_BLOCK, relay.apply_realtime(user_id, project_id, RelayEnv::Dev, tables).await));
+                        }
+                    }
+                }
+            }
+            Err(e) => said.push(format!(
                 "Relay dev couldn't apply the migrations: {e}. Fix that file if it never applied; if it was applied before, write the next migration instead."
-            ),
-        };
-        outcome.display_text = format!("{}\n\n{said}", outcome.display_text);
+            )),
+        }
     }
     if backend_json && name != "delete_file" {
-        let said = match sign_in_to_dev(storage, relay, user_id, project_id).await {
-            Ok(said) => format!("Relay dev sign-in: {said}"),
-            Err(e) => format!("Relay dev sign-in settings weren't saved: {e}"),
-        };
-        outcome.display_text = format!("{}\n\n{said}", outcome.display_text);
+        said.extend(backend_to_dev(storage, relay, user_id, project_id).await);
+    }
+    for line in said {
+        outcome.display_text = format!("{}\n\n{line}", outcome.display_text);
     }
     outcome
 }
 
-/// Sends `nomi/backend.json`'s `auth` block to the dev backend.
-async fn sign_in_to_dev(storage: &ProjectStore, relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> Result<String, String> {
-    let text = storage.get_object(&project_file_key(project_id, BACKEND_JSON_PATH)).await.map_err(|e| e.to_string())?.unwrap_or_default();
-    let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("{BACKEND_JSON_PATH} isn't valid JSON ({e}); fix it and write it again"))?;
-    match parsed.get("auth") {
-        Some(auth) => relay.apply_auth(user_id, project_id, RelayEnv::Dev, auth).await,
-        None => Ok(format!("{BACKEND_JSON_PATH} has no auth block, so sign-in stays as it is (email codes).")),
+const AUTH_BLOCK: &str = "auth";
+const STORAGE_BLOCK: &str = "storage";
+const REALTIME_BLOCK: &str = "realtime";
+
+/// `nomi/backend.json`, parsed; `None` when the project has none.
+async fn read_backend_json(storage: &ProjectStore, project_id: Uuid) -> Result<Option<Value>, String> {
+    let Some(text) = storage.get_object(&project_file_key(project_id, BACKEND_JSON_PATH)).await.map_err(|e| e.to_string())? else { return Ok(None) };
+    serde_json::from_str(&text).map(Some).map_err(|e| format!("{BACKEND_JSON_PATH} isn't valid JSON ({e}); fix it and write it again"))
+}
+
+/// How one block's save went, in the words Koda reads after the write.
+fn block_outcome(block: &str, result: Result<String, String>) -> String {
+    let label = match block {
+        AUTH_BLOCK => "sign-in",
+        other => other,
+    };
+    match result {
+        Ok(said) => format!("Relay dev {label}: {said}"),
+        Err(e) => format!("Relay dev {label} settings weren't saved: {e}"),
     }
+}
+
+/// Sends each of `nomi/backend.json`'s blocks to the dev backend: sign-in, buckets, realtime.
+async fn backend_to_dev(storage: &ProjectStore, relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> Vec<String> {
+    let backend = match read_backend_json(storage, project_id).await {
+        Ok(Some(backend)) => backend,
+        Ok(None) => return Vec::new(),
+        Err(e) => return vec![format!("Relay dev settings weren't saved: {e}")],
+    };
+    let mut said = Vec::new();
+    if let Some(auth) = backend.get(AUTH_BLOCK) {
+        said.push(block_outcome(AUTH_BLOCK, relay.apply_auth(user_id, project_id, RelayEnv::Dev, auth).await));
+    }
+    if let Some(buckets) = backend.get(STORAGE_BLOCK) {
+        said.push(block_outcome(STORAGE_BLOCK, relay.apply_storage(user_id, project_id, RelayEnv::Dev, buckets).await));
+    }
+    if let Some(tables) = backend.get(REALTIME_BLOCK) {
+        said.push(block_outcome(REALTIME_BLOCK, relay.apply_realtime(user_id, project_id, RelayEnv::Dev, tables).await));
+    }
+    if said.is_empty() {
+        said.push(format!("{BACKEND_JSON_PATH} has no auth, storage or realtime block, so nothing changed (sign-in stays email codes)."));
+    }
+    said
 }
 
 /// Runs `apply_migrations` or `describe_backend` for a project the person can open, on Relay.

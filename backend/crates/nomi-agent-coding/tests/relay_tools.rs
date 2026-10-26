@@ -44,6 +44,8 @@ async fn seed_project(pool: &PgPool, backend: &str) -> Seeded {
 struct FakeRelay {
     applied: Mutex<Vec<(Uuid, RelayEnv, Vec<String>)>>,
     auth: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
+    storage: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
+    realtime: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
     fails: bool,
 }
 
@@ -77,6 +79,14 @@ impl RelayOps for FakeRelay {
     async fn apply_auth(&self, _: Uuid, _: Uuid, env: RelayEnv, auth: &serde_json::Value) -> Result<String, String> {
         self.auth.lock().unwrap().push((env, auth.clone()));
         Ok("Sign-in settings saved to dev. Still needs the project secret NOMI_OAUTH_GITHUB_SECRET.".into())
+    }
+    async fn apply_storage(&self, _: Uuid, _: Uuid, env: RelayEnv, storage: &serde_json::Value) -> Result<String, String> {
+        self.storage.lock().unwrap().push((env, storage.clone()));
+        Ok("Buckets saved to dev: avatars.".into())
+    }
+    async fn apply_realtime(&self, _: Uuid, _: Uuid, env: RelayEnv, tables: &serde_json::Value) -> Result<String, String> {
+        self.realtime.lock().unwrap().push((env, tables.clone()));
+        Ok("Realtime on in dev for: message.".into())
     }
 }
 
@@ -271,4 +281,46 @@ async fn writing_backend_json_sends_its_sign_in_settings_to_dev(pool: PgPool) {
         .unwrap();
     assert!(broken.display_text.contains("isn't valid JSON"), "{}", broken.display_text);
     assert_eq!(relay.auth.lock().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writing_backend_json_sends_its_buckets_and_realtime_tables_to_dev(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay::default());
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+    let backend = json!({ "storage": { "buckets": [{ "name": "avatars", "public": true, "write": "owner" }] }, "realtime": ["message"] });
+
+    let said = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": "nomi/backend.json", "content": backend.to_string()}))
+        .await
+        .unwrap();
+
+    assert!(said.display_text.contains("Relay dev storage: Buckets saved to dev: avatars."), "{}", said.display_text);
+    assert!(said.display_text.contains("Relay dev realtime: Realtime on in dev for: message."), "{}", said.display_text);
+    assert_eq!(relay.storage.lock().unwrap().clone(), vec![(RelayEnv::Dev, backend["storage"].clone())]);
+    assert_eq!(relay.realtime.lock().unwrap().clone(), vec![(RelayEnv::Dev, backend["realtime"].clone())]);
+    assert!(relay.auth.lock().unwrap().is_empty(), "no auth block, nothing sent for sign-in");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_new_migration_sends_the_realtime_tables_again(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay::default());
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+    let project = seeded.project_id.to_string();
+    agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": project, "path": "nomi/backend.json", "content": json!({ "realtime": ["message"] }).to_string()}))
+        .await
+        .unwrap();
+
+    let said = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": project, "path": "nomi/migrations/0001_init.sql", "content": "create table message (id int primary key);"}))
+        .await
+        .unwrap();
+
+    assert_eq!(relay.realtime.lock().unwrap().len(), 2, "sent again once the table exists");
+    assert!(said.display_text.contains("Relay dev realtime:"), "{}", said.display_text);
+    assert!(relay.storage.lock().unwrap().is_empty());
 }

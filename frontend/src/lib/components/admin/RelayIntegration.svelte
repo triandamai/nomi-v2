@@ -7,8 +7,9 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
+	import Checkbox from '$lib/components/m3/Checkbox.svelte';
 	import { adminApi } from '$lib/adminApi';
-	import { DEFAULT_SMTP_PORT, readRefusal, settingsBody, type RelayCheck, type RelayOverview, type RelaySettingsForm } from '$lib/relaySettings';
+	import { DEFAULT_SMTP_PORT, DEFAULT_STORAGE_REGION, readRefusal, settingsBody, type RelayCheck, type RelayOverview, type RelaySettingsForm } from '$lib/relaySettings';
 
 	let { canManage }: { canManage: boolean } = $props();
 
@@ -34,6 +35,12 @@
 		smtp_user: '',
 		smtp_password: '',
 		smtp_from: '',
+		storage_endpoint: '',
+		storage_region: DEFAULT_STORAGE_REGION,
+		storage_bucket: '',
+		storage_access_key_id: '',
+		storage_secret: '',
+		storage_path_style: false,
 	});
 	const securityOptions = [
 		{ value: 'starttls', label: 'STARTTLS' },
@@ -68,6 +75,12 @@
 			smtp_user: relay?.shared_smtp?.user ?? '',
 			smtp_password: '',
 			smtp_from: relay?.shared_smtp?.from ?? '',
+			storage_endpoint: relay?.storage?.endpoint ?? '',
+			storage_region: relay?.storage?.region || DEFAULT_STORAGE_REGION,
+			storage_bucket: relay?.storage?.bucket ?? '',
+			storage_access_key_id: relay?.storage?.access_key_id ?? '',
+			storage_secret: '',
+			storage_path_style: relay?.storage?.path_style ?? false,
 		};
 		checks = relay?.checks ?? [];
 	}
@@ -100,7 +113,7 @@
 		busy = 'settings';
 		error = notice = null;
 		try {
-			await adminApi('relay/settings', { method: 'PUT', body: settingsBody(form, !!overview?.relay?.shared_smtp) });
+			await adminApi('relay/settings', { method: 'PUT', body: settingsBody(form, !!overview?.relay?.shared_smtp, !!overview?.relay?.storage) });
 			await load();
 			notice = m.relay_admin_saved();
 		} catch (e) {
@@ -201,6 +214,27 @@
 							disabled={!canManage}
 						/>
 					</div>
+				</fieldset>
+
+				<fieldset class="sender">
+					<legend class="sender__title">{m.relay_admin_storage_title()}</legend>
+					<p class="muted small">{m.relay_admin_storage_hint()}</p>
+					<div class="grid">
+						<TextField label={m.relay_admin_storage_endpoint()} bind:value={form.storage_endpoint} type="url" placeholder="https://<account>.r2.cloudflarestorage.com" supportingText={m.relay_admin_storage_endpoint_hint()} disabled={!canManage} />
+						<TextField label={m.relay_admin_storage_region()} bind:value={form.storage_region} autocomplete="off" disabled={!canManage} />
+						<TextField label={m.relay_admin_storage_bucket()} bind:value={form.storage_bucket} autocomplete="off" placeholder="relay-files" disabled={!canManage} />
+						<TextField label={m.relay_admin_storage_key_id()} bind:value={form.storage_access_key_id} autocomplete="off" disabled={!canManage} />
+						<TextField
+							label={m.relay_admin_storage_secret()}
+							bind:value={form.storage_secret}
+							type="password"
+							autocomplete="off"
+							required={!!form.storage_bucket.trim() && !overview.relay?.storage}
+							supportingText={overview.relay?.storage ? m.relay_admin_key_keep() : undefined}
+							disabled={!canManage}
+						/>
+					</div>
+					<Checkbox label={m.relay_admin_storage_path_style()} bind:checked={form.storage_path_style} disabled={!canManage} />
 				</fieldset>
 
 				{#if checks.length}

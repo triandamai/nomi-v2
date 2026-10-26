@@ -11,7 +11,7 @@ pub const GUIDES: &[(&str, &str, &str)] = &[
     ("sveltekit", "SvelteKit 3 + Svelte 5: full-stack apps (the default)", include_str!("../guides/sveltekit.md")),
     ("design", "How every project should look: a deliberate modern style, and the generic AI look to avoid", include_str!("../guides/design.md")),
     ("database", "Drizzle with Postgres or SQLite, and how the preview runs them (projects not on Relay)", include_str!("../guides/database.md")),
-    ("relay", "Nomi Relay: migrations with row-level security, the nomi-relay client, auth and storage (projects on Relay)", include_str!("../guides/relay.md")),
+    ("relay", "Nomi Relay: migrations with row-level security, the nomi-relay client, sign-in, files and live changes (projects on Relay)", include_str!("../guides/relay.md")),
     ("preview", "How Nomi runs the project in the browser, and what can't run there", include_str!("../guides/preview.md")),
     ("react", "React 19 + Vite single-page apps", include_str!("../guides/react.md")),
     ("vue", "Vue 3 + Vite single-page apps", include_str!("../guides/vue.md")),

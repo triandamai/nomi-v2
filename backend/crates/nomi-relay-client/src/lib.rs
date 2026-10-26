@@ -213,6 +213,16 @@ impl<'a> Relay<'a> {
         self.call(reqwest::Method::PUT, &format!("{}/auth", Self::env_path(project_id, env)), Some(auth.clone()), REQUEST_TIMEOUT).await
     }
 
+    /// Replaces `env`'s buckets (`nomi/backend.json`'s `storage`).
+    pub async fn put_storage(&self, project_id: Uuid, env: &str, storage: &Value) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::PUT, &format!("{}/storage", Self::env_path(project_id, env)), Some(storage.clone()), REQUEST_TIMEOUT).await
+    }
+
+    /// Replaces `env`'s realtime tables (`nomi/backend.json`'s `realtime`).
+    pub async fn put_realtime(&self, project_id: Uuid, env: &str, tables: &Value) -> Result<Value, RelayError> {
+        self.call(reqwest::Method::PUT, &format!("{}/realtime", Self::env_path(project_id, env)), Some(json!({ "tables": tables })), REQUEST_TIMEOUT).await
+    }
+
     /// `env`'s sign-in settings, without secrets, and `missing_secrets`.
     pub async fn auth(&self, project_id: Uuid, env: &str) -> Result<Value, RelayError> {
         self.call(reqwest::Method::GET, &format!("{}/auth", Self::env_path(project_id, env)), None, REQUEST_TIMEOUT).await

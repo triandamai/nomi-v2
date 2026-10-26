@@ -2269,5 +2269,14 @@
 	"relay_admin_smtp_none": "Tanpa (hanya lokal)",
 	"relay_admin_smtp_from": "Dari",
 	"relay_admin_smtp_user": "Nama pengguna",
-	"relay_admin_smtp_password": "Kata sandi"
+	"relay_admin_smtp_password": "Kata sandi",
+	"relay_admin_storage_title": "Penyimpanan file",
+	"relay_admin_storage_hint": "Bucket S3 tempat unggahan setiap aplikasi disimpan, masing-masing di foldernya sendiri. Penyimpanan apa pun yang kompatibel dengan S3 bisa dipakai (AWS, R2, MinIO). Kosongkan bucket untuk mematikan penyimpanan.",
+	"relay_admin_storage_endpoint": "Endpoint",
+	"relay_admin_storage_endpoint_hint": "Kosongkan untuk AWS S3.",
+	"relay_admin_storage_region": "Region",
+	"relay_admin_storage_bucket": "Bucket",
+	"relay_admin_storage_key_id": "Access key ID",
+	"relay_admin_storage_secret": "Secret access key",
+	"relay_admin_storage_path_style": "Alamat gaya path (MinIO dan kebanyakan penyimpanan yang di-host sendiri)"
 }
