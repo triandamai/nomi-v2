@@ -25,6 +25,14 @@ async fn own_url(pool: &PgPool) -> String {
     format!("{server}/{database}")
 }
 
+/// The same database URL with a password that doesn't work, whatever the login is.
+fn with_wrong_password(url: &str) -> String {
+    let (scheme, rest) = url.split_once("://").unwrap();
+    let (login, host) = rest.split_once('@').expect("DATABASE_URL has a login");
+    let user = login.split_once(':').map_or(login, |(user, _)| user);
+    format!("{scheme}://{user}:wrong-password@{host}")
+}
+
 async fn postgrest() -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("GET")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
@@ -114,7 +122,7 @@ async fn settings_that_dont_work_are_refused_and_the_old_ones_keep_serving(pool:
     let relay = Relay::unconfigured(pool.clone(), KEY);
     save(&relay, input(&url, &pgrst.uri())).await.unwrap();
 
-    let mut broken = input(&url.replace("nomi:nomi@", "nomi:wrong@"), &pgrst.uri());
+    let mut broken = input(&with_wrong_password(&url), &pgrst.uri());
     broken.postgrest_production_url = "http://127.0.0.1:9".into();
     broken.public_domain = "changed.example".into();
     let Err(RelayError::Rejected { code, details, .. }) = save(&relay, broken).await else { panic!("expected a refusal") };
