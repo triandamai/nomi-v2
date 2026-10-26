@@ -54,6 +54,8 @@
 		hasOlder = false,
 		glass = false,
 		placeholder,
+		typingLabel = null,
+		ontyping,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -85,7 +87,16 @@
 		glass?: boolean;
 		/** The message field's placeholder ("Ask anything…" when not given). */
 		placeholder?: string;
+		/** "Ben is typing…": others writing in this chat right now (a shared project's chat). */
+		typingLabel?: string | null;
+		/** Called while the person writes, so others in the chat can see it. */
+		ontyping?: () => void;
 	} = $props();
+
+	// Someone writing tells the others in a shared chat (the page throttles it).
+	$effect(() => {
+		if (draft.trim()) untrack(() => ontyping?.());
+	});
 
 	// The chat's name: renamed in place by the person, or live when they ask the crew to.
 	let shownTitle = $state(untrack(() => title));
@@ -758,6 +769,9 @@
 							<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })}</span>
 						</div>
 					{/if}
+					{#if typingLabel}
+						<p class="thread__typing" role="status">{typingLabel}</p>
+					{/if}
 					{#if turnError}
 						<div class="thread__notice"><ErrorBubble text={m.chat_turn_error()} /></div>
 					{/if}
@@ -1228,5 +1242,11 @@
 	.composer {
 		max-width: 780px;
 		margin: 0 auto;
+	}
+	.thread__typing {
+		margin: 4px 0 0;
+		padding: 0 4px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
 	}
 </style>

@@ -24,6 +24,8 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import Avatar from '$lib/components/m3/Avatar.svelte';
+	import { ProjectPresence } from '$lib/projectPresence.svelte';
 	import SheetFrame from '$lib/components/project/SheetFrame.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import ModelManager from '$lib/components/models/ModelManager.svelte';
@@ -129,8 +131,30 @@
 		deploy = d;
 		void d.refresh();
 		d.listen();
-		return () => d.stop();
+		const p = new ProjectPresence(id);
+		presence = p;
+		p.start(d);
+		return () => {
+			p.stop();
+			d.stop();
+		};
 	});
+
+	let presence = $state<ProjectPresence | null>(null);
+	/** Shown at most this many faces in the toolbar; the rest are counted in the label. */
+	const TOOLBAR_FACES = 3;
+	const typingLabel = $derived.by(() => {
+		const names = presence?.typing ?? [];
+		if (names.length === 0) return null;
+		if (names.length === 1) return m.pj_typing_one({ name: names[0] });
+		if (names.length === 2) return m.pj_typing_two({ first: names[0], second: names[1] });
+		return m.pj_typing_many({ first: names[0], second: names[1], count: names.length - 2 });
+	});
+	let membersTab = $state<'people' | 'activity'>('people');
+	function openActivity() {
+		membersTab = 'activity';
+		openSheet('members');
+	}
 
 	let openIssues = $state(0);
 	$effect(() => {
@@ -561,6 +585,15 @@
 				</button>
 			{/each}
 		</nav>
+		{#if presence && presence.people.length > 0}
+			{@const label = m.pj_here_now_people({ names: presence.people.map((p) => p.name).join(', ') })}
+			<button type="button" class="here" onclick={openActivity} aria-label={label} title={label}>
+				{#each presence.people.slice(0, TOOLBAR_FACES) as person (person.user_id)}
+					<span class="here__face"><Avatar name={person.name} avatarUrl={person.avatar_url} size={28} /></span>
+				{/each}
+				{#if presence.people.length > TOOLBAR_FACES}<span class="here__more">+{presence.people.length - TOOLBAR_FACES}</span>{/if}
+			</button>
+		{/if}
 		{#if deploy?.overview?.available && deploy.isAdmin}
 			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
 				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : m.pj_publish()}</span>
@@ -591,6 +624,8 @@
 			{modelControl}
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
+			{typingLabel}
+			ontyping={() => presence?.ping()}
 		/>
 	</section>
 
@@ -690,11 +725,11 @@
 			{:else if sheet === 'domain' && deploy}
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}
-				<MonitorPanel projectId={project.id} {published} />
+				<MonitorPanel projectId={project.id} {published} {deploy} />
 			{:else if sheet === 'database'}
 				<DatabasePanel projectId={project.id} {published} />
 			{:else if sheet === 'members'}
-				<MembersPanel projectId={project.id} orgId={project.org_id} />
+				<MembersPanel projectId={project.id} orgId={project.org_id} bind:tab={membersTab} {presence} {deploy} />
 			{:else if sheet === 'settings' && deploy}
 				<SettingsPanel {deploy} projectName={project.name} />
 			{/if}
@@ -1039,5 +1074,37 @@
 		line-height: 1.55;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+	.here {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		cursor: pointer;
+	}
+	.here:hover {
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.here:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.here__face {
+		display: inline-flex;
+		margin-left: -8px;
+		border: 2px solid var(--nomi-color-ground);
+		border-radius: 999px;
+	}
+	.here__face:first-child {
+		margin-left: 0;
+	}
+	.here__more {
+		margin-left: 6px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+		font-weight: 600;
 	}
 </style>

@@ -103,6 +103,14 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions/x')).toBe(false);
 		});
 
+		it("allows presence, typing and the activity feed, and nothing under them", () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('presence')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('typing')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('activity')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('presence/other')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('activity/../deploy')).toBe(false);
+		});
+
 		it('allows transfer and transfer/orgs', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('transfer')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('transfer/orgs')).toBe(true);
