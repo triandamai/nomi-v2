@@ -1,6 +1,6 @@
 {
   "name": "nomi-relay",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Client for Nomi Relay: data, auth, storage, realtime and functions for apps Nomi builds.",
   "type": "module",
   "license": "MIT",
