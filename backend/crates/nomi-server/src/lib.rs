@@ -28,7 +28,7 @@ pub mod worker;
 /// `relay_ops::ServerRelayOps`.
 pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore) -> nomi_agent_core::AgentRegistry {
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
-    let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone());
+    let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),

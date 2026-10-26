@@ -39,10 +39,11 @@ async fn seed_project(pool: &PgPool, backend: &str) -> Seeded {
     Seeded { user_id, session_id, project_id }
 }
 
-/// Records what Koda sent to Relay.
+/// Records what Koda sent to Relay; told to, its migrations fail.
 #[derive(Default)]
 struct FakeRelay {
     applied: Mutex<Vec<(Uuid, RelayEnv, Vec<String>)>>,
+    fails: bool,
 }
 
 #[async_trait]
@@ -55,16 +56,22 @@ impl RelayOps for FakeRelay {
     }
     async fn apply_migrations(&self, _user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {
         self.applied.lock().unwrap().push((project_id, env, files.iter().map(|f| format!("{}={}", f.path, f.content)).collect()));
+        if self.fails {
+            return Err("0001_init.sql line 3: relation \"nope\" does not exist".into());
+        }
         Ok("Applied to dev: 0001_init.sql.".into())
     }
     async fn describe_backend(&self, _: Uuid, _: Uuid, env: RelayEnv) -> Result<String, String> {
-        Ok(format!("tables in {}", env.as_str()))
+        if env == RelayEnv::Production {
+            return Ok("tables in production".into());
+        }
+        Ok(json!({ "tables": [{ "name": "task", "rls_enabled": true, "columns": [{ "name": "id" }, { "name": "title" }], "policies": [{ "name": "own tasks" }] }] }).to_string())
     }
     async fn deploy_functions(&self, _: Uuid, _: Uuid, _: RelayEnv, _: &[ProjectFile]) -> Result<String, String> {
         unimplemented!()
     }
     async fn types(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {
-        unimplemented!()
+        Ok("export interface Database { tables: {}; functions: Record<string, never> }\n".into())
     }
 }
 
@@ -113,10 +120,10 @@ async fn apply_migrations_sends_the_migration_files_in_order_to_dev(pool: PgPool
         .await
         .unwrap();
 
-    assert_eq!(said.display_text, "Applied to dev: 0001_init.sql.");
+    assert!(said.display_text.starts_with("Applied to dev: 0001_init.sql."), "{}", said.display_text);
     let applied = relay.applied.lock().unwrap();
     assert_eq!(
-        *applied,
+        applied.last().cloned().into_iter().collect::<Vec<_>>(),
         vec![(
             seeded.project_id,
             RelayEnv::Dev,
@@ -163,4 +170,77 @@ async fn relay_tools_refuse_a_drizzle_project_and_someone_else_s(pool: PgPool) {
         .execute_tool(&mut conn, drizzle.session_id, Uuid::new_v4(), drizzle.user_id, DESCRIBE_BACKEND_TOOL_NAME, json!({"project_id": relay_project.project_id.to_string()}))
         .await;
     assert!(stranger.is_err());
+}
+
+async fn written(storage: &ProjectStore, project_id: Uuid, path: &str) -> Option<String> {
+    storage.get_object(&nomi_agent_coding::project_file_key(project_id, path)).await.unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writing_a_migration_applies_it_to_dev_and_refreshes_the_types(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay::default());
+    let storage = test_storage();
+    let agent = CodingAgent::new(storage.clone()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+
+    let said = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": "nomi/migrations/0001_init.sql", "content": "create table task (id int);"}))
+        .await
+        .unwrap();
+
+    assert!(said.display_text.contains("Relay dev: Applied to dev: 0001_init.sql."), "{}", said.display_text);
+    assert_eq!(relay.applied.lock().unwrap().len(), 1);
+    assert_eq!(relay.applied.lock().unwrap()[0].1, RelayEnv::Dev);
+    assert!(written(&storage, seeded.project_id, "src/lib/nomi.types.ts").await.unwrap().contains("export interface Database"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failed_apply_comes_back_with_the_write_for_koda_to_fix(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let storage = test_storage();
+    let agent = CodingAgent::new(storage.clone()).with_relay_ops(Arc::new(FakeRelay { fails: true, ..Default::default() }));
+    let mut conn = pool.acquire().await.unwrap();
+
+    let said = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": "nomi/migrations/0001_init.sql", "content": "select * from nope;"}))
+        .await
+        .unwrap();
+
+    assert!(said.display_text.contains("0001_init.sql line 3"), "{}", said.display_text);
+    assert!(said.block.is_some(), "the file was still written");
+    assert!(written(&storage, seeded.project_id, "src/lib/nomi.types.ts").await.is_none());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn other_files_and_drizzle_projects_apply_nothing(pool: PgPool) {
+    let relay = Arc::new(FakeRelay::default());
+    let mut conn = pool.acquire().await.unwrap();
+    for (backend, path) in [("relay", "src/routes/+page.svelte"), ("drizzle", "nomi/migrations/0001_init.sql")] {
+        let seeded = seed_project(&pool, backend).await;
+        let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+        agent
+            .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": path, "content": "x"}))
+            .await
+            .unwrap();
+    }
+    assert!(relay.applied.lock().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_relay_projects_brief_has_its_tables_and_the_relay_guide(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(Arc::new(FakeRelay::default()));
+    let mut conn = pool.acquire().await.unwrap();
+    let messages = vec![nomi_llm::LlmMessage {
+        role: nomi_llm::LlmRole::User,
+        content: vec![nomi_llm::ContentBlock::Text { text: format!("Project {}: build it", seeded.project_id) }],
+    }];
+
+    let brief = agent.domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.expect("a brief");
+
+    assert!(brief.contains("## Backend: Nomi Relay"), "{brief}");
+    assert!(brief.contains("task (id, title)"), "{brief}");
+    assert!(brief.contains("# Building on Nomi Relay"), "the relay guide, preloaded");
+    assert!(!brief.contains("# Databases with Drizzle"), "not the Drizzle guide");
 }

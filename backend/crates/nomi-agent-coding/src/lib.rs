@@ -148,7 +148,8 @@ impl SubAgent for CodingAgent {
         if RELAY_TOOL_NAMES.contains(&name) {
             return relay::execute(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input).await.map(ToolOutcome::text);
         }
-        execute(conn, &self.storage, user_id, name, input).await
+        let outcome = execute(conn, &self.storage, user_id, name, input.clone()).await?;
+        Ok(relay::after_write(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input, outcome).await)
     }
 
     /// The Relay tools, for a project whose backend is Relay.
@@ -172,7 +173,7 @@ impl SubAgent for CodingAgent {
         user_id: Uuid,
         messages: &[nomi_llm::LlmMessage],
     ) -> Option<String> {
-        brief::task_brief(conn, s3, session_id, user_id, messages).await
+        brief::task_brief(conn, s3, session_id, user_id, messages, self.relay_ops.as_ref()).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

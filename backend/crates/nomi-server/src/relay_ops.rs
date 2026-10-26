@@ -11,6 +11,17 @@ use uuid::Uuid;
 
 use nomi_agent_core::relay_ops::{ProjectFile, RelayEnv, RelayOps, SharedRelayOps, NOT_SET_UP};
 use nomi_relay_client::{Relay, RelayConfig, RelayError, SourceFile};
+use nomi_shipyard::ShipyardConfig;
+use nomi_storage::ProjectStore;
+
+use crate::project_ops::ShipyardAccess;
+
+/// Where the published app finds its Relay backend, and its keys: stored as the project's secrets
+/// (production's values), so every publish binds them by name.
+pub const SECRET_URL: &str = "NOMI_URL";
+pub const SECRET_ANON_KEY: &str = "NOMI_ANON_KEY";
+pub const SECRET_SERVICE_KEY: &str = "NOMI_SERVICE_KEY";
+const PRODUCTION: &str = "production";
 
 use crate::routes::deploy::{project_role, require_admin, ApiError};
 
@@ -47,24 +58,87 @@ fn with_location(message: &str, details: &Value) -> String {
     }
 }
 
+/// Before a publish of a Relay project: applies the production migrations it doesn't have yet,
+/// from the files being published. A failure stops the publish (the running version keeps
+/// serving) and says which file and line. A project not on Relay passes straight through.
+pub async fn apply_before_publish(
+    pool: &PgPool,
+    http_client: &reqwest::Client,
+    config: Option<&RelayConfig>,
+    project_id: Uuid,
+    files: &[(String, Vec<u8>)],
+) -> Result<(), ApiError> {
+    let backend: String = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the project: {e}")))?;
+    if backend != "relay" {
+        return Ok(());
+    }
+    let config = config.ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    let migrations: Vec<SourceFile> = files
+        .iter()
+        .filter(|(path, _)| path.starts_with("nomi/migrations/") && path.ends_with(".sql"))
+        .map(|(path, bytes)| SourceFile { path: path.clone(), content: String::from_utf8_lossy(bytes).into_owned() })
+        .collect();
+    Relay::new(http_client, config).apply_migrations(project_id, PRODUCTION, &migrations).await.map(|_| ()).map_err(relay_error)
+}
+
 fn source_files(files: &[ProjectFile]) -> Vec<SourceFile> {
     files.iter().map(|f| SourceFile { path: f.path.clone(), content: f.content.clone() }).collect()
+}
+
+/// What storing a project's secrets on Shipyard takes.
+struct ShipyardHandle {
+    pool: PgPool,
+    project_storage: ProjectStore,
+    http_client: reqwest::Client,
+    config: ShipyardConfig,
+}
+
+impl ShipyardAccess for ShipyardHandle {
+    fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+    fn project_storage(&self) -> &ProjectStore {
+        &self.project_storage
+    }
+    fn http_client(&self) -> &reqwest::Client {
+        &self.http_client
+    }
+    fn shipyard(&self) -> Option<&ShipyardConfig> {
+        Some(&self.config)
+    }
 }
 
 pub struct ServerRelayOps {
     pool: PgPool,
     http_client: reqwest::Client,
     config: Option<RelayConfig>,
+    shipyard: Option<ShipyardHandle>,
 }
 
 impl ServerRelayOps {
     pub fn new(pool: PgPool, http_client: reqwest::Client, config: Option<RelayConfig>) -> Self {
-        Self { pool, http_client, config }
+        Self { pool, http_client, config, shipyard: None }
     }
 
-    /// Relay from the environment (RELAY_CONTROL_URL, RELAY_CONTROL_KEY).
-    pub fn shared(pool: PgPool) -> SharedRelayOps {
-        std::sync::Arc::new(Self::new(pool, crate::http_client(), RelayConfig::from_env()))
+    /// Where Relay's keys are kept for the published app. Without it (a Nomi without Shipyard),
+    /// backends are still made, but nothing is stored for publishing.
+    pub fn with_shipyard(mut self, project_storage: ProjectStore, config: ShipyardConfig) -> Self {
+        self.shipyard = Some(ShipyardHandle { pool: self.pool.clone(), project_storage, http_client: self.http_client.clone(), config });
+        self
+    }
+
+    /// Relay and Shipyard from the environment (RELAY_CONTROL_URL, RELAY_CONTROL_KEY, SHIPYARD_*).
+    pub fn shared(pool: PgPool, project_storage: ProjectStore) -> SharedRelayOps {
+        let ops = Self::new(pool, crate::http_client(), RelayConfig::from_env());
+        let ops = match ShipyardConfig::from_env() {
+            Some(config) => ops.with_shipyard(project_storage, config),
+            None => ops,
+        };
+        std::sync::Arc::new(ops)
     }
 
     fn relay(&self) -> Result<Relay<'_>, String> {
@@ -94,14 +168,23 @@ impl RelayOps for ServerRelayOps {
             .fetch_one(&self.pool)
             .await
             .map_err(|e| format!("couldn't read the project: {e}"))?;
-        let relay_id = relay.ensure_backend(project_id, &name).await.map_err(|e| message(relay_error(e)))?;
+        let backend = relay.ensure_backend(project_id, &name).await.map_err(|e| message(relay_error(e)))?;
         sqlx::query("UPDATE projects SET relay_project_id = $1, updated_at = now() WHERE id = $2")
-            .bind(relay_id)
+            .bind(backend.id)
             .bind(project_id)
             .execute(&self.pool)
             .await
             .map_err(|e| format!("couldn't remember the Relay backend: {e}"))?;
-        Ok(relay_id)
+        match (&self.shipyard, backend.environment(PRODUCTION)) {
+            (Some(shipyard), Some(production)) => {
+                for (name, value) in [(SECRET_URL, &production.url), (SECRET_ANON_KEY, &production.anon_key), (SECRET_SERVICE_KEY, &production.service_key)] {
+                    crate::routes::project_secrets::store(shipyard, project_id, name, value, user_id).await.map_err(message)?;
+                }
+            }
+            (None, _) => tracing::info!(%project_id, "Relay backend made; no Shipyard here to keep its keys for publishing"),
+            (Some(_), None) => return Err("Relay answered without a production environment".to_string()),
+        }
+        Ok(backend.id)
     }
 
     async fn apply_migrations(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {

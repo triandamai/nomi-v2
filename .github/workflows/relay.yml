@@ -1,8 +1,9 @@
 name: Relay
 
 # Tests the Relay packages (relay/sdk/js → nomi-relay, relay/cli → nomi-relay-cli) on every pull request
-# that touches relay/, and on every merge to main that does, publishes both to npm with the next
-# version and records that version back on main.
+# that touches them, and on every merge to main that does, publishes both to npm with the next
+# version and records that version back on main. The Relay service (relay/crates) has its own
+# pipeline, relay-service.yml, and never publishes to npm.
 #
 # Versions: both packages share one. Each release raises the patch number of what npm has; to
 # release a minor or major, set the new version in both package.json files in the PR.
@@ -13,14 +14,22 @@ name: Relay
 on:
   pull_request:
     paths:
-      - 'relay/**'
-      - '!relay/README.md'
+      - 'relay/sdk/**'
+      - 'relay/cli/**'
+      - 'relay/scripts/**'
+      - 'relay/package.json'
+      - 'relay/package-lock.json'
+      - 'relay/tsconfig.base.json'
       - '.github/workflows/relay.yml'
   push:
     branches: [main]
     paths:
-      - 'relay/**'
-      - '!relay/README.md'
+      - 'relay/sdk/**'
+      - 'relay/cli/**'
+      - 'relay/scripts/**'
+      - 'relay/package.json'
+      - 'relay/package-lock.json'
+      - 'relay/tsconfig.base.json'
       - '.github/workflows/relay.yml'
   workflow_dispatch:
 

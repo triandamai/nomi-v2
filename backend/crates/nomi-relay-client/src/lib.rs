@@ -5,7 +5,9 @@
 
 use std::time::Duration;
 
-use serde::Serialize;
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -96,6 +98,29 @@ pub struct SourceFile {
     pub content: String,
 }
 
+/// One environment of a project's backend: where the app reaches it and its keys. The anon key
+/// is public; the service key is for the app's server only.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct EnvironmentKeys {
+    pub url: String,
+    pub anon_key: String,
+    pub service_key: String,
+}
+
+/// A project's backend on Relay.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Backend {
+    pub id: Uuid,
+    /// Keyed by `dev` and `production`.
+    pub environments: BTreeMap<String, EnvironmentKeys>,
+}
+
+impl Backend {
+    pub fn environment(&self, env: &str) -> Option<&EnvironmentKeys> {
+        self.environments.get(env)
+    }
+}
+
 pub struct Relay<'a> {
     pub http: &'a reqwest::Client,
     pub config: &'a RelayConfig,
@@ -132,13 +157,10 @@ impl<'a> Relay<'a> {
     }
 
     /// Makes the project's backend (database objects, `nomi` schema, keys), or does nothing if it
-    /// exists. Idempotent. Answers Relay's id for it.
-    pub async fn ensure_backend(&self, project_id: Uuid, name: &str) -> Result<Uuid, RelayError> {
+    /// exists. Idempotent: the same keys every time.
+    pub async fn ensure_backend(&self, project_id: Uuid, name: &str) -> Result<Backend, RelayError> {
         let data = self.call(reqwest::Method::PUT, &Self::project_path(project_id), Some(json!({ "name": name })), REQUEST_TIMEOUT).await?;
-        data.get("id")
-            .and_then(Value::as_str)
-            .and_then(|id| id.parse().ok())
-            .ok_or_else(|| RelayError::Unavailable(format!("Relay answered without a backend id: {data}")))
+        serde_json::from_value(data.clone()).map_err(|e| RelayError::Unavailable(format!("Relay's answer wasn't a backend ({e}): {data}")))
     }
 
     /// Drops exactly the project's database objects and rows.
@@ -199,21 +221,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ensure_backend_puts_the_project_and_answers_relay_s_id() {
+    async fn ensure_backend_puts_the_project_and_answers_its_keys() {
         let server = MockServer::start().await;
         let project = Uuid::new_v4();
-        let relay_id = Uuid::new_v4();
         Mock::given(method("PUT"))
             .and(path(format!("/control/projects/{project}")))
             .and(header("authorization", "Bearer relay_control_key"))
             .and(body_json(json!({ "name": "Todo" })))
-            .respond_with(envelope(json!({ "id": relay_id })))
+            .respond_with(envelope(json!({
+                "id": project,
+                "slug": "todo-4f2c1a",
+                "tier": "free",
+                "environments": {
+                    "dev": { "url": "https://todo-4f2c1a-dev.api.relay.test", "anon_key": "dev-anon", "service_key": "dev-service" },
+                    "production": { "url": "https://todo-4f2c1a.api.relay.test", "anon_key": "prod-anon", "service_key": "prod-service" }
+                }
+            })))
             .expect(1)
             .mount(&server)
             .await;
         let http = reqwest::Client::new();
         let config = config(&server.uri());
-        assert_eq!(Relay::new(&http, &config).ensure_backend(project, "Todo").await.unwrap(), relay_id);
+        let backend = Relay::new(&http, &config).ensure_backend(project, "Todo").await.unwrap();
+        assert_eq!(backend.id, project);
+        let production = backend.environment("production").unwrap();
+        assert_eq!(production.url, "https://todo-4f2c1a.api.relay.test");
+        assert_eq!(production.anon_key, "prod-anon");
+        assert_eq!(production.service_key, "prod-service");
+        assert!(backend.environment("staging").is_none());
     }
 
     #[tokio::test]
