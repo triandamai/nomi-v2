@@ -24,6 +24,22 @@ pub struct Settings {
     pub postgrest_jwt_secret: String,
 }
 
+/// An SMTP server email goes out through: Relay's shared sender, or a project's own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Smtp {
+    pub host: String,
+    pub port: u16,
+    #[serde(default)]
+    pub user: String,
+    #[serde(default)]
+    pub password: String,
+    /// `Name <address>`.
+    pub from: String,
+    /// `starttls` (default), `tls` or `none`.
+    #[serde(default)]
+    pub security: String,
+}
+
 impl Settings {
     pub fn shared_url(&self, env: Env) -> &str {
         match env {
