@@ -72,6 +72,12 @@ pub trait RelayOps: Send + Sync {
 
     /// `src/lib/nomi.types.ts` for `env`'s schema.
     async fn types(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String>;
+
+    /// Saves the project's sign-in settings (`nomi/backend.json`'s `auth`) to `env`, and says
+    /// which project secrets they still need.
+    async fn apply_auth(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv, _auth: &serde_json::Value) -> Result<String, String> {
+        Err(NOT_SET_UP.to_string())
+    }
 }
 
 /// For tests and setups without Relay: every call says Relay isn't available.

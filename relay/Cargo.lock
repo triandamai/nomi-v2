@@ -1698,17 +1698,22 @@ name = "relay-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "hex",
+ "jsonwebtoken",
  "lettre",
  "rand 0.8.8",
  "relay-core",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "sqlx",
  "tokio",
+ "url",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -1771,6 +1776,7 @@ name = "relay-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "http-body-util",
  "jsonwebtoken",
  "relay-auth",
@@ -1781,11 +1787,13 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
  "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "wiremock",
 ]

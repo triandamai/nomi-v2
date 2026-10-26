@@ -48,6 +48,23 @@ CREATE TABLE IF NOT EXISTS nomi.codes (
 );
 CREATE INDEX IF NOT EXISTS codes_by_email ON nomi.codes (project_id, email, created_at);
 CREATE INDEX IF NOT EXISTS sessions_by_hash ON nomi.sessions (refresh_token_hash);
+-- OAuth sign-ins in progress: state and the one-time code hashed; the PKCE challenge the app
+-- will prove; the user being linked to, when it's linkIdentity.
+CREATE TABLE IF NOT EXISTS nomi.oauth_flows (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id     UUID NOT NULL,
+    state_hash     TEXT NOT NULL UNIQUE,
+    provider       TEXT NOT NULL,
+    code_challenge TEXT NOT NULL,
+    redirect_to    TEXT NOT NULL,
+    nonce          TEXT NOT NULL,
+    link_user_id   UUID REFERENCES nomi.users(id) ON DELETE CASCADE,
+    user_id        UUID REFERENCES nomi.users(id) ON DELETE CASCADE,
+    code_hash      TEXT UNIQUE,
+    claimed_at     TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS nomi.migrations (
     project_id UUID NOT NULL,
     name       TEXT NOT NULL,
@@ -83,7 +100,7 @@ $$;
 DO $$
 DECLARE t text;
 BEGIN
-    FOREACH t IN ARRAY ARRAY['users', 'identities', 'sessions', 'codes', 'migrations', 'buckets'] LOOP
+    FOREACH t IN ARRAY ARRAY['users', 'identities', 'sessions', 'codes', 'oauth_flows', 'migrations', 'buckets'] LOOP
         EXECUTE format('ALTER TABLE nomi.%I ENABLE ROW LEVEL SECURITY', t);
         IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'nomi' AND tablename = t AND policyname = 'own project') THEN
             EXECUTE format('CREATE POLICY "own project" ON nomi.%I USING (project_id = nomi.project_id()) WITH CHECK (project_id = nomi.project_id())', t);

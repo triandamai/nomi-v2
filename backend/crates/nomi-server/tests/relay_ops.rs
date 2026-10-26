@@ -304,3 +304,33 @@ async fn strangers_and_projects_off_relay_get_no_preview_access(pool: PgPool) {
     let stranger = preview_access(&pool, &http, Some(&config), project_id, stranger).await.unwrap_err();
     assert_eq!(stranger.0, axum::http::StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sign_in_settings_are_saved_and_the_missing_secrets_named(pool: PgPool) {
+    let (user_id, project_id) = seed_project(&pool).await;
+    let server = MockServer::start().await;
+    let auth = json!({ "methods": ["email_code", "github"], "github": { "client_id": "gh" } });
+    Mock::given(method("PUT")).and(path(format!("/control/projects/{project_id}/environments/dev/auth"))).and(body_json(auth.clone())).respond_with(envelope(json!({ "saved": true }))).expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(format!("/control/projects/{project_id}/environments/dev/auth")))
+        .respond_with(envelope(json!({ "methods": ["email_code", "github"], "missing_secrets": ["NOMI_OAUTH_GITHUB_SECRET"] })))
+        .mount(&server)
+        .await;
+    let said = ops(&pool, &server).apply_auth(user_id, project_id, RelayEnv::Dev, &auth).await.unwrap();
+    assert!(said.contains("saved to dev") && said.contains("NOMI_OAUTH_GITHUB_SECRET"), "{said}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn publishing_sends_the_sign_in_settings_to_production_before_the_migrations(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let server = MockServer::start().await;
+    let auth = json!({ "methods": ["email_code"], "redirect_urls": ["https://todo.apps.test"] });
+    Mock::given(method("PUT")).and(path(format!("/control/projects/{project_id}/environments/production/auth"))).and(body_json(auth.clone())).respond_with(envelope(json!({ "saved": true }))).expect(1).mount(&server).await;
+    Mock::given(method("POST")).and(path(format!("/control/projects/{project_id}/environments/production/migrations"))).respond_with(envelope(json!({ "applied": [] }))).expect(1).mount(&server).await;
+    let files = vec![("nomi/backend.json".to_string(), json!({ "auth": auth }).to_string().into_bytes())];
+    let config = RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key")).unwrap();
+    nomi_server::relay_ops::apply_before_publish(&pool, &reqwest::Client::new(), Some(&config), project_id, &files).await.unwrap();
+    let order: Vec<String> = server.received_requests().await.unwrap().iter().map(|r| r.url.path().to_string()).collect();
+    assert!(order[0].ends_with("/production/auth") && order[1].ends_with("/production/migrations"), "{order:?}");
+}

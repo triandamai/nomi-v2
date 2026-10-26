@@ -451,3 +451,34 @@ async fn rolling_back_to_a_failed_publish_is_refused(pool: PgPool) {
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_relay_projects_sign_in_secrets_also_go_to_relay(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "ref": "sec-1" }, "error": null }))).mount(&shipyard).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "deleted": true }, "error": null }))).mount(&shipyard).await;
+    let relay = MockServer::start().await;
+    Mock::given(method("PUT")).and(path_regex(r"^/control/projects/[^/]+/auth/secrets/NOMI_OAUTH_GITHUB_SECRET$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(1).mount(&relay).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/control/projects/[^/]+/auth/secrets/NOMI_OAUTH_GITHUB_SECRET$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(1).mount(&relay).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let owner: uuid::Uuid = sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
+    nomi_server::relay_connection::save(&pool, &nomi_test_support::TEST_SETTINGS_KEY, &relay.uri(), Some("relay_control_key"), owner).await.unwrap();
+    let secrets = format!("/api/projects/{project_id}/secrets");
+
+    // Not on Relay yet: the secret goes to Shipyard only.
+    let (status, _) = request(router.clone(), "PUT", &format!("{secrets}/STRIPE_KEY"), Some(&token), Some(json!({ "value": "sk" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let (status, body) = request(router.clone(), "PUT", &format!("{secrets}/NOMI_OAUTH_GITHUB_SECRET"), Some(&token), Some(json!({ "value": "gh-secret" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, _) = request(router.clone(), "PUT", &format!("{secrets}/OTHER_KEY"), Some(&token), Some(json!({ "value": "x" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = request(router.clone(), "DELETE", &format!("{secrets}/NOMI_OAUTH_GITHUB_SECRET"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let sent = relay.received_requests().await.unwrap();
+    let put: Value = serde_json::from_slice(&sent.iter().find(|r| r.method.as_str() == "PUT").unwrap().body).unwrap();
+    assert_eq!(put["value"], "gh-secret");
+}

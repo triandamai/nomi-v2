@@ -100,6 +100,7 @@ pub async fn set(
         return Err((StatusCode::UNPROCESSABLE_ENTITY, format!("a project keeps up to {MAX_SECRETS} secrets")));
     }
     store(&state, project_id, &name, &body.value, claims.sub).await?;
+    forward_to_relay(&state, project_id, &name, Some(&body.value)).await?;
     tracing::info!(%project_id, user = %claims.sub, secret = %name, "project secret set");
     Ok(StatusCode::NO_CONTENT)
 }
@@ -135,6 +136,26 @@ pub(crate) async fn store(state: &impl crate::project_ops::ShipyardAccess, proje
     .await
     .map_err(internal("failed to save the secret"))?;
     Ok(())
+}
+
+/// A Relay project's sign-in secrets (`NOMI_SMTP_PASSWORD`, `NOMI_OAUTH_*`) are used by Relay
+/// itself, at sign-in, so they go there too.
+async fn forward_to_relay(state: &AppState, project_id: Uuid, name: &str, value: Option<&str>) -> Result<(), ApiError> {
+    if !nomi_relay_client::is_sign_in_secret(name) {
+        return Ok(());
+    }
+    let backend: Option<String> = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(internal("failed to read the project"))?;
+    if backend.as_deref() != Some("relay") {
+        return Ok(());
+    }
+    let config = crate::relay_connection::load(&state.pool, Some(&state.settings_key))
+        .await
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    nomi_relay_client::Relay::new(&state.http_client, &config).put_auth_secret(project_id, name, value).await.map(|_| ()).map_err(crate::relay_ops::relay_error)
 }
 
 /// The environment a changed secret restarts.
@@ -175,6 +196,7 @@ pub async fn remove(
     if removed == 0 {
         return Err((StatusCode::NOT_FOUND, "no such secret".to_string()));
     }
+    forward_to_relay(&state, project_id, &name, None).await?;
     tracing::info!(%project_id, user = %claims.sub, secret = %name, "project secret removed");
     Ok(StatusCode::NO_CONTENT)
 }

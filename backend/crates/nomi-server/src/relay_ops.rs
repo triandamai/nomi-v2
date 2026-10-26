@@ -23,6 +23,7 @@ pub const SECRET_ANON_KEY: &str = "NOMI_ANON_KEY";
 pub const SECRET_SERVICE_KEY: &str = "NOMI_SERVICE_KEY";
 const PRODUCTION: &str = "production";
 const DEV: &str = "dev";
+const BACKEND_JSON: &str = "nomi/backend.json";
 
 use crate::routes::deploy::{project_role, require_admin, ApiError};
 
@@ -78,12 +79,35 @@ pub async fn apply_before_publish(
         return Ok(());
     }
     let config = config.ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    let relay = Relay::new(http_client, config);
+    // The published app's sign-in settings first, so its users can sign in the moment it's live.
+    if let Some((_, bytes)) = files.iter().find(|(path, _)| path == BACKEND_JSON) {
+        let parsed: Value = serde_json::from_slice(bytes).map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("{BACKEND_JSON} isn't valid JSON: {e}")))?;
+        if let Some(auth) = parsed.get("auth") {
+            relay.put_auth(project_id, PRODUCTION, auth).await.map_err(relay_error)?;
+        }
+    }
     let migrations: Vec<SourceFile> = files
         .iter()
         .filter(|(path, _)| path.starts_with("nomi/migrations/") && path.ends_with(".sql"))
         .map(|(path, bytes)| SourceFile { path: path.clone(), content: String::from_utf8_lossy(bytes).into_owned() })
         .collect();
-    Relay::new(http_client, config).apply_migrations(project_id, PRODUCTION, &migrations).await.map(|_| ()).map_err(relay_error)
+    relay.apply_migrations(project_id, PRODUCTION, &migrations).await.map(|_| ()).map_err(relay_error)
+}
+
+/// What to tell Koda after sign-in settings were saved to `env`.
+fn sign_in_summary(env: &str, status: &Value) -> String {
+    let missing: Vec<&str> = status.get("missing_secrets").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    if missing.is_empty() {
+        format!("Sign-in settings saved to {env}.")
+    } else {
+        format!(
+            "Sign-in settings saved to {env}. Still needs the project secret{} {}: ask the person to add {} in the project's Secrets (you never see the values).",
+            if missing.len() == 1 { "" } else { "s" },
+            missing.join(", "),
+            if missing.len() == 1 { "it" } else { "them" }
+        )
+    }
 }
 
 /// What a project's preview needs to reach its dev backend: the address and anon key for
@@ -263,7 +287,11 @@ impl RelayOps for ServerRelayOps {
         let config = self.require_config().await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
-        let schema = relay.describe(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))?;
+        let mut schema = relay.describe(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))?;
+        // Sign-in too: which methods are on and which secrets they still need.
+        if let (Ok(auth), Some(object)) = (relay.auth(project_id, env.as_str()).await, schema.as_object_mut()) {
+            object.insert("auth".to_string(), auth);
+        }
         serde_json::to_string_pretty(&schema).map_err(|e| e.to_string())
     }
 
@@ -280,5 +308,14 @@ impl RelayOps for ServerRelayOps {
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         relay.types(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))
+    }
+
+    async fn apply_auth(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, auth: &Value) -> Result<String, String> {
+        let config = self.require_config().await?;
+        let relay = Relay::new(&self.http_client, &config);
+        self.check_access(user_id, project_id, env).await?;
+        relay.put_auth(project_id, env.as_str(), auth).await.map_err(|e| message(relay_error(e)))?;
+        let status = relay.auth(project_id, env.as_str()).await.unwrap_or(Value::Null);
+        Ok(sign_in_summary(env.as_str(), &status))
     }
 }
