@@ -1394,6 +1394,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "relay-gateway"
+version = "0.1.0"
+dependencies = [
+ "jsonwebtoken",
+ "relay-core",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "relay-migrate"
 version = "0.1.0"
 dependencies = [
