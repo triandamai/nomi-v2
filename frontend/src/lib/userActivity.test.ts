@@ -82,6 +82,20 @@ describe("the person's activity feed", () => {
 		expect(shown).toEqual([]);
 	});
 
+	it('tells chat lists when a chat moved on elsewhere, without a snackbar', async () => {
+		const { connectUserActivity, onChatsChanged } = await import('./userActivity');
+		connectUserActivity();
+		const changed: string[] = [];
+		const stop = onChatsChanged((sessionId) => changed.push(sessionId));
+		const socket = FakeSocket.all[0];
+		socket.emit('message', { data: JSON.stringify({ kind: 'ChatUpdated', session_id: 's2', project_id: null, title: null }) });
+		socket.emit('message', { data: activity() });
+		stop();
+		socket.emit('message', { data: JSON.stringify({ kind: 'ChatUpdated', session_id: 's3', project_id: null, title: null }) });
+		expect(changed).toEqual(['s2', 's1']);
+		expect(shown).toHaveLength(1);
+	});
+
 	it('reconnects when the feed drops, but not once signed out', async () => {
 		const { connectUserActivity } = await import('./userActivity');
 		connectUserActivity();
