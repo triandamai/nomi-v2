@@ -97,3 +97,14 @@ async fn an_unknown_environment_or_project_is_not_found(pool: PgPool) {
     assert_eq!(call(&router, "GET", &format!("{base}/environments/staging/schema"), Some(KEY), None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(call(&router, "GET", &format!("{base}/environments/dev/schema"), Some(KEY), None).await.0, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn reading_a_project_answers_its_keys_without_making_one(pool: PgPool) {
+    let router = router(&pool);
+    let path = format!("/control/projects/{}", Uuid::new_v4());
+    assert_eq!(call(&router, "GET", &path, Some(KEY), None).await.0, StatusCode::NOT_FOUND);
+    let (_, made) = call(&router, "PUT", &path, Some(KEY), Some(json!({ "name": "Todo" }))).await;
+    let (status, read) = call(&router, "GET", &path, Some(KEY), None).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["data"], made["data"]);
+}

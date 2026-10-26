@@ -10,7 +10,7 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use relay_control::backend::{delete_backend, ensure_backend, Databases};
+use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
 use relay_control::{migrations, schema, Relay};
 use relay_core::{Env, Tier};
 use relay_migrate::MigrationFile;
@@ -71,6 +71,10 @@ async fn put_project(State(state): State<AppState>, Path(project): Path<Uuid>, J
     Ok(ok(ensure_backend(&state.relay, project, &body.name, tier, body.databases).await?))
 }
 
+async fn get_project(State(state): State<AppState>, Path(project): Path<Uuid>) -> Result<Answer> {
+    Ok(ok(backend_keys(&state.relay, project).await?))
+}
+
 async fn delete_project(State(state): State<AppState>, Path(project): Path<Uuid>) -> Result<Answer> {
     delete_backend(&state.relay, project).await?;
     Ok(ok(json!({ "deleted": project })))
@@ -117,7 +121,7 @@ pub fn router(relay: Arc<Relay>, control_key: String, gateway: Option<GatewaySet
 fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
     let state = AppState { relay, control_key: Arc::new(control_key) };
     let control = Router::new()
-        .route("/control/projects/:id", put(put_project).delete(delete_project))
+        .route("/control/projects/:id", get(get_project).put(put_project).delete(delete_project))
         .route("/control/projects/:id/environments/:env/migrations", post(post_migrations))
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))
         .route("/control/projects/:id/environments/:env/types", get(get_types))
