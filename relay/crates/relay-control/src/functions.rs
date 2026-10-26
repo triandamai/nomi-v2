@@ -222,6 +222,21 @@ pub async fn reload(relay: &Relay, project: Uuid, env: Env, version: i32) -> Res
     load(relay, project, env, version, &files).await?.map_err(|error| RelayError::rejected(FUNCTIONS_FAILED, error))
 }
 
+/// After a project secret changed: each environment's current build is loaded again, so its
+/// functions see the new value. A runtime that isn't set up, or an environment with no functions,
+/// has nothing to do.
+pub async fn secrets_changed(relay: &Relay, project: Uuid) -> Result<(), RelayError> {
+    if runtime(relay).is_err() {
+        return Ok(());
+    }
+    for env in Env::ALL {
+        if let Some(build) = current(relay, project, env).await? {
+            reload(relay, project, env, build.version).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Makes the newest good build before the current one current again.
 pub async fn rollback(relay: &Relay, project: Uuid, env: Env) -> Result<CurrentBuild, RelayError> {
     let current = current(relay, project, env).await?.ok_or_else(|| RelayError::rejected("NOTHING_TO_ROLL_BACK", "these functions have never been deployed"))?;

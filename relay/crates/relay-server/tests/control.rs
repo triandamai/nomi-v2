@@ -191,8 +191,13 @@ async fn functions_are_deployed_rolled_back_and_described(pool: PgPool) {
     assert_eq!(described["data"]["functions"]["version"], 1);
     assert_eq!(described["data"]["functions"]["functions"]["hello"]["auth"], "public");
 
+    let loads_before = runtime.received_requests().await.unwrap().len();
     let (status, saved) = call(&router, "PUT", &format!("{base}/secrets/STRIPE_SECRET"), Some(KEY), Some(json!({ "value": "sk_test" }))).await;
     assert_eq!(status, StatusCode::OK, "{saved}");
+    let reloads = runtime.received_requests().await.unwrap()[loads_before..].to_vec();
+    assert_eq!(reloads.len(), 1, "the current build is loaded again with the new secret");
+    let env: Value = serde_json::from_slice(&reloads[0].body).unwrap();
+    assert_eq!(env["env"]["STRIPE_SECRET"], "sk_test");
     let (status, _) = call(&router, "PUT", &format!("{base}/secrets/not-a-name"), Some(KEY), Some(json!({ "value": "x" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(call(&router, "DELETE", &format!("{base}/secrets/STRIPE_SECRET"), Some(KEY), None).await.0, StatusCode::OK);

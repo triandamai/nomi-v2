@@ -126,12 +126,14 @@ async fn put_secret(State(state): State<AppState>, Path((project, name)): Path<(
     secret_name(&name)?;
     relay_control::state::environment(&state.relay, project, Env::Dev).await?.ok_or_else(|| Failure::new(StatusCode::NOT_FOUND, "NOT_FOUND", "no backend for this project"))?;
     relay_auth::config::set_secret(&state.relay.state, &state.relay.encryption_key, project, &name, Some(&body.value)).await.map_err(auth_failure)?;
+    functions::secrets_changed(&state.relay, project).await?;
     Ok(ok(json!({ "saved": name })))
 }
 
 async fn delete_secret(State(state): State<AppState>, Path((project, name)): Path<(Uuid, String)>) -> Result<Answer> {
     secret_name(&name)?;
     relay_auth::config::set_secret(&state.relay.state, &state.relay.encryption_key, project, &name, None).await.map_err(auth_failure)?;
+    functions::secrets_changed(&state.relay, project).await?;
     Ok(ok(json!({ "removed": name })))
 }
 
