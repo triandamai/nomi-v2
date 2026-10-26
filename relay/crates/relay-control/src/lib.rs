@@ -2,6 +2,7 @@
 //! deleting a project's backend, applying its migrations, reading its schema and types.
 
 pub mod backend;
+pub mod migrations;
 pub mod state;
 
 use std::collections::HashMap;
