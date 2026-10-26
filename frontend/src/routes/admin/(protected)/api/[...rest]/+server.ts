@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
-// Admin pages that work in place (support, integrations, maintenance, roles, model switches) call the
+// Admin pages that work in place (support, integrations and Relay, maintenance, roles, model switches) call the
 // backend's /api/admin/* through here.
 const UUID = '[0-9a-f-]{36}';
 const ID = '[A-Za-z0-9_-]{1,64}';
@@ -18,6 +18,8 @@ const ALLOWED = new RegExp(
 			'support/keys',
 			`support/keys/${UUID}`,
 			'support/questions',
+			'relay',
+			'relay/(connection|settings)',
 			'shipyard',
 			'shipyard/webhook',
 			'shipyard/apps',

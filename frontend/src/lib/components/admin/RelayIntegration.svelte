@@ -258,21 +258,24 @@
 		color: var(--md-sys-color-on-surface-variant);
 	}
 	.area textarea {
-		min-height: 44px;
-		padding: 10px 12px;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-small);
-		background: var(--md-sys-color-surface-container-highest);
+		box-sizing: border-box;
+		min-height: 48px;
+		padding: 12px 14px;
+		border: 1.5px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface);
 		color: var(--md-sys-color-on-surface);
-		font: inherit;
+		font-family: var(--md-sys-typescale-body-large-font);
+		font-size: var(--md-sys-typescale-body-large-size);
 		resize: vertical;
 	}
 	.area textarea:hover:not(:disabled) {
 		border-color: var(--md-sys-color-on-surface);
 	}
 	.area textarea:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: -1px;
+		outline: none;
+		border: 2px solid var(--md-sys-color-primary);
+		padding: 11.5px 13.5px;
 	}
 	.checks {
 		display: flex;
