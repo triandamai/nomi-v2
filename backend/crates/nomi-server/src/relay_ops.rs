@@ -22,6 +22,7 @@ pub const SECRET_URL: &str = "NOMI_URL";
 pub const SECRET_ANON_KEY: &str = "NOMI_ANON_KEY";
 pub const SECRET_SERVICE_KEY: &str = "NOMI_SERVICE_KEY";
 const PRODUCTION: &str = "production";
+const DEV: &str = "dev";
 
 use crate::routes::deploy::{project_role, require_admin, ApiError};
 
@@ -83,6 +84,40 @@ pub async fn apply_before_publish(
         .map(|(path, bytes)| SourceFile { path: path.clone(), content: String::from_utf8_lossy(bytes).into_owned() })
         .collect();
     Relay::new(http_client, config).apply_migrations(project_id, PRODUCTION, &migrations).await.map(|_| ()).map_err(relay_error)
+}
+
+/// What a project's preview needs to reach its dev backend: the address and anon key for
+/// everyone who can open the project, the service key only for its admins.
+#[derive(Debug, serde::Serialize)]
+pub struct PreviewAccess {
+    pub url: String,
+    pub anon_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_key: Option<String>,
+}
+
+/// The dev backend's access for `user_id`'s preview of the project; 404 when they can't open
+/// the project or it isn't on Relay.
+pub async fn preview_access(
+    pool: &PgPool,
+    http_client: &reqwest::Client,
+    config: Option<&RelayConfig>,
+    project_id: Uuid,
+    user_id: Uuid,
+) -> Result<PreviewAccess, ApiError> {
+    let role = project_role(pool, project_id, user_id).await?;
+    let backend: String = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the project: {e}")))?;
+    if backend != "relay" {
+        return Err((StatusCode::NOT_FOUND, "this project isn't on Relay".to_string()));
+    }
+    let config = config.ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    let found = Relay::new(http_client, config).backend(project_id).await.map_err(relay_error)?;
+    let dev = found.environment(DEV).ok_or((StatusCode::NOT_FOUND, "the project's backend has no dev environment".to_string()))?;
+    Ok(PreviewAccess { url: dev.url.clone(), anon_key: dev.anon_key.clone(), service_key: (role == "admin").then(|| dev.service_key.clone()) })
 }
 
 fn source_files(files: &[ProjectFile]) -> Vec<SourceFile> {

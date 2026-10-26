@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, scriptsOf, toFileTree } from './projectRuntime';
+import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree } from './projectRuntime';
 
 describe('project runtime helpers', () => {
 	it('nests files into folders for mounting', () => {
@@ -63,5 +63,19 @@ describe('appendOutput', () => {
 	it('collapses long runs of blank lines but keeps single gaps', () => {
 		expect(appendOutput('a\n', '\n\n\n\nb\n')).toBe('a\n\nb\n');
 		expect(appendOutput('a\n', '\nb\n')).toBe('a\n\nb\n');
+	});
+
+	it('gives the preview its dev backend, and the service key only when Nomi sent one', () => {
+		const base = { NOMI_PREVIEW: '1' };
+		const member = previewEnv(base, { url: 'https://todo-dev.api.relay.test', anon_key: 'anon' });
+		expect(member).toEqual({
+			NOMI_PREVIEW: '1',
+			PUBLIC_NOMI_URL: 'https://todo-dev.api.relay.test',
+			PUBLIC_NOMI_KEY: 'anon',
+			NOMI_URL: 'https://todo-dev.api.relay.test',
+			NOMI_ANON_KEY: 'anon',
+		});
+		expect(previewEnv(base, { url: 'u', anon_key: 'a', service_key: 's' }).NOMI_SERVICE_KEY).toBe('s');
+		expect(previewEnv(base, null)).toEqual(base);
 	});
 });
