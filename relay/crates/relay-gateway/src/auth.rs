@@ -140,7 +140,7 @@ mod tests {
         let project = Uuid::new_v4();
         let user = Uuid::new_v4();
         let anon = api_key(SECRET, project, Env::Production, ApiRole::Anon, NOW);
-        let token = user_token(SECRET, project, Env::Production, user, Some("a@b.test"), NOW, 900);
+        let token = user_token(SECRET, project, Env::Production, user, Uuid::new_v4(), Some("a@b.test"), NOW, 900);
         let caller = resolve(SECRET, project, Env::Production, Some(&anon), Some(&token), NOW + 10).unwrap();
         assert_eq!(caller.kind, Kind::Authenticated);
         assert_eq!(caller.sub, Some(user));

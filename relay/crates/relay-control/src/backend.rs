@@ -163,7 +163,7 @@ pub async fn delete_backend(relay: &Relay, project: Uuid) -> Result<(), RelayErr
         if placement.tier == Tier::Free {
             sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE", quoted(&placement.schema))).execute(&placement.pool).await?;
         }
-        for table in ["sessions", "identities", "users", "migrations", "buckets"] {
+        for table in ["sessions", "identities", "codes", "users", "migrations", "buckets"] {
             sqlx::query(&format!("DELETE FROM nomi.{table} WHERE project_id = $1")).bind(project).execute(&placement.pool).await?;
         }
         for name in &roles {

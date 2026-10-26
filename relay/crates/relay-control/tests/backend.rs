@@ -29,6 +29,8 @@ async fn a_free_project_gets_a_schema_roles_the_nomi_schema_and_keys(pool: PgPoo
     let schema = relay_core::names::schema_for(project, Tier::Free);
     assert!(exists(&pool, SCHEMA_EXISTS, &schema).await);
     assert!(exists(&pool, SCHEMA_EXISTS, "nomi").await);
+    let codes: bool = sqlx::query_scalar("SELECT to_regclass('nomi.codes') IS NOT NULL").fetch_one(&pool).await.unwrap();
+    assert!(codes, "sign-in codes need their table");
     for kind in relay_core::names::RoleKind::ALL {
         assert!(exists(&pool, ROLE_EXISTS, &relay_core::names::role(project, kind)).await);
     }
