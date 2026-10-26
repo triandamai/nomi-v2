@@ -11,15 +11,20 @@ path = "src/main.rs"
 relay-core = { path = "../relay-core" }
 relay-control = { path = "../relay-control" }
 relay-migrate = { path = "../relay-migrate" }
+relay-gateway = { path = "../relay-gateway" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 axum = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "migrate"] }
 tokio = { version = "1", features = ["full"] }
+tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
+jsonwebtoken = "9"
+wiremock = "0.6"
 http-body-util = "0.1"
 tower = { version = "0.4", features = ["util"] }

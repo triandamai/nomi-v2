@@ -16,7 +16,7 @@ const KEY: &str = "control-key";
 
 fn router(pool: &PgPool) -> axum::Router {
     let shared = HashMap::from([(Env::Dev, pool.clone()), (Env::Production, pool.clone())]);
-    relay_server::app::router(Arc::new(Relay::new(pool.clone(), shared, [9u8; 32], "api.relay.test".into())), KEY.into())
+    relay_server::app::router(Arc::new(Relay::new(pool.clone(), shared, [9u8; 32], "api.relay.test".into())), KEY.into(), None)
 }
 
 async fn call(router: &axum::Router, method: &str, path: &str, key: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {

@@ -1,5 +1,5 @@
 //! `relay-server`: reads its settings (see `relay_core::config`), brings its state up to date,
-//! and serves the control plane.
+//! and serves the control plane and the gateway.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,7 +23,12 @@ async fn main() {
         (Env::Production, connect(config.shared_production_url.clone()).await),
     ]);
     let relay = Arc::new(Relay::new(state, shared, config.encryption_key, config.public_domain.clone()));
-    let app = relay_server::app::router(relay, config.control_key.clone());
+    let gateway = relay_server::app::GatewaySettings {
+        postgrest: HashMap::from([(Env::Dev, config.postgrest_dev_url.clone()), (Env::Production, config.postgrest_production_url.clone())]),
+        jwt_secret: config.postgrest_jwt_secret.clone(),
+        preview_origins: config.preview_origins.clone(),
+    };
+    let app = relay_server::app::router(relay, config.control_key.clone(), Some(gateway));
     let listener = tokio::net::TcpListener::bind(&config.bind).await.expect("couldn't bind");
     tracing::info!(bind = %config.bind, "relay listening");
     axum::serve(listener, app).await.expect("server failed");

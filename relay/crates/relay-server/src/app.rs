@@ -1,8 +1,10 @@
-//! The control plane's routes. Only the Nomi backend calls them, with `RELAY_CONTROL_KEY`.
+//! The control plane's routes (only the Nomi backend calls them, with `RELAY_CONTROL_KEY`), and
+//! the hostname dispatch that sends an app's requests to the gateway instead.
 
 use std::sync::Arc;
 
 use axum::extract::{Path, Request, State};
+use axum::http::header::HOST;
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::Response;
@@ -16,7 +18,11 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use tower::ServiceExt;
+
 use crate::envelope::{ok, Answer, Failure};
+use crate::gateway::Gateway;
+pub use crate::gateway::{GatewaySettings, MAX_BODY_BYTES};
 
 #[derive(Clone)]
 struct AppState {
@@ -87,7 +93,28 @@ async fn health() -> Answer {
     ok(json!({ "ok": true }))
 }
 
-pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
+/// Relay's whole surface: a project host (`<slug>[-dev].<domain>`) goes to the gateway when one
+/// is configured, every other host to the control plane.
+pub fn router(relay: Arc<Relay>, control_key: String, gateway: Option<GatewaySettings>) -> Router {
+    let control = control_router(relay.clone(), control_key);
+    let Some(settings) = gateway else { return control };
+    let domain = relay.public_domain.clone();
+    let gateway = Arc::new(Gateway { relay, settings, http: reqwest::Client::new() });
+    Router::new().fallback(move |request: Request| {
+        let control = control.clone();
+        let gateway = gateway.clone();
+        let domain = domain.clone();
+        async move {
+            let host = request.headers().get(HOST).and_then(|v| v.to_str().ok()).unwrap_or_default();
+            match relay_gateway::host::route(host, &domain) {
+                Some((slug, env)) => gateway.handle(slug, env, request).await,
+                None => control.oneshot(request).await.unwrap_or_else(|never| match never {}),
+            }
+        }
+    })
+}
+
+fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
     let state = AppState { relay, control_key: Arc::new(control_key) };
     let control = Router::new()
         .route("/control/projects/:id", put(put_project).delete(delete_project))

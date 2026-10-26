@@ -2,4 +2,5 @@
 //! user's token, and passes the request on to PostgREST as the project's own database role.
 
 pub mod auth;
+pub mod cors;
 pub mod host;
