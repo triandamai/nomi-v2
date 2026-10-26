@@ -124,7 +124,9 @@ jobs:
             node scripts/next-version.mjs --set "$VERSION" > /dev/null
             npm install --package-lock-only --ignore-scripts --no-audit --no-fund
             git add sdk/js/package.json sdk/js/src/version.ts cli/package.json package-lock.json
-            git commit -m "relay: release $VERSION [skip ci]" || { echo "version already recorded"; recorded=yes; break; }
+            # No [skip ci]: a push made with GITHUB_TOKEN never starts workflows anyway, and the
+            # marker would stop the app's Release workflow for any version tag put on this commit.
+            git commit -m "relay: release $VERSION" || { echo "version already recorded"; recorded=yes; break; }
             git tag -f "relay-v$VERSION"
             if git push origin main && git push -f origin "relay-v$VERSION"; then recorded=yes; break; fi
             echo "push raced another commit; retrying ($attempt)"
