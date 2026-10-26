@@ -8,6 +8,7 @@ use relay_migrate::lint::lint;
 use relay_migrate::{checksum, line_at, valid_name, MigrationFile};
 use serde_json::json;
 use sqlx::postgres::{PgDatabaseError, PgErrorPosition};
+use sqlx::Executor;
 use uuid::Uuid;
 
 use crate::{Relay, RelayError};
@@ -73,7 +74,8 @@ pub async fn apply(relay: &Relay, project: Uuid, env: Env, files: &[MigrationFil
         sqlx::query(&format!("SET LOCAL ROLE {owner}")).execute(&mut *tx).await?;
         sqlx::query(&format!("SET LOCAL search_path = {}", quoted(&placement.schema))).execute(&mut *tx).await?;
         sqlx::query(&format!("SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")).execute(&mut *tx).await?;
-        if let Err(e) = sqlx::raw_sql(&file.content).execute(&mut *tx).await {
+        // A plain string runs over the simple-query protocol, so a file may hold many statements.
+        if let Err(e) = (&mut *tx).execute(file.content.as_str()).await {
             let line = error_line(&e, &file.content);
             let message = e.as_database_error().map(|d| d.message().to_string()).unwrap_or_else(|| e.to_string());
             tx.rollback().await?;
@@ -101,4 +103,12 @@ pub async fn apply(relay: &Relay, project: Uuid, env: Env, files: &[MigrationFil
         sqlx::query("NOTIFY pgrst, 'reload schema'").execute(&placement.pool).await?;
     }
     Ok(ran)
+}
+
+/// The server's handlers need `apply`'s future to be `Send`; sqlx's `raw_sql` on a transaction
+/// quietly breaks that, so this fails to compile if it comes back.
+#[allow(dead_code)]
+fn apply_is_send(relay: &Relay, files: &[MigrationFile]) {
+    fn send<T: Send>(_: T) {}
+    send(apply(relay, Uuid::nil(), Env::Dev, files));
 }
