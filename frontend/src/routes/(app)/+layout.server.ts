@@ -15,9 +15,10 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 	if ((await maintenanceState(fetch)).enabled) throw redirect(307, '/maintenance');
 
 	if (!locals.accessToken) {
-		// Signing in brings them back here (e.g. to a team invite they opened from an email).
-		const back = url.pathname === '/' ? '' : `?redirect_to=${encodeURIComponent(url.pathname + url.search)}`;
-		throw redirect(303, `/login${back}`);
+		// Opening Nomi itself shows the landing page; anything deeper signs in and comes back
+		// (e.g. to a team invite they opened from an email).
+		if (url.pathname === '/') throw redirect(303, '/welcome');
+		throw redirect(303, `/login?redirect_to=${encodeURIComponent(url.pathname + url.search)}`);
 	}
 
 	const userEmail = cookies.get('user_email') ?? '';
