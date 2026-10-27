@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::project_relays::{self, CREATING, FAILED, READY};
+use crate::project_relays::{self, CREATING, FAILED, READY, SLEEPING, WAKING};
 
 pub const DEV: &str = "dev";
 pub const PRODUCTION: &str = "production";
@@ -30,6 +30,13 @@ pub const POLL_EVERY: Duration = Duration::from_secs(3);
 const PUBLISH_WAIT: Duration = Duration::from_secs(600);
 const HEALTH_WAIT: Duration = Duration::from_secs(180);
 const CONTROL_KEY_BYTES: usize = 32;
+/// A development backend nobody has used for this long is shut down (its data stays).
+pub const DEV_IDLE_AFTER: Duration = Duration::from_secs(60 * 60);
+/// How often Nomi looks for idle development backends.
+pub const IDLE_CHECK_EVERY: Duration = Duration::from_secs(5 * 60);
+/// How long a caller waits for a sleeping backend to wake before saying it's still waking.
+pub const BACKEND_READY_WAIT: Duration = Duration::from_secs(120);
+const STEP_WAKE: &str = "waking the backend";
 /// How much of an unexpected answer goes into an error.
 const MAX_DETAIL_CHARS: usize = 300;
 
@@ -241,4 +248,105 @@ pub async fn start(pool: PgPool, http: reqwest::Client, shipyard: ShipyardConfig
         run(&Deps { pool: &pool, http: &http, shipyard: &shipyard, settings_key: &settings_key }, project_id, env, has_functions).await;
     });
     Ok(())
+}
+
+/// The org and backend app a project's Relay lives in on Shipyard.
+async fn backend_target(pool: &PgPool, project_id: Uuid) -> Result<(String, String), String> {
+    let target = crate::shipyard::load_target(pool, project_id).await.map_err(|e| e.to_string())?.ok_or("the project no longer exists")?;
+    let app = target.shipyard_app.clone().ok_or("the project has no app on Shipyard")?;
+    Ok((target.org_key(), backend_app(&app)))
+}
+
+/// Shuts down the development backends nobody has used for `idle_after`: every service scaled to
+/// nothing, the database's data kept. Answers how many it stopped. A Shipyard that can't scale
+/// yet (`NotFound`) leaves them all running.
+pub async fn sleep_idle(deps: &Deps<'_>, idle_after: Duration) -> Result<usize, String> {
+    let client = Shipyard::new(deps.http, deps.shipyard);
+    let mut stopped = 0;
+    for project_id in project_relays::idle_dev(deps.pool, idle_after.as_secs() as i64).await? {
+        let (org, backend) = backend_target(deps.pool, project_id).await?;
+        match client.scale_env(&org, &backend, DEV, 0).await {
+            Ok(_) => {
+                project_relays::set_state(deps.pool, project_id, DEV, SLEEPING, None, None).await?;
+                stopped += 1;
+                tracing::info!(%project_id, "an idle development backend was shut down");
+            }
+            Err(nomi_shipyard::ShipyardError::NotFound(_)) => {
+                return Err("Shipyard can't scale an environment yet, so idle backends keep running".to_string());
+            }
+            Err(e) => tracing::warn!(error = ?e, %project_id, "couldn't shut down an idle development backend"),
+        }
+    }
+    Ok(stopped)
+}
+
+/// Checks for idle development backends every `IDLE_CHECK_EVERY`, for as long as Nomi runs.
+pub async fn sleep_loop(pool: PgPool, http: reqwest::Client, shipyard: ShipyardConfig, settings_key: [u8; 32]) {
+    let mut said_so = false;
+    loop {
+        tokio::time::sleep(IDLE_CHECK_EVERY).await;
+        let deps = Deps { pool: &pool, http: &http, shipyard: &shipyard, settings_key: &settings_key };
+        match sleep_idle(&deps, DEV_IDLE_AFTER).await {
+            Ok(_) => said_so = false,
+            // Said once, not every five minutes, until it works.
+            Err(e) if !said_so => {
+                tracing::warn!(error = %e, "idle development backends weren't shut down");
+                said_so = true;
+            }
+            Err(_) => {}
+        }
+    }
+}
+
+/// Starts a sleeping development backend and waits for Relay to answer again. Only the caller
+/// that wins the claim does the work; the rest just see `waking`.
+async fn wake(deps: &Deps<'_>, project_id: Uuid) {
+    let started = async {
+        let (org, backend) = backend_target(deps.pool, project_id).await?;
+        let client = Shipyard::new(deps.http, deps.shipyard);
+        client.scale_env(&org, &backend, DEV, 1).await.map_err(|e| format!("{e:?}"))?;
+        let stack = project_relays::stack(deps.pool, project_id, DEV).await?.ok_or("the backend is gone")?;
+        let control_key = project_relays::control_key(deps.pool, deps.settings_key, project_id, DEV).await?.ok_or("the backend's key is missing")?;
+        let config = RelayConfig::from_values(stack.url.as_deref(), Some(&control_key)).ok_or("the backend has no address")?;
+        wait_for_relay(deps.http, &config).await
+    }
+    .await;
+    let outcome = match started {
+        Ok(()) => project_relays::set_state(deps.pool, project_id, DEV, READY, None, None).await,
+        Err(message) => project_relays::set_state(deps.pool, project_id, DEV, FAILED, Some(STEP_WAKE), Some(&message)).await,
+    };
+    if let Err(e) = outcome {
+        tracing::error!(error = %e, %project_id, "couldn't record a backend waking");
+    }
+}
+
+/// Wakes the project's development backend if it's asleep, without waiting: the Relay sheet and
+/// the preview show it waking.
+pub fn wake_in_background(pool: PgPool, http: reqwest::Client, shipyard: ShipyardConfig, settings_key: [u8; 32], project_id: Uuid) {
+    tokio::spawn(async move {
+        if matches!(project_relays::claim_wake(&pool, project_id, DEV).await, Ok(true)) {
+            wake(&Deps { pool: &pool, http: &http, shipyard: &shipyard, settings_key: &settings_key }, project_id).await;
+        }
+    });
+}
+
+/// Wakes the project's development backend if it's asleep and waits, up to `BACKEND_READY_WAIT`,
+/// until it's ready: for callers that can't show "waking" (Koda's tools). `Ok` when it's ready
+/// or has no sleeping backend; the reason in words otherwise.
+pub async fn ensure_awake(deps: &Deps<'_>, project_id: Uuid) -> Result<(), String> {
+    if project_relays::claim_wake(deps.pool, project_id, DEV).await? {
+        wake(deps, project_id).await;
+    }
+    let deadline = tokio::time::Instant::now() + BACKEND_READY_WAIT;
+    loop {
+        match project_relays::stack(deps.pool, project_id, DEV).await? {
+            Some(stack) if stack.state == WAKING => {}
+            Some(stack) if stack.state == FAILED => return Err(stack.error.unwrap_or_else(|| "the backend couldn't be woken".to_string())),
+            _ => return Ok(()),
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("This project's backend is still waking up. Try again in a moment.".to_string());
+        }
+        tokio::time::sleep(POLL_EVERY).await;
+    }
 }

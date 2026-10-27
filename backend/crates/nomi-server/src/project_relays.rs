@@ -13,6 +13,9 @@ pub const READY: &str = "ready";
 pub const SLEEPING: &str = "sleeping";
 pub const WAKING: &str = "waking";
 pub const FAILED: &str = "failed";
+const DEV: &str = "dev";
+/// Using a backend records it at most this often, so a busy turn doesn't write on every call.
+const TOUCH_AT_MOST_EVERY: &str = "1 minute";
 
 /// What Nomi has recorded for one environment's Relay.
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +73,10 @@ pub async fn config_for(
     let stack = Stack { url, version, state, step, error };
     if stack.state != READY {
         return Err(unavailable(&stack));
+    }
+    // A development backend that's being used isn't left to fall asleep.
+    if env == DEV {
+        touch(pool, project_id, env).await;
     }
     let key = settings_key.ok_or_else(|| "this Nomi can't read its projects' Relay keys: SETTINGS_ENCRYPTION_KEY isn't set".to_string())?;
     let control_key = decrypt(key, &sealed).map_err(|_| "the project's Relay key can't be decrypted with this settings key".to_string())?;
@@ -154,4 +161,45 @@ pub async fn mark_secrets_made(pool: &PgPool, project_id: Uuid, env: &str) -> Re
         .await
         .map_err(|e| format!("couldn't update the project's backend: {e}"))?;
     Ok(())
+}
+
+/// Notes that the project's backend is in use. Best-effort and rate-limited: it only keeps a
+/// backend from sleeping, so a missed write costs nothing.
+pub async fn touch(pool: &PgPool, project_id: Uuid, env: &str) {
+    let result = sqlx::query(&format!(
+        "UPDATE project_relays SET last_used_at = now() WHERE project_id = $1 AND env = $2 AND last_used_at < now() - interval '{TOUCH_AT_MOST_EVERY}'"
+    ))
+    .bind(project_id)
+    .bind(env)
+    .execute(pool)
+    .await;
+    if let Err(e) = result {
+        tracing::debug!(error = %e, %project_id, "couldn't note a backend as used");
+    }
+}
+
+/// Development backends that are ready and haven't been used for `idle_secs`.
+pub async fn idle_dev(pool: &PgPool, idle_secs: i64) -> Result<Vec<Uuid>, String> {
+    sqlx::query_scalar(
+        "SELECT project_id FROM project_relays WHERE env = 'dev' AND state = 'ready' AND last_used_at < now() - make_interval(secs => $1) ORDER BY last_used_at",
+    )
+    .bind(idle_secs as f64)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("couldn't look for idle backends: {e}"))
+}
+
+/// Takes the right to wake a sleeping backend: true for exactly one caller, so a Relay isn't
+/// started twice by two people opening the project together.
+pub async fn claim_wake(pool: &PgPool, project_id: Uuid, env: &str) -> Result<bool, String> {
+    let claimed: Option<bool> = sqlx::query_scalar(
+        "UPDATE project_relays SET state = 'waking', step = 'waking the backend', error = NULL, last_used_at = now(), updated_at = now() \
+         WHERE project_id = $1 AND env = $2 AND state = 'sleeping' RETURNING true",
+    )
+    .bind(project_id)
+    .bind(env)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("couldn't wake the project's backend: {e}"))?;
+    Ok(claimed.unwrap_or(false))
 }

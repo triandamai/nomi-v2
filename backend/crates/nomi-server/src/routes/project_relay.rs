@@ -39,6 +39,12 @@ pub async fn overview(
     // Its own backend is still being made, is waking, or failed: say so, with the step.
     if let Some(stack) = crate::project_relays::stack(&state.pool, project_id, env).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))? {
         if stack.state != crate::project_relays::READY {
+            // Opening the sheet wakes a sleeping backend; the sheet looks again until it's ready.
+            if stack.state == crate::project_relays::SLEEPING && env == crate::relay_backend::DEV {
+                if let Some(shipyard) = state.shipyard.clone() {
+                    crate::relay_backend::wake_in_background(state.pool.clone(), state.http_client.clone(), shipyard, state.settings_key, project_id);
+                }
+            }
             return Ok(Json(json!({ "backend": "relay", "setup": { "state": stack.state, "step": stack.step, "error": stack.error } })));
         }
     }
@@ -74,6 +80,11 @@ pub async fn run_query(
 /// `GET /api/projects/:id/relay/preview`: the dev backend's address and anon key (and, for the
 /// project's admins, its service key), which the preview gets as `PUBLIC_NOMI_URL` and friends.
 pub async fn preview(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<Json<PreviewAccess>, ApiError> {
+    // The preview is opened once and can't show "waking", so it waits for a sleeping backend.
+    if let Some(shipyard) = state.shipyard.as_ref() {
+        let deps = crate::relay_backend::Deps { pool: &state.pool, http: &state.http_client, shipyard, settings_key: &state.settings_key };
+        crate::relay_backend::ensure_awake(&deps, project_id).await.map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
+    }
     let config = crate::project_relays::for_request(&state.pool, Some(&state.settings_key), project_id, "dev").await?;
     preview_access(&state.pool, &state.http_client, config.as_ref(), project_id, claims.sub).await.map(Json)
 }

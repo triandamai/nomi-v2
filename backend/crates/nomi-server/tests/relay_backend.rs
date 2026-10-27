@@ -139,3 +139,103 @@ async fn a_failed_deploy_says_where_and_trying_again_keeps_what_was_made(pool: P
     assert!(calls(&working, "PUT", "/secrets/RELAY_CONTROL_KEY").await.is_empty());
     assert_eq!(calls(&broken, "PUT", "/secrets/RELAY_ENCRYPTION_KEY").await.len(), 1);
 }
+
+// ---- Sleeping and waking ----
+
+use nomi_server::relay_backend::{ensure_awake, sleep_idle};
+use nomi_server::project_relays::SLEEPING;
+use std::time::Duration;
+
+const IDLE_AFTER: Duration = Duration::from_secs(3600);
+
+/// A ready backend in `env`, last used `idle_hours` ago, whose app is `app` on Shipyard.
+async fn ready_backend(pool: &PgPool, env: &str, idle_hours: i64, url: &str) -> Uuid {
+    let project = seed_project(pool).await;
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-abc' WHERE id = $1").bind(project).execute(pool).await.unwrap();
+    project_relays::begin(pool, &KEY, project, env, "control-key", "0.1.5").await.unwrap();
+    project_relays::set_url(pool, project, env, url).await.unwrap();
+    project_relays::set_state(pool, project, env, READY, None, None).await.unwrap();
+    sqlx::query("UPDATE project_relays SET last_used_at = now() - make_interval(hours => $3) WHERE project_id = $1 AND env = $2")
+        .bind(project)
+        .bind(env)
+        .bind(idle_hours as i32)
+        .execute(pool)
+        .await
+        .unwrap();
+    project
+}
+
+async fn scale_mock(replicas: u32, times: u64) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-abc-backend/envs/dev/scale$"))
+        .and(wiremock::matchers::body_json(json!({ "replicas": replicas })))
+        .respond_with(envelope(json!({ "replicas": replicas })))
+        .expect(times)
+        .mount(&server)
+        .await;
+    server
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_idle_development_backend_is_scaled_to_zero_and_a_used_one_is_not(pool: PgPool) {
+    let idle = ready_backend(&pool, "dev", 2, "https://a.test").await;
+    let busy = ready_backend(&pool, "dev", 0, "https://b.test").await;
+    let production = ready_backend(&pool, "production", 48, "https://c.test").await;
+    let shipyard = scale_mock(0, 1).await;
+    let http = reqwest::Client::new();
+
+    let stopped = sleep_idle(&deps(&pool, &http, &config(&shipyard)), IDLE_AFTER).await.unwrap();
+
+    assert_eq!(stopped, 1);
+    let state = |project: Uuid, env: &'static str| {
+        let pool = pool.clone();
+        async move { project_relays::stack(&pool, project, env).await.unwrap().unwrap().state }
+    };
+    assert_eq!(state(idle, "dev").await, SLEEPING);
+    assert_eq!(state(busy, "dev").await, READY);
+    assert_eq!(state(production, "production").await, READY, "production never sleeps");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_shipyard_that_cannot_scale_yet_leaves_the_backends_running(pool: PgPool) {
+    let idle = ready_backend(&pool, "dev", 5, "https://a.test").await;
+    let shipyard = MockServer::start().await;
+    Mock::given(method("PATCH")).respond_with(ResponseTemplate::new(404).set_body_json(json!({ "data": null, "error": { "code": "NOT_FOUND", "message": "no such route" } }))).mount(&shipyard).await;
+    let http = reqwest::Client::new();
+
+    let outcome = sleep_idle(&deps(&pool, &http, &config(&shipyard)), IDLE_AFTER).await;
+
+    assert!(outcome.unwrap_err().contains("can't scale"));
+    assert_eq!(project_relays::stack(&pool, idle, "dev").await.unwrap().unwrap().state, READY);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn calling_a_backend_keeps_it_awake(pool: PgPool) {
+    let project = ready_backend(&pool, "dev", 3, "https://a.test").await;
+
+    project_relays::config_for(&pool, Some(&KEY), None, project, "dev").await.unwrap();
+
+    let idle = project_relays::idle_dev(&pool, 3600).await.unwrap();
+    assert!(!idle.contains(&project), "a call just used it");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_sleeping_backend_is_woken_once_and_waited_for(pool: PgPool) {
+    let relay = MockServer::start().await;
+    Mock::given(method("GET")).and(path("/health")).respond_with(ResponseTemplate::new(200)).mount(&relay).await;
+    let project = ready_backend(&pool, "dev", 2, &relay.uri()).await;
+    project_relays::set_state(&pool, project, "dev", SLEEPING, None, None).await.unwrap();
+    let shipyard = scale_mock(1, 1).await;
+    let http = reqwest::Client::new();
+    let config = config(&shipyard);
+
+    // Two people open the project at once: one starts it, both are answered when it's up.
+    let (one, two) = (deps(&pool, &http, &config), deps(&pool, &http, &config));
+    let (first, second) = tokio::join!(ensure_awake(&one, project), ensure_awake(&two, project));
+
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(project_relays::stack(&pool, project, "dev").await.unwrap().unwrap().state, READY);
+    assert!(project_relays::config_for(&pool, Some(&KEY), None, project, "dev").await.unwrap().is_some());
+}

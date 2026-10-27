@@ -120,6 +120,7 @@ async fn main() {
 
     if let Some(config) = nomi_shipyard::ShipyardConfig::from_env() {
         tokio::spawn(nomi_server::shipyard::catch_up_loop(pool.clone(), http_client.clone(), config.clone()));
+        tokio::spawn(nomi_server::relay_backend::sleep_loop(pool.clone(), http_client.clone(), config.clone(), settings_key));
         tokio::spawn(nomi_server::shipyard::register_webhook_on_start(pool.clone(), http_client.clone(), config, settings_key));
     }
 
