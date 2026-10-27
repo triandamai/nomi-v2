@@ -121,7 +121,7 @@ async fn migrations_land_in_public(pool: PgPool) {
     save(&relay, from_nomi()).await.unwrap();
     ensure_backend(&relay, project, "Barbershop", Tier::Free, None).await.unwrap();
 
-    let files = vec![MigrationFile { path: "nomi/migrations/0001_init.sql".into(), content: "create table task (id int primary key);\n".into() }];
+    let files = vec![MigrationFile { path: "nomi/migrations/0001_init.sql".into(), content: "create table task (id int primary key);\nalter table task enable row level security;\n".into() }];
     let applied = apply(&relay, project, Env::Production, &files).await.unwrap();
 
     assert_eq!(applied, vec!["0001_init.sql"]);
