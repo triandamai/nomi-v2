@@ -84,3 +84,37 @@ async fn any_host_reaches_the_one_project(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, serde_json::json!([]));
 }
+
+const REALTIME: &str = "/realtime";
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn realtime_is_served_by_a_standalone_relay(pool: PgPool) {
+    let w = world(&pool).await;
+    let keys = ensure_backend(&w.relay, w.project, "Barbershop", Tier::Free, None).await.unwrap();
+    let anon = keys.environments["production"].anon_key.clone();
+
+    let request = Request::get(format!("{REALTIME}?apikey={anon}")).header("host", "whatever.example").body(Body::empty()).unwrap();
+    let (status, _) = send(&w.router, request).await;
+
+    // Not a WebSocket upgrade, so the socket itself says no; but never "dedicated isn't served".
+    assert_ne!(status, StatusCode::NOT_IMPLEMENTED);
+    assert!(status.is_client_error(), "{status}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_shared_relay_still_refuses_a_dedicated_projects_realtime_and_data(pool: PgPool) {
+    use relay_control::backend::Databases;
+    use std::collections::HashMap;
+    let own = own_url(&pool).await;
+    let shared = HashMap::from([(Env::Dev, pool.clone()), (Env::Production, pool.clone())]);
+    let relay = Arc::new(Relay::new(pool.clone(), shared, [6u8; 32], "api.relay.test".into()));
+    let keys = ensure_backend(&relay, Uuid::new_v4(), "Barbershop", Tier::Dedicated, Some(Databases { dev: own.clone(), production: own })).await.unwrap();
+    let router = router(relay, CONTROL_KEY.into());
+    let host = format!("{}.api.relay.test", keys.slug);
+    let anon = keys.environments["production"].anon_key.clone();
+
+    let socket = Request::get(format!("{REALTIME}?apikey={anon}")).header("host", &host).body(Body::empty()).unwrap();
+    assert_eq!(send(&router, socket).await.0, StatusCode::NOT_IMPLEMENTED);
+    let data = Request::get("/rest/task").header("host", &host).header("apikey", &anon).header("authorization", format!("Bearer {anon}")).body(Body::empty()).unwrap();
+    assert_eq!(send(&router, data).await.0, StatusCode::NOT_IMPLEMENTED);
+}
