@@ -391,7 +391,7 @@ async fn writes_while_the_backend_is_being_set_up_are_kept_for_it_instead_of_fai
     assert!(said.contains(nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY), "{said}");
     let said = write(&agent, &mut conn, &seeded, "nomi/functions/place-order.ts", "export default () => 1;").await;
     assert!(said.contains(nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY), "{said}");
-    assert!(!said.to_lowercase().contains("drizzle"), "{said}");
+    assert!(!said.contains("couldn't") && !said.contains("still starting"), "no failure for Koda to turn into a question: {said}");
 
     assert!(relay.applied.lock().unwrap().is_empty(), "nothing is sent to a backend that isn't there yet");
     assert!(relay.realtime.lock().unwrap().is_empty());
