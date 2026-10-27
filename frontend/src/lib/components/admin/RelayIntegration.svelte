@@ -41,6 +41,8 @@
 		storage_access_key_id: '',
 		storage_secret: '',
 		storage_path_style: false,
+		functions_url: '',
+		functions_secret: '',
 	});
 	const securityOptions = [
 		{ value: 'starttls', label: 'STARTTLS' },
@@ -81,6 +83,8 @@
 			storage_access_key_id: relay?.storage?.access_key_id ?? '',
 			storage_secret: '',
 			storage_path_style: relay?.storage?.path_style ?? false,
+			functions_url: relay?.functions?.url ?? '',
+			functions_secret: '',
 		};
 		checks = relay?.checks ?? [];
 	}
@@ -113,7 +117,7 @@
 		busy = 'settings';
 		error = notice = null;
 		try {
-			await adminApi('relay/settings', { method: 'PUT', body: settingsBody(form, !!overview?.relay?.shared_smtp, !!overview?.relay?.storage) });
+			await adminApi('relay/settings', { method: 'PUT', body: settingsBody(form, { sender: !!overview?.relay?.shared_smtp, storage: !!overview?.relay?.storage, functions: !!overview?.relay?.functions }) });
 			await load();
 			notice = m.relay_admin_saved();
 		} catch (e) {
@@ -235,6 +239,23 @@
 						/>
 					</div>
 					<Checkbox label={m.relay_admin_storage_path_style()} bind:checked={form.storage_path_style} disabled={!canManage} />
+				</fieldset>
+
+				<fieldset class="sender">
+					<legend class="sender__title">{m.relay_admin_functions_title()}</legend>
+					<p class="muted small">{m.relay_admin_functions_hint()}</p>
+					<div class="grid">
+						<TextField label={m.relay_admin_functions_url()} bind:value={form.functions_url} type="url" placeholder="http://relay-functions:8000" disabled={!canManage} />
+						<TextField
+							label={m.relay_admin_functions_secret()}
+							bind:value={form.functions_secret}
+							type="password"
+							autocomplete="off"
+							required={!!form.functions_url.trim() && !overview.relay?.functions}
+							supportingText={overview.relay?.functions ? m.relay_admin_key_keep() : undefined}
+							disabled={!canManage}
+						/>
+					</div>
 				</fieldset>
 
 				{#if checks.length}

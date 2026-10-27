@@ -11,7 +11,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
-use relay_control::{migrations, realtime, schema, settings, storage, Relay};
+use relay_control::{functions, migrations, realtime, schema, settings, storage, Relay};
 use relay_core::{Env, Tier};
 use relay_migrate::MigrationFile;
 use serde::Deserialize;
@@ -91,7 +91,50 @@ async fn get_schema(State(state): State<AppState>, Path((project, env_name)): Pa
     let mut answer = serde_json::to_value(schema::describe(&state.relay, project, env).await?).unwrap_or_default();
     answer["buckets"] = json!(storage::load(&state.relay, project, env).await?.buckets);
     answer["realtime"] = json!(realtime::load(&state.relay, project, env).await?);
+    answer["functions"] = json!(functions::current(&state.relay, project, env).await?);
     Ok(ok(answer))
+}
+
+#[derive(Deserialize)]
+struct FunctionsRequest {
+    files: Vec<functions::SourceFile>,
+    /// `backend.json`'s `functions`: each function's settings.
+    #[serde(default)]
+    functions: std::collections::BTreeMap<String, relay_core::backend::FunctionSettings>,
+}
+
+/// Deploys `nomi/functions/` to `env`; the runtime checks it before it's served.
+async fn post_functions(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>, Json(body): Json<FunctionsRequest>) -> Result<Answer> {
+    Ok(ok(functions::deploy(&state.relay, project, env(&env_name)?, &body.files, &body.functions).await?))
+}
+
+async fn rollback_functions(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>) -> Result<Answer> {
+    Ok(ok(functions::rollback(&state.relay, project, env(&env_name)?).await?))
+}
+
+/// Any project secret, by its environment-variable name: functions get them all as `ctx.env`.
+fn secret_name(name: &str) -> Result<()> {
+    let shaped = name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+    if shaped {
+        Ok(())
+    } else {
+        Err(Failure::new(StatusCode::BAD_REQUEST, "BAD_REQUEST", "a secret's name is an environment variable name, like STRIPE_SECRET"))
+    }
+}
+
+async fn put_secret(State(state): State<AppState>, Path((project, name)): Path<(Uuid, String)>, Json(body): Json<SecretValue>) -> Result<Answer> {
+    secret_name(&name)?;
+    relay_control::state::environment(&state.relay, project, Env::Dev).await?.ok_or_else(|| Failure::new(StatusCode::NOT_FOUND, "NOT_FOUND", "no backend for this project"))?;
+    relay_auth::config::set_secret(&state.relay.state, &state.relay.encryption_key, project, &name, Some(&body.value)).await.map_err(auth_failure)?;
+    functions::secrets_changed(&state.relay, project).await?;
+    Ok(ok(json!({ "saved": name })))
+}
+
+async fn delete_secret(State(state): State<AppState>, Path((project, name)): Path<(Uuid, String)>) -> Result<Answer> {
+    secret_name(&name)?;
+    relay_auth::config::set_secret(&state.relay.state, &state.relay.encryption_key, project, &name, None).await.map_err(auth_failure)?;
+    functions::secrets_changed(&state.relay, project).await?;
+    Ok(ok(json!({ "removed": name })))
 }
 
 /// Replaces `env`'s buckets (`nomi/backend.json`'s `storage`).
@@ -220,6 +263,9 @@ fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
         .route("/control/projects/:id/environments/:env/auth", get(get_auth).put(put_auth))
         .route("/control/projects/:id/environments/:env/storage", axum::routing::put(put_storage))
         .route("/control/projects/:id/environments/:env/realtime", axum::routing::put(put_realtime))
+        .route("/control/projects/:id/environments/:env/functions", post(post_functions))
+        .route("/control/projects/:id/environments/:env/functions/rollback", post(rollback_functions))
+        .route("/control/projects/:id/secrets/:name", axum::routing::put(put_secret).delete(delete_secret))
         .route("/control/projects/:id/auth/secrets/:name", axum::routing::put(put_auth_secret).delete(delete_auth_secret))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_control_key));
     Router::new().route("/health", get(health)).merge(control).with_state(state)

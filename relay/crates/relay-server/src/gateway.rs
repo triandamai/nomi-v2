@@ -96,6 +96,8 @@ impl Gateway {
             StatusCode::NO_CONTENT.into_response()
         } else if request.uri().path().starts_with(crate::auth_routes::AUTH_PREFIX) {
             crate::auth_routes::handle(self, &live.settings, &slug, env, request).await
+        } else if request.uri().path().starts_with(crate::functions_routes::FUNCTIONS_PREFIX) {
+            crate::functions_routes::handle(self, &slug, env, request).await
         } else if request.uri().path() == crate::realtime::REALTIME_PATH {
             crate::realtime::upgrade(self, &slug, env, request).await
         } else if request.uri().path().starts_with(crate::storage_routes::STORAGE_PREFIX) {

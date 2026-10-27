@@ -1,9 +1,12 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { spawn as spawnProcess } from 'node:child_process';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { lintMigrations } from './lint.js';
 import { nextMigrationFile, readMigrations, slug } from './migrations.js';
+import { serveEntry } from './serve.js';
 
 const EXIT_OK = 0;
 export const EXIT_PROBLEMS = 1;
@@ -11,11 +14,29 @@ const EXIT_USAGE = 2;
 /** Shown checksums are cut to this many characters; the full one is what Relay compares. */
 const SHORT_CHECKSUM_LENGTH = 12;
 
+/** Runs a program to the end and answers its exit code. */
+export type Spawn = (command: string, args: string[], env: Record<string, string | undefined>) => Promise<number>;
+
 export interface Io {
   cwd: string;
   out: (line: string) => void;
   err: (line: string) => void;
+  /** The environment `functions serve` hands the functions (default: this process's). */
+  env?: Record<string, string | undefined>;
+  spawn?: Spawn;
 }
+
+/** Where `functions serve` listens unless told otherwise. */
+const DEFAULT_SERVE_PORT = 8787;
+const FUNCTION_FILE = /^([a-z0-9][a-z0-9-]*)\.(ts|js|mts|mjs)$/;
+const NEEDED_ENV = ['NOMI_URL', 'NOMI_ANON_KEY', 'NOMI_SERVICE_KEY'];
+
+const runProgram: Spawn = (command, args, env) =>
+  new Promise((resolve, reject) => {
+    const child = spawnProcess(command, args, { stdio: 'inherit', env });
+    child.on('error', reject);
+    child.on('exit', (code) => resolve(code ?? EXIT_PROBLEMS));
+  });
 
 const HELP = `nomi-relay: command line for Nomi Relay
 
@@ -28,16 +49,20 @@ Commands
                             and statements that reach outside the project
   migrate status            List local migrations with their checksums
   functions new <name>      Write nomi/functions/<name>.ts from a starter
+  functions serve           Run nomi/functions/ locally with Deno, at
+                            http://localhost:8787/functions/<name> (--port to change); reads
+                            NOMI_URL, NOMI_ANON_KEY, NOMI_SERVICE_KEY and secrets from the
+                            environment
 
 Coming with the hosted Relay
-  login, link, migrate apply, types, functions serve, functions deploy, secrets set
+  login, link, migrate apply, types, functions deploy, secrets set
 
 Options
   --dir <path>              Project folder (default: the current folder)
   -h, --help                Show this help
   -v, --version             Show the version`;
 
-const COMING_SOON = new Set(['login', 'link', 'types', 'secrets', 'migrate apply', 'functions serve', 'functions deploy']);
+const COMING_SOON = new Set(['login', 'link', 'types', 'secrets', 'migrate apply', 'functions deploy']);
 
 const BACKEND_JSON = {
   auth: { methods: ['email_code'], redirect_urls: [] },
@@ -95,6 +120,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       allowPositionals: true,
       options: {
         dir: { type: 'string' },
+        port: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' }
       }
@@ -170,6 +196,31 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
       const created = await writeNew(join(functionsDir, `${name}.ts`), functionStarter(name), io);
       return created ? EXIT_OK : EXIT_PROBLEMS;
+    }
+
+    case 'functions serve': {
+      const env = io.env ?? process.env;
+      const missing = NEEDED_ENV.filter((name) => !env[name]);
+      if (missing.length > 0) {
+        io.err(`functions serve needs ${missing.join(', ')}: the dev backend's address and keys (the project's preview has them).`);
+        return EXIT_USAGE;
+      }
+      const files = (await readdir(functionsDir).catch(() => [] as string[])).filter((file) => FUNCTION_FILE.test(file)).sort();
+      if (files.length === 0) {
+        io.err(`${relative(io.cwd, functionsDir) || 'nomi/functions'} has no functions yet: run "nomi-relay functions new <name>".`);
+        return EXIT_PROBLEMS;
+      }
+      const entries = Object.fromEntries(files.map((file) => [file.replace(FUNCTION_FILE, '$1'), join(functionsDir, file)]));
+      const port = values.port ?? String(DEFAULT_SERVE_PORT);
+      const entry = join(tmpdir(), `nomi-relay-serve-${process.pid}.ts`);
+      await writeFile(entry, serveEntry(entries, `npm:nomi-relay@${await version()}`));
+      for (const name of Object.keys(entries)) io.out(`serving http://localhost:${port}/functions/${name}`);
+      try {
+        return await (io.spawn ?? runProgram)('deno', ['run', '--allow-net', '--allow-env', `--allow-read=${functionsDir}`, entry], { ...env, PORT: port });
+      } catch {
+        io.err('functions serve runs your functions on Deno, as Relay does: install it from https://deno.com.');
+        return EXIT_PROBLEMS;
+      }
     }
 
     default:

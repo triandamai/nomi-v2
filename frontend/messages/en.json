@@ -2278,5 +2278,9 @@
 	"relay_admin_storage_bucket": "Bucket",
 	"relay_admin_storage_key_id": "Access key ID",
 	"relay_admin_storage_secret": "Secret access key",
-	"relay_admin_storage_path_style": "Path-style addresses (MinIO and most self-hosted stores)"
+	"relay_admin_storage_path_style": "Path-style addresses (MinIO and most self-hosted stores)",
+	"relay_admin_functions_title": "Functions runtime",
+	"relay_admin_functions_hint": "Where apps' hosted functions run: Relay's functions runtime (relay/functions-runtime), started with the same secret as its RELAY_FUNCTIONS_SECRET. Leave the address empty to turn functions off.",
+	"relay_admin_functions_url": "Runtime address",
+	"relay_admin_functions_secret": "Runtime secret"
 }

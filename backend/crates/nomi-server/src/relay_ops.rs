@@ -101,7 +101,66 @@ pub async fn apply_before_publish(
     if let Some(tables) = backend.as_ref().and_then(|b| b.get("realtime")) {
         relay.put_realtime(project_id, PRODUCTION, tables).await.map_err(relay_error)?;
     }
-    Ok(())
+    // Last, so they meet the schema they were written for; a failed check stops the publish.
+    deploy_functions_for(&relay, project_id, PRODUCTION, files).await
+}
+
+/// Rolling a Relay project back to an earlier publish: its functions go back too, deployed again
+/// from that publish's source (migrations never go back).
+pub async fn functions_on_rollback(
+    pool: &PgPool,
+    http_client: &reqwest::Client,
+    config: Option<&RelayConfig>,
+    project_id: Uuid,
+    env: &str,
+    source_zip: &[u8],
+) -> Result<(), ApiError> {
+    let backend: Option<String> = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the project: {e}")))?;
+    if backend.as_deref() != Some("relay") {
+        return Ok(());
+    }
+    let config = config.ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    let mut files = nomi_shipyard::bundle::files_under(source_zip, "nomi/functions/").map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read that publish's source: {e}")))?;
+    files.extend(nomi_shipyard::bundle::files_under(source_zip, BACKEND_JSON).unwrap_or_default());
+    deploy_functions_for(&Relay::new(http_client, config), project_id, env, &files).await
+}
+
+/// Deploys the functions among `files` to `env`, when there are any.
+pub async fn deploy_functions_for(relay: &Relay<'_>, project_id: Uuid, env: &str, files: &[(String, Vec<u8>)]) -> Result<(), ApiError> {
+    let sources = function_sources(files);
+    if sources.is_empty() {
+        return Ok(());
+    }
+    let settings = files
+        .iter()
+        .find(|(path, _)| path == BACKEND_JSON)
+        .and_then(|(_, bytes)| serde_json::from_slice::<Value>(bytes).ok())
+        .and_then(|b| b.get("functions").cloned())
+        .unwrap_or_else(|| serde_json::json!({}));
+    relay.deploy_functions(project_id, env, &sources, &settings).await.map(|_| ()).map_err(relay_error)
+}
+
+/// What to tell Koda after a functions deploy.
+fn deploy_summary(env: &str, answer: &Value) -> String {
+    let version = answer.get("version").and_then(Value::as_i64).unwrap_or_default();
+    let names: Vec<&str> = answer.get("functions").and_then(Value::as_object).map(|f| f.keys().map(String::as_str).collect()).unwrap_or_default();
+    format!("Deployed to {env} as build {version}: {}.", if names.is_empty() { "no functions".to_string() } else { names.join(", ") })
+}
+
+/// The files of `nomi/functions/` among those being published, helpers included.
+pub fn function_sources(files: &[(String, Vec<u8>)]) -> Vec<SourceFile> {
+    const EXTENSIONS: [&str; 5] = [".ts", ".js", ".mts", ".mjs", ".json"];
+    let mut sources: Vec<SourceFile> = files
+        .iter()
+        .filter(|(path, _)| path.starts_with("nomi/functions/") && EXTENSIONS.iter().any(|ext| path.ends_with(ext)))
+        .map(|(path, bytes)| SourceFile { path: path.clone(), content: String::from_utf8_lossy(bytes).into_owned() })
+        .collect();
+    sources.sort_by(|a, b| a.path.cmp(&b.path));
+    sources
 }
 
 /// The names in `backend.json`'s `storage` block, for telling Koda what was saved.
@@ -315,12 +374,12 @@ impl RelayOps for ServerRelayOps {
         serde_json::to_string_pretty(&schema).map_err(|e| e.to_string())
     }
 
-    async fn deploy_functions(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {
+    async fn deploy_functions(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile], settings: &Value) -> Result<String, String> {
         let config = self.require_config().await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
-        let answer = relay.deploy_functions(project_id, env.as_str(), &source_files(files)).await.map_err(|e| message(relay_error(e)))?;
-        serde_json::to_string_pretty(&answer).map_err(|e| e.to_string())
+        let answer = relay.deploy_functions(project_id, env.as_str(), &source_files(files), settings).await.map_err(|e| message(relay_error(e)))?;
+        Ok(deploy_summary(env.as_str(), &answer))
     }
 
     async fn types(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {

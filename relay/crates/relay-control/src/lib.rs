@@ -3,6 +3,7 @@
 
 pub mod backend;
 pub mod files;
+pub mod functions;
 pub mod migrations;
 pub mod postgrest;
 pub mod realtime;
@@ -78,6 +79,8 @@ pub struct Relay {
     dedicated: Mutex<HashMap<String, PgPool>>,
     /// Where sign-in codes go out (SMTP; a recording outbox in tests).
     pub outbox: Arc<dyn Outbox>,
+    /// For calls to the functions runtime.
+    pub http: reqwest::Client,
 }
 
 /// Relay's settings and the shared databases they name. Swapped whole when settings are saved.
@@ -112,12 +115,12 @@ impl Relay {
     /// A Relay already pointed at `shared`, as the tests (and only they) make one.
     pub fn new(state: PgPool, shared: HashMap<Env, PgPool>, encryption_key: [u8; 32], public_domain: String) -> Self {
         let live = Live { settings: Settings { public_domain, ..Settings::default() }, shared, store: None };
-        Self { state, encryption_key, live: RwLock::new(Some(Arc::new(live))), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox) }
+        Self { state, encryption_key, live: RwLock::new(Some(Arc::new(live))), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox), http: reqwest::Client::new() }
     }
 
     /// A Relay whose settings haven't been saved yet.
     pub fn unconfigured(state: PgPool, encryption_key: [u8; 32]) -> Self {
-        Self { state, encryption_key, live: RwLock::new(None), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox) }
+        Self { state, encryption_key, live: RwLock::new(None), dedicated: Mutex::new(HashMap::new()), outbox: Arc::new(SmtpOutbox), http: reqwest::Client::new() }
     }
 
     /// Relay as its saved settings describe it, or unconfigured when there are none.

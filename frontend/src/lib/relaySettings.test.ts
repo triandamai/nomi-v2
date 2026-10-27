@@ -21,11 +21,15 @@ const form: RelaySettingsForm = {
 	storage_access_key_id: '',
 	storage_secret: '',
 	storage_path_style: false,
+	functions_url: '',
+	functions_secret: '',
 };
+
+const NOTHING_STORED = { sender: false, storage: false, functions: false };
 
 describe('relay settings', () => {
 	it('leaves out database URLs that were not typed, so the stored ones stay', () => {
-		const body = settingsBody(form, false, false);
+		const body = settingsBody(form, NOTHING_STORED);
 		expect(body).toEqual({
 			public_domain: 'api.relay.example',
 			shared_production_url: 'postgres://relay:pw@db/prod',
@@ -38,17 +42,24 @@ describe('relay settings', () => {
 	});
 
 	it('sends the shared sender when one is typed, keeps a stored password, and clears it when the host is emptied', () => {
-		const typed = settingsBody({ ...form, smtp_host: ' smtp.nomi.test ', smtp_user: 'codes', smtp_from: 'Nomi <codes@nomi.test>' }, false, false);
+		const typed = settingsBody({ ...form, smtp_host: ' smtp.nomi.test ', smtp_user: 'codes', smtp_from: 'Nomi <codes@nomi.test>' }, NOTHING_STORED);
 		expect(typed.shared_smtp).toEqual({ host: 'smtp.nomi.test', port: 587, security: 'starttls', user: 'codes', password: '', from: 'Nomi <codes@nomi.test>' });
-		expect('shared_smtp' in settingsBody(form, false, false)).toBe(false);
-		expect(settingsBody(form, true, false).shared_smtp).toEqual({ host: '', port: 587, security: 'starttls', user: '', password: '', from: '' });
+		expect('shared_smtp' in settingsBody(form, NOTHING_STORED)).toBe(false);
+		expect(settingsBody(form, { ...NOTHING_STORED, sender: true }).shared_smtp).toEqual({ host: '', port: 587, security: 'starttls', user: '', password: '', from: '' });
 	});
 
 	it('sends file storage when a bucket is typed, keeps a stored secret, and removes it when the bucket is emptied', () => {
-		const typed = settingsBody({ ...form, storage_endpoint: ' https://s3.nomi.test/ ', storage_bucket: ' relay-files ', storage_access_key_id: ' AKIA ', storage_path_style: true }, false, false);
+		const typed = settingsBody({ ...form, storage_endpoint: ' https://s3.nomi.test/ ', storage_bucket: ' relay-files ', storage_access_key_id: ' AKIA ', storage_path_style: true }, NOTHING_STORED);
 		expect(typed.storage).toEqual({ endpoint: 'https://s3.nomi.test', region: 'auto', bucket: 'relay-files', access_key_id: 'AKIA', secret_access_key: '', path_style: true });
-		expect('storage' in settingsBody(form, false, false)).toBe(false);
-		expect(settingsBody(form, false, true).storage).toEqual({ endpoint: '', region: 'auto', bucket: '', access_key_id: '', secret_access_key: '', path_style: false });
+		expect('storage' in settingsBody(form, NOTHING_STORED)).toBe(false);
+		expect(settingsBody(form, { ...NOTHING_STORED, storage: true }).storage).toEqual({ endpoint: '', region: 'auto', bucket: '', access_key_id: '', secret_access_key: '', path_style: false });
+	});
+
+	it('sends the functions runtime when its address is typed, keeps a stored secret, and removes it when emptied', () => {
+		const typed = settingsBody({ ...form, functions_url: ' http://relay-functions:8000/ ', functions_secret: 's3cret' }, NOTHING_STORED);
+		expect(typed.functions).toEqual({ url: 'http://relay-functions:8000', secret: 's3cret' });
+		expect('functions' in settingsBody(form, NOTHING_STORED)).toBe(false);
+		expect(settingsBody(form, { ...NOTHING_STORED, functions: true }).functions).toEqual({ url: '', secret: '' });
 	});
 
 	it('splits origins on commas and lines', () => {

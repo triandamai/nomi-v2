@@ -41,7 +41,7 @@ impl From<RelayError> for Failure {
                 let status = match code {
                     "CONFLICT" => StatusCode::CONFLICT,
                     "BAD_REQUEST" => StatusCode::BAD_REQUEST,
-                    relay_control::NOT_CONFIGURED => StatusCode::SERVICE_UNAVAILABLE,
+                    relay_control::NOT_CONFIGURED | relay_control::functions::FUNCTIONS_NOT_SET_UP => StatusCode::SERVICE_UNAVAILABLE,
                     _ => StatusCode::UNPROCESSABLE_ENTITY,
                 };
                 Failure { status, code, message, details }

@@ -170,6 +170,58 @@ pub fn realtime_problems(tables: &[String]) -> Vec<String> {
     out
 }
 
+/// A function's call timeout when `backend.json` doesn't set one, and the most it may set.
+pub const DEFAULT_FUNCTION_TIMEOUT: u32 = 30;
+pub const MAX_FUNCTION_TIMEOUT: u32 = 60;
+
+/// Who may call a function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Access {
+    /// A signed-in user or the service key.
+    #[default]
+    Required,
+    /// Anyone, even without the app's key (webhooks).
+    Public,
+}
+
+/// One function's settings in `backend.json`'s `functions`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FunctionSettings {
+    #[serde(default)]
+    pub auth: Access,
+    /// Seconds.
+    #[serde(default = "default_function_timeout")]
+    pub timeout: u32,
+    /// A cron expression (`0 * * * *`, UTC): the gateway calls it then, with the service role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+}
+
+fn default_function_timeout() -> u32 {
+    DEFAULT_FUNCTION_TIMEOUT
+}
+
+impl Default for FunctionSettings {
+    fn default() -> Self {
+        Self { auth: Access::default(), timeout: DEFAULT_FUNCTION_TIMEOUT, schedule: None }
+    }
+}
+
+/// A function's name from its file in `nomi/functions/` (`place-order.ts` → `place-order`);
+/// `None` for helpers in `_shared/` and anything that isn't a function file.
+pub fn function_name(path: &str) -> Option<String> {
+    let file = path.strip_prefix("nomi/functions/").unwrap_or(path);
+    if file.contains('/') || file.starts_with('_') {
+        return None;
+    }
+    let name = [".ts", ".js", ".mts", ".mjs"].iter().find_map(|ext| file.strip_suffix(ext))?;
+    let valid = name.len() <= MAX_NAME_LEN
+        && name.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    valid.then(|| name.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +299,19 @@ mod tests {
         assert!(StorageConfig::default().problems().is_empty());
         assert!(realtime_problems(&["message".into(), "task_2".into()]).is_empty());
         assert_eq!(realtime_problems(&["public.message".into(), "Task".into(), "a".into(), "a".into()]).len(), 3);
+    }
+
+    #[test]
+    fn functions_are_named_by_their_files_and_default_to_signed_in_callers_and_30_seconds() {
+        assert_eq!(function_name("nomi/functions/place-order.ts").as_deref(), Some("place-order"));
+        assert_eq!(function_name("hello.js").as_deref(), Some("hello"));
+        for not_one in ["nomi/functions/_shared/db.ts", "nomi/functions/a/b.ts", "nomi/functions/Place.ts", "nomi/functions/x.json", "nomi/functions/a_b.ts"] {
+            assert_eq!(function_name(not_one), None, "{not_one}");
+        }
+        let settings: FunctionSettings = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(settings, FunctionSettings { auth: Access::Required, timeout: 30, schedule: None });
+        let webhook: FunctionSettings = serde_json::from_value(json!({ "auth": "public", "timeout": 10, "schedule": "0 * * * *" })).unwrap();
+        assert_eq!((webhook.auth, webhook.timeout, webhook.schedule.as_deref()), (Access::Public, 10, Some("0 * * * *")));
     }
 
     #[test]

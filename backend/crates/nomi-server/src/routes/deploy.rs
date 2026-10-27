@@ -421,6 +421,9 @@ pub async fn rollback(
         .map_err(internal("failed to read the published source"))?
         .ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
     let target = target(&state, project_id).await?;
+    // A Relay project's functions go back with the code; a failed check stops the rollback.
+    let relay = crate::relay_connection::load(state.pool(), crate::relay_connection::settings_key_from_env().as_ref()).await;
+    crate::relay_ops::functions_on_rollback(state.pool(), state.http_client(), relay.as_ref(), project_id, &environment, &source).await?;
     let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
     let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub, None).await?;
     Ok((StatusCode::ACCEPTED, Json(row)))
