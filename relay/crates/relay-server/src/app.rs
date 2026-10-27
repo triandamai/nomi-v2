@@ -11,7 +11,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
-use relay_control::{migrations, schema, settings, Relay};
+use relay_control::{migrations, realtime, schema, settings, storage, Relay};
 use relay_core::{Env, Tier};
 use relay_migrate::MigrationFile;
 use serde::Deserialize;
@@ -85,8 +85,30 @@ async fn post_migrations(State(state): State<AppState>, Path((project, env_name)
     Ok(ok(json!({ "applied": applied })))
 }
 
+/// The tables Koda's `describe_backend` reads, with the buckets and realtime tables next to them.
 async fn get_schema(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>) -> Result<Answer> {
-    Ok(ok(schema::describe(&state.relay, project, env(&env_name)?).await?))
+    let env = env(&env_name)?;
+    let mut answer = serde_json::to_value(schema::describe(&state.relay, project, env).await?).unwrap_or_default();
+    answer["buckets"] = json!(storage::load(&state.relay, project, env).await?.buckets);
+    answer["realtime"] = json!(realtime::load(&state.relay, project, env).await?);
+    Ok(ok(answer))
+}
+
+/// Replaces `env`'s buckets (`nomi/backend.json`'s `storage`).
+async fn put_storage(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>, Json(body): Json<relay_core::backend::StorageConfig>) -> Result<Answer> {
+    storage::save(&state.relay, project, env(&env_name)?, &body).await?;
+    Ok(ok(json!({ "saved": body.buckets.len() })))
+}
+
+#[derive(Deserialize)]
+struct RealtimeRequest {
+    tables: Vec<String>,
+}
+
+/// Replaces `env`'s realtime tables (`nomi/backend.json`'s `realtime`).
+async fn put_realtime(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>, Json(body): Json<RealtimeRequest>) -> Result<Answer> {
+    realtime::save(&state.relay, project, env(&env_name)?, &body.tables).await?;
+    Ok(ok(json!({ "tables": body.tables })))
 }
 
 async fn get_types(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>) -> Result<Answer> {
@@ -171,7 +193,7 @@ async fn health() -> Answer {
 /// goes to the gateway, every other host to the control plane.
 pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
     let control = control_router(relay.clone(), control_key);
-    let gateway = Arc::new(Gateway { relay: relay.clone(), http: reqwest::Client::new() });
+    let gateway = Arc::new(Gateway { relay: relay.clone(), http: reqwest::Client::new(), hub: Default::default() });
     Router::new().fallback(move |request: Request| {
         let control = control.clone();
         let gateway = gateway.clone();
@@ -196,6 +218,8 @@ fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))
         .route("/control/projects/:id/environments/:env/types", get(get_types))
         .route("/control/projects/:id/environments/:env/auth", get(get_auth).put(put_auth))
+        .route("/control/projects/:id/environments/:env/storage", axum::routing::put(put_storage))
+        .route("/control/projects/:id/environments/:env/realtime", axum::routing::put(put_realtime))
         .route("/control/projects/:id/auth/secrets/:name", axum::routing::put(put_auth_secret).delete(delete_auth_secret))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_control_key));
     Router::new().route("/health", get(health)).merge(control).with_state(state)

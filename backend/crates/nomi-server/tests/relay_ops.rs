@@ -334,3 +334,36 @@ async fn publishing_sends_the_sign_in_settings_to_production_before_the_migratio
     let order: Vec<String> = server.received_requests().await.unwrap().iter().map(|r| r.url.path().to_string()).collect();
     assert!(order[0].ends_with("/production/auth") && order[1].ends_with("/production/migrations"), "{order:?}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn buckets_and_realtime_tables_are_saved_to_the_environment(pool: PgPool) {
+    let (user_id, project_id) = seed_project(&pool).await;
+    let server = MockServer::start().await;
+    let storage = json!({ "buckets": [{ "name": "avatars", "public": true }, { "name": "docs" }] });
+    Mock::given(method("PUT")).and(path(format!("/control/projects/{project_id}/environments/dev/storage"))).and(body_json(storage.clone())).respond_with(envelope(json!({ "saved": 2 }))).expect(1).mount(&server).await;
+    Mock::given(method("PUT")).and(path(format!("/control/projects/{project_id}/environments/dev/realtime"))).and(body_json(json!({ "tables": ["message"] }))).respond_with(envelope(json!({ "tables": ["message"] }))).expect(1).mount(&server).await;
+
+    let said = ops(&pool, &server).apply_storage(user_id, project_id, RelayEnv::Dev, &storage).await.unwrap();
+    assert_eq!(said, "Buckets saved to dev: avatars, docs.");
+    let said = ops(&pool, &server).apply_realtime(user_id, project_id, RelayEnv::Dev, &json!(["message"])).await.unwrap();
+    assert_eq!(said, "Live changes are on in dev for: message.");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn publishing_sends_buckets_before_and_realtime_tables_after_the_migrations(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let server = MockServer::start().await;
+    let base = format!("/control/projects/{project_id}/environments/production");
+    Mock::given(method("PUT")).and(path(format!("{base}/storage"))).respond_with(envelope(json!({ "saved": 1 }))).expect(1).mount(&server).await;
+    Mock::given(method("POST")).and(path(format!("{base}/migrations"))).respond_with(envelope(json!({ "applied": [] }))).expect(1).mount(&server).await;
+    Mock::given(method("PUT")).and(path(format!("{base}/realtime"))).and(body_json(json!({ "tables": ["message"] }))).respond_with(envelope(json!({ "tables": ["message"] }))).expect(1).mount(&server).await;
+    let backend = json!({ "storage": { "buckets": [{ "name": "avatars" }] }, "realtime": ["message"] });
+    let files = vec![("nomi/backend.json".to_string(), backend.to_string().into_bytes())];
+    let config = RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key")).unwrap();
+
+    nomi_server::relay_ops::apply_before_publish(&pool, &reqwest::Client::new(), Some(&config), project_id, &files).await.unwrap();
+
+    let order: Vec<String> = server.received_requests().await.unwrap().iter().map(|r| r.url.path().rsplit('/').next().unwrap().to_string()).collect();
+    assert_eq!(order, vec!["storage", "migrations", "realtime"]);
+}

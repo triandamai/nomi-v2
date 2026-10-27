@@ -9,7 +9,7 @@ use std::time::Duration;
 use relay_core::crypto::{decrypt, encrypt};
 use relay_core::keys::new_signing_secret;
 use relay_auth::mail::Outbox;
-use relay_core::settings::{mask_database_url, Settings, Smtp};
+use relay_core::settings::{mask_database_url, Settings, Smtp, StorageSettings};
 use relay_core::Env;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -24,6 +24,7 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 const ROLE_CLAIM_KEY: &str = ".db_role";
 pub const SETTINGS_INVALID: &str = "SETTINGS_INVALID";
 const SHARED_SENDER: &str = "shared sender";
+const FILE_STORAGE: &str = "file storage";
 
 /// What the admin sends. Database URLs left out (or empty) keep the stored ones: the form never
 /// has their passwords.
@@ -44,6 +45,10 @@ pub struct SettingsInput {
     /// stored one.
     #[serde(default)]
     pub shared_smtp: Option<Smtp>,
+    /// Left out keeps the stored bucket; an empty bucket name removes it; an empty secret keeps
+    /// the stored one.
+    #[serde(default)]
+    pub storage: Option<StorageSettings>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,6 +72,8 @@ pub struct SettingsView {
     pub preview_origins: Vec<String>,
     /// Without its password.
     pub shared_smtp: Option<Smtp>,
+    /// Without its secret.
+    pub storage: Option<StorageSettings>,
     pub checks: Vec<Check>,
 }
 
@@ -131,6 +138,13 @@ async fn checks(settings: &Settings, pools: &HashMap<Env, PgPool>, outbox: &dyn 
     if let Some(smtp) = &settings.shared_smtp {
         out.push(check(SHARED_SENDER.to_string(), outbox.check(smtp).await));
     }
+    if let Some(storage) = &settings.storage {
+        let answered = match crate::files::store_for(storage) {
+            Ok(store) => tokio::time::timeout(CHECK_TIMEOUT, crate::files::check(store.as_ref())).await.unwrap_or_else(|_| Err("didn't answer in time".into())),
+            Err(e) => Err(e),
+        };
+        out.push(check(FILE_STORAGE.to_string(), answered));
+    }
     out
 }
 
@@ -145,6 +159,7 @@ fn view_of(settings: &Settings, configured: bool, checks: Vec<Check>) -> Setting
         postgrest_role: settings.postgrest_role.clone(),
         preview_origins: settings.preview_origins.clone(),
         shared_smtp: settings.shared_smtp.clone().map(|smtp| Smtp { password: String::new(), ..smtp }),
+        storage: settings.storage.clone().map(|storage| StorageSettings { secret_access_key: String::new(), ..storage }),
         checks,
     }
 }
@@ -168,6 +183,22 @@ fn merge_sender(given: Option<Smtp>, stored: Option<Smtp>) -> Option<Smtp> {
     }
     let password = if given.password.is_empty() { stored.map(|s| s.password).unwrap_or_default() } else { given.password };
     Some(Smtp { host: given.host.trim().to_string(), from: given.from.trim().to_string(), password, ..given })
+}
+
+fn merge_storage(given: Option<StorageSettings>, stored: Option<StorageSettings>) -> Option<StorageSettings> {
+    let Some(given) = given else { return stored };
+    if given.bucket.trim().is_empty() {
+        return None;
+    }
+    let secret = if given.secret_access_key.is_empty() { stored.map(|s| s.secret_access_key).unwrap_or_default() } else { given.secret_access_key };
+    Some(StorageSettings {
+        endpoint: given.endpoint.trim().trim_end_matches('/').to_string(),
+        region: given.region.trim().to_string(),
+        bucket: given.bucket.trim().to_string(),
+        access_key_id: given.access_key_id.trim().to_string(),
+        secret_access_key: secret,
+        path_style: given.path_style,
+    })
 }
 
 fn quoted(identifier: &str) -> String {
@@ -202,6 +233,7 @@ pub async fn save(relay: &Relay, input: SettingsInput) -> Result<SettingsView, R
         preview_origins: input.preview_origins.into_iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect(),
         postgrest_jwt_secret: Some(stored.postgrest_jwt_secret.clone()).filter(|s| !s.is_empty()).unwrap_or_else(new_signing_secret),
         shared_smtp: merge_sender(input.shared_smtp, stored.shared_smtp.clone()),
+        storage: merge_storage(input.storage, stored.storage.clone()),
     };
     let mut pools = HashMap::new();
     for env in Env::ALL {

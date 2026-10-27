@@ -78,6 +78,16 @@ pub trait RelayOps: Send + Sync {
     async fn apply_auth(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv, _auth: &serde_json::Value) -> Result<String, String> {
         Err(NOT_SET_UP.to_string())
     }
+
+    /// Saves the project's buckets (`nomi/backend.json`'s `storage`) to `env`.
+    async fn apply_storage(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv, _storage: &serde_json::Value) -> Result<String, String> {
+        Err(NOT_SET_UP.to_string())
+    }
+
+    /// Turns on live changes for the tables `nomi/backend.json`'s `realtime` lists, in `env`.
+    async fn apply_realtime(&self, _user_id: Uuid, _project_id: Uuid, _env: RelayEnv, _tables: &serde_json::Value) -> Result<String, String> {
+        Err(NOT_SET_UP.to_string())
+    }
 }
 
 /// For tests and setups without Relay: every call says Relay isn't available.

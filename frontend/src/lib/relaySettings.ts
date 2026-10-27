@@ -17,6 +17,16 @@ export interface RelaySmtp {
 	security: string;
 }
 
+/** The S3 bucket Relay keeps every app's files in, as Relay answers it (never with its secret). */
+export interface RelayStorage {
+	endpoint: string;
+	region: string;
+	bucket: string;
+	access_key_id: string;
+	secret_access_key: string;
+	path_style: boolean;
+}
+
 /** Relay's settings as it answers them: database URLs without their passwords. */
 export interface RelaySettings {
 	configured: boolean;
@@ -28,6 +38,7 @@ export interface RelaySettings {
 	postgrest_role: string;
 	preview_origins: string[];
 	shared_smtp: RelaySmtp | null;
+	storage: RelayStorage | null;
 	checks: RelayCheck[];
 }
 
@@ -60,7 +71,17 @@ export interface RelaySettingsForm {
 	smtp_user: string;
 	smtp_password: string;
 	smtp_from: string;
+	/** File storage; the secret starts empty and stays as stored. */
+	storage_endpoint: string;
+	storage_region: string;
+	storage_bucket: string;
+	storage_access_key_id: string;
+	storage_secret: string;
+	storage_path_style: boolean;
 }
+
+/** R2 and most S3-compatible stores take any region; AWS needs the bucket's own. */
+export const DEFAULT_STORAGE_REGION = 'auto';
 
 /** Port 587 with STARTTLS: what most providers (Resend, Postmark, SES) take. */
 export const DEFAULT_SMTP_PORT = 587;
@@ -74,9 +95,10 @@ export function originsFromText(text: string): string[] {
 
 /**
  * What `PUT /api/admin/relay/settings` takes: database URLs only when typed, so stored ones stay;
- * the shared sender when a host is typed, or with an empty host to remove one that was stored.
+ * the shared sender when a host is typed, or with an empty host to remove one that was stored;
+ * file storage the same way, by its bucket.
  */
-export function settingsBody(form: RelaySettingsForm, hadSender: boolean): Record<string, unknown> {
+export function settingsBody(form: RelaySettingsForm, hadSender: boolean, hadStorage: boolean): Record<string, unknown> {
 	const body: Record<string, unknown> = {
 		public_domain: form.public_domain.trim(),
 		postgrest_dev_url: form.postgrest_dev_url.trim(),
@@ -94,6 +116,16 @@ export function settingsBody(form: RelaySettingsForm, hadSender: boolean): Recor
 			user: form.smtp_user.trim(),
 			password: form.smtp_password,
 			from: form.smtp_from.trim(),
+		};
+	}
+	if (form.storage_bucket.trim() || hadStorage) {
+		body.storage = {
+			endpoint: form.storage_endpoint.trim().replace(/\/+$/, ''),
+			region: form.storage_region.trim() || DEFAULT_STORAGE_REGION,
+			bucket: form.storage_bucket.trim(),
+			access_key_id: form.storage_access_key_id.trim(),
+			secret_access_key: form.storage_secret,
+			path_style: form.storage_path_style,
 		};
 	}
 	return body;

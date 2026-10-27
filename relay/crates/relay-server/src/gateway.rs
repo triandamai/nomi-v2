@@ -28,7 +28,7 @@ const FORWARDED_REQUEST_HEADERS: [&str; 5] = ["accept", "content-type", "prefer"
 /// What PostgREST may tell the client.
 const FORWARDED_RESPONSE_HEADERS: [&str; 4] = ["content-type", "content-range", "location", "preference-applied"];
 const ALLOWED_METHODS: &str = "GET, HEAD, POST, PATCH, PUT, DELETE, OPTIONS";
-const ALLOWED_HEADERS: &str = "authorization, apikey, content-type, prefer, range, range-unit, accept, x-client-info, x-nomi-client";
+const ALLOWED_HEADERS: &str = "authorization, apikey, content-type, prefer, range, range-unit, accept, x-client-info, x-nomi-client, x-nomi-upsert, cache-control";
 const EXPOSED_HEADERS: &str = "content-range, location, preference-applied";
 
 /// The project and environment a request is for, and who's calling.
@@ -43,6 +43,7 @@ pub(crate) struct Target {
 pub struct Gateway {
     pub relay: Arc<Relay>,
     pub http: reqwest::Client,
+    pub hub: crate::realtime::Hub,
 }
 
 /// A refusal in PostgREST's own error shape, so the SDK reads it the same way.
@@ -95,6 +96,10 @@ impl Gateway {
             StatusCode::NO_CONTENT.into_response()
         } else if request.uri().path().starts_with(crate::auth_routes::AUTH_PREFIX) {
             crate::auth_routes::handle(self, &live.settings, &slug, env, request).await
+        } else if request.uri().path() == crate::realtime::REALTIME_PATH {
+            crate::realtime::upgrade(self, &slug, env, request).await
+        } else if request.uri().path().starts_with(crate::storage_routes::STORAGE_PREFIX) {
+            crate::storage_routes::handle(self, &slug, env, request).await
         } else {
             self.forward(&live.settings, &slug, env, request).await
         };

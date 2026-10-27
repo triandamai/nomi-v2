@@ -102,6 +102,16 @@ struct InternalClaims {
     exp: u64,
 }
 
+/// The database role a request from `caller` runs as.
+pub fn database_role(project: Uuid, caller: &Caller) -> String {
+    role(project, caller.kind.database_role())
+}
+
+/// What `nomi.claims()` answers for `caller` (`request.jwt.claims`), as PostgREST would set it.
+pub fn request_claims(project: Uuid, caller: &Caller) -> serde_json::Value {
+    serde_json::json!({ "role": caller.kind.as_str(), "sub": caller.sub, "email": caller.email, "ref": project })
+}
+
 /// The token the gateway sends PostgREST, signed with the secret only Relay and PostgREST share.
 pub fn internal_token(postgrest_secret: &str, project: Uuid, caller: &Caller, now: u64) -> String {
     let claims = InternalClaims {

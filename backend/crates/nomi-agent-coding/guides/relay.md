@@ -1,7 +1,7 @@
 # Building on Nomi Relay
 
 This project's backend is Nomi Relay: a real Postgres database for `dev` (the preview) and one for
-production, sign-in, file storage and live updates are already there. You write three things:
+production, sign-in, file storage and live changes are already there. You write three things:
 
 1. **migrations**: the schema and who may read and write each row;
 2. **the app's server logic**, only where SQL can't express it;
@@ -125,6 +125,62 @@ secrets are still missing.
   has that email. `nomi.auth.linkIdentity('github')` adds a method to the signed-in user.
 - To send codes from the app's own domain, add `"smtp": { "host", "port", "user", "from" }` and
   ask for `NOMI_SMTP_PASSWORD`.
+
+## Files
+
+Buckets are declared in `nomi/backend.json`; writing it saves them to dev, publishing to
+production. Never store uploads in a table or on the app's own server.
+
+```json
+{
+  "storage": {
+    "buckets": [
+      { "name": "avatars", "public": true, "write": "owner", "max_size_mb": 5, "types": ["image/*"] },
+      { "name": "invoices", "read": "owner", "write": "service" }
+    ]
+  }
+}
+```
+
+- `read` and `write` say who may: `anyone` (any caller with the app's key), `signed_in` (the
+  default), `owner` (a signed-in user, only under a folder named by their id) or `service` (only
+  server code with the service key, which passes every rule).
+- With `owner`, put each user's files under their id: `` `${user.id}/avatar.png` ``.
+- `public: true` also serves files to anyone at `getPublicUrl(path)`, with no request: use it for
+  images shown on public pages. For a private file in an `<img>` or a download link, use
+  `createSignedUrl(path, seconds)`.
+- `max_size_mb` defaults to 50 (100 at most); `types` limits the content types an upload may have.
+- An upload never replaces a file unless it says `{ upsert: true }`.
+
+```ts
+const { error } = await nomi.storage.from('avatars').upload(`${user.id}/avatar.png`, file, { upsert: true });
+const { publicUrl } = nomi.storage.from('avatars').getPublicUrl(`${user.id}/avatar.png`);
+const { data } = await nomi.storage.from('invoices').createSignedUrl(`${user.id}/may.pdf`, 600);
+const { data: files } = await nomi.storage.from('invoices').list(user.id);
+```
+
+## Live changes
+
+List the tables whose changes the app shows live (chat messages, a shared board), and the app
+gets each insert, update and delete as it happens, only for rows its user may read.
+
+```json
+{ "realtime": ["message"] }
+```
+
+A listed table needs a primary key, and its migration first (Relay says so if it's missing, and
+turns it on as soon as the migration applies).
+
+```ts
+const stop = nomi.realtime.on<Message>('message', (change) => {
+  if (change.event === 'resync') return reload();          // reconnected or missed changes: refetch
+  if (change.event === 'delete') messages = messages.filter((m) => m.id !== change.key.id);
+  else messages = [...messages.filter((m) => m.id !== change.row!.id), change.row!];
+});
+// stop() when the page goes away (onDestroy / the effect's cleanup)
+```
+
+Load the list with a normal query first, then apply changes; on `resync`, load it again.
 
 Server code (SvelteKit `+page.server.ts`, endpoints) uses the same client with the service key,
 read from the environment, never sent to the browser:

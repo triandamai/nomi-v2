@@ -127,8 +127,9 @@ Relay reads three variables from its environment: `RELAY_DATABASE_URL` (its stat
 `RELAY_ENCRYPTION_KEY` (32 bytes of hex; seals what it keeps) and `RELAY_CONTROL_KEY` (what Nomi
 calls it with), plus an optional `RELAY_BIND`. Everything else is set in Nomi's admin (Relay page)
 and kept sealed in Relay's state: the public domain, the shared dev and production database URLs,
-each PostgREST's URL, PostgREST's login role, and the preview origins allowed to call a dev
-backend from the browser. Saving checks every database and PostgREST first; until saved, Relay
+each PostgREST's URL, PostgREST's login role, the preview origins allowed to call a dev
+backend from the browser, the shared sender for sign-in codes, and the S3 bucket (any
+S3-compatible store) every project's files go in, each under `<project>/<env>/<bucket>/`. Saving checks every database and PostgREST first; until saved, Relay
 answers `503 NOT_CONFIGURED`.
 
 ## What Koda writes
@@ -267,8 +268,18 @@ else to run or keep up.
   it only to subscribers who are allowed to see it. Deletes send just the primary key.
 - **Delivery.** At most once. A client that reconnects gets a `resync` event and refetches, so
   the SDK's live lists never drift.
-- **Limits.** Connections per project and changes per second are plan quotas. A burst beyond
-  them collapses into a single `resync` instead of dropping events silently.
+- **Limits.** Connections per project and changes per second are plan quotas (for now 200
+  sockets per project environment and 50 changes a second per socket). A burst beyond them
+  collapses into a single `resync` instead of dropping events silently.
+
+## Storage
+
+Buckets are declared in `backend.json` (`"storage": { "buckets": [...] }`), each with who may
+`read` and `write` (`anyone`, `signed_in`, `owner` — the user whose id is the path's first
+folder — or `service`), an optional `public` flag, `max_size_mb` and content `types`. The S3
+bucket stays private: the gateway checks each request against the bucket's rules and streams
+the bytes itself. A signed URL (`/storage/sign/…?token=`) opens one file until it expires; a
+public bucket also serves files at `/storage/public/<bucket>/<path>` with no key.
 
 ## Functions
 

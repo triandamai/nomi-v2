@@ -137,3 +137,28 @@ async fn settings_that_dont_work_answer_422_with_each_check(pool: PgPool) {
     assert_eq!(answer["error"]["code"], "SETTINGS_INVALID");
     assert_eq!(answer["error"]["details"]["checks"].as_array().unwrap().len(), 4);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn buckets_and_realtime_tables_are_saved_and_described(pool: PgPool) {
+    let router = router(&pool);
+    let project = Uuid::new_v4();
+    let base = format!("/control/projects/{project}");
+    call(&router, "PUT", &base, Some(KEY), Some(json!({ "name": "Chat" }))).await;
+    let init = "create table message (id int primary key, body text);\nalter table message enable row level security;\n";
+    call(&router, "POST", &format!("{base}/environments/dev/migrations"), Some(KEY), Some(json!({ "files": [{ "path": "nomi/migrations/0001_init.sql", "content": init }] }))).await;
+
+    let (status, saved) = call(&router, "PUT", &format!("{base}/environments/dev/storage"), Some(KEY), Some(json!({ "buckets": [{ "name": "avatars", "public": true, "write": "owner" }] }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let (status, saved) = call(&router, "PUT", &format!("{base}/environments/dev/realtime"), Some(KEY), Some(json!({ "tables": ["message"] }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+
+    let (_, described) = call(&router, "GET", &format!("{base}/environments/dev/schema"), Some(KEY), None).await;
+    assert_eq!(described["data"]["buckets"][0]["name"], "avatars");
+    assert_eq!(described["data"]["buckets"][0]["write"], "owner");
+    assert_eq!(described["data"]["realtime"], json!(["message"]));
+    assert_eq!(described["data"]["tables"][0]["name"], "message");
+
+    let (status, refused) = call(&router, "PUT", &format!("{base}/environments/dev/realtime"), Some(KEY), Some(json!({ "tables": ["order"] }))).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{refused}");
+    assert_eq!(refused["error"]["code"], "BACKEND_INVALID");
+}
