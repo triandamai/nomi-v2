@@ -83,6 +83,14 @@ async fn main() {
             nomi_server::delegation_worker::run(delegation_pool, delegation_mqtt, delegation_s3, settings_key, delegation_http_client, delegation_database_url, delegation_project_storage).await;
         });
 
+        let background_mqtt_client_id = format!("nomi-orchestrator-background-worker-{}", uuid::Uuid::new_v4());
+        let background_mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &background_mqtt_client_id);
+        let background_pool = pool.clone();
+        let background_database_url = database_url.clone();
+        tokio::spawn(async move {
+            nomi_server::background_worker::run(background_pool, background_mqtt, background_database_url).await;
+        });
+
         let scheduler_mqtt_client_id = format!("nomi-orchestrator-scheduler-{}", uuid::Uuid::new_v4());
         let scheduler_mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &scheduler_mqtt_client_id);
         let scheduler_pool = pool.clone();

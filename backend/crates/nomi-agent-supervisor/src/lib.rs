@@ -150,7 +150,17 @@ pub async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, ses
     .await
     .map_err(|e| e.to_string())?;
 
-    if rows.is_empty() {
+    let bg_rows: Vec<(String, String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT agent_type, label, command, status, output, error FROM background_tasks \
+         WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2",
+    )
+    .bind(session_id)
+    .bind(RECENT_ACTIVITY_LIMIT)
+    .fetch_all(&mut **conn)
+    .await
+    .unwrap_or_default();
+
+    if rows.is_empty() && bg_rows.is_empty() {
         return Ok("No background delegations for this session yet.".to_string());
     }
 
@@ -161,6 +171,16 @@ pub async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, ses
             out.push_str(&format!(" — result: {r}"));
         }
         if let Some(e) = error {
+            out.push_str(&format!(" — error: {e}"));
+        }
+        out.push('\n');
+    }
+    for (agent_type, label, command, status, output, error) in bg_rows {
+        out.push_str(&format!("- {agent_type} background task ({status}): \"{label}\" (`{command}`)"));
+        if let Some(o) = output.filter(|s| !s.trim().is_empty()) {
+            out.push_str(&format!(" — output: {o}"));
+        }
+        if let Some(e) = error.filter(|s| !s.trim().is_empty()) {
             out.push_str(&format!(" — error: {e}"));
         }
         out.push('\n');

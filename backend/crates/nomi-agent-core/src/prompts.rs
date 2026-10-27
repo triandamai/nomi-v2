@@ -162,6 +162,14 @@ pub const SUPERVISOR_SYSTEM_PROMPT: &str =
      cancel or call off their work, use stop_agents and tell them plainly what was stopped. You \
      never do the specialist work yourself; you only report on it and stop it.";
 
+/// Added to every agent's system prompt: how background execution works across Nomi's crew.
+pub const BACKGROUND_EXECUTION_GUIDE: &str = "You can execute commands or long-running operations in the background \
+     with `run_background_task` (and check or stop them with `list_background_tasks` / `cancel_background_task`). \
+     `run_background_task` is non-blocking: it starts the task in the background and returns a task_id right away. \
+     While a background task is running, you can either start working on another task right away in this turn, or \
+     finish your turn and wait while Nomi and the user remain free to work on other tasks. When the background task \
+     finishes, it automatically spawns Nomi with the result so Nomi can review it and follow up.";
+
 /// Added to every agent's system prompt: how to offer next steps as buttons when it's done
 /// (see `suggestions::split_suggestions`).
 pub const FOLLOW_UP_SUGGESTIONS: &str = "When you've finished what was asked (not when you're asking a question or \

@@ -255,6 +255,23 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
         stopped_types.push(target.clone());
     }
 
+    let bg_tasks: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "UPDATE background_tasks SET status = 'cancelled', completed_at = now(), error = 'Stopped by the user' \
+         WHERE user_id = $1 AND status IN ('pending', 'running') \
+           AND ($2::uuid IS NULL OR session_id = $2) \
+           AND ($3::text IS NULL OR agent_type = $3) \
+         RETURNING id, session_id, agent_type",
+    )
+    .bind(request.user_id)
+    .bind(session_filter)
+    .bind(&agent_filter)
+    .fetch_all(&mut *conn)
+    .await?;
+    for (_, session_id, agent_type) in &bg_tasks {
+        touched_sessions.insert(*session_id);
+        stopped_types.push(agent_type.clone());
+    }
+
     let mut dropped_messages = 0;
     if agent_filter.is_none() {
         // A turn in flight with no agent session of its own is Nomi (the default agent) at work.

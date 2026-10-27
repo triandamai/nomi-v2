@@ -54,17 +54,18 @@ pub async fn crew_board(conn: &mut sqlx::PgConnection, session_id: uuid::Uuid, m
     )
     .bind(session_id)
     .bind(me)
-    .fetch_all(conn)
+    .fetch_all(&mut *conn)
     .await
     .ok()?;
-    if rows.is_empty() {
+    let bg_rows = crate::background::fetch_background_board_rows(conn, session_id).await;
+    if rows.is_empty() && bg_rows.is_empty() {
         return None;
     }
     let clip = |text: &str, max: usize| -> String {
         let text = text.trim().replace('\n', " ");
         if text.chars().count() <= max { text } else { format!("{}…", text.chars().take(max).collect::<String>()) }
     };
-    let mut lines = Vec::with_capacity(rows.len());
+    let mut lines = Vec::with_capacity(rows.len() + bg_rows.len());
     for (agent, task, status, result, phase, ago) in rows {
         let who = display_name_for(&agent);
         let minutes = (ago / 60).max(0);
@@ -80,6 +81,7 @@ pub async fn crew_board(conn: &mut sqlx::PgConnection, session_id: uuid::Uuid, m
         };
         lines.push(line);
     }
+    lines.extend(crate::background::format_background_board_lines(&bg_rows));
     if lines.is_empty() {
         return None;
     }
