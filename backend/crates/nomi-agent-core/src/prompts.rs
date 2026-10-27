@@ -230,3 +230,8 @@ pub const SPEAK_TOOL_DESCRIPTION: &str = "Say something out loud in Nomi's voice
 pub const SPEAK_TOOL_DONE: &str = "Said it aloud; the recording is in the chat and is your reply. End your turn without \
      writing anything, unless something really has to be in writing too.";
 
+
+/// Added as the person's turn when the chat's newest message is the crew's (a progress note or a
+/// question between agents posted after the person wrote): every request must end on the
+/// person's side, and some providers (Gemini) refuse one that doesn't.
+pub const ANSWER_THE_PERSON_NOTE: &str = "(The person's latest message above is still waiting for your answer.)";
