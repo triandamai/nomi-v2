@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(relay["env"]["RELAY_ENV"], "dev");
         assert_eq!(relay["env"]["RELAY_DATABASE_URL"], json!({ "database": "url" }));
         assert_eq!(relay["env"]["RELAY_POSTGREST_URL"], "http://postgrest:3000");
-        assert_eq!(relay["env"]["RELAY_CONTROL_KEY"], json!({ "secret": "RELAY_CONTROL_KEY" }));
+        assert_eq!(relay["env"]["RELAY_CONTROL_KEY"], json!({ "secret": "DEV_RELAY_CONTROL_KEY" }));
         assert!(relay["env"].get("RELAY_FUNCTIONS_URL").is_none());
         let postgrest = &services[1];
         assert_eq!(postgrest["kind"], "worker");
