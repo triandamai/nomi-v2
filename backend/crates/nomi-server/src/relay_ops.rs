@@ -335,6 +335,16 @@ impl ServerRelayOps {
         self.config().await.ok_or_else(|| NOT_SET_UP.to_string())
     }
 
+    /// The Relay for this project's `env`: its own when it has one, else the shared one.
+    async fn config_for(&self, project_id: Uuid, env: RelayEnv) -> Result<RelayConfig, String> {
+        let shared = self.config().await;
+        let settings_key = match &self.connection {
+            Connection::Stored { settings_key, .. } => settings_key.as_ref(),
+            Connection::Fixed(_) => None,
+        };
+        crate::project_relays::config_for(&self.pool, settings_key, shared, project_id, env.as_str()).await?.ok_or_else(|| NOT_SET_UP.to_string())
+    }
+
     /// Anyone who can open the project works on `dev`; `production`, read or changed, is its admins'.
     async fn check_access(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<(), String> {
         match env {
@@ -379,7 +389,7 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn apply_migrations(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         let answer = relay.apply_migrations(project_id, env.as_str(), &source_files(files)).await.map_err(|e| message(relay_error(e)))?;
@@ -396,7 +406,7 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn describe_backend(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         let mut schema = relay.describe(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))?;
@@ -408,7 +418,7 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn deploy_functions(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile], settings: &Value) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         let answer = relay.deploy_functions(project_id, env.as_str(), &source_files(files), settings).await.map_err(|e| message(relay_error(e)))?;
@@ -416,14 +426,14 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn types(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         relay.types(project_id, env.as_str()).await.map_err(|e| message(relay_error(e)))
     }
 
     async fn apply_auth(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, auth: &Value) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         relay.put_auth(project_id, env.as_str(), auth).await.map_err(|e| message(relay_error(e)))?;
@@ -432,7 +442,7 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn apply_storage(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, storage: &Value) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         relay.put_storage(project_id, env.as_str(), storage).await.map_err(|e| message(relay_error(e)))?;
@@ -440,7 +450,7 @@ impl RelayOps for ServerRelayOps {
     }
 
     async fn apply_realtime(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, tables: &Value) -> Result<String, String> {
-        let config = self.require_config().await?;
+        let config = self.config_for(project_id, env).await?;
         let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, env).await?;
         relay.put_realtime(project_id, env.as_str(), tables).await.map_err(|e| message(relay_error(e)))?;

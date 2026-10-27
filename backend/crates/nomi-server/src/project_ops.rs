@@ -99,12 +99,13 @@ impl ServerProjectOps {
 
     /// Relay, when the project keeps its data there: Iris reads it through Relay as the
     /// project's owner instead of Shipyard's Postgres.
-    async fn relay_for(&self, project_id: Uuid) -> Result<Option<RelayConfig>, String> {
+    async fn relay_for(&self, project_id: Uuid, env: &str) -> Result<Option<RelayConfig>, String> {
         if !crate::relay_ops::on_relay(&self.pool, project_id).await.map_err(message)? {
             return Ok(None);
         }
-        crate::relay_connection::load_or(&self.pool, self.relay_settings_key.as_ref(), RelayConfig::from_env())
-            .await
+        let shared = crate::relay_connection::load_or(&self.pool, self.relay_settings_key.as_ref(), RelayConfig::from_env()).await;
+        crate::project_relays::config_for(&self.pool, self.relay_settings_key.as_ref(), shared, project_id, env)
+            .await?
             .map(Some)
             .ok_or_else(|| "this project is on Relay, and Relay isn't set up on this Nomi".to_string())
     }
@@ -191,7 +192,7 @@ impl ProjectOps for ServerProjectOps {
 
     async fn tables(&self, user_id: Uuid, project_id: Uuid, source: DataSource) -> Result<Vec<TableInfo>, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
-        if let Some(config) = self.relay_for(project_id).await? {
+        if let Some(config) = self.relay_for(project_id, relay_env(source)).await? {
             let schema = Relay::new(&self.http_client, &config).describe(project_id, relay_env(source)).await.map_err(|e| message(relay_error(e)))?;
             let names = schema.get("tables").and_then(Value::as_array).cloned().unwrap_or_default();
             return Ok(names
@@ -208,7 +209,7 @@ impl ProjectOps for ServerProjectOps {
     async fn query(&self, user_id: Uuid, project_id: Uuid, source: DataSource, sql: &str) -> Result<QueryRows, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
         let sql = sql.trim().trim_end_matches(';').trim();
-        if let Some(config) = self.relay_for(project_id).await? {
+        if let Some(config) = self.relay_for(project_id, relay_env(source)).await? {
             let result = Relay::new(&self.http_client, &config).query(project_id, relay_env(source), sql, true).await.map_err(|e| message(relay_error(e)))?;
             let field = |name: &str| result.get(name).cloned().unwrap_or_default();
             return Ok(QueryRows {

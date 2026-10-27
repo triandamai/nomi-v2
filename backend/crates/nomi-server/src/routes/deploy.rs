@@ -378,7 +378,7 @@ pub(crate) async fn start_publish(
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
     // A Relay project's production database gets its new migrations before the new code goes out.
-    let relay = crate::relay_connection::load(state.pool(), crate::relay_connection::settings_key_from_env().as_ref()).await;
+    let relay = crate::project_relays::for_request(state.pool(), crate::relay_connection::settings_key_from_env().as_ref(), project_id, "production").await?;
     if let Err(refused) = crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), relay.as_ref(), project_id, &files).await {
         // Koda answers in the chat; the admins may not be watching it.
         if agent.is_some() {
@@ -428,7 +428,7 @@ pub async fn rollback(
         .ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
     let target = target(&state, project_id).await?;
     // A Relay project's functions go back with the code; a failed check stops the rollback.
-    let relay = crate::relay_connection::load(state.pool(), crate::relay_connection::settings_key_from_env().as_ref()).await;
+    let relay = crate::project_relays::for_request(state.pool(), crate::relay_connection::settings_key_from_env().as_ref(), project_id, "production").await?;
     crate::relay_ops::functions_on_rollback(state.pool(), state.http_client(), relay.as_ref(), project_id, &environment, &source).await?;
     let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
     let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub, None).await?;

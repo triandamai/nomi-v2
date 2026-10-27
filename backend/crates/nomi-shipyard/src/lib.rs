@@ -444,6 +444,19 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::PUT, &format!("{}/secrets/{}", Self::app_path(org, app), seg(name)), Some(body)).await
     }
 
+    /// Has Shipyard make a secret's value once, for one environment (`kind`: `hex32`, `base64_32`,
+    /// `uuid` or `password`). Nomi never reads it back; services bind it by name.
+    pub async fn generate_secret(&self, org: &str, app: &str, name: &str, kind: &str, environment: &str) -> Result<Value, ShipyardError> {
+        let body = json!({ "generate": kind, "environment": environment });
+        self.call(reqwest::Method::PUT, &format!("{}/secrets/{}", Self::app_path(org, app), seg(name)), Some(body)).await
+    }
+
+    /// Sets how many replicas every service of the environment runs; 0 stops them all and keeps
+    /// their volumes (a sleeping development backend), 1 starts them again.
+    pub async fn scale_env(&self, org: &str, app: &str, env: &str, replicas: u32) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::PATCH, &format!("{}/scale", Self::env_path(org, app, env)), Some(json!({ "replicas": replicas }))).await
+    }
+
     pub async fn delete_secret(&self, org: &str, app: &str, name: &str, environment: Option<&str>) -> Result<Value, ShipyardError> {
         let mut path = format!("{}/secrets/{}", Self::app_path(org, app), seg(name));
         if let Some(environment) = environment {
@@ -555,6 +568,36 @@ mod tests {
         let failure = Shipyard::new(&http, &config).deployment_failure("org-1", "todo", "production", "d1").await.unwrap().unwrap();
         assert_eq!(failure.phase, "build");
         assert_eq!(failure.tail, vec!["error during build"]);
+    }
+
+    #[tokio::test]
+    async fn a_generated_secret_is_asked_for_by_kind_and_environment() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/orgs/org-1/apps/todo-backend/secrets/RELAY_ENCRYPTION_KEY"))
+            .and(wiremock::matchers::body_json(json!({ "generate": "hex32", "environment": "dev" })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "ref": "sec_9" }, "error": null })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        Shipyard::new(&http, &config).generate_secret("org-1", "todo-backend", "RELAY_ENCRYPTION_KEY", "hex32", "dev").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn scaling_an_environment_sends_the_replica_count() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/orgs/org-1/apps/todo-backend/envs/dev/scale"))
+            .and(wiremock::matchers::body_json(json!({ "replicas": 0 })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "replicas": 0 }, "error": null })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        Shipyard::new(&http, &config).scale_env("org-1", "todo-backend", "dev", 0).await.unwrap();
     }
 
     #[tokio::test]
