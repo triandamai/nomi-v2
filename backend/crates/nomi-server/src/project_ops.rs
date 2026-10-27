@@ -231,11 +231,7 @@ impl ProjectOps for ServerProjectOps {
             .service_logs(&target.org_key(), &shipyard_app, shipyard_env, service, tail, None)
             .await
             .map_err(|e| message(shipyard_error(e)))?;
-        Ok(logs
-            .get("lines")
-            .and_then(serde_json::Value::as_array)
-            .map(|lines| lines.iter().filter_map(|l| l.as_str().map(str::to_string)).collect())
-            .unwrap_or_default())
+        Ok(nomi_shipyard::log_lines(&logs))
     }
 
     async fn tables(&self, user_id: Uuid, project_id: Uuid, source: DataSource) -> Result<Vec<TableInfo>, String> {

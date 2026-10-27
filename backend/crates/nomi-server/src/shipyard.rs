@@ -294,8 +294,7 @@ async fn publish_failure(pool: &PgPool, client: &Shipyard<'_>, project_id: Uuid,
             .service_logs(&target.org_key(), app, env, &service, FAILURE_RUNTIME_LOG_LINES, None)
             .await
             .ok()
-            .and_then(|logs| logs.get("lines").and_then(Value::as_array).cloned())
-            .map(|lines| lines.iter().filter_map(|l| l.as_str().map(str::to_string)).collect())
+            .map(|logs| nomi_shipyard::log_lines(&logs))
             .unwrap_or_default()
     } else {
         Vec::new()
@@ -420,6 +419,13 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
                 notify_admins(pool, project_id, "resource_alert", &format!("{metric} {value}")).await;
             }
         }
+        "service.error_rate_alert" => {
+            let count = |key: &str| event.data.get(key).and_then(Value::as_u64).unwrap_or_default();
+            let rate = event.data.get("error_rate").and_then(Value::as_f64).map(|v| format!("{v:.0}%")).unwrap_or_default();
+            if !alerted_recently(pool, project_id, &event.kind, &event.id).await? {
+                notify_admins(pool, project_id, "error_rate_alert", &format!("{} of {} ({rate})", count("errors_5xx"), count("requests"))).await;
+            }
+        }
         _ => {}
     }
     if !event.kind.starts_with("publish.") {
@@ -468,6 +474,7 @@ pub(crate) async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, d
             "backend_failed" => ("deploy.publish_failed_title", "deploy.backend_failed_body"),
             "backend_setup_failed" => ("deploy.backend_setup_failed_title", "deploy.backend_setup_failed_body"),
             "crashed" => ("deploy.crashed_title", "deploy.crashed_body"),
+            "error_rate_alert" => ("deploy.error_rate_title", "deploy.error_rate_body"),
             _ => ("deploy.resource_title", "deploy.resource_body"),
         };
         let title = locale.tf(title_key, &[("name", &name)]);

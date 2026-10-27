@@ -473,6 +473,26 @@ impl<'a> Shipyard<'a> {
 
 /// A Shipyard app slug for a project: its name in `a-z0-9-` and a piece of its id, so two
 /// projects with the same name don't collide (1–63 chars, no leading or trailing `-`).
+/// A service's runtime log (`GET …/services/{service}/logs`) as text, one line each. Shipyard sends
+/// `{ at, level, message, service }` per line; an older one sent plain strings. The level stays
+/// in the line as a word, so a line can still be told apart by it.
+pub fn log_lines(logs: &Value) -> Vec<String> {
+    logs.get("lines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|line| match line {
+            Value::String(text) => Some(text.clone()),
+            Value::Object(fields) => {
+                let message = fields.get("message").and_then(Value::as_str)?;
+                let prefix: Vec<&str> = ["at", "level"].iter().filter_map(|k| fields.get(*k).and_then(Value::as_str)).collect();
+                Some(if prefix.is_empty() { message.to_string() } else { format!("{} {message}", prefix.join(" ")) })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn app_slug(name: &str, project_id: &str) -> String {
     let mut base = String::new();
     for c in name.to_lowercase().chars() {
@@ -494,6 +514,25 @@ pub fn app_slug(name: &str, project_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn log_lines_reads_structured_and_plain_lines() {
+        let logs = json!({ "service": "web", "lines": [
+            { "at": "2026-10-28T01:02:03Z", "level": "error", "message": "connect ECONNREFUSED", "service": "web" },
+            { "at": "2026-10-28T01:02:04Z", "level": "info", "message": "listening on 3000" },
+            "a line from an older Shipyard",
+            { "level": "warn" }
+        ] });
+        assert_eq!(
+            log_lines(&logs),
+            vec![
+                "2026-10-28T01:02:03Z error connect ECONNREFUSED".to_string(),
+                "2026-10-28T01:02:04Z info listening on 3000".to_string(),
+                "a line from an older Shipyard".to_string(),
+            ]
+        );
+        assert!(log_lines(&json!({})).is_empty());
+    }
+
     use super::*;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
