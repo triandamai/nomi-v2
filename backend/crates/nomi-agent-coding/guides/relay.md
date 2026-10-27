@@ -245,3 +245,19 @@ const admin = createClient(env.NOMI_URL, env.NOMI_SERVICE_KEY);
 
 The service key bypasses row-level security: use it only for what a user must not be able to
 do themselves, and never put it in a `PUBLIC_` variable.
+
+## Publishing
+
+Publishing goes in this order: sign-in settings, buckets, then production's new migrations, live
+tables and functions, and only then the new code. If Relay refuses a migration, the publish stops
+before anything changes: the version that was live keeps running, and Nomi says the file and line
+in the chat and notifies the project's admins. Fix it with a new migration (never edit one that
+production already has), then publish again. When the publish goes live, Nomi posts the address
+in the chat and notifies the admins too.
+
+## Seeing the data
+
+The project's admins see the backend in the project's **Relay** sheet: each environment's tables
+with their columns and policies, buckets, live tables, functions and sign-in, and a SQL console
+that runs as the project's owner. Iris reads the same tables (reads only) when someone asks
+what's in them. Neither needs anything from you: don't build an admin page just to look at data.

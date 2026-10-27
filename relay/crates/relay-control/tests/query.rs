@@ -87,3 +87,17 @@ async fn one_statement_at_a_time_and_big_reads_are_cut(pool: PgPool) {
     assert!(many.truncated);
     assert_eq!(many.rows.len(), relay_control::query::MAX_ROWS);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_project_sees_only_its_own_signed_in_users(pool: PgPool) {
+    let relay = relay(&pool);
+    let mine = project(&relay, "Mine").await;
+    let theirs = project(&relay, "Theirs").await;
+    for (project, email) in [(mine, "ana@mine.test"), (theirs, "bo@theirs.test")] {
+        sqlx::query("INSERT INTO nomi.users (project_id, email) VALUES ($1, $2)").bind(project).bind(email).execute(&pool).await.unwrap();
+    }
+
+    let users = run(&relay, mine, Env::Dev, "select email from nomi.users", Access::ReadOnly).await.unwrap();
+
+    assert_eq!(users.rows, vec![vec![json!("ana@mine.test")]]);
+}
