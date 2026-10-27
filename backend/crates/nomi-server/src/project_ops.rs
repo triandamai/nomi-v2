@@ -39,6 +39,10 @@ pub(crate) trait ShipyardAccess {
     fn project_storage(&self) -> &ProjectStore;
     fn http_client(&self) -> &reqwest::Client;
     fn shipyard(&self) -> Option<&ShipyardConfig>;
+    /// The key that seals what Nomi keeps about projects' Relays; the environment's by default.
+    fn settings_key(&self) -> Option<[u8; 32]> {
+        crate::relay_connection::settings_key_from_env()
+    }
 }
 
 impl ShipyardAccess for crate::app::AppState {
@@ -53,6 +57,9 @@ impl ShipyardAccess for crate::app::AppState {
     }
     fn shipyard(&self) -> Option<&ShipyardConfig> {
         self.shipyard.as_ref()
+    }
+    fn settings_key(&self) -> Option<[u8; 32]> {
+        Some(self.settings_key)
     }
 }
 
@@ -77,6 +84,9 @@ impl ShipyardAccess for ServerProjectOps {
     }
     fn shipyard(&self) -> Option<&ShipyardConfig> {
         self.shipyard.as_ref()
+    }
+    fn settings_key(&self) -> Option<[u8; 32]> {
+        self.relay_settings_key
     }
 }
 
@@ -119,7 +129,13 @@ fn relay_env(source: DataSource) -> &'static str {
 impl ProjectOps for ServerProjectOps {
     async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str, agent: Option<&str>) -> Result<String, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
-        let row = crate::routes::deploy::start_publish(self, project_id, user_id, environment, agent).await.map_err(message)?;
+        let row = match crate::routes::deploy::begin_publish(self, project_id, user_id, environment, agent).await.map_err(message)? {
+            crate::routes::deploy::Started::Publishing(row) => row,
+            // Not started yet: the app's own database is made first, and the publish follows by itself.
+            crate::routes::deploy::Started::Preparing(note) => {
+                return Ok(format!("{note} Nomi posts in this chat when the app is live, or why it couldn't be. Don't publish again and don't give the person a link yet."));
+            }
+        };
         // Accepted isn't live: the address only works once Shipyard says the publish succeeded,
         // and Nomi posts it in the chat then (or why it failed).
         Ok(format!(

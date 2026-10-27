@@ -179,7 +179,7 @@ pub struct DeployOverview {
 }
 
 /// The project's files, as Shipyard gets them (without excluded paths).
-async fn project_files(state: &impl ShipyardAccess, project_id: Uuid) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
+pub(crate) async fn project_files(state: &impl ShipyardAccess, project_id: Uuid) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
     let paths: Vec<String> = sqlx::query_scalar("SELECT path FROM project_files WHERE project_id = $1 ORDER BY path")
         .bind(project_id)
         .fetch_all(state.pool())
@@ -335,11 +335,39 @@ pub async fn publish(
     AuthClaims(claims): AuthClaims,
     Path(project_id): Path<Uuid>,
     body: Option<Json<PublishRequest>>,
-) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
+) -> Result<(StatusCode, Json<Value>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let environment = body.and_then(|Json(b)| b.environment).unwrap_or_else(|| DEFAULT_ENV.to_string());
-    let row = start_publish(&state, project_id, claims.sub, &environment, None).await?;
-    Ok((StatusCode::ACCEPTED, Json(row)))
+    let body = match begin_publish(&state, project_id, claims.sub, &environment, None).await? {
+        Started::Publishing(row) => serde_json::to_value(row).map_err(internal("failed to describe the publish"))?,
+        Started::Preparing(message) => json!({ "preparing": true, "message": message }),
+    };
+    Ok((StatusCode::ACCEPTED, Json(body)))
+}
+
+/// What starting a publish came to.
+pub(crate) enum Started {
+    Publishing(PublishRow),
+    /// The app's own backend is being set up first; the publish follows by itself.
+    Preparing(String),
+}
+
+/// `start_publish`, after making the app's own production backend when it's the first publish
+/// of a project with a Relay of its own.
+pub(crate) async fn begin_publish(
+    state: &impl ShipyardAccess,
+    project_id: Uuid,
+    user_id: Uuid,
+    environment: &str,
+    agent: Option<&str>,
+) -> Result<Started, ApiError> {
+    if let Some(message) = crate::relay_backend::prepare_for_publish(state, project_id, user_id, environment, agent)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+    {
+        return Ok(Started::Preparing(message));
+    }
+    start_publish(state, project_id, user_id, environment, agent).await.map(Started::Publishing)
 }
 
 /// Publishes the project's current files to `environment` as `user_id` (whose right to was
@@ -378,7 +406,7 @@ pub(crate) async fn start_publish(
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
     // A Relay project's production database gets its new migrations before the new code goes out.
-    let relay = crate::project_relays::for_request(state.pool(), crate::relay_connection::settings_key_from_env().as_ref(), project_id, "production").await?;
+    let relay = crate::project_relays::for_request(state.pool(), state.settings_key().as_ref(), project_id, "production").await?;
     if let Err(refused) = crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), relay.as_ref(), project_id, &files).await {
         // Koda answers in the chat; the admins may not be watching it.
         if agent.is_some() {
@@ -428,7 +456,7 @@ pub async fn rollback(
         .ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
     let target = target(&state, project_id).await?;
     // A Relay project's functions go back with the code; a failed check stops the rollback.
-    let relay = crate::project_relays::for_request(state.pool(), crate::relay_connection::settings_key_from_env().as_ref(), project_id, "production").await?;
+    let relay = crate::project_relays::for_request(state.pool(), state.settings_key().as_ref(), project_id, "production").await?;
     crate::relay_ops::functions_on_rollback(state.pool(), state.http_client(), relay.as_ref(), project_id, &environment, &source).await?;
     let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
     let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub, None).await?;

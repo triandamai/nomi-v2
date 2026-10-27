@@ -19,6 +19,9 @@ use uuid::Uuid;
 
 use crate::project_relays::{self, CREATING, FAILED, READY, SLEEPING, WAKING};
 
+use crate::project_ops::ShipyardAccess;
+use crate::relay_ops::{SECRET_ANON_KEY, SECRET_SERVICE_KEY, SECRET_URL};
+
 pub const DEV: &str = "dev";
 pub const PRODUCTION: &str = "production";
 
@@ -151,7 +154,25 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
     let relay = Relay::new(deps.http, &config);
     let settings = relay_settings(deps, &url, env).await.map_err(fail(STEP_SETUP))?;
     relay.save_settings(&settings).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
-    relay.ensure_backend(project_id, &target.name).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
+    let made = relay.ensure_backend(project_id, &target.name).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
+    if env == PRODUCTION {
+        // The published app finds its backend through these, bound by name on every publish.
+        let production = made.environment(PRODUCTION).ok_or_else(|| Failed { step: STEP_SETUP, message: "Relay answered without a production environment".to_string() })?;
+        let keys = [(SECRET_URL, &production.url), (SECRET_ANON_KEY, &production.anon_key), (SECRET_SERVICE_KEY, &production.service_key)];
+        for (name, value) in keys {
+            client.set_secret(&org, &app, name, Some(value), None).await.map_err(fail(STEP_SETUP))?;
+            sqlx::query(
+                "INSERT INTO project_secrets (project_id, name, updated_by) VALUES ($1, $2, $3) \
+                 ON CONFLICT (project_id, name) DO UPDATE SET updated_by = $3, updated_at = now()",
+            )
+            .bind(project_id)
+            .bind(name)
+            .bind(target.user_id)
+            .execute(deps.pool)
+            .await
+            .map_err(fail(STEP_SETUP))?;
+        }
+    }
     Ok(())
 }
 
@@ -350,3 +371,63 @@ pub async fn ensure_awake(deps: &Deps<'_>, project_id: Uuid) -> Result<(), Strin
         tokio::time::sleep(POLL_EVERY).await;
     }
 }
+
+/// A backend still marked `creating` after this long was left by a Nomi that stopped mid-job.
+const STALE_AFTER_SECS: i64 = 20 * 60;
+
+/// Before a project's first publish to production: when the project has its own development
+/// backend and no production one yet, sets the production backend up first, then publishes by
+/// itself when it's ready. Answers what to tell the person when it did; `None` when the publish
+/// can go ahead now (no Relay of its own, or its production backend is ready).
+pub(crate) async fn prepare_for_publish(
+    state: &impl ShipyardAccess,
+    project_id: Uuid,
+    user_id: Uuid,
+    environment: &str,
+    agent: Option<&str>,
+) -> Result<Option<String>, String> {
+    if environment != PRODUCTION {
+        return Ok(None);
+    }
+    let pool = state.pool();
+    let Some(settings_key) = state.settings_key() else { return Ok(None) };
+    if project_relays::stack(pool, project_id, DEV).await?.is_none() {
+        return Ok(None);
+    }
+    let fresh_creating = |stack: &project_relays::Stack| stack.state == CREATING;
+    if let Some(stack) = project_relays::stack(pool, project_id, PRODUCTION).await? {
+        if stack.state == READY {
+            return Ok(None);
+        }
+        let age: Option<i64> = sqlx::query_scalar("SELECT extract(epoch FROM now() - updated_at)::bigint FROM project_relays WHERE project_id = $1 AND env = $2")
+            .bind(project_id)
+            .bind(PRODUCTION)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        if fresh_creating(&stack) && age.unwrap_or(i64::MAX) < STALE_AFTER_SECS {
+            return Ok(Some(WAITING.to_string()));
+        }
+    }
+    let handle = crate::relay_ops::ShipyardHandle::of(state).ok_or_else(|| "publishing isn't set up on this Nomi".to_string())?;
+    let files = crate::routes::deploy::project_files(state, project_id).await.map_err(|(_, message)| message)?;
+    let has_functions = files.iter().any(|(path, _)| path.starts_with("nomi/functions/"));
+    project_relays::begin(pool, &settings_key, project_id, PRODUCTION, &new_control_key(), RELAY_STACK_VERSION).await?;
+    let agent = agent.map(str::to_string);
+    tokio::spawn(async move {
+        let deps = Deps { pool: handle.pool(), http: handle.http_client(), shipyard: &handle.config, settings_key: &settings_key };
+        run(&deps, project_id, PRODUCTION, has_functions).await;
+        let ready = matches!(project_relays::stack(deps.pool, project_id, PRODUCTION).await, Ok(Some(stack)) if stack.state == READY);
+        if !ready {
+            return; // `run` already said why.
+        }
+        if let Err((_, message)) = crate::routes::deploy::start_publish(&handle, project_id, user_id, PRODUCTION, agent.as_deref()).await {
+            tracing::warn!(%project_id, %message, "the publish after the backend was set up didn't start");
+            crate::shipyard::notify_admins(deps.pool, project_id, "backend_failed", &message).await;
+        }
+    });
+    Ok(Some(PREPARING.to_string()))
+}
+
+const PREPARING: &str = "Setting up this app's own database and backend first, which takes a few minutes. Publishing starts by itself when it's ready.";
+const WAITING: &str = "This app's backend is still being set up. Publishing starts by itself when it's ready.";

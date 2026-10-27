@@ -246,6 +246,21 @@ const admin = createClient(env.NOMI_URL, env.NOMI_SERVICE_KEY);
 The service key bypasses row-level security: use it only for what a user must not be able to
 do themselves, and never put it in a `PUBLIC_` variable.
 
+## Your backend: its own database and Relay
+
+Every project has its own development database and Relay. Nomi makes them in the background when
+the project is made, so the first backend tool can answer "still being set up" for a minute:
+wait and try again rather than working around it. If setup fails, the person sees why in the
+project's Relay sheet and can try again; tell them, and don't retry in a loop. After an hour
+nobody uses it, the development backend sleeps; your next backend tool wakes it and waits, so a
+call can take a few seconds longer than usual.
+
+The first publish makes the app's own production database and Relay the same way, then deploys
+the app, so it takes a few minutes longer than later ones. `publish_project` then answers that
+publishing starts by itself: don't publish again and don't give a link; Nomi posts in the chat
+when the app is live or why it couldn't be. Development data never goes to production: production
+starts empty with the schema from the migrations.
+
 ## Publishing
 
 Publishing goes in this order: sign-in settings, buckets, then production's new migrations, live

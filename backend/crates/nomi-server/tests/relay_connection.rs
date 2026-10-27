@@ -1,8 +1,8 @@
-//! How Nomi reaches Relay: set in the admin and kept encrypted, with the environment as the
-//! fallback for setups that predate the admin page.
+//! The shared Relay older projects still use: a saved connection, kept encrypted, with the
+//! environment as the fallback.
 use nomi_agent_core::relay_ops::RelayOps;
 use nomi_relay_client::RelayConfig;
-use nomi_server::relay_connection::{load_or, save, view, Source};
+use nomi_server::relay_connection::{load_or, save};
 use nomi_server::relay_ops::ServerRelayOps;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -18,10 +18,9 @@ fn from_env() -> Option<RelayConfig> {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn a_connection_saved_in_the_admin_wins_over_the_environment_and_is_sealed(pool: PgPool) {
+async fn a_saved_connection_wins_over_the_environment_and_is_sealed(pool: PgPool) {
     let user = admin(&pool).await;
     assert_eq!(load_or(&pool, Some(&KEY), from_env()).await.unwrap().control_url, "http://relay-from-env");
-    assert_eq!(view(&pool, Some(&KEY), from_env().as_ref()).await.source, Source::Environment);
 
     save(&pool, &KEY, "https://relay.example/", Some("stored-key"), user).await.unwrap();
     let config = load_or(&pool, Some(&KEY), from_env()).await.unwrap();
@@ -29,12 +28,6 @@ async fn a_connection_saved_in_the_admin_wins_over_the_environment_and_is_sealed
     assert_eq!(config.control_key, "stored-key");
     let sealed: Vec<u8> = sqlx::query_scalar("SELECT control_key_encrypted FROM relay_connection").fetch_one(&pool).await.unwrap();
     assert!(!String::from_utf8_lossy(&sealed).contains("stored-key"));
-
-    let shown = view(&pool, Some(&KEY), from_env().as_ref()).await;
-    assert_eq!(shown.source, Source::Admin);
-    assert_eq!(shown.control_url, "https://relay.example");
-    assert!(shown.key_set);
-    assert!(!serde_json::to_string(&shown).unwrap().contains("stored-key"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
