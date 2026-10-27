@@ -36,6 +36,12 @@ pub async fn overview(
         return Ok(Json(json!({ "backend": "drizzle" })));
     }
     let env = relay_env(query.source == Source::Production);
+    // Its own backend is still being made, is waking, or failed: say so, with the step.
+    if let Some(stack) = crate::project_relays::stack(&state.pool, project_id, env).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))? {
+        if stack.state != crate::project_relays::READY {
+            return Ok(Json(json!({ "backend": "relay", "setup": { "state": stack.state, "step": stack.step, "error": stack.error } })));
+        }
+    }
     let config = connection(&state, project_id, env).await?;
     relay_overview(&state.http_client, &config, project_id, env).await.map(Json)
 }
@@ -70,4 +76,29 @@ pub async fn run_query(
 pub async fn preview(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<Json<PreviewAccess>, ApiError> {
     let config = crate::project_relays::for_request(&state.pool, Some(&state.settings_key), project_id, "dev").await?;
     preview_access(&state.pool, &state.http_client, config.as_ref(), project_id, claims.sub).await.map(Json)
+}
+
+/// `POST /api/projects/:id/relay/retry`: sets the project's backend up again after it failed,
+/// from the step it stopped at. Answers 202; the Relay sheet shows how it goes.
+pub async fn retry(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<SourceQuery>,
+) -> Result<StatusCode, ApiError> {
+    require_admin(&state.pool, project_id, claims.sub).await?;
+    let env = relay_env(query.source == Source::Production);
+    let stack = crate::project_relays::stack(&state.pool, project_id, env)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+        .ok_or((StatusCode::NOT_FOUND, "this project's backend isn't one Nomi sets up".to_string()))?;
+    if stack.state != crate::project_relays::FAILED {
+        return Err((StatusCode::CONFLICT, "this project's backend isn't waiting to be tried again".to_string()));
+    }
+    let shipyard = state.shipyard.clone().ok_or((StatusCode::SERVICE_UNAVAILABLE, "publishing isn't set up on this Nomi".to_string()))?;
+    tracing::info!(%project_id, user = %claims.sub, env, "a project's backend is being set up again");
+    crate::relay_backend::start(state.pool.clone(), state.http_client.clone(), shipyard, state.settings_key, project_id, env, true)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(StatusCode::ACCEPTED)
 }

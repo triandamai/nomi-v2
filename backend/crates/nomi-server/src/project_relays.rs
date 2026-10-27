@@ -134,3 +134,24 @@ pub async fn set_url(pool: &PgPool, project_id: Uuid, env: &str, url: &str) -> R
         .map_err(|e| format!("couldn't update the project's backend: {e}"))?;
     Ok(())
 }
+
+/// Whether this Relay's secrets have been made on Shipyard.
+pub async fn secrets_made(pool: &PgPool, project_id: Uuid, env: &str) -> Result<bool, String> {
+    sqlx::query_scalar("SELECT secrets_made FROM project_relays WHERE project_id = $1 AND env = $2")
+        .bind(project_id)
+        .bind(env)
+        .fetch_optional(pool)
+        .await
+        .map(|made| made.unwrap_or(false))
+        .map_err(|e| format!("couldn't read the project's backend: {e}"))
+}
+
+pub async fn mark_secrets_made(pool: &PgPool, project_id: Uuid, env: &str) -> Result<(), String> {
+    sqlx::query("UPDATE project_relays SET secrets_made = true, updated_at = now() WHERE project_id = $1 AND env = $2")
+        .bind(project_id)
+        .bind(env)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("couldn't update the project's backend: {e}"))?;
+    Ok(())
+}

@@ -164,6 +164,8 @@ deploy:
   published_body: "Published. It's live at %{detail}."
   publish_failed_title: "%{name} couldn't be published"
   publish_failed_body: "Shipyard stopped the publish: %{detail}. Open the project's deployments to see the log, or ask Koda to fix it."
+  backend_setup_failed_title: "%{name}'s backend couldn't be set up"
+  backend_setup_failed_body: "%{detail} Open the project's Relay sheet and choose Try again."
   backend_failed_body: "Relay refused the database changes: %{detail}. The version that was live keeps running; ask Koda to fix it."
   crashed_title: "%{name} crashed"
   crashed_body: "The published app stopped unexpectedly (exit code %{detail}). Shipyard restarts it; the runtime log shows why."

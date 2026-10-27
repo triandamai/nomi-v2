@@ -2417,5 +2417,11 @@
 	"landing_work_you_next": "Pasang anggaran makan Rp 1.000.000 untuk bulan depan, dan pindahkan rapat Jumat saya ke jam 10.",
 	"landing_work_dana_budget": "Anggaran sudah dipasang. Saya kabari kalau hampir habis.",
 	"landing_work_tara": "Sudah dipindah ke Jumat jam 10.00, dan semua undangan sudah tahu.",
-	"landing_work_result": "Dua urusan beres dalam satu chat"
+	"landing_work_result": "Dua urusan beres dalam satu chat",
+	"relay_setup_creating": "Sedang menyiapkan backend proyek ini…",
+	"relay_setup_waking": "Sedang membangunkan backend…",
+	"relay_setup_now": "Sekarang: {step}",
+	"relay_setup_failed": "Backend gagal disiapkan",
+	"relay_setup_failed_at": "Berhenti saat {step}.",
+	"relay_try_again": "Coba lagi"
 }
