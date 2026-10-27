@@ -4,7 +4,7 @@
 
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
-use sqlx::Postgres;
+use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 
 use nomi_agent_core::relay_ops::{
@@ -14,6 +14,7 @@ use nomi_agent_core::relay_ops::{
 use nomi_llm::{LlmMessage, ToolDefinition};
 use nomi_storage::ProjectStore;
 
+use nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY;
 use nomi_agent_core::ToolOutcome;
 
 use crate::brief::project_for;
@@ -146,6 +147,11 @@ pub(crate) async fn after_write(
     if backend_of(conn, project_id).await.as_deref() != Some(BACKEND_RELAY) {
         return outcome;
     }
+    // Nothing to send it to yet: `sync_to_dev` sends it all once the backend is ready.
+    if relay.backend_starting(project_id).await {
+        outcome.display_text = format!("{}\n\n{BACKEND_APPLIES_WHEN_READY}", outcome.display_text);
+        return outcome;
+    }
     let mut said = Vec::new();
     if migrations {
         match apply_to_dev(conn, storage, relay, user_id, project_id).await {
@@ -228,6 +234,25 @@ async fn backend_to_dev(storage: &ProjectStore, relay: &dyn RelayOps, user_id: U
     said
 }
 
+/// Sends everything under `nomi/` to the project's dev backend, in the order Koda's writes would
+/// have: the migrations (and the types file), `backend.json`'s blocks, then the functions. For a
+/// backend that was still being set up while Koda wrote them. Answers what each part said.
+pub async fn sync_to_dev(pool: &PgPool, storage: &ProjectStore, relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> Result<Vec<String>, String> {
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    let mut said = Vec::new();
+    if !migration_files(&mut conn, storage, project_id).await?.is_empty() {
+        said.push(match apply_to_dev(&mut conn, storage, relay, user_id, project_id).await {
+            Ok(applied) => format!("Relay dev: {applied}"),
+            Err(e) => format!("Relay dev couldn't apply the migrations: {e}"),
+        });
+    }
+    said.extend(backend_to_dev(storage, relay, user_id, project_id).await);
+    if !function_files(&mut conn, storage, project_id).await?.is_empty() {
+        said.push(block_outcome(FUNCTIONS_BLOCK, deploy_to_dev(&mut conn, storage, relay, user_id, project_id).await));
+    }
+    Ok(said)
+}
+
 /// Runs `apply_migrations` or `describe_backend` for a project the person can open, on Relay.
 pub(crate) async fn execute(
     conn: &mut PoolConnection<Postgres>,
@@ -243,6 +268,9 @@ pub(crate) async fn execute(
         return Err(format!(
             "This project isn't on Relay (its backend is {backend}): its database code lives in the app. Don't call {name}."
         ));
+    }
+    if (name == APPLY_MIGRATIONS_TOOL_NAME || name == DEPLOY_FUNCTIONS_TOOL_NAME) && relay.backend_starting(project_id).await {
+        return Ok(BACKEND_APPLIES_WHEN_READY.to_string());
     }
     match name {
         APPLY_MIGRATIONS_TOOL_NAME => apply_to_dev(conn, storage, relay, user_id, project_id).await,

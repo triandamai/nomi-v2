@@ -88,6 +88,12 @@ pub trait RelayOps: Send + Sync {
     /// Whether this Nomi has Relay at all. Without it, projects are built on Drizzle.
     async fn is_available(&self) -> bool;
 
+    /// Whether the project's own development backend is still being set up. What's written for
+    /// it meanwhile is applied to it by Nomi the moment it's ready, so nothing has to wait.
+    async fn backend_starting(&self, _project_id: Uuid) -> bool {
+        false
+    }
+
     /// Makes the project's Relay backend if it doesn't have one yet, as `user_id` (who must be
     /// able to open the project), and answers Relay's id for it.
     async fn ensure_backend(&self, user_id: Uuid, project_id: Uuid) -> Result<Uuid, String>;

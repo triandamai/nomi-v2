@@ -12,6 +12,7 @@ use nomi_relay_client::{Relay, RelayConfig, RelayError};
 use nomi_settings::config;
 use nomi_shipyard::manifest::{self, Images, BACKEND_SUFFIX, DEFAULT_POSTGREST_IMAGE, DEFAULT_RELAY_VERSION, secret_name, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
 use nomi_shipyard::{Shipyard, ShipyardConfig};
+use nomi_storage::ProjectStore;
 use rand::RngCore;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -40,6 +41,9 @@ pub const DEV_IDLE_AFTER: Duration = Duration::from_secs(60 * 60);
 pub const IDLE_CHECK_EVERY: Duration = Duration::from_secs(5 * 60);
 /// How long a caller waits for a sleeping backend to wake before saying it's still waking.
 pub const BACKEND_READY_WAIT: Duration = Duration::from_secs(120);
+/// How long Koda's reads of a backend (its tables, its types) wait for a new one to finish being
+/// set up: writes don't wait at all, they're sent to it once it's ready.
+pub const BACKEND_SETUP_WAIT: Duration = Duration::from_secs(300);
 const STEP_WAKE: &str = "waking the backend";
 /// How much of an unexpected answer goes into an error.
 const MAX_DETAIL_CHARS: usize = 300;
@@ -121,14 +125,17 @@ pub fn backend_app(app: &str) -> String {
 }
 
 /// Sets up the project's `env` Relay, recording where it is and how it went. On a failure the
-/// row says which step and why, and the project's admins are told. Safe to run again.
-pub async fn run(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: bool) {
+/// row says which step and why, and the project's admins are told. Safe to run again. Answers
+/// whether it's ready.
+pub async fn run(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: bool) -> bool {
     match set_up(deps, project_id, env, has_functions).await {
         Ok(()) => {
             if let Err(e) = project_relays::set_state(deps.pool, project_id, env, READY, None, None).await {
                 tracing::error!(error = %e, %project_id, env, "couldn't mark a backend ready");
+                return false;
             }
             tracing::info!(%project_id, env, "backend ready");
+            true
         }
         Err(Failed { step, message }) => {
             tracing::warn!(%project_id, env, step, %message, "a backend couldn't be set up");
@@ -136,6 +143,7 @@ pub async fn run(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: bo
                 tracing::error!(error = %e, %project_id, env, "couldn't record a backend failure");
             }
             crate::shipyard::notify_admins(deps.pool, project_id, "backend_setup_failed", &format!("It stopped while {step}: {message}.")).await;
+            false
         }
     }
 }
@@ -306,13 +314,46 @@ async fn relay_settings(deps: &Deps<'_>, url: &str, env: &str) -> Result<Value, 
 }
 
 /// Starts the job for the project's `env` Relay in the background: records it as being made first,
-/// so a call a moment later hears "still being set up" instead of reaching the shared Relay.
-pub async fn start(pool: PgPool, http: reqwest::Client, shipyard: ShipyardConfig, settings_key: [u8; 32], project_id: Uuid, env: &'static str, has_functions: bool) -> Result<(), String> {
+/// so a call a moment later hears "still being set up" instead of reaching the shared Relay. A
+/// development backend then gets what Koda wrote under `nomi/` while it was being made.
+#[allow(clippy::too_many_arguments)]
+pub async fn start(
+    pool: PgPool,
+    http: reqwest::Client,
+    shipyard: ShipyardConfig,
+    settings_key: [u8; 32],
+    project_storage: ProjectStore,
+    project_id: Uuid,
+    env: &'static str,
+    has_functions: bool,
+) -> Result<(), String> {
     project_relays::begin(&pool, &settings_key, project_id, env, &new_control_key(), DEFAULT_RELAY_VERSION).await?;
     tokio::spawn(async move {
-        run(&Deps { pool: &pool, http: &http, shipyard: &shipyard, settings_key: &settings_key }, project_id, env, has_functions).await;
+        let ready = run(&Deps { pool: &pool, http: &http, shipyard: &shipyard, settings_key: &settings_key }, project_id, env, has_functions).await;
+        if ready && env == DEV {
+            send_project_files(pool, http, shipyard, settings_key, project_storage, project_id).await;
+        }
     });
     Ok(())
+}
+
+/// Sends the project's `nomi/` (migrations, `backend.json`, functions) to its development backend,
+/// as its owner. What fails stays for Koda: his next write there applies the migrations again
+/// and says what's wrong.
+async fn send_project_files(pool: PgPool, http: reqwest::Client, shipyard: ShipyardConfig, settings_key: [u8; 32], project_storage: ProjectStore, project_id: Uuid) {
+    let owner: Option<Uuid> = match sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(&pool).await {
+        Ok(owner) => owner,
+        Err(e) => {
+            tracing::warn!(error = %e, %project_id, "couldn't read a project to send its files to its backend");
+            return;
+        }
+    };
+    let Some(owner) = owner else { return };
+    let ops = crate::relay_ops::ServerRelayOps::stored(pool.clone(), http, Some(settings_key), RelayConfig::from_env()).with_shipyard(project_storage.clone(), shipyard);
+    match nomi_agent_coding::relay::sync_to_dev(&pool, &project_storage, &ops, owner, project_id).await {
+        Ok(said) => tracing::info!(%project_id, said = %said.join(" | "), "sent the project's nomi/ files to its new backend"),
+        Err(e) => tracing::warn!(error = %e, %project_id, "couldn't send the project's nomi/ files to its new backend"),
+    }
 }
 
 /// The org and backend app a project's Relay lives in on Shipyard.
@@ -400,10 +441,15 @@ pub fn wake_in_background(pool: PgPool, http: reqwest::Client, shipyard: Shipyar
 /// (Koda's tools, the preview). `Ok` when it's ready
 /// or has no sleeping backend; the reason in words otherwise.
 pub async fn ensure_awake(deps: &Deps<'_>, project_id: Uuid) -> Result<(), String> {
+    wait_until_ready(deps, project_id, BACKEND_READY_WAIT).await
+}
+
+/// `ensure_awake`, waiting up to `wait`.
+pub async fn wait_until_ready(deps: &Deps<'_>, project_id: Uuid, wait: Duration) -> Result<(), String> {
     if project_relays::claim_wake(deps.pool, project_id, DEV).await? {
         wake(deps, project_id).await;
     }
-    let deadline = tokio::time::Instant::now() + BACKEND_READY_WAIT;
+    let deadline = tokio::time::Instant::now() + wait;
     loop {
         match project_relays::stack(deps.pool, project_id, DEV).await? {
             Some(stack) if stack.state == WAKING || stack.state == CREATING => {}

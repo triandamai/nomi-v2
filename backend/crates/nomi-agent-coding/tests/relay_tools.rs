@@ -48,12 +48,17 @@ struct FakeRelay {
     realtime: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
     deployed: Mutex<Vec<(RelayEnv, Vec<String>, serde_json::Value)>>,
     fails: bool,
+    /// The project's own backend is still being set up.
+    starting: bool,
 }
 
 #[async_trait]
 impl RelayOps for FakeRelay {
     async fn is_available(&self) -> bool {
         true
+    }
+    async fn backend_starting(&self, _: Uuid) -> bool {
+        self.starting
     }
     async fn ensure_backend(&self, _: Uuid, _: Uuid) -> Result<Uuid, String> {
         unimplemented!()
@@ -371,4 +376,65 @@ async fn koda_can_deploy_the_functions_himself(pool: PgPool) {
 
     assert!(said.display_text.contains("Deployed to dev"), "{}", said.display_text);
     assert_eq!(relay.deployed.lock().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writes_while_the_backend_is_being_set_up_are_kept_for_it_instead_of_failing(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay { starting: true, ..FakeRelay::default() });
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+
+    let said = write(&agent, &mut conn, &seeded, "nomi/migrations/0001_init.sql", "create table task (id int);").await;
+    assert!(said.contains(nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY), "{said}");
+    let said = write(&agent, &mut conn, &seeded, "nomi/backend.json", r#"{"realtime":["task"]}"#).await;
+    assert!(said.contains(nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY), "{said}");
+    let said = write(&agent, &mut conn, &seeded, "nomi/functions/place-order.ts", "export default () => 1;").await;
+    assert!(said.contains(nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY), "{said}");
+    assert!(!said.to_lowercase().contains("drizzle"), "{said}");
+
+    assert!(relay.applied.lock().unwrap().is_empty(), "nothing is sent to a backend that isn't there yet");
+    assert!(relay.realtime.lock().unwrap().is_empty());
+    assert!(relay.deployed.lock().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn applying_by_hand_while_the_backend_is_being_set_up_says_it_will_be_applied(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay { starting: true, ..FakeRelay::default() });
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+    write(&agent, &mut conn, &seeded, "nomi/migrations/0001_init.sql", "create table task (id int);").await;
+
+    for tool in [APPLY_MIGRATIONS_TOOL_NAME, DEPLOY_FUNCTIONS_TOOL_NAME] {
+        let said = agent
+            .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, tool, json!({"project_id": seeded.project_id.to_string()}))
+            .await
+            .expect("not an error");
+        assert!(said.display_text.contains(nomi_agent_core::prompts::BACKEND_APPLIES_WHEN_READY), "{tool}: {}", said.display_text);
+    }
+    assert!(relay.applied.lock().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn once_the_backend_is_ready_everything_written_meanwhile_is_sent_to_it(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let storage = test_storage();
+    let starting = CodingAgent::new(storage.clone()).with_relay_ops(Arc::new(FakeRelay { starting: true, ..FakeRelay::default() }));
+    let mut conn = pool.acquire().await.unwrap();
+    write(&starting, &mut conn, &seeded, "nomi/migrations/0002_tags.sql", "create table tag (id int);").await;
+    write(&starting, &mut conn, &seeded, "nomi/migrations/0001_init.sql", "create table task (id int);").await;
+    write(&starting, &mut conn, &seeded, "nomi/backend.json", r#"{"realtime":["task"]}"#).await;
+    write(&starting, &mut conn, &seeded, "nomi/functions/place-order.ts", "export default () => 1;").await;
+
+    let ready = FakeRelay::default();
+    let said = nomi_agent_coding::relay::sync_to_dev(&pool, &storage, &ready, seeded.user_id, seeded.project_id).await.unwrap();
+
+    let applied = ready.applied.lock().unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0].1, RelayEnv::Dev);
+    assert_eq!(applied[0].2, vec!["nomi/migrations/0001_init.sql=create table task (id int);", "nomi/migrations/0002_tags.sql=create table tag (id int);"]);
+    assert_eq!(ready.realtime.lock().unwrap().as_slice(), &[(RelayEnv::Dev, json!(["task"]))]);
+    assert_eq!(ready.deployed.lock().unwrap()[0].1, vec!["nomi/functions/place-order.ts"]);
+    assert!(said.iter().any(|s| s.contains("Applied to dev")), "{said:?}");
 }

@@ -75,8 +75,9 @@ pub const CODING_SYSTEM_PROMPT: &str =
      user asks for them or the plan says so. Data on a server goes through Nomi Relay when the project is on Relay (your \
      brief says so): its database, sign-in, files, live changes and functions, through migrations in nomi/migrations \
      and the nomi-relay client, as the relay guide shows; never add Drizzle to it. \
-     A new project's backend takes a few minutes to start: when a backend tool says it's still starting, keep \
-     building and call it again, never ask the person or offer Drizzle. When it says the backend couldn't be set \
+     A new project's backend takes a few minutes to start: write nomi/ as usual meanwhile (Nomi applies it the \
+     moment the backend is ready), and when a backend tool says it's still starting, keep building and call it \
+     again later; never ask the person or offer Drizzle. When it says the backend couldn't be set \
      up, tell the person to open the project's Relay sheet and choose Try again. A project not on Relay uses \
      Drizzle: Postgres for real multi-user apps, SQLite for small personal tools. Nothing when the browser's \
      localStorage is enough. Never use another ORM, CSS framework, database or native module.\n\n\
@@ -240,6 +241,13 @@ pub const SPEAK_TOOL_DONE: &str = "Said it aloud; the recording is in the chat a
 /// question between agents posted after the person wrote): every request must end on the
 /// person's side, and some providers (Gemini) refuse one that doesn't.
 pub const ANSWER_THE_PERSON_NOTE: &str = "(The person's latest message above is still waiting for your answer.)";
+
+/// What Koda reads after writing under `nomi/` while the project's new backend is still being
+/// set up: it's kept, and applied by Nomi the moment the backend is ready.
+pub const BACKEND_APPLIES_WHEN_READY: &str = "Saved. This project's backend is still being set up (normal for a new \
+     project; it takes a few minutes), and Nomi applies everything in nomi/ (migrations, backend.json, functions) to \
+     it by itself the moment it's ready. Nothing to do and nothing to ask the person: keep building, and never \
+     suggest Drizzle.";
 
 /// Follows a backend tool's answer when the project's own backend is still starting, so Koda
 /// keeps working instead of asking the person.

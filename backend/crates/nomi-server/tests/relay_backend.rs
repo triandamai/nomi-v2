@@ -327,3 +327,44 @@ async fn the_backend_deploys_the_images_the_admin_named(pool: PgPool) {
     let relay_dockerfile = files.iter().find(|(p, _)| p == "relay/Dockerfile").map(|(_, b)| String::from_utf8_lossy(b).to_string());
     assert_eq!(relay_dockerfile.as_deref(), Some("FROM registry.test/acme/relay:0.1.5\n"));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_new_dev_backend_gets_the_migrations_written_while_it_was_being_made(pool: PgPool) {
+    set_images(&pool).await;
+    let project = seed_project(&pool).await;
+    let storage = nomi_storage::ProjectStore::at(std::env::temp_dir().join(format!("nomi-relay-backend-{}", Uuid::new_v4())));
+    let migration = "nomi/migrations/0001_init.sql";
+    storage.put_object(&nomi_agent_coding::project_file_key(project, migration), "create table task (id int);", "text/plain").await.unwrap();
+    sqlx::query("INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, 'text/plain', 26)")
+        .bind(project)
+        .bind(migration)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let relay = relay(project).await;
+    Mock::given(method("POST"))
+        .and(path(format!("/control/projects/{project}/environments/dev/migrations")))
+        .respond_with(envelope(json!({ "applied": ["0001_init.sql"] })))
+        .mount(&relay)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/control/projects/{project}/environments/dev/types")))
+        .respond_with(envelope(json!({ "types": "export interface Database {}\n" })))
+        .mount(&relay)
+        .await;
+    let shipyard = shipyard(&relay.uri(), json!({ "status": "succeeded", "urls": [relay.uri()] })).await;
+
+    nomi_server::relay_backend::start(pool.clone(), reqwest::Client::new(), config(&shipyard), KEY, storage, project, "dev", false).await.unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let sent = calls(&relay, "POST", "/environments/dev/migrations").await;
+        if let Some(body) = sent.first() {
+            assert_eq!(body["files"][0]["path"], "nomi/migrations/0001_init.sql", "{body}");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the migration never reached the new backend");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert_eq!(project_relays::stack(&pool, project, "dev").await.unwrap().unwrap().state, READY);
+}
