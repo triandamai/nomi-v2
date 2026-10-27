@@ -2372,7 +2372,7 @@
 	"relay_setup_failed": "The backend couldn’t be set up",
 	"relay_setup_failed_at": "It stopped while {step}.",
 	"relay_try_again": "Try again",
-	"config_relay": "Relay images",
+	"config_relay": "Relay images and packages",
 	"config_relay_lede": "Where the images for each project's own database and Relay are. The Relay workflow pushes them to Shipyard's registry; projects can't get a backend until these are set.",
 	"config_relay_relay_image": "Relay image",
 	"config_relay_relay_image_hint": "The repository, without a tag: <registry>/<prefix>/relay.",
@@ -2381,5 +2381,13 @@
 	"config_relay_postgrest_image": "PostgREST image",
 	"config_relay_postgrest_image_hint": "A full image with its tag. Empty runs postgrest/postgrest:v12.2.3.",
 	"config_relay_version": "Version",
-	"config_relay_version_hint": "The tag of the two images above that backends run. Raise it to move projects to a newer Relay."
+	"config_relay_version_hint": "The tag of the two images above that backends run. Raise it to move projects to a newer Relay.",
+	"config_relay_sdk_package": "Client package",
+	"config_relay_sdk_package_hint": "The npm package projects import to talk to their backend. Empty uses nomi-relay.",
+	"config_relay_sdk_version": "Client version",
+	"config_relay_sdk_version_hint": "The version range written into each new project's package.json. Empty uses ^0.1.0.",
+	"config_relay_cli_package": "Command line package",
+	"config_relay_cli_package_hint": "The npm package for the nomi-relay command (migration checks, new migrations). Empty uses nomi-relay-cli.",
+	"config_relay_cli_version": "Command line version",
+	"config_relay_cli_version_hint": "The version range added to each new project's dev dependencies. Empty uses ^0.1.0."
 }

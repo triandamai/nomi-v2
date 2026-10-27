@@ -110,10 +110,10 @@ async fn a_backend_is_made_in_order_and_recorded(pool: PgPool) {
 
     // The control key Shipyard was given is the one Nomi keeps, and the rest are Shipyard's to make.
     let control = project_relays::control_key(&pool, &KEY, project, "dev").await.unwrap().unwrap();
-    let key_calls = calls(&shipyard, "PUT", "/secrets/RELAY_CONTROL_KEY").await;
-    assert_eq!(key_calls, vec![json!({ "value": control, "environment": "dev" })]);
+    let key_calls = calls(&shipyard, "PUT", "/secrets/DEV_RELAY_CONTROL_KEY").await;
+    assert_eq!(key_calls, vec![json!({ "value": control, "environment": null })]);
     for name in ["RELAY_ENCRYPTION_KEY", "RELAY_PGRST_PASSWORD", "RELAY_FUNCTIONS_SECRET"] {
-        assert_eq!(calls(&shipyard, "PUT", &format!("/secrets/{name}")).await, vec![json!({ "generate": "hex32", "environment": "dev" })], "{name}");
+        assert_eq!(calls(&shipyard, "PUT", &format!("/secrets/DEV_{name}")).await, vec![json!({ "generate": "hex32", "environment": null })], "{name}");
     }
 
     // Relay is told its own address and who may call it from a preview.
@@ -148,9 +148,9 @@ async fn a_failed_deploy_says_where_and_trying_again_keeps_what_was_made(pool: P
 
     assert_eq!(project_relays::stack(&pool, project, "dev").await.unwrap().unwrap().state, READY);
     assert_eq!(project_relays::control_key(&pool, &KEY, project, "dev").await.unwrap().unwrap(), control);
-    assert!(calls(&working, "PUT", "/secrets/RELAY_ENCRYPTION_KEY").await.is_empty());
-    assert!(calls(&working, "PUT", "/secrets/RELAY_CONTROL_KEY").await.is_empty());
-    assert_eq!(calls(&broken, "PUT", "/secrets/RELAY_ENCRYPTION_KEY").await.len(), 1);
+    assert!(calls(&working, "PUT", "/secrets/DEV_RELAY_ENCRYPTION_KEY").await.is_empty());
+    assert!(calls(&working, "PUT", "/secrets/DEV_RELAY_CONTROL_KEY").await.is_empty());
+    assert_eq!(calls(&broken, "PUT", "/secrets/DEV_RELAY_ENCRYPTION_KEY").await.len(), 1);
 }
 
 // ---- Sleeping and waking ----

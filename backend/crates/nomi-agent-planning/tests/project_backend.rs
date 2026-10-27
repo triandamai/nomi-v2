@@ -126,20 +126,20 @@ mod rena_chooses {
     }
 
     #[sqlx::test(migrations = "../../migrations")]
-    async fn without_relay_on_this_nomi_the_project_is_built_on_drizzle(pool: PgPool) {
+    async fn without_relay_on_this_nomi_rena_is_told_to_ask_before_using_drizzle(pool: PgPool) {
         let (user_id, session_id) = seed_user_and_session(&pool).await;
         let said = create(&pool, Arc::new(NoRelayOps), session_id, user_id, json!({"name": "Todo", "description": "Tasks", "backend": "relay"})).await.unwrap();
         assert_eq!(backend_of_session(&pool, session_id).await, "drizzle");
-        assert!(said.contains("Drizzle"), "{said}");
+        assert!(said.contains("NOT on Relay") && said.contains("ask whether to build it on Drizzle"), "{said}");
     }
 
     #[sqlx::test(migrations = "../../migrations")]
-    async fn when_relay_cant_make_the_backend_the_project_stays_on_drizzle(pool: PgPool) {
+    async fn when_relay_cant_make_the_backend_rena_is_told_to_ask(pool: PgPool) {
         let (user_id, session_id) = seed_user_and_session(&pool).await;
         let relay = Arc::new(FakeRelay { available: true, fails: true, ..Default::default() });
         let said = create(&pool, relay, session_id, user_id, json!({"name": "Todo", "description": "Tasks", "backend": "relay"})).await.unwrap();
         assert_eq!(backend_of_session(&pool, session_id).await, "drizzle");
-        assert!(said.contains("couldn't be reached"), "{said}");
+        assert!(said.contains("couldn't be reached") && said.contains("NOT on Relay"), "{said}");
     }
 
     #[sqlx::test(migrations = "../../migrations")]

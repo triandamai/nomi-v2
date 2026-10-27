@@ -9,7 +9,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_agent_core::relay_ops::{ProjectFile, RelayEnv, RelayOps, SharedRelayOps, NOT_SET_UP};
+use nomi_agent_core::relay_ops::{ProjectFile, RelayEnv, RelayPackages, RelayOps, SharedRelayOps, NOT_SET_UP};
 use nomi_relay_client::{Relay, RelayConfig, RelayError, SourceFile};
 use nomi_shipyard::ShipyardConfig;
 use nomi_storage::ProjectStore;
@@ -382,6 +382,13 @@ impl ServerRelayOps {
 
 #[async_trait]
 impl RelayOps for ServerRelayOps {
+    async fn packages(&self) -> RelayPackages {
+        match self.settings_key() {
+            Some(key) => crate::relay_backend::packages(&self.pool, &key).await,
+            None => RelayPackages::default(),
+        }
+    }
+
     async fn is_available(&self) -> bool {
         if self.config().await.is_some() {
             return true;

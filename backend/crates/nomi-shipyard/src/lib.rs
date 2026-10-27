@@ -446,7 +446,7 @@ impl<'a> Shipyard<'a> {
 
     /// Has Shipyard make a secret's value once, for one environment (`kind`: `hex32`, `base64_32`,
     /// `uuid` or `password`). Nomi never reads it back; services bind it by name.
-    pub async fn generate_secret(&self, org: &str, app: &str, name: &str, kind: &str, environment: &str) -> Result<Value, ShipyardError> {
+    pub async fn generate_secret(&self, org: &str, app: &str, name: &str, kind: &str, environment: Option<&str>) -> Result<Value, ShipyardError> {
         let body = json!({ "generate": kind, "environment": environment });
         self.call(reqwest::Method::PUT, &format!("{}/secrets/{}", Self::app_path(org, app), seg(name)), Some(body)).await
     }
@@ -582,7 +582,7 @@ mod tests {
             .await;
         let http = reqwest::Client::new();
         let config = config(&server.uri());
-        Shipyard::new(&http, &config).generate_secret("org-1", "todo-backend", "RELAY_ENCRYPTION_KEY", "hex32", "dev").await.unwrap();
+        Shipyard::new(&http, &config).generate_secret("org-1", "todo-backend", "RELAY_ENCRYPTION_KEY", "hex32", Some("dev")).await.unwrap();
     }
 
     #[tokio::test]

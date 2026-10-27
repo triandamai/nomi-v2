@@ -112,6 +112,10 @@ pub const RELAY: SectionDef = SectionDef {
         field("functions_image", "RELAY_FUNCTIONS_IMAGE", Kind::Text),
         field("postgrest_image", "RELAY_POSTGREST_IMAGE", Kind::Text),
         field("version", "RELAY_IMAGE_VERSION", Kind::Text),
+        field("sdk_package", "RELAY_SDK_PACKAGE", Kind::Text),
+        field("sdk_version", "RELAY_SDK_VERSION", Kind::Text),
+        field("cli_package", "RELAY_CLI_PACKAGE", Kind::Text),
+        field("cli_version", "RELAY_CLI_VERSION", Kind::Text),
     ],
 };
 

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use nomi_relay_client::{Relay, RelayConfig, RelayError};
 use nomi_settings::config;
-use nomi_shipyard::manifest::{self, Images, BACKEND_SUFFIX, DEFAULT_POSTGREST_IMAGE, DEFAULT_RELAY_VERSION, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
+use nomi_shipyard::manifest::{self, Images, BACKEND_SUFFIX, DEFAULT_POSTGREST_IMAGE, DEFAULT_RELAY_VERSION, secret_name, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
 use nomi_shipyard::{Shipyard, ShipyardConfig};
 use rand::RngCore;
 use serde_json::{json, Value};
@@ -20,6 +20,7 @@ use uuid::Uuid;
 use crate::project_relays::{self, CREATING, FAILED, READY, SLEEPING, WAKING};
 
 use crate::project_ops::ShipyardAccess;
+use nomi_agent_core::relay_ops::RelayPackages;
 use crate::relay_ops::{SECRET_ANON_KEY, SECRET_SERVICE_KEY, SECRET_URL};
 
 pub const DEV: &str = "dev";
@@ -95,6 +96,20 @@ pub async fn images(pool: &PgPool, settings_key: &[u8; 32]) -> Result<Images, St
     })
 }
 
+/// The npm packages new projects use for Relay, as Admin → Configuration → Relay names them.
+pub async fn packages(pool: &PgPool, settings_key: &[u8; 32]) -> RelayPackages {
+    let defaults = RelayPackages::default();
+    let Ok(section) = config::load(pool, Some(settings_key), &config::RELAY).await else { return defaults };
+    let section = section.with_env(|name| std::env::var(name).ok());
+    let pick = |field: &str, default: String| section.get(field).unwrap_or(default);
+    RelayPackages {
+        sdk: pick("sdk_package", defaults.sdk),
+        sdk_version: pick("sdk_version", defaults.sdk_version),
+        cli: pick("cli_package", defaults.cli),
+        cli_version: pick("cli_version", defaults.cli_version),
+    }
+}
+
 /// Whether Relay's images are set, so a backend can be made.
 pub async fn images_set(pool: &PgPool, settings_key: &[u8; 32]) -> bool {
     images(pool, settings_key).await.is_ok()
@@ -156,10 +171,10 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
             .await
             .map_err(fail(STEP_SECRETS))?
             .ok_or_else(|| Failed { step: STEP_SECRETS, message: "the backend's key is missing".to_string() })?;
-        client.set_secret(&org, &backend, SECRET_CONTROL_KEY, Some(&control_key), Some(env)).await.map_err(fail(STEP_SECRETS))?;
+        client.set_secret(&org, &backend, &secret_name(SECRET_CONTROL_KEY, env), Some(&control_key), None).await.map_err(fail(STEP_SECRETS))?;
         // Made by Shipyard, once: Nomi never reads these back.
         for name in [SECRET_ENCRYPTION_KEY, SECRET_PGRST_PASSWORD, SECRET_FUNCTIONS_SECRET] {
-            client.generate_secret(&org, &backend, name, "hex32", env).await.map_err(fail(STEP_SECRETS))?;
+            client.generate_secret(&org, &backend, &secret_name(name, env), "hex32", None).await.map_err(fail(STEP_SECRETS))?;
         }
         project_relays::mark_secrets_made(deps.pool, project_id, env).await.map_err(fail(STEP_SECRETS))?;
     }
