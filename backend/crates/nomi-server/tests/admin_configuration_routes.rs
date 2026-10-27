@@ -129,10 +129,8 @@ async fn bad_values_are_refused_with_the_reason(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body.to_string().contains("turn_concurrency"), "{body}");
 
-    // A bucket needs both keys, saved here or in the environment.
-    let (status, body) = request(router.clone(), "PUT", "/api/admin/configuration/storage", &token, Some(json!({ "values": { "bucket": "nomi-files" } }))).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(body.to_string().contains("access key"), "{body}");
+    // (A bucket without keys is checked in the route's own tests: whether it's refused depends on
+    // the AWS keys in the environment the tests run in.)
 
     let (status, _) = request(router.clone(), "PUT", "/api/admin/configuration/nope", &token, Some(json!({ "values": {} }))).await;
     assert_eq!(status, StatusCode::NOT_FOUND);

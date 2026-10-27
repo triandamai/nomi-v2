@@ -59,6 +59,19 @@ pub struct SaveRequest {
     pub values: BTreeMap<String, String>,
 }
 
+/// Why storage can't be saved as `changes` asks, if it can't: a bucket needs both keys, whether
+/// they're saved here or come from the environment. `saved` answers what's saved for a field;
+/// `env` what the environment has for it (a field that's cleared falls back to the environment).
+fn storage_problem(saved: impl Fn(&str) -> Option<String>, env: impl Fn(&str) -> Option<String>, changes: &BTreeMap<String, String>) -> Option<&'static str> {
+    let after = |field: &str| match changes.get(field).map(|v| v.trim()) {
+        Some("") if field != "secret_access_key" => env(field),
+        Some("") | None => saved(field).or_else(|| env(field)),
+        Some(value) => Some(value.to_string()),
+    };
+    (after("bucket").is_some() && (after("access_key_id").is_none() || after("secret_access_key").is_none()))
+        .then_some("a bucket needs an access key ID and a secret access key")
+}
+
 /// What a section needs as a whole, beyond each field being valid on its own.
 async fn check_whole(state: &AppState, def: &'static SectionDef, values: &BTreeMap<String, String>) -> Result<(), ApiError> {
     if def.name != config::STORAGE.name {
@@ -67,16 +80,12 @@ async fn check_whole(state: &AppState, def: &'static SectionDef, values: &BTreeM
     let saved = config::load(&state.pool, Some(&state.settings_key), def)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the configuration: {e}")))?
-        .with_env(env);
-    let after = |field: &str| match values.get(field).map(|v| v.trim()) {
-        Some("") if field != "secret_access_key" => None,
-        Some("") | None => saved.get(field),
-        Some(value) => Some(value.to_string()),
-    };
-    if after("bucket").is_some() && (after("access_key_id").is_none() || after("secret_access_key").is_none()) {
-        return Err((StatusCode::UNPROCESSABLE_ENTITY, "a bucket needs an access key ID and a secret access key".to_string()));
+        .with_env(|_| None);
+    let from_env = |field: &str| def.fields.iter().find(|f| f.name == field).and_then(|f| env(f.env)).filter(|v| !v.trim().is_empty());
+    match storage_problem(|field| saved.get(field), from_env, values) {
+        Some(why) => Err((StatusCode::UNPROCESSABLE_ENTITY, why.to_string())),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// `PUT /api/admin/configuration/:section`: saves the section's changed fields, all or nothing.
@@ -96,4 +105,36 @@ pub async fn save(
     })?;
     tracing::info!(user = %claims.sub, section = def.name, fields = ?req.values.keys().collect::<Vec<_>>(), "configuration saved");
     Ok(Json(section_view(&state, def).await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn changes(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    fn keys(field: &str) -> Option<String> {
+        matches!(field, "access_key_id" | "secret_access_key").then(|| format!("{field}-value"))
+    }
+
+    #[test]
+    fn a_bucket_needs_both_keys_from_here_or_the_environment() {
+        let nothing = |_: &str| None;
+        assert!(storage_problem(nothing, nothing, &changes(&[("bucket", "files")])).is_some());
+        assert!(storage_problem(nothing, nothing, &changes(&[("bucket", "files"), ("access_key_id", "id")])).is_some());
+        assert!(storage_problem(nothing, nothing, &changes(&[("bucket", "files"), ("access_key_id", "id"), ("secret_access_key", "s")])).is_none());
+        assert!(storage_problem(keys, nothing, &changes(&[("bucket", "files")])).is_none(), "keys saved before");
+        assert!(storage_problem(nothing, keys, &changes(&[("bucket", "files")])).is_none(), "keys in the environment");
+        assert!(storage_problem(nothing, nothing, &changes(&[("region", "eu-west-1")])).is_none(), "no bucket, nothing needed");
+    }
+
+    #[test]
+    fn a_cleared_key_falls_back_to_the_environment_and_an_empty_secret_keeps_the_saved_one() {
+        let nothing = |_: &str| None;
+        let cleared = changes(&[("bucket", "files"), ("access_key_id", ""), ("secret_access_key", "")]);
+        assert!(storage_problem(keys, nothing, &cleared).is_some(), "the saved ID is gone and the environment has none");
+        assert!(storage_problem(keys, keys, &cleared).is_none(), "the environment's ID takes over");
+    }
 }
