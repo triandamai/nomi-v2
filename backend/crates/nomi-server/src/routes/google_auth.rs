@@ -15,8 +15,8 @@ fn not_configured() -> (StatusCode, String) {
 }
 
 /// Signing in uses the server's Google OAuth client, the same one the Workspace agent connects with.
-fn sign_in_config() -> Option<GoogleSignInConfig> {
-    GoogleConfig::from_env().map(|c| GoogleSignInConfig {
+async fn sign_in_config() -> Option<GoogleSignInConfig> {
+    GoogleConfig::current().await.map(|c| GoogleSignInConfig {
         client_id: c.client_id,
         client_secret: c.client_secret,
         redirect_uri: c.signin_redirect_uri,
@@ -50,7 +50,7 @@ pub struct StartResponse {
 
 /// Public: the Google page for signing in or signing up.
 pub async fn start(State(state): State<AppState>, body: Option<Json<StartRequest>>) -> Result<Json<StartResponse>, (StatusCode, String)> {
-    let config = sign_in_config().ok_or_else(not_configured)?;
+    let config = sign_in_config().await.ok_or_else(not_configured)?;
     let invite_code = body.and_then(|Json(b)| b.invite_code);
     let url = google_sign_in::start(&state.pool, &config, Purpose::SignIn { invite_code }).await.map_err(sign_in_error)?;
     Ok(Json(StartResponse { url }))
@@ -58,7 +58,7 @@ pub async fn start(State(state): State<AppState>, body: Option<Json<StartRequest
 
 /// Signed in: the Google page for adding Google to this account.
 pub async fn start_link(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<StartResponse>, (StatusCode, String)> {
-    let config = sign_in_config().ok_or_else(not_configured)?;
+    let config = sign_in_config().await.ok_or_else(not_configured)?;
     let url = google_sign_in::start(&state.pool, &config, Purpose::Link { user_id: claims.sub }).await.map_err(sign_in_error)?;
     Ok(Json(StartResponse { url }))
 }
@@ -81,7 +81,7 @@ pub struct CallbackResponse {
 }
 
 pub async fn callback(State(state): State<AppState>, Json(req): Json<CallbackRequest>) -> Result<Json<CallbackResponse>, (StatusCode, String)> {
-    let config = sign_in_config().ok_or_else(not_configured)?;
+    let config = sign_in_config().await.ok_or_else(not_configured)?;
     let finished = google_sign_in::finish(&state.pool, &state.http_client, &config, &req.code, &req.state).await.map_err(sign_in_error)?;
     match finished {
         Finished::Linked { email, .. } => Ok(Json(CallbackResponse { email, is_new: false, linked: true, access_token: None, refresh_token: None })),
@@ -107,7 +107,7 @@ pub async fn get_methods(State(state): State<AppState>, AuthClaims(claims): Auth
     let methods = google_sign_in::methods(&state.pool, claims.sub)
         .await
         .map_err(|e| sign_in_error(SignInError::Other(e.to_string())))?;
-    Ok(Json(MethodsResponse { configured: GoogleConfig::from_env().is_some(), methods }))
+    Ok(Json(MethodsResponse { configured: GoogleConfig::current().await.is_some(), methods }))
 }
 
 pub async fn unlink(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<StatusCode, (StatusCode, String)> {
@@ -131,7 +131,7 @@ pub struct AvailableResponse {
 /// Public: whether the sign-in page should offer "Continue with Google", and which callback
 /// addresses this server sends to Google.
 pub async fn available() -> Json<AvailableResponse> {
-    let config = GoogleConfig::from_env();
+    let config = GoogleConfig::current().await;
     Json(AvailableResponse {
         available: config.is_some(),
         sign_in_redirect_uri: config.as_ref().map(|c| c.signin_redirect_uri.clone()),

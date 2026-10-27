@@ -58,7 +58,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
         registry: turn_registry,
         catalog: catalog.clone(),
     });
-    let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(turn_concurrency()));
+    let slots = Slots::default();
     let finished = std::sync::Arc::new(tokio::sync::Notify::new());
 
     loop {
@@ -73,7 +73,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
         // A turn can't legitimately run past its time limit, so anything still 'processing'
         // well after it was orphaned by a crash or restart.
-        match queue::fail_abandoned(&pool, nomi_turn::turn_time_limit() + ABANDONED_GRACE).await {
+        match queue::fail_abandoned(&pool, nomi_turn::turn_time_limit().await + ABANDONED_GRACE).await {
             Ok(0) => {}
             Ok(n) => tracing::warn!(count = n, "worker: failed turn jobs that no worker finished"),
             Err(e) => tracing::error!(error = %e, "worker: failed to clear abandoned turn jobs"),
@@ -83,7 +83,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
         // everyone else's; claim_next never hands out a chat's next message while one of its
         // turns is still running, so each chat stays in order.
         loop {
-            let Ok(slot) = slots.clone().try_acquire_owned() else {
+            // Read each time, so a change in Admin → Configuration applies to the next claim.
+            let Some(slot) = slots.try_take(turn_concurrency().await) else {
                 break; // every slot busy: a finishing turn wakes the loop again
             };
             let claimed = match queue::claim_next(&pool).await {
@@ -186,9 +187,35 @@ struct Turns {
     catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>,
 }
 
-/// How many turns may run at once (`TURN_CONCURRENCY`, default 4).
-fn turn_concurrency() -> usize {
-    std::env::var("TURN_CONCURRENCY").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(4)
+/// Turns that may run at once unless Admin → Configuration (or `TURN_CONCURRENCY`) says.
+const DEFAULT_TURN_CONCURRENCY: u64 = 4;
+
+/// How many turns may run at once.
+async fn turn_concurrency() -> usize {
+    let agent_loop = nomi_settings::config::current(&nomi_settings::config::AGENT_LOOP).await;
+    agent_loop.number("turn_concurrency").unwrap_or(DEFAULT_TURN_CONCURRENCY) as usize
+}
+
+/// The turns running now, against a limit that can change between claims (a semaphore's can't
+/// shrink while its permits are out).
+#[derive(Clone, Default)]
+struct Slots(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+/// One running turn's place; dropping it frees the place.
+struct Slot(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Slots {
+    fn try_take(&self, limit: usize) -> Option<Slot> {
+        use std::sync::atomic::Ordering;
+        self.0.fetch_update(Ordering::AcqRel, Ordering::Acquire, |running| (running < limit).then_some(running + 1)).ok()?;
+        Some(Slot(self.0.clone()))
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
 }
 
 /// Runs one claimed turn and records how it ended.
@@ -258,5 +285,25 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
             nomi_turn::activity::announce(&turns.pool, &turns.mqtt, claimed.session_id, user_id, nomi_turn::activity::Ended::Failed).await;
             tracing::warn!(job_id = %claimed.id, error = %e, "worker: turn job failed");
         }
+    }
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::Slots;
+
+    #[test]
+    fn slots_follow_a_limit_that_changes_between_claims() {
+        let slots = Slots::default();
+        let first = slots.try_take(2).unwrap();
+        let _second = slots.try_take(2).unwrap();
+        assert!(slots.try_take(2).is_none(), "both places taken");
+        // Lowered to 1: nothing new starts until the running ones finish.
+        drop(first);
+        assert!(slots.try_take(1).is_none());
+        // Raised to 3: two more fit beside the one still running, and no more.
+        let _third = slots.try_take(3).unwrap();
+        let _fourth = slots.try_take(3).unwrap();
+        assert!(slots.try_take(3).is_none());
     }
 }

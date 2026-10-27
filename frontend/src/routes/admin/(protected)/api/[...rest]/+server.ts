@@ -35,6 +35,8 @@ const ALLOWED = new RegExp(
 			`users/${UUID}/admin-access`,
 			'permissions/catalog',
 			'maintenance',
+			'configuration',
+			'configuration/[a-z_]+',
 			`settings/llm/models/${UUID}/enabled`,
 		].join('|') +
 		')$',

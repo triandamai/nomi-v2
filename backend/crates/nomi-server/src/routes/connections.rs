@@ -37,7 +37,7 @@ pub async fn get_google(
     let status = connection::status(&mut conn, claims.sub).await.map_err(internal)?;
     let activity = if status.is_some() { connection::recent_activity(&mut conn, claims.sub, 10).await.map_err(internal)? } else { Vec::new() };
     Ok(Json(GoogleConnectionResponse {
-        configured: GoogleConfig::from_env().is_some(),
+        configured: GoogleConfig::current().await.is_some(),
         connection: status,
         activity,
         services: connection::SERVICES.to_vec(),
@@ -61,7 +61,7 @@ pub async fn start_google(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<StartRequest>,
 ) -> Result<Json<StartResponse>, (StatusCode, String)> {
-    let config = GoogleConfig::from_env().ok_or_else(not_configured)?;
+    let config = GoogleConfig::current().await.ok_or_else(not_configured)?;
     let mut conn = state.pool.acquire().await.map_err(internal)?;
     // Only a chat this user wrote in can be resumed.
     let resume = match req.resume_session_id {
@@ -106,7 +106,7 @@ pub async fn complete_google(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<CallbackRequest>,
 ) -> Result<Json<CallbackResponse>, (StatusCode, String)> {
-    let config = GoogleConfig::from_env().ok_or_else(not_configured)?;
+    let config = GoogleConfig::current().await.ok_or_else(not_configured)?;
     let mut conn = state.pool.acquire().await.map_err(internal)?;
     let connected = connection::complete_authorization(&mut conn, &state.http_client, &config, &state.settings_key, claims.sub, &req.code, &req.state)
         .await
@@ -143,7 +143,7 @@ pub async fn complete_google(
 
 pub async fn disconnect_google(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<StatusCode, (StatusCode, String)> {
     let mut conn = state.pool.acquire().await.map_err(internal)?;
-    let config = GoogleConfig::from_env();
+    let config = GoogleConfig::current().await;
     connection::disconnect(&mut conn, &state.http_client, config.as_ref(), &state.settings_key, claims.sub).await.map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -169,7 +169,7 @@ pub async fn overview(State(state): State<AppState>, AuthClaims(claims): AuthCla
     let hevy = nomi_agent_health::connection::status(&mut conn, claims.sub, nomi_agent_health::connection::HEVY).await.map_err(internal)?;
     Ok(Json(ConnectionsOverview {
         google: GoogleOverview {
-            configured: GoogleConfig::from_env().is_some(),
+            configured: GoogleConfig::current().await.is_some(),
             email: google.as_ref().map(|g| g.email.clone()),
             services: google.map(|g| g.services).unwrap_or_default(),
         },

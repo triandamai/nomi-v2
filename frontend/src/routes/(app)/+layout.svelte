@@ -16,6 +16,7 @@
 	import { nextSnackbar, showSnackbar, snackbars, type SnackbarItem } from '$lib/snackbars.svelte';
 	import { connectUserActivity } from '$lib/userActivity';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
+	import { setAttachmentLimits } from '$lib/attachments';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -27,6 +28,9 @@
 	// Dynamic agents' chosen shapes: registered before any child renders an AgentShape, and again
 	// whenever the crew reloads.
 	registerAgentLooks(untrack(() => data.crew));
+	$effect.pre(() => {
+		if (data.attachmentLimits) setAttachmentLimits(data.attachmentLimits);
+	});
 	$effect.pre(() => registerAgentLooks(data.crew));
 
 	// The saved language follows the person to every device: switch (one reload) when this one

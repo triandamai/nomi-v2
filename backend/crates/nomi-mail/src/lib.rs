@@ -83,13 +83,13 @@ pub struct SmtpConfig {
 }
 
 impl SmtpConfig {
-    /// Reads `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY` and
-    /// `MAIL_FROM`. `None` when `SMTP_HOST` isn't set.
-    pub fn from_env() -> Option<Self> {
-        let var = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-        let host = var("SMTP_HOST")?;
-        let port: Option<u16> = var("SMTP_PORT").and_then(|p| p.parse().ok());
-        let security = var("SMTP_SECURITY").and_then(|s| SmtpSecurity::parse(&s)).unwrap_or(match port {
+    /// From Admin → Configuration's SMTP fields (`host`, `port`, `username`, `password`,
+    /// `security`, `from`), as `get` answers them. `None` without a host.
+    pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Option<Self> {
+        let var = |field: &str| get(field).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let host = var("host")?;
+        let port: Option<u16> = var("port").and_then(|p| p.parse().ok());
+        let security = var("security").and_then(|s| SmtpSecurity::parse(&s)).unwrap_or(match port {
             Some(465) => SmtpSecurity::Tls,
             _ => SmtpSecurity::StartTls,
         });
@@ -98,9 +98,9 @@ impl SmtpConfig {
             SmtpSecurity::StartTls => 587,
             SmtpSecurity::None => 25,
         });
-        let username = var("SMTP_USERNAME");
-        let from = var("MAIL_FROM").or_else(|| username.clone().filter(|u| u.contains('@'))).unwrap_or_else(|| format!("Nomi <no-reply@{host}>"));
-        Some(Self { host, port, username, password: var("SMTP_PASSWORD"), security, from })
+        let username = var("username");
+        let from = var("from").or_else(|| username.clone().filter(|u| u.contains('@'))).unwrap_or_else(|| format!("Nomi <no-reply@{host}>"));
+        Some(Self { host, port, username, password: var("password"), security, from })
     }
 }
 
@@ -199,21 +199,25 @@ impl Mailer for MemoryMailer {
     }
 }
 
-/// The mailer the environment asks for: SMTP when `SMTP_HOST` is set, else the log.
-pub fn from_env() -> Arc<dyn Mailer> {
-    match SmtpConfig::from_env() {
-        Some(config) => match SmtpMailer::new(&config) {
-            Ok(mailer) => {
-                tracing::info!(host = %config.host, port = config.port, "email: sending through SMTP");
-                Arc::new(mailer)
-            }
-            Err(e) => panic!("SMTP settings are invalid: {e}"),
-        },
-        None => {
-            tracing::warn!("email: SMTP_HOST isn't set, so emails (including sign-in codes) are written to the server log, not sent");
-            Arc::new(LogMailer)
+/// Sends through the SMTP server Admin → Configuration has at the time of each email (the
+/// environment fills what isn't saved there), or writes to the log when there's none, so a saved
+/// change applies to the next email without a restart.
+pub struct ConfiguredMailer;
+
+#[async_trait::async_trait]
+impl Mailer for ConfiguredMailer {
+    async fn send(&self, email: Email) -> Result<(), MailError> {
+        let smtp = nomi_settings::config::current(&nomi_settings::config::SMTP).await;
+        match SmtpConfig::from_lookup(|field| smtp.get(field)) {
+            Some(config) => SmtpMailer::new(&config)?.send(email).await,
+            None => LogMailer.send(email).await,
         }
     }
+}
+
+/// The mailer Nomi uses: Admin → Configuration's SMTP server, read for each email.
+pub fn configured() -> Arc<dyn Mailer> {
+    Arc::new(ConfiguredMailer)
 }
 
 #[cfg(test)]
@@ -257,5 +261,27 @@ mod tests {
     fn a_bad_address_is_refused() {
         let email = Email { to: "not an address".into(), subject: "x".into(), text: "x".into(), ..Default::default() };
         assert!(matches!(build_message("a@b.co".parse().unwrap(), &email), Err(MailError::Address(_))));
+    }
+}
+
+#[cfg(test)]
+mod lookup_tests {
+    use super::*;
+
+    #[test]
+    fn smtp_comes_from_the_configured_fields_and_needs_a_host() {
+        assert!(SmtpConfig::from_lookup(|_| None).is_none());
+        let config = SmtpConfig::from_lookup(|field| match field {
+            "host" => Some("smtp.example.com".into()),
+            "port" => Some("465".into()),
+            "username" => Some("ana@example.com".into()),
+            "password" => Some("hunter2".into()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(config.port, 465);
+        assert_eq!(config.security, SmtpSecurity::Tls);
+        assert_eq!(config.from, "ana@example.com");
+        assert_eq!(config.password.as_deref(), Some("hunter2"));
     }
 }

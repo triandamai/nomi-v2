@@ -1,3 +1,4 @@
+pub mod config;
 pub mod crypto;
 pub mod llm_models;
 pub mod model_choices;

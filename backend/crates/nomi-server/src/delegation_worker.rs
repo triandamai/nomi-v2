@@ -178,7 +178,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
 
             // A stalled model or command mustn't hold this worker (it runs one delegation at a
             // time) forever.
-            let limit = nomi_turn::delegation_time_limit();
+            let limit = nomi_turn::delegation_time_limit().await;
             let outcome = match tokio::time::timeout(
                 limit,
                 nomi_agent_core::run_agent_turn(

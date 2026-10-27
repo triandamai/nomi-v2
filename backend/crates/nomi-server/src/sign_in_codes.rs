@@ -18,15 +18,15 @@ pub enum EmailCodes {
 }
 
 impl EmailCodes {
-    /// On unless `AUTH_EMAIL_CODES` is `off`; codes go out through SMTP (`SMTP_*`), or to the
-    /// server log when no SMTP server is set.
+    /// On unless `AUTH_EMAIL_CODES` is `off`; codes go out through the SMTP server in Admin →
+    /// Configuration (or `SMTP_*`), or to the server log when there's none.
     pub fn from_env() -> Self {
         let off = std::env::var("AUTH_EMAIL_CODES").is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "false" | "0"));
         if off {
             tracing::warn!("AUTH_EMAIL_CODES=off: password sign-in doesn't ask for an emailed code");
             EmailCodes::Off
         } else {
-            EmailCodes::Required(nomi_mail::from_env())
+            EmailCodes::Required(nomi_mail::configured())
         }
     }
 }

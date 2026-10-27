@@ -3103,6 +3103,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "lettre",
+ "nomi-settings",
  "resvg",
  "thiserror 1.0.69",
  "tokio",
@@ -3202,6 +3203,8 @@ dependencies = [
  "chrono",
  "hex",
  "rand 0.8.7",
+ "serde",
+ "serde_json",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
@@ -3233,6 +3236,7 @@ dependencies = [
  "aws-sdk-s3",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -3263,6 +3267,7 @@ dependencies = [
  "nomi-i18n",
  "nomi-llm",
  "nomi-realtime",
+ "nomi-settings",
  "nomi-storage",
  "nomi-test-support",
  "serde_json",

@@ -11,6 +11,8 @@ thiserror = "1"
 aes-gcm = "0.10"
 rand = "0.8"
 hex = "0.4"
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
