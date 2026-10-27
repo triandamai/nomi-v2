@@ -65,6 +65,15 @@ async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) ->
         "## Backend: Nomi Relay\nThis project's database, sign-in and storage come from Relay (guide below): write migrations in \
          nomi/migrations/, use the nomi-relay client, and never add Drizzle or your own auth.\n",
     );
+    if relay.backend_starting(project_id).await {
+        section.push_str(
+            "The dev backend is being set up in the background right now: write your migrations in \
+             nomi/migrations/, nomi/backend.json, and nomi/functions/ as usual — Nomi applies them \
+             to dev automatically as soon as it's ready. Do not call describe_backend or wait for \
+             dev to finish starting before writing the app.\n\n",
+        );
+        return section;
+    }
     match relay.describe_backend(user_id, project_id, RelayEnv::Dev).await {
         Ok(described) => {
             let tables: Vec<String> = serde_json::from_str::<serde_json::Value>(&described)
@@ -260,5 +269,46 @@ mod package_tests {
         assert!(said.contains("\"@acme/relay\": \"^2.1.0\"") && said.contains("from '@acme/relay'"), "{said}");
         assert!(!said.contains("\"nomi-relay\": \"^0.1.0\"") && !said.contains("from 'nomi-relay'"));
         assert!(said.contains("`@acme/relay-cli` (`\"@acme/relay-cli\": \"^2.0.0\"` in devDependencies"));
+    }
+
+    struct StartingRelay;
+
+    #[async_trait::async_trait]
+    impl RelayOps for StartingRelay {
+        async fn is_available(&self) -> bool {
+            true
+        }
+        async fn backend_starting(&self, _: Uuid) -> bool {
+            true
+        }
+        async fn ensure_backend(&self, _: Uuid, id: Uuid) -> Result<Uuid, String> {
+            Ok(id)
+        }
+        async fn apply_migrations(&self, _: Uuid, _: Uuid, _: RelayEnv, _: &[nomi_agent_core::relay_ops::ProjectFile]) -> Result<String, String> {
+            unreachable!()
+        }
+        async fn describe_backend(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {
+            panic!("relay_section should not call describe_backend while the dev backend is starting")
+        }
+        async fn types(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {
+            unreachable!()
+        }
+        async fn deploy_functions(
+            &self,
+            _: Uuid,
+            _: Uuid,
+            _: RelayEnv,
+            _: &[nomi_agent_core::relay_ops::ProjectFile],
+            _: &serde_json::Value,
+        ) -> Result<String, String> {
+            unreachable!()
+        }
+    }
+
+    #[tokio::test]
+    async fn relay_section_does_not_call_describe_backend_while_dev_is_starting() {
+        let section = relay_section(&StartingRelay, Uuid::new_v4(), Uuid::new_v4()).await;
+        assert!(section.contains("The dev backend is being set up in the background right now"), "{section}");
+        assert!(!section.contains("Couldn't read the dev backend"), "{section}");
     }
 }

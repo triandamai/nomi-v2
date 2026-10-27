@@ -771,11 +771,14 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
     let pool = state.pool.clone();
     let http = state.http_client.clone();
     let config = config.clone();
+    let settings_key = state.settings_key;
+    let project_storage = state.project_storage.clone();
     tokio::spawn(async move {
         let client = Shipyard::new(&http, &config);
         if let Err(e) = nomi_shipyard_side::apply_event(&pool, Some(&client), project_id, &event).await {
             tracing::error!(error = %e, event = %event.id, "failed to apply a Shipyard event");
         }
+        crate::relay_backend::finish_on_event(&pool, &http, &config, &settings_key, Some(project_storage), project_id, &event).await;
     });
     StatusCode::NO_CONTENT
 }

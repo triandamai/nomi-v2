@@ -124,11 +124,57 @@ pub fn backend_app(app: &str) -> String {
     format!("{app}{BACKEND_SUFFIX}")
 }
 
+/// How long `save_settings` / `ensure_backend` retries while PostgREST or the functions runtime
+/// finishes starting next to Relay.
+const SETUP_RETRY_WAIT: Duration = Duration::from_secs(60);
+
+fn active_setups() -> &'static std::sync::Mutex<std::collections::HashSet<(Uuid, String)>> {
+    static ACTIVE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<(Uuid, String)>>> = std::sync::OnceLock::new();
+    ACTIVE.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+fn publish_notify() -> &'static tokio::sync::Notify {
+    static NOTIFY: std::sync::OnceLock<tokio::sync::Notify> = std::sync::OnceLock::new();
+    NOTIFY.get_or_init(tokio::sync::Notify::new)
+}
+
+struct ActiveGuard(Uuid, String);
+
+impl ActiveGuard {
+    fn enter(project_id: Uuid, env: &str) -> Self {
+        let key = (project_id, env.to_string());
+        if let Ok(mut set) = active_setups().lock() {
+            set.insert(key.clone());
+        }
+        Self(key.0, key.1)
+    }
+}
+
+impl Drop for ActiveGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = active_setups().lock() {
+            set.remove(&(self.0, self.1.clone()));
+        }
+    }
+}
+
+fn is_active_setup(project_id: Uuid, env: &str) -> bool {
+    active_setups()
+        .lock()
+        .map(|set| set.contains(&(project_id, env.to_string())))
+        .unwrap_or(false)
+}
+
 /// Sets up the project's `env` Relay, recording where it is and how it went. On a failure the
 /// row says which step and why, and the project's admins are told. Safe to run again. Answers
 /// whether it's ready.
 pub async fn run(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: bool) -> bool {
-    match set_up(deps, project_id, env, has_functions).await {
+    let _guard = ActiveGuard::enter(project_id, env);
+    finish_run(deps, project_id, env, set_up(deps, project_id, env, has_functions).await).await
+}
+
+async fn finish_run(deps: &Deps<'_>, project_id: Uuid, env: &str, outcome: Result<(), Failed>) -> bool {
+    match outcome {
         Ok(()) => {
             if let Err(e) = project_relays::set_state(deps.pool, project_id, env, READY, None, None).await {
                 tracing::error!(error = %e, %project_id, env, "couldn't mark a backend ready");
@@ -193,26 +239,42 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
     let accepted = client.publish(&org, &backend, env, &manifest, Some(source)).await.map_err(fail(STEP_DEPLOY))?;
 
     at(deps, project_id, env, STEP_WAIT).await?;
-    let url = wait_for_publish(&client, &org, &backend, env, &accepted.publish_id, accepted.url.clone()).await.map_err(fail(STEP_WAIT))?;
-    project_relays::set_url(deps.pool, project_id, env, &url).await.map_err(fail(STEP_WAIT))?;
+    let url = wait_for_publish(deps.pool, &client, project_id, &org, &backend, env, &accepted.publish_id, accepted.url.clone())
+        .await
+        .map_err(fail(STEP_WAIT))?;
+    configure_deployed_relay(deps, &client, &target, &app, &org, project_id, env, &url).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn configure_deployed_relay(
+    deps: &Deps<'_>,
+    client: &Shipyard<'_>,
+    target: &crate::shipyard::ProjectTarget,
+    app: &str,
+    org: &str,
+    project_id: Uuid,
+    env: &str,
+    url: &str,
+) -> Result<(), Failed> {
+    project_relays::set_url(deps.pool, project_id, env, url).await.map_err(fail(STEP_WAIT))?;
     let control_key = project_relays::control_key(deps.pool, deps.settings_key, project_id, env)
         .await
         .map_err(fail(STEP_WAIT))?
         .ok_or_else(|| Failed { step: STEP_WAIT, message: "the backend's key is missing".to_string() })?;
-    let config = RelayConfig::from_values(Some(&url), Some(&control_key)).ok_or_else(|| Failed { step: STEP_WAIT, message: "the backend has no address".to_string() })?;
+    let config = RelayConfig::from_values(Some(url), Some(&control_key)).ok_or_else(|| Failed { step: STEP_WAIT, message: "the backend has no address".to_string() })?;
     wait_for_relay(deps.http, &config).await.map_err(fail(STEP_WAIT))?;
 
     at(deps, project_id, env, STEP_SETUP).await?;
     let relay = Relay::new(deps.http, &config);
-    let settings = relay_settings(deps, &url, env).await.map_err(fail(STEP_SETUP))?;
-    relay.save_settings(&settings).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
-    let made = relay.ensure_backend(project_id, &target.name).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
+    let settings = relay_settings(deps, url, env).await.map_err(fail(STEP_SETUP))?;
+    save_settings_with_retry(&relay, settings).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
+    let made = ensure_backend_with_retry(&relay, project_id, &target.name).await.map_err(|e| Failed { step: STEP_SETUP, message: describe(&e) })?;
     if env == PRODUCTION {
         // The published app finds its backend through these, bound by name on every publish.
         let production = made.environment(PRODUCTION).ok_or_else(|| Failed { step: STEP_SETUP, message: "Relay answered without a production environment".to_string() })?;
         let keys = [(SECRET_URL, &production.url), (SECRET_ANON_KEY, &production.anon_key), (SECRET_SERVICE_KEY, &production.service_key)];
         for (name, value) in keys {
-            client.set_secret(&org, &app, name, Some(value), None).await.map_err(fail(STEP_SETUP))?;
+            client.set_secret(org, app, name, Some(value), None).await.map_err(fail(STEP_SETUP))?;
             sqlx::query(
                 "INSERT INTO project_secrets (project_id, name, updated_by) VALUES ($1, $2, $3) \
                  ON CONFLICT (project_id, name) DO UPDATE SET updated_by = $3, updated_at = now()",
@@ -228,36 +290,286 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
     Ok(())
 }
 
+async fn save_settings_with_retry(relay: &Relay<'_>, mut settings: Value) -> Result<Value, RelayError> {
+    let deadline = tokio::time::Instant::now() + SETUP_RETRY_WAIT;
+    loop {
+        match relay.save_settings(&settings).await {
+            Ok(saved) => return Ok(saved),
+            Err(RelayError::Rejected { status, code, message, details }) => {
+                let mut stripped = false;
+                if message.contains("shared sender") && settings.get("shared_smtp").is_some() {
+                    if let Some(obj) = settings.as_object_mut() {
+                        obj.remove("shared_smtp");
+                        stripped = true;
+                    }
+                }
+                if message.contains("file storage") && settings.get("storage").is_some() {
+                    if let Some(obj) = settings.as_object_mut() {
+                        obj.remove("storage");
+                        stripped = true;
+                    }
+                }
+                if stripped {
+                    tracing::warn!(%message, "Relay backend couldn't reach optional shared SMTP/storage; saving core settings without them");
+                    continue;
+                }
+                let transient = message.contains("PostgREST") || message.contains("functions runtime") || message.contains("database");
+                if !transient || tokio::time::Instant::now() >= deadline {
+                    return Err(RelayError::Rejected { status, code, message, details });
+                }
+            }
+            Err(RelayError::Unavailable(ref message)) => {
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(RelayError::Unavailable(message.clone()));
+                }
+            }
+            Err(other) => return Err(other),
+        }
+        tokio::time::sleep(POLL_EVERY).await;
+    }
+}
+
+async fn ensure_backend_with_retry(
+    relay: &Relay<'_>,
+    project_id: Uuid,
+    name: &str,
+) -> Result<nomi_relay_client::Backend, RelayError> {
+    let deadline = tokio::time::Instant::now() + SETUP_RETRY_WAIT;
+    loop {
+        match relay.ensure_backend(project_id, name).await {
+            Ok(made) => return Ok(made),
+            Err(RelayError::Unavailable(message)) if tokio::time::Instant::now() < deadline => {
+                tracing::debug!(%project_id, %message, "waiting to ensure backend on Relay");
+            }
+            Err(other) => return Err(other),
+        }
+        tokio::time::sleep(POLL_EVERY).await;
+    }
+}
+
 fn describe(e: &RelayError) -> String {
     match e {
         RelayError::Rejected { message, .. } | RelayError::NotFound(message) | RelayError::Unavailable(message) | RelayError::Unauthorized(message) => clip(message),
     }
 }
 
-/// Follows a publish until Shipyard says it succeeded or failed; answers the environment's address.
-async fn wait_for_publish(client: &Shipyard<'_>, org: &str, app: &str, env: &str, publish_id: &str, accepted_url: Option<String>) -> Result<String, String> {
+/// Resolves an environment's URL on Shipyard when a publish response or event didn't carry `urls`.
+async fn resolve_env_url(client: &Shipyard<'_>, org: &str, app: &str, env: &str) -> Option<String> {
+    if let Ok(domain) = client.get_domain(org, app, env).await {
+        if let Some(url) = domain.get("url").and_then(Value::as_str).filter(|u| !u.is_empty()) {
+            return Some(url.to_string());
+        }
+    }
+    let env_data = client.get_env(org, app, env).await.ok()?;
+    env_data
+        .get("url")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            env_data
+                .get("last_publish")
+                .and_then(|p| p.get("urls"))
+                .and_then(Value::as_array)
+                .and_then(|u| u.first())
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            env_data
+                .get("services")
+                .and_then(Value::as_array)
+                .and_then(|services| {
+                    services.iter().find_map(|s| {
+                        s.get("url").and_then(Value::as_str).or_else(|| {
+                            s.get("urls")
+                                .and_then(Value::as_array)
+                                .and_then(|u| u.first())
+                                .and_then(Value::as_str)
+                        })
+                    })
+                })
+        })
+        .filter(|u| !u.is_empty())
+        .map(str::to_string)
+}
+
+/// Follows a publish until Shipyard says it succeeded or failed (via webhook or polling); answers
+/// the environment's address.
+#[allow(clippy::too_many_arguments)]
+async fn wait_for_publish(
+    pool: &PgPool,
+    client: &Shipyard<'_>,
+    project_id: Uuid,
+    org: &str,
+    app: &str,
+    env: &str,
+    publish_id: &str,
+    accepted_url: Option<String>,
+) -> Result<String, String> {
     let deadline = tokio::time::Instant::now() + PUBLISH_WAIT;
     loop {
-        let publish = client.get_publish(org, app, env, publish_id).await.map_err(|e| format!("{e:?}"))?;
-        match publish.get("status").and_then(Value::as_str).unwrap_or("running") {
-            "succeeded" => {
-                let url = publish.get("urls").and_then(Value::as_array).and_then(|urls| urls.first()).and_then(Value::as_str).map(str::to_string).or(accepted_url);
-                return url.ok_or_else(|| "Shipyard gave the backend no address".to_string());
+        if let Ok(Some(stack)) = project_relays::stack(pool, project_id, env).await {
+            if let Some(url) = stack.url.filter(|u| !u.is_empty()) {
+                return Ok(url);
             }
-            "failed" => {
-                let why = match publish.get("error") {
-                    Some(Value::String(s)) => s.clone(),
-                    Some(Value::Null) | None => "Shipyard didn't say why".to_string(),
-                    Some(other) => other.to_string(),
-                };
-                return Err(format!("Shipyard stopped the deploy: {}", clip(&why)));
+            if stack.state == FAILED {
+                return Err(stack.error.unwrap_or_else(|| "Shipyard stopped the deploy".to_string()));
             }
-            _ => {}
+        }
+        match client.get_publish(org, app, env, publish_id).await {
+            Ok(publish) => match publish.get("status").and_then(Value::as_str).unwrap_or("running") {
+                "succeeded" => {
+                    let mut url = publish
+                        .get("urls")
+                        .and_then(Value::as_array)
+                        .and_then(|urls| urls.first())
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .or_else(|| accepted_url.clone());
+                    if url.is_none() {
+                        url = resolve_env_url(client, org, app, env).await;
+                    }
+                    return url.ok_or_else(|| "Shipyard gave the backend no address".to_string());
+                }
+                "failed" => {
+                    let why = match publish.get("error") {
+                        Some(Value::String(s)) => s.clone(),
+                        Some(Value::Null) | None => "Shipyard didn't say why".to_string(),
+                        Some(other) => other.to_string(),
+                    };
+                    return Err(format!("Shipyard stopped the deploy: {}", clip(&why)));
+                }
+                _ => {}
+            },
+            // On Shipyard, an environment doesn't exist until its first deploy creates it, so
+            // asking for the publish while the environment is still being provisioned can return
+            // 404 NotFound or a transient Unavailable; keep waiting for it or for the webhook.
+            Err(nomi_shipyard::ShipyardError::NotFound(_) | nomi_shipyard::ShipyardError::Unavailable(_)) => {
+                tracing::debug!(%project_id, app, env, publish_id, "publish not visible yet on Shipyard; waiting");
+            }
+            Err(e) => return Err(format!("{e:?}")),
         }
         if tokio::time::Instant::now() >= deadline {
             return Err("it took longer than ten minutes to start".to_string());
         }
-        tokio::time::sleep(POLL_EVERY).await;
+        let notified = publish_notify().notified();
+        tokio::select! {
+            _ = tokio::time::sleep(POLL_EVERY) => {}
+            _ = notified => {}
+        }
+    }
+}
+
+/// Records the URL or failure from a Shipyard `publish.succeeded` / `publish.failed` event for
+/// `<app>-backend` and wakes any running [`wait_for_publish`].
+pub async fn record_publish_event(
+    pool: &PgPool,
+    client: Option<&Shipyard<'_>>,
+    project_id: Uuid,
+    event: &crate::shipyard::Event,
+) {
+    let env = event.environment.as_deref().unwrap_or(DEV);
+    match event.kind.as_str() {
+        "publish.succeeded" => {
+            let mut url = event
+                .data
+                .get("urls")
+                .and_then(Value::as_array)
+                .and_then(|u| u.first())
+                .and_then(Value::as_str)
+                .filter(|u| !u.is_empty())
+                .map(str::to_string);
+            if url.is_none() {
+                if let (Some(client), Some(event_app)) = (client, event.app.as_deref()) {
+                    if let Ok(Some(target)) = crate::shipyard::load_target(pool, project_id).await {
+                        url = resolve_env_url(client, &target.org_key(), event_app, env).await;
+                    }
+                }
+            }
+            if let Some(url) = url {
+                let _ = project_relays::set_url(pool, project_id, env, &url).await;
+            }
+            publish_notify().notify_waiters();
+        }
+        "publish.failed" => {
+            let why = crate::shipyard::error_text(&event.data).unwrap_or_else(|| "Shipyard didn't say why".to_string());
+            if matches!(project_relays::stack(pool, project_id, env).await, Ok(Some(stack)) if stack.state != READY) {
+                let message = format!("Shipyard stopped the deploy: {}", clip(&why));
+                let _ = project_relays::set_state(pool, project_id, env, FAILED, Some(STEP_WAIT), Some(&message)).await;
+            }
+            publish_notify().notify_waiters();
+        }
+        _ => {}
+    }
+}
+
+/// When Shipyard delivers `publish.succeeded` for `<app>-backend` and no in-process [`run`] is
+/// actively waiting on it (for instance, polling failed earlier or Nomi restarted while Shipyard
+/// was building), finishes configuring the Relay backend and syncing `nomi/` files.
+pub async fn finish_on_event(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    shipyard: &ShipyardConfig,
+    settings_key: &[u8; 32],
+    project_storage: Option<ProjectStore>,
+    project_id: Uuid,
+    event: &crate::shipyard::Event,
+) {
+    if event.kind != "publish.succeeded" {
+        return;
+    }
+    if !crate::shipyard::is_backend_event(pool, project_id, event).await.unwrap_or(false) {
+        return;
+    }
+    let env = event.environment.as_deref().unwrap_or(DEV);
+    if is_active_setup(project_id, env) {
+        return;
+    }
+    let Ok(Some(stack)) = project_relays::stack(pool, project_id, env).await else {
+        return;
+    };
+    if stack.state == READY {
+        return;
+    }
+    let _guard = ActiveGuard::enter(project_id, env);
+    let deps = Deps { pool, http, shipyard, settings_key };
+    let outcome = async {
+        at(&deps, project_id, env, STEP_WAIT).await?;
+        let client = Shipyard::new(http, shipyard);
+        let target = crate::shipyard::load_target(pool, project_id)
+            .await
+            .map_err(fail(STEP_WAIT))?
+            .ok_or_else(|| Failed { step: STEP_WAIT, message: "the project no longer exists".to_string() })?;
+        let app = target
+            .shipyard_app
+            .clone()
+            .ok_or_else(|| Failed { step: STEP_WAIT, message: "the project has no app on Shipyard".to_string() })?;
+        let org = target.org_key();
+        let backend = backend_app(&app);
+        let url = stack
+            .url
+            .filter(|u| !u.is_empty())
+            .or_else(|| {
+                event
+                    .data
+                    .get("urls")
+                    .and_then(Value::as_array)
+                    .and_then(|u| u.first())
+                    .and_then(Value::as_str)
+                    .filter(|u| !u.is_empty())
+                    .map(str::to_string)
+            });
+        let url = match url {
+            Some(url) => url,
+            None => resolve_env_url(&client, &org, &backend, env)
+                .await
+                .ok_or_else(|| Failed { step: STEP_WAIT, message: "Shipyard gave the backend no address".to_string() })?,
+        };
+        configure_deployed_relay(&deps, &client, &target, &app, &org, project_id, env, &url).await
+    }
+    .await;
+    if finish_run(&deps, project_id, env, outcome).await && env == DEV {
+        if let Some(storage) = project_storage {
+            send_project_files(pool.clone(), http.clone(), shipyard.clone(), *settings_key, storage, project_id).await;
+        }
     }
 }
 
@@ -453,7 +765,7 @@ pub async fn wait_until_ready(deps: &Deps<'_>, project_id: Uuid, wait: Duration)
     loop {
         match project_relays::stack(deps.pool, project_id, DEV).await? {
             Some(stack) if stack.state == WAKING || stack.state == CREATING => {}
-            Some(stack) if stack.state == FAILED => return Err(stack.error.unwrap_or_else(|| "the backend couldn't be woken".to_string())),
+            Some(stack) if stack.state == FAILED => return Err(project_relays::unavailable(&stack)),
             _ => return Ok(()),
         }
         if tokio::time::Instant::now() >= deadline {
@@ -526,3 +838,68 @@ pub(crate) async fn prepare_for_publish(
 
 const PREPARING: &str = "Setting up this app's own database and backend first, which takes a few minutes. Publishing starts by itself when it's ready.";
 const WAITING: &str = "This app's backend is still being set up. Publishing starts by itself when it's ready.";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn save_settings_strips_unreachable_optional_storage_and_smtp_without_failing() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/control/settings"))
+            .respond_with(ResponseTemplate::new(422).set_body_json(json!({
+                "data": null,
+                "error": { "code": "SETTINGS_INVALID", "message": "These didn't work: shared sender, file storage" }
+            })))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/control/settings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "configured": true }, "error": null })))
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let config = RelayConfig::from_values(Some(&server.uri()), Some("key")).unwrap();
+        let relay = Relay::new(&http, &config);
+        let settings = json!({
+            "public_domain": "backend.apps.test",
+            "postgrest_dev_url": "",
+            "postgrest_production_url": "",
+            "preview_origins": [".webcontainer-api.io"],
+            "shared_smtp": { "host": "localhost", "from": "noreply@test" },
+            "storage": { "bucket": "local", "endpoint": "http://localhost:9000" }
+        });
+
+        let saved = save_settings_with_retry(&relay, settings).await.unwrap();
+        assert_eq!(saved["configured"], true);
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+        let second: Value = serde_json::from_slice(&requests[1].body).unwrap();
+        assert!(second.get("shared_smtp").is_none());
+        assert!(second.get("storage").is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_env_url_falls_back_to_domain_or_env_when_publish_omits_urls() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orgs/org-1/apps/todo-backend/envs/dev/domain"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "url": "https://todo-backend-dev.apps.test" },
+                "error": null
+            })))
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let cfg = ShipyardConfig { base_url: server.uri(), key: "k".into(), reveal_key: None, webhook_secret: None };
+        let client = Shipyard::new(&http, &cfg);
+        let resolved = resolve_env_url(&client, "org-1", "todo-backend", "dev").await;
+        assert_eq!(resolved.as_deref(), Some("https://todo-backend-dev.apps.test"));
+    }
+}

@@ -34,7 +34,7 @@ pub const STILL_BEING_SET_UP: &str = "This project's backend is still being set 
 pub const WAKING_UP: &str = "This project's backend is waking up.";
 
 /// Why a project's own Relay can't be called right now, in words for the person.
-fn unavailable(stack: &Stack) -> String {
+pub fn unavailable(stack: &Stack) -> String {
     match stack.state.as_str() {
         CREATING => STILL_BEING_SET_UP.to_string(),
         SLEEPING | WAKING => WAKING_UP.to_string(),

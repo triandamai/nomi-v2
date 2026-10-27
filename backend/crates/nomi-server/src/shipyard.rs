@@ -200,7 +200,14 @@ pub struct Event {
 /// to one, for [`apply_event`].
 pub async fn store_event(pool: &PgPool, event: &Event) -> Result<Option<Uuid>, sqlx::Error> {
     let project_id: Option<Uuid> = match &event.app {
-        Some(app) => sqlx::query_scalar("SELECT id FROM projects WHERE shipyard_app = $1").bind(app).fetch_optional(pool).await?,
+        Some(app) => {
+            let base = app.strip_suffix(nomi_shipyard::manifest::BACKEND_SUFFIX);
+            sqlx::query_scalar("SELECT id FROM projects WHERE shipyard_app = $1 OR ($2::text IS NOT NULL AND shipyard_app = $2)")
+                .bind(app)
+                .bind(base)
+                .fetch_optional(pool)
+                .await?
+        }
         None => None,
     };
     let inserted = sqlx::query(
@@ -221,8 +228,25 @@ pub async fn store_event(pool: &PgPool, event: &Event) -> Result<Option<Uuid>, s
     Ok(if inserted { project_id } else { None })
 }
 
+/// Whether an event came from the project's `<app>-backend` Relay app on Shipyard rather than
+/// its web app.
+pub async fn is_backend_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Result<bool, sqlx::Error> {
+    let Some(event_app) = event.app.as_deref() else {
+        return Ok(false);
+    };
+    if !event_app.ends_with(nomi_shipyard::manifest::BACKEND_SUFFIX) {
+        return Ok(false);
+    }
+    let shipyard_app: Option<String> = sqlx::query_scalar("SELECT shipyard_app FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+    Ok(shipyard_app.as_deref().is_some_and(|app| crate::relay_backend::backend_app(app) == event_app))
+}
+
 /// The error text of a failed publish or deployment.
-fn error_text(data: &Value) -> Option<String> {
+pub(crate) fn error_text(data: &Value) -> Option<String> {
     match data.get("error") {
         Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
         Some(Value::Object(o)) => o.get("message").and_then(Value::as_str).map(str::to_string),
@@ -336,6 +360,11 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
     let publish_id = event.data.get("publish_id").and_then(Value::as_str);
     match event.kind.as_str() {
         "publish.succeeded" | "publish.failed" => {
+            if is_backend_event(pool, project_id, event).await? {
+                crate::relay_backend::record_publish_event(pool, client, project_id, event).await;
+                crate::project_events::changed(project_id, &event.kind);
+                return Ok(());
+            }
             let status = if event.kind == "publish.succeeded" { "succeeded" } else { "failed" };
             let url = event.data.get("urls").and_then(Value::as_array).and_then(|u| u.first()).and_then(Value::as_str);
             if let Some(publish_id) = publish_id {
