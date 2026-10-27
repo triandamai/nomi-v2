@@ -1,30 +1,12 @@
-//! How Nomi reaches Nomi Relay: Relay's address and control key, set in the admin (Relay page)
-//! and kept encrypted with the settings key. `RELAY_CONTROL_URL` / `RELAY_CONTROL_KEY` are the
-//! fallback for a Nomi set up before the page existed. Read on every use, so the server and the
-//! worker see a saved connection at once.
+//! The shared Relay: the one projects made before each project got its own (see
+//! `project_relays`) still use. Its address and control key are the connection saved earlier
+//! (kept encrypted with the settings key) or `RELAY_CONTROL_URL` / `RELAY_CONTROL_KEY`. Read on
+//! every use. There's no admin page for it any more; a new one is saved with `save`.
 
 use nomi_relay_client::RelayConfig;
 use nomi_settings::crypto::{decrypt, encrypt, parse_key};
-use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
-
-/// Where the connection in use came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Source {
-    Admin,
-    Environment,
-    None,
-}
-
-/// What the admin page shows: never the key itself.
-#[derive(Debug, Clone, Serialize)]
-pub struct ConnectionView {
-    pub source: Source,
-    pub control_url: String,
-    pub key_set: bool,
-}
 
 /// The settings key from the environment, as the server and worker read it at start.
 pub fn settings_key_from_env() -> Option<[u8; 32]> {
@@ -61,14 +43,6 @@ pub async fn load_or(pool: &PgPool, settings_key: Option<&[u8; 32]>, fallback: O
 /// The connection to use, with the environment as the fallback.
 pub async fn load(pool: &PgPool, settings_key: Option<&[u8; 32]>) -> Option<RelayConfig> {
     load_or(pool, settings_key, RelayConfig::from_env()).await
-}
-
-pub async fn view(pool: &PgPool, settings_key: Option<&[u8; 32]>, fallback: Option<&RelayConfig>) -> ConnectionView {
-    match (stored(pool, settings_key).await, fallback) {
-        (Some(config), _) => ConnectionView { source: Source::Admin, control_url: config.control_url, key_set: true },
-        (None, Some(config)) => ConnectionView { source: Source::Environment, control_url: config.control_url.clone(), key_set: true },
-        (None, None) => ConnectionView { source: Source::None, control_url: String::new(), key_set: false },
-    }
 }
 
 /// Saves Relay's address and, when given, its key; an empty or missing key keeps the stored one.

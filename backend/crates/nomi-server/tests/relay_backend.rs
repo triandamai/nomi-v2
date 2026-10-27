@@ -40,11 +40,11 @@ async fn shipyard(relay_url: &str, outcome: Value) -> MockServer {
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+$")).respond_with(envelope(json!({}))).mount(&server).await;
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(envelope(json!({ "ref": "sec" }))).mount(&server).await;
     Mock::given(method("POST"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publish$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/(dev|production)/publish$"))
         .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "data": { "publish_id": "p1", "status": "running", "url": relay_url, "warnings": [] }, "error": null })))
         .mount(&server)
         .await;
-    Mock::given(method("GET")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publishes/p1$")).respond_with(envelope(outcome)).mount(&server).await;
+    Mock::given(method("GET")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/(dev|production)/publishes/p1$")).respond_with(envelope(outcome)).mount(&server).await;
     server
 }
 
@@ -56,7 +56,7 @@ async fn relay(project: Uuid) -> MockServer {
         .and(path(format!("/control/projects/{project}")))
         .respond_with(envelope(json!({
             "id": project, "slug": "todo", "tier": "dedicated",
-            "environments": { "dev": { "url": "https://x", "anon_key": "a", "service_key": "s" }, "production": { "url": "https://x", "anon_key": "a", "service_key": "s" } }
+            "environments": { "dev": { "url": "https://x", "anon_key": "a", "service_key": "s" }, "production": { "url": "https://prod.backend.test", "anon_key": "prod-anon", "service_key": "prod-service" } }
         })))
         .expect(1..)
         .mount(&server)
@@ -239,4 +239,26 @@ async fn a_sleeping_backend_is_woken_once_and_waited_for(pool: PgPool) {
     second.unwrap();
     assert_eq!(project_relays::stack(&pool, project, "dev").await.unwrap().unwrap().state, READY);
     assert!(project_relays::config_for(&pool, Some(&KEY), None, project, "dev").await.unwrap().is_some());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_production_backend_gives_the_published_app_its_keys(pool: PgPool) {
+    let project = seed_project(&pool).await;
+    let relay = relay(project).await;
+    let shipyard = shipyard(&relay.uri(), json!({ "status": "succeeded", "urls": [relay.uri()] })).await;
+    let http = reqwest::Client::new();
+
+    run(&deps(&pool, &http, &config(&shipyard)), project, "production", false).await;
+
+    assert_eq!(project_relays::stack(&pool, project, "production").await.unwrap().unwrap().state, READY);
+    // App-wide secrets on the app itself, which every publish binds by name.
+    for (name, value) in [("NOMI_URL", "https://prod.backend.test"), ("NOMI_ANON_KEY", "prod-anon"), ("NOMI_SERVICE_KEY", "prod-service")] {
+        assert_eq!(calls(&shipyard, "PUT", &format!("/secrets/{name}")).await, vec![json!({ "value": value, "environment": null })], "{name}");
+    }
+    let names: Vec<String> = sqlx::query_scalar("SELECT name FROM project_secrets WHERE project_id = $1 ORDER BY name").bind(project).fetch_all(&pool).await.unwrap();
+    assert_eq!(names, vec!["NOMI_ANON_KEY", "NOMI_SERVICE_KEY", "NOMI_URL"]);
+    // Production has no preview origins, and no functions runtime when the app has none.
+    assert_eq!(calls(&relay, "PUT", "/control/settings").await[0]["preview_origins"], json!([]));
+    let publish = shipyard.received_requests().await.unwrap().into_iter().find(|r| r.url.path().ends_with("/envs/production/publish")).unwrap();
+    assert!(!String::from_utf8_lossy(&publish.body).contains("\"name\":\"functions\""));
 }

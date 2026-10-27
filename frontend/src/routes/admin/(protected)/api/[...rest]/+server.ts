@@ -18,8 +18,6 @@ const ALLOWED = new RegExp(
 			'support/keys',
 			`support/keys/${UUID}`,
 			'support/questions',
-			'relay',
-			'relay/(connection|settings)',
 			'shipyard',
 			'shipyard/webhook',
 			'shipyard/apps',

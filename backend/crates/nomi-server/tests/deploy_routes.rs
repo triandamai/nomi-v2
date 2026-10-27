@@ -496,3 +496,28 @@ async fn a_relay_projects_secrets_also_go_to_relay(pool: PgPool) {
     let put: Value = serde_json::from_slice(&sent.iter().find(|r| r.method.as_str() == "PUT").unwrap().body).unwrap();
     assert_eq!(put["value"], "gh-secret");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_first_publish_of_a_project_with_its_own_backend_makes_the_production_backend_first(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "backend@deploy.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    // Made on Relay with its own development backend, as a new project is; nothing in production yet.
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let key = nomi_test_support::TEST_SETTINGS_KEY;
+    nomi_server::project_relays::begin(&pool, &key, project_id, "dev", "dev-key", "0.1.5").await.unwrap();
+    nomi_server::project_relays::set_url(&pool, project_id, "dev", "https://dev.backend.test").await.unwrap();
+    nomi_server::project_relays::set_state(&pool, project_id, "dev", nomi_server::project_relays::READY, None, None).await.unwrap();
+
+    let (status, body) = request(router.clone(), "POST", &format!("/api/projects/{project_id}/deploy/publish"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(body["preparing"], true, "{body}");
+    assert!(body["message"].as_str().unwrap().contains("Publishing starts by itself"));
+    let production = nomi_server::project_relays::stack(&pool, project_id, "production").await.unwrap();
+    assert!(production.is_some(), "the production backend is being made");
+    let publishes: i64 = sqlx::query_scalar("SELECT count(*) FROM project_publishes WHERE project_id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(publishes, 0, "the app itself waits for its backend");
+}

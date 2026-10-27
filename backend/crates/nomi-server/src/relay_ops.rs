@@ -261,11 +261,25 @@ fn source_files(files: &[ProjectFile]) -> Vec<SourceFile> {
 }
 
 /// What storing a project's secrets on Shipyard takes.
-struct ShipyardHandle {
+pub(crate) struct ShipyardHandle {
     pool: PgPool,
     project_storage: ProjectStore,
     http_client: reqwest::Client,
-    config: ShipyardConfig,
+    pub(crate) config: ShipyardConfig,
+    settings_key: Option<[u8; 32]>,
+}
+
+impl ShipyardHandle {
+    /// An owned copy of what `state` reaches Shipyard with, for work that outlives the request.
+    pub(crate) fn of(state: &impl ShipyardAccess) -> Option<Self> {
+        Some(Self {
+            pool: state.pool().clone(),
+            project_storage: state.project_storage().clone(),
+            http_client: state.http_client().clone(),
+            config: state.shipyard()?.clone(),
+            settings_key: state.settings_key(),
+        })
+    }
 }
 
 impl ShipyardAccess for ShipyardHandle {
@@ -280,6 +294,9 @@ impl ShipyardAccess for ShipyardHandle {
     }
     fn shipyard(&self) -> Option<&ShipyardConfig> {
         Some(&self.config)
+    }
+    fn settings_key(&self) -> Option<[u8; 32]> {
+        self.settings_key
     }
 }
 
@@ -310,7 +327,7 @@ impl ServerRelayOps {
     /// Where Relay's keys are kept for the published app. Without it (a Nomi without Shipyard),
     /// backends are still made, but nothing is stored for publishing.
     pub fn with_shipyard(mut self, project_storage: ProjectStore, config: ShipyardConfig) -> Self {
-        self.shipyard = Some(ShipyardHandle { pool: self.pool.clone(), project_storage, http_client: self.http_client.clone(), config });
+        self.shipyard = Some(ShipyardHandle { pool: self.pool.clone(), project_storage, http_client: self.http_client.clone(), config, settings_key: self.settings_key() });
         self
     }
 
