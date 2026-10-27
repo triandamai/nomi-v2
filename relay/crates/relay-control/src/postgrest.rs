@@ -15,9 +15,55 @@ pub const REQUEST_STATEMENT_TIMEOUT: &str = "8s";
 const SCHEMAS_LOCK: i64 = 0x7265_6c61_7900_0001;
 /// A free project's schema: `app_` and its id without dashes.
 const FREE_SCHEMA_PATTERN: &str = "^app_[0-9a-f]{32}$";
+/// Postgres' "duplicate object", raised when two starts create the role at once.
+const DUPLICATE_OBJECT: &str = "42710";
+/// What Postgres says when two sessions change the same role at once (roles are shared by the
+/// whole cluster, so Relays started together against one cluster can meet here).
+const CONCURRENT_ROLE_UPDATE: &str = "tuple concurrently updated";
+/// How many times a role change is tried, and how long to wait between tries.
+const ROLE_CHANGE_ATTEMPTS: u32 = 10;
+const ROLE_CHANGE_RETRY: std::time::Duration = std::time::Duration::from_millis(50);
 
 fn quoted(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+/// The login PostgREST uses next to a standalone Relay (`relay_core::settings::AUTHENTICATOR`),
+/// made when missing and given `password` every time, so it matches `RELAY_PGRST_PASSWORD`.
+/// NOINHERIT: it only becomes a project's role when a request's token says so.
+pub async fn ensure_authenticator(pool: &PgPool, password: &str) -> Result<(), RelayError> {
+    let mut attempt = 1;
+    loop {
+        match make_authenticator(pool, password).await {
+            Err(RelayError::Internal(message)) if message.contains(CONCURRENT_ROLE_UPDATE) && attempt < ROLE_CHANGE_ATTEMPTS => {
+                attempt += 1;
+                tokio::time::sleep(ROLE_CHANGE_RETRY).await;
+            }
+            result => return result,
+        }
+    }
+}
+
+async fn make_authenticator(pool: &PgPool, password: &str) -> Result<(), RelayError> {
+    let name = quoted(relay_core::settings::AUTHENTICATOR);
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)")
+        .bind(relay_core::settings::AUTHENTICATOR)
+        .fetch_one(pool)
+        .await?;
+    if !exists {
+        if let Err(e) = sqlx::query(&format!("CREATE ROLE {name} LOGIN NOINHERIT")).execute(pool).await {
+            let duplicate = e.as_database_error().and_then(|d| d.code()).is_some_and(|code| code == DUPLICATE_OBJECT);
+            if !duplicate {
+                return Err(e.into());
+            }
+        }
+    }
+    sqlx::query(&format!("ALTER ROLE {name} LOGIN NOINHERIT PASSWORD {}", literal(password))).execute(pool).await?;
+    Ok(())
 }
 
 async fn require_role(pool: &PgPool, authenticator: &str) -> Result<(), RelayError> {

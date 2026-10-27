@@ -232,7 +232,7 @@ fn literal(value: &str) -> String {
 
 /// Writes PostgREST's secret and claim key onto its role in this database, and the schemas it
 /// serves, then asks it to reload.
-async fn point_postgrest(pool: &PgPool, settings: &Settings, role: &str) -> Result<(), RelayError> {
+pub(crate) async fn point_postgrest(pool: &PgPool, settings: &Settings, role: &str) -> Result<(), RelayError> {
     let database: String = sqlx::query_scalar("SELECT current_database()").fetch_one(pool).await?;
     let target = format!("ALTER ROLE {} IN DATABASE {}", quoted(role), quoted(&database));
     sqlx::query(&format!("{target} SET pgrst.jwt_secret = {}", literal(&settings.postgrest_jwt_secret))).execute(pool).await?;
@@ -257,6 +257,8 @@ pub async fn save(relay: &Relay, input: SettingsInput) -> Result<SettingsView, R
         storage: merge_storage(input.storage, stored.storage.clone()),
         functions: merge_runtime(input.functions, stored.functions.clone()),
     };
+    // A standalone Relay's databases, PostgREST and runtime come from its environment.
+    let settings = relay.with_environment(settings);
     let mut pools = HashMap::new();
     for env in Env::ALL {
         let url = settings.shared_url(env);

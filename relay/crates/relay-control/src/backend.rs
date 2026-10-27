@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use relay_core::keys::{api_key, ApiRole};
-use relay_core::names::{public_url, role, schema_for, RoleKind};
+use relay_core::names::{role, schema_for, RoleKind};
 use relay_core::{Env, Tier};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -99,6 +99,12 @@ async fn provision(pool: &PgPool, project: Uuid, tier: Tier) -> Result<(), Relay
 /// Makes `project`'s backend in both environments, or does nothing if it exists. Answers its
 /// address and keys per environment (the same ones every time).
 pub async fn ensure_backend(relay: &Relay, project: Uuid, name: &str, tier: Tier, databases: Option<Databases>) -> Result<BackendKeys, RelayError> {
+    // A standalone Relay holds its one project, dedicated, in its own database.
+    let (tier, databases) = match relay.standalone() {
+        Some(mode) if mode.config.project != project => return Err(RelayError::rejected("CONFLICT", "this Relay serves one project")),
+        Some(mode) => (Tier::Dedicated, Some(Databases { dev: mode.database_url.clone(), production: mode.database_url.clone() })),
+        None => (tier, databases),
+    };
     if tier == Tier::Dedicated && databases.is_none() {
         return Err(RelayError::rejected("BAD_REQUEST", "a dedicated backend needs its dev and production databases"));
     }
@@ -136,7 +142,7 @@ pub async fn backend_keys(relay: &Relay, project: Uuid) -> Result<BackendKeys, R
         environments.insert(
             env.as_str().to_string(),
             EnvironmentKeys {
-                url: public_url(&relay.live()?.settings.public_domain, &row.slug, env),
+                url: relay.public_url(&row.slug, env)?,
                 anon_key: api_key(&row.signing_secret, project, env, ApiRole::Anon, row.keys_issued_at),
                 service_key: api_key(&row.signing_secret, project, env, ApiRole::Service, row.keys_issued_at),
             },

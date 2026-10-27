@@ -118,7 +118,9 @@ impl Gateway {
             Ok(target) => target,
             Err(response) => return response,
         };
-        if environment.tier == Tier::Dedicated {
+        // A shared Relay's PostgREST doesn't serve a dedicated project's own database; a standalone
+        // Relay's does (its one project is dedicated, in the database PostgREST is pointed at).
+        if environment.tier == Tier::Dedicated && self.relay.standalone().is_none() {
             return refuse(StatusCode::NOT_IMPLEMENTED, "RELAY_DEDICATED", "Dedicated backends aren't served by the gateway yet.");
         }
         let headers = request.headers();

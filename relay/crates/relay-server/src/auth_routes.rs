@@ -14,7 +14,6 @@ use relay_auth::config::{self, EMAIL_CODE};
 use relay_auth::sessions;
 use relay_auth::users::{self, Attributes};
 use relay_auth::{AuthError, Scope};
-use relay_core::names::public_url;
 use relay_core::settings::Settings;
 use relay_core::Env;
 use relay_gateway::auth::Kind;
@@ -103,8 +102,8 @@ fn percent_decode(text: &str) -> String {
 
 /// The provider's way back: Relay's own address on this host, one per provider.
 fn callback_url(gateway: &Gateway, slug: &str, env: Env, provider: &str) -> Result<String, AuthError> {
-    let domain = gateway.relay.live().map_err(|e| AuthError::Internal(e.to_string()))?.settings.public_domain.clone();
-    Ok(format!("{}{CALLBACK_PREFIX}{provider}", public_url(&domain, slug, env)))
+    let base = gateway.relay.public_url(slug, env).map_err(|e| AuthError::Internal(e.to_string()))?;
+    Ok(format!("{base}{CALLBACK_PREFIX}{provider}"))
 }
 
 /// Checks where the person will come back to, records the flow, and answers the provider's URL.
