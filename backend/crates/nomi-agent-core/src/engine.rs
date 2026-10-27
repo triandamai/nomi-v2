@@ -71,6 +71,42 @@ pub fn reply_text_of(content: &[ContentBlock]) -> String {
     joined.trim().to_string()
 }
 
+/// Makes the request end on the person's side: when the chat's newest message is the crew's,
+/// adds a note in the person's turn pointing back at what they asked.
+pub(crate) fn end_on_the_person(messages: &mut Vec<LlmMessage>) {
+    if messages.last().is_some_and(|m| m.role == LlmRole::Assistant) {
+        messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: crate::prompts::ANSWER_THE_PERSON_NOTE.to_string() }] });
+    }
+}
+
+#[cfg(test)]
+mod ends_on_the_person_tests {
+    use super::end_on_the_person;
+    use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
+
+    fn said(role: LlmRole, text: &str) -> LlmMessage {
+        LlmMessage { role, content: vec![ContentBlock::Text { text: text.into() }] }
+    }
+
+    #[test]
+    fn a_chat_whose_newest_message_is_the_crews_gets_a_note_from_the_person_last() {
+        // The person wrote, then a crew member posted (a progress note, a question to Rena) before
+        // the turn ran: Gemini refuses a request whose last turn is the model's.
+        let mut messages = vec![said(LlmRole::User, "add a dark mode"), said(LlmRole::Assistant, "Koda: Rena, which colours?")];
+        end_on_the_person(&mut messages);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2].role, LlmRole::User);
+        assert_eq!(messages[2].content, vec![ContentBlock::Text { text: crate::prompts::ANSWER_THE_PERSON_NOTE.to_string() }]);
+    }
+
+    #[test]
+    fn a_chat_ending_on_the_person_is_left_alone() {
+        let mut messages = vec![said(LlmRole::Assistant, "hi"), said(LlmRole::User, "add a dark mode")];
+        end_on_the_person(&mut messages);
+        assert_eq!(messages.len(), 2);
+    }
+}
+
 #[cfg(test)]
 mod reply_text_tests {
     use super::reply_text_of;
@@ -543,6 +579,7 @@ pub async fn run_agent_turn(
     mut messages: Vec<LlmMessage>,
     max_tokens: u32,
 ) -> Result<LoopOutcome, TurnError> {
+    end_on_the_person(&mut messages);
     let mut tools = agent.tools();
     let mut own_tools = always_on_own_tools(agent);
     let chat_tools = agent.chat_tools(conn, session_id, user_id, &messages).await;

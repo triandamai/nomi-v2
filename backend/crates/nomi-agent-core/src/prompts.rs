@@ -38,7 +38,9 @@ pub const PLANNING_APP_PLAYBOOK: &str =
      default, for anything with pages, a server or saved data), react or vue only if they ask, astro for content \
      sites, static for a single plain page. Give it backend relay when it keeps data on a server, signs people in, \
      stores files or calls a paid API: Nomi Relay then gives it a database, sign-in, storage and functions, and \
-     create_project says if it has to fall back to Drizzle. Leave backend out for apps that only need the browser. \
+     the backend is set up in the background over a few minutes, which is normal: hand the build to Koda straight \
+     away. Only when create_project says Relay isn't set up or failed, ask the person whether to build on Drizzle \
+     instead. Leave backend out for apps that only need the browser. \
      Then call write_plan with a short title and the plan as markdown: what \
      it's for, every page and what it does, the data it keeps (browser only, or on the server and who may see it), \
      the content to use, \
@@ -72,7 +74,10 @@ pub const CODING_SYSTEM_PROMPT: &str =
      SvelteKit 3 with Svelte 5 is the default for anything with pages and a server. React, Vue or Astro only when the \
      user asks for them or the plan says so. Data on a server goes through Nomi Relay when the project is on Relay (your \
      brief says so): its database, sign-in, files, live changes and functions, through migrations in nomi/migrations \
-     and the nomi-relay client, as the relay guide shows; never add Drizzle to it. A project not on Relay uses \
+     and the nomi-relay client, as the relay guide shows; never add Drizzle to it. \
+     A new project's backend takes a few minutes to start: when a backend tool says it's still starting, keep \
+     building and call it again, never ask the person or offer Drizzle. When it says the backend couldn't be set \
+     up, tell the person to open the project's Relay sheet and choose Try again. A project not on Relay uses \
      Drizzle: Postgres for real multi-user apps, SQLite for small personal tools. Nothing when the browser's \
      localStorage is enough. Never use another ORM, CSS framework, database or native module.\n\n\
      How you work:\n\
@@ -230,3 +235,14 @@ pub const SPEAK_TOOL_DESCRIPTION: &str = "Say something out loud in Nomi's voice
 pub const SPEAK_TOOL_DONE: &str = "Said it aloud; the recording is in the chat and is your reply. End your turn without \
      writing anything, unless something really has to be in writing too.";
 
+
+/// Added as the person's turn when the chat's newest message is the crew's (a progress note or a
+/// question between agents posted after the person wrote): every request must end on the
+/// person's side, and some providers (Gemini) refuse one that doesn't.
+pub const ANSWER_THE_PERSON_NOTE: &str = "(The person's latest message above is still waiting for your answer.)";
+
+/// Follows a backend tool's answer when the project's own backend is still starting, so Koda
+/// keeps working instead of asking the person.
+pub const BACKEND_STARTING_GUIDANCE: &str = "This is normal for a new project and needs nothing from the person. \
+     Keep building what doesn't need the backend (pages, components, migrations in nomi/migrations), then call \
+     this tool again. Don't ask the person about it, don't wait for them, and never suggest Drizzle.";

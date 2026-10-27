@@ -396,7 +396,8 @@ pub fn wake_in_background(pool: PgPool, http: reqwest::Client, shipyard: Shipyar
 }
 
 /// Wakes the project's development backend if it's asleep and waits, up to `BACKEND_READY_WAIT`,
-/// until it's ready: for callers that can't show "waking" (Koda's tools). `Ok` when it's ready
+/// until it's ready (also while it's still being set up): for callers that can't show "waking"
+/// (Koda's tools, the preview). `Ok` when it's ready
 /// or has no sleeping backend; the reason in words otherwise.
 pub async fn ensure_awake(deps: &Deps<'_>, project_id: Uuid) -> Result<(), String> {
     if project_relays::claim_wake(deps.pool, project_id, DEV).await? {
@@ -405,16 +406,20 @@ pub async fn ensure_awake(deps: &Deps<'_>, project_id: Uuid) -> Result<(), Strin
     let deadline = tokio::time::Instant::now() + BACKEND_READY_WAIT;
     loop {
         match project_relays::stack(deps.pool, project_id, DEV).await? {
-            Some(stack) if stack.state == WAKING => {}
+            Some(stack) if stack.state == WAKING || stack.state == CREATING => {}
             Some(stack) if stack.state == FAILED => return Err(stack.error.unwrap_or_else(|| "the backend couldn't be woken".to_string())),
             _ => return Ok(()),
         }
         if tokio::time::Instant::now() >= deadline {
-            return Err("This project's backend is still waking up. Try again in a moment.".to_string());
+            return Err(STILL_STARTING.to_string());
         }
         tokio::time::sleep(POLL_EVERY).await;
     }
 }
+
+/// What a backend call answers when the project's development backend is still being set up or
+/// woken after `BACKEND_READY_WAIT`.
+pub const STILL_STARTING: &str = "This project's backend is still starting (it's set up in the background and takes a few minutes).";
 
 /// A backend still marked `creating` after this long was left by a Nomi that stopped mid-job.
 const STALE_AFTER_SECS: i64 = 20 * 60;

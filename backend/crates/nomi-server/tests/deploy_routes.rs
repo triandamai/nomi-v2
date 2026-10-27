@@ -395,6 +395,24 @@ async fn a_project_can_be_limited_to_its_members(pool: PgPool) {
     assert_eq!(left, 0);
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn deleting_a_project_deletes_its_backend_app_too(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    let deleted = json!({ "data": { "deleted": true }, "error": null });
+    Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/todo-del$")).respond_with(ResponseTemplate::new(200).set_body_json(deleted.clone())).expect(1).mount(&shipyard).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/todo-del-backend$")).respond_with(ResponseTemplate::new(200).set_body_json(deleted)).expect(1).mount(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-del' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router.clone(), "DELETE", &format!("/api/projects/{project_id}"), Some(&token), None).await;
+
+    // Its development backend (database and Relay) goes with it, not only the web app.
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+}
+
 /// A publish row as Shipyard's webhooks would have left it.
 async fn seed_publish(pool: &PgPool, project_id: Uuid, environment: &str, status: &str, files_version: i64, rollback_of: Option<Uuid>, agent: Option<&str>) -> Uuid {
     sqlx::query_scalar(

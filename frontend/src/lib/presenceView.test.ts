@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expireTyping, isDeployEvent, shouldSend, typingNames } from './presenceView';
+import { expireTyping, isBackendEvent, isDeployEvent, shouldSend, typingNames } from './presenceView';
 
 describe('typingNames', () => {
 	it('lists who is typing, the first to start first, without the person themself', () => {
@@ -41,5 +41,13 @@ describe('isDeployEvent', () => {
 		expect(isDeployEvent('{"kind":"Typing","user_id":"u2","name":"Ben"}')).toBe(false);
 		// Anything this build can't read is treated as a change to be safe.
 		expect(isDeployEvent('not json')).toBe(true);
+	});
+});
+
+describe('isBackendEvent', () => {
+	it('is true only for a change to the project backend', () => {
+		expect(isBackendEvent('{"kind":"DeployChanged","event":"backend.changed"}')).toBe(true);
+		expect(isBackendEvent('{"kind":"DeployChanged","event":"publish.succeeded"}')).toBe(false);
+		expect(isBackendEvent('not json')).toBe(false);
 	});
 });

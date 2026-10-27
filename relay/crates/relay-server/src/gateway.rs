@@ -70,6 +70,25 @@ fn cors_headers(env: Env, origin: Option<&str>, preview_origins: &[String]) -> H
     headers
 }
 
+/// What a backend's own address answers: someone opening it in a browser sees that it's running
+/// and where its parts are, instead of an error.
+fn about(env: Env) -> Response {
+    Json(json!({
+        "service": "nomi-relay",
+        "status": "running",
+        "environment": env.as_str(),
+        "message": "This is the app's backend. The app reaches it through the nomi-relay client.",
+        "paths": {
+            "data": REST_PREFIX,
+            "auth": crate::auth_routes::AUTH_PREFIX.trim_end_matches('/'),
+            "storage": crate::storage_routes::STORAGE_PREFIX.trim_end_matches('/'),
+            "functions": crate::functions_routes::FUNCTIONS_PREFIX.trim_end_matches('/'),
+            "realtime": crate::realtime::REALTIME_PATH,
+        },
+    }))
+    .into_response()
+}
+
 fn refusal_response(refusal: Refusal) -> Response {
     let code = match refusal {
         Refusal::MissingKey => "RELAY_NO_KEY",
@@ -94,6 +113,8 @@ impl Gateway {
                 cors.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from(PREFLIGHT_MAX_AGE_SECONDS));
             }
             StatusCode::NO_CONTENT.into_response()
+        } else if request.method() == Method::GET && request.uri().path() == "/" {
+            about(env)
         } else if request.uri().path().starts_with(crate::auth_routes::AUTH_PREFIX) {
             crate::auth_routes::handle(self, &live.settings, &slug, env, request).await
         } else if request.uri().path().starts_with(crate::functions_routes::FUNCTIONS_PREFIX) {

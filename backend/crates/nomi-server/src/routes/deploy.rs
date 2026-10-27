@@ -694,8 +694,8 @@ pub async fn take_offline(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `DELETE /api/projects/:id`: terminates the project. Its Shipyard app goes everywhere (every
-/// environment, data, the dev database), then its files and Nomi's record of it. The chat stays.
+/// `DELETE /api/projects/:id`: terminates the project. Its Shipyard apps (the web app and its
+/// backend) go everywhere (every environment, data, the databases), then its files and Nomi's record of it. The chat stays.
 pub async fn delete_project(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -704,9 +704,12 @@ pub async fn delete_project(
     require_admin(&state.pool, project_id, claims.sub).await?;
     let target = target(&state, project_id).await?;
     if let Some(app) = target.shipyard_app.as_deref() {
-        match client(&state)?.delete_app(&target.org_key(), app).await {
-            Ok(_) | Err(ShipyardError::NotFound(_)) => {}
-            Err(e) => return Err(shipyard_error(e)),
+        // The web app, and the backend app holding its own databases and Relay.
+        for app in [app.to_string(), crate::relay_backend::backend_app(app)] {
+            match client(&state)?.delete_app(&target.org_key(), &app).await {
+                Ok(_) | Err(ShipyardError::NotFound(_)) => {}
+                Err(e) => return Err(shipyard_error(e)),
+            }
         }
     }
     for prefix in [project_id.to_string(), format!("publishes/{project_id}")] {
