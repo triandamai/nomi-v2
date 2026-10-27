@@ -341,6 +341,11 @@ impl ServerRelayOps {
 
     /// The Relay for this project's `env`: its own when it has one, else the shared one.
     async fn config_for(&self, project_id: Uuid, env: RelayEnv) -> Result<RelayConfig, String> {
+        // A development backend that went to sleep is woken, and waited for, before it's called.
+        if let (RelayEnv::Dev, Some(shipyard), Some(key)) = (env, &self.shipyard, self.settings_key()) {
+            let deps = crate::relay_backend::Deps { pool: &self.pool, http: &self.http_client, shipyard: &shipyard.config, settings_key: &key };
+            crate::relay_backend::ensure_awake(&deps, project_id).await?;
+        }
         let shared = self.config().await;
         let settings_key = match &self.connection {
             Connection::Stored { settings_key, .. } => settings_key.as_ref(),
