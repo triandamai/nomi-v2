@@ -38,7 +38,9 @@ async fn request(router: axum::Router, method: &str, uri: &str, token: &str, bod
     let response = router.oneshot(builder.body(body).unwrap()).await.unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap_or(Value::Null) })
+    // Refusals come back as plain text; they're kept as a string so the reason can be checked.
+    let body = if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned())) };
+    (status, body)
 }
 
 async fn login(router: axum::Router, pool: &PgPool, email: &str, admin: bool) -> String {
