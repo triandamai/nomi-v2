@@ -379,7 +379,13 @@ pub(crate) async fn start_publish(
     }
     // A Relay project's production database gets its new migrations before the new code goes out.
     let relay = crate::relay_connection::load(state.pool(), crate::relay_connection::settings_key_from_env().as_ref()).await;
-    crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), relay.as_ref(), project_id, &files).await?;
+    if let Err(refused) = crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), relay.as_ref(), project_id, &files).await {
+        // Koda answers in the chat; the admins may not be watching it.
+        if agent.is_some() {
+            crate::shipyard::notify_admins(state.pool(), project_id, "backend_failed", &refused.1).await;
+        }
+        return Err(refused);
+    }
     let secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
     let mut manifest = manifest::build(database, &secrets);
     manifest::label(&mut manifest, &project_id.to_string(), &target.stack, target.files_version);

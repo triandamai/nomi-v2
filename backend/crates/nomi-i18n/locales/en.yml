@@ -160,8 +160,11 @@ team:
   joined_title: "%{name} joined %{org}"
   joined_body: "They can now open and work on %{org}'s projects."
 deploy:
+  published_title: "%{name} is live"
+  published_body: "Published. It's live at %{detail}."
   publish_failed_title: "%{name} couldn't be published"
   publish_failed_body: "Shipyard stopped the publish: %{detail}. Open the project's deployments to see the log, or ask Koda to fix it."
+  backend_failed_body: "Relay refused the database changes: %{detail}. The version that was live keeps running; ask Koda to fix it."
   crashed_title: "%{name} crashed"
   crashed_body: "The published app stopped unexpectedly (exit code %{detail}). Shipyard restarts it; the runtime log shows why."
   resource_title: "%{name} is running hot"
