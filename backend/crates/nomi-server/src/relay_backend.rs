@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use nomi_relay_client::{Relay, RelayConfig, RelayError};
 use nomi_settings::config;
-use nomi_shipyard::manifest::{self, Images, BACKEND_SUFFIX, DEFAULT_POSTGREST_IMAGE, DEFAULT_RELAY_VERSION, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
+use nomi_shipyard::manifest::{self, Images, BACKEND_SUFFIX, DEFAULT_POSTGREST_IMAGE, DEFAULT_RELAY_VERSION, secret_name, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
 use nomi_shipyard::{Shipyard, ShipyardConfig};
 use rand::RngCore;
 use serde_json::{json, Value};
@@ -156,10 +156,10 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
             .await
             .map_err(fail(STEP_SECRETS))?
             .ok_or_else(|| Failed { step: STEP_SECRETS, message: "the backend's key is missing".to_string() })?;
-        client.set_secret(&org, &backend, SECRET_CONTROL_KEY, Some(&control_key), Some(env)).await.map_err(fail(STEP_SECRETS))?;
+        client.set_secret(&org, &backend, &secret_name(SECRET_CONTROL_KEY, env), Some(&control_key), None).await.map_err(fail(STEP_SECRETS))?;
         // Made by Shipyard, once: Nomi never reads these back.
         for name in [SECRET_ENCRYPTION_KEY, SECRET_PGRST_PASSWORD, SECRET_FUNCTIONS_SECRET] {
-            client.generate_secret(&org, &backend, name, "hex32", env).await.map_err(fail(STEP_SECRETS))?;
+            client.generate_secret(&org, &backend, &secret_name(name, env), "hex32", None).await.map_err(fail(STEP_SECRETS))?;
         }
         project_relays::mark_secrets_made(deps.pool, project_id, env).await.map_err(fail(STEP_SECRETS))?;
     }

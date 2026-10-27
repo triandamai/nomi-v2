@@ -106,6 +106,19 @@ pub const SECRET_CONTROL_KEY: &str = "RELAY_CONTROL_KEY";
 pub const SECRET_ENCRYPTION_KEY: &str = "RELAY_ENCRYPTION_KEY";
 pub const SECRET_PGRST_PASSWORD: &str = "RELAY_PGRST_PASSWORD";
 pub const SECRET_FUNCTIONS_SECRET: &str = "RELAY_FUNCTIONS_SECRET";
+/// What a development environment's secret names start with. Secrets belong to the app, not to an
+/// environment (an environment doesn't exist until its first deploy), so dev and production each
+/// get their own names.
+const DEV_SECRET_PREFIX: &str = "DEV_";
+
+/// The name a backend secret has in `env`: production keeps `base`, development gets a prefix.
+pub fn secret_name(base: &str, env: &str) -> String {
+    if env == "production" {
+        base.to_string()
+    } else {
+        format!("{DEV_SECRET_PREFIX}{base}")
+    }
+}
 /// The login PostgREST uses (Relay creates it).
 const AUTHENTICATOR: &str = "authenticator";
 
@@ -150,7 +163,7 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
 /// environment's own Postgres. `env` is `dev` or `production`; Relay serves exactly this project
 /// in exactly this environment.
 pub fn relay_backend(project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
-    let secret = |name: &str| json!({ "secret": name });
+    let secret = |name: &str| json!({ "secret": secret_name(name, env) });
     let mut relay_env = json!({
         "RELAY_DATABASE_URL": { "database": "url" },
         "RELAY_ENCRYPTION_KEY": secret(SECRET_ENCRYPTION_KEY),
@@ -356,5 +369,12 @@ mod tests {
         let mut manifest = build(Database::None, &[]);
         label(&mut manifest, "p1", "sveltekit", 7);
         assert_eq!(manifest["labels"], json!({ "nomi.app/project": "p1", "nomi.app/stack": "sveltekit", "nomi.app/files-version": "7" }));
+    }
+
+    #[test]
+    fn dev_and_production_backends_bind_their_own_secret_names() {
+        let secrets = |env: &str| relay_backend("p", env, false, "1")["services"][0]["env"]["RELAY_ENCRYPTION_KEY"].clone();
+        assert_eq!(secrets("production"), json!({ "secret": "RELAY_ENCRYPTION_KEY" }));
+        assert_eq!(secrets("dev"), json!({ "secret": "DEV_RELAY_ENCRYPTION_KEY" }));
     }
 }
