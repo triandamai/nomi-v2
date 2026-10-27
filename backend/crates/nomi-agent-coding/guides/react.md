@@ -16,8 +16,9 @@ database, say so and prefer SvelteKit (Nomi's full-stack default) unless the use
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0", "@types/node": "^24.13.3", "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7", "@vitejs/plugin-react": "^6.1.1", "tailwindcss": "^4.3.0",
-    "typescript": "~6.0.2", "vite": "^8.3.0"
-  }
+    "typescript": "~6.0.2", "vite": "^8.3.0", "@rolldown/binding-wasm32-wasi": "~1.2.14"
+  },
+  "overrides": { "@napi-rs/wasm-runtime": "1.2.5" }
 }
 ```
 For routing add `react-router@^8.4.0` (`createBrowserRouter`, `RouterProvider` from `react-router`).

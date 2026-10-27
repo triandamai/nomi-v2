@@ -15,8 +15,9 @@ database, prefer SvelteKit unless the user insists on Vue.
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0", "@types/node": "^24.13.3", "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1", "tailwindcss": "^4.3.0", "typescript": "~6.0.2", "vite": "^8.3.0",
-    "vue-tsc": "^3.3.11"
-  }
+    "vue-tsc": "^3.3.11", "@rolldown/binding-wasm32-wasi": "~1.2.14"
+  },
+  "overrides": { "@napi-rs/wasm-runtime": "1.2.5" }
 }
 ```
 Add `vue-router@^4` for pages and `pinia` for shared state when needed.

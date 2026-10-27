@@ -15,6 +15,12 @@ When the project isn't open, `run_command` can't run: write the files anyway and
 time it's opened, Nomi installs and checks it, and if that fails, the errors come back to you as
 a new task.
 
+Vite 8 bundles with Rolldown, whose WebAssembly binding crashes in a WebContainer when npm picks
+`@napi-rs/wasm-runtime` 1.2.6 (the error says "Cannot find native binding"). Every starter
+`package.json` therefore lists `@rolldown/binding-wasm32-wasi` and overrides
+`@napi-rs/wasm-runtime` to `1.2.5`. Keep both lines; if that error appears anyway, check they are
+still in `package.json` before changing anything else. Reinstalling doesn't fix it.
+
 What doesn't work in the preview:
 - Native modules (`better-sqlite3`, `bcrypt`, `sharp`, `pg-native`, anything with a `binding.gyp`
   or a platform-specific binary). Use pure-JS or WebAssembly packages instead: for password
