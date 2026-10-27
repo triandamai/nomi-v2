@@ -903,6 +903,40 @@ export interface ContainerUsage {
 	limits: { cpu: number | null; memory_mb: number | null };
 }
 
+/** Shipyard's metrics. Every number is null when Shipyard didn't measure it, never 0. */
+export type MetricsRange = '1h' | '24h' | '7d';
+
+export interface MetricsCounters {
+	visitors: number | null;
+	requests: number | null;
+	errors_5xx: number | null;
+	errors_4xx: number | null;
+	p50_ms: number | null;
+	p95_ms: number | null;
+}
+
+export interface ContainerSample {
+	service: string;
+	container_id: string;
+	cpu_percent: number | null;
+	memory_percent: number | null;
+	memory_bytes: number | null;
+	memory_limit_bytes: number | null;
+}
+
+export interface MetricsBucket extends MetricsCounters {
+	at: string;
+	containers: ContainerSample[];
+}
+
+export interface ProjectMetrics {
+	range: MetricsRange;
+	step: string;
+	buckets: MetricsBucket[];
+	totals: MetricsCounters;
+	previous_totals: MetricsCounters;
+}
+
 export interface ShipyardEvent {
 	id: string;
 	type: string;

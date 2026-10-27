@@ -1,5 +1,5 @@
 //! Publishing a project on Shipyard and looking after it once it's live: publish, the history
-//! of publishes (each can be rolled back to), deployment and runtime logs, resource usage, the
+//! of publishes (each can be rolled back to), deployment and runtime logs, resource usage and its history, the
 //! events Shipyard sent, taking an environment offline, and deleting the whole project.
 //!
 //! Everyone who can open a project sees all of it; only its admins (whoever started it, people
@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
-use nomi_shipyard::{manifest, Shipyard, ShipyardError};
+use nomi_shipyard::{manifest, MetricsRange, Shipyard, ShipyardError};
 
 use crate::app::AppState;
 use crate::project_ops::ShipyardAccess;
@@ -639,6 +639,31 @@ pub async fn usage(
     let env = env_of(&query)?;
     let usage = client(&state)?.usage(&target.org_key(), app, &env).await.map_err(shipyard_error)?;
     Ok(Json(usage))
+}
+
+#[derive(Deserialize)]
+pub struct MetricsQuery {
+    pub environment: Option<String>,
+    pub range: Option<String>,
+}
+
+/// `GET /api/projects/:id/deploy/metrics`: traffic and container history over 1h, 24h or 7d.
+pub async fn metrics(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<MetricsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    project_role(&state.pool, project_id, claims.sub).await?;
+    let range = match query.range.as_deref() {
+        None => MetricsRange::default(),
+        Some(range) => MetricsRange::parse(range).ok_or((StatusCode::BAD_REQUEST, "range must be 1h, 24h or 7d".to_string()))?,
+    };
+    let target = target(&state, project_id).await?;
+    let app = published_app(&target)?;
+    let env = env_of(&EnvQuery { environment: query.environment.clone() })?;
+    let metrics = client(&state)?.metrics(&target.org_key(), app, &env, range, None).await.map_err(shipyard_error)?;
+    Ok(Json(metrics))
 }
 
 #[derive(Serialize, sqlx::FromRow)]

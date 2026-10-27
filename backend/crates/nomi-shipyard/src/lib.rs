@@ -21,6 +21,73 @@ pub const ENV_KEY: &str = "SHIPYARD_KEY";
 pub const ENV_REVEAL_KEY: &str = "SHIPYARD_REVEAL_KEY";
 pub const ENV_WEBHOOK_SECRET: &str = "SHIPYARD_WEBHOOK_SECRET";
 
+/// How far back the metrics endpoint looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MetricsRange {
+    Hour,
+    #[default]
+    Day,
+    Week,
+}
+
+impl MetricsRange {
+    pub fn parse(range: &str) -> Option<Self> {
+        match range {
+            "1h" => Some(Self::Hour),
+            "24h" => Some(Self::Day),
+            "7d" => Some(Self::Week),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Hour => "1h",
+            Self::Day => "24h",
+            Self::Week => "7d",
+        }
+    }
+
+    /// The bucket size that gives the range a readable number of points (60, 288 or 168).
+    pub fn default_step(self) -> MetricsStep {
+        match self {
+            Self::Hour => MetricsStep::Minute,
+            Self::Day => MetricsStep::FiveMinutes,
+            Self::Week => MetricsStep::Hour,
+        }
+    }
+}
+
+/// The size of each metrics bucket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetricsStep {
+    Minute,
+    FiveMinutes,
+    Hour,
+    Day,
+}
+
+impl MetricsStep {
+    pub fn parse(step: &str) -> Option<Self> {
+        match step {
+            "1m" => Some(Self::Minute),
+            "5m" => Some(Self::FiveMinutes),
+            "1h" => Some(Self::Hour),
+            "1d" => Some(Self::Day),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Minute => "1m",
+            Self::FiveMinutes => "5m",
+            Self::Hour => "1h",
+            Self::Day => "1d",
+        }
+    }
+}
+
 /// How Nomi reaches Shipyard, from the server's environment.
 #[derive(Debug, Clone)]
 pub struct ShipyardConfig {
@@ -327,6 +394,15 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::GET, &format!("{}/usage", Self::env_path(org, app, env)), None).await
     }
 
+    /// Traffic (visitors, requests, 4xx/5xx, p50/p95) and container CPU/memory over `range`, in
+    /// buckets of `step` (the range's own step when None), with totals and the previous range's
+    /// totals. Shipyard keeps 7 days; anything it didn't measure is null.
+    pub async fn metrics(&self, org: &str, app: &str, env: &str, range: MetricsRange, step: Option<MetricsStep>) -> Result<Value, ShipyardError> {
+        let step = step.unwrap_or_else(|| range.default_step());
+        let path = format!("{}/metrics?range={}&step={}", Self::env_path(org, app, env), range.as_str(), step.as_str());
+        self.call(reqwest::Method::GET, &path, None).await
+    }
+
     /// The app's secrets: names, refs, environments and where they're used. Never values.
     pub async fn list_secrets(&self, org: &str, app: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::GET, &format!("{}/secrets", Self::app_path(org, app)), None).await
@@ -598,6 +674,30 @@ mod tests {
         let http = reqwest::Client::new();
         let config = config(&server.uri());
         Shipyard::new(&http, &config).scale_env("org-1", "todo-backend", "dev", 0).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn metrics_ask_for_the_range_with_its_own_step() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orgs/org-1/apps/todo/envs/production/metrics"))
+            .and(wiremock::matchers::query_param("range", "7d"))
+            .and(wiremock::matchers::query_param("step", "1h"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "range": "7d", "step": "1h", "buckets": [], "totals": { "visitors": 3, "p95_ms": null }, "previous_totals": {} },
+                "error": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let metrics = Shipyard::new(&http, &config).metrics("org-1", "todo", "production", MetricsRange::Week, None).await.unwrap();
+        assert_eq!(metrics["totals"]["visitors"], json!(3));
+        assert!(metrics["totals"]["p95_ms"].is_null());
+        assert_eq!(MetricsRange::default().default_step(), MetricsStep::FiveMinutes);
+        assert_eq!(MetricsRange::parse("1h").map(MetricsRange::default_step), Some(MetricsStep::Minute));
+        assert_eq!(MetricsRange::parse("30d"), None);
     }
 
     #[tokio::test]

@@ -103,10 +103,16 @@ Nomi will draw the threshold on the chart and mark when the alert fired. An erro
 (`service.error_rate_alert`, e.g. 5xx above 5% for 5 minutes) would let Nomi tell the project's
 admins about a broken app the way it does for crashes today.
 
-## In Nomi, once these exist
+## In Nomi, now that the metrics call exists
 
-- `nomi-shipyard`: a `metrics(org, app, env, range, step)` client call.
-- `nomi-server`: `GET /api/projects/:id/deploy/metrics?range=` passing it through, any project
-  member allowed (like usage and logs).
-- Monitor: show the 1h / 24h / 7d switch and the four number tiles, draw visitors per bucket, and
-  draw CPU and memory from history instead of the sheet's own samples.
+Items 1 and 2 landed as the one `metrics` call above:
+
+- `nomi-shipyard`: `Shipyard::metrics(org, app, env, range, step)`; the step follows the range
+  (1h → 1m, 24h → 5m, 7d → 1h) unless one is asked for.
+- `nomi-server`: `GET /api/projects/:id/deploy/metrics?environment=&range=1h|24h|7d` passes it
+  through, any project member allowed (like usage and logs).
+- Monitor: the 1h / 24h / 7d switch, four tiles (visitors, requests, 5xx, p95) against the range
+  before, a small chart per tile, and CPU and memory from history (the sheet's own samples only
+  until Shipyard has some). Unmeasured values read "Not measured" and leave gaps in the charts.
+
+Item 3 (structured log lines) is still open.

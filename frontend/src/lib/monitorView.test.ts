@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { chartPaths, eventTone, filterLogs, liveSince, logLevel, orderContainers, peak } from './monitorView';
-import type { ContainerUsage, ShipyardService } from './types';
+import { change, chartPaths, countMax, eventTone, filterLogs, gappedChartPaths, liveSince, logLevel, orderContainers, peak, serviceHistory } from './monitorView';
+import type { ContainerUsage, MetricsBucket, ShipyardService } from './types';
 
 describe('logLevel', () => {
 	it('reads errors and warnings as whole words, in any case', () => {
@@ -58,5 +58,42 @@ describe('events and services', () => {
 	it('lists the database container last', () => {
 		const c = (service: string) => ({ service, container_id: service }) as ContainerUsage;
 		expect(orderContainers([c('db'), c('web'), c('worker')]).map((x) => x.service)).toEqual(['web', 'worker', 'db']);
+	});
+});
+
+describe('metrics history', () => {
+	it('leaves unmeasured buckets as gaps instead of drawing them at 0', () => {
+		const runs = gappedChartPaths([1, 2, null, 4, 2, null], 100, 40, 4);
+		expect(runs).toEqual([
+			{ x: 0, line: 'M0,30 L20,20', area: 'M0,30 L20,20 L20,40 L0,40 Z' },
+			{ x: 60, line: 'M0,0 L20,20', area: 'M0,0 L20,20 L20,40 L0,40 Z' },
+		]);
+		expect(gappedChartPaths([null, 3, null], 100, 40, 4)).toEqual([]);
+		expect(gappedChartPaths([], 100, 40, 4)).toEqual([]);
+	});
+	it('scales counters to their largest measured value', () => {
+		expect(countMax([3, null, 12])).toBe(12);
+		expect(countMax([0, 0])).toBe(1);
+		expect(countMax([null])).toBe(1);
+	});
+	it('compares with the previous range only when both were measured', () => {
+		expect(change(120, 100)).toBe(20);
+		expect(change(50, 100)).toBe(-50);
+		expect(change(null, 100)).toBeNull();
+		expect(change(10, null)).toBeNull();
+		expect(change(0, 0)).toBe(0);
+		expect(change(5, 0)).toBeNull();
+	});
+	it('averages each service across its replicas, bucket by bucket', () => {
+		const sample = (service: string, cpu: number | null, memory: number | null) =>
+			({ service, container_id: `${service}-${cpu}`, cpu_percent: cpu, memory_percent: memory, memory_bytes: null, memory_limit_bytes: null });
+		const bucket = (containers: MetricsBucket['containers']) =>
+			({ at: '', visitors: null, requests: null, errors_5xx: null, errors_4xx: null, p50_ms: null, p95_ms: null, containers }) as MetricsBucket;
+		const history = serviceHistory([
+			bucket([sample('web', 10, 40), sample('web', 30, null), sample('db', 5, 20)]),
+			bucket([sample('db', 6, 21)]),
+		]);
+		expect(history.web).toEqual({ cpu: [20, null], memory: [40, null] });
+		expect(history.db).toEqual({ cpu: [5, 6], memory: [20, 21] });
 	});
 });
