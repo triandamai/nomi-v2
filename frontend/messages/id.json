@@ -2371,5 +2371,15 @@
 	"relay_setup_now": "Sekarang: {step}",
 	"relay_setup_failed": "Backend gagal disiapkan",
 	"relay_setup_failed_at": "Berhenti saat {step}.",
-	"relay_try_again": "Coba lagi"
+	"relay_try_again": "Coba lagi",
+	"config_relay": "Image Relay",
+	"config_relay_lede": "Lokasi image untuk database dan Relay milik setiap proyek. Workflow Relay mengunggahnya ke registry Shipyard; proyek belum bisa punya backend sebelum ini diisi.",
+	"config_relay_relay_image": "Image Relay",
+	"config_relay_relay_image_hint": "Repositori tanpa tag: <registry>/<prefix>/relay.",
+	"config_relay_functions_image": "Image runtime fungsi",
+	"config_relay_functions_image_hint": "Repositori tanpa tag: <registry>/<prefix>/relay-functions.",
+	"config_relay_postgrest_image": "Image PostgREST",
+	"config_relay_postgrest_image_hint": "Image lengkap beserta tag. Kosong memakai postgrest/postgrest:v12.2.3.",
+	"config_relay_version": "Versi",
+	"config_relay_version_hint": "Tag dari dua image di atas yang dijalankan backend. Naikkan untuk memindahkan proyek ke Relay yang lebih baru."
 }

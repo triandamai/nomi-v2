@@ -29,6 +29,17 @@ async fn seed_project(pool: &PgPool) -> Uuid {
         .unwrap()
 }
 
+/// Tells Nomi where Relay's images are, as the admin does under Configuration → Relay.
+async fn set_images(pool: &PgPool) {
+    use std::collections::BTreeMap;
+    let user: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    let changes: BTreeMap<String, String> = [("relay_image", "registry.test/acme/relay"), ("functions_image", "registry.test/acme/relay-functions"), ("version", "0.1.5")]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    nomi_settings::config::save(pool, &KEY, &nomi_settings::config::RELAY, &changes, user).await.unwrap();
+}
+
 fn envelope(data: Value) -> ResponseTemplate {
     ResponseTemplate::new(200).set_body_json(json!({ "data": data, "error": null }))
 }
@@ -85,6 +96,7 @@ async fn calls(server: &MockServer, verb: &str, ending: &str) -> Vec<Value> {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_backend_is_made_in_order_and_recorded(pool: PgPool) {
+    set_images(&pool).await;
     let project = seed_project(&pool).await;
     let relay = relay(project).await;
     let shipyard = shipyard(&relay.uri(), json!({ "status": "succeeded", "urls": [relay.uri()] })).await;
@@ -115,6 +127,7 @@ async fn a_backend_is_made_in_order_and_recorded(pool: PgPool) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_failed_deploy_says_where_and_trying_again_keeps_what_was_made(pool: PgPool) {
+    set_images(&pool).await;
     let project = seed_project(&pool).await;
     let relay = relay(project).await;
     let http = reqwest::Client::new();
@@ -243,6 +256,7 @@ async fn a_sleeping_backend_is_woken_once_and_waited_for(pool: PgPool) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn the_production_backend_gives_the_published_app_its_keys(pool: PgPool) {
+    set_images(&pool).await;
     let project = seed_project(&pool).await;
     let relay = relay(project).await;
     let shipyard = shipyard(&relay.uri(), json!({ "status": "succeeded", "urls": [relay.uri()] })).await;
@@ -261,4 +275,36 @@ async fn the_production_backend_gives_the_published_app_its_keys(pool: PgPool) {
     assert_eq!(calls(&relay, "PUT", "/control/settings").await[0]["preview_origins"], json!([]));
     let publish = shipyard.received_requests().await.unwrap().into_iter().find(|r| r.url.path().ends_with("/envs/production/publish")).unwrap();
     assert!(!String::from_utf8_lossy(&publish.body).contains("\"name\":\"functions\""));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn without_the_images_location_the_backend_says_where_to_set_it(pool: PgPool) {
+    let project = seed_project(&pool).await;
+    let shipyard = MockServer::start().await;
+    let http = reqwest::Client::new();
+
+    run(&deps(&pool, &http, &config(&shipyard)), project, "dev", true).await;
+
+    let stack = project_relays::stack(&pool, project, "dev").await.unwrap().unwrap();
+    assert_eq!(stack.state, FAILED);
+    assert_eq!(stack.step.as_deref(), Some("finding Relay's images"));
+    assert!(stack.error.unwrap().contains("Configuration → Relay"));
+    assert!(shipyard.received_requests().await.unwrap().is_empty(), "nothing was asked of Shipyard");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_backend_deploys_the_images_the_admin_named(pool: PgPool) {
+    set_images(&pool).await;
+    let project = seed_project(&pool).await;
+    let relay = relay(project).await;
+    let shipyard = shipyard(&relay.uri(), json!({ "status": "succeeded", "urls": [relay.uri()] })).await;
+    let http = reqwest::Client::new();
+
+    run(&deps(&pool, &http, &config(&shipyard)), project, "dev", false).await;
+
+    let publish = shipyard.received_requests().await.unwrap().into_iter().find(|r| r.url.path().ends_with("/envs/dev/publish")).unwrap();
+    let zip_start = publish.body.windows(4).position(|w| w == b"PK\x03\x04").unwrap();
+    let files = nomi_shipyard::bundle::files_under(&publish.body[zip_start..], "").unwrap_or_default();
+    let relay_dockerfile = files.iter().find(|(p, _)| p == "relay/Dockerfile").map(|(_, b)| String::from_utf8_lossy(b).to_string());
+    assert_eq!(relay_dockerfile.as_deref(), Some("FROM registry.test/acme/relay:0.1.5\n"));
 }

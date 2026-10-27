@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use nomi_relay_client::{Relay, RelayConfig, RelayError};
 use nomi_settings::config;
-use nomi_shipyard::manifest::{self, BACKEND_SUFFIX, RELAY_STACK_VERSION, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
+use nomi_shipyard::manifest::{self, Images, BACKEND_SUFFIX, DEFAULT_POSTGREST_IMAGE, DEFAULT_RELAY_VERSION, SECRET_CONTROL_KEY, SECRET_ENCRYPTION_KEY, SECRET_FUNCTIONS_SECRET, SECRET_PGRST_PASSWORD};
 use nomi_shipyard::{Shipyard, ShipyardConfig};
 use rand::RngCore;
 use serde_json::{json, Value};
@@ -43,6 +43,7 @@ const STEP_WAKE: &str = "waking the backend";
 /// How much of an unexpected answer goes into an error.
 const MAX_DETAIL_CHARS: usize = 300;
 
+const STEP_IMAGES: &str = "finding Relay's images";
 const STEP_APP: &str = "preparing the backend app";
 const STEP_SECRETS: &str = "setting its secrets";
 const STEP_DEPLOY: &str = "starting its database and Relay";
@@ -78,6 +79,27 @@ fn new_control_key() -> String {
     hex::encode(bytes)
 }
 
+/// Where Relay's images are, from admin's Configuration → Relay (or the environment). Relay's
+/// and its functions runtime's repositories have no default: they're in the registry only the
+/// person who runs Nomi knows.
+pub async fn images(pool: &PgPool, settings_key: &[u8; 32]) -> Result<Images, String> {
+    let section = config::load(pool, Some(settings_key), &config::RELAY).await.map_err(|e| e.to_string())?.with_env(|name| std::env::var(name).ok());
+    let need = |field: &str| {
+        section.get(field).ok_or_else(|| "Relay's images aren't set: add where they are under Admin → Configuration → Relay.".to_string())
+    };
+    Ok(Images {
+        relay: need("relay_image")?.trim_end_matches('/').to_string(),
+        functions: need("functions_image")?.trim_end_matches('/').to_string(),
+        postgrest: section.get("postgrest_image").unwrap_or_else(|| DEFAULT_POSTGREST_IMAGE.to_string()),
+        version: section.get("version").unwrap_or_else(|| DEFAULT_RELAY_VERSION.to_string()),
+    })
+}
+
+/// Whether Relay's images are set, so a backend can be made.
+pub async fn images_set(pool: &PgPool, settings_key: &[u8; 32]) -> bool {
+    images(pool, settings_key).await.is_ok()
+}
+
 /// The Shipyard app a project's backend lives in.
 pub fn backend_app(app: &str) -> String {
     format!("{app}{BACKEND_SUFFIX}")
@@ -110,7 +132,14 @@ async fn at(deps: &Deps<'_>, project_id: Uuid, env: &str, step: &'static str) ->
 async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: bool) -> Result<(), Failed> {
     let client = Shipyard::new(deps.http, deps.shipyard);
 
-    project_relays::begin(deps.pool, deps.settings_key, project_id, env, &new_control_key(), RELAY_STACK_VERSION).await.map_err(fail(STEP_APP))?;
+    let images = match images(deps.pool, deps.settings_key).await {
+        Ok(images) => images,
+        Err(message) => {
+            project_relays::begin(deps.pool, deps.settings_key, project_id, env, &new_control_key(), DEFAULT_RELAY_VERSION).await.map_err(fail(STEP_IMAGES))?;
+            return Err(Failed { step: STEP_IMAGES, message });
+        }
+    };
+    project_relays::begin(deps.pool, deps.settings_key, project_id, env, &new_control_key(), &images.version).await.map_err(fail(STEP_APP))?;
     at(deps, project_id, env, STEP_APP).await?;
     let target = crate::shipyard::load_target(deps.pool, project_id)
         .await
@@ -136,8 +165,8 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
     }
 
     at(deps, project_id, env, STEP_DEPLOY).await?;
-    let manifest = manifest::relay_backend(&project_id.to_string(), env, has_functions);
-    let source = manifest::backend_source(RELAY_STACK_VERSION, has_functions).map_err(fail(STEP_DEPLOY))?;
+    let manifest = manifest::relay_backend(&project_id.to_string(), env, has_functions, &images.version);
+    let source = manifest::backend_source(&images, has_functions).map_err(fail(STEP_DEPLOY))?;
     let accepted = client.publish(&org, &backend, env, &manifest, Some(source)).await.map_err(fail(STEP_DEPLOY))?;
 
     at(deps, project_id, env, STEP_WAIT).await?;
@@ -264,7 +293,7 @@ async fn relay_settings(deps: &Deps<'_>, url: &str, env: &str) -> Result<Value, 
 /// Starts the job for the project's `env` Relay in the background: records it as being made first,
 /// so a call a moment later hears "still being set up" instead of reaching the shared Relay.
 pub async fn start(pool: PgPool, http: reqwest::Client, shipyard: ShipyardConfig, settings_key: [u8; 32], project_id: Uuid, env: &'static str, has_functions: bool) -> Result<(), String> {
-    project_relays::begin(&pool, &settings_key, project_id, env, &new_control_key(), RELAY_STACK_VERSION).await?;
+    project_relays::begin(&pool, &settings_key, project_id, env, &new_control_key(), DEFAULT_RELAY_VERSION).await?;
     tokio::spawn(async move {
         run(&Deps { pool: &pool, http: &http, shipyard: &shipyard, settings_key: &settings_key }, project_id, env, has_functions).await;
     });
@@ -412,7 +441,7 @@ pub(crate) async fn prepare_for_publish(
     let handle = crate::relay_ops::ShipyardHandle::of(state).ok_or_else(|| "publishing isn't set up on this Nomi".to_string())?;
     let files = crate::routes::deploy::project_files(state, project_id).await.map_err(|(_, message)| message)?;
     let has_functions = files.iter().any(|(path, _)| path.starts_with("nomi/functions/"));
-    project_relays::begin(pool, &settings_key, project_id, PRODUCTION, &new_control_key(), RELAY_STACK_VERSION).await?;
+    project_relays::begin(pool, &settings_key, project_id, PRODUCTION, &new_control_key(), DEFAULT_RELAY_VERSION).await?;
     let agent = agent.map(str::to_string);
     tokio::spawn(async move {
         let deps = Deps { pool: handle.pool(), http: handle.http_client(), shipyard: &handle.config, settings_key: &settings_key };
