@@ -168,7 +168,7 @@ pub async fn upgrade(gateway: &Gateway, slug: &str, env: Env, request: Request) 
         Ok(found) => found,
         Err(response) => return response,
     };
-    if row.tier == Tier::Dedicated {
+    if row.tier == Tier::Dedicated && gateway.relay.standalone().is_none() {
         return refuse(StatusCode::NOT_IMPLEMENTED, "RELAY_DEDICATED", "Dedicated backends aren't served by the gateway yet.");
     }
     let apikey = query(&request, "apikey").unwrap_or_default();
