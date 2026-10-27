@@ -254,6 +254,9 @@ pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
         let gateway = gateway.clone();
         let relay = relay.clone();
         async move {
+            if let Some(mode) = relay.standalone() {
+                return standalone_route(&relay, mode, &control, &gateway, request).await;
+            }
             let host = request.headers().get(HOST).and_then(|v| v.to_str().ok()).unwrap_or_default();
             let project = relay.live().ok().and_then(|live| relay_gateway::host::route(host, &live.settings.public_domain));
             match project {
@@ -262,6 +265,25 @@ pub fn router(relay: Arc<Relay>, control_key: String) -> Router {
             }
         }
     })
+}
+
+/// The control plane's paths; on a standalone host everything else is the app's backend.
+const CONTROL_PREFIX: &str = "/control";
+const HEALTH_PATH: &str = "/health";
+
+/// A standalone Relay has one host for both: `/control/…` and `/health` go to the control plane
+/// (which still checks the control key), anything else to the gateway as its one project,
+/// whatever the hostname.
+async fn standalone_route(relay: &Relay, mode: &relay_control::StandaloneMode, control: &Router, gateway: &Gateway, request: Request) -> Response {
+    let path = request.uri().path();
+    if path == HEALTH_PATH || path == CONTROL_PREFIX || path.starts_with(&format!("{CONTROL_PREFIX}/")) {
+        return control.clone().oneshot(request).await.unwrap_or_else(|never| match never {});
+    }
+    match relay_control::state::environment(relay, mode.config.project, mode.config.env).await {
+        Ok(Some(row)) => gateway.handle(row.slug, mode.config.env, request).await,
+        Ok(None) => crate::gateway::refuse(StatusCode::SERVICE_UNAVAILABLE, relay_control::NOT_CONFIGURED, "this backend hasn't been set up yet"),
+        Err(e) => crate::gateway::refuse(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", &e.to_string()),
+    }
 }
 
 fn control_router(relay: Arc<Relay>, control_key: String) -> Router {

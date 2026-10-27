@@ -17,7 +17,13 @@ async fn main() {
     let config = Config::from_env().unwrap_or_else(|e| panic!("{e}"));
     let state = PgPoolOptions::new().max_connections(POOL_SIZE).connect(&config.database_url).await.expect("couldn't reach Relay's state database");
     sqlx::migrate!("../../migrations").run(&state).await.expect("couldn't bring Relay's state up to date");
-    let relay = Relay::start(state, config.encryption_key).await.expect("couldn't load Relay's settings");
+    let relay = match config.standalone.clone() {
+        Some(standalone) => {
+            tracing::info!(project = %standalone.project, env = standalone.env.as_str(), "relay serving one project");
+            Relay::start_standalone(state, config.encryption_key, config.database_url.clone(), standalone).await.expect("couldn't set up standalone Relay")
+        }
+        None => Relay::start(state, config.encryption_key).await.expect("couldn't load Relay's settings"),
+    };
     if relay.live().is_err() {
         tracing::warn!("Relay isn't set up yet: save its settings in Nomi's admin");
     }

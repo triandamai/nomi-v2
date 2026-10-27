@@ -138,6 +138,36 @@ S3-compatible store) every project's files go in, each under `<project>/<env>/<b
 functions runtime's address and secret. Saving checks every database and PostgREST first; until saved, Relay
 answers `503 NOT_CONFIGURED`.
 
+### Standalone: one Relay per project
+
+Nomi runs a Relay next to each project on Shipyard, one for its development backend and one for
+production, each in its own database. Setting `RELAY_PROJECT` turns this on:
+
+| Variable | What it is |
+|---|---|
+| `RELAY_PROJECT` | The one project this Relay serves (its Nomi project id) |
+| `RELAY_ENV` | `dev` or `production` (default) |
+| `RELAY_POSTGREST_URL` | The PostgREST next to it, e.g. `http://postgrest:3000` |
+| `RELAY_PGRST_PASSWORD` | The password PostgREST logs in with as `authenticator`; Relay makes that login and sets the password at every start |
+| `RELAY_FUNCTIONS_URL`, `RELAY_FUNCTIONS_SECRET` | The functions runtime next to it (optional, both or neither) |
+
+What changes:
+
+- The project lives in Relay's own database (`RELAY_DATABASE_URL`) as a `dedicated` backend: its
+  tables in `public`, next to the `nomi` schema and Relay's own `relay` schema.
+- Relay serves at once, with nothing saved. PostgREST's JWT secret is derived from
+  `RELAY_ENCRYPTION_KEY`, so it's the same after every restart.
+- `PUT /control/settings` still sets the public domain, preview origins, sender and storage. The
+  database, PostgREST and runtime it's sent are ignored in favour of the environment's.
+  `public_domain` is the instance's own host, and the project's URL is `https://<public_domain>`.
+- One host serves both sides. `/control/…` and `/health` are the control plane (still behind
+  `RELAY_CONTROL_KEY`), and every other path is the project's backend, whatever the hostname.
+- `PUT /control/projects/:id` accepts only `RELAY_PROJECT`; another id is `409 CONFLICT`.
+
+CI publishes the images on every merge to main that touches the service:
+`ghcr.io/triandamai/nomi-relay` and `ghcr.io/triandamai/nomi-relay-functions`, each tagged
+`sha-<commit>` (what Nomi pins) and with the npm packages' version.
+
 ## What Koda writes
 
 A project's backend is a folder in its files:

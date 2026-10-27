@@ -3,7 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::Standalone;
 use crate::Env;
+
+/// The role PostgREST logs in as next to a standalone Relay.
+pub const AUTHENTICATOR: &str = "authenticator";
+/// What a standalone Relay's PostgREST JWT secret is derived under, so it's the same after every
+/// restart without being stored.
+const JWT_SECRET_LABEL: &str = "pgrst.jwt_secret";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
@@ -94,6 +101,22 @@ impl Settings {
     pub fn postgrest_role(&self) -> Option<&str> {
         Some(self.postgrest_role.as_str()).filter(|r| !r.is_empty())
     }
+
+    /// A standalone Relay's settings: what was saved through the control API (public domain,
+    /// preview origins, sender, storage), with everything about where its data lives taken from
+    /// its environment. Both environments' database is its own, served by its own PostgREST.
+    pub fn standalone(saved: Settings, database_url: &str, encryption_key: &[u8; 32], standalone: &Standalone) -> Settings {
+        Settings {
+            shared_dev_url: database_url.to_string(),
+            shared_production_url: database_url.to_string(),
+            postgrest_dev_url: standalone.postgrest_url.clone(),
+            postgrest_production_url: standalone.postgrest_url.clone(),
+            postgrest_role: AUTHENTICATOR.to_string(),
+            postgrest_jwt_secret: crate::keys::role_password(encryption_key, JWT_SECRET_LABEL),
+            functions: standalone.functions.clone().or(saved.functions.clone()),
+            ..saved
+        }
+    }
 }
 
 /// `postgres://user@host:port/db`: where a database is, without its password or options.
@@ -133,5 +156,41 @@ mod tests {
         assert_eq!(settings.postgrest_url(Env::Production), "http://pp");
         assert_eq!(settings.postgrest_role(), None);
         assert_eq!(Settings { postgrest_role: "authenticator".into(), ..Settings::default() }.postgrest_role(), Some("authenticator"));
+    }
+
+    #[test]
+    fn standalone_settings_point_everything_at_its_own_database() {
+        let standalone = Standalone {
+            project: uuid::Uuid::nil(),
+            env: Env::Production,
+            postgrest_url: "http://postgrest:3000".into(),
+            pgrst_password: "pw".into(),
+            functions: None,
+        };
+        let saved = Settings {
+            public_domain: "app-backend.apps.test".into(),
+            shared_dev_url: "postgres://elsewhere".into(),
+            preview_origins: vec![".webcontainer-api.io".into()],
+            functions: Some(FunctionsRuntime { url: "http://saved".into(), secret: "s".into() }),
+            ..Settings::default()
+        };
+        let key = [7u8; 32];
+        let settings = Settings::standalone(saved.clone(), "postgres://own/db", &key, &standalone);
+        assert_eq!(settings.shared_url(Env::Dev), "postgres://own/db");
+        assert_eq!(settings.shared_url(Env::Production), "postgres://own/db");
+        assert_eq!(settings.postgrest_url(Env::Dev), "http://postgrest:3000");
+        assert_eq!(settings.postgrest_url(Env::Production), "http://postgrest:3000");
+        assert_eq!(settings.postgrest_role(), Some(AUTHENTICATOR));
+        assert_eq!(settings.public_domain, "app-backend.apps.test");
+        assert_eq!(settings.preview_origins, vec![".webcontainer-api.io".to_string()]);
+        assert_eq!(settings.functions, saved.functions, "a runtime saved earlier is kept when the environment names none");
+
+        let again = Settings::standalone(Settings::default(), "postgres://own/db", &key, &standalone);
+        assert_eq!(settings.postgrest_jwt_secret, again.postgrest_jwt_secret, "the same after a restart");
+        assert!(settings.postgrest_jwt_secret.len() >= 32);
+        assert_ne!(Settings::standalone(Settings::default(), "postgres://own/db", &[8u8; 32], &standalone).postgrest_jwt_secret, settings.postgrest_jwt_secret);
+
+        let with_runtime = Standalone { functions: Some(FunctionsRuntime { url: "http://functions:8000".into(), secret: "f".into() }), ..standalone };
+        assert_eq!(Settings::standalone(saved, "postgres://own/db", &key, &with_runtime).functions.unwrap().url, "http://functions:8000");
     }
 }
