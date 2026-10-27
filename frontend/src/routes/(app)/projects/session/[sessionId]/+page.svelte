@@ -42,6 +42,7 @@
 	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
+	import { isBackendEvent } from '$lib/presenceView';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -132,10 +133,15 @@
 		deploy = d;
 		void d.refresh();
 		d.listen();
+		// Rena puts a project on Relay after the page has loaded: show its Relay sheet then.
+		const stopBackend = d.onEvent((event) => {
+			if (isBackendEvent(event)) void invalidateAll();
+		});
 		const p = new ProjectPresence(id);
 		presence = p;
 		p.start(d);
 		return () => {
+			stopBackend();
 			p.stop();
 			d.stop();
 		};

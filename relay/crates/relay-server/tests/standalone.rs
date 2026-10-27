@@ -85,6 +85,21 @@ async fn any_host_reaches_the_one_project(pool: PgPool) {
     assert_eq!(body, serde_json::json!([]));
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn opening_the_backends_address_says_what_it_is(pool: PgPool) {
+    let w = world(&pool).await;
+    ensure_backend(&w.relay, w.project, "Barbershop", Tier::Free, None).await.unwrap();
+
+    let request = Request::get("/").header("host", "whatever.example").body(Body::empty()).unwrap();
+    let (status, body) = send(&w.router, request).await;
+
+    // Someone opening the backend's domain in a browser learns it's working and where things are.
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["service"], "nomi-relay");
+    assert_eq!(body["status"], "running");
+    assert_eq!(body["paths"]["data"], "/rest");
+}
+
 const REALTIME: &str = "/realtime";
 
 #[sqlx::test(migrations = "../../migrations")]

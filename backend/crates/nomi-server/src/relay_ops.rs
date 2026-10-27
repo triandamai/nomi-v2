@@ -300,6 +300,17 @@ impl ShipyardAccess for ShipyardHandle {
     }
 }
 
+/// A backend that's still starting gets Koda's instructions for it after the reason; any other
+/// error is left as it is.
+fn starting_guidance(error: String) -> String {
+    let starting = error == crate::relay_backend::STILL_STARTING || error == crate::project_relays::STILL_BEING_SET_UP || error == crate::project_relays::WAKING_UP;
+    if starting {
+        format!("{error} {}", nomi_agent_core::prompts::BACKEND_STARTING_GUIDANCE)
+    } else {
+        error
+    }
+}
+
 /// Where the Relay connection comes from: fixed (tests), or the admin's stored one read on every
 /// call, with the environment's as the fallback.
 enum Connection {
@@ -361,14 +372,17 @@ impl ServerRelayOps {
         // A development backend that went to sleep is woken, and waited for, before it's called.
         if let (RelayEnv::Dev, Some(shipyard), Some(key)) = (env, &self.shipyard, self.settings_key()) {
             let deps = crate::relay_backend::Deps { pool: &self.pool, http: &self.http_client, shipyard: &shipyard.config, settings_key: &key };
-            crate::relay_backend::ensure_awake(&deps, project_id).await?;
+            crate::relay_backend::ensure_awake(&deps, project_id).await.map_err(starting_guidance)?;
         }
         let shared = self.config().await;
         let settings_key = match &self.connection {
             Connection::Stored { settings_key, .. } => settings_key.as_ref(),
             Connection::Fixed(_) => None,
         };
-        crate::project_relays::config_for(&self.pool, settings_key, shared, project_id, env.as_str()).await?.ok_or_else(|| NOT_SET_UP.to_string())
+        crate::project_relays::config_for(&self.pool, settings_key, shared, project_id, env.as_str())
+            .await
+            .map_err(starting_guidance)?
+            .ok_or_else(|| NOT_SET_UP.to_string())
     }
 
     /// Anyone who can open the project works on `dev`; `production`, read or changed, is its admins'.

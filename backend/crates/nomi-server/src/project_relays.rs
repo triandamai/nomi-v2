@@ -27,11 +27,17 @@ pub struct Stack {
     pub error: Option<String>,
 }
 
+/// The project event sent whenever a project's backend changes state.
+pub const BACKEND_CHANGED: &str = "backend.changed";
+
+pub const STILL_BEING_SET_UP: &str = "This project's backend is still being set up.";
+pub const WAKING_UP: &str = "This project's backend is waking up.";
+
 /// Why a project's own Relay can't be called right now, in words for the person.
 fn unavailable(stack: &Stack) -> String {
     match stack.state.as_str() {
-        CREATING => "This project's backend is still being set up.".to_string(),
-        SLEEPING | WAKING => "This project's backend is waking up.".to_string(),
+        CREATING => STILL_BEING_SET_UP.to_string(),
+        SLEEPING | WAKING => WAKING_UP.to_string(),
         _ => {
             let step = stack.step.as_deref().map(|s| format!(" at \"{s}\"")).unwrap_or_default();
             match stack.error.as_deref() {
@@ -127,6 +133,8 @@ pub async fn set_state(pool: &PgPool, project_id: Uuid, env: &str, state: &str, 
         .execute(pool)
         .await
         .map_err(|e| format!("couldn't update the project's backend: {e}"))?;
+    // Open project pages show the backend's progress, and switch to its Relay sheet.
+    crate::project_events::changed(project_id, BACKEND_CHANGED);
     Ok(())
 }
 

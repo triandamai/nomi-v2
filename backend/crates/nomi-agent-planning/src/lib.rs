@@ -284,7 +284,7 @@ async fn choose_backend(
         if let Err(e) = relay.ensure_backend(user_id, project_id).await {
             return Ok(Some(format!("Relay couldn't make this project's backend ({e}), so it is NOT on Relay. {ASK_BEFORE_DRIZZLE}")));
         }
-        Some("Its backend is Nomi Relay: a database, sign-in, storage and functions are ready.".to_string())
+        Some("Its backend is Nomi Relay (a database, sign-in, storage and functions). It's being set up in the background and takes a few minutes; that's normal, so hand the build to the coding agent now: its backend tools wait for it.".to_string())
     } else {
         None
     };

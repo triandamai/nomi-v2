@@ -255,6 +255,25 @@ async fn a_sleeping_backend_is_woken_once_and_waited_for(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn a_backend_still_being_set_up_is_waited_for(pool: PgPool) {
+    let project = ready_backend(&pool, "dev", 0, "http://relay.test").await;
+    project_relays::set_state(&pool, project, "dev", project_relays::CREATING, Some("deploying"), None).await.unwrap();
+    let shipyard = scale_mock(1, 0).await;
+    let http = reqwest::Client::new();
+    let config = config(&shipyard);
+    let deps = deps(&pool, &http, &config);
+
+    // Setup finishes while Koda's tool call waits: the call goes on instead of failing.
+    let finish = async {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        project_relays::set_state(&pool, project, "dev", READY, None, None).await.unwrap();
+    };
+    let (waited, ()) = tokio::join!(ensure_awake(&deps, project), finish);
+
+    waited.unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn the_production_backend_gives_the_published_app_its_keys(pool: PgPool) {
     set_images(&pool).await;
     let project = seed_project(&pool).await;

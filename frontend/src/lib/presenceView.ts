@@ -36,6 +36,18 @@ export function shouldSend(lastSentAt: number | null, now: number, everyMs: numb
 }
 
 /** Whether a message on the project's live topic is about publishing (so the Deploy state reloads). */
+/** The project event sent when the project's backend changes (made, set up, failed, asleep). */
+export const BACKEND_CHANGED = 'backend.changed';
+
+/** Whether a project event says its backend changed, so the page reloads what it shows. */
+export function isBackendEvent(data: string): boolean {
+	try {
+		return (JSON.parse(data) as { event?: unknown }).event === BACKEND_CHANGED;
+	} catch {
+		return false;
+	}
+}
+
 export function isDeployEvent(data: string): boolean {
 	try {
 		const kind = (JSON.parse(data) as { kind?: unknown }).kind;
