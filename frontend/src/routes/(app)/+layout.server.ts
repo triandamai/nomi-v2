@@ -6,6 +6,7 @@ import { maintenanceState } from '$lib/server/maintenance';
 import { getLocale } from '$lib/paraglide/runtime';
 import { setLanguageCookie } from '$lib/server/locale';
 import type { CrewRosterMember } from '$lib/crew';
+import type { AttachmentLimits } from '$lib/attachments';
 import type { Preferences, Profile, UsageBrief } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
@@ -21,13 +22,16 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 
 	const userEmail = cookies.get('user_email') ?? '';
 
-	const [profileResponse, preferencesResponse, crewResponse, usageResponse, unreadResponse] = await Promise.all([
+	const [profileResponse, preferencesResponse, crewResponse, usageResponse, unreadResponse, limitsResponse] = await Promise.all([
 		apiFetch(fetch, cookies, '/api/profile'),
 		apiFetch(fetch, cookies, '/api/preferences'),
 		apiFetch(fetch, cookies, '/api/agents'),
 		apiFetch(fetch, cookies, '/api/usage/brief'),
 		apiFetch(fetch, cookies, '/api/notifications/unread'),
+		apiFetch(fetch, cookies, '/api/attachments/limits'),
 	]);
+	// The composer checks files against these before uploading; its defaults stand in otherwise.
+	const attachmentLimits: AttachmentLimits | null = limitsResponse.ok ? ((await limitsResponse.json()) as AttachmentLimits) : null;
 	const unread = unreadResponse.ok ? ((await unreadResponse.json()) as { unread: number }).unread : 0;
 	// The drawer's usage meter; it just doesn't show when usage can't be read.
 	const usage: UsageBrief | null = usageResponse.ok ? ((await usageResponse.json()) as UsageBrief) : null;
@@ -45,5 +49,5 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 	const appearance = preferencesResponse.ok ? formatAppearance(preferences.theme, preferences.accent_color) : null;
 	if (appearance && cookies.get(APPEARANCE_COOKIE) !== appearance) cookies.set(APPEARANCE_COOKIE, appearance, APPEARANCE_COOKIE_OPTIONS);
 
-	return { userEmail, profile, preferences, crew, usage, unread };
+	return { userEmail, profile, preferences, crew, usage, unread, attachmentLimits };
 };

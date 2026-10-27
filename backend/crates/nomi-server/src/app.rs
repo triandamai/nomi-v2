@@ -225,6 +225,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/support/keys", get(crate::routes::support::list_keys).post(crate::routes::support::create_key))
         .route("/api/admin/support/keys/:id", delete(crate::routes::support::revoke_key))
         .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
+        .route("/api/admin/configuration", get(crate::routes::admin_configuration::get))
+        .route("/api/admin/configuration/:section", axum::routing::put(crate::routes::admin_configuration::save))
         .route("/api/admin/relay", get(crate::routes::admin_relay::get))
         .route("/api/admin/relay/connection", put(crate::routes::admin_relay::put_connection))
         .route("/api/admin/relay/settings", put(crate::routes::admin_relay::put_settings))

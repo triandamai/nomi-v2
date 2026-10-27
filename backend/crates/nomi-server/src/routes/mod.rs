@@ -1,6 +1,7 @@
 pub mod agent_permissions;
 pub mod agents;
 pub mod admin_access;
+pub mod admin_configuration;
 pub mod admin_dashboard;
 pub mod admin_relay;
 pub mod admin_shipyard;

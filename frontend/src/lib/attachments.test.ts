@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composeMessage, formatBytes, maxBytesFor, refusal, splitAttachments, voiceNoteName } from './attachments';
+import { composeMessage, formatBytes, maxBytesFor, refusal, setAttachmentLimits, splitAttachments, voiceNoteName } from './attachments';
 
 const ID = '0b6a1c5e-6f9e-4a8e-9d3e-2f1d8c7b6a50';
 const tag = (name: string, kind: string, mime: string, size: number) =>
@@ -39,6 +39,16 @@ describe('attachments', () => {
 		expect(refusal({ name: 'more.mp4', size: 5 * MB, type: 'video/mp4' }, full)).toContain('100 MB');
 		expect(refusal({ name: 'x.txt', size: 1, type: 'text/plain' }, Array.from({ length: 10 }, () => ({ size: 1 })))).toContain('10');
 		expect(refusal({ name: 'empty.txt', size: 0, type: 'text/plain' }, [])).not.toBeNull();
+	});
+
+	it('follows the limits the server sends', () => {
+		const MB = 1024 * 1024;
+		setAttachmentLimits({ max_file_bytes: 25 * MB, max_video_bytes: 200 * MB, max_message_bytes: 300 * MB, max_files: 2 });
+		expect(refusal({ name: 'scan.pdf', size: 20 * MB, type: 'application/pdf' }, [])).toBeNull();
+		expect(refusal({ name: 'scan.pdf', size: 26 * MB, type: 'application/pdf' }, [])).toContain('25 MB');
+		expect(maxBytesFor('trip.mov', 'video/quicktime')).toBe(200 * MB);
+		expect(refusal({ name: 'x.txt', size: 1, type: 'text/plain' }, [{ size: 1 }, { size: 1 }])).toContain('2');
+		setAttachmentLimits({ max_file_bytes: 10 * MB, max_video_bytes: 50 * MB, max_message_bytes: 100 * MB, max_files: 10 });
 	});
 
 	it('formats sizes in bytes, KB and MB', () => {

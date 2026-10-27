@@ -2,6 +2,7 @@
 	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
 	import IconRocket from '$lib/components/icons/IconRocket.svelte';
 	import IconSettings from '$lib/components/icons/IconSettings.svelte';
+	import IconSliders from '$lib/components/icons/IconSliders.svelte';
 	import { VERSION_LABEL } from '$lib/version';
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
@@ -64,6 +65,7 @@
 			{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip, area: 'models' },
 			{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory, area: 'models' },
 			{ href: '/admin/integrations', label: m.admin_integrations(), icon: IconRocket, area: 'integrations' },
+			{ href: '/admin/configuration', label: m.admin_configuration(), icon: IconSliders, area: 'configuration' },
 			{ href: '/admin/support', label: m.admin_support(), icon: IconChatBubble, area: 'support' },
 			{ href: '/admin/users', label: m.admin_users(), icon: IconPerson, area: 'user' },
 			{ href: '/admin/plans', label: m.admin_plans(), icon: IconWallet, area: 'plans' },
