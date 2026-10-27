@@ -7,11 +7,11 @@
 	import IconCopy from '$lib/components/icons/IconCopy.svelte';
 	import QueryResultView from '$lib/components/project/QueryResultView.svelte';
 	import { projectApi } from '$lib/projectApi';
-	import type { DatabaseSource, QueryResult, RelayOverview, RelayRule, RelayTable } from '$lib/types';
+	import type { DatabaseSource, QueryResult, RelayOverview, RelayRule, RelaySetup, RelayTable } from '$lib/types';
 
 	let { projectId, published }: { projectId: string; published: boolean } = $props();
 
-	type Relay = Extract<RelayOverview, { backend: 'relay' }>;
+	type Relay = Extract<RelayOverview, { backend: 'relay'; url: string }>;
 
 	const ROWS_TO_BROWSE = 100;
 	const RULES: Record<RelayRule, () => string> = {
@@ -23,6 +23,11 @@
 
 	let source = $state<DatabaseSource>('development');
 	let relay = $state<Relay | null>(null);
+	// Set while the project's own backend is being made, waking, or failed.
+	let setup = $state<RelaySetup | null>(null);
+	let retrying = $state(false);
+	// How often the sheet asks again while the backend is being made.
+	const SETUP_POLL_MS = 3000;
 	let loadError = $state<string | null>(null);
 	let selected = $state<RelayTable | null>(null);
 	let sql = $state('');
@@ -35,7 +40,8 @@
 		loadError = null;
 		try {
 			const answer = await projectApi<RelayOverview>(projectId, `relay?source=${source}`);
-			relay = answer.backend === 'relay' ? answer : null;
+			setup = answer.backend === 'relay' && 'setup' in answer ? answer.setup : null;
+			relay = answer.backend === 'relay' && 'url' in answer ? answer : null;
 			if (selected) selected = relay?.tables.find((t) => t.name === selected?.name) ?? null;
 		} catch (e) {
 			loadError = (e as Error).message;
@@ -45,10 +51,30 @@
 	$effect(() => {
 		void source;
 		relay = null;
+		setup = null;
 		selected = null;
 		result = null;
 		void load();
 	});
+
+	// While the backend is being made or waking, look again until it's ready.
+	$effect(() => {
+		if (setup?.state !== 'creating' && setup?.state !== 'waking' && setup?.state !== 'sleeping') return;
+		const timer = setTimeout(() => void load(), SETUP_POLL_MS);
+		return () => clearTimeout(timer);
+	});
+
+	async function retry() {
+		retrying = true;
+		try {
+			await projectApi<void>(projectId, `relay/retry?source=${source}`, { method: 'POST' });
+			await load();
+		} catch (e) {
+			loadError = (e as Error).message;
+		} finally {
+			retrying = false;
+		}
+	}
 
 	async function run() {
 		if (!sql.trim()) return;
@@ -97,6 +123,18 @@
 
 	{#if loadError}
 		<p class="error" role="alert">{loadError}</p>
+	{:else if setup?.state === 'failed'}
+		<div class="setup" role="alert">
+			<p class="setup__title">{m.relay_setup_failed()}</p>
+			{#if setup.step}<p class="muted small">{m.relay_setup_failed_at({ step: setup.step })}</p>{/if}
+			{#if setup.error}<p class="setup__error">{setup.error}</p>{/if}
+			<Button variant="tonal" size="s" disabled={retrying} onclick={() => void retry()}>{m.relay_try_again()}</Button>
+		</div>
+	{:else if setup}
+		<div class="setup" role="status">
+			<p class="setup__title">{setup.state === 'creating' ? m.relay_setup_creating() : m.relay_setup_waking()}</p>
+			{#if setup.state === 'creating' && setup.step}<p class="muted small">{m.relay_setup_now({ step: setup.step })}</p>{/if}
+		</div>
 	{:else if !relay}
 		<p class="muted">{m.pj_loading()}</p>
 	{:else}
@@ -202,6 +240,24 @@
 </div>
 
 <style>
+	.setup {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.setup__title {
+		margin: 0;
+		font-weight: 700;
+	}
+	.setup__error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+		overflow-wrap: anywhere;
+	}
 	.relay {
 		display: flex;
 		flex-direction: column;

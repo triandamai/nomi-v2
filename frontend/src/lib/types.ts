@@ -977,9 +977,17 @@ export interface RelayFunction {
 	schedule?: string;
 }
 
+/** Where a project's own backend is when it can't be used yet. */
+export interface RelaySetup {
+	state: 'creating' | 'sleeping' | 'waking' | 'failed';
+	step: string | null;
+	error: string | null;
+}
+
 /** A Relay project's backend in one environment, as its data sheet shows it. */
 export type RelayOverview =
 	| { backend: 'drizzle' }
+	| { backend: 'relay'; setup: RelaySetup }
 	| {
 			backend: 'relay';
 			url: string;

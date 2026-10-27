@@ -331,8 +331,12 @@ impl ServerRelayOps {
         }
     }
 
-    async fn require_config(&self) -> Result<RelayConfig, String> {
-        self.config().await.ok_or_else(|| NOT_SET_UP.to_string())
+    /// The key that seals the projects' Relay control keys.
+    fn settings_key(&self) -> Option<[u8; 32]> {
+        match &self.connection {
+            Connection::Stored { settings_key, .. } => *settings_key,
+            Connection::Fixed(_) => None,
+        }
     }
 
     /// The Relay for this project's `env`: its own when it has one, else the shared one.
@@ -357,13 +361,31 @@ impl ServerRelayOps {
 #[async_trait]
 impl RelayOps for ServerRelayOps {
     async fn is_available(&self) -> bool {
-        self.config().await.is_some()
+        self.config().await.is_some() || (self.shipyard.is_some() && self.settings_key().is_some())
     }
 
     async fn ensure_backend(&self, user_id: Uuid, project_id: Uuid) -> Result<Uuid, String> {
-        let config = self.require_config().await?;
-        let relay = Relay::new(&self.http_client, &config);
         self.check_access(user_id, project_id, RelayEnv::Dev).await?;
+        // With Shipyard, the project gets its own Relay for development, made in the background.
+        let own = match (&self.shipyard, self.settings_key()) {
+            (Some(shipyard), Some(key)) => {
+                crate::relay_backend::start(self.pool.clone(), self.http_client.clone(), shipyard.config.clone(), key, project_id, "dev", true).await?;
+                sqlx::query("UPDATE projects SET relay_project_id = $1, updated_at = now() WHERE id = $2")
+                    .bind(project_id)
+                    .bind(project_id)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| format!("couldn't remember the Relay backend: {e}"))?;
+                true
+            }
+            _ => false,
+        };
+        // Until a project's production Relay is made with its first publish, its published app
+        // gets its keys from the shared Relay, when this Nomi has one.
+        let Some(config) = self.config().await else {
+            return if own { Ok(project_id) } else { Err(NOT_SET_UP.to_string()) };
+        };
+        let relay = Relay::new(&self.http_client, &config);
         let name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
             .bind(project_id)
             .fetch_one(&self.pool)
@@ -385,7 +407,7 @@ impl RelayOps for ServerRelayOps {
             (None, _) => tracing::info!(%project_id, "Relay backend made; no Shipyard here to keep its keys for publishing"),
             (Some(_), None) => return Err("Relay answered without a production environment".to_string()),
         }
-        Ok(backend.id)
+        Ok(if own { project_id } else { backend.id })
     }
 
     async fn apply_migrations(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {

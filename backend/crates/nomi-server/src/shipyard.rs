@@ -437,6 +437,7 @@ pub(crate) async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, d
             "published" => ("deploy.published_title", "deploy.published_body"),
             "publish_failed" => ("deploy.publish_failed_title", "deploy.publish_failed_body"),
             "backend_failed" => ("deploy.publish_failed_title", "deploy.backend_failed_body"),
+            "backend_setup_failed" => ("deploy.backend_setup_failed_title", "deploy.backend_setup_failed_body"),
             "crashed" => ("deploy.crashed_title", "deploy.crashed_body"),
             _ => ("deploy.resource_title", "deploy.resource_body"),
         };

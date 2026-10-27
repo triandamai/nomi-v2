@@ -164,6 +164,8 @@ deploy:
   published_body: "Sudah terbit. Aplikasinya aktif di %{detail}."
   publish_failed_title: "%{name} gagal dipublikasikan"
   publish_failed_body: "Shipyard menghentikan publikasi: %{detail}. Buka deployment proyek untuk melihat log, atau minta Koda memperbaikinya."
+  backend_setup_failed_title: "Backend %{name} gagal disiapkan"
+  backend_setup_failed_body: "%{detail} Buka sheet Relay proyek dan pilih Coba lagi."
   backend_failed_body: "Relay menolak perubahan database: %{detail}. Versi yang sedang aktif tetap berjalan; minta Koda memperbaikinya."
   crashed_title: "%{name} berhenti mendadak"
   crashed_body: "Aplikasi yang dipublikasikan berhenti tiba-tiba (kode keluar %{detail}). Shipyard menjalankannya lagi; log runtime menunjukkan penyebabnya."

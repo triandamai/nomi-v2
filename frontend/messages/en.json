@@ -2417,5 +2417,11 @@
 	"landing_work_you_next": "Set a food budget of Rp 1,000,000 for next month, and move my Friday meeting to 10.",
 	"landing_work_dana_budget": "Budget set. I’ll tell you when you’re getting close.",
 	"landing_work_tara": "Moved to Friday at 10:00, and everyone invited knows.",
-	"landing_work_result": "Two things done in one chat"
+	"landing_work_result": "Two things done in one chat",
+	"relay_setup_creating": "Setting up this project’s backend…",
+	"relay_setup_waking": "Waking the backend…",
+	"relay_setup_now": "Now: {step}",
+	"relay_setup_failed": "The backend couldn’t be set up",
+	"relay_setup_failed_at": "It stopped while {step}.",
+	"relay_try_again": "Try again"
 }

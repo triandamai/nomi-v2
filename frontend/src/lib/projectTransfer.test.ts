@@ -96,6 +96,7 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query/x')).toBe(false);
+		expect(ALLOWED_PROJECT_API_PATHS.test('relay/retry')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay/secrets')).toBe(false);
 		});
 
