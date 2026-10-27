@@ -161,10 +161,11 @@ use std::time::Duration;
 
 const IDLE_AFTER: Duration = Duration::from_secs(3600);
 
-/// A ready backend in `env`, last used `idle_hours` ago, whose app is `app` on Shipyard.
+/// A ready backend in `env`, last used `idle_hours` ago, in a project with an app on Shipyard.
 async fn ready_backend(pool: &PgPool, env: &str, idle_hours: i64, url: &str) -> Uuid {
     let project = seed_project(pool).await;
-    sqlx::query("UPDATE projects SET shipyard_app = 'todo-abc' WHERE id = $1").bind(project).execute(pool).await.unwrap();
+    // Each project's app name is its own: they're unique.
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-' || left(id::text, 8) WHERE id = $1").bind(project).execute(pool).await.unwrap();
     project_relays::begin(pool, &KEY, project, env, "control-key", "0.1.5").await.unwrap();
     project_relays::set_url(pool, project, env, url).await.unwrap();
     project_relays::set_state(pool, project, env, READY, None, None).await.unwrap();
@@ -181,7 +182,7 @@ async fn ready_backend(pool: &PgPool, env: &str, idle_hours: i64, url: &str) -> 
 async fn scale_mock(replicas: u32, times: u64) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/todo-abc-backend/envs/dev/scale$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-[0-9a-f]{8}-backend/envs/dev/scale$"))
         .and(wiremock::matchers::body_json(json!({ "replicas": replicas })))
         .respond_with(envelope(json!({ "replicas": replicas })))
         .expect(times)
