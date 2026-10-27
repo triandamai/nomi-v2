@@ -568,7 +568,7 @@ async fn metrics_come_from_shipyard_for_the_asked_range(pool: PgPool) {
     // Not published yet: nothing to measure.
     let (status, _) = request(router.clone(), "GET", &format!("{metrics}?range=1h"), Some(&token), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    sqlx::query("UPDATE projects SET shipyard_app = 'todo-metrics'' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-metrics' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
 
     let (status, body) = request(router.clone(), "GET", &format!("{metrics}?range=1h"), Some(&token), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
