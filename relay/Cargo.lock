@@ -1834,10 +1834,12 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "hex",
+ "hmac",
  "jsonwebtoken",
  "rand 0.8.8",
  "serde",
  "serde_json",
+ "sha2",
  "url",
  "uuid",
 ]

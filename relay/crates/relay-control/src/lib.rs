@@ -6,6 +6,7 @@ pub mod files;
 pub mod functions;
 pub mod migrations;
 pub mod postgrest;
+pub mod query;
 pub mod realtime;
 pub mod schema;
 pub mod settings;

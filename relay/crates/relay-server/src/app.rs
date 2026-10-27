@@ -11,7 +11,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use relay_control::backend::{backend_keys, delete_backend, ensure_backend, Databases};
-use relay_control::{functions, migrations, realtime, schema, settings, storage, Relay};
+use relay_control::{functions, migrations, query, realtime, schema, settings, storage, Relay};
 use relay_core::{Env, Tier};
 use relay_migrate::MigrationFile;
 use serde::Deserialize;
@@ -154,6 +154,18 @@ async fn put_realtime(State(state): State<AppState>, Path((project, env_name)): 
     Ok(ok(json!({ "tables": body.tables })))
 }
 
+#[derive(Deserialize)]
+struct QueryRequest {
+    sql: String,
+    access: query::Access,
+}
+
+/// SQL from the project's console in Nomi, or a read from Iris.
+async fn post_query(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>, Json(body): Json<QueryRequest>) -> Result<Answer> {
+    let result = query::run(&state.relay, project, env(&env_name)?, &body.sql, body.access).await?;
+    Ok(ok(json!(result)))
+}
+
 async fn get_types(State(state): State<AppState>, Path((project, env_name)): Path<(Uuid, String)>) -> Result<Answer> {
     Ok(ok(json!({ "types": schema::types(&state.relay, project, env(&env_name)?).await? })))
 }
@@ -260,6 +272,7 @@ fn control_router(relay: Arc<Relay>, control_key: String) -> Router {
         .route("/control/projects/:id/environments/:env/migrations", post(post_migrations))
         .route("/control/projects/:id/environments/:env/schema", get(get_schema))
         .route("/control/projects/:id/environments/:env/types", get(get_types))
+        .route("/control/projects/:id/environments/:env/query", post(post_query))
         .route("/control/projects/:id/environments/:env/auth", get(get_auth).put(put_auth))
         .route("/control/projects/:id/environments/:env/storage", axum::routing::put(put_storage))
         .route("/control/projects/:id/environments/:env/realtime", axum::routing::put(put_realtime))
