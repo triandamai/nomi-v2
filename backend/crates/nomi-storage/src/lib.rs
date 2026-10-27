@@ -23,16 +23,38 @@ pub struct S3Config {
 /// a real misconfiguration and does panic, since that means someone intended to enable this and
 /// got it wrong.
 pub async fn build_from_env() -> Option<S3Config> {
-    let bucket = std::env::var("S3_BUCKET").ok()?;
-    let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-    let access_key = std::env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID must be set when S3_BUCKET is set");
-    let secret_key =
-        std::env::var("AWS_SECRET_ACCESS_KEY").expect("AWS_SECRET_ACCESS_KEY must be set when S3_BUCKET is set");
-    let endpoint_url = std::env::var("S3_ENDPOINT_URL").ok();
-    let public_url_base = std::env::var("S3_PUBLIC_URL_BASE")
-        .unwrap_or_else(|_| format!("https://{bucket}.s3.{region}.amazonaws.com"));
+    std::env::var("S3_BUCKET").ok()?;
+    std::env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID must be set when S3_BUCKET is set");
+    std::env::var("AWS_SECRET_ACCESS_KEY").expect("AWS_SECRET_ACCESS_KEY must be set when S3_BUCKET is set");
+    build_from(|field| {
+        let name = match field {
+            "bucket" => "S3_BUCKET",
+            "region" => "S3_REGION",
+            "access_key_id" => "AWS_ACCESS_KEY_ID",
+            "secret_access_key" => "AWS_SECRET_ACCESS_KEY",
+            "endpoint_url" => "S3_ENDPOINT_URL",
+            _ => "S3_PUBLIC_URL_BASE",
+        };
+        std::env::var(name).ok()
+    })
+    .await
+}
 
-    let credentials = Credentials::new(access_key, secret_key, None, None, "env");
+/// S3 from Admin → Configuration's storage fields (`bucket`, `region`, `access_key_id`,
+/// `secret_access_key`, `endpoint_url`, `public_url_base`), as `get` answers them. `None` without
+/// a bucket; a bucket without both keys is logged and also `None`, so a half-finished save never
+/// stops Nomi from starting.
+pub async fn build_from(get: impl Fn(&str) -> Option<String>) -> Option<S3Config> {
+    let bucket = get("bucket").filter(|b| !b.is_empty())?;
+    let region = get("region").filter(|r| !r.is_empty()).unwrap_or_else(|| "us-east-1".to_string());
+    let (Some(access_key), Some(secret_key)) = (get("access_key_id"), get("secret_access_key")) else {
+        tracing::error!(%bucket, "S3 has a bucket but no access key and secret: files stay on disk until both are set");
+        return None;
+    };
+    let endpoint_url = get("endpoint_url").filter(|e| !e.is_empty());
+    let public_url_base = get("public_url_base").filter(|p| !p.is_empty()).unwrap_or_else(|| format!("https://{bucket}.s3.{region}.amazonaws.com"));
+
+    let credentials = Credentials::new(access_key, secret_key, None, None, "nomi-config");
     let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .region(Region::new(region))
         .credentials_provider(credentials)

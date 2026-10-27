@@ -1,3 +1,4 @@
+pub mod configuration;
 pub mod app;
 pub mod attachment_worker;
 pub mod bootstrap;

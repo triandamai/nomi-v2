@@ -31,15 +31,17 @@ async fn main() {
 
     let http_client = nomi_server::http_client();
 
-    let s3 = nomi_storage::build_from_env().await;
+    // Admin → Configuration is read from here on; the environment fills what isn't saved there.
+    nomi_settings::config::install(pool.clone());
+    let s3 = nomi_server::configuration::storage().await;
     if s3.is_some() {
         tracing::info!("S3 storage configured for avatars, attachments and project files");
     } else {
-        tracing::info!("S3_BUCKET not set — avatar upload disabled, attachments and project files kept on disk");
+        tracing::info!("no file storage set (Admin → Configuration or S3_*) — avatar upload disabled, attachments and project files kept on disk");
     }
 
     // Notifications are emailed through the same SMTP settings as sign-in codes.
-    nomi_server::notifications::init_mailer(nomi_mail::from_env());
+    nomi_server::notifications::init_mailer(nomi_mail::configured());
     nomi_server::public_url::warn_if_unknown();
     nomi_server::project_events::init(&mqtt_broker_host, mqtt_broker_port);
     nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
@@ -138,14 +140,14 @@ async fn main() {
     let app = nomi_server::app::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.expect("failed to bind to port 8080");
-    match nomi_agent_workspace::connection::GoogleConfig::from_env() {
+    match nomi_agent_workspace::connection::GoogleConfig::current().await {
         // Both must be listed exactly under the Google OAuth client's authorized redirect URIs.
         Some(google) => tracing::info!(
             sign_in_redirect_uri = %google.signin_redirect_uri,
             workspace_redirect_uri = %google.redirect_uri,
             "Google sign-in and Workspace enabled"
         ),
-        None => tracing::info!("Google not configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI)"),
+        None => tracing::info!("Google not configured (Admin → Configuration → Google, or GOOGLE_*)"),
     }
     tracing::info!("listening on 0.0.0.0:8080");
     axum::serve(listener, app).await.expect("server error");

@@ -51,22 +51,37 @@ fn http_client() -> reqwest::Client {
     CLIENT.get_or_init(reqwest::Client::new).clone()
 }
 
+/// Where the agent's Google OAuth client comes from.
+enum GoogleSource {
+    /// Given once (tests); `None` means Google isn't set up.
+    Fixed(Option<Arc<GoogleConfig>>),
+    /// Admin → Configuration as it is at each call, so a saved client applies at once.
+    Current,
+}
+
 pub struct WorkspaceAgent {
     http: reqwest::Client,
-    /// `None` until whoever runs Nomi adds Google OAuth credentials.
-    config: Option<Arc<GoogleConfig>>,
+    config: GoogleSource,
     key: [u8; 32],
 }
 
 impl WorkspaceAgent {
     pub fn new(http: reqwest::Client, config: Option<Arc<GoogleConfig>>, key: [u8; 32]) -> Self {
-        Self { http, config, key }
+        Self { http, config: GoogleSource::Fixed(config), key }
     }
 
-    /// Google settings and the encryption key from the environment (see `GoogleConfig::from_env`).
+    /// The encryption key from the environment; Google's client from Admin → Configuration on
+    /// every call (see `GoogleConfig::current`).
     pub fn from_env() -> Self {
         let key = std::env::var("SETTINGS_ENCRYPTION_KEY").ok().and_then(|k| nomi_settings::crypto::parse_key(&k)).unwrap_or([0u8; 32]);
-        Self::new(http_client(), GoogleConfig::from_env().map(Arc::new), key)
+        Self { http: http_client(), config: GoogleSource::Current, key }
+    }
+
+    async fn google_config(&self) -> Option<Arc<GoogleConfig>> {
+        match &self.config {
+            GoogleSource::Fixed(config) => config.clone(),
+            GoogleSource::Current => GoogleConfig::current().await.map(Arc::new),
+        }
     }
 }
 
@@ -238,9 +253,10 @@ impl SubAgent for WorkspaceAgent {
         input: Value,
     ) -> Result<ToolOutcome, String> {
         let service = tool_service(name).ok_or_else(|| format!("unknown tool {name}"))?;
-        let Some(config) = self.config.as_deref() else {
+        let google_config = self.google_config().await;
+        let Some(config) = google_config.as_deref() else {
             return Ok(ToolOutcome::text(
-                "Google Workspace isn't set up on this Nomi server yet. Tell the user whoever runs Nomi needs to add Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI).",
+                "Google Workspace isn't set up on this Nomi server yet. Tell the user whoever runs Nomi needs to add Google OAuth credentials in Admin → Configuration → Google.",
             ));
         };
 

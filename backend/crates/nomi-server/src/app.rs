@@ -321,6 +321,7 @@ pub fn build_router(state: AppState) -> Router {
             // Uploads are streamed and limited by the handler itself (nomi_attachments::Limits).
             post(attachments_routes::upload).layer(axum::extract::DefaultBodyLimit::disable()),
         )
+        .route("/api/attachments/limits", get(attachments_routes::limits))
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))

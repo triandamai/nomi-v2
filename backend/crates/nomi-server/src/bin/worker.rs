@@ -32,12 +32,14 @@ async fn main() {
     let mqtt_client_id = format!("nomi-worker-{}", uuid::Uuid::new_v4());
     let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
-    let s3 = nomi_storage::build_from_env().await;
+    // Admin → Configuration is read from here on; the environment fills what isn't saved there.
+    nomi_settings::config::install(pool.clone());
+    let s3 = nomi_server::configuration::storage().await;
     let project_storage = nomi_storage::build_project_store(s3.clone());
     // Turns open attached files from the same place the server stores them.
     nomi_storage::blob::init_attachment_store(s3.clone());
     // Quota notices from turns are emailed through the same SMTP settings as the server's.
-    nomi_server::notifications::init_mailer(nomi_mail::from_env());
+    nomi_server::notifications::init_mailer(nomi_mail::configured());
     nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
     // Chat replies and quota notices reach phones through the same push setup as the server's.
     nomi_server::push::init(nomi_server::push::from_env(http_client.clone()));

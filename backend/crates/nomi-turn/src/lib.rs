@@ -88,17 +88,20 @@ pub async fn handle_inbound_message(
     }
 }
 
-/// Longest one turn may run (`TURN_TIME_LIMIT_SECS`, default 10 minutes). Long enough for a
-/// many-step task on a slow model; short enough that a stuck one doesn't hold the queue.
-pub fn turn_time_limit() -> std::time::Duration {
-    time_limit(std::env::var("TURN_TIME_LIMIT_SECS").ok().as_deref(), 600)
+/// Longest one turn may run (Admin → Configuration, or `TURN_TIME_LIMIT_SECS`; default 10
+/// minutes). Long enough for a many-step task on a slow model; short enough that a stuck one
+/// doesn't hold the queue.
+pub async fn turn_time_limit() -> std::time::Duration {
+    let agent_loop = nomi_settings::config::current(&nomi_settings::config::AGENT_LOOP).await;
+    time_limit(agent_loop.get("turn_time_limit_secs").as_deref(), 600)
 }
 
-/// Longest one background (delegated) run may take (`DELEGATION_TIME_LIMIT_SECS`, default 30
-/// minutes): a build writes, installs, checks and fixes, but one that stalls mustn't hold the
-/// delegation worker, which runs them one at a time, forever.
-pub fn delegation_time_limit() -> std::time::Duration {
-    time_limit(std::env::var("DELEGATION_TIME_LIMIT_SECS").ok().as_deref(), 1800)
+/// Longest one background (delegated) run may take (Admin → Configuration, or
+/// `DELEGATION_TIME_LIMIT_SECS`; default 30 minutes): a build writes, installs, checks and fixes,
+/// but one that stalls mustn't hold the delegation worker, which runs them one at a time, forever.
+pub async fn delegation_time_limit() -> std::time::Duration {
+    let agent_loop = nomi_settings::config::current(&nomi_settings::config::AGENT_LOOP).await;
+    time_limit(agent_loop.get("delegation_time_limit_secs").as_deref(), 1800)
 }
 
 /// Seconds from a setting, or `default_secs` when it's unset, unreadable or zero.
@@ -159,7 +162,7 @@ pub async fn process_turn(
     // A stalled model or tool must never hold the chat (or the worker, which runs turns one at a
     // time) forever: past the limit the turn is dropped and fails like any other error below,
     // which also releases the session lock on this same connection.
-    let limit = turn_time_limit();
+    let limit = turn_time_limit().await;
     let result = match tokio::time::timeout(
         limit,
         run_locked_turn(
