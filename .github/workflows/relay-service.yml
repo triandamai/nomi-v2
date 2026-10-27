@@ -84,16 +84,19 @@ jobs:
         working-directory: relay/functions-runtime
         run: deno task test
 
-  # Nomi runs a Relay next to every project on Shipyard (standalone mode), from these images. The
-  # tag Nomi pins is the npm packages' version; every build is also tagged with its commit.
+  # Nomi runs a Relay next to every project on Shipyard (standalone mode), from these images, in
+  # Shipyard's own registry like the backend and frontend (release.yml; the same secrets).
+  # Admin -> Configuration -> Relay says where they are. Every build is tagged with the npm
+  # packages' version and with its commit.
   images:
-    name: Relay images (ghcr.io)
+    name: Relay images (Shipyard registry)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test, functions-runtime]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+    env:
+      REGISTRY: ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}
     steps:
       - uses: actions/checkout@v6
 
@@ -103,34 +106,35 @@ jobs:
           echo "version=$(node -p "require('./relay/sdk/js/package.json').version")" >> "$GITHUB_OUTPUT"
           echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
+      - name: Log in to Shipyard registry
+        uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ secrets.SHIPYARD_REGISTRY_HOST }}
+          username: ci
+          password: ${{ secrets.SHIPYARD_REGISTRY_KEY }}
+
+      - uses: docker/setup-buildx-action@v4
 
       - name: relay-server
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: relay
           file: relay/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/nomi-relay:${{ steps.tags.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/nomi-relay:${{ steps.tags.outputs.sha }}
-          cache-from: type=gha,scope=nomi-relay
-          cache-to: type=gha,mode=max,scope=nomi-relay
+            ${{ env.REGISTRY }}/relay:${{ steps.tags.outputs.version }}
+            ${{ env.REGISTRY }}/relay:${{ steps.tags.outputs.sha }}
+          cache-from: type=gha,scope=relay
+          cache-to: type=gha,mode=max,scope=relay
 
       - name: functions runtime
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: relay/functions-runtime
           file: relay/functions-runtime/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/nomi-relay-functions:${{ steps.tags.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/nomi-relay-functions:${{ steps.tags.outputs.sha }}
-          cache-from: type=gha,scope=nomi-relay-functions
-          cache-to: type=gha,mode=max,scope=nomi-relay-functions
+            ${{ env.REGISTRY }}/relay-functions:${{ steps.tags.outputs.version }}
+            ${{ env.REGISTRY }}/relay-functions:${{ steps.tags.outputs.sha }}
+          cache-from: type=gha,scope=relay-functions
+          cache-to: type=gha,mode=max,scope=relay-functions

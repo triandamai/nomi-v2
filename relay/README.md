@@ -164,9 +164,11 @@ What changes:
   `RELAY_CONTROL_KEY`), and every other path is the project's backend, whatever the hostname.
 - `PUT /control/projects/:id` accepts only `RELAY_PROJECT`; another id is `409 CONFLICT`.
 
-CI publishes the images on every merge to main that touches the service:
-`ghcr.io/triandamai/nomi-relay` and `ghcr.io/triandamai/nomi-relay-functions`, each tagged
-`sha-<commit>` (what Nomi pins) and with the npm packages' version.
+CI publishes the images to Shipyard's registry on every merge to main that touches the service,
+with the repository's `SHIPYARD_REGISTRY_HOST`, `SHIPYARD_IMAGE_PREFIX` and `SHIPYARD_REGISTRY_KEY`
+secrets (the ones the backend and frontend use): `<host>/<prefix>/relay` and
+`<host>/<prefix>/relay-functions`, each tagged `sha-<commit>` and with the npm packages' version.
+Nomi is told where they are in admin (Configuration → Relay).
 
 ## What Koda writes
 
