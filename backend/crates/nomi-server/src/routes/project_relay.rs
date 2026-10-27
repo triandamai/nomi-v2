@@ -108,7 +108,7 @@ pub async fn retry(
     }
     let shipyard = state.shipyard.clone().ok_or((StatusCode::SERVICE_UNAVAILABLE, "publishing isn't set up on this Nomi".to_string()))?;
     tracing::info!(%project_id, user = %claims.sub, env, "a project's backend is being set up again");
-    crate::relay_backend::start(state.pool.clone(), state.http_client.clone(), shipyard, state.settings_key, project_id, env, true)
+    crate::relay_backend::start(state.pool.clone(), state.http_client.clone(), shipyard, state.settings_key, state.project_storage.clone(), project_id, env, true)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(StatusCode::ACCEPTED)

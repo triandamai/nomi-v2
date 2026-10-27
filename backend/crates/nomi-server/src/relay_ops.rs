@@ -372,7 +372,7 @@ impl ServerRelayOps {
         // A development backend that went to sleep is woken, and waited for, before it's called.
         if let (RelayEnv::Dev, Some(shipyard), Some(key)) = (env, &self.shipyard, self.settings_key()) {
             let deps = crate::relay_backend::Deps { pool: &self.pool, http: &self.http_client, shipyard: &shipyard.config, settings_key: &key };
-            crate::relay_backend::ensure_awake(&deps, project_id).await.map_err(starting_guidance)?;
+            crate::relay_backend::wait_until_ready(&deps, project_id, crate::relay_backend::BACKEND_SETUP_WAIT).await.map_err(starting_guidance)?;
         }
         let shared = self.config().await;
         let settings_key = match &self.connection {
@@ -403,6 +403,10 @@ impl RelayOps for ServerRelayOps {
         }
     }
 
+    async fn backend_starting(&self, project_id: Uuid) -> bool {
+        matches!(crate::project_relays::stack(&self.pool, project_id, crate::relay_backend::DEV).await, Ok(Some(stack)) if stack.state == crate::project_relays::CREATING)
+    }
+
     async fn is_available(&self) -> bool {
         if self.config().await.is_some() {
             return true;
@@ -418,7 +422,7 @@ impl RelayOps for ServerRelayOps {
         // With Shipyard, the project gets its own Relay for development, made in the background.
         let own = match (&self.shipyard, self.settings_key()) {
             (Some(shipyard), Some(key)) if crate::relay_backend::images_set(&self.pool, &key).await => {
-                crate::relay_backend::start(self.pool.clone(), self.http_client.clone(), shipyard.config.clone(), key, project_id, "dev", true).await?;
+                crate::relay_backend::start(self.pool.clone(), self.http_client.clone(), shipyard.config.clone(), key, shipyard.project_storage.clone(), project_id, "dev", true).await?;
                 sqlx::query("UPDATE projects SET relay_project_id = $1, updated_at = now() WHERE id = $2")
                     .bind(project_id)
                     .bind(project_id)
