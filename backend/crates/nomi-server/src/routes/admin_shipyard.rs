@@ -103,9 +103,10 @@ pub async fn list_apps(State(state): State<AppState>, AuthClaims(claims): AuthCl
             if key.is_empty() {
                 continue;
             }
+            let base = key.strip_suffix(nomi_shipyard::manifest::BACKEND_SUFFIX);
             let project = linked
                 .iter()
-                .find(|(_, _, _, k)| *k == key)
+                .find(|(_, _, _, k)| *k == key || base.is_some_and(|b| *k == b))
                 .map(|(id, name, session_id, _)| LinkedProject { id: *id, name: name.clone(), session_id: *session_id });
             apps.push(ShipyardApp {
                 org_id,

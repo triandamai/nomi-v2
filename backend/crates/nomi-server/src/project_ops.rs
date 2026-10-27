@@ -113,6 +113,10 @@ impl ServerProjectOps {
         if !crate::relay_ops::on_relay(&self.pool, project_id).await.map_err(message)? {
             return Ok(None);
         }
+        if let (crate::relay_backend::DEV, Some(shipyard), Some(key)) = (env, &self.shipyard, self.relay_settings_key) {
+            let deps = crate::relay_backend::Deps { pool: &self.pool, http: &self.http_client, shipyard, settings_key: &key };
+            crate::relay_backend::wait_until_ready(&deps, project_id, crate::relay_backend::BACKEND_READY_WAIT).await?;
+        }
         let shared = crate::relay_connection::load_or(&self.pool, self.relay_settings_key.as_ref(), RelayConfig::from_env()).await;
         crate::project_relays::config_for(&self.pool, self.relay_settings_key.as_ref(), shared, project_id, env)
             .await?
@@ -147,38 +151,60 @@ impl ProjectOps for ServerProjectOps {
 
     async fn status(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
         project_role(&self.pool, project_id, user_id).await.map_err(message)?;
-        let publishes: Vec<(String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
-            "SELECT environment, status, url, error, created_at, \
-                    NULLIF(concat_ws(' ', failure->>'phase', failure->>'step', failure->>'message'), '') \
-             FROM project_publishes WHERE project_id = $1 AND environment = $2 \
-             ORDER BY created_at DESC LIMIT $3",
-        )
-        .bind(project_id)
-        .bind(environment)
-        .bind(STATUS_PUBLISHES)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| format!("couldn't read the publishes: {e}"))?;
+        let is_dev_relay = matches!(environment, "dev" | "development") && crate::relay_ops::on_relay(&self.pool, project_id).await.unwrap_or(false);
         let mut lines = Vec::new();
-        if publishes.is_empty() {
-            lines.push(format!("Never published to {environment}."));
-        }
-        for (env, status, url, error, created_at, failure) in &publishes {
-            let mut line = format!("Publish to {env} at {}: {status}", created_at.to_rfc3339());
-            if let Some(url) = url {
-                line.push_str(&format!(", {url}"));
+        if is_dev_relay {
+            if let Ok(Some(stack)) = crate::project_relays::stack(&self.pool, project_id, crate::relay_backend::DEV).await {
+                let mut line = format!("Relay dev backend: {}", stack.state);
+                if let Some(url) = stack.url.as_deref() {
+                    line.push_str(&format!(", {url}"));
+                }
+                if let Some(step) = stack.step.as_deref() {
+                    line.push_str(&format!(" (step: {step})"));
+                }
+                if let Some(err) = stack.error.as_deref() {
+                    line.push_str(&format!(" ({})", nomi_llm::redact::redacted(err)));
+                }
+                lines.push(line);
             }
-            if let Some(error) = error {
-                line.push_str(&format!(" ({})", nomi_llm::redact::redacted(error)));
+        } else {
+            let publishes: Vec<(String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+                "SELECT environment, status, url, error, created_at, \
+                        NULLIF(concat_ws(' ', failure->>'phase', failure->>'step', failure->>'message'), '') \
+                 FROM project_publishes WHERE project_id = $1 AND environment = $2 \
+                 ORDER BY created_at DESC LIMIT $3",
+            )
+            .bind(project_id)
+            .bind(environment)
+            .bind(STATUS_PUBLISHES)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| format!("couldn't read the publishes: {e}"))?;
+            if publishes.is_empty() {
+                lines.push(format!("Never published to {environment}."));
             }
-            if let Some(failure) = failure {
-                line.push_str(&format!(" [failed at: {}]", nomi_llm::redact::redacted(failure)));
+            for (env, status, url, error, created_at, failure) in &publishes {
+                let mut line = format!("Publish to {env} at {}: {status}", created_at.to_rfc3339());
+                if let Some(url) = url {
+                    line.push_str(&format!(", {url}"));
+                }
+                if let Some(error) = error {
+                    line.push_str(&format!(" ({})", nomi_llm::redact::redacted(error)));
+                }
+                if let Some(failure) = failure {
+                    line.push_str(&format!(" [failed at: {}]", nomi_llm::redact::redacted(failure)));
+                }
+                lines.push(line);
             }
-            lines.push(line);
         }
         let target = target(self, project_id).await.map_err(message)?;
         if let Some(app) = target.shipyard_app.as_deref() {
-            match client(self).map_err(message)?.get_env(&target.org_key(), app, environment).await {
+            let (shipyard_app, shipyard_env) = if is_dev_relay {
+                (crate::relay_backend::backend_app(app), crate::relay_backend::DEV)
+            } else {
+                (app.to_string(), environment)
+            };
+            match client(self).map_err(message)?.get_env(&target.org_key(), &shipyard_app, shipyard_env).await {
                 Ok(live) => {
                     let described = nomi_llm::redact::redacted(live.to_string());
                     let clipped: String = described.chars().take(MAX_ENV_DESCRIPTION_CHARS).collect();
@@ -194,9 +220,15 @@ impl ProjectOps for ServerProjectOps {
         project_role(&self.pool, project_id, user_id).await.map_err(message)?;
         let target = target(self, project_id).await.map_err(message)?;
         let app = target.shipyard_app.as_deref().ok_or("this project hasn't been published yet")?;
+        let is_dev_relay = matches!(environment, "dev" | "development") && crate::relay_ops::on_relay(&self.pool, project_id).await.unwrap_or(false);
+        let (shipyard_app, shipyard_env, service) = if is_dev_relay {
+            (crate::relay_backend::backend_app(app), crate::relay_backend::DEV, "relay")
+        } else {
+            (app.to_string(), environment, "web")
+        };
         let logs = client(self)
             .map_err(message)?
-            .service_logs(&target.org_key(), app, environment, "web", tail, None)
+            .service_logs(&target.org_key(), &shipyard_app, shipyard_env, service, tail, None)
             .await
             .map_err(|e| message(shipyard_error(e)))?;
         Ok(logs
