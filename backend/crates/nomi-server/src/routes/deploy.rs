@@ -619,10 +619,15 @@ pub async fn runtime_logs(
     let app = published_app(&target)?;
     let env = env_of(&EnvQuery { environment: query.environment.clone() })?;
     let service = query.service.clone().unwrap_or_else(|| "web".to_string());
-    let logs = client(&state)?
+    let mut logs = client(&state)?
         .service_logs(&target.org_key(), app, &env, &service, query.tail.unwrap_or(300), query.since.as_deref())
         .await
         .map_err(shipyard_error)?;
+    // The Monitor shows text lines, whichever shape Shipyard sent them in.
+    let lines = nomi_shipyard::log_lines(&logs);
+    if let Some(fields) = logs.as_object_mut() {
+        fields.insert("lines".to_string(), json!(lines));
+    }
     Ok(Json(logs))
 }
 

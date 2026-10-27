@@ -23,7 +23,7 @@
 	const CHART_WIDTH = 300;
 	const CHART_HEIGHT = 80;
 	/** Shipyard events worth a line here. */
-	const EVENTS = ['service.crashed', 'service.resource_alert', 'deployment.failed', 'publish.failed', 'publish.succeeded'];
+	const EVENTS = ['service.crashed', 'service.resource_alert', 'service.error_rate_alert', 'deployment.failed', 'publish.failed', 'publish.succeeded'];
 
 	const services = $derived(deploy?.overview?.live?.services ?? []);
 	// When the web service last deployed (not uptime: a crash restarts it without a deploy).
@@ -107,6 +107,12 @@
 					metric: String(data.metric ?? 'cpu'),
 					value: typeof data.value === 'number' ? percent(data.value) : '?',
 					threshold: typeof data.threshold === 'number' ? percent(data.threshold) : '?',
+				});
+			case 'service.error_rate_alert':
+				return m.pj_alert_error_rate({
+					errors: String(data.errors_5xx ?? '?'),
+					requests: String(data.requests ?? '?'),
+					rate: typeof data.error_rate === 'number' ? percent(data.error_rate) : '?',
 				});
 			case 'publish.succeeded':
 				return m.pj_mon_event_live();
