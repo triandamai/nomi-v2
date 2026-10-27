@@ -86,8 +86,18 @@
 				delegation_time_limit_secs: { label: m.config_agent_loop_delegation_time_limit_secs, hint: m.config_agent_loop_delegation_time_limit_secs_hint },
 			},
 		},
+		relay: {
+			title: m.config_relay,
+			lede: m.config_relay_lede,
+			fields: {
+				relay_image: { label: m.config_relay_relay_image, hint: m.config_relay_relay_image_hint },
+				functions_image: { label: m.config_relay_functions_image, hint: m.config_relay_functions_image_hint },
+				postgrest_image: { label: m.config_relay_postgrest_image, hint: m.config_relay_postgrest_image_hint },
+				version: { label: m.config_relay_version, hint: m.config_relay_version_hint },
+			},
+		},
 	};
-	const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop'];
+	const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay'];
 
 	let sections = $state<Section[] | null>(null);
 	let tab = $state('attachments');

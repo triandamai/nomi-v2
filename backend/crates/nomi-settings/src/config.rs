@@ -102,7 +102,20 @@ pub const AGENT_LOOP: SectionDef = SectionDef {
     ],
 };
 
-pub const SECTIONS: [&SectionDef; 5] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &SMTP, &AGENT_LOOP];
+/// Where the images a project's own Relay runs are: the repository of Relay's and its functions
+/// runtime's images in Shipyard's registry (`<host>/<prefix>/relay`), PostgREST's full image and
+/// the tag the first two are run at.
+pub const RELAY: SectionDef = SectionDef {
+    name: "relay",
+    fields: &[
+        field("relay_image", "RELAY_IMAGE", Kind::Text),
+        field("functions_image", "RELAY_FUNCTIONS_IMAGE", Kind::Text),
+        field("postgrest_image", "RELAY_POSTGREST_IMAGE", Kind::Text),
+        field("version", "RELAY_IMAGE_VERSION", Kind::Text),
+    ],
+};
+
+pub const SECTIONS: [&SectionDef; 6] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &SMTP, &AGENT_LOOP, &RELAY];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)

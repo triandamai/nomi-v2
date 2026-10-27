@@ -383,14 +383,20 @@ impl ServerRelayOps {
 #[async_trait]
 impl RelayOps for ServerRelayOps {
     async fn is_available(&self) -> bool {
-        self.config().await.is_some() || (self.shipyard.is_some() && self.settings_key().is_some())
+        if self.config().await.is_some() {
+            return true;
+        }
+        match (&self.shipyard, self.settings_key()) {
+            (Some(_), Some(key)) => crate::relay_backend::images_set(&self.pool, &key).await,
+            _ => false,
+        }
     }
 
     async fn ensure_backend(&self, user_id: Uuid, project_id: Uuid) -> Result<Uuid, String> {
         self.check_access(user_id, project_id, RelayEnv::Dev).await?;
         // With Shipyard, the project gets its own Relay for development, made in the background.
         let own = match (&self.shipyard, self.settings_key()) {
-            (Some(shipyard), Some(key)) => {
+            (Some(shipyard), Some(key)) if crate::relay_backend::images_set(&self.pool, &key).await => {
                 crate::relay_backend::start(self.pool.clone(), self.http_client.clone(), shipyard.config.clone(), key, project_id, "dev", true).await?;
                 sqlx::query("UPDATE projects SET relay_project_id = $1, updated_at = now() WHERE id = $2")
                     .bind(project_id)

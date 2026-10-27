@@ -78,12 +78,24 @@ pub fn dockerfile(stack: &str, files: &[(String, Vec<u8>)]) -> String {
 
 /// The Shipyard app that holds a project's Relay backend: the project's own app slug and this.
 pub const BACKEND_SUFFIX: &str = "-backend";
-/// The version of Relay's images a backend runs (`relay-service.yml` pushes them to ghcr.io under
-/// the npm packages' version). Raised here when Nomi should move projects to a newer Relay.
-pub const RELAY_STACK_VERSION: &str = "0.1.5";
-const RELAY_IMAGE: &str = "ghcr.io/triandamai/nomi-relay";
-const FUNCTIONS_IMAGE: &str = "ghcr.io/triandamai/nomi-relay-functions";
-const POSTGREST_IMAGE: &str = "postgrest/postgrest:v12.2.3";
+/// Where a backend's images are (Admin → Configuration → Relay): Relay's and its functions
+/// runtime's repositories in Shipyard's registry, PostgREST's image, and the tag the first two run
+/// at. The version is raised there when Nomi should move projects to a newer Relay.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Images {
+    /// `<registry>/<prefix>/relay`, without a tag.
+    pub relay: String,
+    /// `<registry>/<prefix>/relay-functions`, without a tag.
+    pub functions: String,
+    /// A full reference, tag included.
+    pub postgrest: String,
+    pub version: String,
+}
+
+/// PostgREST's image when none is set.
+pub const DEFAULT_POSTGREST_IMAGE: &str = "postgrest/postgrest:v12.2.3";
+/// The Relay version to run when none is set (the npm packages' version when this was written).
+pub const DEFAULT_RELAY_VERSION: &str = "0.1.5";
 /// What a backend's services listen on.
 pub const RELAY_PORT: u16 = 8080;
 const POSTGREST_PORT: u16 = 3000;
@@ -137,7 +149,7 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
 /// `backend_source` (Shipyard's integration API can't run a prebuilt image yet), and the
 /// environment's own Postgres. `env` is `dev` or `production`; Relay serves exactly this project
 /// in exactly this environment.
-pub fn relay_backend(project_id: &str, env: &str, has_functions: bool) -> Value {
+pub fn relay_backend(project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
     let secret = |name: &str| json!({ "secret": name });
     let mut relay_env = json!({
         "RELAY_DATABASE_URL": { "database": "url" },
@@ -174,20 +186,20 @@ pub fn relay_backend(project_id: &str, env: &str, has_functions: bool) -> Value 
     json!({
         "services": services,
         "database": { "engine": "postgres" },
-        "labels": { "nomi.app/project": project_id, "nomi.app/role": "relay-backend", "nomi.app/relay-version": RELAY_STACK_VERSION },
+        "labels": { "nomi.app/project": project_id, "nomi.app/role": "relay-backend", "nomi.app/relay-version": version },
     })
 }
 
 /// The source of a backend: one Dockerfile per service, each only naming its image, so building
 /// them just pulls the image.
-pub fn backend_source(version: &str, has_functions: bool) -> Result<Vec<u8>, String> {
+pub fn backend_source(images: &Images, has_functions: bool) -> Result<Vec<u8>, String> {
     let dockerfile = |image: &str| format!("FROM {image}\n").into_bytes();
     let mut files = vec![
-        ("relay/Dockerfile".to_string(), dockerfile(&format!("{RELAY_IMAGE}:{version}"))),
-        ("postgrest/Dockerfile".to_string(), dockerfile(POSTGREST_IMAGE)),
+        ("relay/Dockerfile".to_string(), dockerfile(&format!("{}:{}", images.relay, images.version))),
+        ("postgrest/Dockerfile".to_string(), dockerfile(&images.postgrest)),
     ];
     if has_functions {
-        files.push(("functions/Dockerfile".to_string(), dockerfile(&format!("{FUNCTIONS_IMAGE}:{version}"))));
+        files.push(("functions/Dockerfile".to_string(), dockerfile(&format!("{}:{}", images.functions, images.version))));
     }
     crate::bundle::zip(&files)
 }
@@ -284,7 +296,7 @@ mod tests {
 
     #[test]
     fn a_backend_is_relay_postgrest_and_a_database() {
-        let manifest = relay_backend("p1", "dev", false);
+        let manifest = relay_backend("p1", "dev", false, "0.1.5");
         let services = manifest["services"].as_array().unwrap();
         let names: Vec<&str> = services.iter().map(|s| s["name"].as_str().unwrap()).collect();
         assert_eq!(names, vec!["relay", "postgrest"]);
@@ -307,7 +319,7 @@ mod tests {
 
     #[test]
     fn a_backend_with_functions_runs_the_runtime_and_tells_relay_where() {
-        let manifest = relay_backend("p1", "production", true);
+        let manifest = relay_backend("p1", "production", true, "0.1.5");
         let services = manifest["services"].as_array().unwrap();
         assert_eq!(services.len(), 3);
         assert_eq!(services[2]["name"], "functions");
@@ -318,16 +330,22 @@ mod tests {
 
     #[test]
     fn a_backends_source_is_one_line_dockerfiles_naming_the_images() {
-        let zip = backend_source("0.1.5", true).unwrap();
+        let images = Images {
+            relay: "registry.test/acme/relay".into(),
+            functions: "registry.test/acme/relay-functions".into(),
+            postgrest: "postgrest/postgrest:v12.2.3".into(),
+            version: "0.1.5".into(),
+        };
+        let zip = backend_source(&images, true).unwrap();
         let files = crate::bundle::files_under(&zip, "").unwrap();
         let text = |path: &str| String::from_utf8(files.iter().find(|(p, _)| p == path).unwrap().1.clone()).unwrap();
-        assert_eq!(text("relay/Dockerfile"), "FROM ghcr.io/triandamai/nomi-relay:0.1.5\n");
-        assert_eq!(text("functions/Dockerfile"), "FROM ghcr.io/triandamai/nomi-relay-functions:0.1.5\n");
+        assert_eq!(text("relay/Dockerfile"), "FROM registry.test/acme/relay:0.1.5\n");
+        assert_eq!(text("functions/Dockerfile"), "FROM registry.test/acme/relay-functions:0.1.5\n");
         assert!(text("postgrest/Dockerfile").starts_with("FROM postgrest/postgrest:v"));
-        let without = crate::bundle::files_under(&backend_source("0.1.5", false).unwrap(), "").unwrap();
+        let without = crate::bundle::files_under(&backend_source(&images, false).unwrap(), "").unwrap();
         assert!(without.iter().all(|(p, _)| p != "functions/Dockerfile"));
         // Every service's `path` has its Dockerfile.
-        for service in relay_backend("p1", "dev", true)["services"].as_array().unwrap() {
+        for service in relay_backend("p1", "dev", true, "0.1.5")["services"].as_array().unwrap() {
             let dir = service["path"].as_str().unwrap();
             assert!(files.iter().any(|(p, _)| *p == format!("{dir}/Dockerfile")), "{dir}");
         }
