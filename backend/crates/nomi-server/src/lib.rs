@@ -10,6 +10,7 @@ pub mod project_events;
 pub mod problem;
 pub mod project_ops;
 pub mod public_url;
+pub mod project_relays;
 pub mod relay_connection;
 pub mod relay_ops;
 pub mod push;
