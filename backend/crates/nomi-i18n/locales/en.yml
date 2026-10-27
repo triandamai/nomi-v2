@@ -171,6 +171,8 @@ deploy:
   crashed_body: "The published app stopped unexpectedly (exit code %{detail}). Shipyard restarts it; the runtime log shows why."
   resource_title: "%{name} is running hot"
   resource_body: "Shipyard reported %{detail} use. Check the monitor in the project to see whether it needs more room."
+  error_rate_title: "%{name} is failing requests"
+  error_rate_body: "Shipyard saw %{detail} requests end in a server error. The runtime log in the project's monitor shows why."
   chat_published: "Published to %{env}. It's live at %{url}"
   chat_failed: "Publishing to %{env} failed while %{phase} (`%{step}`): %{message}"
   chat_failed_plain: "Publishing to %{env} failed: %{message}"

@@ -368,3 +368,123 @@ async fn a_new_dev_backend_gets_the_migrations_written_while_it_was_being_made(p
     }
     assert_eq!(project_relays::stack(&pool, project, "dev").await.unwrap().unwrap().state, READY);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_publish_that_404s_while_the_environment_is_created_and_settings_that_wait_for_postgrest_still_succeed(pool: PgPool) {
+    set_images(&pool).await;
+    let project = seed_project(&pool).await;
+    let relay = MockServer::start().await;
+    Mock::given(method("GET")).and(path("/health")).respond_with(ResponseTemplate::new(200)).mount(&relay).await;
+    // PostgREST takes a moment longer than Relay's own /health check to come up.
+    Mock::given(method("PUT"))
+        .and(path("/control/settings"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({
+            "data": null,
+            "error": { "code": "SETTINGS_INVALID", "message": "These didn't work: dev PostgREST" }
+        })))
+        .up_to_n_times(1)
+        .mount(&relay)
+        .await;
+    Mock::given(method("PUT")).and(path("/control/settings")).respond_with(envelope(json!({ "configured": true }))).mount(&relay).await;
+    Mock::given(method("PUT"))
+        .and(path(format!("/control/projects/{project}")))
+        .respond_with(envelope(json!({
+            "id": project, "slug": "todo", "tier": "dedicated",
+            "environments": { "dev": { "url": "https://x", "anon_key": "a", "service_key": "s" } }
+        })))
+        .mount(&relay)
+        .await;
+
+    let shipyard = MockServer::start().await;
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+$")).respond_with(envelope(json!({}))).mount(&shipyard).await;
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+$")).respond_with(envelope(json!({}))).mount(&shipyard).await;
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(envelope(json!({ "ref": "sec" }))).mount(&shipyard).await;
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publish$"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "data": { "publish_id": "p1", "status": "running", "url": null, "warnings": [] }, "error": null })))
+        .mount(&shipyard)
+        .await;
+    // First poll gets 404 while Shipyard is still creating the dev environment; next poll succeeds.
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publishes/p1$"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({ "data": null, "error": { "code": "NOT_FOUND", "message": "environment dev not found" } })))
+        .up_to_n_times(1)
+        .mount(&shipyard)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publishes/p1$"))
+        .respond_with(envelope(json!({ "status": "succeeded", "urls": [relay.uri()] })))
+        .mount(&shipyard)
+        .await;
+
+    let http = reqwest::Client::new();
+    assert!(run(&deps(&pool, &http, &config(&shipyard)), project, "dev", true).await);
+    let stack = project_relays::stack(&pool, project, "dev").await.unwrap().unwrap();
+    assert_eq!(stack.state, READY, "{stack:?}");
+    assert_eq!(stack.url.as_deref(), Some(relay.uri().as_str()));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_shipyard_webhook_for_the_backend_app_finishes_a_backend_setup_and_syncs_migrations(pool: PgPool) {
+    set_images(&pool).await;
+    let project = seed_project(&pool).await;
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-hook' WHERE id = $1").bind(project).execute(&pool).await.unwrap();
+    project_relays::begin(&pool, &KEY, project, "dev", "control-key", "0.1.5").await.unwrap();
+    project_relays::set_state(&pool, project, "dev", FAILED, Some("waiting for it to start"), Some("NotFound")).await.unwrap();
+
+    let storage = nomi_storage::ProjectStore::at(std::env::temp_dir().join(format!("nomi-relay-hook-{}", Uuid::new_v4())));
+    let migration = "nomi/migrations/0001_init.sql";
+    storage.put_object(&nomi_agent_coding::project_file_key(project, migration), "create table task (id int);", "text/plain").await.unwrap();
+    sqlx::query("INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, 'text/plain', 26)")
+        .bind(project)
+        .bind(migration)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let relay = relay(project).await;
+    Mock::given(method("POST"))
+        .and(path(format!("/control/projects/{project}/environments/dev/migrations")))
+        .respond_with(envelope(json!({ "applied": ["0001_init.sql"] })))
+        .mount(&relay)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/control/projects/{project}/environments/dev/types")))
+        .respond_with(envelope(json!({ "types": "export interface Database {}\n" })))
+        .mount(&relay)
+        .await;
+    let shipyard = MockServer::start().await;
+    let http = reqwest::Client::new();
+    let shipyard_cfg = config(&shipyard);
+    let client = nomi_shipyard::Shipyard::new(&http, &shipyard_cfg);
+
+    let event: nomi_server::shipyard::Event = serde_json::from_value(json!({
+        "id": "evt-backend-1",
+        "type": "publish.succeeded",
+        "created_at": chrono::Utc::now(),
+        "app": "todo-hook-backend",
+        "environment": "dev",
+        "data": { "publish_id": "p1", "urls": [relay.uri()], "error": null }
+    }))
+    .unwrap();
+
+    // Stored under the project (stripping `-backend`), applied without posting a web-app publish
+    // message into the project's chat, and finishes setting up the Relay + syncing `nomi/`.
+    let matched = nomi_server::shipyard::store_event(&pool, &event).await.unwrap();
+    assert_eq!(matched, Some(project));
+    nomi_server::shipyard::apply_event(&pool, Some(&client), project, &event).await.unwrap();
+    nomi_server::relay_backend::finish_on_event(&pool, &http, &shipyard_cfg, &KEY, Some(storage), project, &event).await;
+
+    let stack = project_relays::stack(&pool, project, "dev").await.unwrap().unwrap();
+    assert_eq!(stack.state, READY, "{stack:?}");
+    assert_eq!(stack.url.as_deref(), Some(relay.uri().as_str()));
+    let sent = calls(&relay, "POST", "/environments/dev/migrations").await;
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["files"][0]["path"], "nomi/migrations/0001_init.sql");
+    let chat_messages: i64 = sqlx::query_scalar("SELECT count(*) FROM messages m JOIN projects p ON p.session_id = m.session_id WHERE p.id = $1")
+        .bind(project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(chat_messages, 0, "backend deploy events do not post web-app publish notices in chat");
+}

@@ -1591,6 +1591,7 @@
 	"pj_alert_crashed": "Aplikasi berhenti tiba-tiba (kode keluar {code})",
 	"pj_alert_failed": "Publikasi gagal: {error}",
 	"pj_alert_resource": "{metric} mencapai {value} (batas {threshold})",
+	"pj_alert_error_rate": "{errors} dari {requests} permintaan berakhir dengan galat server ({rate})",
 	"pj_all_projects": "Semua proyek",
 	"pj_close": "Tutup",
 	"pj_copied": "Disalin",

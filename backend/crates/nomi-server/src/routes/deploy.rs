@@ -619,10 +619,15 @@ pub async fn runtime_logs(
     let app = published_app(&target)?;
     let env = env_of(&EnvQuery { environment: query.environment.clone() })?;
     let service = query.service.clone().unwrap_or_else(|| "web".to_string());
-    let logs = client(&state)?
+    let mut logs = client(&state)?
         .service_logs(&target.org_key(), app, &env, &service, query.tail.unwrap_or(300), query.since.as_deref())
         .await
         .map_err(shipyard_error)?;
+    // The Monitor shows text lines, whichever shape Shipyard sent them in.
+    let lines = nomi_shipyard::log_lines(&logs);
+    if let Some(fields) = logs.as_object_mut() {
+        fields.insert("lines".to_string(), json!(lines));
+    }
     Ok(Json(logs))
 }
 
@@ -796,11 +801,14 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
     let pool = state.pool.clone();
     let http = state.http_client.clone();
     let config = config.clone();
+    let settings_key = state.settings_key;
+    let project_storage = state.project_storage.clone();
     tokio::spawn(async move {
         let client = Shipyard::new(&http, &config);
         if let Err(e) = nomi_shipyard_side::apply_event(&pool, Some(&client), project_id, &event).await {
             tracing::error!(error = %e, event = %event.id, "failed to apply a Shipyard event");
         }
+        crate::relay_backend::finish_on_event(&pool, &http, &config, &settings_key, Some(project_storage), project_id, &event).await;
     });
     StatusCode::NO_CONTENT
 }

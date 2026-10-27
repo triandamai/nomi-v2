@@ -171,6 +171,8 @@ deploy:
   crashed_body: "Aplikasi yang dipublikasikan berhenti tiba-tiba (kode keluar %{detail}). Shipyard menjalankannya lagi; log runtime menunjukkan penyebabnya."
   resource_title: "%{name} bekerja terlalu berat"
   resource_body: "Shipyard melaporkan pemakaian %{detail}. Periksa monitor di proyek untuk melihat apakah perlu ruang lebih."
+  error_rate_title: "%{name} gagal melayani permintaan"
+  error_rate_body: "Shipyard melihat %{detail} permintaan berakhir dengan galat server. Log runtime di monitor proyek menunjukkan penyebabnya."
   chat_published: "Sudah terbit di %{env}. Aplikasinya aktif di %{url}"
   chat_failed: "Publikasi ke %{env} gagal saat %{phase} (`%{step}`): %{message}"
   chat_failed_plain: "Publikasi ke %{env} gagal: %{message}"

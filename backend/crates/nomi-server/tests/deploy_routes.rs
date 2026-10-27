@@ -243,6 +243,27 @@ async fn publishing_follows_webhooks_and_rolls_back(pool: PgPool) {
     }
     assert_eq!(notified, 2);
 
+    // So does a burst of server errors, with how many there were.
+    let errors = json!({
+        "id": "evt-3", "type": "service.error_rate_alert", "created_at": chrono::Utc::now(), "app": app,
+        "environment": "production", "service": "web", "data": { "error_rate": 12.5, "threshold": 5.0, "requests": 400, "errors_5xx": 50 }
+    });
+    assert_eq!(webhook(router.clone(), &errors, WEBHOOK_SECRET).await, StatusCode::NO_CONTENT);
+    let mut bodies: Vec<String> = Vec::new();
+    for _ in 0..50 {
+        bodies = sqlx::query_scalar("SELECT body FROM notifications WHERE user_id = $1 AND kind = 'deploy' ORDER BY created_at")
+            .bind(owner)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        if bodies.len() > 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(bodies.len(), 3, "{bodies:?}");
+    assert!(bodies[2].contains("50 of 400"), "{bodies:?}");
+
     // Rolling back sends the first publish's source and manifest again.
     let first_id = first["id"].as_str().unwrap();
     let (status, rolled) =
@@ -580,4 +601,27 @@ async fn metrics_come_from_shipyard_for_the_asked_range(pool: PgPool) {
     let stranger = register(router.clone(), "stranger@deploy.test").await;
     let (status, _) = request(router, "GET", &format!("{metrics}?range=1h"), Some(&stranger), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn runtime_logs_come_back_as_text_lines_whatever_shape_shipyard_sends(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-logs/envs/production/services/web/logs$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "service": "web", "lines": [
+            { "at": "2026-10-28T01:02:03Z", "level": "error", "message": "connect ECONNREFUSED", "service": "web" },
+            "plain line"
+        ] }, "error": null })))
+        .mount(&shipyard)
+        .await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-logs' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router.clone(), "GET", &format!("/api/projects/{project_id}/deploy/logs"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["lines"], json!(["2026-10-28T01:02:03Z error connect ECONNREFUSED", "plain line"]));
 }

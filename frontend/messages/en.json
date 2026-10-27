@@ -1591,6 +1591,7 @@
 	"pj_alert_crashed": "The app stopped unexpectedly (exit code {code})",
 	"pj_alert_failed": "A publish failed: {error}",
 	"pj_alert_resource": "{metric} reached {value} (limit {threshold})",
+	"pj_alert_error_rate": "{errors} of {requests} requests ended in a server error ({rate})",
 	"pj_all_projects": "All projects",
 	"pj_close": "Close",
 	"pj_copied": "Copied",

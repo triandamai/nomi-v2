@@ -419,9 +419,10 @@ impl RelayOps for ServerRelayOps {
 
     async fn ensure_backend(&self, user_id: Uuid, project_id: Uuid) -> Result<Uuid, String> {
         self.check_access(user_id, project_id, RelayEnv::Dev).await?;
-        // With Shipyard, the project gets its own Relay for development, made in the background.
-        let own = match (&self.shipyard, self.settings_key()) {
-            (Some(shipyard), Some(key)) if crate::relay_backend::images_set(&self.pool, &key).await => {
+        // With Shipyard, the project gets its own Relay for development, made in the background;
+        // its production Relay is made on its first publish.
+        if let (Some(shipyard), Some(key)) = (&self.shipyard, self.settings_key()) {
+            if crate::relay_backend::images_set(&self.pool, &key).await {
                 crate::relay_backend::start(self.pool.clone(), self.http_client.clone(), shipyard.config.clone(), key, shipyard.project_storage.clone(), project_id, "dev", true).await?;
                 sqlx::query("UPDATE projects SET relay_project_id = $1, updated_at = now() WHERE id = $2")
                     .bind(project_id)
@@ -429,14 +430,11 @@ impl RelayOps for ServerRelayOps {
                     .execute(&self.pool)
                     .await
                     .map_err(|e| format!("couldn't remember the Relay backend: {e}"))?;
-                true
+                return Ok(project_id);
             }
-            _ => false,
-        };
-        // Until a project's production Relay is made with its first publish, its published app
-        // gets its keys from the shared Relay, when this Nomi has one.
+        }
         let Some(config) = self.config().await else {
-            return if own { Ok(project_id) } else { Err(NOT_SET_UP.to_string()) };
+            return Err(NOT_SET_UP.to_string());
         };
         let relay = Relay::new(&self.http_client, &config);
         let name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
@@ -460,7 +458,7 @@ impl RelayOps for ServerRelayOps {
             (None, _) => tracing::info!(%project_id, "Relay backend made; no Shipyard here to keep its keys for publishing"),
             (Some(_), None) => return Err("Relay answered without a production environment".to_string()),
         }
-        Ok(if own { project_id } else { backend.id })
+        Ok(backend.id)
     }
 
     async fn apply_migrations(&self, user_id: Uuid, project_id: Uuid, env: RelayEnv, files: &[ProjectFile]) -> Result<String, String> {
