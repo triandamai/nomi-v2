@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use nomi_agent_coding::CodingAgent;
-use nomi_agent_core::relay_ops::{ProjectFile, RelayEnv, RelayOps, APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME};
+use nomi_agent_core::relay_ops::{ProjectFile, RelayEnv, RelayOps, APPLY_MIGRATIONS_TOOL_NAME, DEPLOY_FUNCTIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME};
 use nomi_agent_core::SubAgent;
 use nomi_storage::ProjectStore;
 
@@ -46,6 +46,7 @@ struct FakeRelay {
     auth: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
     storage: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
     realtime: Mutex<Vec<(RelayEnv, serde_json::Value)>>,
+    deployed: Mutex<Vec<(RelayEnv, Vec<String>, serde_json::Value)>>,
     fails: bool,
 }
 
@@ -70,8 +71,9 @@ impl RelayOps for FakeRelay {
         }
         Ok(json!({ "tables": [{ "name": "task", "rls_enabled": true, "columns": [{ "name": "id" }, { "name": "title" }], "policies": [{ "name": "own tasks" }] }] }).to_string())
     }
-    async fn deploy_functions(&self, _: Uuid, _: Uuid, _: RelayEnv, _: &[ProjectFile]) -> Result<String, String> {
-        unimplemented!()
+    async fn deploy_functions(&self, _: Uuid, _: Uuid, env: RelayEnv, files: &[ProjectFile], settings: &serde_json::Value) -> Result<String, String> {
+        self.deployed.lock().unwrap().push((env, files.iter().map(|f| f.path.clone()).collect(), settings.clone()));
+        Ok("Deployed to dev as build 1: place-order.".into())
     }
     async fn types(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {
         Ok("export interface Database { tables: {}; functions: Record<string, never> }\n".into())
@@ -90,6 +92,14 @@ impl RelayOps for FakeRelay {
     }
 }
 
+async fn write(agent: &CodingAgent, conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>, seeded: &Seeded, path: &str, content: &str) -> String {
+    agent
+        .execute_tool(conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "write_file", json!({"project_id": seeded.project_id.to_string(), "path": path, "content": content}))
+        .await
+        .unwrap()
+        .display_text
+}
+
 async fn tool_names(agent: &CodingAgent, pool: &PgPool, seeded: &Seeded) -> Vec<String> {
     let mut conn = pool.acquire().await.unwrap();
     agent.chat_tools(&mut conn, seeded.session_id, seeded.user_id, &[]).await.into_iter().map(|t| t.name).collect()
@@ -106,7 +116,7 @@ async fn koda_has_no_relay_tools_on_a_drizzle_project(pool: PgPool) {
 async fn koda_gets_relay_tools_on_a_relay_project_without_asking_first(pool: PgPool) {
     let seeded = seed_project(&pool, "relay").await;
     let agent = CodingAgent::new(test_storage()).with_relay_ops(Arc::new(FakeRelay::default()));
-    assert_eq!(tool_names(&agent, &pool, &seeded).await, vec![APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME]);
+    assert_eq!(tool_names(&agent, &pool, &seeded).await, vec![APPLY_MIGRATIONS_TOOL_NAME, DESCRIBE_BACKEND_TOOL_NAME, DEPLOY_FUNCTIONS_TOOL_NAME]);
     assert!(!agent.tool_needs_approval(APPLY_MIGRATIONS_TOOL_NAME));
     assert!(!agent.tool_needs_approval(DESCRIBE_BACKEND_TOOL_NAME));
 }
@@ -323,4 +333,42 @@ async fn a_new_migration_sends_the_realtime_tables_again(pool: PgPool) {
     assert_eq!(relay.realtime.lock().unwrap().len(), 2, "sent again once the table exists");
     assert!(said.display_text.contains("Relay dev realtime:"), "{}", said.display_text);
     assert!(relay.storage.lock().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn writing_a_function_deploys_every_function_file_to_dev_with_its_settings(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay::default());
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    let mut conn = pool.acquire().await.unwrap();
+    write(&agent, &mut conn, &seeded, "nomi/functions/_shared/money.ts", "export const cents = (n: number) => n * 100;").await;
+    assert_eq!(relay.deployed.lock().unwrap().len(), 1, "a helper deploys too: it changes what the functions do");
+    write(&agent, &mut conn, &seeded, "nomi/backend.json", &json!({ "functions": { "place-order": { "timeout": 10 } } }).to_string()).await;
+
+    let said = write(&agent, &mut conn, &seeded, "nomi/functions/place-order.ts", "export default () => new Response('ok')").await;
+
+    assert!(said.contains("Relay dev functions: Deployed to dev as build 1: place-order."), "{said}");
+    let deployed = relay.deployed.lock().unwrap().clone();
+    let (env, paths, settings) = deployed.last().unwrap();
+    assert_eq!(*env, RelayEnv::Dev);
+    assert_eq!(paths, &vec!["nomi/functions/_shared/money.ts".to_string(), "nomi/functions/place-order.ts".to_string()]);
+    assert_eq!(settings, &json!({ "place-order": { "timeout": 10 } }));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn koda_can_deploy_the_functions_himself(pool: PgPool) {
+    let seeded = seed_project(&pool, "relay").await;
+    let relay = Arc::new(FakeRelay::default());
+    let agent = CodingAgent::new(test_storage()).with_relay_ops(relay.clone());
+    assert!(tool_names(&agent, &pool, &seeded).await.contains(&"deploy_functions".to_string()));
+    let mut conn = pool.acquire().await.unwrap();
+    write(&agent, &mut conn, &seeded, "nomi/functions/place-order.ts", "export default () => new Response('ok')").await;
+
+    let said = agent
+        .execute_tool(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, "deploy_functions", json!({"project_id": seeded.project_id.to_string()}))
+        .await
+        .unwrap();
+
+    assert!(said.display_text.contains("Deployed to dev"), "{}", said.display_text);
+    assert_eq!(relay.deployed.lock().unwrap().len(), 2);
 }

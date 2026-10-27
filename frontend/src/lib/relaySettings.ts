@@ -27,6 +27,12 @@ export interface RelayStorage {
 	path_style: boolean;
 }
 
+/** Where Relay's functions runtime is, as Relay answers it (never with its secret). */
+export interface RelayFunctionsRuntime {
+	url: string;
+	secret: string;
+}
+
 /** Relay's settings as it answers them: database URLs without their passwords. */
 export interface RelaySettings {
 	configured: boolean;
@@ -39,6 +45,7 @@ export interface RelaySettings {
 	preview_origins: string[];
 	shared_smtp: RelaySmtp | null;
 	storage: RelayStorage | null;
+	functions: RelayFunctionsRuntime | null;
 	checks: RelayCheck[];
 }
 
@@ -78,6 +85,16 @@ export interface RelaySettingsForm {
 	storage_access_key_id: string;
 	storage_secret: string;
 	storage_path_style: boolean;
+	/** The functions runtime; the secret starts empty and stays as stored. */
+	functions_url: string;
+	functions_secret: string;
+}
+
+/** Which optional parts Relay already has, so leaving their fields empty removes them. */
+export interface StoredParts {
+	sender: boolean;
+	storage: boolean;
+	functions: boolean;
 }
 
 /** R2 and most S3-compatible stores take any region; AWS needs the bucket's own. */
@@ -96,9 +113,9 @@ export function originsFromText(text: string): string[] {
 /**
  * What `PUT /api/admin/relay/settings` takes: database URLs only when typed, so stored ones stay;
  * the shared sender when a host is typed, or with an empty host to remove one that was stored;
- * file storage the same way, by its bucket.
+ * file storage the same way, by its bucket, and the functions runtime by its address.
  */
-export function settingsBody(form: RelaySettingsForm, hadSender: boolean, hadStorage: boolean): Record<string, unknown> {
+export function settingsBody(form: RelaySettingsForm, stored: StoredParts): Record<string, unknown> {
 	const body: Record<string, unknown> = {
 		public_domain: form.public_domain.trim(),
 		postgrest_dev_url: form.postgrest_dev_url.trim(),
@@ -108,7 +125,7 @@ export function settingsBody(form: RelaySettingsForm, hadSender: boolean, hadSto
 	};
 	if (form.shared_dev_url.trim()) body.shared_dev_url = form.shared_dev_url.trim();
 	if (form.shared_production_url.trim()) body.shared_production_url = form.shared_production_url.trim();
-	if (form.smtp_host.trim() || hadSender) {
+	if (form.smtp_host.trim() || stored.sender) {
 		body.shared_smtp = {
 			host: form.smtp_host.trim(),
 			port: Number(form.smtp_port) || DEFAULT_SMTP_PORT,
@@ -118,7 +135,7 @@ export function settingsBody(form: RelaySettingsForm, hadSender: boolean, hadSto
 			from: form.smtp_from.trim(),
 		};
 	}
-	if (form.storage_bucket.trim() || hadStorage) {
+	if (form.storage_bucket.trim() || stored.storage) {
 		body.storage = {
 			endpoint: form.storage_endpoint.trim().replace(/\/+$/, ''),
 			region: form.storage_region.trim() || DEFAULT_STORAGE_REGION,
@@ -127,6 +144,9 @@ export function settingsBody(form: RelaySettingsForm, hadSender: boolean, hadSto
 			secret_access_key: form.storage_secret,
 			path_style: form.storage_path_style,
 		};
+	}
+	if (form.functions_url.trim() || stored.functions) {
+		body.functions = { url: form.functions_url.trim().replace(/\/+$/, ''), secret: form.functions_secret };
 	}
 	return body;
 }

@@ -21,7 +21,9 @@ async fn main() {
     if relay.live().is_err() {
         tracing::warn!("Relay isn't set up yet: save its settings in Nomi's admin");
     }
-    let app = relay_server::app::router(Arc::new(relay), config.control_key.clone());
+    let relay = Arc::new(relay);
+    relay_server::schedules::start(relay.clone());
+    let app = relay_server::app::router(relay, config.control_key.clone());
     let listener = tokio::net::TcpListener::bind(&config.bind).await.expect("couldn't bind");
     tracing::info!(bind = %config.bind, "relay listening");
     axum::serve(listener, app).await.expect("server failed");

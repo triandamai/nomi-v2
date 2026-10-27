@@ -2278,5 +2278,9 @@
 	"relay_admin_storage_bucket": "Bucket",
 	"relay_admin_storage_key_id": "Access key ID",
 	"relay_admin_storage_secret": "Secret access key",
-	"relay_admin_storage_path_style": "Alamat gaya path (MinIO dan kebanyakan penyimpanan yang di-host sendiri)"
+	"relay_admin_storage_path_style": "Alamat gaya path (MinIO dan kebanyakan penyimpanan yang di-host sendiri)",
+	"relay_admin_functions_title": "Runtime fungsi",
+	"relay_admin_functions_hint": "Tempat fungsi yang di-host aplikasi berjalan: runtime fungsi Relay (relay/functions-runtime), dijalankan dengan rahasia yang sama dengan RELAY_FUNCTIONS_SECRET-nya. Kosongkan alamat untuk mematikan fungsi.",
+	"relay_admin_functions_url": "Alamat runtime",
+	"relay_admin_functions_secret": "Rahasia runtime"
 }

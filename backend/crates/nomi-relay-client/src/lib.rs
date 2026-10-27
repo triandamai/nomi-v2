@@ -237,10 +237,21 @@ impl<'a> Relay<'a> {
         }
     }
 
-    /// Builds and deploys the project's functions to `env`.
-    pub async fn deploy_functions(&self, project_id: Uuid, env: &str, files: &[SourceFile]) -> Result<Value, RelayError> {
+    /// Checks and deploys the project's functions to `env`, with each one's settings
+    /// (`backend.json`'s `functions`). Answers `{ version, functions }`.
+    pub async fn deploy_functions(&self, project_id: Uuid, env: &str, files: &[SourceFile], settings: &Value) -> Result<Value, RelayError> {
         let path = format!("{}/functions", Self::env_path(project_id, env));
-        self.call(reqwest::Method::POST, &path, Some(json!({ "files": files })), LONG_REQUEST_TIMEOUT).await
+        self.call(reqwest::Method::POST, &path, Some(json!({ "files": files, "functions": settings })), LONG_REQUEST_TIMEOUT).await
+    }
+
+    /// Sets (or, with `None`, removes) one of the project's secrets: sign-in uses some, and the
+    /// project's functions get them all.
+    pub async fn put_secret(&self, project_id: Uuid, name: &str, value: Option<&str>) -> Result<Value, RelayError> {
+        let path = format!("{}/secrets/{name}", Self::project_path(project_id));
+        match value {
+            Some(value) => self.call(reqwest::Method::PUT, &path, Some(json!({ "value": value })), REQUEST_TIMEOUT).await,
+            None => self.call(reqwest::Method::DELETE, &path, None, REQUEST_TIMEOUT).await,
+        }
     }
 }
 

@@ -84,7 +84,7 @@ mod rena_chooses {
         async fn describe_backend(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {
             unimplemented!()
         }
-        async fn deploy_functions(&self, _: Uuid, _: Uuid, _: RelayEnv, _: &[ProjectFile]) -> Result<String, String> {
+        async fn deploy_functions(&self, _: Uuid, _: Uuid, _: RelayEnv, _: &[ProjectFile], _: &Value) -> Result<String, String> {
             unimplemented!()
         }
         async fn types(&self, _: Uuid, _: Uuid, _: RelayEnv) -> Result<String, String> {

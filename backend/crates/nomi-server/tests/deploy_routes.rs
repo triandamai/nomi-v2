@@ -453,14 +453,15 @@ async fn rolling_back_to_a_failed_publish_is_refused(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn a_relay_projects_sign_in_secrets_also_go_to_relay(pool: PgPool) {
+async fn a_relay_projects_secrets_also_go_to_relay(pool: PgPool) {
     let shipyard = MockServer::start().await;
     mount_shipyard(&shipyard).await;
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "ref": "sec-1" }, "error": null }))).mount(&shipyard).await;
     Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "deleted": true }, "error": null }))).mount(&shipyard).await;
     let relay = MockServer::start().await;
-    Mock::given(method("PUT")).and(path_regex(r"^/control/projects/[^/]+/auth/secrets/NOMI_OAUTH_GITHUB_SECRET$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(1).mount(&relay).await;
-    Mock::given(method("DELETE")).and(path_regex(r"^/control/projects/[^/]+/auth/secrets/NOMI_OAUTH_GITHUB_SECRET$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(1).mount(&relay).await;
+    // Sign-in uses some, and functions get them all as ctx.env.
+    Mock::given(method("PUT")).and(path_regex(r"^/control/projects/[^/]+/secrets/(NOMI_OAUTH_GITHUB_SECRET|OTHER_KEY)$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(2).mount(&relay).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/control/projects/[^/]+/secrets/NOMI_OAUTH_GITHUB_SECRET$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(1).mount(&relay).await;
     let router = build_router(test_state(pool.clone(), Some(&shipyard)));
     let token = register(router.clone(), "ana@acme.test").await;
     let (project_id, _) = project_with_files(router.clone(), &token).await;

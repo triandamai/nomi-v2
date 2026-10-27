@@ -51,6 +51,7 @@ fn input(url: &str, postgrest: &str) -> SettingsInput {
         preview_origins: vec![".preview.nomi.test".into()],
         shared_smtp: None,
         storage: None,
+        functions: None,
     }
 }
 
@@ -238,4 +239,27 @@ async fn file_storage_that_refuses_is_named_and_nothing_is_saved(pool: PgPool) {
     let RelayError::Rejected { message, .. } = refused else { panic!("not a refusal") };
     assert!(message.contains("file storage"), "{message}");
     assert!(relay.live().is_err());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_functions_runtime_is_checked_with_its_secret_and_the_secret_never_shown(pool: PgPool) {
+    use relay_core::settings::FunctionsRuntime;
+    use wiremock::matchers::{header, path};
+    ensure_authenticator(&pool).await;
+    let url = own_url(&pool).await;
+    let pgrst = postgrest().await;
+    let runtime = MockServer::start().await;
+    Mock::given(method("GET")).and(path("/health")).and(header("x-relay-runtime", "right-secret")).respond_with(ResponseTemplate::new(200)).mount(&runtime).await;
+    Mock::given(method("GET")).and(path("/health")).respond_with(ResponseTemplate::new(401)).mount(&runtime).await;
+    let relay = Relay::unconfigured(pool.clone(), KEY);
+
+    let wrong = save(&relay, SettingsInput { functions: Some(FunctionsRuntime { url: runtime.uri(), secret: "wrong".into() }), ..input(&url, &pgrst.uri()) }).await.unwrap_err();
+    let RelayError::Rejected { message, .. } = wrong else { panic!("not a refusal") };
+    assert!(message.contains("functions runtime"), "{message}");
+
+    let saved = save(&relay, SettingsInput { functions: Some(FunctionsRuntime { url: format!("{}/", runtime.uri()), secret: "right-secret".into() }), ..input(&url, &pgrst.uri()) }).await.unwrap();
+    assert_eq!(saved.functions.as_ref().unwrap().secret, "");
+    assert_eq!(saved.functions.as_ref().unwrap().url, runtime.uri());
+    save(&relay, SettingsInput { functions: Some(FunctionsRuntime { url: runtime.uri(), secret: String::new() }), ..input(&url, &pgrst.uri()) }).await.unwrap();
+    assert_eq!(relay_control::settings::load(&relay).await.unwrap().unwrap().functions.unwrap().secret, "right-secret");
 }

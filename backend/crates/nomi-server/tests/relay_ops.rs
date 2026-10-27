@@ -367,3 +367,93 @@ async fn publishing_sends_buckets_before_and_realtime_tables_after_the_migration
     let order: Vec<String> = server.received_requests().await.unwrap().iter().map(|r| r.url.path().rsplit('/').next().unwrap().to_string()).collect();
     assert_eq!(order, vec!["storage", "migrations", "realtime"]);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn functions_are_deployed_with_their_settings_and_the_answer_says_what_is_served(pool: PgPool) {
+    let (user_id, project_id) = seed_project(&pool).await;
+    let server = MockServer::start().await;
+    let files = vec![nomi_agent_core::relay_ops::ProjectFile { path: "nomi/functions/place-order.ts".into(), content: "export default () => new Response()".into() }];
+    let settings = json!({ "place-order": { "auth": "required", "timeout": 10 } });
+    Mock::given(method("POST"))
+        .and(path(format!("/control/projects/{project_id}/environments/dev/functions")))
+        .and(body_json(json!({ "files": [{ "path": "nomi/functions/place-order.ts", "content": "export default () => new Response()" }], "functions": settings })))
+        .respond_with(envelope(json!({ "version": 3, "functions": { "place-order": { "auth": "required", "timeout": 10 } } })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let said = ops(&pool, &server).deploy_functions(user_id, project_id, RelayEnv::Dev, &files, &settings).await.unwrap();
+
+    assert_eq!(said, "Deployed to dev as build 3: place-order.");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_function_that_fails_its_check_comes_back_with_the_error(pool: PgPool) {
+    let (user_id, project_id) = seed_project(&pool).await;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({ "data": null, "error": { "code": "FUNCTIONS_FAILED", "message": "nomi/functions/place-order.ts:1:7 - error TS2322" } })))
+        .mount(&server)
+        .await;
+    let files = vec![nomi_agent_core::relay_ops::ProjectFile { path: "nomi/functions/place-order.ts".into(), content: "const n: number = 'x'".into() }];
+
+    let error = ops(&pool, &server).deploy_functions(user_id, project_id, RelayEnv::Dev, &files, &json!({})).await.unwrap_err();
+
+    assert!(error.contains("place-order.ts:1:7"), "{error}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn publishing_deploys_the_functions_last(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let server = MockServer::start().await;
+    let base = format!("/control/projects/{project_id}/environments/production");
+    Mock::given(method("POST")).and(path(format!("{base}/migrations"))).respond_with(envelope(json!({ "applied": [] }))).expect(1).mount(&server).await;
+    Mock::given(method("PUT")).and(path(format!("{base}/realtime"))).respond_with(envelope(json!({ "tables": [] }))).mount(&server).await;
+    Mock::given(method("POST"))
+        .and(path(format!("{base}/functions")))
+        .and(body_json(json!({ "files": [{ "path": "nomi/functions/_shared/a.ts", "content": "export const a = 1;" }, { "path": "nomi/functions/hello.ts", "content": "export default () => new Response()" }], "functions": { "hello": { "auth": "public" } } })))
+        .respond_with(envelope(json!({ "version": 1, "functions": {} })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let files = vec![
+        ("nomi/backend.json".to_string(), json!({ "realtime": [], "functions": { "hello": { "auth": "public" } } }).to_string().into_bytes()),
+        ("nomi/functions/hello.ts".to_string(), b"export default () => new Response()".to_vec()),
+        ("nomi/functions/_shared/a.ts".to_string(), b"export const a = 1;".to_vec()),
+        ("src/app.ts".to_string(), b"app".to_vec()),
+    ];
+    let config = RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key")).unwrap();
+
+    nomi_server::relay_ops::apply_before_publish(&pool, &reqwest::Client::new(), Some(&config), project_id, &files).await.unwrap();
+
+    let order: Vec<String> = server.received_requests().await.unwrap().iter().map(|r| r.url.path().rsplit('/').next().unwrap().to_string()).collect();
+    assert_eq!(order, vec!["migrations", "realtime", "functions"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn rolling_back_redeploys_the_functions_that_publish_had(pool: PgPool) {
+    let (_, project_id) = seed_project(&pool).await;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/control/projects/{project_id}/environments/production/functions")))
+        .and(body_json(json!({ "files": [{ "path": "nomi/functions/hello.ts", "content": "export default () => new Response('old')" }], "functions": {} })))
+        .respond_with(envelope(json!({ "version": 4, "functions": {} })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let source = nomi_shipyard::bundle::zip(&[
+        ("nomi/functions/hello.ts".into(), b"export default () => new Response('old')".to_vec()),
+        ("src/app.ts".into(), b"app".to_vec()),
+    ])
+    .unwrap();
+    let config = RelayConfig::from_values(Some(&server.uri()), Some("relay_control_key")).unwrap();
+    let http = reqwest::Client::new();
+
+    // Not on Relay: nothing to send.
+    nomi_server::relay_ops::functions_on_rollback(&pool, &http, Some(&config), project_id, "production", &source).await.unwrap();
+    assert!(server.received_requests().await.unwrap().is_empty());
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    nomi_server::relay_ops::functions_on_rollback(&pool, &http, Some(&config), project_id, "production", &source).await.unwrap();
+}

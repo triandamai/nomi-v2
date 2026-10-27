@@ -1,8 +1,9 @@
 name: Relay service
 
-# The Relay service under relay/crates (control plane now, gateway later): cargo test against a
-# real Postgres, since provisioning, roles, row-level security and migrations are what it does.
-# Runs only when the service's own files change; the npm packages have relay.yml.
+# The Relay service under relay/crates (control plane and gateway): cargo test against a real
+# Postgres, since provisioning, roles, row-level security and migrations are what it does; and its
+# functions runtime (relay/functions-runtime, Deno) with deno test. Runs only when the service's
+# own files change; the npm packages have relay.yml.
 on:
   pull_request:
     paths:
@@ -11,6 +12,7 @@ on:
       - 'relay/Cargo.toml'
       - 'relay/Cargo.lock'
       - 'relay/Dockerfile'
+      - 'relay/functions-runtime/**'
       - '.github/workflows/relay-service.yml'
   push:
     branches: [main]
@@ -20,6 +22,7 @@ on:
       - 'relay/Cargo.toml'
       - 'relay/Cargo.lock'
       - 'relay/Dockerfile'
+      - 'relay/functions-runtime/**'
       - '.github/workflows/relay-service.yml'
   workflow_dispatch:
 
@@ -65,3 +68,18 @@ jobs:
       - name: cargo test --workspace
         working-directory: relay
         run: cargo test --workspace
+
+  functions-runtime:
+    name: Functions runtime (deno test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: denoland/setup-deno@v2
+        with:
+          # The version the runtime's Dockerfile runs.
+          deno-version: v2.3.3
+
+      - name: deno test
+        working-directory: relay/functions-runtime
+        run: deno task test

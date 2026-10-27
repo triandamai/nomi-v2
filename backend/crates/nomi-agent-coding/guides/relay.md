@@ -182,6 +182,58 @@ const stop = nomi.realtime.on<Message>('message', (change) => {
 
 Load the list with a normal query first, then apply changes; on `resync`, load it again.
 
+## Functions
+
+Trusted server code SQL can't express (charging a card, sending email, a webhook from another
+service) goes in a hosted function: one file per function in `nomi/functions/`, helpers in
+`nomi/functions/_shared/`. It's the only server code a static or single-page app has. Writing a
+file there deploys every function to dev, checked first: a type error comes back with its file
+and line, and the running functions stay as they were. Publishing deploys them to production.
+
+```ts
+// nomi/functions/place-order.ts: called as nomi.functions.invoke('place-order', { body: { cart } })
+import { defineFunction } from 'nomi-relay/functions';
+
+export default defineFunction(async (req, ctx) => {
+  if (!ctx.user) return new Response('sign in first', { status: 401 });
+  const { cart } = await req.json();
+  const charge = await fetch('https://api.stripe.com/v1/charges', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${ctx.env.STRIPE_SECRET}` },
+    body: new URLSearchParams({ amount: String(cart.total), currency: 'usd' })
+  });
+  if (!charge.ok) return new Response('payment failed', { status: 402 });
+  const { data, error } = await ctx.nomi.from('order').insert({ cart }).select().single();
+  return error ? Response.json(error, { status: 400 }) : Response.json(data);
+});
+```
+
+- `ctx.user` is the caller, already checked; `ctx.nomi` acts as them (row-level security
+  applies); `ctx.admin` uses the service key, only for a step that must bypass it; `ctx.env` has
+  the project's secrets by name (ask the person to add them in the project's Secrets).
+- It runs on Deno: `fetch`, `Request`, `Response`, Web Crypto. Imports are `nomi-relay`,
+  `npm:` packages (`import Stripe from 'npm:stripe@17'`) and files in `_shared/`. No file system,
+  no subprocesses, no `Deno.env` (use `ctx.env`).
+- Keep the top of each file light: it runs whenever the functions wake.
+- Settings go in `backend.json`; every function is for signed-in callers by default:
+
+```json
+{
+  "functions": {
+    "stripe-webhook": { "auth": "public", "timeout": 10 },
+    "nightly-report": { "schedule": "0 3 * * *" }
+  }
+}
+```
+
+  `auth: "public"` lets anyone call it, even without the app's key: only for webhooks, which must
+  check the provider's signature themselves. `timeout` is in seconds (30 by default, 60 at most).
+  `schedule` is a cron expression in UTC; the function is then called with the service role
+  (`ctx.user` is null, `ctx.claims.role` is `service`).
+- Call them from the app with `nomi.functions.invoke(name, { body })`, which returns
+  `{ data, error }` like every other call. A function's address is
+  `<PUBLIC_NOMI_URL>/functions/<name>` (give that to a webhook provider).
+
 Server code (SvelteKit `+page.server.ts`, endpoints) uses the same client with the service key,
 read from the environment, never sent to the browser:
 

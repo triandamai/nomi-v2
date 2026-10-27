@@ -9,7 +9,7 @@ use std::time::Duration;
 use relay_core::crypto::{decrypt, encrypt};
 use relay_core::keys::new_signing_secret;
 use relay_auth::mail::Outbox;
-use relay_core::settings::{mask_database_url, Settings, Smtp, StorageSettings};
+use relay_core::settings::{mask_database_url, FunctionsRuntime, Settings, Smtp, StorageSettings};
 use relay_core::Env;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -25,6 +25,7 @@ const ROLE_CLAIM_KEY: &str = ".db_role";
 pub const SETTINGS_INVALID: &str = "SETTINGS_INVALID";
 const SHARED_SENDER: &str = "shared sender";
 const FILE_STORAGE: &str = "file storage";
+const FUNCTIONS_RUNTIME: &str = "functions runtime";
 
 /// What the admin sends. Database URLs left out (or empty) keep the stored ones: the form never
 /// has their passwords.
@@ -49,6 +50,10 @@ pub struct SettingsInput {
     /// the stored one.
     #[serde(default)]
     pub storage: Option<StorageSettings>,
+    /// Left out keeps the stored runtime; an empty URL removes it; an empty secret keeps the
+    /// stored one.
+    #[serde(default)]
+    pub functions: Option<FunctionsRuntime>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,6 +79,8 @@ pub struct SettingsView {
     pub shared_smtp: Option<Smtp>,
     /// Without its secret.
     pub storage: Option<StorageSettings>,
+    /// Without its secret.
+    pub functions: Option<FunctionsRuntime>,
     pub checks: Vec<Check>,
 }
 
@@ -145,6 +152,9 @@ async fn checks(settings: &Settings, pools: &HashMap<Env, PgPool>, outbox: &dyn 
         };
         out.push(check(FILE_STORAGE.to_string(), answered));
     }
+    if let Some(runtime) = &settings.functions {
+        out.push(check(FUNCTIONS_RUNTIME.to_string(), crate::functions::check_runtime(&http, runtime, CHECK_TIMEOUT).await));
+    }
     out
 }
 
@@ -160,6 +170,7 @@ fn view_of(settings: &Settings, configured: bool, checks: Vec<Check>) -> Setting
         preview_origins: settings.preview_origins.clone(),
         shared_smtp: settings.shared_smtp.clone().map(|smtp| Smtp { password: String::new(), ..smtp }),
         storage: settings.storage.clone().map(|storage| StorageSettings { secret_access_key: String::new(), ..storage }),
+        functions: settings.functions.clone().map(|runtime| FunctionsRuntime { secret: String::new(), ..runtime }),
         checks,
     }
 }
@@ -201,6 +212,16 @@ fn merge_storage(given: Option<StorageSettings>, stored: Option<StorageSettings>
     })
 }
 
+fn merge_runtime(given: Option<FunctionsRuntime>, stored: Option<FunctionsRuntime>) -> Option<FunctionsRuntime> {
+    let Some(given) = given else { return stored };
+    let url = given.url.trim().trim_end_matches('/').to_string();
+    if url.is_empty() {
+        return None;
+    }
+    let secret = if given.secret.is_empty() { stored.map(|s| s.secret).unwrap_or_default() } else { given.secret };
+    Some(FunctionsRuntime { url, secret })
+}
+
 fn quoted(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
@@ -234,6 +255,7 @@ pub async fn save(relay: &Relay, input: SettingsInput) -> Result<SettingsView, R
         postgrest_jwt_secret: Some(stored.postgrest_jwt_secret.clone()).filter(|s| !s.is_empty()).unwrap_or_else(new_signing_secret),
         shared_smtp: merge_sender(input.shared_smtp, stored.shared_smtp.clone()),
         storage: merge_storage(input.storage, stored.storage.clone()),
+        functions: merge_runtime(input.functions, stored.functions.clone()),
     };
     let mut pools = HashMap::new();
     for env in Env::ALL {
