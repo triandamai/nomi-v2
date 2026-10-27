@@ -37,6 +37,8 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'database/credentials',
 			'database/tables',
 			'database/query',
+			'relay',
+			'relay/query',
 			'showcase',
 			'domain',
 			'domain/check',

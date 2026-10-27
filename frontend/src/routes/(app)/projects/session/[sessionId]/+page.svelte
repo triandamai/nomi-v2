@@ -36,6 +36,7 @@
 	import DeployPanel from '$lib/components/project/DeployPanel.svelte';
 	import MonitorPanel from '$lib/components/project/MonitorPanel.svelte';
 	import DatabasePanel from '$lib/components/project/DatabasePanel.svelte';
+	import RelayPanel from '$lib/components/project/RelayPanel.svelte';
 	import MembersPanel from '$lib/components/project/MembersPanel.svelte';
 	import SettingsPanel from '$lib/components/project/SettingsPanel.svelte';
 	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
@@ -178,11 +179,16 @@
 		ready: m.projects_ready,
 	};
 
+	/** The data sheet is Relay's console for a project on Relay, the Postgres one otherwise. */
+	function dataTitle(): string {
+		return data.project?.backend === 'relay' ? m.pj_tab_relay() : m.pj_tab_database();
+	}
+
 	const TOOLS: { id: Sheet; label: () => string; icon: typeof IconRocket }[] = [
 		{ id: 'deploy', label: m.pj_tab_deploy, icon: IconHistory },
 		{ id: 'domain', label: m.pj_tab_domain, icon: IconLink },
 		{ id: 'monitor', label: m.pj_tab_monitor, icon: IconPulse },
-		{ id: 'database', label: m.pj_tab_database, icon: IconDatabase },
+		{ id: 'database', label: () => dataTitle(), icon: IconDatabase },
 		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
 		{ id: 'settings', label: m.pj_tab_settings, icon: IconSettings },
 	];
@@ -190,7 +196,7 @@
 		deploy: m.pj_tab_deploy,
 		domain: m.pj_tab_domain,
 		monitor: m.pj_tab_monitor,
-		database: m.pj_tab_database,
+		database: () => dataTitle(),
 		members: m.pj_tab_members,
 		issues: m.issues_title,
 		settings: m.pj_tab_settings,
@@ -727,7 +733,11 @@
 			{:else if sheet === 'monitor'}
 				<MonitorPanel projectId={project.id} {published} {deploy} />
 			{:else if sheet === 'database'}
-				<DatabasePanel projectId={project.id} {published} />
+				{#if project.backend === 'relay'}
+					<RelayPanel projectId={project.id} {published} />
+				{:else}
+					<DatabasePanel projectId={project.id} {published} />
+				{/if}
 			{:else if sheet === 'members'}
 				<MembersPanel projectId={project.id} orgId={project.org_id} bind:tab={membersTab} {presence} {deploy} />
 			{:else if sheet === 'settings' && deploy}

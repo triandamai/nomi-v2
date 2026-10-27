@@ -542,6 +542,8 @@ export interface ProjectDetail {
 	org_id: string;
 	org_name: string;
 	open_issues: number;
+	/** Where the app keeps its data: Shipyard's Postgres through Drizzle, or Nomi Relay. */
+	backend: 'drizzle' | 'relay';
 }
 
 export type AdminStreamFrame =
@@ -943,6 +945,51 @@ export interface QueryResult {
 	rows_affected: number | null;
 	took_ms: number;
 }
+
+export type RelayRule = 'anyone' | 'signed_in' | 'owner' | 'service';
+
+export interface RelayColumn {
+	name: string;
+	type: string;
+	nullable: boolean;
+	default: string | null;
+	identity: boolean;
+}
+
+export interface RelayTable {
+	name: string;
+	rls_enabled: boolean;
+	columns: RelayColumn[];
+	policies: { name: string; command: string; using: string | null; check: string | null }[];
+}
+
+export interface RelayBucket {
+	name: string;
+	public: boolean;
+	read: RelayRule;
+	write: RelayRule;
+	max_size_mb: number;
+}
+
+export interface RelayFunction {
+	auth: 'required' | 'public';
+	timeout: number;
+	schedule?: string;
+}
+
+/** A Relay project's backend in one environment, as its data sheet shows it. */
+export type RelayOverview =
+	| { backend: 'drizzle' }
+	| {
+			backend: 'relay';
+			url: string;
+			anon_key: string;
+			tables: RelayTable[];
+			buckets: RelayBucket[];
+			realtime: string[];
+			functions: { version: number; functions: Record<string, RelayFunction> } | null;
+			auth: { methods: string[]; missing_secrets: string[] };
+	  };
 
 export interface TransferOrgSummary {
 	id: string;
