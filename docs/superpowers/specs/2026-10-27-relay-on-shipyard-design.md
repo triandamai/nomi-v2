@@ -112,13 +112,17 @@ When the row isn't `ready`, it explains:
 ### The backend manifest
 
 `nomi_shipyard::manifest::relay_backend(version, env)` builds the manifest for a backend
-environment. Every service runs a prebuilt image, so nothing is built and no source is sent.
+environment. Shipyard's integration API doesn't run prebuilt images yet, so each service is
+built from a one-line Dockerfile that starts from the image. `manifest::backend_source(version)`
+zips those Dockerfiles, and that zip is the backend's source. Building them only pulls the
+images, so it's quick. When Shipyard adds prebuilt images to the integration API, only these
+two functions change.
 
-| Service | Kind | Image |
-|---|---|---|
-| `relay` | `web`, port 8080 (the environment's address) | `<registry>/nomi-relay:<version>` |
-| `postgrest` | `worker` | `postgrest/postgrest:<pinned>` |
-| `functions` | `worker` | `<registry>/nomi-relay-functions:<version>` |
+| Service | Kind | `path` in the zip | Dockerfile |
+|---|---|---|---|
+| `relay` | `web`, port 8080 (the environment's address) | `relay` | `FROM <registry>/nomi-relay:<version>` |
+| `postgrest` | `worker` | `postgrest` | `FROM postgrest/postgrest:<pinned>` |
+| `functions` | `worker` | `functions` | `FROM <registry>/nomi-relay-functions:<version>` |
 
 **`relay`'s environment:**
 - `RELAY_DATABASE_URL = {database: url}`
@@ -165,7 +169,8 @@ and continue where it stopped.
 
 1. **App.** `put_app(org, "<app>-backend", "<name> backend", dev_database: false)`.
 2. **Secrets** for this environment, as listed above.
-3. **Deploy.** Publish the backend manifest to the environment, with no source. Then follow it
+3. **Deploy.** Publish the backend manifest to the environment, with the Dockerfiles zip as
+   its source. Then follow it
    the way project publishes are followed: the webhook, with polling as the fallback.
 4. **Address.** Read the environment's URL from `get_env` into the row.
 5. **Set up Relay** through its control API:
@@ -252,8 +257,8 @@ on Swarm, so sleeping is scaling to zero.
   merge under `relay/`. They're tagged with the same version as the npm packages.
 - Nomi pins the version it was built against in one constant, `RELAY_STACK_VERSION`. The
   PostgREST tag is pinned the same way.
-- When a backend's row is older than `RELAY_STACK_VERSION`, the backend's manifest is published
-  again with the new tags:
+- When a backend's row is older than `RELAY_STACK_VERSION`, the backend is published again
+  with Dockerfiles naming the new tags:
   - for `production`, at its next publish, before `apply_before_publish`;
   - for `dev`, when it next wakes or Koda next starts a turn on the project.
 
@@ -301,7 +306,7 @@ The multi-project code stays for now. It still serves projects made before this.
 ## Nomi changes (`backend/`, `frontend/`)
 
 - **`nomi-shipyard`:**
-  - `manifest::relay_backend(version, env)`;
+  - `manifest::relay_backend(version, env)` and `manifest::backend_source(version)`;
   - `put_secret` with `environment` and `generate`;
   - `scale_env(org, app, env, replicas)`.
 - **`nomi-server`:**
@@ -365,14 +370,11 @@ Each step is its own PR and leaves everything working.
 
 ## Shipyard: what the integration API needs
 
-The user confirmed that Shipyard does all of this. The integration docs
-(https://shipyard.trian.space/docs/nomi) don't show two of the pieces yet, so Nomi needs them
-there:
-
-1. **A prebuilt image in a manifest service.** The design assumes `services[].image` (no
-   `path` or `dockerfile`, and no source needed). If the field has another name, only
-   `manifest::relay_backend` changes.
-2. **Scaling an environment's services to 0 and back, the database included.** The docs say
-   "scale replicas to 0 via the dashboard", and manifest `replicas` starts at 1. Nomi would
-   call something like `PATCH …/envs/{env}/scale` with `{ "replicas": 0 }`, which keeps
-   volumes. If it's per service instead, `scale_env` loops over the services.
+- **Prebuilt images:** not in the integration API yet. This design builds one-line Dockerfiles
+  instead (see "The backend manifest"), so it doesn't wait on that.
+- **Scaling to zero:** not in the integration API yet. The user is adding it. Nomi is built
+  against `PATCH …/orgs/{org}/apps/{app}/envs/{env}/scale` with `{ "replicas": 0 | 1 }`. It
+  scales every service in the environment, the database included, and keeps volumes. If the
+  shipped call differs, only `nomi_shipyard::Shipyard::scale_env` changes. Until it exists,
+  that call answers `NotFound`: the sleep job logs it once and leaves development backends
+  running, and nothing else depends on it.
