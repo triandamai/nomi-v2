@@ -1,8 +1,9 @@
 <script lang="ts">
-	// The landing page: what someone sees the first time they open Nomi. It leads with building
-	// — a short chat on the dark stage plays once, Rena planning an app, Koda building it, Iris
-	// checking it — then how it works, the crew, a few live apps and a last way in. Under
-	// reduced motion the whole chat shows at once.
+	// The landing page: what someone sees the first time they open Nomi. The hero turns through
+	// three scenes — Nomi's crew building an app, remembering what you told it, and getting
+	// everyday work done — each a headline and a short chat that plays on the dark stage. Picking
+	// a scene stops the turning. Then how it works, the crew, a few live apps and a last way in.
+	// Under reduced motion the first scene shows whole and only changes when picked.
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -14,43 +15,120 @@
 
 	let { data }: { data: PageData } = $props();
 
-	// Time between one chat line and the next while the hero plays.
+	// Time between one chat line and the next while a scene plays.
 	const STEP_MS = 1100;
-	// Koda's line stays "building" this long before it says what it made.
-	const BUILD_MS = 1800;
+	// A line that shows its work first ("Building it…") stays that way this long.
+	const BUSY_MS = 1800;
+	// How long a finished scene stays before the next one starts.
+	const HOLD_MS = 3200;
 
-	type Line = { from: 'you' | string; text: () => string };
-	const CHAT: Line[] = [
-		{ from: 'you', text: m.landing_chat_you_ask },
-		{ from: 'planning', text: m.landing_chat_rena_plan },
-		{ from: 'you', text: m.landing_chat_you_go },
-		{ from: 'coding', text: m.landing_chat_koda_built },
-		{ from: 'inspector', text: m.landing_chat_iris_checked },
+	type Line = { from: string; text: () => string; busy?: () => string };
+	type Scene = { name: () => string; title: () => string; result: () => string; resultAgent: string; chat: Line[] };
+	const SCENES: Scene[] = [
+		{
+			name: m.landing_scene_build,
+			title: m.landing_title,
+			result: m.landing_chat_live,
+			resultAgent: 'coding',
+			chat: [
+				{ from: 'you', text: m.landing_chat_you_ask },
+				{ from: 'planning', text: m.landing_chat_rena_plan },
+				{ from: 'you', text: m.landing_chat_you_go },
+				{ from: 'coding', text: m.landing_chat_koda_built, busy: m.landing_chat_koda_building },
+				{ from: 'inspector', text: m.landing_chat_iris_checked },
+			],
+		},
+		{
+			name: m.landing_scene_remember,
+			title: m.landing_title_remember,
+			result: m.landing_remember_result,
+			resultAgent: 'chitchat',
+			chat: [
+				{ from: 'you', text: m.landing_remember_you_tell },
+				{ from: 'chitchat', text: m.landing_remember_nomi },
+				{ from: 'you', text: m.landing_remember_you_ask },
+				{ from: 'planning', text: m.landing_remember_rena, busy: m.landing_remember_rena_busy },
+				{ from: 'reminders', text: m.landing_remember_kala },
+			],
+		},
+		{
+			name: m.landing_scene_work,
+			title: m.landing_title_work,
+			result: m.landing_work_result,
+			resultAgent: 'money',
+			chat: [
+				{ from: 'you', text: m.landing_work_you_ask },
+				{ from: 'money', text: m.landing_work_dana, busy: m.landing_work_dana_busy },
+				{ from: 'you', text: m.landing_work_you_next },
+				{ from: 'money', text: m.landing_work_dana_budget },
+				{ from: 'workspace', text: m.landing_work_tara },
+			],
+		},
 	];
-	const KODA = CHAT.findIndex((line) => line.from === 'coding');
 
-	// How many chat lines are showing, whether Koda is still building, and whether the app is live.
-	let shown = $state(CHAT.length);
-	let building = $state(false);
-	let live = $state(true);
+	// The scene showing (and the one before, rolling out), how many of its lines are in, whether
+	// the newest is still busy, and whether its result has landed. Server-rendered and without
+	// JavaScript, the first scene shows whole.
+	let scene = $state(0);
+	let leaving = $state<number | null>(null);
+	let shown = $state(SCENES[0].chat.length);
+	let busy = $state(false);
+	let finished = $state(true);
+	let turning = true;
+	let reducedMotion = false;
+	let timers: ReturnType<typeof setTimeout>[] = [];
 
-	onMount(() => {
-		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+	function stop() {
+		timers.forEach(clearTimeout);
+		timers = [];
+	}
+
+	function play(index: number) {
+		stop();
+		if (index !== scene) leaving = scene;
+		scene = index;
+		const lines = SCENES[index].chat;
+		if (reducedMotion) {
+			shown = lines.length;
+			busy = false;
+			finished = true;
+			return;
+		}
 		shown = 0;
-		live = false;
-		const timers: ReturnType<typeof setTimeout>[] = [];
+		busy = false;
+		finished = false;
 		let at = STEP_MS / 2;
-		CHAT.forEach((_, i) => {
+		lines.forEach((line, i) => {
 			timers.push(setTimeout(() => {
 				shown = i + 1;
-				building = i === KODA;
+				busy = Boolean(line.busy);
 			}, at));
-			at += i === KODA ? BUILD_MS : STEP_MS;
-			if (i === KODA) timers.push(setTimeout(() => (building = false), at - STEP_MS / 2));
+			if (line.busy) {
+				at += BUSY_MS;
+				timers.push(setTimeout(() => (busy = false), at));
+			}
+			at += STEP_MS;
 		});
-		timers.push(setTimeout(() => (live = true), at));
-		return () => timers.forEach(clearTimeout);
+		timers.push(setTimeout(() => (finished = true), at - STEP_MS / 2));
+		if (turning) timers.push(setTimeout(() => play((index + 1) % SCENES.length), at + HOLD_MS));
+	}
+
+	function pick(index: number) {
+		turning = false;
+		play(index);
+	}
+
+	onMount(() => {
+		reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (reducedMotion) turning = false;
+		else play(0);
+		return stop;
 	});
+
+	const current = $derived(SCENES[scene]);
+
+	// A headline's sentences, each starting its own line ("Tell Nomi once." / "It remembers.").
+	const sentences = (title: string) => title.split(/(?<=[.!?])\s+/);
 
 	const STEPS = [
 		{ title: m.landing_step_describe, body: m.landing_step_describe_body },
@@ -78,6 +156,25 @@
 	};
 </script>
 
+{#snippet lines(chat: Line[], count: number, live: boolean)}
+	<ol class="chat__lines">
+		{#each chat.slice(0, count) as line, i (`${scene}-${i}`)}
+			{#if line.from === 'you'}
+				<li class="bubble bubble--you">{line.text()}</li>
+			{:else}
+				{@const working = live && busy && i === count - 1}
+				<li class="bubble bubble--agent">
+					<AgentShape agent={line.from} size={28} face {working} />
+					<span class="bubble__body">
+						<span class="bubble__name">{crewName(line.from)}</span>
+						<span>{working && line.busy ? line.busy() : line.text()}</span>
+					</span>
+				</li>
+			{/if}
+		{/each}
+	</ol>
+{/snippet}
+
 <div class="page">
 	<header class="top">
 		<a href="/welcome" class="brand" aria-label={m.nav_nomi_home()}>
@@ -104,7 +201,13 @@
 			</div>
 
 			<div class="stage__copy">
-				<h1 id="landing-title" class="stage__title">{m.landing_title()}</h1>
+				<h1 id="landing-title" class="stage__title">
+					{#each SCENES as each, i (i)}
+						<span class="stage__line" class:stage__line--on={i === scene} class:stage__line--out={i === leaving && i !== scene} aria-hidden={i !== scene}>
+							{#each sentences(each.title()) as sentence, j (j)}<span class="stage__sentence">{sentence}</span>{' '}{/each}
+						</span>
+					{/each}
+				</h1>
 				<p class="stage__lede">{m.landing_lede()}</p>
 				<div class="stage__actions">
 					{#if data.signedIn}
@@ -117,25 +220,28 @@
 			</div>
 
 			<figure class="chat" aria-label={m.landing_chat_label()}>
-				<ol class="chat__lines">
-					{#each CHAT.slice(0, shown) as line, i (i)}
-						{#if line.from === 'you'}
-							<li class="bubble bubble--you">{line.text()}</li>
-						{:else}
-							<li class="bubble bubble--agent">
-								<AgentShape agent={line.from} size={28} face working={i === KODA && building} />
-								<span class="bubble__body">
-									<span class="bubble__name">{crewName(line.from)}</span>
-									<span>{i === KODA && building ? m.landing_chat_koda_building() : line.text()}</span>
-								</span>
-							</li>
-						{/if}
+				<div class="scenes" role="group" aria-label={m.landing_scenes_label()}>
+					{#each SCENES as each, i (i)}
+						<button type="button" class="scenes__pick" aria-pressed={i === scene} onclick={() => pick(i)}>{each.name()}</button>
 					{/each}
-				</ol>
-				<p class="chat__live" class:chat__live--on={live} aria-hidden={!live}>
-					<AgentShape agent="coding" size={20} />
-					<span>{m.landing_chat_live()}</span>
-				</p>
+				</div>
+				<!-- Every scene's whole chat sits hidden in the same cell as the one playing, so the panel
+				     is as tall as the longest at any width and nothing below it moves. -->
+				<div class="chat__body">
+					{#each SCENES as each, i (i)}
+						<div class="chat__play chat__play--sizer" aria-hidden="true" inert>
+							{@render lines(each.chat, each.chat.length, false)}
+							<p class="chat__result">{each.result()}</p>
+						</div>
+					{/each}
+					<div class="chat__play">
+						{@render lines(current.chat, shown, true)}
+						<p class="chat__result" class:chat__result--on={finished} aria-hidden={!finished}>
+							<AgentShape agent={current.resultAgent} size={20} />
+							<span>{current.result()}</span>
+						</p>
+					</div>
+				</div>
 			</figure>
 		</section>
 
@@ -304,15 +410,42 @@
 			rotate: 360deg;
 		}
 	}
+	/* Every scene's headline sits in one grid cell, so the hero is as tall as the longest and
+	   never jumps; the one showing rolls up into place and the one before rolls up and away. */
 	.stage__title {
+		display: grid;
 		margin: 0;
-		max-width: 12ch;
 		font-family: var(--md-ref-typeface-brand);
 		font-size: clamp(2.5rem, 6.2vw, 4.75rem);
 		font-weight: 800;
 		line-height: 0.98;
 		letter-spacing: -0.035em;
 		font-variation-settings: 'wdth' 85;
+	}
+	.stage__line {
+		grid-area: 1 / 1;
+		max-width: 12ch;
+		opacity: 0;
+		translate: 0 0.5em;
+		visibility: hidden;
+	}
+	.stage__sentence {
+		display: block;
+	}
+	.stage__line--on,
+	.stage__line--out {
+		visibility: visible;
+		transition:
+			opacity 360ms ease,
+			translate 620ms cubic-bezier(0.38, 1.21, 0.22, 1);
+	}
+	.stage__line--on {
+		opacity: 1;
+		translate: 0 0;
+	}
+	.stage__line--out {
+		translate: 0 -0.5em;
+		transition-duration: 240ms, 360ms;
 	}
 	.stage__lede {
 		margin: 20px 0 0;
@@ -342,13 +475,56 @@
 	.chat {
 		margin: 0;
 		padding: 20px;
-		min-height: 420px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		border-radius: 28px;
+		background: color-mix(in srgb, var(--nomi-color-on-stage) 7%, transparent);
+	}
+	.scenes {
+		display: flex;
+		gap: 4px;
+		align-self: flex-start;
+		padding: 4px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--nomi-color-on-stage) 8%, transparent);
+	}
+	.scenes__pick {
+		min-height: 36px;
+		padding: 0 14px;
+		border: none;
+		border-radius: 999px;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		font-weight: 600;
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: background 160ms ease;
+	}
+	.scenes__pick:hover {
+		background: color-mix(in srgb, var(--nomi-color-on-stage) 10%, transparent);
+	}
+	.scenes__pick[aria-pressed='true'] {
+		background: var(--nomi-color-on-stage);
+		color: var(--nomi-color-stage);
+	}
+	.scenes__pick:focus-visible {
+		outline: 2px solid var(--nomi-color-on-stage);
+		outline-offset: 2px;
+	}
+	.chat__body {
+		display: grid;
+	}
+	.chat__play {
+		grid-area: 1 / 1;
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
 		gap: 14px;
-		border-radius: 28px;
-		background: color-mix(in srgb, var(--nomi-color-on-stage) 7%, transparent);
+	}
+	.chat__play--sizer {
+		visibility: hidden;
 	}
 	.chat__lines {
 		display: flex;
@@ -395,7 +571,7 @@
 			scale: 0.96;
 		}
 	}
-	.chat__live {
+	.chat__result {
 		align-self: flex-start;
 		display: inline-flex;
 		align-items: center;
@@ -412,7 +588,7 @@
 			opacity 300ms ease,
 			scale 420ms cubic-bezier(0.38, 1.21, 0.22, 1);
 	}
-	.chat__live--on {
+	.chat__result--on {
 		opacity: 1;
 		scale: 1;
 	}
@@ -608,10 +784,6 @@
 		.stage {
 			grid-template-columns: 1fr;
 		}
-		/* Tall enough for the whole chat, so the page below doesn't move while it plays. */
-		.chat {
-			min-height: 440px;
-		}
 		.steps {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
@@ -638,8 +810,14 @@
 			width: 72%;
 		}
 		.chat {
-			min-height: 500px;
 			padding: 14px;
+		}
+		.scenes__pick {
+			min-height: 44px;
+		}
+		/* On a phone the panel runs below the fold, so the chat starts at its top. */
+		.chat__play {
+			justify-content: flex-start;
 		}
 		.section {
 			padding-inline: 20px;
@@ -654,7 +832,9 @@
 		.bubble {
 			animation: none;
 		}
-		.chat__live {
+		.chat__result,
+		.stage__line--on,
+		.stage__line--out {
 			transition: none;
 		}
 	}
