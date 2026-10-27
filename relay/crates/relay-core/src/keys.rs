@@ -62,6 +62,16 @@ pub fn new_signing_secret() -> String {
     hex::encode(bytes)
 }
 
+/// The password of a project role's own database login, derived from Relay's key so every Relay
+/// instance gives the same one and nothing needs storing.
+pub fn role_password(key: &[u8; 32], role: &str) -> String {
+    use hmac::{Hmac, Mac};
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(key).expect("any key length works");
+    mac.update(b"relay-role-login:");
+    mac.update(role.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
 fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
 }

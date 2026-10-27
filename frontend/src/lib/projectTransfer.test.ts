@@ -90,11 +90,14 @@ describe('projectTransfer helpers', () => {
 	});
 
 	describe('proxy route ALLOWED_PROJECT_API_PATHS pattern', () => {
-		it("allows the preview's Relay access and nothing under it", () => {
-		expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview')).toBe(true);
-		expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview/x')).toBe(false);
-		expect(ALLOWED_PROJECT_API_PATHS.test('relay')).toBe(false);
-	});
+		it("allows the preview's Relay access, the data sheet and its console, and nothing under them", () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview/x')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query/x')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/secrets')).toBe(false);
+		});
 
 	it('allows the secrets and one secret by name', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('secrets')).toBe(true);

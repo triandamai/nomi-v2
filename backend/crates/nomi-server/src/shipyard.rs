@@ -375,6 +375,7 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
                 notify_admins(pool, project_id, "publish_failed", &why).await;
             } else if let Some(url) = url {
                 post_to_project_chat(pool, project_id, &locale.tf("deploy.chat_published", &[("env", environment), ("url", url)]), Vec::new()).await;
+                notify_admins(pool, project_id, "published", url).await;
             }
         }
         "service.crashed" => {
@@ -422,7 +423,8 @@ pub async fn project_admins(pool: &PgPool, project_id: Uuid) -> Result<Vec<Uuid>
     .await
 }
 
-async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, detail: &str) {
+/// Tells each of the project's admins, in their language, by notification, push and email.
+pub(crate) async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, detail: &str) {
     let name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
         .bind(project_id)
         .fetch_one(pool)
@@ -432,7 +434,9 @@ async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, detail: &str
     for user_id in admins {
         let locale = person_locale(pool, user_id).await;
         let (title_key, body_key) = match what {
+            "published" => ("deploy.published_title", "deploy.published_body"),
             "publish_failed" => ("deploy.publish_failed_title", "deploy.publish_failed_body"),
+            "backend_failed" => ("deploy.publish_failed_title", "deploy.backend_failed_body"),
             "crashed" => ("deploy.crashed_title", "deploy.crashed_body"),
             _ => ("deploy.resource_title", "deploy.resource_body"),
         };

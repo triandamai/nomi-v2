@@ -199,6 +199,13 @@ impl<'a> Relay<'a> {
         self.call(reqwest::Method::GET, &format!("{}/schema", Self::env_path(project_id, env)), None, REQUEST_TIMEOUT).await
     }
 
+    /// Runs one SQL statement in `env` as the project's owner; `read_only` for Iris. Answers
+    /// `{ columns, rows, truncated, rows_affected, took_ms }`.
+    pub async fn query(&self, project_id: Uuid, env: &str, sql: &str, read_only: bool) -> Result<Value, RelayError> {
+        let access = if read_only { "read_only" } else { "read_write" };
+        self.call(reqwest::Method::POST, &format!("{}/query", Self::env_path(project_id, env)), Some(json!({ "sql": sql, "access": access })), REQUEST_TIMEOUT).await
+    }
+
     /// `src/lib/nomi.types.ts` for `env`'s schema.
     pub async fn types(&self, project_id: Uuid, env: &str) -> Result<String, RelayError> {
         let data = self.call(reqwest::Method::GET, &format!("{}/types", Self::env_path(project_id, env)), None, REQUEST_TIMEOUT).await?;

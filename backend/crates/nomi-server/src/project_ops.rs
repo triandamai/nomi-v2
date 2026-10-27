@@ -26,8 +26,12 @@ fn database_source(source: DataSource) -> database::Source {
 }
 
 use nomi_agent_core::project_ops::{DataSource, ProjectOps, QueryRows, SharedProjectOps, TableInfo};
+use nomi_relay_client::{Relay, RelayConfig};
 use nomi_shipyard::ShipyardConfig;
 use nomi_storage::ProjectStore;
+use serde_json::Value;
+
+use crate::relay_ops::relay_error;
 
 /// What reaching a project on Shipyard takes, without the rest of the web server's state.
 pub(crate) trait ShipyardAccess {
@@ -57,6 +61,8 @@ pub struct ServerProjectOps {
     project_storage: ProjectStore,
     http_client: reqwest::Client,
     shipyard: Option<ShipyardConfig>,
+    /// Opens the Relay connection saved in the admin, for projects that keep their data on Relay.
+    relay_settings_key: Option<[u8; 32]>,
 }
 
 impl ShipyardAccess for ServerProjectOps {
@@ -77,8 +83,35 @@ impl ShipyardAccess for ServerProjectOps {
 impl ServerProjectOps {
     /// Shipyard from the environment (SHIPYARD_*), like the web server's own.
     pub fn shared(pool: PgPool, project_storage: ProjectStore) -> SharedProjectOps {
-        std::sync::Arc::new(Self { pool, project_storage, http_client: crate::http_client(), shipyard: ShipyardConfig::from_env() })
+        std::sync::Arc::new(Self {
+            pool,
+            project_storage,
+            http_client: crate::http_client(),
+            shipyard: ShipyardConfig::from_env(),
+            relay_settings_key: crate::relay_connection::settings_key_from_env(),
+        })
     }
+
+    /// Without Shipyard, with Relay as saved in the admin (sealed with `relay_settings_key`).
+    pub fn with_relay(pool: PgPool, project_storage: ProjectStore, http_client: reqwest::Client, relay_settings_key: Option<[u8; 32]>) -> Self {
+        Self { pool, project_storage, http_client, shipyard: None, relay_settings_key }
+    }
+
+    /// Relay, when the project keeps its data there: Iris reads it through Relay as the
+    /// project's owner instead of Shipyard's Postgres.
+    async fn relay_for(&self, project_id: Uuid) -> Result<Option<RelayConfig>, String> {
+        if !crate::relay_ops::on_relay(&self.pool, project_id).await.map_err(message)? {
+            return Ok(None);
+        }
+        crate::relay_connection::load_or(&self.pool, self.relay_settings_key.as_ref(), RelayConfig::from_env())
+            .await
+            .map(Some)
+            .ok_or_else(|| "this project is on Relay, and Relay isn't set up on this Nomi".to_string())
+    }
+}
+
+fn relay_env(source: DataSource) -> &'static str {
+    crate::relay_ops::relay_env(source == DataSource::Production)
 }
 
 #[async_trait]
@@ -158,6 +191,15 @@ impl ProjectOps for ServerProjectOps {
 
     async fn tables(&self, user_id: Uuid, project_id: Uuid, source: DataSource) -> Result<Vec<TableInfo>, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
+        if let Some(config) = self.relay_for(project_id).await? {
+            let schema = Relay::new(&self.http_client, &config).describe(project_id, relay_env(source)).await.map_err(|e| message(relay_error(e)))?;
+            let names = schema.get("tables").and_then(Value::as_array).cloned().unwrap_or_default();
+            return Ok(names
+                .iter()
+                .filter_map(|t| t.get("name").and_then(Value::as_str))
+                .map(|name| TableInfo { schema: "public".into(), name: name.to_string(), rows_estimate: -1 })
+                .collect());
+        }
         let url = database::owner_url(self, project_id, database_source(source)).await.map_err(message)?;
         let tables = database::list_tables(&url).await.map_err(message)?;
         Ok(tables.into_iter().map(|t| TableInfo { schema: t.schema, name: t.name, rows_estimate: t.rows_estimate }).collect())
@@ -166,6 +208,15 @@ impl ProjectOps for ServerProjectOps {
     async fn query(&self, user_id: Uuid, project_id: Uuid, source: DataSource, sql: &str) -> Result<QueryRows, String> {
         require_admin(&self.pool, project_id, user_id).await.map_err(message)?;
         let sql = sql.trim().trim_end_matches(';').trim();
+        if let Some(config) = self.relay_for(project_id).await? {
+            let result = Relay::new(&self.http_client, &config).query(project_id, relay_env(source), sql, true).await.map_err(|e| message(relay_error(e)))?;
+            let field = |name: &str| result.get(name).cloned().unwrap_or_default();
+            return Ok(QueryRows {
+                columns: serde_json::from_value(field("columns")).unwrap_or_default(),
+                rows: serde_json::from_value(field("rows")).unwrap_or_default(),
+                truncated: field("truncated").as_bool().unwrap_or_default(),
+            });
+        }
         let url = database::owner_url(self, project_id, database_source(source)).await.map_err(message)?;
         let result = database::execute_sql(&url, sql, Access::ReadOnly).await.map_err(message)?;
         Ok(QueryRows { columns: result.columns, rows: result.rows, truncated: result.truncated })

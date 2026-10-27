@@ -209,13 +209,26 @@ async fn publishing_follows_webhooks_and_rolls_back(pool: PgPool) {
     let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM shipyard_events WHERE project_id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
     assert_eq!(stored, 1);
 
-    // A failed crash alert notifies the project's admin.
+    // The admins hear the publish went out, as well as reading it in the project's chat.
+    let owner = user_id(&pool, "ana@acme.test").await;
+    let mut live: Vec<(String, String)> = Vec::new();
+    for _ in 0..50 {
+        live = sqlx::query_as("SELECT title, body FROM notifications WHERE user_id = $1 AND kind = 'deploy'").bind(owner).fetch_all(&pool).await.unwrap();
+        if !live.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(live.len(), 1, "one notice, however often the event came");
+    assert!(live[0].0.contains("is live"), "{live:?}");
+    assert!(live[0].1.contains("https://todo.apps.test"), "{live:?}");
+
+    // A crash alert notifies the project's admin.
     let crash = json!({
         "id": "evt-2", "type": "service.crashed", "created_at": chrono::Utc::now(), "app": app,
         "environment": "production", "service": "web", "data": { "exit_code": 137 }
     });
     assert_eq!(webhook(router.clone(), &crash, WEBHOOK_SECRET).await, StatusCode::NO_CONTENT);
-    let owner = user_id(&pool, "ana@acme.test").await;
     let mut notified = 0i64;
     for _ in 0..50 {
         notified = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id = $1 AND kind = 'deploy'")
@@ -223,12 +236,12 @@ async fn publishing_follows_webhooks_and_rolls_back(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-        if notified > 0 {
+        if notified > 1 {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert_eq!(notified, 1);
+    assert_eq!(notified, 2);
 
     // Rolling back sends the first publish's source and manifest again.
     let first_id = first["id"].as_str().unwrap();

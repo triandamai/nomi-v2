@@ -202,3 +202,25 @@ async fn functions_are_deployed_rolled_back_and_described(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(call(&router, "DELETE", &format!("{base}/secrets/STRIPE_SECRET"), Some(KEY), None).await.0, StatusCode::OK);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sql_runs_against_one_environment_and_reads_only_refuse_writes(pool: PgPool) {
+    let router = router(&pool);
+    let base = format!("/control/projects/{}", Uuid::new_v4());
+    call(&router, "PUT", &base, Some(KEY), Some(json!({ "name": "Todo" }))).await;
+    let init = "create table task (id int primary key, title text not null);\nalter table task enable row level security;\n";
+    let files = json!({ "files": [{ "path": "nomi/migrations/0001_init.sql", "content": init }] });
+    call(&router, "POST", &format!("{base}/environments/dev/migrations"), Some(KEY), Some(files)).await;
+    let query = format!("{base}/environments/dev/query");
+
+    let (status, wrote) = call(&router, "POST", &query, Some(KEY), Some(json!({ "sql": "insert into task values (1, 'milk')", "access": "read_write" }))).await;
+    assert_eq!(status, StatusCode::OK, "{wrote}");
+    assert_eq!(wrote["data"]["rows_affected"], 1);
+    let (_, read) = call(&router, "POST", &query, Some(KEY), Some(json!({ "sql": "select title from task", "access": "read_only" }))).await;
+    assert_eq!(read["data"]["columns"], json!(["title"]));
+    assert_eq!(read["data"]["rows"], json!([["milk"]]));
+
+    let (status, body) = call(&router, "POST", &query, Some(KEY), Some(json!({ "sql": "delete from task", "access": "read_only" }))).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"]["code"], "QUERY_FAILED");
+}

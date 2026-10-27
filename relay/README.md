@@ -91,6 +91,11 @@ Today each app carries its own backend, written fresh by Koda every time:
   - create or delete a project's backend;
   - apply migrations to an environment;
   - read the schema;
+  - run one SQL statement in an environment, for the project's data sheet in Nomi (reads and
+    writes) and for Iris (reads only, in a read-only transaction). It runs over a connection
+    logged in as the project's owner role, never as Relay's own user, so the SQL can't switch to
+    another project's role: the owner's login is turned on the first time it's needed, with a
+    password derived from Relay's key;
   - rotate keys;
   - set auth, OAuth provider and storage settings;
   - deploy functions to an environment.

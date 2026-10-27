@@ -60,6 +60,39 @@ fn with_location(message: &str, details: &Value) -> String {
     }
 }
 
+/// Whether the project keeps its data on Relay rather than in Shipyard's Postgres (Drizzle).
+pub(crate) async fn on_relay(pool: &PgPool, project_id: Uuid) -> Result<bool, ApiError> {
+    let backend: Option<String> = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the project: {e}")))?;
+    Ok(backend.ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))? == "relay")
+}
+
+/// Relay's name for a data sheet source: the preview's `dev`, or the published `production`.
+pub(crate) fn relay_env(production: bool) -> &'static str {
+    if production {
+        PRODUCTION
+    } else {
+        DEV
+    }
+}
+
+/// The project's backend in `env` for its data sheet: where it is, its anon key, its tables
+/// with their columns and policies, its buckets, live tables, functions and sign-in.
+pub async fn overview(http_client: &reqwest::Client, config: &RelayConfig, project_id: Uuid, env: &str) -> Result<Value, ApiError> {
+    let relay = Relay::new(http_client, config);
+    let found = relay.backend(project_id).await.map_err(relay_error)?;
+    let keys = found.environment(env).ok_or((StatusCode::NOT_FOUND, format!("the project's backend has no {env} environment")))?;
+    let mut answer = relay.describe(project_id, env).await.map_err(relay_error)?;
+    answer["backend"] = Value::from("relay");
+    answer["url"] = Value::from(keys.url.clone());
+    answer["anon_key"] = Value::from(keys.anon_key.clone());
+    answer["auth"] = relay.auth(project_id, env).await.map_err(relay_error)?;
+    Ok(answer)
+}
+
 /// Before a publish of a Relay project: applies the production migrations it doesn't have yet,
 /// from the files being published. A failure stops the publish (the running version keeps
 /// serving) and says which file and line. A project not on Relay passes straight through.

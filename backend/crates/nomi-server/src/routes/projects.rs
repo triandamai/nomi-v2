@@ -206,13 +206,15 @@ pub struct ProjectDetailResponse {
     pub org_id: Uuid,
     pub org_name: String,
     pub open_issues: i64,
+    /// `drizzle` or `relay`: where the app keeps its data, and so what the data sheet shows.
+    pub backend: String,
 }
 
-/// The chat, organization and open issue count of a project.
-async fn project_context(pool: &sqlx::PgPool, project_id: Uuid) -> Result<(Uuid, Uuid, String, i64), sqlx::Error> {
+/// The chat, organization, open issue count and backend of a project.
+async fn project_context(pool: &sqlx::PgPool, project_id: Uuid) -> Result<(Uuid, Uuid, String, i64, String), sqlx::Error> {
     sqlx::query_as(
         "SELECT p.session_id, p.org_id, o.name, \
-                (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open') \
+                (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open'), p.backend \
          FROM projects p JOIN organizations o ON o.id = p.org_id WHERE p.id = $1",
     )
     .bind(project_id)
@@ -257,7 +259,7 @@ pub async fn get_project(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
 
-    let (session_id, org_id, org_name, open_issues) = project_context(&state.pool, project_id).await.map_err(|e| {
+    let (session_id, org_id, org_name, open_issues, backend) = project_context(&state.pool, project_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project context");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
@@ -275,6 +277,7 @@ pub async fn get_project(
         org_id,
         org_name,
         open_issues,
+        backend,
     }))
 }
 
@@ -322,7 +325,7 @@ pub async fn get_project_by_session(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
 
-    let (session_id, org_id, org_name, open_issues) = project_context(&state.pool, project_id).await.map_err(|e| {
+    let (session_id, org_id, org_name, open_issues, backend) = project_context(&state.pool, project_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project context");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
@@ -340,6 +343,7 @@ pub async fn get_project_by_session(
         org_id,
         org_name,
         open_issues,
+        backend,
     }))
 }
 
