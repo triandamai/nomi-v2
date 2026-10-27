@@ -80,7 +80,7 @@ async fn a_relay_that_isnt_ready_says_why_instead_of_falling_back(pool: PgPool) 
     project_relays::begin(&pool, &KEY, project, "dev", "ignored", "0.1.6").await.unwrap();
     let again = project_relays::stack(&pool, project, "dev").await.unwrap().unwrap();
     assert_eq!((again.state.as_str(), again.step, again.error, again.version.as_str()), (CREATING, None, None, "0.1.6"));
-    assert_eq!(project_relays::control_key(&pool, &KEY, project, "dev").await.unwrap().as_deref(), Some("ignored"));
+    assert_eq!(project_relays::control_key(&pool, &KEY, project, "dev").await.unwrap().as_deref(), Some("k"), "trying again keeps the key Shipyard was already given");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
