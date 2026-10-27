@@ -17,6 +17,9 @@ pub const PLANNING_AGENT_TYPE: &str = "planning";
 /// The stacks a project can be built on (see the coding agent's guides).
 pub const STACKS: &[&str] = &["sveltekit", "react", "vue", "astro", "static"];
 
+/// What Rena does when the user wanted Relay and it isn't there: the user decides, not the build.
+const ASK_BEFORE_DRIZZLE: &str = "Tell the user, in your own words, what happened and ask whether to build it on Drizzle (its own database code) instead or wait until Relay is set up. Do not hand the build to the coding agent until they answer; if they say Drizzle, call create_project again with backend drizzle.";
+
 /// What a project's server side is built on: Nomi Relay, or the app's own Drizzle code.
 pub const BACKENDS: &[&str] = &[BACKEND_RELAY, BACKEND_DRIZZLE];
 pub const BACKEND_RELAY: &str = "relay";
@@ -252,7 +255,7 @@ pub async fn create_project(
 /// Puts the project on `backend`, and says what came of it when that isn't simply what was
 /// asked. A project that already has files keeps its backend: moving an app between backends
 /// is a task of its own, never a side effect of renaming it. Relay is used only when this Nomi
-/// has it and it made the project's backend; otherwise the project is built on Drizzle.
+/// has it and it made the project's backend; otherwise the project stays as it was and Rena is told to ask the user.
 async fn choose_backend(
     conn: &mut PoolConnection<Postgres>,
     user_id: Uuid,
@@ -276,10 +279,10 @@ async fn choose_backend(
     }
     let note = if backend == BACKEND_RELAY {
         if !relay.is_available().await {
-            return Ok(Some("Relay isn't set up on this Nomi, so it's built on Drizzle.".to_string()));
+            return Ok(Some(format!("Relay isn't set up on this Nomi, so this project is NOT on Relay. {ASK_BEFORE_DRIZZLE}")));
         }
         if let Err(e) = relay.ensure_backend(user_id, project_id).await {
-            return Ok(Some(format!("Relay couldn't make its backend ({e}), so it's built on Drizzle for now.")));
+            return Ok(Some(format!("Relay couldn't make this project's backend ({e}), so it is NOT on Relay. {ASK_BEFORE_DRIZZLE}")));
         }
         Some("Its backend is Nomi Relay: a database, sign-in, storage and functions are ready.".to_string())
     } else {

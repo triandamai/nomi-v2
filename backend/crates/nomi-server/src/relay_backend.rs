@@ -20,6 +20,7 @@ use uuid::Uuid;
 use crate::project_relays::{self, CREATING, FAILED, READY, SLEEPING, WAKING};
 
 use crate::project_ops::ShipyardAccess;
+use nomi_agent_core::relay_ops::RelayPackages;
 use crate::relay_ops::{SECRET_ANON_KEY, SECRET_SERVICE_KEY, SECRET_URL};
 
 pub const DEV: &str = "dev";
@@ -93,6 +94,20 @@ pub async fn images(pool: &PgPool, settings_key: &[u8; 32]) -> Result<Images, St
         postgrest: section.get("postgrest_image").unwrap_or_else(|| DEFAULT_POSTGREST_IMAGE.to_string()),
         version: section.get("version").unwrap_or_else(|| DEFAULT_RELAY_VERSION.to_string()),
     })
+}
+
+/// The npm packages new projects use for Relay, as Admin → Configuration → Relay names them.
+pub async fn packages(pool: &PgPool, settings_key: &[u8; 32]) -> RelayPackages {
+    let defaults = RelayPackages::default();
+    let Ok(section) = config::load(pool, Some(settings_key), &config::RELAY).await else { return defaults };
+    let section = section.with_env(|name| std::env::var(name).ok());
+    let pick = |field: &str, default: String| section.get(field).unwrap_or(default);
+    RelayPackages {
+        sdk: pick("sdk_package", defaults.sdk),
+        sdk_version: pick("sdk_version", defaults.sdk_version),
+        cli: pick("cli_package", defaults.cli),
+        cli_version: pick("cli_version", defaults.cli_version),
+    }
 }
 
 /// Whether Relay's images are set, so a backend can be made.

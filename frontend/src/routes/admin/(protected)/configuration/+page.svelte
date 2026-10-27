@@ -94,6 +94,10 @@
 				functions_image: { label: m.config_relay_functions_image, hint: m.config_relay_functions_image_hint },
 				postgrest_image: { label: m.config_relay_postgrest_image, hint: m.config_relay_postgrest_image_hint },
 				version: { label: m.config_relay_version, hint: m.config_relay_version_hint },
+			sdk_package: { label: m.config_relay_sdk_package, hint: m.config_relay_sdk_package_hint },
+			sdk_version: { label: m.config_relay_sdk_version, hint: m.config_relay_sdk_version_hint },
+			cli_package: { label: m.config_relay_cli_package, hint: m.config_relay_cli_package_hint },
+			cli_version: { label: m.config_relay_cli_version, hint: m.config_relay_cli_version_hint },
 			},
 		},
 	};

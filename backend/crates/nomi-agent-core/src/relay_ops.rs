@@ -52,8 +52,39 @@ pub struct ProjectFile {
     pub content: String,
 }
 
+/// The npm packages a Relay project uses: the app-side client and the command line. They're
+/// published under the admin's own account, so the admin can name them and the version range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelayPackages {
+    pub sdk: String,
+    pub sdk_version: String,
+    pub cli: String,
+    pub cli_version: String,
+}
+
+pub const DEFAULT_SDK_PACKAGE: &str = "nomi-relay";
+pub const DEFAULT_SDK_VERSION: &str = "^0.1.0";
+pub const DEFAULT_CLI_PACKAGE: &str = "nomi-relay-cli";
+pub const DEFAULT_CLI_VERSION: &str = "^0.1.0";
+
+impl Default for RelayPackages {
+    fn default() -> Self {
+        Self {
+            sdk: DEFAULT_SDK_PACKAGE.to_string(),
+            sdk_version: DEFAULT_SDK_VERSION.to_string(),
+            cli: DEFAULT_CLI_PACKAGE.to_string(),
+            cli_version: DEFAULT_CLI_VERSION.to_string(),
+        }
+    }
+}
+
 #[async_trait]
 pub trait RelayOps: Send + Sync {
+    /// The client and command-line packages new projects depend on.
+    async fn packages(&self) -> RelayPackages {
+        RelayPackages::default()
+    }
+
     /// Whether this Nomi has Relay at all. Without it, projects are built on Drizzle.
     async fn is_available(&self) -> bool;
 

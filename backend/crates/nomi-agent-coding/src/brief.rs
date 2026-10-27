@@ -9,7 +9,7 @@ use nomi_agent_core::plans::{latest_plan_by, open_checklist_items};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
-use nomi_agent_core::relay_ops::{RelayEnv, RelayOps};
+use nomi_agent_core::relay_ops::{RelayEnv, RelayOps, RelayPackages, DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION};
 
 /// More files than this are summarised as a count: list_files shows them all.
 const MAX_LISTED_FILES: usize = 150;
@@ -87,6 +87,19 @@ async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) ->
         Err(e) => section.push_str(&format!("(Couldn't read the dev backend: {e}. Call describe_backend.)\n\n")),
     }
     section
+}
+
+/// The relay guide names the default packages; this Nomi's admin may publish them under other
+/// names or ranges, so the brief says the ones to use.
+fn with_packages(guide: &str, packages: &RelayPackages) -> String {
+    let pinned = format!("\"{}\": \"{}\"", DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION);
+    let guide = guide.replace(&pinned, &format!("\"{}\": \"{}\"", packages.sdk, packages.sdk_version));
+    let guide = if packages.sdk == DEFAULT_SDK_PACKAGE { guide } else { guide.replace(DEFAULT_SDK_PACKAGE, &packages.sdk) };
+    format!(
+        "{guide}\n\nPackages on this Nomi: the client is `{}` (`\"{}\": \"{}\"` in dependencies); the command line is `{}` \
+         (`\"{}\": \"{}\"` in devDependencies, installs the `nomi-relay` command for `migrate lint`, `migrate new` and `functions new`).",
+        packages.sdk, packages.sdk, packages.sdk_version, packages.cli, packages.cli, packages.cli_version
+    )
 }
 
 fn clip(text: &str, max: usize) -> &str {
@@ -209,6 +222,7 @@ The person stored these for the published app, read on the server from the envir
     if on_relay {
         brief.push_str(&relay_section(relay, user_id, project_id).await);
     }
+    let packages = relay.packages().await;
 
     let stack_guide = guides::guide_for_stack(&stack).unwrap_or("sveltekit");
     let mut topics = vec![stack_guide, "preview"];
@@ -217,8 +231,34 @@ The person stored these for the published app, read on the server from the envir
     }
     for topic in topics {
         if let Some((_, _, content)) = guides::GUIDES.iter().find(|(name, _, _)| *name == topic) {
+            let content = if topic == "relay" { with_packages(content, &packages) } else { content.to_string() };
             brief.push_str(&format!("## Guide: {topic} (already read for you)\n{content}\n\n"));
         }
     }
     Some(brief.trim_end().to_string())
+}
+
+#[cfg(test)]
+mod package_tests {
+    use super::*;
+
+    fn guide() -> String {
+        guides::GUIDES.iter().find(|g| g.0 == "relay").unwrap().2.to_string()
+    }
+
+    #[test]
+    fn the_default_packages_leave_the_guide_as_it_is() {
+        let said = with_packages(&guide(), &RelayPackages::default());
+        assert!(said.contains("\"nomi-relay\": \"^0.1.0\"") && said.contains("from 'nomi-relay'"));
+        assert!(said.contains("the command line is `nomi-relay-cli`"));
+    }
+
+    #[test]
+    fn the_admins_packages_replace_the_guides_name_and_version() {
+        let packages = RelayPackages { sdk: "@acme/relay".into(), sdk_version: "^2.1.0".into(), cli: "@acme/relay-cli".into(), cli_version: "^2.0.0".into() };
+        let said = with_packages(&guide(), &packages);
+        assert!(said.contains("\"@acme/relay\": \"^2.1.0\"") && said.contains("from '@acme/relay'"), "{said}");
+        assert!(!said.contains("\"nomi-relay\": \"^0.1.0\"") && !said.contains("from 'nomi-relay'"));
+        assert!(said.contains("`@acme/relay-cli` (`\"@acme/relay-cli\": \"^2.0.0\"` in devDependencies"));
+    }
 }
