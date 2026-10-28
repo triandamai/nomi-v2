@@ -1,15 +1,15 @@
 <script lang="ts">
-	// The published app while it runs: whether it's up, CPU and memory of each container (sampled
-	// every few seconds while this is open), what Shipyard reported, and what the app prints.
-	// Visitors, requests and history wait for Shipyard to report them (docs/shipyard-todo.md):
-	// nothing here is shown that Nomi can't back.
+	// The published app while it runs: whether it's up, its traffic over the last hour, day or week
+	// against the one before, CPU and memory of each container (from Shipyard's history, or sampled
+	// every few seconds while this is open when there's none yet), what Shipyard reported, and what
+	// the app prints. Whatever Shipyard didn't measure reads "Not measured", never 0.
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import StatusSquare from '$lib/components/project/StatusSquare.svelte';
-	import { chartPaths, eventTone, filterLogs, liveSince, logLevel, orderContainers, peak, type LogFilter } from '$lib/monitorView';
+	import { change, chartPaths, countMax, eventTone, filterLogs, gappedChartPaths, liveSince, logLevel, orderContainers, peak, serviceHistory, type ChartRun, type LogFilter } from '$lib/monitorView';
 	import { ago, bytes, projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
-	import type { ContainerUsage, ShipyardEvent } from '$lib/types';
+	import type { ContainerUsage, MetricsCounters, MetricsRange, ProjectMetrics, ShipyardEvent } from '$lib/types';
 
 	let { projectId, published, deploy = null }: { projectId: string; published: boolean; deploy?: ProjectDeploy | null } = $props();
 
@@ -22,6 +22,11 @@
 	const EVENTS_SHOWN = 20;
 	const CHART_WIDTH = 300;
 	const CHART_HEIGHT = 80;
+	const SPARK_HEIGHT = 40;
+	/** Percent charts never scale below 100% so a quiet app doesn't look busy. */
+	const PERCENT_MAX = 100;
+	/** Shipyard's buckets are a minute at their finest; once a minute keeps the newest one in view. */
+	const METRICS_MS = 60_000;
 	/** Shipyard events worth a line here. */
 	const EVENTS = ['service.crashed', 'service.resource_alert', 'service.error_rate_alert', 'deployment.failed', 'publish.failed', 'publish.succeeded'];
 
@@ -52,6 +57,23 @@
 			usageError = null;
 		} catch (e) {
 			usageError = (e as Error).message;
+		}
+	}
+
+	let range = $state<MetricsRange>('24h');
+	let metrics = $state<ProjectMetrics | null>(null);
+	let metricsError = $state<string | null>(null);
+	const pastUsage = $derived(metrics ? serviceHistory(metrics.buckets) : {});
+
+	async function loadMetrics(asked: MetricsRange) {
+		try {
+			const next = await projectApi<ProjectMetrics>(projectId, `deploy/metrics?range=${asked}`);
+			// A slow answer for a range the person already switched away from is dropped.
+			if (asked !== range) return;
+			metrics = next;
+			metricsError = null;
+		} catch (e) {
+			if (asked === range) metricsError = (e as Error).message;
 		}
 	}
 
@@ -93,6 +115,14 @@
 		};
 	});
 
+	$effect(() => {
+		if (!published) return;
+		const asked = range;
+		void loadMetrics(asked);
+		const metricsTimer = setInterval(() => !document.hidden && void loadMetrics(asked), METRICS_MS);
+		return () => clearInterval(metricsTimer);
+	});
+
 	function percent(value: number): string {
 		return `${new Intl.NumberFormat(locale, { maximumFractionDigits: value < 10 ? 1 : 0 }).format(value)}%`;
 	}
@@ -121,6 +151,44 @@
 		}
 	}
 
+	const RANGES: { value: MetricsRange; label: () => string; over: () => string; vs: (p: { change: string }) => string }[] = [
+		{ value: '1h', label: m.pj_mon_range_1h, over: m.pj_mon_over_1h, vs: m.pj_mon_vs_1h },
+		{ value: '24h', label: m.pj_mon_range_24h, over: m.pj_mon_over_24h, vs: m.pj_mon_vs_24h },
+		{ value: '7d', label: m.pj_mon_range_7d, over: m.pj_mon_over_7d, vs: m.pj_mon_vs_7d },
+	];
+	const shownRange = $derived(RANGES.find((r) => r.value === range) ?? RANGES[1]);
+
+	function count(value: number): string {
+		return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+	}
+
+	/** `up` says whether a rise is good news, bad news, or neither (more requests is just more). */
+	const TRAFFIC: { key: keyof MetricsCounters; label: () => string; format: (value: number) => string; up: 'good' | 'bad' | 'neutral' }[] = [
+		{ key: 'visitors', label: m.pj_mon_visitors, format: count, up: 'good' },
+		{ key: 'requests', label: m.pj_mon_requests, format: count, up: 'neutral' },
+		{ key: 'errors_5xx', label: m.pj_mon_errors_5xx, format: count, up: 'bad' },
+		{ key: 'p95_ms', label: m.pj_mon_p95, format: (ms) => m.pj_mon_ms({ ms: count(Math.round(ms)) }), up: 'bad' },
+	];
+
+	function signedPercent(value: number): string {
+		return new Intl.NumberFormat(locale, { style: 'percent', signDisplay: 'exceptZero', maximumFractionDigits: 0 }).format(value / 100);
+	}
+
+	function deltaTone(up: 'good' | 'bad' | 'neutral', delta: number): 'better' | 'worse' | 'same' {
+		if (up === 'neutral' || Math.round(delta) === 0) return 'same';
+		return delta > 0 === (up === 'good') ? 'better' : 'worse';
+	}
+
+	/** A container's CPU or memory chart: Shipyard's history when it has any, else this sheet's samples. */
+	function usageChart(past: (number | null)[] | undefined, live: number[] | undefined): { runs: ChartRun[]; peak: number | null; fromHistory: boolean } {
+		const measured = past?.filter((v): v is number => v !== null) ?? [];
+		if (past && measured.length > 0) {
+			return { runs: gappedChartPaths(past, CHART_WIDTH, CHART_HEIGHT, Math.max(PERCENT_MAX, ...measured)), peak: peak(measured), fromHistory: true };
+		}
+		const paths = live ? chartPaths(live, CHART_WIDTH, CHART_HEIGHT) : null;
+		return { runs: paths ? [{ x: 0, ...paths }] : [], peak: peak(live ?? []), fromHistory: false };
+	}
+
 	const FILTERS: { value: LogFilter; label: () => string }[] = [
 		{ value: 'all', label: m.pj_mon_all },
 		{ value: 'warn', label: m.pj_mon_warnings },
@@ -143,7 +211,45 @@
 		</div>
 	</section>
 
-	<p class="later">{m.pj_mon_metrics_later()}</p>
+	<section class="traffic" aria-label={m.pj_mon_traffic()}>
+		<div class="traffic__head">
+			<h3 class="section-title traffic__title">{m.pj_mon_traffic()}</h3>
+			<div class="segmented" role="radiogroup" aria-label={m.pj_mon_range()}>
+				{#each RANGES as option (option.value)}
+					<button type="button" role="radio" aria-checked={range === option.value} onclick={() => (range = option.value)}>{option.label()}</button>
+				{/each}
+			</div>
+		</div>
+		{#if metricsError}<p class="error" role="alert">{metricsError}</p>{/if}
+		<div class="tiles">
+			{#each TRAFFIC as metric (metric.key)}
+				{@const now = metrics ? (metrics.totals[metric.key] ?? null) : null}
+				{@const delta = metrics ? change(now, metrics.previous_totals[metric.key] ?? null) : null}
+				{@const series = metrics?.buckets.map((b) => b[metric.key] ?? null) ?? []}
+				{@const runs = gappedChartPaths(series, CHART_WIDTH, SPARK_HEIGHT, countMax(series))}
+				<article class="card tile">
+					<span class="meta">{metric.label()}</span>
+					{#if !metrics}
+						<span class="tile__value tile__value--none">–</span>
+					{:else if now === null}
+						<span class="tile__value tile__value--none">{m.pj_mon_not_measured()}</span>
+					{:else}
+						<span class="tile__value">{metric.format(now)}</span>
+					{/if}
+					{#if delta !== null}
+						<span class="caption tile__delta tile__delta--{deltaTone(metric.up, delta)}">{shownRange.vs({ change: signedPercent(delta) })}</span>
+					{/if}
+					<svg class="tile__svg" viewBox="0 0 {CHART_WIDTH} {SPARK_HEIGHT}" preserveAspectRatio="none" aria-hidden="true">
+						<line class="chart__base" x1="0" y1={SPARK_HEIGHT} x2={CHART_WIDTH} y2={SPARK_HEIGHT} />
+						{#each runs as run, i (i)}
+							<g transform="translate({run.x} 0)"><path class="chart__area" d={run.area} /><path class="chart__line" d={run.line} /></g>
+						{/each}
+					</svg>
+				</article>
+			{/each}
+		</div>
+		<span class="caption">{shownRange.over()}</span>
+	</section>
 
 	{#if usageError}<p class="error" role="alert">{usageError}</p>{/if}
 	{#if shownContainers.length === 0 && !usageError}
@@ -151,8 +257,8 @@
 	{/if}
 	{#each shownContainers as c (c.container_id)}
 		{@const h = history[c.container_id]}
-		{@const cpu = h ? chartPaths(h.cpu, CHART_WIDTH, CHART_HEIGHT) : null}
-		{@const memory = h ? chartPaths(h.memory, CHART_WIDTH, CHART_HEIGHT) : null}
+		{@const cpu = usageChart(pastUsage[c.service]?.cpu, h?.cpu)}
+		{@const memory = usageChart(pastUsage[c.service]?.memory, h?.memory)}
 		<section class="resources">
 			<h3 class="section-title">{c.service}</h3>
 			{#if c.stats}
@@ -160,13 +266,15 @@
 					<article class="card chart">
 						<div class="chart__head">
 							<span class="chart__title">{m.pj_cpu()}</span>
-							<span class="meta">{m.pj_mon_now_peak({ now: percent(c.stats.cpu_percent), peak: percent(peak(h?.cpu ?? []) ?? c.stats.cpu_percent) })}</span>
+							<span class="meta">{m.pj_mon_now_peak({ now: percent(c.stats.cpu_percent), peak: percent(cpu.peak ?? c.stats.cpu_percent) })}</span>
 						</div>
 						<svg class="chart__svg" viewBox="0 0 {CHART_WIDTH} {CHART_HEIGHT}" preserveAspectRatio="none" aria-hidden="true">
 							<line class="chart__base" x1="0" y1={CHART_HEIGHT} x2={CHART_WIDTH} y2={CHART_HEIGHT} />
-							{#if cpu}<path class="chart__area" d={cpu.area} /><path class="chart__line" d={cpu.line} />{/if}
+							{#each cpu.runs as run, i (i)}
+								<g transform="translate({run.x} 0)"><path class="chart__area" d={run.area} /><path class="chart__line" d={run.line} /></g>
+							{/each}
 						</svg>
-						<span class="caption">{m.pj_mon_since_open()}{#if c.limits.cpu}&nbsp;· {m.pj_cpu_limit({ cpu: c.limits.cpu })}{/if}</span>
+						<span class="caption">{cpu.fromHistory ? shownRange.over() : m.pj_mon_since_open()}{#if c.limits.cpu}&nbsp;· {m.pj_cpu_limit({ cpu: c.limits.cpu })}{/if}</span>
 					</article>
 					<article class="card chart">
 						<div class="chart__head">
@@ -175,9 +283,11 @@
 						</div>
 						<svg class="chart__svg" viewBox="0 0 {CHART_WIDTH} {CHART_HEIGHT}" preserveAspectRatio="none" aria-hidden="true">
 							<line class="chart__base" x1="0" y1={CHART_HEIGHT} x2={CHART_WIDTH} y2={CHART_HEIGHT} />
-							{#if memory}<path class="chart__area" d={memory.area} /><path class="chart__line" d={memory.line} />{/if}
+							{#each memory.runs as run, i (i)}
+								<g transform="translate({run.x} 0)"><path class="chart__area" d={run.area} /><path class="chart__line" d={run.line} /></g>
+							{/each}
 						</svg>
-						<span class="caption">{m.pj_mon_since_open()} · {m.pj_mon_now_peak({ now: percent(c.stats.memory_percent), peak: percent(peak(h?.memory ?? []) ?? c.stats.memory_percent) })}</span>
+						<span class="caption">{memory.fromHistory ? shownRange.over() : m.pj_mon_since_open()} · {m.pj_mon_now_peak({ now: percent(c.stats.memory_percent), peak: percent(memory.peak ?? c.stats.memory_percent) })}</span>
 					</article>
 				</div>
 			{:else}
@@ -263,13 +373,61 @@
 		font-size: 1rem;
 		font-weight: 600;
 	}
-	.later {
-		margin: 12px 0 0;
-		padding: 10px 14px;
-		border: 1px dashed var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-medium);
+	.traffic {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		margin-top: 20px;
+	}
+	.traffic__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px 12px;
+	}
+	.traffic__title {
+		margin: 0;
+	}
+	.tiles {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 12px;
+	}
+	@media (max-width: 760px) {
+		.tiles {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	.tile {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+		padding: 14px 16px 12px;
+	}
+	.tile__value {
+		color: var(--md-sys-color-on-surface);
+		font-size: 1.5rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+	.tile__value--none {
 		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
+		font-size: 0.9375rem;
+		font-weight: 500;
+		line-height: 2.25rem;
+	}
+	.tile__delta--better {
+		color: var(--md-sys-color-primary);
+	}
+	.tile__delta--worse {
+		color: var(--md-sys-color-error);
+	}
+	.tile__svg {
+		width: 100%;
+		height: 40px;
+		margin-top: 6px;
 	}
 	.charts {
 		display: grid;

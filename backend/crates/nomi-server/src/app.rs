@@ -371,6 +371,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
         .route("/api/projects/:id/deploy/logs", get(crate::routes::deploy::runtime_logs))
         .route("/api/projects/:id/deploy/usage", get(crate::routes::deploy::usage))
+        .route("/api/projects/:id/deploy/metrics", get(crate::routes::deploy::metrics))
         .route("/api/projects/:id/deploy/events", get(crate::routes::deploy::events))
         .route("/api/projects/:id/deploy/environments/:env", delete(crate::routes::deploy::take_offline))
         .route(

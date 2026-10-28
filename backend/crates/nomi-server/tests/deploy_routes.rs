@@ -562,6 +562,48 @@ async fn the_first_publish_of_a_project_with_its_own_backend_makes_the_productio
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn metrics_come_from_shipyard_for_the_asked_range(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-metrics/envs/production/metrics$"))
+        .and(wiremock::matchers::query_param("range", "1h"))
+        .and(wiremock::matchers::query_param("step", "1m"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": {
+                "range": "1h", "step": "1m",
+                "buckets": [{ "at": "2026-10-28T10:00:00Z", "visitors": 2, "requests": 9, "errors_5xx": 0, "errors_4xx": 1, "p50_ms": 12, "p95_ms": null, "containers": [] }],
+                "totals": { "visitors": 2, "requests": 9, "errors_5xx": 0, "errors_4xx": 1, "p50_ms": 12, "p95_ms": null },
+                "previous_totals": { "visitors": null, "requests": null, "errors_5xx": null, "errors_4xx": null, "p50_ms": null, "p95_ms": null }
+            },
+            "error": null
+        })))
+        .expect(1)
+        .mount(&shipyard)
+        .await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "metrics@deploy.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let metrics = format!("/api/projects/{project_id}/deploy/metrics");
+
+    // Not published yet: nothing to measure.
+    let (status, _) = request(router.clone(), "GET", &format!("{metrics}?range=1h"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-metrics' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router.clone(), "GET", &format!("{metrics}?range=1h"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["totals"]["requests"], json!(9));
+    assert!(body["totals"]["p95_ms"].is_null(), "unmeasured stays null");
+
+    let (status, _) = request(router.clone(), "GET", &format!("{metrics}?range=30d"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let stranger = register(router.clone(), "stranger@deploy.test").await;
+    let (status, _) = request(router, "GET", &format!("{metrics}?range=1h"), Some(&stranger), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn runtime_logs_come_back_as_text_lines_whatever_shape_shipyard_sends(pool: PgPool) {
     let shipyard = MockServer::start().await;
     mount_shipyard(&shipyard).await;
