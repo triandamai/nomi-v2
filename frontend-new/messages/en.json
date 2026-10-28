@@ -26,5 +26,17 @@
 	"shell_nav_drawer": "Navigation",
 	"workspace_view": "View",
 	"workspace_chat": "Chat",
-	"workspace_preview": "Preview"
+	"workspace_preview": "Preview",
+	"plan_title": "Plan",
+	"plan_progress": "{done} of {total} done",
+	"plan_note": "Each step goes to the crew member who owns it",
+	"plan_stop": "Stop plan",
+	"draft_title": "Draft plan",
+	"draft_tag": "Draft",
+	"draft_add_step": "Add a step",
+	"draft_discard": "Discard",
+	"draft_changes": "Ask for changes",
+	"draft_run": "Run plan",
+	"draft_move": "Move step {index}",
+	"draft_remove": "Remove step {index}"
 }
