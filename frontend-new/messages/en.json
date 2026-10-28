@@ -1,5 +1,12 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"app_name": "Nomi",
-	"app_in_progress": "The new Nomi is on its way."
+	"app_in_progress": "The new Nomi is on its way.",
+	"composer_field": "Message",
+	"composer_attach": "Attach a file",
+	"composer_record": "Record a voice note",
+	"composer_send": "Send",
+	"composer_hint_send": "send",
+	"composer_hint_newline": "new line",
+	"composer_hint_mention": "address crew"
 }

@@ -1,5 +1,12 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"app_name": "Nomi",
-	"app_in_progress": "Nomi yang baru sedang disiapkan."
+	"app_in_progress": "Nomi yang baru sedang disiapkan.",
+	"composer_field": "Pesan",
+	"composer_attach": "Lampirkan file",
+	"composer_record": "Rekam pesan suara",
+	"composer_send": "Kirim",
+	"composer_hint_send": "kirim",
+	"composer_hint_newline": "baris baru",
+	"composer_hint_mention": "panggil kru"
 }
