@@ -27,6 +27,10 @@
 	const publishes = $derived((overview?.publishes ?? []).filter((p) => p.environment === environment));
 	const live = $derived(publishes.find((p) => p.is_live) ?? null);
 	const canPublish = $derived(Boolean(overview?.available) && role === 'admin');
+	// The app's own production backend, set up before its first publish (only production has one).
+	const setup = $derived(environment === 'production' ? (overview?.backend_setup ?? null) : null);
+	const setupFailed = $derived(setup?.state === 'failed');
+	const atStep = $derived(setup?.step ? m.pj_backend_at_step({ step: setup.step }) : '');
 
 	let openId = $state<string | null>(null);
 	const opened = $derived(openId ? (overview?.publishes.find((p) => p.id === openId) ?? null) : null);
@@ -70,6 +74,19 @@
 		</div>
 	{/if}
 
+	{#if setup}
+		<section class="setup" class:setup--failed={setupFailed} role="status">
+			{#if setupFailed}
+				<p class="setup__text">
+					{setup.error ? m.pj_backend_failed({ step: atStep, error: setup.error }) : m.pj_backend_failed_plain({ step: atStep })}
+				</p>
+			{:else}
+				<p class="setup__text">{m.pj_backend_setting_up()}</p>
+				{#if setup.step}<p class="setup__step">{m.pj_backend_step({ step: setup.step })}</p>{/if}
+			{/if}
+		</section>
+	{/if}
+
 	<section class="live">
 		{#if live}
 			<div class="live__text">
@@ -83,8 +100,8 @@
 		{:else}
 			<p class="live__empty">{m.pj_dep_nothing_live({ env: environmentName(environment) })}</p>
 			{#if canPublish}
-				<Button variant="filled" size="m" disabled={deploy.busy || deploy.running} onclick={() => deploy.publish()}>
-					<IconRocket size={18} />{deploy.running ? m.pj_publishing() : m.pj_publish()}
+				<Button variant="filled" size="m" disabled={deploy.busy || deploy.running || deploy.preparing} onclick={() => deploy.publish()}>
+					<IconRocket size={18} />{deploy.running ? m.pj_publishing() : deploy.preparing ? m.pj_preparing() : m.pj_publish()}
 				</Button>
 			{/if}
 		{/if}
@@ -124,6 +141,34 @@
 </Dialog>
 
 <style>
+	.setup {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px 12px;
+		margin: 0 0 12px;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		font-size: 0.875rem;
+	}
+	.setup--failed {
+		background: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-on-error-container);
+	}
+	.setup__text {
+		flex: 1 1 220px;
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+	.setup__step {
+		flex-basis: 100%;
+		margin: 0;
+		font-weight: 600;
+		overflow-wrap: anywhere;
+	}
 	.muted {
 		margin: 8px 0;
 		color: var(--md-sys-color-on-surface-variant);

@@ -851,6 +851,8 @@ export interface DeployOverview {
 	publishes: ProjectPublish[];
 	/** What runs in production now; null when nothing does. */
 	live: { environment: string; services: ShipyardService[]; last_publish: unknown } | null;
+	/** The app's own production backend while it's set up before the first publish, or when that failed. */
+	backend_setup: RelaySetup | null;
 }
 
 export interface PublishDetail extends ProjectPublish {

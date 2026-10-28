@@ -607,8 +607,8 @@
 			</button>
 		{/if}
 		{#if deploy?.overview?.available && deploy.isAdmin}
-			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
-				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : m.pj_publish()}</span>
+			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running || deploy.preparing} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
+				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : deploy.preparing ? m.pj_preparing() : m.pj_publish()}</span>
 			</Button>
 		{/if}
 	</header>

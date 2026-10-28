@@ -176,6 +176,24 @@ pub struct DeployOverview {
     pub publishes: Vec<PublishRow>,
     /// What runs in production right now, from Shipyard; null when nothing does.
     pub live: Option<Value>,
+    /// The app's own production backend while it's being set up before its first publish (or
+    /// when that failed); null otherwise. The publish follows by itself once it's ready.
+    pub backend_setup: Option<BackendSetup>,
+}
+
+#[derive(Serialize)]
+pub struct BackendSetup {
+    pub state: String,
+    pub step: Option<String>,
+    pub error: Option<String>,
+}
+
+/// The production backend of a project with a Relay of its own, when it isn't ready yet.
+async fn backend_setup(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Option<BackendSetup>, ApiError> {
+    let stack = crate::project_relays::stack(pool, project_id, DEFAULT_ENV).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(stack
+        .filter(|s| s.state != crate::project_relays::READY)
+        .map(|s| BackendSetup { state: s.state, step: s.step, error: s.error }))
 }
 
 /// The project's files, as Shipyard gets them (without excluded paths).
@@ -249,6 +267,7 @@ pub async fn overview(
         url,
         publishes,
         live,
+        backend_setup: backend_setup(&state.pool, project_id).await?,
     }))
 }
 
