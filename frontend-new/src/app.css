@@ -1,1 +1,147 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import './lib/ds/tokens/tokens.css';
+
+/*
+ * Only the design system exists. Tailwind's own palette, fonts, sizes, radii and shadows are
+ * switched off and replaced by the tokens in tokens.css, so `bg-surface`, `text-text-2`,
+ * `border-border-strong`, `text-ui`, `rounded-sm` and `shadow-float` are all there is. `inline`
+ * keeps each utility pointing at the token, so a [data-theme] subtree re-themes it.
+ */
+@theme inline {
+	--color-*: initial;
+	--color-bg: var(--nm-bg);
+	--color-surface: var(--nm-surface);
+	--color-surface-2: var(--nm-surface-2);
+	--color-border: var(--nm-border);
+	--color-border-strong: var(--nm-border-strong);
+	--color-text: var(--nm-text);
+	--color-text-2: var(--nm-text-2);
+	--color-text-3: var(--nm-text-3);
+	--color-accent: var(--nm-accent);
+	--color-accent-ink: var(--nm-accent-ink);
+	--color-danger: var(--nm-danger);
+	--color-danger-bg: var(--nm-danger-bg);
+	--color-danger-border: var(--nm-danger-border);
+	--color-focus: var(--nm-focus);
+	--color-overlay: var(--nm-overlay);
+	--color-shadow: var(--nm-shadow);
+	--color-warning: var(--nm-warning);
+	--color-warning-bg: var(--nm-warning-bg);
+	--color-accent-bg: var(--nm-accent-bg);
+	--color-heat-1: var(--nm-heat-1);
+	--color-heat-2: var(--nm-heat-2);
+	--color-heat-3: var(--nm-heat-3);
+	--color-heat-4: var(--nm-heat-4);
+	--color-crew-nomi: var(--crew-nomi);
+	--color-crew-nomi-bg: var(--crew-nomi-bg);
+	--color-crew-nomi-ink: var(--crew-nomi-ink);
+	--color-crew-koda: var(--crew-koda);
+	--color-crew-koda-bg: var(--crew-koda-bg);
+	--color-crew-koda-ink: var(--crew-koda-ink);
+	--color-crew-dana: var(--crew-dana);
+	--color-crew-dana-bg: var(--crew-dana-bg);
+	--color-crew-dana-ink: var(--crew-dana-ink);
+	--color-crew-kala: var(--crew-kala);
+	--color-crew-kala-bg: var(--crew-kala-bg);
+	--color-crew-kala-ink: var(--crew-kala-ink);
+	--color-crew-rena: var(--crew-rena);
+	--color-crew-rena-bg: var(--crew-rena-bg);
+	--color-crew-rena-ink: var(--crew-rena-ink);
+	--color-crew-tara: var(--crew-tara);
+	--color-crew-tara-bg: var(--crew-tara-bg);
+	--color-crew-tara-ink: var(--crew-tara-ink);
+	--color-crew-maya: var(--crew-maya);
+	--color-crew-maya-bg: var(--crew-maya-bg);
+	--color-crew-maya-ink: var(--crew-maya-ink);
+	--color-crew-raga: var(--crew-raga);
+	--color-crew-raga-bg: var(--crew-raga-bg);
+	--color-crew-raga-ink: var(--crew-raga-ink);
+	--color-crew-personality: var(--crew-personality);
+	--color-crew-personality-bg: var(--crew-personality-bg);
+	--color-crew-personality-ink: var(--crew-personality-ink);
+	--color-crew-supervisor: var(--crew-supervisor);
+	--color-crew-supervisor-bg: var(--crew-supervisor-bg);
+	--color-crew-supervisor-ink: var(--crew-supervisor-ink);
+	--color-bg-clear: var(--nm-bg-clear);
+	--color-code-keyword: var(--nm-code-keyword);
+	--color-code-string: var(--nm-code-string);
+	--color-code-fn: var(--nm-code-fn);
+	--color-code-number: var(--nm-code-number);
+	--color-code-type: var(--nm-code-type);
+	--color-diff-add: var(--nm-diff-add);
+	--color-diff-del: var(--nm-diff-del);
+	--color-kb-bg: var(--nm-kb-bg);
+	--color-kb-key: var(--nm-kb-key);
+	--color-kb-key-alt: var(--nm-kb-key-alt);
+	--color-peer-1: var(--nm-peer-1);
+	--color-peer-1-bg: var(--nm-peer-1-bg);
+	--color-peer-2: var(--nm-peer-2);
+	--color-peer-2-bg: var(--nm-peer-2-bg);
+
+	--font-*: initial;
+	--font-sans: var(--nm-sans);
+	--font-mono: var(--nm-mono);
+
+	--text-*: initial;
+	--text-display: var(--nm-size-display);
+	--text-display--line-height: 1.2;
+	--text-display--letter-spacing: -0.4px;
+	--text-body: var(--nm-size-body);
+	--text-body--line-height: 1.6;
+	--text-ui: var(--nm-size-ui);
+	--text-ui--line-height: 1.45;
+	--text-caption: var(--nm-size-caption);
+	--text-caption--line-height: 1.45;
+	--text-label: var(--nm-size-label);
+	--text-label--line-height: 1.35;
+
+	--tracking-*: initial;
+	--tracking-display: -0.4px;
+	--tracking-label: 0.6px;
+
+	--radius-*: initial;
+	--radius-sm: var(--nm-radius-sm);
+	--radius-md: var(--nm-radius-md);
+
+	/* Borders over shadows: one shadow, for things that truly float (menus, toasts, dialogs). */
+	--shadow-*: initial;
+	--shadow-float: 0 8px 24px var(--nm-shadow);
+	--inset-shadow-*: initial;
+	--drop-shadow-*: initial;
+	--text-shadow-*: initial;
+}
+
+@layer base {
+	html {
+		background: var(--nm-bg);
+	}
+
+	/* A [data-theme] subtree takes its own text colour, like the page does. */
+	:root,
+	[data-theme] {
+		color: var(--nm-text);
+	}
+
+	body {
+		margin: 0;
+		background: var(--nm-bg);
+		font-family: var(--nm-sans);
+		font-size: var(--nm-size-ui);
+		line-height: 1.45;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	*,
+	::before,
+	::after {
+		border-color: var(--nm-border);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--nm-focus);
+		outline-offset: 2px;
+	}
+}

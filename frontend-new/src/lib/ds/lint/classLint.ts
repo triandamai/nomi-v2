@@ -1,0 +1,50 @@
+// Checks a component's classes against the design system's rules (see CLAUDE.md, "Don't").
+// It reads markup only: static class attributes, string literals in class expressions and
+// class: directives. Script and style blocks are skipped.
+
+const HEX = /#[0-9a-fA-F]{3,8}\b/;
+const ALLOWED_SHADOWS = new Set(['shadow-float', 'shadow-none']);
+
+function markup(source: string): string {
+	return source.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '');
+}
+
+function literals(expression: string): string[] {
+	return [...expression.matchAll(/'([^']*)'|"([^"]*)"|`([^`$]*)`/g)].map((match) => match[1] ?? match[2] ?? match[3] ?? '');
+}
+
+/** The class names a component's markup uses. */
+export function classNames(source: string): string[] {
+	const html = markup(source);
+	const names: string[] = [];
+	for (const match of html.matchAll(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{[^{}]*\})*)\})/g)) {
+		const quoted = match[1] ?? match[2];
+		if (quoted !== undefined) {
+			// Static text plus any string literals inside {…} interpolations.
+			const expressions = [...quoted.matchAll(/\{([^}]*)\}/g)].flatMap((inner) => literals(inner[1]));
+			names.push(...quoted.replace(/\{[^}]*\}/g, ' ').split(/\s+/), ...expressions.flatMap((text) => text.split(/\s+/)));
+		} else {
+			names.push(...literals(match[3]).flatMap((text) => text.split(/\s+/)));
+		}
+	}
+	for (const match of html.matchAll(/\bclass:([^\s=>/]+)/g)) names.push(match[1]);
+	return [...new Set(names.filter((name) => name && !/[{}'"`$]/.test(name)))];
+}
+
+/** Everything in `source` that breaks the design system's class rules, as readable lines. */
+export function findClassProblems(source: string, isKnown: (name: string) => boolean): string[] {
+	const problems: string[] = [];
+	for (const name of classNames(source)) {
+		const utility = name.split(':').pop() ?? name;
+		if (HEX.test(name)) problems.push(`raw colour: ${name}`);
+		else if (name.startsWith('dark:') || name.includes(':dark:')) problems.push(`dark: variant: ${name}`);
+		else if (/^-?(inset-)?shadow-/.test(utility) && !ALLOWED_SHADOWS.has(utility)) problems.push(`shadow on a flat element: ${name}`);
+		else if (name.includes('[')) problems.push(`arbitrary value: ${name}`);
+		else if (!isKnown(name)) problems.push(`unknown class: ${name}`);
+	}
+	for (const match of markup(source).matchAll(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+		const hex = (match[1] ?? match[2]).match(HEX);
+		if (hex) problems.push(`raw colour in style: ${hex[0]}`);
+	}
+	return problems;
+}
