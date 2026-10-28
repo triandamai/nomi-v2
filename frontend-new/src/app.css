@@ -100,6 +100,9 @@
 	--text-label: var(--nm-size-label);
 	--text-label--line-height: 1.35;
 
+	/* Code blocks and diffs: lines a little apart, so long ones stay readable. */
+	--leading-code: 1.7;
+
 	--tracking-*: initial;
 	--tracking-display: -0.4px;
 	--tracking-label: 0.6px;

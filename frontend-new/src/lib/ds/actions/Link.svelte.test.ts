@@ -14,6 +14,15 @@ describe('Link', () => {
 		expect(link.querySelector('svg.lucide-arrow-up-right')?.getAttribute('width')).toBe('14');
 	});
 
+	it('steps back in a card footer: quiet, regular weight, still with its arrow', async () => {
+		await render(Link, { href: 'https://docs.google.com', label: 'Open in Sheets', quiet: true });
+		const link = page.getByRole('link', { name: 'Open in Sheets' }).element();
+		const style = getComputedStyle(link);
+		expect(style.fontWeight).toBe('400');
+		expect(style.color).toBe(tokenColor('nm-text-2'));
+		expect(link.querySelector('svg.lucide-arrow-up-right')).not.toBeNull();
+	});
+
 	it('sits inside a sentence underlined, so it is not told apart by colour alone', async () => {
 		await render(Link, { href: '/settings/credits', label: 'switch to Nomi credits', variant: 'inline' });
 		const link = page.getByRole('link', { name: 'switch to Nomi credits' }).element();
