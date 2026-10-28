@@ -250,6 +250,25 @@ pub async fn is_backend_event(pool: &PgPool, project_id: Uuid, event: &Event) ->
     if matches!(event.service.as_deref(), Some("relay" | "postgrest" | "functions")) {
         return Ok(true);
     }
+    if matches!(event.service.as_deref(), Some("web")) {
+        return Ok(false);
+    }
+    if event
+        .data
+        .get("deployments")
+        .and_then(Value::as_array)
+        .is_some_and(|deployments| deployments.iter().any(|d| d.get("service").and_then(Value::as_str) == Some("relay")))
+    {
+        return Ok(true);
+    }
+    if event
+        .data
+        .get("deployments")
+        .and_then(Value::as_array)
+        .is_some_and(|deployments| deployments.iter().any(|d| d.get("service").and_then(Value::as_str) == Some("web")))
+    {
+        return Ok(false);
+    }
     if event
         .data
         .get("services")
@@ -257,6 +276,14 @@ pub async fn is_backend_event(pool: &PgPool, project_id: Uuid, event: &Event) ->
         .is_some_and(|services| services.iter().any(|s| s.as_str() == Some("relay")))
     {
         return Ok(true);
+    }
+    if event
+        .data
+        .get("services")
+        .and_then(Value::as_array)
+        .is_some_and(|services| services.iter().any(|s| s.as_str() == Some("web")))
+    {
+        return Ok(false);
     }
     let env = event.environment.as_deref().unwrap_or(crate::relay_backend::DEV);
     if let Some(publish_id) = event.data.get("publish_id").and_then(Value::as_str) {
