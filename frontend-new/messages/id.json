@@ -8,5 +8,7 @@
 	"composer_send": "Kirim",
 	"composer_hint_send": "kirim",
 	"composer_hint_newline": "baris baru",
-	"composer_hint_mention": "panggil kru"
+	"composer_hint_mention": "panggil kru",
+	"toast_dismiss": "Tutup",
+	"toast_region": "Notifikasi"
 }

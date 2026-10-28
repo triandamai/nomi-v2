@@ -8,5 +8,7 @@
 	"composer_send": "Send",
 	"composer_hint_send": "send",
 	"composer_hint_newline": "new line",
-	"composer_hint_mention": "address crew"
+	"composer_hint_mention": "address crew",
+	"toast_dismiss": "Dismiss",
+	"toast_region": "Notifications"
 }
