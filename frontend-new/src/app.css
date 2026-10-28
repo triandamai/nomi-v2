@@ -103,6 +103,8 @@
 	--tracking-*: initial;
 	--tracking-display: -0.4px;
 	--tracking-label: 0.6px;
+	/* The nomi wordmark in the sidebar. */
+	--tracking-wordmark: -0.2px;
 
 	--radius-*: initial;
 	--radius-sm: var(--nm-radius-sm);
