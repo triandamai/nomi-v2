@@ -9,8 +9,22 @@ function markup(source: string): string {
 	return source.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '');
 }
 
+/** String literals in an expression, except those it only compares against (`variant === 'ghost'`). */
 function literals(expression: string): string[] {
-	return [...expression.matchAll(/'([^']*)'|"([^"]*)"|`([^`$]*)`/g)].map((match) => match[1] ?? match[2] ?? match[3] ?? '');
+	const found: string[] = [];
+	for (const match of expression.matchAll(/'([^']*)'|"([^"]*)"|`([^`$]*)`/g)) {
+		const before = expression.slice(0, match.index).trimEnd();
+		const after = expression.slice(match.index + match[0].length).trimStart();
+		if (/[=!]==?$/.test(before) || /^[=!]==?/.test(after)) continue;
+		found.push(match[1] ?? match[2] ?? match[3] ?? '');
+	}
+	return found;
+}
+
+/** Classes the component styles itself, in its own <style> block. */
+function scopedClasses(source: string): Set<string> {
+	const styles = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((match) => match[1]).join('\n');
+	return new Set([...styles.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((match) => match[1]));
 }
 
 /** The class names a component's markup uses. */
@@ -34,7 +48,9 @@ export function classNames(source: string): string[] {
 /** Everything in `source` that breaks the design system's class rules, as readable lines. */
 export function findClassProblems(source: string, isKnown: (name: string) => boolean): string[] {
 	const problems: string[] = [];
+	const scoped = scopedClasses(source);
 	for (const name of classNames(source)) {
+		if (scoped.has(name)) continue;
 		const utility = name.split(':').pop() ?? name;
 		if (HEX.test(name)) problems.push(`raw colour: ${name}`);
 		else if (name.startsWith('dark:') || name.includes(':dark:')) problems.push(`dark: variant: ${name}`);

@@ -1,0 +1,29 @@
+<script lang="ts">
+	import { ArrowUpRight } from '@lucide/svelte';
+	import Icon from '../foundations/Icon.svelte';
+
+	// Design System / Nomi → Actions. A link on its own line ("Upgrade to Pro ↗"), or one inside a
+	// sentence ("…or switch to Nomi credits"), underlined so it isn't told apart by colour alone.
+	type Props = {
+		href: string;
+		label: string;
+		variant?: 'standalone' | 'inline';
+		/** Another site: opens in a new tab, without access to this page. */
+		external?: boolean;
+	};
+	let { href, label, variant = 'standalone', external = false }: Props = $props();
+</script>
+
+<a
+	{href}
+	target={external ? '_blank' : undefined}
+	rel={external ? 'noopener noreferrer' : undefined}
+	class={[
+		'rounded-xs outline-offset-2',
+		variant === 'standalone' && 'inline-flex items-center gap-1 text-ui font-medium text-text hover:underline hover:decoration-border-strong hover:underline-offset-2',
+		variant === 'inline' && 'text-text-2 underline decoration-border-strong underline-offset-2 hover:text-text hover:decoration-text-3',
+	]}
+>
+	{label}
+	{#if variant === 'standalone'}<span class="inline-flex text-text-2"><Icon icon={ArrowUpRight} size={14} /></span>{/if}
+</a>
