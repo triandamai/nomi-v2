@@ -47,7 +47,35 @@ pub async fn get(State(state): State<AppState>, AuthClaims(claims): AuthClaims, 
         Err(ShipyardError::NotFound(_)) => Value::Null,
         Err(e) => return Err(shipyard_error(e)),
     };
-    Ok(Json(ProjectDomain { hostname: text(&domain, "hostname"), subdomain: text(&domain, "subdomain"), url: text(&domain, "url"), can_edit }))
+    let mut hostname = text(&domain, "hostname");
+    let mut subdomain = text(&domain, "subdomain");
+    let mut url = text(&domain, "url");
+    if subdomain.as_deref().is_some_and(|s| s.ends_with(nomi_shipyard::manifest::BACKEND_SUFFIX)) {
+        hostname = None;
+        subdomain = None;
+        url = None;
+        if let Ok(env_data) = client(&state)?.get_env(&target.org_key(), app, ENV).await {
+            if let Some(web_url) = env_data
+                .get("services")
+                .and_then(Value::as_array)
+                .and_then(|services| {
+                    services.iter().find(|s| s.get("name").and_then(Value::as_str) == Some("web")).and_then(|s| {
+                        s.get("urls").and_then(Value::as_array).and_then(|u| u.first()).and_then(Value::as_str)
+                    })
+                })
+            {
+                if let Ok(parsed) = reqwest::Url::parse(web_url) {
+                    if let Some(host) = parsed.host_str() {
+                        let sub = host.split('.').next().unwrap_or(host);
+                        hostname = Some(host.to_string());
+                        subdomain = Some(sub.to_string());
+                        url = Some(web_url.to_string());
+                    }
+                }
+            }
+        }
+    }
+    Ok(Json(ProjectDomain { hostname, subdomain, url, can_edit }))
 }
 
 #[derive(Deserialize)]

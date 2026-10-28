@@ -149,6 +149,9 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
             "env": env,
             "volumes": volumes,
         }],
+        "domain": {
+            "service": "web",
+        },
     });
     if database == Database::Postgres {
         manifest["database"] = json!({ "engine": "postgres" });
@@ -203,16 +206,20 @@ pub fn relay_backend(project_id: &str, env: &str, has_functions: bool, version: 
     })
 }
 
-/// [`relay_backend`] inside `app` on Shipyard: in `production` (where the `web` service also
-/// lives and takes `app`'s main domain), `relay` gets `<app>-backend` as its own subdomain.
+/// [`relay_backend`] inside `app` on Shipyard: Relay gets its own `-backend` subdomain
+/// (`<app>-backend` in production, `<app>-backend-<env>` in development) so it never collides
+/// with the `web` service's domain (`<app>` in production, `<app>-<env>` in dev).
 pub fn relay_backend_for_app(app: &str, project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
     let mut manifest = relay_backend(project_id, env, has_functions, version);
-    if env == "production" {
-        manifest["domain"] = json!({
-            "subdomain": format!("{app}{BACKEND_SUFFIX}"),
-            "service": "relay",
-        });
-    }
+    let subdomain = if env == "production" {
+        format!("{app}{BACKEND_SUFFIX}")
+    } else {
+        format!("{app}{BACKEND_SUFFIX}-{env}")
+    };
+    manifest["domain"] = json!({
+        "subdomain": subdomain,
+        "service": "relay",
+    });
     manifest
 }
 
@@ -399,11 +406,12 @@ mod tests {
     #[test]
     fn backend_inside_app_claims_backend_subdomain_in_production_and_binds_public_nomi_vars() {
         let dev = relay_backend_for_app("todo-1234", "p", "dev", false, "0.1.5");
-        assert!(dev.get("domain").is_none());
+        assert_eq!(dev["domain"], json!({ "subdomain": "todo-1234-backend-dev", "service": "relay" }));
         let prod = relay_backend_for_app("todo-1234", "p", "production", false, "0.1.5");
         assert_eq!(prod["domain"], json!({ "subdomain": "todo-1234-backend", "service": "relay" }));
 
         let manifest = build(Database::None, &["NOMI_URL".into(), "NOMI_ANON_KEY".into(), "NOMI_SERVICE_KEY".into()]);
+        assert_eq!(manifest["domain"], json!({ "service": "web" }));
         let env = &manifest["services"][0]["env"];
         assert_eq!(env["NOMI_URL"], json!({ "secret": "NOMI_URL" }));
         assert_eq!(env["PUBLIC_NOMI_URL"], json!({ "secret": "NOMI_URL" }));
