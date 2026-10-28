@@ -203,6 +203,19 @@ pub fn relay_backend(project_id: &str, env: &str, has_functions: bool, version: 
     })
 }
 
+/// [`relay_backend`] inside `app` on Shipyard: in `production` (where the `web` service also
+/// lives and takes `app`'s main domain), `relay` gets `<app>-backend` as its own subdomain.
+pub fn relay_backend_for_app(app: &str, project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
+    let mut manifest = relay_backend(project_id, env, has_functions, version);
+    if env == "production" {
+        manifest["domain"] = json!({
+            "subdomain": format!("{app}{BACKEND_SUFFIX}"),
+            "service": "relay",
+        });
+    }
+    manifest
+}
+
 /// The source of a backend: one Dockerfile per service, each only naming its image, so building
 /// them just pulls the image.
 pub fn backend_source(images: &Images, has_functions: bool) -> Result<Vec<u8>, String> {
@@ -245,6 +258,11 @@ pub fn bind_secrets(manifest: &mut Value, secret_names: &[String]) {
     };
     for name in secret_names {
         env.entry(name.clone()).or_insert_with(|| json!({ "secret": name }));
+        if name == "NOMI_URL" {
+            env.entry("PUBLIC_NOMI_URL".to_string()).or_insert_with(|| json!({ "secret": "NOMI_URL" }));
+        } else if name == "NOMI_ANON_KEY" {
+            env.entry("PUBLIC_NOMI_KEY".to_string()).or_insert_with(|| json!({ "secret": "NOMI_ANON_KEY" }));
+        }
     }
 }
 
@@ -376,5 +394,21 @@ mod tests {
         let secrets = |env: &str| relay_backend("p", env, false, "1")["services"][0]["env"]["RELAY_ENCRYPTION_KEY"].clone();
         assert_eq!(secrets("production"), json!({ "secret": "RELAY_ENCRYPTION_KEY" }));
         assert_eq!(secrets("dev"), json!({ "secret": "DEV_RELAY_ENCRYPTION_KEY" }));
+    }
+
+    #[test]
+    fn backend_inside_app_claims_backend_subdomain_in_production_and_binds_public_nomi_vars() {
+        let dev = relay_backend_for_app("todo-1234", "p", "dev", false, "0.1.5");
+        assert!(dev.get("domain").is_none());
+        let prod = relay_backend_for_app("todo-1234", "p", "production", false, "0.1.5");
+        assert_eq!(prod["domain"], json!({ "subdomain": "todo-1234-backend", "service": "relay" }));
+
+        let manifest = build(Database::None, &["NOMI_URL".into(), "NOMI_ANON_KEY".into(), "NOMI_SERVICE_KEY".into()]);
+        let env = &manifest["services"][0]["env"];
+        assert_eq!(env["NOMI_URL"], json!({ "secret": "NOMI_URL" }));
+        assert_eq!(env["PUBLIC_NOMI_URL"], json!({ "secret": "NOMI_URL" }));
+        assert_eq!(env["NOMI_ANON_KEY"], json!({ "secret": "NOMI_ANON_KEY" }));
+        assert_eq!(env["PUBLIC_NOMI_KEY"], json!({ "secret": "NOMI_ANON_KEY" }));
+        assert_eq!(env["NOMI_SERVICE_KEY"], json!({ "secret": "NOMI_SERVICE_KEY" }));
     }
 }

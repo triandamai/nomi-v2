@@ -51,11 +51,11 @@ async fn shipyard(relay_url: &str, outcome: Value) -> MockServer {
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+$")).respond_with(envelope(json!({}))).mount(&server).await;
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(envelope(json!({ "ref": "sec" }))).mount(&server).await;
     Mock::given(method("POST"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/(dev|production)/publish$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/(dev|production)/publish$"))
         .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "data": { "publish_id": "p1", "status": "running", "url": relay_url, "warnings": [] }, "error": null })))
         .mount(&server)
         .await;
-    Mock::given(method("GET")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/(dev|production)/publishes/p1$")).respond_with(envelope(outcome)).mount(&server).await;
+    Mock::given(method("GET")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/(dev|production)/publishes/p1$")).respond_with(envelope(outcome)).mount(&server).await;
     server
 }
 
@@ -182,7 +182,7 @@ async fn ready_backend(pool: &PgPool, env: &str, idle_hours: i64, url: &str) -> 
 async fn scale_mock(replicas: u32, times: u64) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/todo-[0-9a-f]{8}-backend/envs/dev/scale$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-[0-9a-f]{8}/envs/dev/scale$"))
         .and(wiremock::matchers::body_json(json!({ "replicas": replicas })))
         .respond_with(envelope(json!({ "replicas": replicas })))
         .expect(times)
@@ -400,19 +400,19 @@ async fn a_publish_that_404s_while_the_environment_is_created_and_settings_that_
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+$")).respond_with(envelope(json!({}))).mount(&shipyard).await;
     Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(envelope(json!({ "ref": "sec" }))).mount(&shipyard).await;
     Mock::given(method("POST"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publish$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/dev/publish$"))
         .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "data": { "publish_id": "p1", "status": "running", "url": null, "warnings": [] }, "error": null })))
         .mount(&shipyard)
         .await;
     // First poll gets 404 while Shipyard is still creating the dev environment; next poll succeeds.
     Mock::given(method("GET"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publishes/p1$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/dev/publishes/p1$"))
         .respond_with(ResponseTemplate::new(404).set_body_json(json!({ "data": null, "error": { "code": "NOT_FOUND", "message": "environment dev not found" } })))
         .up_to_n_times(1)
         .mount(&shipyard)
         .await;
     Mock::given(method("GET"))
-        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+-backend/envs/dev/publishes/p1$"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/dev/publishes/p1$"))
         .respond_with(envelope(json!({ "status": "succeeded", "urls": [relay.uri()] })))
         .mount(&shipyard)
         .await;
@@ -462,7 +462,7 @@ async fn a_shipyard_webhook_for_the_backend_app_finishes_a_backend_setup_and_syn
         "id": "evt-backend-1",
         "type": "publish.succeeded",
         "created_at": chrono::Utc::now(),
-        "app": "todo-hook-backend",
+        "app": "todo-hook",
         "environment": "dev",
         "data": { "publish_id": "p1", "urls": [relay.uri()], "error": null }
     }))

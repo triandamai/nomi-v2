@@ -135,7 +135,10 @@
 		d.listen();
 		// Rena puts a project on Relay after the page has loaded: show its Relay sheet then.
 		const stopBackend = d.onEvent((event) => {
-			if (isBackendEvent(event)) void invalidateAll();
+			if (isBackendEvent(event)) {
+				void invalidateAll();
+				void runtime?.refreshRelay();
+			}
 		});
 		const p = new ProjectPresence(id);
 		presence = p;

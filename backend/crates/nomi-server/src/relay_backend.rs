@@ -216,8 +216,6 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
         .ok_or_else(|| Failed { step: STEP_APP, message: "the project no longer exists".to_string() })?;
     let app = crate::shipyard::ensure_app(deps.pool, &client, &target).await.map_err(|e| Failed { step: STEP_APP, message: format!("{e:?}") })?;
     let org = target.org_key();
-    let backend = backend_app(&app);
-    client.put_app(&org, &backend, &format!("{} backend", target.name), false).await.map_err(fail(STEP_APP))?;
 
     at(deps, project_id, env, STEP_SECRETS).await?;
     if !project_relays::secrets_made(deps.pool, project_id, env).await.map_err(fail(STEP_SECRETS))? {
@@ -225,21 +223,21 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
             .await
             .map_err(fail(STEP_SECRETS))?
             .ok_or_else(|| Failed { step: STEP_SECRETS, message: "the backend's key is missing".to_string() })?;
-        client.set_secret(&org, &backend, &secret_name(SECRET_CONTROL_KEY, env), Some(&control_key), None).await.map_err(fail(STEP_SECRETS))?;
+        client.set_secret(&org, &app, &secret_name(SECRET_CONTROL_KEY, env), Some(&control_key), None).await.map_err(fail(STEP_SECRETS))?;
         // Made by Shipyard, once: Nomi never reads these back.
         for name in [SECRET_ENCRYPTION_KEY, SECRET_PGRST_PASSWORD, SECRET_FUNCTIONS_SECRET] {
-            client.generate_secret(&org, &backend, &secret_name(name, env), "hex32", None).await.map_err(fail(STEP_SECRETS))?;
+            client.generate_secret(&org, &app, &secret_name(name, env), "hex32", None).await.map_err(fail(STEP_SECRETS))?;
         }
         project_relays::mark_secrets_made(deps.pool, project_id, env).await.map_err(fail(STEP_SECRETS))?;
     }
 
     at(deps, project_id, env, STEP_DEPLOY).await?;
-    let manifest = manifest::relay_backend(&project_id.to_string(), env, has_functions, &images.version);
+    let manifest = manifest::relay_backend_for_app(&app, &project_id.to_string(), env, has_functions, &images.version);
     let source = manifest::backend_source(&images, has_functions).map_err(fail(STEP_DEPLOY))?;
-    let accepted = client.publish(&org, &backend, env, &manifest, Some(source)).await.map_err(fail(STEP_DEPLOY))?;
+    let accepted = client.publish(&org, &app, env, &manifest, Some(source)).await.map_err(fail(STEP_DEPLOY))?;
 
     at(deps, project_id, env, STEP_WAIT).await?;
-    let url = wait_for_publish(deps.pool, &client, project_id, &org, &backend, env, &accepted.publish_id, accepted.url.clone())
+    let url = wait_for_publish(deps.pool, &client, project_id, &org, &app, env, &accepted.publish_id, accepted.url.clone())
         .await
         .map_err(fail(STEP_WAIT))?;
     configure_deployed_relay(deps, &client, &target, &app, &org, project_id, env, &url).await
@@ -355,12 +353,34 @@ fn describe(e: &RelayError) -> String {
 
 /// Resolves an environment's URL on Shipyard when a publish response or event didn't carry `urls`.
 async fn resolve_env_url(client: &Shipyard<'_>, org: &str, app: &str, env: &str) -> Option<String> {
+    let env_data = client.get_env(org, app, env).await.ok();
+    if let Some(relay_url) = env_data
+        .as_ref()
+        .and_then(|d| d.get("services"))
+        .and_then(Value::as_array)
+        .and_then(|services| {
+            services
+                .iter()
+                .find(|s| s.get("name").and_then(Value::as_str) == Some("relay"))
+                .and_then(|s| {
+                    s.get("url").and_then(Value::as_str).or_else(|| {
+                        s.get("urls")
+                            .and_then(Value::as_array)
+                            .and_then(|u| u.first())
+                            .and_then(Value::as_str)
+                    })
+                })
+        })
+        .filter(|u| !u.is_empty())
+    {
+        return Some(relay_url.to_string());
+    }
     if let Ok(domain) = client.get_domain(org, app, env).await {
         if let Some(url) = domain.get("url").and_then(Value::as_str).filter(|u| !u.is_empty()) {
             return Some(url.to_string());
         }
     }
-    let env_data = client.get_env(org, app, env).await.ok()?;
+    let env_data = env_data?;
     env_data
         .get("url")
         .and_then(Value::as_str)
@@ -543,7 +563,7 @@ pub async fn finish_on_event(
             .clone()
             .ok_or_else(|| Failed { step: STEP_WAIT, message: "the project has no app on Shipyard".to_string() })?;
         let org = target.org_key();
-        let backend = backend_app(&app);
+        let event_app = event.app.as_deref().unwrap_or(&app);
         let url = stack
             .url
             .filter(|u| !u.is_empty())
@@ -559,7 +579,7 @@ pub async fn finish_on_event(
             });
         let url = match url {
             Some(url) => url,
-            None => resolve_env_url(&client, &org, &backend, env)
+            None => resolve_env_url(&client, &org, event_app, env)
                 .await
                 .ok_or_else(|| Failed { step: STEP_WAIT, message: "Shipyard gave the backend no address".to_string() })?,
         };
@@ -668,11 +688,11 @@ async fn send_project_files(pool: PgPool, http: reqwest::Client, shipyard: Shipy
     }
 }
 
-/// The org and backend app a project's Relay lives in on Shipyard.
+/// The org and app a project's Relay lives in on Shipyard.
 async fn backend_target(pool: &PgPool, project_id: Uuid) -> Result<(String, String), String> {
     let target = crate::shipyard::load_target(pool, project_id).await.map_err(|e| e.to_string())?.ok_or("the project no longer exists")?;
     let app = target.shipyard_app.clone().ok_or("the project has no app on Shipyard")?;
-    Ok((target.org_key(), backend_app(&app)))
+    Ok((target.org_key(), app))
 }
 
 /// Shuts down the development backends nobody has used for `idle_after`: every service scaled to
