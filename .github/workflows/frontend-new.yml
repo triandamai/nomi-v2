@@ -1,9 +1,9 @@
 name: Frontend (new)
 
 # The new SvelteKit frontend under frontend-new/ (rebuilt from the pen.dev design system): type
-# check, unit tests, component tests in a real Chromium, and a production build. Runs on pull
-# requests and merges to main only when frontend-new/ or this file changed, like the other
-# per-area workflows.
+# check, unit tests, component tests in a real Chromium, a production build, end-to-end smoke
+# tests and the Docker image build. Runs on pull requests and merges to main only when
+# frontend-new/ or this file changed, like the other per-area workflows.
 on:
   pull_request:
     paths:
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   frontend-new:
-    name: Frontend new (check + unit + component tests + build)
+    name: Frontend new (check + unit + component + e2e tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -74,3 +74,25 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The production server (server.js with the live-update relay) in a real browser, against a
+      # stub backend (e2e/stub-api.mjs).
+      - name: End-to-end smoke tests
+        run: npm run test:e2e
+
+  docker:
+    name: Frontend new (Docker image builds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Built, not pushed: publishing comes with the deploy job, after a release.
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: frontend-new
+          push: false
+          cache-from: type=gha,scope=frontend-new
+          cache-to: type=gha,mode=max,scope=frontend-new

@@ -16,11 +16,17 @@ npm run dev                        # http://localhost:5175
 ## Check it
 
 ```sh
-npm run check && npm run test:unit && npm run test:components && npm run build
+npm run check && npm run test:unit && npm run test:components && npm run build && npm run test:e2e
 ```
 
-- `test:unit`: pure TypeScript and server code, in Node.
+- `test:unit`: pure TypeScript, server code and the live-update relay, in Node.
 - `test:components`: components in a real Chromium, with the app's CSS.
+- `test:e2e`: the production server (`server.js`) in a real browser, against a stub backend.
+
+## Run it in production
+
+`npm run build`, then `node server.js` with `API_URL` (and `ORIGIN` behind a proxy) set; see
+[.env.example](.env.example). Or the Docker image: `docker build -t nomi-frontend-new .`
 
 How to work in this folder (design rules, tests, i18n, boundaries): see [CLAUDE.md](CLAUDE.md).
 What the backend would need to add for some designed flows: see

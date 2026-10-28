@@ -15,7 +15,9 @@
 		"check": "npm run i18n && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test:unit": "npm run i18n && vitest run --project unit",
 		"test:components": "npm run i18n && vitest run --project components",
-		"test": "npm run test:unit && npm run test:components"
+		"test": "npm run test:unit && npm run test:components",
+		"test:e2e": "playwright test",
+		"start": "node server.js"
 	},
 	"devDependencies": {
 		"@fontsource-variable/geist": "5.3.0",
@@ -23,12 +25,14 @@
 		"@inlang/paraglide-js": "2.25.4",
 		"@inlang/plugin-message-format": "4.4.4",
 		"@lucide/svelte": "1.63.0",
+		"@playwright/test": "1.62.1",
 		"@sveltejs/adapter-node": "5.5.7",
 		"@sveltejs/kit": "2.70.2",
 		"@sveltejs/vite-plugin-svelte": "7.3.0",
 		"@tailwindcss/node": "4.3.3",
 		"@tailwindcss/vite": "4.3.3",
 		"@types/node": "26.2.0",
+		"@types/ws": "8.18.1",
 		"@vitest/browser-playwright": "4.1.12",
 		"playwright": "1.62.1",
 		"svelte": "5.56.9",
@@ -38,5 +42,8 @@
 		"vite": "8.2.1",
 		"vitest": "4.1.12",
 		"vitest-browser-svelte": "3.1.0"
+	},
+	"dependencies": {
+		"ws": "8.21.3"
 	}
 }
