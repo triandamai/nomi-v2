@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/geist-mono';
+/* Only for the initial on an app's identity tile (Project Row): the person's app, not Nomi's UI. */
+@import '@fontsource/fraunces/latin-600.css';
 @import './lib/ds/tokens/tokens.css';
 
 /*
@@ -83,6 +85,7 @@
 	--font-*: initial;
 	--font-sans: var(--nm-sans);
 	--font-mono: var(--nm-mono);
+	--font-app: 'Fraunces', ui-serif, Georgia, serif;
 
 	--text-*: initial;
 	--text-display: var(--nm-size-display);

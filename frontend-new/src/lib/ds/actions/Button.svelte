@@ -15,12 +15,14 @@
 		disabled?: boolean;
 		/** Makes it a link. */
 		href?: string;
+		/** A link to another site: opens in a new tab, without access to this page. */
+		external?: boolean;
 		type?: 'button' | 'submit' | 'reset';
 		onclick?: (event: MouseEvent) => void;
 		[attribute: `data-${string}`]: unknown;
 		[attribute: `aria-${string}`]: unknown;
 	};
-	let { label, variant = 'primary', iconStart, iconEnd, loading = false, disabled = false, href, type = 'button', onclick, ...rest }: Props = $props();
+	let { label, variant = 'primary', iconStart, iconEnd, loading = false, disabled = false, href, external = false, type = 'button', onclick, ...rest }: Props = $props();
 
 	const leading = $derived(loading ? LoaderCircle : iconStart);
 	const lifts = $derived(variant === 'primary' || variant === 'inverse');
@@ -43,6 +45,8 @@
 {#if href}
 	<a
 		{href}
+		target={external ? '_blank' : undefined}
+		rel={external ? 'noopener noreferrer' : undefined}
 		{...rest}
 		class={[
 			'inline-flex h-7.5 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 text-ui whitespace-nowrap outline-offset-1 transition-colors select-none pointer-coarse:min-h-11 data-focus:outline-2 data-focus:outline-focus',
