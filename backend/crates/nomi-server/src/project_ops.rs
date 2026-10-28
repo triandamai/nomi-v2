@@ -199,12 +199,12 @@ impl ProjectOps for ServerProjectOps {
         }
         let target = target(self, project_id).await.map_err(message)?;
         if let Some(app) = target.shipyard_app.as_deref() {
-            let (shipyard_app, shipyard_env) = if is_dev_relay {
-                (crate::relay_backend::backend_app(app), crate::relay_backend::DEV)
+            let shipyard_env = if is_dev_relay {
+                crate::relay_backend::DEV
             } else {
-                (app.to_string(), environment)
+                environment
             };
-            match client(self).map_err(message)?.get_env(&target.org_key(), &shipyard_app, shipyard_env).await {
+            match client(self).map_err(message)?.get_env(&target.org_key(), app, shipyard_env).await {
                 Ok(live) => {
                     let described = nomi_llm::redact::redacted(live.to_string());
                     let clipped: String = described.chars().take(MAX_ENV_DESCRIPTION_CHARS).collect();
@@ -221,14 +221,14 @@ impl ProjectOps for ServerProjectOps {
         let target = target(self, project_id).await.map_err(message)?;
         let app = target.shipyard_app.as_deref().ok_or("this project hasn't been published yet")?;
         let is_dev_relay = matches!(environment, "dev" | "development") && crate::relay_ops::on_relay(&self.pool, project_id).await.unwrap_or(false);
-        let (shipyard_app, shipyard_env, service) = if is_dev_relay {
-            (crate::relay_backend::backend_app(app), crate::relay_backend::DEV, "relay")
+        let (shipyard_env, service) = if is_dev_relay {
+            (crate::relay_backend::DEV, "relay")
         } else {
-            (app.to_string(), environment, "web")
+            (environment, "web")
         };
         let logs = client(self)
             .map_err(message)?
-            .service_logs(&target.org_key(), &shipyard_app, shipyard_env, service, tail, None)
+            .service_logs(&target.org_key(), app, shipyard_env, service, tail, None)
             .await
             .map_err(|e| message(shipyard_error(e)))?;
         Ok(nomi_shipyard::log_lines(&logs))

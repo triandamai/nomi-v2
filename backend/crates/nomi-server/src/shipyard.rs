@@ -228,21 +228,55 @@ pub async fn store_event(pool: &PgPool, event: &Event) -> Result<Option<Uuid>, s
     Ok(if inserted { project_id } else { None })
 }
 
-/// Whether an event came from the project's `<app>-backend` Relay app on Shipyard rather than
-/// its web app.
+/// Whether an event is for the project's Relay backend on Shipyard rather than its web app.
 pub async fn is_backend_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Result<bool, sqlx::Error> {
     let Some(event_app) = event.app.as_deref() else {
         return Ok(false);
     };
-    if !event_app.ends_with(nomi_shipyard::manifest::BACKEND_SUFFIX) {
-        return Ok(false);
-    }
     let shipyard_app: Option<String> = sqlx::query_scalar("SELECT shipyard_app FROM projects WHERE id = $1")
         .bind(project_id)
         .fetch_optional(pool)
         .await?
         .flatten();
-    Ok(shipyard_app.as_deref().is_some_and(|app| crate::relay_backend::backend_app(app) == event_app))
+    let Some(app) = shipyard_app.as_deref() else {
+        return Ok(false);
+    };
+    if crate::relay_backend::backend_app(app) == event_app {
+        return Ok(true);
+    }
+    if app != event_app {
+        return Ok(false);
+    }
+    if matches!(event.service.as_deref(), Some("relay" | "postgrest" | "functions")) {
+        return Ok(true);
+    }
+    if event
+        .data
+        .get("services")
+        .and_then(Value::as_array)
+        .is_some_and(|services| services.iter().any(|s| s.as_str() == Some("relay")))
+    {
+        return Ok(true);
+    }
+    let env = event.environment.as_deref().unwrap_or(crate::relay_backend::DEV);
+    if let Some(publish_id) = event.data.get("publish_id").and_then(Value::as_str) {
+        let is_web_publish: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM project_publishes WHERE project_id = $1 AND shipyard_publish_id = $2)",
+        )
+        .bind(project_id)
+        .bind(publish_id)
+        .fetch_one(pool)
+        .await?;
+        if is_web_publish {
+            return Ok(false);
+        }
+    }
+    let has_backend_stack = crate::project_relays::stack(pool, project_id, env)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|stack| env == crate::relay_backend::DEV || stack.state != crate::project_relays::READY);
+    Ok(has_backend_stack)
 }
 
 /// The error text of a failed publish or deployment.

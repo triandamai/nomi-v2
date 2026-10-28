@@ -559,6 +559,27 @@ async fn the_first_publish_of_a_project_with_its_own_backend_makes_the_productio
     assert!(production.is_some(), "the production backend is being made");
     let publishes: i64 = sqlx::query_scalar("SELECT count(*) FROM project_publishes WHERE project_id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
     assert_eq!(publishes, 0, "the app itself waits for its backend");
+
+    // The Deploy sheet shows the backend being set up (or why it couldn't be), until it's ready.
+    let overview = |router: axum::Router| {
+        let token = token.clone();
+        async move { request(router, "GET", &format!("/api/projects/{project_id}/deploy"), Some(&token), None).await.1 }
+    };
+    let state = overview(router.clone()).await["backend_setup"]["state"].as_str().map(str::to_string);
+    assert!(matches!(state.as_deref(), Some("creating" | "failed")), "{state:?}");
+    // This Nomi has no Relay images set, so the setup fails, and the sheet says where and why.
+    let mut setup = Value::Null;
+    for _ in 0..50 {
+        setup = overview(router.clone()).await["backend_setup"].clone();
+        if setup["state"] == "failed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(setup["state"], "failed", "{setup}");
+    assert!(setup["step"].is_string() && setup["error"].as_str().unwrap().contains("images"), "{setup}");
+    nomi_server::project_relays::set_state(&pool, project_id, "production", nomi_server::project_relays::READY, None, None).await.unwrap();
+    assert!(overview(router).await["backend_setup"].is_null());
 }
 
 #[sqlx::test(migrations = "../../migrations")]

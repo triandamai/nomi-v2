@@ -231,10 +231,20 @@ export class ProjectRuntime {
 	}
 
 	/** A Relay project's dev backend for the preview's environment; nothing for other projects. */
-	async #loadRelayAccess() {
+	async #loadRelayAccess(): Promise<boolean> {
 		const response = await this.#api('relay/preview').catch(() => null);
-		if (!response?.ok) return;
+		if (!response?.ok) return response?.status === 404;
 		this.#env = previewEnv(PREVIEW_ENV, (await response.json()) as RelayPreviewAccess);
+		return true;
+	}
+
+	/** Reloads the dev backend's address and keys when the backend finishes starting, restarting the dev server if its URL changed. */
+	async refreshRelay() {
+		const before = this.#env.PUBLIC_NOMI_URL;
+		this.#relayLoaded = await this.#loadRelayAccess();
+		if (this.#env.PUBLIC_NOMI_URL && this.#env.PUBLIC_NOMI_URL !== before && this.#dev) {
+			await this.#startDev();
+		}
 	}
 
 	async #packageJson(): Promise<string | undefined> {
@@ -253,8 +263,7 @@ export class ProjectRuntime {
 			return;
 		}
 		if (!this.#relayLoaded) {
-			this.#relayLoaded = true;
-			await this.#loadRelayAccess();
+			this.#relayLoaded = await this.#loadRelayAccess();
 		}
 		this.phase = 'installing';
 		const install = await this.#run('npm', ['install']);

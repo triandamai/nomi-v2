@@ -176,6 +176,24 @@ pub struct DeployOverview {
     pub publishes: Vec<PublishRow>,
     /// What runs in production right now, from Shipyard; null when nothing does.
     pub live: Option<Value>,
+    /// The app's own production backend while it's being set up before its first publish (or
+    /// when that failed); null otherwise. The publish follows by itself once it's ready.
+    pub backend_setup: Option<BackendSetup>,
+}
+
+#[derive(Serialize)]
+pub struct BackendSetup {
+    pub state: String,
+    pub step: Option<String>,
+    pub error: Option<String>,
+}
+
+/// The production backend of a project with a Relay of its own, when it isn't ready yet.
+async fn backend_setup(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Option<BackendSetup>, ApiError> {
+    let stack = crate::project_relays::stack(pool, project_id, DEFAULT_ENV).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(stack
+        .filter(|s| s.state != crate::project_relays::READY)
+        .map(|s| BackendSetup { state: s.state, step: s.step, error: s.error }))
 }
 
 /// The project's files, as Shipyard gets them (without excluded paths).
@@ -249,6 +267,7 @@ pub async fn overview(
         url,
         publishes,
         live,
+        backend_setup: backend_setup(&state.pool, project_id).await?,
     }))
 }
 
@@ -414,8 +433,35 @@ pub(crate) async fn start_publish(
         }
         return Err(refused);
     }
-    let secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
+    let mut secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
+    if crate::relay_ops::on_relay(state.pool(), project_id).await.unwrap_or(false) {
+        if let Some(ref relay_cfg) = relay {
+            if let Ok(found) = nomi_relay_client::Relay::new(state.http_client(), relay_cfg).backend(project_id).await {
+                if let Some(production) = found.environment("production") {
+                    if !secrets.iter().any(|s| s == crate::relay_ops::SECRET_URL) {
+                        for (name, value) in [
+                            (crate::relay_ops::SECRET_URL, &production.url),
+                            (crate::relay_ops::SECRET_ANON_KEY, &production.anon_key),
+                            (crate::relay_ops::SECRET_SERVICE_KEY, &production.service_key),
+                        ] {
+                            let _ = crate::routes::project_secrets::store(state, project_id, name, value, user_id).await;
+                        }
+                        secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
+                    }
+                    if !files.iter().any(|(p, _)| p == ".env.production") {
+                        let env_prod = format!("PUBLIC_NOMI_URL={}\nPUBLIC_NOMI_KEY={}\n", production.url, production.anon_key);
+                        files.push((".env.production".to_string(), env_prod.into_bytes()));
+                    }
+                }
+            }
+        }
+    }
     let mut manifest = manifest::build(database, &secrets);
+    if database == manifest::Database::None
+        && crate::project_relays::stack(state.pool(), project_id, "production").await.ok().flatten().is_some()
+    {
+        manifest["database"] = json!({ "engine": "postgres" });
+    }
     manifest::label(&mut manifest, &project_id.to_string(), &target.stack, target.files_version);
     let source = nomi_shipyard::bundle::zip(&files).map_err(internal("failed to pack the project"))?;
 
@@ -720,6 +766,11 @@ pub async fn take_offline(
     let target = target(&state, project_id).await?;
     let app = published_app(&target)?;
     client(&state)?.delete_env(&target.org_key(), app, &environment).await.map_err(shipyard_error)?;
+    let _ = sqlx::query("DELETE FROM project_relays WHERE project_id = $1 AND env = $2")
+        .bind(project_id)
+        .bind(&environment)
+        .execute(&state.pool)
+        .await;
     crate::routes::showcase::hide_when_offline(&state.pool, project_id, &environment).await;
     Ok(StatusCode::NO_CONTENT)
 }

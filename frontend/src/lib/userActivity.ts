@@ -1,4 +1,5 @@
 import { toastFor, type ChatOutcome, type Waiting } from '$lib/chatActivity';
+import { notificationArrived } from '$lib/notifications.svelte';
 import { showSnackbar } from '$lib/snackbars.svelte';
 
 // The person's own live feed (MQTT `user/{id}/activity`, relayed at /activity/ws). The app keeps
@@ -28,7 +29,17 @@ export interface ChatUpdated {
 	title: string | null;
 }
 
-type UserEvent = ChatActivity | ChatUpdated;
+/** A new item in the person's inbox (backend: nomi_realtime::UserEvent::NotificationCreated). */
+export interface NotificationCreated {
+	kind: 'NotificationCreated';
+	notification_id: string;
+	category: string;
+	title: string;
+	body: string;
+	link: string | null;
+}
+
+type UserEvent = ChatActivity | ChatUpdated | NotificationCreated;
 
 const chatsChanged = new Set<(sessionId: string) => void>();
 
@@ -54,6 +65,10 @@ function outcomeOf(event: ChatActivity): ChatOutcome {
 
 /** What to do with one event from the feed. */
 export function handleActivity(event: UserEvent) {
+	if (event.kind === 'NotificationCreated') {
+		notificationArrived({ id: event.notification_id, title: event.title, body: event.body, link: event.link });
+		return;
+	}
 	if (event.kind === 'ChatUpdated' || event.kind === 'ChatActivity') {
 		for (const listener of chatsChanged) listener(event.session_id);
 	}

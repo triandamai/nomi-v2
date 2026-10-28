@@ -7,6 +7,8 @@ export interface LatestNotification {
 	id: string;
 	title: string;
 	link: string | null;
+	/** What happened, when it came live (the unread poll sends the title only). */
+	body?: string;
 }
 
 export const inbox = $state<{ unread: number; latest: LatestNotification | null; arrived: LatestNotification | null }>({
@@ -32,6 +34,14 @@ export async function refreshUnread(): Promise<void> {
 	} catch {
 		// Offline: keep the last count.
 	}
+}
+
+/** A notification the live feed brought: counted, and popped up straight away. */
+export function notificationArrived(notification: LatestNotification): void {
+	if (inbox.latest?.id === notification.id) return;
+	inbox.unread += 1;
+	inbox.latest = notification;
+	inbox.arrived = notification;
 }
 
 /** Starts polling; returns the function that stops it. */

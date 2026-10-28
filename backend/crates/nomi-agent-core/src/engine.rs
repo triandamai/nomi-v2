@@ -639,6 +639,13 @@ pub async fn run_agent_turn(
         tools.push(crate::attachments::read_attachment_tool_definition());
     }
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
+    // In a project's chat, its tools default to that project: no one asks the person for an id.
+    let chat_project = crate::chat_project::of_chat(conn, session_id, user_id).await;
+    if let Some((_, name)) = &chat_project {
+        for tool in &mut tools {
+            crate::chat_project::default_to_chat_project(tool, name);
+        }
+    }
 
     let memories = if agent.uses_memory() {
         let last_user_text = messages
@@ -704,6 +711,10 @@ pub async fn run_agent_turn(
     // And the notes the crew pinned for each other here.
     let system_prompt = match crate::crew_talk::notes_board(&mut **conn, session_id).await {
         Some(board) => format!("{system_prompt}\n\n{board}"),
+        None => system_prompt,
+    };
+    let system_prompt = match &chat_project {
+        Some((project_id, name)) => format!("{system_prompt}\n\n{}", crate::chat_project::prompt_line(*project_id, name)),
         None => system_prompt,
     };
 
@@ -1059,6 +1070,41 @@ pub enum ToolBatchOutcome {
 /// decision) is what lets a batch with two-or-more gated tool calls converge: without it, each
 /// resume forgets the previous card's decision and re-pauses on an already-decided block forever.
 #[allow(clippy::too_many_arguments)]
+/// `blocks` with this chat's project filled in where a call to a tool that takes a `project_id`
+/// left it out (or made one up); `None` when nothing needed it.
+async fn with_chat_project(
+    conn: &mut PoolConnection<Postgres>,
+    agent: &dyn SubAgent,
+    session_id: Uuid,
+    user_id: Uuid,
+    blocks: &[ContentBlock],
+    conversation: &[LlmMessage],
+) -> Option<Vec<ContentBlock>> {
+    let unnamed = |input: &serde_json::Value| crate::chat_project::fill(input, Uuid::nil()).is_some();
+    if !blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { input, .. } if unnamed(input))) {
+        return None;
+    }
+    let (project_id, _) = crate::chat_project::of_chat(conn, session_id, user_id).await?;
+    let mut definitions = agent.tools();
+    definitions.extend(agent.chat_tools(conn, session_id, user_id, conversation).await);
+    let takes_project = |name: &str| definitions.iter().any(|t| t.name == name && crate::chat_project::takes_project(t));
+    let mut changed = false;
+    let filled = blocks
+        .iter()
+        .map(|block| match block {
+            ContentBlock::ToolUse { id, name, input, thought_signature } if takes_project(name) => match crate::chat_project::fill(input, project_id) {
+                Some(input) => {
+                    changed = true;
+                    ContentBlock::ToolUse { id: id.clone(), name: name.clone(), input, thought_signature: thought_signature.clone() }
+                }
+                None => block.clone(),
+            },
+            _ => block.clone(),
+        })
+        .collect();
+    changed.then_some(filled)
+}
+
 pub async fn resolve_tool_batch(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
@@ -1075,6 +1121,8 @@ pub async fn resolve_tool_batch(
     already_decided: &[(String, bool)],
 ) -> Result<ToolBatchOutcome, TurnError> {
     let locale = crate::locale::user_locale(conn, user_id).await;
+    let filled = with_chat_project(conn, agent, session_id, user_id, tool_use_blocks, conversation_so_far).await;
+    let tool_use_blocks = filled.as_deref().unwrap_or(tool_use_blocks);
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
             if already_decided.iter().any(|(decided_id, _)| decided_id == id) {

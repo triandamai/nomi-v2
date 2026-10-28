@@ -38,6 +38,11 @@ export class ProjectDeploy {
 		return this.overview?.publishes.some((p) => p.status === 'running') ?? false;
 	}
 
+	/** The app's own backend is being set up; the publish follows by itself when it's ready. */
+	get preparing(): boolean {
+		return this.overview?.backend_setup?.state === 'creating';
+	}
+
 	get isAdmin(): boolean {
 		return this.overview?.role === 'admin';
 	}
@@ -54,7 +59,7 @@ export class ProjectDeploy {
 	#schedule() {
 		if (this.#timer) clearTimeout(this.#timer);
 		this.#timer = null;
-		if (this.#stopped || !this.running) return;
+		if (this.#stopped || !(this.running || this.preparing)) return;
 		this.#timer = setTimeout(() => void this.#poll(), FALLBACK_MS);
 	}
 

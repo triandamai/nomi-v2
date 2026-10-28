@@ -62,7 +62,9 @@
 		if (!arrived) return;
 		inbox.arrived = null;
 		if (page.url.pathname.startsWith('/notifications')) return;
-		showSnackbar({ message: arrived.title, actionLabel: m.notif_view(), href: arrived.link || '/notifications', timeout: 6000 });
+		// With what happened when the live feed brought it ("…couldn't be published — Shipyard refused it: …").
+		const message = arrived.body ? `${arrived.title} — ${arrived.body}` : arrived.title;
+		showSnackbar({ message, actionLabel: m.notif_view(), href: arrived.link || '/notifications', timeout: arrived.body ? 10_000 : 6000 });
 	});
 
 	// The person's own live feed, open as long as the app is: a chat the crew finishes (or that
