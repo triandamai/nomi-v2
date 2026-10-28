@@ -1247,7 +1247,10 @@ pub async fn get_agent_status(
 /// left finishing, or waiting on them). The app keeps it open while it's open.
 pub async fn user_activity_stream(State(state): State<AppState>, AuthClaims(claims): AuthClaims, ws: WebSocketUpgrade) -> impl IntoResponse {
     let (broker_host, broker_port) = (state.mqtt_broker_host.clone(), state.mqtt_broker_port);
-    ws.on_upgrade(move |socket| relay_topic(socket, nomi_realtime::user_topic(claims.sub), broker_host, broker_port))
+    // Both of the person's topics: `activity` (chats the crew is done with) and `stream` (new inbox
+    // items, so a failed publish pops up straight away rather than on the next unread poll).
+    let topic = format!("user/{}/+", claims.sub);
+    ws.on_upgrade(move |socket| relay_topic(socket, topic, broker_host, broker_port))
 }
 
 async fn relay_session_stream(socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {

@@ -122,7 +122,8 @@ async fn send_from_this_device(client: &reqwest::Client, http_base: &str, token:
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_message_sent_on_one_device_reaches_the_persons_other_devices(pool: PgPool) {
     nomi_server::project_events::init(nomi_test_support::TEST_MQTT_BROKER_HOST, nomi_test_support::TEST_MQTT_BROKER_PORT);
-    let (http_base, ws_base) = spawn_app(pool).await;
+    nomi_server::user_events::init(nomi_test_support::TEST_MQTT_BROKER_HOST, nomi_test_support::TEST_MQTT_BROKER_PORT);
+    let (http_base, ws_base) = spawn_app(pool.clone()).await;
     let client = reqwest::Client::new();
     let token = register_and_login(&client, &http_base, "two-devices@example.com").await;
     let session_id = create_session(&client, &http_base, &token).await;
@@ -136,4 +137,20 @@ async fn a_message_sent_on_one_device_reaches_the_persons_other_devices(pool: Pg
     assert_eq!(in_chat["message_id"], sent["user_message"]["id"]);
     let in_list = first_of_kind(&mut laptop, "ChatUpdated").await;
     assert_eq!(in_list["session_id"], json!(session_id));
+
+    // A new inbox item (a publish that failed in the background) reaches the web app straight away.
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = $1")
+        .bind("two-devices@example.com")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let notice = nomi_server::notifications::Notice {
+        kind: nomi_server::notifications::Kind::Deploy,
+        title: "Shop couldn't be published".to_string(),
+        body: "Shipyard refused it: plan limit reached".to_string(),
+        link: Some("/projects/p1/app?sheet=deploy".to_string()),
+    };
+    nomi_server::notifications::send_to_inbox(&pool, user_id, notice).await.unwrap();
+    let arrived = first_of_kind(&mut laptop, "NotificationCreated").await;
+    assert_eq!(arrived["body"], "Shipyard refused it: plan limit reached");
 }
