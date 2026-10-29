@@ -101,7 +101,7 @@
 	"clarify_answered": "Answered {count} questions",
 	"plan_approval_title": "Ready to run this plan?",
 	"plan_approval_keep": "Keep planning",
-	"plan_approval_keep_placeholder": "Tell Nomi what to change…",
+	"plan_approval_keep_placeholder": "Tell {name} what to change…",
 	"plan_approval_keys": "1–{count} to pick · ↵ confirm",
 	"plan_approval_run": "Run plan",
 	"plan_approval_send": "Send changes",
@@ -230,5 +230,17 @@
 	"mobile_more": "More",
 	"mobile_said": "{provider} said",
 	"mobile_progress": "Question {current} of {total}",
-	"mobile_unread": "Unread"
+	"mobile_unread": "Unread",
+	"build_plan_kind": "plan",
+	"build_plan_label": "Here’s what {name} will build",
+	"build_run": "Build it",
+	"build_running": "running · started {time}",
+	"build_working": "{name} is building",
+	"build_step": "Step {current} of {total} · {label}",
+	"build_stop": "Stop",
+	"build_live": "Live",
+	"build_copy_link": "Copy link",
+	"build_open": "Open",
+	"build_details": "Details",
+	"build_after_publish": "Changes after this need Publish"
 }

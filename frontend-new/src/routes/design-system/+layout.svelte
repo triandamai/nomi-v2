@@ -8,6 +8,7 @@
 	const sheets = [
 		{ href: '/design-system/nomi', label: 'Nomi' },
 		{ href: '/design-system/chat', label: 'Chat responses' },
+		{ href: '/design-system/build', label: 'Build' },
 	];
 </script>
 

@@ -101,7 +101,7 @@
 	"clarify_answered": "Menjawab {count} pertanyaan",
 	"plan_approval_title": "Siap menjalankan rencana ini?",
 	"plan_approval_keep": "Lanjut merencanakan",
-	"plan_approval_keep_placeholder": "Beri tahu Nomi apa yang perlu diubah…",
+	"plan_approval_keep_placeholder": "Beri tahu {name} apa yang perlu diubah…",
 	"plan_approval_keys": "1–{count} untuk memilih · ↵ konfirmasi",
 	"plan_approval_run": "Jalankan rencana",
 	"plan_approval_send": "Kirim perubahan",
@@ -230,5 +230,17 @@
 	"mobile_more": "Lainnya",
 	"mobile_said": "Kata {provider}",
 	"mobile_progress": "Pertanyaan {current} dari {total}",
-	"mobile_unread": "Belum dibaca"
+	"mobile_unread": "Belum dibaca",
+	"build_plan_kind": "rencana",
+	"build_plan_label": "Ini yang akan dibuat {name}",
+	"build_run": "Bangun",
+	"build_running": "berjalan · mulai {time}",
+	"build_working": "{name} sedang membangun",
+	"build_step": "Langkah {current} dari {total} · {label}",
+	"build_stop": "Hentikan",
+	"build_live": "Live",
+	"build_copy_link": "Salin tautan",
+	"build_open": "Buka",
+	"build_details": "Rincian",
+	"build_after_publish": "Perubahan setelah ini perlu Publish"
 }
