@@ -24,9 +24,10 @@ pub const BLURB_MAX: usize = 140;
 const PAGE_SIZE: i64 = 60;
 
 /// The address of the project's newest successful production publish, if it is still published.
+/// Prefers non-relay URLs over backend relay URLs.
 const LIVE_URL: &str = "(SELECT pp.url FROM project_publishes pp \
      WHERE pp.project_id = p.id AND pp.environment = 'production' AND pp.status = 'succeeded' AND pp.url IS NOT NULL \
-     ORDER BY pp.created_at DESC LIMIT 1)";
+     ORDER BY (pp.url NOT LIKE '%-relay.%' AND pp.url NOT LIKE '%.relay.%' AND pp.url NOT LIKE '%/rest%') DESC, pp.created_at DESC LIMIT 1)";
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct ShowcaseApp {
@@ -47,7 +48,8 @@ pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<ShowcaseApp>
     let apps: Vec<ShowcaseApp> = sqlx::query_as(&format!(
         "SELECT id, name, blurb, url, stack, team, showcased_at FROM ( \
              SELECT DISTINCT ON (url) * FROM ( \
-                 SELECT p.id, p.name, p.showcase_blurb AS blurb, COALESCE(p.showcase_url, {LIVE_URL}) AS url, p.stack, \
+                 SELECT p.id, p.name, p.showcase_blurb AS blurb, \
+                        COALESCE(NULLIF(CASE WHEN p.showcase_url LIKE '%-relay.%' OR p.showcase_url LIKE '%.relay.%' OR p.showcase_url LIKE '%/rest%' OR p.showcase_url LIKE '%-backend.%' THEN NULL ELSE p.showcase_url END, ''), {LIVE_URL}) AS url, p.stack, \
                         CASE WHEN o.is_personal THEN NULL ELSE o.name END AS team, \
                         COALESCE(p.showcased_at, p.created_at) AS showcased_at, p.showcase_url IS NOT NULL AS checked \
                  FROM projects p JOIN organizations o ON o.id = p.org_id \
@@ -73,7 +75,7 @@ pub struct ProjectShowcase {
 async fn read(state: &AppState, project_id: Uuid, can_edit: bool) -> Result<ProjectShowcase, ApiError> {
     let (showcase, blurb, url): (bool, Option<String>, Option<String>) = sqlx::query_as(&format!(
         "SELECT p.showcase, p.showcase_blurb, \
-                CASE WHEN p.shipyard_app IS NULL THEN NULL WHEN p.showcase THEN COALESCE(p.showcase_url, {LIVE_URL}) ELSE {LIVE_URL} END \
+                CASE WHEN p.shipyard_app IS NULL THEN NULL WHEN p.showcase THEN COALESCE(NULLIF(CASE WHEN p.showcase_url LIKE '%-relay.%' OR p.showcase_url LIKE '%.relay.%' OR p.showcase_url LIKE '%/rest%' OR p.showcase_url LIKE '%-backend.%' THEN NULL ELSE p.showcase_url END, ''), {LIVE_URL}) ELSE {LIVE_URL} END \
          FROM projects p WHERE p.id = $1"
     ))
     .bind(project_id)
@@ -175,16 +177,93 @@ async fn verified_url(state: &AppState, project_id: Uuid) -> Result<String, ApiE
     Ok(url)
 }
 
-/// The web address of an environment from Shipyard's `GET .../envs/{env}`: the first service
-/// with a URL, preferring one that's live (the database has none).
+/// Whether a URL points to a Relay backend service or API rather than the web frontend.
+pub fn is_relay_url(url: &str) -> bool {
+    let lower = url.to_lowercase();
+    lower.contains("-relay.")
+        || lower.contains(".relay.")
+        || lower.contains("://relay.")
+        || lower.contains("-backend.")
+        || lower.contains(".backend.")
+        || lower.contains("://backend.")
+        || lower.ends_with("/rest")
+        || lower.contains("/rest/")
+}
+
+fn is_relay_service(s: &serde_json::Value) -> bool {
+    let name = s.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_lowercase();
+    let kind = s.get("kind").or_else(|| s.get("type")).and_then(|k| k.as_str()).unwrap_or_default().to_lowercase();
+    let slug = s.get("slug").and_then(|s| s.as_str()).unwrap_or_default().to_lowercase();
+
+    name == "relay"
+        || name.starts_with("relay-")
+        || name.ends_with("-relay")
+        || name.contains("relay")
+        || name == "backend"
+        || name.starts_with("backend-")
+        || name.ends_with("-backend")
+        || name.contains("backend")
+        || kind == "relay"
+        || kind == "backend"
+        || slug == "relay"
+        || slug.contains("relay")
+        || slug.contains("backend")
+}
+
+fn is_database_service(s: &serde_json::Value) -> bool {
+    let name = s.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_lowercase();
+    let kind = s.get("kind").or_else(|| s.get("type")).and_then(|k| k.as_str()).unwrap_or_default().to_lowercase();
+    name == "db" || name == "database" || name == "postgres" || name == "redis" || kind == "database"
+}
+
+fn is_web_service(s: &serde_json::Value) -> bool {
+    let name = s.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_lowercase();
+    let kind = s.get("kind").or_else(|| s.get("type")).and_then(|k| k.as_str()).unwrap_or_default().to_lowercase();
+    (name == "web" || name == "frontend" || name == "app" || kind == "web") && !is_relay_service(s) && !is_database_service(s)
+}
+
+/// The web address of an environment from Shipyard's `GET .../envs/{env}`: the web service's
+/// URL (not the relay backend, database or worker), preferring one that's live.
 pub fn live_web_url(env: &serde_json::Value) -> Option<String> {
     let services = env.get("services")?.as_array()?;
-    let url_of = |s: &serde_json::Value| s.get("urls").and_then(|u| u.as_array()).and_then(|u| u.first()).and_then(|u| u.as_str()).map(str::to_string);
-    services
-        .iter()
-        .find(|s| s.get("live").and_then(|l| l.as_bool()) == Some(true) && url_of(s).is_some())
-        .or_else(|| services.iter().find(|s| url_of(s).is_some()))
-        .and_then(url_of)
+    let url_of = |s: &serde_json::Value| {
+        s.get("urls")
+            .and_then(|u| u.as_array())
+            .and_then(|urls| {
+                urls.iter()
+                    .filter_map(|u| u.as_str())
+                    .find(|u| !is_relay_url(u))
+                    .or_else(|| urls.first().and_then(|u| u.as_str()))
+            })
+            .map(str::to_string)
+    };
+
+    // 1. Live web service (e.g. named "web", "frontend", or kind "web")
+    if let Some(s) = services.iter().find(|s| {
+        is_web_service(s) && s.get("live").and_then(|l| l.as_bool()) == Some(true) && url_of(s).is_some()
+    }) {
+        return url_of(s);
+    }
+
+    // 2. Any other live service that is not relay, backend or database
+    if let Some(s) = services.iter().find(|s| {
+        !is_relay_service(s) && !is_database_service(s) && s.get("live").and_then(|l| l.as_bool()) == Some(true) && url_of(s).is_some()
+    }) {
+        return url_of(s);
+    }
+
+    // 3. Web service with a URL even if not reported as live
+    if let Some(s) = services.iter().find(|s| is_web_service(s) && url_of(s).is_some()) {
+        return url_of(s);
+    }
+
+    // 4. Any other service with a URL that is not relay, backend or database
+    if let Some(s) = services.iter().find(|s| !is_relay_service(s) && !is_database_service(s) && url_of(s).is_some()) {
+        return url_of(s);
+    }
+
+    // Never return a relay or database service URL for showcase web URL
+    None
 }
 
 /// Production went offline: the app leaves the showcase (its owners can show it again once it's
@@ -214,5 +293,24 @@ mod tests {
         assert_eq!(live_web_url(&json!({ "services": [{ "name": "web", "urls": ["https://a.example"] }] })).as_deref(), Some("https://a.example"));
         assert_eq!(live_web_url(&json!({ "services": [{ "name": "db", "urls": [] }] })), None);
         assert_eq!(live_web_url(&json!({})), None);
+    }
+
+    #[test]
+    fn the_web_address_skips_relay_and_picks_web_domain() {
+        let env = json!({ "services": [
+            { "name": "db", "type": "database", "urls": [] },
+            { "name": "relay", "type": "service", "urls": ["https://todo-relay.apps.example"], "live": true },
+            { "name": "web", "urls": ["https://todo.apps.example"], "live": true },
+        ] });
+        assert_eq!(live_web_url(&env).as_deref(), Some("https://todo.apps.example"));
+    }
+
+    #[test]
+    fn relay_only_returns_none() {
+        let env = json!({ "services": [
+            { "name": "db", "type": "database", "urls": [] },
+            { "name": "relay", "type": "service", "urls": ["https://todo-relay.apps.example"], "live": true },
+        ] });
+        assert_eq!(live_web_url(&env), None);
     }
 }

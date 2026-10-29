@@ -223,14 +223,17 @@ pub async fn overview(
             .fetch_all(&state.pool)
             .await
             .map_err(internal("failed to list publishes"))?;
-    let url = publishes
-        .iter()
-        .find(|p| p.environment == DEFAULT_ENV && p.status == "succeeded" && p.url.is_some())
-        .and_then(|p| p.url.clone());
     let live = match (client(&state), target.shipyard_app.as_deref()) {
         (Ok(client), Some(app)) => client.get_env(&target.org_key(), app, DEFAULT_ENV).await.ok(),
         _ => None,
     };
+    let live_url = live.as_ref().and_then(crate::routes::showcase::live_web_url);
+    let publish_url = publishes
+        .iter()
+        .find(|p| p.environment == DEFAULT_ENV && p.status == "succeeded" && p.url.as_deref().map_or(false, |u| !crate::routes::showcase::is_relay_url(u)))
+        .or_else(|| publishes.iter().find(|p| p.environment == DEFAULT_ENV && p.status == "succeeded" && p.url.is_some()))
+        .and_then(|p| p.url.clone());
+    let url = live_url.or(publish_url);
     Ok(Json(DeployOverview {
         available: state.shipyard.is_some(),
         role,
@@ -450,7 +453,15 @@ pub async fn get_publish(
             }
             let status = remote.get("status").and_then(Value::as_str).unwrap_or("running");
             if status == "succeeded" || status == "failed" {
-                let url = remote.get("urls").and_then(Value::as_array).and_then(|u| u.first()).and_then(Value::as_str);
+                let url = remote
+                    .get("urls")
+                    .and_then(Value::as_array)
+                    .and_then(|urls| {
+                        urls.iter()
+                            .filter_map(Value::as_str)
+                            .find(|u| !crate::routes::showcase::is_relay_url(u))
+                            .or_else(|| urls.first().and_then(Value::as_str))
+                    });
                 let error = match remote.get("error") {
                     Some(Value::String(s)) => Some(s.clone()),
                     Some(Value::Null) | None => None,

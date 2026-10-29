@@ -180,21 +180,48 @@
 		};
 	});
 
+	const isSettingUp = $derived(
+		Boolean(runtime && ['booting', 'loading', 'waiting', 'installing', 'checking', 'starting'].includes(runtime.phase))
+	);
+
 	// The page needs its cross-origin isolation headers, which only a full load brings. Arriving
 	// by an in-app link, load it once more; leaving, load the next page in full so the isolation
 	// doesn't follow the person around the app.
 	onMount(() => {
-		if (!runsLive || window.crossOriginIsolated) return;
+		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+			if (isSettingUp || editorDirty) {
+				e.preventDefault();
+				e.returnValue = '';
+				return '';
+			}
+		};
+		window.addEventListener('beforeunload', handleBeforeUnload);
+
+		if (!runsLive || window.crossOriginIsolated) {
+			return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+		}
 		const key = `nomi-isolated:${location.pathname}`;
 		try {
-			if (sessionStorage.getItem(key)) return;
+			if (sessionStorage.getItem(key)) {
+				return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+			}
 			sessionStorage.setItem(key, '1');
 		} catch {
-			return;
+			return () => window.removeEventListener('beforeunload', handleBeforeUnload);
 		}
 		location.reload();
+		return () => window.removeEventListener('beforeunload', handleBeforeUnload);
 	});
 	beforeNavigate(({ to, cancel, willUnload }) => {
+		if (to && to.url.pathname !== location.pathname) {
+			if (isSettingUp || editorDirty) {
+				const confirmed = window.confirm(m.project_leave_confirm());
+				if (!confirmed) {
+					cancel();
+					return;
+				}
+			}
+		}
 		if (willUnload || !to || !window.crossOriginIsolated) return;
 		if (to.url.pathname === location.pathname) return;
 		cancel();

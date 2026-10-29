@@ -337,7 +337,16 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
     match event.kind.as_str() {
         "publish.succeeded" | "publish.failed" => {
             let status = if event.kind == "publish.succeeded" { "succeeded" } else { "failed" };
-            let url = event.data.get("urls").and_then(Value::as_array).and_then(|u| u.first()).and_then(Value::as_str);
+            let url = event
+                .data
+                .get("urls")
+                .and_then(Value::as_array)
+                .and_then(|urls| {
+                    urls.iter()
+                        .filter_map(Value::as_str)
+                        .find(|u| !crate::routes::showcase::is_relay_url(u))
+                        .or_else(|| urls.first().and_then(Value::as_str))
+                });
             if let Some(publish_id) = publish_id {
                 // Events can arrive out of order: a finished publish stays finished.
                 sqlx::query(

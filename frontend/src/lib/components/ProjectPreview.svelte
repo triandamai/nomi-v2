@@ -3,6 +3,7 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
+	import ProjectWaitScreen from '$lib/components/project/ProjectWaitScreen.svelte';
 	import type { ProjectRuntime, RuntimePhase } from '$lib/projectRuntime.svelte';
 
 	// The project's live preview, from its dev server running in the browser (WebContainer),
@@ -44,17 +45,8 @@
 		stopped: m.project_phase_stopped,
 	};
 
-	// What the dev server is printing (installing, starting), as a terminal that follows along.
+	// What the dev server is printing (installing, starting), passed down to the wait screen / terminal.
 	const logText = $derived(runtime ? runtime.log.trimEnd().split('\n').slice(-500).join('\n') : '');
-	let logBox = $state<HTMLPreElement | null>(null);
-	let following = $state(true);
-	$effect(() => {
-		void logText;
-		if (logBox && following) logBox.scrollTop = logBox.scrollHeight;
-	});
-	function onLogScroll() {
-		if (logBox) following = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 24;
-	}
 
 	function reload() {
 		if (frame && runtime?.previewUrl) frame.src = runtime.previewUrl;
@@ -96,32 +88,15 @@
 		<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write"></iframe>
 	</div>
 {:else}
-	<div class="preview preview--working">
-		<div class="preview__head">
-			{#if runtime.phase === 'failed'}
-				<AgentShape agent="coding" size={40} />
-			{:else if runtime.phase === 'waiting'}
-				<AgentShape agent="coding" size={40} working />
-			{:else}
-				<LoadingIndicator size={40} label={PHASE_LABEL[runtime.phase]()} />
-			{/if}
-			<div class="preview__head-text">
-				<h3 class="preview__title">{PHASE_LABEL[runtime.phase]()}</h3>
-				{#if runtime.phase === 'waiting'}
-					<p class="preview__note">{m.project_waiting_body()}</p>
-				{:else if runtime.phase === 'failed'}
-					<p class="preview__note">{runtime.error}</p>
-					{#if runtime.handedToKoda}<p class="preview__note">{m.project_check_failed_koda()}</p>{/if}
-				{:else if runtime.running}
-					<p class="preview__note preview__running">{m.project_koda_running({ command: runtime.running })}</p>
-				{/if}
-			</div>
-			{#if runtime.phase === 'failed'}<Button variant="tonal" size="s" onclick={() => runtime.restart()}>{m.project_restart()}</Button>{/if}
-		</div>
-		{#if logText}
-			<pre class="preview__log" bind:this={logBox} onscroll={onLogScroll} aria-live="off" aria-label={m.project_log_label()}>{logText}</pre>
-		{/if}
-	</div>
+	<ProjectWaitScreen
+		phase={runtime.phase}
+		phaseLabel={PHASE_LABEL[runtime.phase]()}
+		runningCommand={runtime.running}
+		error={runtime.error}
+		handedToKoda={runtime.handedToKoda}
+		{logText}
+		onRestart={() => runtime.restart()}
+	/>
 {/if}
 
 <style>
@@ -194,42 +169,5 @@
 		flex-wrap: wrap;
 		justify-content: center;
 		gap: 8px;
-	}
-	.preview--working {
-		gap: 12px;
-		padding: 14px;
-	}
-	.preview__head {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-	.preview__head-text {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-	.preview__head .preview__note {
-		max-width: none;
-		padding: 0;
-	}
-	/* The terminal: the rest of the pane, following the newest line unless scrolled up. */
-	.preview__log {
-		flex: 1;
-		min-height: 160px;
-		margin: 0;
-		padding: 12px 14px;
-		overflow: auto;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: #0f1a14;
-		color: #d7e6dc;
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.8125rem;
-		line-height: 1.55;
-		text-align: left;
-		white-space: pre-wrap;
-		word-break: break-word;
 	}
 </style>
