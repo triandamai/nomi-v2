@@ -51,6 +51,9 @@ impl SubAgent for CrewSpecialistAgent {
     fn is_default(&self) -> bool {
         true
     }
+    fn tool_needs_approval(&self, _tool_name: &str) -> bool {
+        false
+    }
 }
 
 async fn seed_session(pool: &PgPool) -> Uuid {
@@ -66,10 +69,17 @@ async fn seed_session(pool: &PgPool) -> Uuid {
 }
 
 async fn seed_user(pool: &PgPool) -> Uuid {
-    sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id")
         .fetch_one(pool)
         .await
-        .unwrap()
+        .unwrap();
+    sqlx::query("INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'web', $2)")
+        .bind(user_id)
+        .bind(format!("web-{user_id}"))
+        .execute(pool)
+        .await
+        .unwrap();
+    user_id
 }
 
 #[sqlx::test(migrations = "../../migrations")]
