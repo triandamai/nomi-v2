@@ -74,7 +74,7 @@
 	"action_back": "Kembali",
 	"action_cancel": "Batal",
 	"approval_needs_you": "Perlu kamu",
-	"approval_edit": "Ubah",
+	"action_edit": "Ubah",
 	"approval_approve": "Setujui",
 	"approval_reject": "Tolak",
 	"decision_own": "Atau ketik jawabanmu sendiri",
@@ -141,5 +141,13 @@
 	"share_copy": "Salin tautan",
 	"share_revoke": "Kamu bisa mencabut tautan ini kapan saja di Pengaturan › Data",
 	"delete_reply_title": "Hapus balasan ini?",
-	"delete_reply_body": "Balasan {name} dan kartunya hilang dari chat ini. Pesanmu tetap ada, jadi kamu bisa bertanya lagi. Hal yang sudah dilakukan kru, seperti email yang terkirim, tidak dibatalkan."
+	"delete_reply_body": "Balasan {name} dan kartunya hilang dari chat ini. Pesanmu tetap ada, jadi kamu bisa bertanya lagi. Hal yang sudah dilakukan kru, seperti email yang terkirim, tidak dibatalkan.",
+	"action_retry": "Coba lagi",
+	"msg_sending": "mengirim…",
+	"msg_queued": "antre · terkirim saat kamu online lagi",
+	"msg_not_sent": "tidak terkirim",
+	"reply_writing": "Sedang menulis…",
+	"reply_stopped": "kamu hentikan · {elapsed}",
+	"reply_continue": "Lanjutkan",
+	"reply_start_over": "Mulai ulang"
 }

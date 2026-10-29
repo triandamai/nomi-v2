@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
-import { GitBranch } from '@lucide/svelte';
+import { ArrowUpRight, GitBranch, Hourglass, RotateCcw } from '@lucide/svelte';
 import MessageUser from './MessageUser.svelte';
 import MessageAgent from './MessageAgent.svelte';
 import ErrorCallout from './ErrorCallout.svelte';
@@ -22,7 +22,9 @@ describe('MessageUser', () => {
 		expect(style.backgroundColor).toBe(tokenBackground('nm-surface-2'));
 		expect(style.borderTopLeftRadius).toBe('10px');
 		expect(style.fontSize).toBe('15px');
-		expect(getComputedStyle(bubble.parentElement!).justifyContent).toBe('flex-end');
+		const row = bubble.parentElement!.getBoundingClientRect();
+		expect(Math.round(bubble.getBoundingClientRect().right)).toBe(Math.round(row.right));
+		expect(bubble.getBoundingClientRect().left).toBeGreaterThan(row.left);
 	});
 });
 
@@ -48,9 +50,10 @@ describe('ErrorCallout', () => {
 				{ key: 'reason', value: 'Insufficient Balance', strong: true },
 				{ key: 'provider', value: 'api.deepseek.com' },
 			],
-			retryLabel: 'Retry',
-			onretry,
-			fix: { label: 'Add credits on DeepSeek', href: 'https://platform.deepseek.com' },
+			actions: [
+				{ label: 'Retry', icon: RotateCcw, onclick: onretry },
+				{ label: 'Add credits on DeepSeek', icon: ArrowUpRight, href: 'https://platform.deepseek.com', external: true },
+			],
 		});
 		const title = page.getByText('Provider error').element();
 		expect(getComputedStyle(title).color).toBe(tokenColor('nm-danger'));
@@ -58,12 +61,24 @@ describe('ErrorCallout', () => {
 		for (const machine of ['402 insufficient_balance', 'req_9d41e0b2', 'Insufficient Balance', 'api.deepseek.com']) {
 			expect(getComputedStyle(page.getByText(machine).element()).fontFamily, machine).toContain('Geist Mono');
 		}
-		await page.getByRole('button', { name: 'Retry' }).click();
+		const retry = page.getByRole('button', { name: 'Retry' });
+		// The first action is the inverse one, its icon after the label.
+		expect(getComputedStyle(retry.element()).backgroundColor).toBe(tokenBackground('nm-text'));
+		expect(retry.element().lastElementChild?.querySelector('svg.lucide-rotate-ccw')).not.toBeNull();
+		await retry.click();
 		expect(onretry).toHaveBeenCalledOnce();
 		const fix = page.getByRole('link', { name: /Add credits on DeepSeek/ });
 		await expect.element(fix).toHaveAttribute('href', 'https://platform.deepseek.com');
 		// The fix is a secondary button, next to the inverse Retry.
 		expect(getComputedStyle(fix.element()).borderTopColor).toBe(tokenColor('nm-border-strong'));
+		await expect.element(fix).toHaveAttribute('target', '_blank');
+	});
+
+	it('counts down to its own retry, which you can still start now', async () => {
+		const onclick = vi.fn();
+		await render(ErrorCallout, { title: 'Rate limited', actions: [{ label: 'Retrying in 0:24', icon: Hourglass, onclick }] });
+		await page.getByRole('button', { name: 'Retrying in 0:24' }).click();
+		expect(onclick).toHaveBeenCalledOnce();
 	});
 });
 

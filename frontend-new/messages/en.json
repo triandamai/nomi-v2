@@ -74,7 +74,7 @@
 	"action_back": "Back",
 	"action_cancel": "Cancel",
 	"approval_needs_you": "Needs you",
-	"approval_edit": "Edit",
+	"action_edit": "Edit",
 	"approval_approve": "Approve",
 	"approval_reject": "Decline",
 	"decision_own": "Or type your own answer",
@@ -141,5 +141,13 @@
 	"share_copy": "Copy link",
 	"share_revoke": "You can revoke this link any time in Settings › Data",
 	"delete_reply_title": "Delete this reply?",
-	"delete_reply_body": "{name}'s reply and its cards leave this chat. Your message stays, so you can ask again. Things the crew already did, like a sent email, are not undone."
+	"delete_reply_body": "{name}'s reply and its cards leave this chat. Your message stays, so you can ask again. Things the crew already did, like a sent email, are not undone.",
+	"action_retry": "Retry",
+	"msg_sending": "sending…",
+	"msg_queued": "queued · sends when you're back online",
+	"msg_not_sent": "not sent",
+	"reply_writing": "Writing…",
+	"reply_stopped": "stopped by you · {elapsed}",
+	"reply_continue": "Continue",
+	"reply_start_over": "Start over"
 }
