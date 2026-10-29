@@ -1,7 +1,7 @@
 // Chat responses → Code and Diff. Highlighting happens before the component (the syntax colours
 // are the nm-code-* tokens); a block without tokens shows its lines plain.
 
-export type CodeKind = 'keyword' | 'string' | 'fn' | 'number' | 'type' | 'comment';
+export type CodeKind = 'keyword' | 'string' | 'fn' | 'number' | 'type' | 'comment' | 'punct';
 export type CodeToken = { text: string; kind?: CodeKind };
 export type CodeLine = CodeToken[];
 

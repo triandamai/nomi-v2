@@ -81,6 +81,8 @@
 	--color-peer-1-bg: var(--nm-peer-1-bg);
 	--color-peer-2: var(--nm-peer-2);
 	--color-peer-2-bg: var(--nm-peer-2-bg);
+	/* The phone preview's bezel, as the pen draws it: the same in both themes. */
+	--color-bezel: #1b1b1e;
 
 	--font-*: initial;
 	--font-sans: var(--nm-sans);
@@ -137,6 +139,8 @@
 	--radius-xl: 14px;
 	--radius-2xl: 16px;
 	--radius-3xl: 18px;
+	/* The phone preview's corners. */
+	--radius-device: 44px;
 
 	/* Borders over shadows: one shadow, for things that truly float (menus, toasts, dialogs). */
 	--shadow-*: initial;

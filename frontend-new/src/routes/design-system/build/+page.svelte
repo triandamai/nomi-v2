@@ -4,6 +4,7 @@
 	import ShareSection from '$lib/gallery/build/ShareSection.svelte';
 	import FirstRunSection from '$lib/gallery/build/FirstRunSection.svelte';
 	import WorkspaceSection from '$lib/gallery/build/WorkspaceSection.svelte';
+	import CodeSection from '$lib/gallery/build/CodeSection.svelte';
 </script>
 
 <header class="flex max-w-xl flex-col gap-3 py-12">
@@ -20,3 +21,4 @@
 <ShareSection />
 <FirstRunSection />
 <WorkspaceSection />
+<CodeSection />
