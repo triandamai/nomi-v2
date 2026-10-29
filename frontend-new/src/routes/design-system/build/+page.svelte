@@ -1,5 +1,6 @@
 <script lang="ts">
 	import EstimateSection from '$lib/gallery/build/EstimateSection.svelte';
+	import BuildingSection from '$lib/gallery/build/BuildingSection.svelte';
 </script>
 
 <header class="flex max-w-xl flex-col gap-3 py-12">
@@ -12,3 +13,4 @@
 </header>
 
 <EstimateSection />
+<BuildingSection />

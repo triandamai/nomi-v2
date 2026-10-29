@@ -242,5 +242,10 @@
 	"build_copy_link": "Copy link",
 	"build_open": "Open",
 	"build_details": "Details",
-	"build_after_publish": "Changes after this need Publish"
+	"build_after_publish": "Changes after this need Publish",
+	"files_title": "Files",
+	"files_written": "{done} of {total} written",
+	"file_writing": "writing",
+	"preview_building_title": "Building your app",
+	"preview_building_meta": "The preview opens here after the first deploy"
 }
