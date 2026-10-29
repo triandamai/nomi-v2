@@ -83,6 +83,8 @@
 	--color-peer-2-bg: var(--nm-peer-2-bg);
 	/* The phone preview's bezel, as the pen draws it: the same in both themes. */
 	--color-bezel: #1b1b1e;
+	/* A wash of black on a coloured bar (the follow bar's stop button), as the pen draws it. */
+	--color-shade: rgb(0 0 0 / 0.08);
 
 	--font-*: initial;
 	--font-sans: var(--nm-sans);
@@ -106,6 +108,11 @@
 	/* Below the scale, only where the pen uses 10px: a citation's number, a token's name. */
 	--text-micro: 10px;
 	--text-micro--line-height: 13px;
+	/* Only where the pen draws them: initials on a 20px avatar (9), an invite email's title (20). */
+	--text-nano: 9px;
+	--text-nano--line-height: 12px;
+	--text-heading: 20px;
+	--text-heading--line-height: 26px;
 	/* Phones (Mobile chat): 16pt body so inputs don't zoom, 17pt sheet titles, 14pt second lines. */
 	--text-phone-title: 17px;
 	--text-phone-title--line-height: 22px;
