@@ -2,6 +2,7 @@
 	import ThinkingSection from '$lib/gallery/chat/ThinkingSection.svelte';
 	import RichSection from '$lib/gallery/chat/RichSection.svelte';
 	import ActionsSection from '$lib/gallery/chat/ActionsSection.svelte';
+	import FeedbackSection from '$lib/gallery/chat/FeedbackSection.svelte';
 </script>
 
 <header class="flex max-w-xl flex-col gap-3 py-12">
@@ -16,3 +17,4 @@
 <ThinkingSection />
 <RichSection />
 <ActionsSection />
+<FeedbackSection />
