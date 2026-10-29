@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { createRawSnippet } from 'svelte';
 import { page } from 'vitest/browser';
 import GallerySection from './GallerySection.svelte';
+import GalleryBoard from './GalleryBoard.svelte';
 import { tokenColor } from '$lib/ds/test-utils';
 
 // A design sheet's Section Head as the pen draws it (e.g. acyEz): a 28px title with the line
@@ -19,5 +20,14 @@ describe('GallerySection', () => {
 		expect(getComputedStyle(line).fontSize).toBe('13px');
 		expect(getComputedStyle(line).color).toBe(tokenColor('nm-text-3'));
 		expect(getComputedStyle(title.parentElement!).alignItems).toBe('flex-end');
+	});
+});
+
+describe('GalleryBoard', () => {
+	it('centres the note on the title on the Nomi and Chat sheets (pen board heads, note 1.5px down)', async () => {
+		const children = createRawSnippet(() => ({ render: () => '<p>content</p>' }));
+		await render(GalleryBoard, { title: 'Buttons', note: 'primary · secondary', children });
+		const title = page.getByText('Buttons', { exact: true }).element().getBoundingClientRect();
+		expect(page.getByText('primary · secondary').element().getBoundingClientRect().top - title.top).toBe(1.5);
 	});
 });

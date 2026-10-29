@@ -50,6 +50,9 @@ of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour 
   `font-sans / mono`. Spacing keeps Tailwind's 0.25 steps (1px each quarter): the design's scale
   is 2, 4, 6, 8, 12, 16, 20, 24, 32, 48 (`0.5 1 1.5 2 3 4 5 6 8 12`), plus the pen's own paddings
   where it draws them (10 → `2.5`, 14 → `3.5`, 9 → `2.25`).
+- The pen draws strokes inside the frame, so they never move the content: a box with a 1px border
+  takes 1px off the pen's padding (pen 16 → `p-3.75`, 14 → `3.25`, 24 → `5.75`), and comes out the
+  pen's size. Explicit line heights round to whole pixels like the pen's (`leading-*` tokens).
 - `src/lib/ds/lint` checks every `.svelte` file: no raw colours, no `dark:`, no shadows other
   than `shadow-float`, no arbitrary values, and no class Tailwind doesn't generate. It reads the
   markup, so write classes in the markup, not in script variables.

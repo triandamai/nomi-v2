@@ -10,6 +10,7 @@ import ActivityBlock from './conversation/ActivityBlock.svelte';
 import ProjectRow from './lists/ProjectRow.svelte';
 import DraftPlanCard from './chat/DraftPlanCard.svelte';
 import SidebarFixture from './chrome/SidebarFixture.svelte';
+import BuildPlanCard from './mobile/BuildPlanCard.svelte';
 import { userEvent } from 'vitest/browser';
 import { tokenColor } from './test-utils';
 
@@ -77,5 +78,21 @@ describe('matches the pen', () => {
 		expect(style(row.querySelector('span')!).color).toBe(tokenColor('nm-text-2'));
 		const collapse = page.getByRole('button', { name: 'Collapse sidebar' }).element();
 		expect(Math.round(box(collapse).width)).toBe(16);
+	});
+
+	it('Mobile / Build Plan (uYQxq): strokes sit inside the frame and lines round to whole pixels', async () => {
+		const { container } = await render(BuildPlanCard, {
+			project: 'p',
+			summary: 'Menu and pre-order page',
+			steps: ['Set up the project'],
+			outcome: 'A live link.',
+			cost: 'About 5 min',
+			onbuild: () => {},
+			onaskfirst: () => {},
+			onkeep: () => {},
+		});
+		const card = container.querySelector('article')!;
+		expect(box(card.firstElementChild!).top - box(card).top).toBe(16);
+		expect(style(page.getByText('Set up the project').element()).lineHeight).toBe('20px');
 	});
 });

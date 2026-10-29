@@ -323,5 +323,22 @@
 	"presence_follow": "Follow",
 	"follow_label": "Following {name} · {where}",
 	"follow_stop": "Stop following",
-	"presence_label": "People here"
+	"presence_label": "People here",
+	"ws_switch": "Chat or preview",
+	"ws_chat": "Chat",
+	"ws_preview": "Preview",
+	"ask_bar": "Ask {agent} about this screen",
+	"bplan_ask_first": "Ask before it goes live",
+	"bprogress_title": "Building {project}",
+	"bprogress_line": "Step {current} of {total} · {label} · {eta}",
+	"bprogress_note": "You can close the app. We'll notify you when it's live.",
+	"dns_name": "Name: {name}",
+	"dns_waiting": "waiting",
+	"dns_verified": "verified",
+	"dns_failed": "not found",
+	"dns_copy": "Copy {value}",
+	"queue_go_first": "Let {name} go first",
+	"queue_hint_short": "One change at a time, so edits never collide.",
+	"change_ready": "{name}'s change is ready",
+	"project_options": "Project options"
 }

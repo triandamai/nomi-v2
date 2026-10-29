@@ -6,6 +6,7 @@
 	import WorkspaceSection from '$lib/gallery/build/WorkspaceSection.svelte';
 	import CodeSection from '$lib/gallery/build/CodeSection.svelte';
 	import TogetherSection from '$lib/gallery/build/TogetherSection.svelte';
+	import MobileBuildSection from '$lib/gallery/build/MobileBuildSection.svelte';
 </script>
 
 <header class="flex max-w-xl flex-col gap-3 py-12">
@@ -24,3 +25,4 @@
 <WorkspaceSection />
 <CodeSection />
 <TogetherSection />
+<MobileBuildSection />
