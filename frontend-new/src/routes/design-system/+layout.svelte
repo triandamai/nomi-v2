@@ -4,6 +4,7 @@
 	let { children } = $props();
 
 	// ?theme=dark or ?theme=light shows the whole sheet in one theme, to compare with the pen file.
+	// Laid out like the pen's sheets: 64 around, 64 between the header and each section.
 	const theme = $derived(page.url.searchParams.get('theme'));
 	const sheets = [
 		{ href: '/design-system/nomi', label: 'Nomi' },
@@ -15,7 +16,7 @@
 <svelte:head><title>Design system · Nomi</title></svelte:head>
 
 <div data-theme={theme === 'dark' || theme === 'light' ? theme : undefined} class="min-h-screen bg-bg">
-	<div class="mx-auto flex max-w-400 flex-col px-16 py-16 max-md:px-4">
+	<div class="mx-auto flex max-w-400 flex-col gap-16 p-16 max-md:px-4">
 		<nav class="flex items-center gap-4 text-ui" aria-label="Design sheets">
 			{#each sheets as sheet (sheet.href)}
 				<a

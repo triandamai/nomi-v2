@@ -7,16 +7,16 @@
 	import CodeSection from '$lib/gallery/build/CodeSection.svelte';
 	import TogetherSection from '$lib/gallery/build/TogetherSection.svelte';
 	import MobileBuildSection from '$lib/gallery/build/MobileBuildSection.svelte';
+	import StorySection from '$lib/gallery/build/StorySection.svelte';
+	import TypesSection from '$lib/gallery/build/TypesSection.svelte';
+	import SheetHeader from '$lib/gallery/SheetHeader.svelte';
 </script>
 
-<header class="flex max-w-xl flex-col gap-3 py-12">
-	<p class="font-mono text-label tracking-label text-text-3 uppercase">Design system · Build</p>
-	<h1 class="text-display font-medium tracking-display text-text">Everything between describe and a live URL</h1>
-	<p class="text-body text-text-2">
-		Koda shows the plan and a cost range before anything runs, then the real step it is on, never a progress bar. Every number here comes from one
-		story: warung-kopi-menu, started 08:13.
-	</p>
-</header>
+<SheetHeader
+	eyebrow="DESIGN SYSTEM · BUILD"
+	title="Everything between describe and a live URL"
+	lede="Koda shows the plan and a cost range before anything runs, then the real step it is on, never a progress bar. Every number here comes from one story: warung-kopi-menu, started 08:13."
+/>
 
 <EstimateSection />
 <BuildingSection />
@@ -26,3 +26,5 @@
 <CodeSection />
 <TogetherSection />
 <MobileBuildSection />
+<StorySection />
+<TypesSection />
