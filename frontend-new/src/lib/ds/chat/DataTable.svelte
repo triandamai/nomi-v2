@@ -51,8 +51,8 @@
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface py-1 pr-1.5 pl-3.5">
 		<span class="inline-flex text-text-2"><Icon icon={Table2} size={14} /></span>
 		<p id="{id}-title" class="min-w-0 flex-1 truncate text-ui font-medium text-text">{title}</p>
-		<IconButton icon={copier.copied ? Check : Copy} label={copier.copied ? m.copy_done() : m.table_copy()} variant="ghost" onclick={() => copier.copy(tableTsv(columns, rows, total))} />
-		<IconButton icon={Download} label={m.table_download()} variant="ghost" onclick={download} />
+		<IconButton icon={copier.copied ? Check : Copy} label={copier.copied ? m.copy_done() : m.table_copy()} variant="ghost" iconSize={14} onclick={() => copier.copy(tableTsv(columns, rows, total))} />
+		<IconButton icon={Download} label={m.table_download()} variant="ghost" iconSize={14} onclick={download} />
 	</header>
 	<div class="overflow-x-auto">
 		<table aria-labelledby="{id}-title" class="w-full border-collapse">

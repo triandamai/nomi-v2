@@ -81,14 +81,14 @@
 				type="button"
 				aria-label={copier.copied ? m.copy_done() : m.msg_copy()}
 				class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-sm text-text-3 outline-offset-1 hover:bg-surface-2 hover:text-text pointer-coarse:size-11"
-				onclick={() => copier.copy(text)}><Icon icon={copier.copied ? Check : Copy} size={14} /></button
+				onclick={() => copier.copy(text)}><Icon icon={copier.copied ? Check : Copy} size={13} /></button
 			>
 			{#if onedit}
 				<button
 					type="button"
 					aria-label={m.msg_edit()}
 					class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-sm text-text-3 outline-offset-1 hover:bg-surface-2 hover:text-text pointer-coarse:size-11"
-					onclick={onedit}><Icon icon={Pencil} size={14} /></button
+					onclick={onedit}><Icon icon={Pencil} size={13} /></button
 				>
 			{/if}
 			{#if time}<span class="pl-1 font-mono text-label text-text-3">{time}</span>{/if}

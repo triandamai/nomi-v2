@@ -54,6 +54,7 @@
 		</button>
 	</div>
 	<Segmented
+		surface="bg"
 		label={m.share_scope()}
 		value={current.scope}
 		options={[

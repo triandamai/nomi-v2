@@ -2,8 +2,10 @@
 	// Design System / Nomi → Segmented: a few mutually exclusive views of one list ("All 4 · Live 2
 	// · Building 1"). A radio group: arrow keys move the choice, like the platform's own.
 	type Option = { value: string; label: string; count?: number | string };
-	type Props = { label: string; options: Option[]; value?: string; onchange?: (value: string) => void };
-	let { label, options, value = $bindable(options[0]?.value ?? ''), onchange }: Props = $props();
+	// `surface`: filled (surface-2) on its own, or outlined on bg or surface where the pen puts it
+	// inside a card (Share, a form).
+	type Props = { label: string; options: Option[]; value?: string; surface?: 'filled' | 'bg' | 'surface'; onchange?: (value: string) => void };
+	let { label, options, value = $bindable(options[0]?.value ?? ''), surface = 'filled', onchange }: Props = $props();
 
 	let buttons: HTMLButtonElement[] = $state([]);
 
@@ -22,7 +24,12 @@
 	}
 </script>
 
-<div role="radiogroup" aria-label={label} tabindex="-1" {onkeydown} class="inline-flex max-w-full flex-wrap gap-0.5 rounded-sm bg-surface-2 p-0.5">
+<div role="radiogroup" aria-label={label} tabindex="-1" {onkeydown} class={[
+		'inline-flex max-w-full flex-wrap gap-0.5 self-start rounded-sm p-0.5',
+		surface === 'filled' && 'bg-surface-2',
+		surface === 'bg' && 'border border-border bg-bg',
+		surface === 'surface' && 'border border-border bg-surface',
+	]}>
 	{#each options as option, index (option.value)}
 		{@const checked = option.value === value}
 		<button

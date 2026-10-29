@@ -155,6 +155,7 @@
 				<div class="flex flex-col gap-1.5">
 					<p class="text-ui font-medium text-text">Repeat</p>
 					<Segmented
+						surface="surface"
 						label="Repeat"
 						value="monthly"
 						options={[

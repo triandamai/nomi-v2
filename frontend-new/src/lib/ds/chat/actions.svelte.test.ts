@@ -132,7 +132,10 @@ describe('SelectionCard', () => {
 		await expect.element(page.getByRole('checkbox', { name: /Fitness First/ })).not.toBeChecked();
 		await expect.element(page.getByText('2 selected · Rp 240.990 / month')).toBeVisible();
 		expect(getComputedStyle(page.getByText('650.000').element()).color).toBe(tokenColor('nm-text-3'));
-		await page.getByRole('button', { name: 'Select all' }).click();
+		const all = page.getByRole('button', { name: 'Select all' });
+		expect(getComputedStyle(all.element()).fontSize).toBe('12px');
+		expect(getComputedStyle(all.element()).color).toBe(tokenColor('nm-text-2'));
+		await all.click();
 		await expect.element(page.getByRole('checkbox', { name: /Fitness First/ })).toBeChecked();
 		await expect.element(page.getByRole('button', { name: 'Clear' })).toBeVisible();
 		await page.getByRole('button', { name: 'Track 2' }).click();

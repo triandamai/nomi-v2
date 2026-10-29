@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import Link from './Link.svelte';
 import { tokenColor } from '../test-utils';
 
@@ -23,13 +23,15 @@ describe('Link', () => {
 		expect(link.querySelector('svg.lucide-arrow-up-right')).not.toBeNull();
 	});
 
-	it('sits inside a sentence underlined, so it is not told apart by colour alone', async () => {
+	it('sits inside a sentence in text-2, as in the pen, and underlines on hover', async () => {
 		await render(Link, { href: '/settings/credits', label: 'switch to Nomi credits', variant: 'inline' });
-		const link = page.getByRole('link', { name: 'switch to Nomi credits' }).element();
-		const style = getComputedStyle(link);
+		const link = page.getByRole('link', { name: 'switch to Nomi credits' });
+		const style = getComputedStyle(link.element());
 		expect(style.color).toBe(tokenColor('nm-text-2'));
-		expect(style.textDecorationLine).toBe('underline');
-		expect(link.querySelector('svg')).toBeNull();
+		expect(style.textDecorationLine).toBe('none');
+		expect(link.element().querySelector('svg')).toBeNull();
+		await userEvent.hover(link);
+		expect(getComputedStyle(link.element()).textDecorationLine).toBe('underline');
 	});
 
 	it('opens other sites in a new tab without handing them this page', async () => {

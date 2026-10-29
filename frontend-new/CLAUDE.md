@@ -14,6 +14,10 @@ old app: read it for business logic and API usage, never import from it or edit 
 ## Design system
 "An instrument, not a toy." Every value comes from a design token; the pen file is the source
 of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour and copy.
+- Match the pen 1:1: sizes, spacing, colours, icons and copy as drawn. Where the rules below and
+  the pen disagree (a 10px citation number, a 13px icon, an inline link without an underline),
+  the pen wins and the component's comment says so. Check every component against an export of
+  its pen frame before it ships.
 - One accent (mint), under 10% of a view: it marks the single thing to act on. Neutrals do the
   hierarchy. Inverse buttons for panel actions.
 - Mono (Geist Mono) for anything a machine produced: paths, IDs, URLs, tokens, money, costs,
@@ -24,11 +28,11 @@ of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour 
   populated states together.
 - Mascots are identity, not decoration: one per agent, flat colour, only where that agent speaks
   or works.
-- Type: sizes 28 / 15 / 13 / 12 / 11 (max four per screen), weights 400 / 500 / 600, sentence
-  case everywhere; uppercase only in the mono section label.
+- Type: sizes 28 / 15 / 13 / 12 / 11 (max four per screen; `text-micro` 10 only where the pen
+  uses it), weights 400 / 500 / 600, sentence case everywhere; uppercase only in the mono labels.
 - Spacing 2 / 4 / 6 / 8 / 12 / 16 / 20 / 24 / 32 / 48; radius 6 (buttons, chips, rows, inputs)
   and 10 (panels, composer, callouts). Lucide icons, stroke 1.5: 16px in nav and buttons, 14px
-  inline, 12px in chips.
+  inline, 12px in chips (13px where the pen draws it).
 - Don't: gradients, glass, glows or a second accent hue; emoji or illustrations in UI chrome;
   shadows on flat cards or rows; progress bars that creep toward 90%; "magic", "effortless",
   "AI-powered"; Title Case or ALL CAPS outside the mono label; pure #000 or #FFF surfaces.
@@ -41,10 +45,11 @@ of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour 
 - Tokens live in `src/lib/ds/tokens/tokens.css`, exported from the pen file into `tokens.json`
   (`tokens.test.ts` fails when the two drift). Tailwind knows nothing else: colours are the token
   names without `nm-` (`bg-surface`, `text-text-2`, `border-border-strong`, `bg-accent`,
-  `text-accent-ink`, `bg-crew-koda-bg`), sizes `text-display / body / ui / caption / label`,
-  `rounded-sm / md`, `shadow-float` (floating layers only), `tracking-label / display`,
-  `font-sans / mono`. Spacing keeps Tailwind's 4px steps; use only the design's
-  (2, 4, 6, 8, 12, 16, 20, 24, 32, 48 → `0.5 1 1.5 2 3 4 5 6 8 12`).
+  `text-accent-ink`, `bg-crew-koda-bg`), sizes `text-display / body / ui / caption / label / micro`,
+  `rounded-xs / sm / md`, `shadow-float` (floating layers only), `leading-code`, `tracking-label / display`,
+  `font-sans / mono`. Spacing keeps Tailwind's 0.25 steps (1px each quarter): the design's scale
+  is 2, 4, 6, 8, 12, 16, 20, 24, 32, 48 (`0.5 1 1.5 2 3 4 5 6 8 12`), plus the pen's own paddings
+  where it draws them (10 → `2.5`, 14 → `3.5`, 9 → `2.25`).
 - `src/lib/ds/lint` checks every `.svelte` file: no raw colours, no `dark:`, no shadows other
   than `shadow-float`, no arbitrary values, and no class Tailwind doesn't generate. It reads the
   markup, so write classes in the markup, not in script variables.

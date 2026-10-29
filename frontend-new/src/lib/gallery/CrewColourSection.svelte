@@ -28,7 +28,7 @@
 				{#each [`crew-${key}`, `crew-${key}-bg`, `crew-${key}-ink`] as token (token)}
 					<div class="flex items-center gap-2">
 						<span data-token={token} class="size-4 shrink-0 rounded-sm border border-border" style="background: var(--{token})"></span>
-						<span class="font-mono text-label text-text-2">{token}</span>
+						<span class="font-mono text-micro text-text-2">{token}</span>
 					</div>
 				{/each}
 			</div>

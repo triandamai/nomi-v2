@@ -197,11 +197,13 @@ describe('Diff', () => {
 });
 
 describe('Links and sources', () => {
-	it('links inline, brighter than the sentence and underlined', async () => {
+	it('links inline a step brighter than the sentence, as in the pen, underlined on hover', async () => {
 		await render(Hyperlink, { href: '#rules', label: 'house rules Bu Sri sent' });
 		const link = page.getByRole('link', { name: 'house rules Bu Sri sent' });
 		await expect.element(link).toHaveAttribute('href', '#rules');
 		expect(getComputedStyle(link.element()).color).toBe(tokenColor('nm-text'));
+		expect(getComputedStyle(link.element()).textDecorationLine).toBe('none');
+		await userEvent.hover(link);
 		expect(getComputedStyle(link.element()).textDecorationLine).toBe('underline');
 	});
 
@@ -215,6 +217,7 @@ describe('Links and sources', () => {
 		const cite = page.getByRole('link', { name: 'Source 1: Peraturan Kos Mawar 2026.pdf' });
 		await expect.element(cite).toHaveTextContent('1');
 		expect(mono(cite.element())).toContain('Geist Mono');
+		expect(getComputedStyle(cite.element()).fontSize).toBe('10px');
 		expect(getComputedStyle(cite.element()).backgroundColor).toBe(tokenBackground('nm-surface-2'));
 	});
 
@@ -306,6 +309,7 @@ describe('Reminder', () => {
 		expect(mono(page.getByText('25 Nov · 09:00 · every month').element())).toContain('Geist Mono');
 		expect(container.querySelector('svg.lucide-bell')).not.toBeNull();
 		await expect.element(page.getByText('Kala', { exact: true })).toBeVisible();
+		expect(page.getByRole('button', { name: 'Edit reminder' }).element().querySelector('svg')?.getAttribute('width')).toBe('14');
 		await page.getByRole('button', { name: 'Edit reminder' }).click();
 		expect(onedit).toHaveBeenCalledOnce();
 	});

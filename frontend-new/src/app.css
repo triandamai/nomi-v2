@@ -99,6 +99,9 @@
 	--text-caption--line-height: 1.45;
 	--text-label: var(--nm-size-label);
 	--text-label--line-height: 1.35;
+	/* Below the scale, only where the pen uses 10px: a citation's number, a token's name. */
+	--text-micro: 10px;
+	--text-micro--line-height: 1.4;
 
 	/* Code blocks and diffs: lines a little apart, so long ones stay readable. */
 	--leading-code: 1.7;
