@@ -77,12 +77,12 @@
 					type="button"
 					aria-label={m.draft_remove({ index: String(index + 1) })}
 					onclick={() => onremove?.(index)}
-					class="inline-flex cursor-pointer rounded-xs p-0.5 text-text-3 outline-offset-2 hover:text-text"><Icon icon={X} size={14} /></button
+					class="inline-flex cursor-pointer rounded-xs text-text-3 outline-offset-2 hover:text-text pointer-coarse:size-11 pointer-coarse:items-center pointer-coarse:justify-center"><Icon icon={X} size={14} /></button
 				>
 			</li>
 		{/each}
 		<li>
-			<button type="button" onclick={onadd} class="flex w-full cursor-pointer items-center gap-2.5 rounded-xs py-2 text-ui text-text-3 outline-offset-2 hover:text-text-2">
+			<button type="button" onclick={onadd} class="flex w-full cursor-pointer items-center gap-2 rounded-xs py-2 text-ui text-text-3 outline-offset-2 hover:text-text-2">
 				<Icon icon={Plus} size={14} />
 				{m.draft_add_step()}
 			</button>

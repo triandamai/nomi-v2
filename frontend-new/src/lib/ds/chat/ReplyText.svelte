@@ -21,7 +21,7 @@
 </script>
 
 <div class="flex w-full flex-col gap-2" aria-busy={status === 'streaming'}>
-	<p class="text-body whitespace-pre-wrap text-text-2">
+	<p class="text-body leading-relaxed whitespace-pre-wrap text-text-2">
 		{text}{#if status === 'streaming'}<span data-caret aria-hidden="true" class="ml-0.5 inline-block h-4 w-2 animate-pulse bg-accent align-middle motion-reduce:animate-none"></span><span class="sr-only">{m.reply_writing()}</span>{/if}
 	</p>
 	{#if status === 'stopped'}

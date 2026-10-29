@@ -8,8 +8,8 @@
 	<div class="flex items-center gap-3" aria-hidden="true">
 		<span class="size-8 shrink-0 rounded-sm bg-surface-2"></span>
 		<span class="flex flex-1 flex-col gap-1.5">
-			<span class="h-2.5 w-35 rounded-xs bg-surface-2"></span>
-			<span class="h-2 w-full rounded-xs bg-surface"></span>
+			<span class="h-2.5 w-35 rounded-2xs bg-surface-2"></span>
+			<span class="h-2 w-full rounded-2xs bg-surface"></span>
 		</span>
 	</div>
 	<span class="font-mono text-label text-text-3">{label}</span>

@@ -21,7 +21,7 @@
 		<span class="min-w-0 flex-1 truncate text-caption text-text">{title}</span>
 		{#if total}<span class="font-mono text-label text-text-2">{total}</span>{/if}
 	</header>
-	<ul class="flex flex-col py-1">
+	<ul class="flex flex-col">
 		{#each files as file (file.path)}<li><FileRow path={file.path} change={file.change} /></li>{/each}
 	</ul>
 </section>

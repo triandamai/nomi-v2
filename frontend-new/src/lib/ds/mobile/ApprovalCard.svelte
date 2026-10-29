@@ -34,7 +34,7 @@
 	<div class="flex flex-col gap-1.5 p-3.5">
 		{#if to}<p class="font-mono text-label break-words text-text-3">to {to}</p>{/if}
 		{#if subject}<p class="text-body font-medium text-text">{subject}</p>{/if}
-		{#if excerpt}<p class="line-clamp-3 text-phone-sm text-text-2">{excerpt}</p>{/if}
+		{#if excerpt}<p class="line-clamp-3 text-phone-sm leading-comfy text-text-2">{excerpt}</p>{/if}
 		{#if attachment}
 			<p class="flex items-center gap-1.5 pt-1 font-mono text-label text-text-3"><Icon icon={Paperclip} size={12} />{attachment}</p>
 		{/if}

@@ -59,7 +59,7 @@
 		role="tooltip"
 		popover="manual"
 		style="top: {position.top}px; left: {position.left}px"
-		class="pointer-events-none fixed m-0 inline-flex items-center gap-2 rounded-sm bg-text px-2 py-1 text-caption text-bg shadow-float"
+		class="pointer-events-none fixed m-0 inline-flex items-center gap-2 rounded-sm bg-text px-2 py-1 text-caption text-bg"
 	>
 		{label}
 		{#if shortcut}<span class="font-mono text-label text-text-3">{shortcut}</span>{/if}

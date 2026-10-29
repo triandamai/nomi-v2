@@ -28,7 +28,7 @@
 	</span>
 	<span class="flex w-60 shrink-0 flex-col gap-1 max-md:hidden">
 		<Status kind={status.kind} label={status.label} />
-		{#if url}<span class="truncate font-mono text-label text-text-3">{url}</span>{/if}
+		{#if url}<span class="font-mono text-label break-all text-text-3">{url}</span>{/if}
 	</span>
 	<span class="font-mono text-label text-text-3">{updated}</span>
 </a>

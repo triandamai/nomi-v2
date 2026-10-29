@@ -3,7 +3,8 @@
 // class: directives. Script and style blocks are skipped.
 
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
-const ALLOWED_SHADOWS = new Set(['shadow-float', 'shadow-none']);
+// shadow-float for what floats; shadow-focus is a focused field's glow, not elevation.
+const ALLOWED_SHADOWS = new Set(['shadow-float', 'shadow-focus', 'shadow-none']);
 
 function markup(source: string): string {
 	return source.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '');
