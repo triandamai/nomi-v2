@@ -274,5 +274,13 @@
 	"firstrun_line": "Nomi membangun aplikasi web sungguhan dari deskripsi. Kamu dapat tautan live, dan kodenya milikmu untuk diekspor.",
 	"firstrun_name": "Namamu",
 	"firstrun_name_help": "Tampil di proyekmu. Ubah di Pengaturan › Profil.",
-	"firstrun_continue": "Lanjut"
+	"firstrun_continue": "Lanjut",
+	"ws_resize": "Ubah lebar chat",
+	"ws_up_to_date": "Sudah terbaru",
+	"ws_publish": "Publikasikan",
+	"ws_publish_count": "Publikasikan {count} perubahan",
+	"ws_publishing": "Memublikasikan… {elapsed}",
+	"ws_publish_failed": "Gagal publikasi · Coba lagi",
+	"ws_expand": "Perbesar",
+	"ws_sheet_hint": "esc menutup · pratinjau tetap berjalan"
 }
