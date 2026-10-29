@@ -8,7 +8,8 @@
 	// data-hover / data-focus / data-active show a state without a pointer (the gallery uses them).
 	type Props = {
 		label: string;
-		variant?: 'primary' | 'inverse' | 'secondary' | 'ghost' | 'danger';
+		/** ghost-danger: a quiet stop ("Stop all" in the crew-working banner). */
+		variant?: 'primary' | 'inverse' | 'secondary' | 'ghost' | 'ghost-danger' | 'danger';
 		iconStart?: Component<LucideProps>;
 		iconEnd?: Component<LucideProps>;
 		loading?: boolean;
@@ -54,6 +55,7 @@
 			variant === 'inverse' && 'bg-text font-medium text-bg',
 			variant === 'secondary' && 'border border-border-strong text-text hover:bg-surface-2 active:bg-border data-active:bg-border data-hover:bg-surface-2',
 			variant === 'ghost' && 'text-text-2 hover:bg-surface-2 hover:text-text data-hover:bg-surface-2 data-hover:text-text',
+			variant === 'ghost-danger' && 'text-danger hover:bg-surface-2 data-hover:bg-surface-2',
 			variant === 'danger' && 'border border-danger-border bg-danger-bg font-medium text-danger hover:border-danger data-hover:border-danger',
 			lifts && 'lift',
 		]}>{@render content()}</a
@@ -71,6 +73,7 @@
 			variant === 'inverse' && 'bg-text font-medium text-bg',
 			variant === 'secondary' && 'border border-border-strong text-text hover:enabled:bg-surface-2 active:enabled:bg-border data-active:bg-border data-hover:bg-surface-2',
 			variant === 'ghost' && 'text-text-2 hover:enabled:bg-surface-2 hover:enabled:text-text data-hover:bg-surface-2 data-hover:text-text',
+			variant === 'ghost-danger' && 'text-danger hover:enabled:bg-surface-2 data-hover:bg-surface-2',
 			variant === 'danger' && 'border border-danger-border bg-danger-bg font-medium text-danger hover:enabled:border-danger data-hover:border-danger',
 			lifts && 'lift',
 			disabled && !loading && 'opacity-40',
