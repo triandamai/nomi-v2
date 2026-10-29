@@ -7,6 +7,7 @@
 	import ControlsSection from '$lib/gallery/chat/ControlsSection.svelte';
 	import ThreadsSection from '$lib/gallery/chat/ThreadsSection.svelte';
 	import CrewSection from '$lib/gallery/chat/CrewSection.svelte';
+	import MobileSection from '$lib/gallery/chat/MobileSection.svelte';
 </script>
 
 <header class="flex max-w-xl flex-col gap-3 py-12">
@@ -26,3 +27,4 @@
 <ControlsSection />
 <ThreadsSection />
 <CrewSection />
+<MobileSection />

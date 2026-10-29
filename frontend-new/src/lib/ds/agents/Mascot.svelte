@@ -4,7 +4,7 @@
 
 	// Identity, not decoration: only where that agent speaks or works. Decorative next to their
 	// name; give it a label when it stands alone.
-	let { agent, size = 96, label }: { agent: CrewId; size?: 96 | 32 | 20; label?: string } = $props();
+	let { agent, size = 96, label }: { agent: CrewId; size?: 96 | 32 | 20 | 16; label?: string } = $props();
 
 	const shape = $derived(MASCOTS[agent]);
 </script>

@@ -224,5 +224,11 @@
 	"session_title": "Kamu telah keluar",
 	"session_body": "Sesimu berakhir, jadi pesan ini belum terkirim. Pesan disimpan di perangkat ini dan terkirim setelah kamu masuk. Tugas kru yang sedang berjalan tetap berlanjut.",
 	"session_draft_kept": "draf disimpan",
-	"session_sign_in": "Masuk lagi"
+	"session_sign_in": "Masuk lagi",
+	"mobile_back": "Kembali",
+	"mobile_message": "Kirim pesan ke Nomi",
+	"mobile_more": "Lainnya",
+	"mobile_said": "Kata {provider}",
+	"mobile_progress": "Pertanyaan {current} dari {total}",
+	"mobile_unread": "Belum dibaca"
 }
