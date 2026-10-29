@@ -12,7 +12,7 @@
 	title="Build estimate"
 	description="Shown before anything runs, like a Claude plan: the steps, what you'll have, and one clear choice. Cost is a quiet line, never the headline. It collapses into the thread once the build starts."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Build estimate" note="default · before run" inline>
 			<BuildPlan
 				project="warung-kopi-menu"

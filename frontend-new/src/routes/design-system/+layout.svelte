@@ -15,7 +15,7 @@
 <svelte:head><title>Design system · Nomi</title></svelte:head>
 
 <div data-theme={theme === 'dark' || theme === 'light' ? theme : undefined} class="min-h-screen bg-bg">
-	<div class="mx-auto flex max-w-7xl flex-col px-12 py-12">
+	<div class="mx-auto flex max-w-400 flex-col px-16 py-16 max-md:px-4">
 		<nav class="flex items-center gap-4 text-ui" aria-label="Design sheets">
 			{#each sheets as sheet (sheet.href)}
 				<a

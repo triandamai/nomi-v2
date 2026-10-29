@@ -28,7 +28,7 @@
 	title="Message controls & composer"
 	description="Every message can be stopped, edited, regenerated or copied. Edits branch instead of overwriting. Attachments and voice show progress and limits before you send."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Message actions" note="hover · edit · branch">
 			<div class="flex flex-col gap-4">
 				<VersionSwitcher current={2} total={2} onprev={noop} onnext={noop} />

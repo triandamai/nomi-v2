@@ -21,7 +21,7 @@
 </script>
 
 <GallerySection title="Share & export" description="Two dialogs reached from the live card. Export is never behind a plan: it takes the same number of clicks as upgrading, and works on Free.">
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Share" note="copy · QR · WhatsApp · public or unlisted" inline>
 			<div class="flex flex-col items-start gap-4">
 				<BuildSharePanel {url} {preview} oneditpreview={noop} oninvite={noop} onmore={noop} onclose={noop} ondone={noop} />

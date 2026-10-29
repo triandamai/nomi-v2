@@ -20,7 +20,7 @@
 	title="Chat management & long threads"
 	description="The chat itself can be renamed, pinned, moved into a project, exported or deleted. Long threads keep your place and tell you when something new arrives."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Chat menu" note="top bar ··· · rename · move">
 			<div class="flex flex-col items-start gap-4">
 				<SectionLabel label="Menu" />

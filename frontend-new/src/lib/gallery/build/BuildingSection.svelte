@@ -6,7 +6,7 @@
 </script>
 
 <GallerySection title="Building" description="The real step, the real file, the real clock. No percentage, no bar. The preview stays empty until there is something real to show.">
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="File list" note="done · writing · queued" inline>
 			<FileList
 				total={9}

@@ -73,7 +73,7 @@
 	title="Actions"
 	description="Anything that sends, spends, deletes or decides for you stops here and waits. One clear primary per card; the outcome stays visible after you act."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Approval" note="pending · approved · rejected">
 			<div class="flex flex-col gap-5">
 				<ApprovalCard

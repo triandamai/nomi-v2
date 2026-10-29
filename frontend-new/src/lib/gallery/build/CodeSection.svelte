@@ -128,7 +128,7 @@
 				/>
 			</div>
 		</GalleryBoard>
-		<div class="grid items-start gap-6 lg:grid-cols-2">
+		<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 			<GalleryBoard title="Phone preview" note="real phone size · light app inside the dark workspace" inline>
 				<div class="flex flex-col gap-4">
 					<DeviceBar device="iPhone 15 · 393 × 852" ondevice={noop} onphone={noop} />

@@ -26,7 +26,7 @@
 	title="Mobile chat"
 	description="Native patterns at 390 pt: sheets instead of popovers, 44 pt targets, 16 pt body text, the composer above the keyboard, banners at the top. Desktop cards are reused only where they fit without losing anything. The phone's own status bar, keyboard, home indicator and notifications aren't drawn by the app."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Shell" note="nav · composer">
 			<div class="flex w-97.5 max-w-full flex-col gap-12">
 				<NavBar title="Food spending in October" who={{ agent: 'dana', name: 'Dana' }} onback={noop} onmenu={noop} />

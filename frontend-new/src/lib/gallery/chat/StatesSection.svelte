@@ -174,7 +174,7 @@
 	title="States & errors"
 	description="Errors say what happened in plain words, quote the provider's own reason, and offer the next move. Cost is never guessed: providers don't report a charge on failed calls."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Message states" note="user · assistant">
 			<div class="flex flex-col gap-4">
 				<SectionLabel label="User" />
