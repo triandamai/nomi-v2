@@ -1,5 +1,6 @@
 pub mod agent_permissions;
 pub mod attachments;
+pub mod background;
 pub mod build_intent;
 pub mod chat_project;
 pub mod chat_title;
@@ -33,6 +34,9 @@ pub mod voice;
 pub mod web;
 pub mod working_memory;
 
+pub use background::{
+    CANCEL_BACKGROUND_TASK_TOOL_NAME, LIST_BACKGROUND_TASKS_TOOL_NAME, RUN_BACKGROUND_TASK_TOOL_NAME,
+};
 pub use content_block::{ApprovalStatus, ContentBlock, FileWriteEntry, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{

@@ -1,6 +1,7 @@
 pub mod configuration;
 pub mod app;
 pub mod attachment_worker;
+pub mod background_worker;
 pub mod bootstrap;
 pub mod delegation_worker;
 pub mod routes;

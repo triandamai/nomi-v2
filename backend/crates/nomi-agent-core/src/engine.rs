@@ -467,6 +467,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
         crate::crew_talk::note_tool_definition(),
     ];
     tools.extend(crate::records::record_tool_definitions());
+    tools.extend(crate::background::background_tool_definitions());
     let targets = registry.reminder_target_agent_types();
     tools.push(create_reminder_tool_definition(&targets));
     tools.push(list_reminders_tool_definition());
@@ -529,6 +530,8 @@ fn is_gateable(tool_name: &str) -> bool {
         && tool_name != crate::voice::SPEAK_TOOL_NAME
         // Record tools only touch the calling agent's own private records.
         && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
+        // Background task orchestration tools queue/inspect/cancel background tasks without blocking.
+        && !crate::background::BACKGROUND_TOOL_NAMES.contains(&tool_name)
 }
 
 fn describe_pending_action(tool_name: &str, input: &serde_json::Value, locale: Locale) -> String {
@@ -596,6 +599,7 @@ pub async fn run_agent_turn(
     }
     tools.push(crate::views::show_tool_definition());
     tools.push(rename_chat_tool_definition());
+    tools.extend(crate::background::background_tool_definitions());
     let crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
     if !crew.is_empty() {
         tools.push(crate::crew_talk::ask_agent_tool_definition(&crew));
@@ -746,7 +750,11 @@ pub async fn run_agent_turn(
         _ => nomi_llm::ReasoningEffort::Medium,
     };
     // Thinking is shown in chat, so keep it to the point rather than a running monologue.
-    let system_prompt = format!("{system_prompt}\n\n{REASONING_STYLE}\n\n{}", crate::prompts::FOLLOW_UP_SUGGESTIONS);
+    let system_prompt = format!(
+        "{system_prompt}\n\n{}\n\n{REASONING_STYLE}\n\n{}",
+        crate::prompts::BACKGROUND_EXECUTION_GUIDE,
+        crate::prompts::FOLLOW_UP_SUGGESTIONS
+    );
     let agent_type = agent.agent_type();
 
     // Whether this run already saved a plan draft, and already asked once for a missing answer.
@@ -1335,6 +1343,21 @@ pub async fn resolve_tool_batch(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
+            } else if name.as_str() == crate::background::RUN_BACKGROUND_TASK_TOOL_NAME {
+                match crate::background::start_background_task(conn, mqtt, session_id, user_id, agent.agent_type().as_ref(), input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::background::LIST_BACKGROUND_TASKS_TOOL_NAME {
+                match crate::background::list_background_tasks(conn, session_id, user_id).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::background::CANCEL_BACKGROUND_TASK_TOOL_NAME {
+                match crate::background::cancel_background_task(conn, session_id, user_id, input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
             } else if name.as_str() == crate::voice::SPEAK_TOOL_NAME {
                 match crate::voice::speak(conn, user_id, input).await {
                     Ok((text, block)) => (text, false, Some(block)),
@@ -1391,6 +1414,7 @@ pub async fn resolve_tool_batch(
                     && name.as_str() != CREATE_REMINDER_TOOL_NAME
                     && name.as_str() != LIST_REMINDERS_TOOL_NAME
                     && name.as_str() != CANCEL_REMINDER_TOOL_NAME
+                    && !crate::background::BACKGROUND_TOOL_NAMES.contains(&name.as_str())
                     && !crate::web::is_web_tool(name)
                     && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
@@ -1762,4 +1786,43 @@ fn describe_tool_error(tool_name: &str, input: &serde_json::Value, result: &str,
         _ => "engine.failed_tool",
     };
     locale.tf(key, &args)
+}
+
+#[cfg(test)]
+mod background_engine_tests {
+    use super::*;
+    use std::borrow::Cow;
+    use async_trait::async_trait;
+    use crate::background::{
+        CANCEL_BACKGROUND_TASK_TOOL_NAME, LIST_BACKGROUND_TASKS_TOOL_NAME,
+        RUN_BACKGROUND_TASK_TOOL_NAME,
+    };
+
+    struct DummyDefaultAgent;
+    #[async_trait]
+    impl SubAgent for DummyDefaultAgent {
+        fn agent_type(&self) -> Cow<'static, str> { Cow::Borrowed("chitchat") }
+        fn system_prompt(&self) -> Cow<'static, str> { Cow::Borrowed("test") }
+        fn tools(&self) -> Vec<ToolDefinition> { vec![] }
+        async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: serde_json::Value) -> Result<crate::content_block::ToolOutcome, String> {
+            Err("none".to_string())
+        }
+        fn intent_label(&self) -> Cow<'static, str> { Cow::Borrowed("chitchat") }
+        fn intent_description(&self) -> Cow<'static, str> { Cow::Borrowed("default") }
+        fn is_default(&self) -> bool { true }
+    }
+
+    #[test]
+    fn crew_tools_include_all_background_task_tools_and_never_gate_them() {
+        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]);
+        let defs = crew_tool_definitions(&registry);
+        let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&RUN_BACKGROUND_TASK_TOOL_NAME));
+        assert!(names.contains(&LIST_BACKGROUND_TASKS_TOOL_NAME));
+        assert!(names.contains(&CANCEL_BACKGROUND_TASK_TOOL_NAME));
+
+        assert!(!is_gateable(RUN_BACKGROUND_TASK_TOOL_NAME));
+        assert!(!is_gateable(LIST_BACKGROUND_TASKS_TOOL_NAME));
+        assert!(!is_gateable(CANCEL_BACKGROUND_TASK_TOOL_NAME));
+    }
 }

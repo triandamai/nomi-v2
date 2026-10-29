@@ -63,7 +63,9 @@ pub async fn handle_inbound_message(
 
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
-    lock::insert_inbound_message(&mut conn, session_id, sender_channel_identity_id, text).await?;
+    if nomi_agent_core::background::parse_wakeup_marker(text).is_none() {
+        lock::insert_inbound_message(&mut conn, session_id, sender_channel_identity_id, text).await?;
+    }
 
     let result = run_locked_turn(&mut conn, None, s3, provider, embedding_provider, registry, catalog, session_id, sender_channel_identity_id, user_id, text).await;
 
@@ -252,6 +254,39 @@ async fn run_locked_turn(
     user_id: Uuid,
     text: &str,
 ) -> Result<(String, Option<Uuid>), TurnError> {
+    // A completed background task always spawns Nomi (the default assistant) to review its
+    // output and reply or coordinate the next step, even if another specialist was active.
+    if let Some(wakeup) = nomi_agent_core::background::parse_wakeup_marker(text) {
+        if let Some(agent_session_id) = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await? {
+            let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
+            routing::complete_agent_session(
+                conn,
+                mqtt,
+                agent_session_id,
+                session_id,
+                &details.agent_type,
+                "completed",
+                "handed back to Nomi after background task finished",
+            )
+            .await?;
+        }
+        return run_background_wakeup_turn(
+            conn,
+            mqtt,
+            s3,
+            provider,
+            embedding_provider,
+            registry,
+            catalog,
+            registry.default_agent(),
+            session_id,
+            sender_channel_identity_id,
+            user_id,
+            &wakeup,
+        )
+        .await;
+    }
+
     // Attachments (files, voice notes) always go to the Files agent first: it reads them and
     // decides whether to answer itself or hand parts to Money, Reminders, Planning or Coding.
     // It runs without an agent session of its own, so an ongoing conversation with another agent
@@ -362,6 +397,56 @@ async fn run_subagent_turn(
 
     let handoff = HandOffContext { provider, embedding_provider, registry, catalog, s3, sender_channel_identity_id, user_id };
     follow_hand_offs(conn, mqtt, &handoff, session_id, agent, agent_session_id, outcome).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_background_wakeup_turn(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
+    agent: Arc<dyn nomi_agent_core::SubAgent>,
+    session_id: Uuid,
+    sender_channel_identity_id: Uuid,
+    user_id: Uuid,
+    wakeup: &nomi_agent_core::background::BackgroundWakeup,
+) -> Result<(String, Option<Uuid>), TurnError> {
+    let mut messages = fetch_recent_messages(conn, session_id).await?;
+    nomi_agent_core::attachments::expand_messages(conn, user_id, &mut messages).await;
+    append_background_wakeup_note(&mut messages, wakeup);
+
+    let outcome = nomi_agent_core::run_agent_turn(
+        conn,
+        mqtt,
+        s3,
+        provider,
+        embedding_provider,
+        registry,
+        agent.as_ref(),
+        session_id,
+        session_id,
+        user_id,
+        messages,
+        SUBAGENT_MAX_TOKENS,
+    )
+    .await?;
+
+    let handoff = HandOffContext { provider, embedding_provider, registry, catalog, s3, sender_channel_identity_id, user_id };
+    follow_hand_offs(conn, mqtt, &handoff, session_id, agent, session_id, outcome).await
+}
+
+pub fn append_background_wakeup_note(
+    messages: &mut Vec<LlmMessage>,
+    wakeup: &nomi_agent_core::background::BackgroundWakeup,
+) {
+    let note = wakeup.prompt_note();
+    match messages.last_mut() {
+        Some(last) if last.role == LlmRole::User => last.content.push(ContentBlock::Text { text: note }),
+        _ => messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: note }] }),
+    }
 }
 
 /// What running a handed-off specialist needs, beyond the chat it runs in.
@@ -907,4 +992,39 @@ pub async fn hand_conversation_to(
     }
     routing::spawn_agent_session(conn, mqtt, session_id, sender, agent.agent_type().as_ref(), agent.display_name().as_ref()).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod background_wakeup_tests {
+    use super::*;
+    use nomi_agent_core::background::BackgroundWakeup;
+
+    #[test]
+    fn wakeup_note_appends_to_trailing_user_turn_or_pushes_new_user_turn() {
+        let wakeup = BackgroundWakeup {
+            task_id: Uuid::nil(),
+            agent_type: "coding".to_string(),
+            label: "full-test-suite".to_string(),
+            command: "cargo test --workspace".to_string(),
+            status: "completed".to_string(),
+            exit_code: Some(0),
+            output: "test result: ok.".to_string(),
+        };
+
+        let mut after_assistant = vec![LlmMessage {
+            role: LlmRole::Assistant,
+            content: vec![ContentBlock::Text { text: "Started full-test-suite in background; meanwhile I updated README.".to_string() }],
+        }];
+        append_background_wakeup_note(&mut after_assistant, &wakeup);
+        assert_eq!(after_assistant.len(), 2);
+        assert_eq!(after_assistant[1].role, LlmRole::User);
+
+        let mut after_user = vec![LlmMessage {
+            role: LlmRole::User,
+            content: vec![ContentBlock::Text { text: "What else is left?".to_string() }],
+        }];
+        append_background_wakeup_note(&mut after_user, &wakeup);
+        assert_eq!(after_user.len(), 1);
+        assert_eq!(after_user[0].content.len(), 2);
+    }
 }
