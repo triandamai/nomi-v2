@@ -269,5 +269,10 @@
 	"export_env": "Env var names",
 	"export_env_note": "Env var values are not exported. Set them again wherever you deploy.",
 	"export_github": "Push to GitHub",
-	"export_zip": "Download zip"
+	"export_zip": "Download zip",
+	"firstrun_title": "What should we call you?",
+	"firstrun_line": "Nomi builds real web apps from a description. You get a live link, and the code is yours to export.",
+	"firstrun_name": "Your name",
+	"firstrun_name_help": "Shown on your projects. Change it in Settings › Profile.",
+	"firstrun_continue": "Continue"
 }

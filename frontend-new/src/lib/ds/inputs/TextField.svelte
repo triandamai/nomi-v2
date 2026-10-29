@@ -9,6 +9,8 @@
 		label: string;
 		value?: string;
 		helper?: string;
+		/** The helper at 11px, where the pen sets it smaller (the first-run name). */
+		smallHelper?: boolean;
 		error?: string;
 		placeholder?: string;
 		/** For machine values: slugs, keys, URLs. */
@@ -26,6 +28,7 @@
 		label,
 		value = $bindable(''),
 		helper,
+		smallHelper = false,
 		error,
 		placeholder,
 		mono = false,
@@ -68,6 +71,6 @@
 		{#if error}<span class="inline-flex text-danger"><Icon icon={CircleAlert} size={14} /></span>{/if}
 	</div>
 	{#if note}
-		<p id="{id}-note" class={['text-caption', error ? 'text-danger' : 'text-text-3']}>{note}</p>
+		<p id="{id}-note" class={[smallHelper && !error ? 'text-label' : 'text-caption', error ? 'text-danger' : 'text-text-3']}>{note}</p>
 	{/if}
 </div>
