@@ -1,3 +1,4 @@
+pub mod configuration;
 pub mod app;
 pub mod attachment_worker;
 pub mod background_worker;
@@ -10,6 +11,10 @@ pub mod project_events;
 pub mod problem;
 pub mod project_ops;
 pub mod public_url;
+pub mod project_relays;
+pub mod relay_backend;
+pub mod relay_connection;
+pub mod relay_ops;
 pub mod push;
 pub mod quota;
 pub mod reminders_worker;
@@ -24,9 +29,11 @@ pub mod worker;
 /// own crate (see nomi-agent-money or nomi-agent-chitchat for the shape), add it as a
 /// dependency of this crate's Cargo.toml, and add one line here.
 /// Every built-in agent. Rena and Koda publish projects, and Iris inspects them, through
-/// `project_ops::ServerProjectOps`.
+/// `project_ops::ServerProjectOps`; Rena makes Relay backends, and Koda works on them, through
+/// `relay_ops::ServerRelayOps`.
 pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore) -> nomi_agent_core::AgentRegistry {
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
+    let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),
@@ -36,8 +43,8 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(nomi_agent_health::HealthAgent::from_env()),
         Box::new(nomi_agent_personality::PersonalityAgent),
         Box::new(nomi_agent_supervisor::SupervisorAgent),
-        Box::new(nomi_agent_planning::PlanningAgent::new().with_project_ops(project_ops.clone())),
-        Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone())),
+        Box::new(nomi_agent_planning::PlanningAgent::new().with_project_ops(project_ops.clone()).with_relay_ops(relay_ops.clone())),
+        Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops)),
         Box::new(nomi_agent_inspector::InspectorAgent::new().with_project_ops(project_ops)),
     ])
 }

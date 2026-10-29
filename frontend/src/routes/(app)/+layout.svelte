@@ -16,6 +16,7 @@
 	import { nextSnackbar, showSnackbar, snackbars, type SnackbarItem } from '$lib/snackbars.svelte';
 	import { connectUserActivity } from '$lib/userActivity';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
+	import { setAttachmentLimits } from '$lib/attachments';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -27,6 +28,9 @@
 	// Dynamic agents' chosen shapes: registered before any child renders an AgentShape, and again
 	// whenever the crew reloads.
 	registerAgentLooks(untrack(() => data.crew));
+	$effect.pre(() => {
+		if (data.attachmentLimits) setAttachmentLimits(data.attachmentLimits);
+	});
 	$effect.pre(() => registerAgentLooks(data.crew));
 
 	// The saved language follows the person to every device: switch (one reload) when this one
@@ -58,7 +62,9 @@
 		if (!arrived) return;
 		inbox.arrived = null;
 		if (page.url.pathname.startsWith('/notifications')) return;
-		showSnackbar({ message: arrived.title, actionLabel: m.notif_view(), href: arrived.link || '/notifications', timeout: 6000 });
+		// With what happened when the live feed brought it ("…couldn't be published — Shipyard refused it: …").
+		const message = arrived.body ? `${arrived.title} — ${arrived.body}` : arrived.title;
+		showSnackbar({ message, actionLabel: m.notif_view(), href: arrived.link || '/notifications', timeout: arrived.body ? 10_000 : 6000 });
 	});
 
 	// The person's own live feed, open as long as the app is: a chat the crew finishes (or that

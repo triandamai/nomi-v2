@@ -209,13 +209,26 @@ async fn publishing_follows_webhooks_and_rolls_back(pool: PgPool) {
     let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM shipyard_events WHERE project_id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
     assert_eq!(stored, 1);
 
-    // A failed crash alert notifies the project's admin.
+    // The admins hear the publish went out, as well as reading it in the project's chat.
+    let owner = user_id(&pool, "ana@acme.test").await;
+    let mut live: Vec<(String, String)> = Vec::new();
+    for _ in 0..50 {
+        live = sqlx::query_as("SELECT title, body FROM notifications WHERE user_id = $1 AND kind = 'deploy'").bind(owner).fetch_all(&pool).await.unwrap();
+        if !live.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(live.len(), 1, "one notice, however often the event came");
+    assert!(live[0].0.contains("is live"), "{live:?}");
+    assert!(live[0].1.contains("https://todo.apps.test"), "{live:?}");
+
+    // A crash alert notifies the project's admin.
     let crash = json!({
         "id": "evt-2", "type": "service.crashed", "created_at": chrono::Utc::now(), "app": app,
         "environment": "production", "service": "web", "data": { "exit_code": 137 }
     });
     assert_eq!(webhook(router.clone(), &crash, WEBHOOK_SECRET).await, StatusCode::NO_CONTENT);
-    let owner = user_id(&pool, "ana@acme.test").await;
     let mut notified = 0i64;
     for _ in 0..50 {
         notified = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id = $1 AND kind = 'deploy'")
@@ -223,12 +236,33 @@ async fn publishing_follows_webhooks_and_rolls_back(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-        if notified > 0 {
+        if notified > 1 {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert_eq!(notified, 1);
+    assert_eq!(notified, 2);
+
+    // So does a burst of server errors, with how many there were.
+    let errors = json!({
+        "id": "evt-3", "type": "service.error_rate_alert", "created_at": chrono::Utc::now(), "app": app,
+        "environment": "production", "service": "web", "data": { "error_rate": 12.5, "threshold": 5.0, "requests": 400, "errors_5xx": 50 }
+    });
+    assert_eq!(webhook(router.clone(), &errors, WEBHOOK_SECRET).await, StatusCode::NO_CONTENT);
+    let mut bodies: Vec<String> = Vec::new();
+    for _ in 0..50 {
+        bodies = sqlx::query_scalar("SELECT body FROM notifications WHERE user_id = $1 AND kind = 'deploy' ORDER BY created_at")
+            .bind(owner)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        if bodies.len() > 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(bodies.len(), 3, "{bodies:?}");
+    assert!(bodies[2].contains("50 of 400"), "{bodies:?}");
 
     // Rolling back sends the first publish's source and manifest again.
     let first_id = first["id"].as_str().unwrap();
@@ -380,4 +414,235 @@ async fn a_project_can_be_limited_to_its_members(pool: PgPool) {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
     assert_eq!(left, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn deleting_a_project_deletes_its_backend_app_too(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    let deleted = json!({ "data": { "deleted": true }, "error": null });
+    Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/todo-del$")).respond_with(ResponseTemplate::new(200).set_body_json(deleted.clone())).expect(1).mount(&shipyard).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/todo-del-backend$")).respond_with(ResponseTemplate::new(200).set_body_json(deleted)).expect(1).mount(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-del' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router.clone(), "DELETE", &format!("/api/projects/{project_id}"), Some(&token), None).await;
+
+    // Its development backend (database and Relay) goes with it, not only the web app.
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+}
+
+/// A publish row as Shipyard's webhooks would have left it.
+async fn seed_publish(pool: &PgPool, project_id: Uuid, environment: &str, status: &str, files_version: i64, rollback_of: Option<Uuid>, agent: Option<&str>) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO project_publishes (project_id, environment, status, manifest, files_version, rollback_of, started_by_agent, created_at) \
+         VALUES ($1, $2, $3, '{}'::jsonb, $4, $5, $6, now() + make_interval(secs => $4)) RETURNING id",
+    )
+    .bind(project_id)
+    .bind(environment)
+    .bind(status)
+    .bind(files_version)
+    .bind(rollback_of)
+    .bind(agent)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+fn publish_in<'a>(overview: &'a Value, id: Uuid) -> &'a Value {
+    overview["publishes"].as_array().unwrap().iter().find(|p| p["id"] == json!(id)).unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn overview_marks_the_newest_success_per_environment_live(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "live@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let worked = seed_publish(&pool, project_id, "production", "succeeded", 1, None, None).await;
+    let broke = seed_publish(&pool, project_id, "production", "failed", 2, None, None).await;
+    let staging = seed_publish(&pool, project_id, "staging", "succeeded", 3, None, None).await;
+
+    let (status, overview) = request(router, "GET", &format!("/api/projects/{project_id}/deploy"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(publish_in(&overview, worked)["is_live"], json!(true));
+    assert_eq!(publish_in(&overview, broke)["is_live"], json!(false));
+    assert_eq!(publish_in(&overview, staging)["is_live"], json!(true));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_rollback_row_names_the_version_it_returned_to_and_who_started_it(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "rolled@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let first = seed_publish(&pool, project_id, "production", "succeeded", 1, None, None).await;
+    let by_koda = seed_publish(&pool, project_id, "production", "succeeded", 2, None, Some("Koda")).await;
+    let back = seed_publish(&pool, project_id, "production", "succeeded", 3, Some(first), None).await;
+
+    let (_, overview) = request(router, "GET", &format!("/api/projects/{project_id}/deploy"), Some(&token), None).await;
+
+    assert_eq!(publish_in(&overview, back)["rollback_of_version"], json!(1));
+    assert_eq!(publish_in(&overview, by_koda)["started_by_agent"], json!("Koda"));
+    assert_eq!(publish_in(&overview, first)["started_by_agent"], Value::Null);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn rolling_back_to_a_failed_publish_is_refused(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("POST")).and(path_regex(r"/publish$")).respond_with(ResponseTemplate::new(202)).expect(0).mount(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "nope@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let broke = seed_publish(&pool, project_id, "production", "failed", 1, None, None).await;
+    sqlx::query("UPDATE project_publishes SET source_key = 'publishes/x.zip' WHERE id = $1").bind(broke).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router, "POST", &format!("/api/projects/{project_id}/deploy/publishes/{broke}/rollback"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_relay_projects_secrets_also_go_to_relay(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("PUT")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "ref": "sec-1" }, "error": null }))).mount(&shipyard).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/secrets/[A-Z_]+$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "deleted": true }, "error": null }))).mount(&shipyard).await;
+    let relay = MockServer::start().await;
+    // Sign-in uses some, and functions get them all as ctx.env.
+    Mock::given(method("PUT")).and(path_regex(r"^/control/projects/[^/]+/secrets/(NOMI_OAUTH_GITHUB_SECRET|OTHER_KEY)$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(2).mount(&relay).await;
+    Mock::given(method("DELETE")).and(path_regex(r"^/control/projects/[^/]+/secrets/NOMI_OAUTH_GITHUB_SECRET$")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": {}, "error": null }))).expect(1).mount(&relay).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let owner: uuid::Uuid = sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
+    nomi_server::relay_connection::save(&pool, &nomi_test_support::TEST_SETTINGS_KEY, &relay.uri(), Some("relay_control_key"), owner).await.unwrap();
+    let secrets = format!("/api/projects/{project_id}/secrets");
+
+    // Not on Relay yet: the secret goes to Shipyard only.
+    let (status, _) = request(router.clone(), "PUT", &format!("{secrets}/STRIPE_KEY"), Some(&token), Some(json!({ "value": "sk" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let (status, body) = request(router.clone(), "PUT", &format!("{secrets}/NOMI_OAUTH_GITHUB_SECRET"), Some(&token), Some(json!({ "value": "gh-secret" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, _) = request(router.clone(), "PUT", &format!("{secrets}/OTHER_KEY"), Some(&token), Some(json!({ "value": "x" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = request(router.clone(), "DELETE", &format!("{secrets}/NOMI_OAUTH_GITHUB_SECRET"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let sent = relay.received_requests().await.unwrap();
+    let put: Value = serde_json::from_slice(&sent.iter().find(|r| r.method.as_str() == "PUT").unwrap().body).unwrap();
+    assert_eq!(put["value"], "gh-secret");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_first_publish_of_a_project_with_its_own_backend_makes_the_production_backend_first(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "backend@deploy.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    // Made on Relay with its own development backend, as a new project is; nothing in production yet.
+    sqlx::query("UPDATE projects SET backend = 'relay' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+    let key = nomi_test_support::TEST_SETTINGS_KEY;
+    nomi_server::project_relays::begin(&pool, &key, project_id, "dev", "dev-key", "0.1.5").await.unwrap();
+    nomi_server::project_relays::set_url(&pool, project_id, "dev", "https://dev.backend.test").await.unwrap();
+    nomi_server::project_relays::set_state(&pool, project_id, "dev", nomi_server::project_relays::READY, None, None).await.unwrap();
+
+    let (status, body) = request(router.clone(), "POST", &format!("/api/projects/{project_id}/deploy/publish"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(body["preparing"], true, "{body}");
+    assert!(body["message"].as_str().unwrap().contains("Publishing starts by itself"));
+    let production = nomi_server::project_relays::stack(&pool, project_id, "production").await.unwrap();
+    assert!(production.is_some(), "the production backend is being made");
+    let publishes: i64 = sqlx::query_scalar("SELECT count(*) FROM project_publishes WHERE project_id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(publishes, 0, "the app itself waits for its backend");
+
+    // The Deploy sheet shows the backend being set up (or why it couldn't be), until it's ready.
+    let overview = |router: axum::Router| {
+        let token = token.clone();
+        async move { request(router, "GET", &format!("/api/projects/{project_id}/deploy"), Some(&token), None).await.1 }
+    };
+    let state = overview(router.clone()).await["backend_setup"]["state"].as_str().map(str::to_string);
+    assert!(matches!(state.as_deref(), Some("creating" | "failed")), "{state:?}");
+    // This Nomi has no Relay images set, so the setup fails, and the sheet says where and why.
+    let mut setup = Value::Null;
+    for _ in 0..50 {
+        setup = overview(router.clone()).await["backend_setup"].clone();
+        if setup["state"] == "failed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(setup["state"], "failed", "{setup}");
+    assert!(setup["step"].is_string() && setup["error"].as_str().unwrap().contains("images"), "{setup}");
+    nomi_server::project_relays::set_state(&pool, project_id, "production", nomi_server::project_relays::READY, None, None).await.unwrap();
+    assert!(overview(router).await["backend_setup"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn metrics_come_from_shipyard_for_the_asked_range(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-metrics/envs/production/metrics$"))
+        .and(wiremock::matchers::query_param("range", "1h"))
+        .and(wiremock::matchers::query_param("step", "1m"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": {
+                "range": "1h", "step": "1m",
+                "buckets": [{ "at": "2026-10-28T10:00:00Z", "visitors": 2, "requests": 9, "errors_5xx": 0, "errors_4xx": 1, "p50_ms": 12, "p95_ms": null, "containers": [] }],
+                "totals": { "visitors": 2, "requests": 9, "errors_5xx": 0, "errors_4xx": 1, "p50_ms": 12, "p95_ms": null },
+                "previous_totals": { "visitors": null, "requests": null, "errors_5xx": null, "errors_4xx": null, "p50_ms": null, "p95_ms": null }
+            },
+            "error": null
+        })))
+        .expect(1)
+        .mount(&shipyard)
+        .await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "metrics@deploy.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let metrics = format!("/api/projects/{project_id}/deploy/metrics");
+
+    // Not published yet: nothing to measure.
+    let (status, _) = request(router.clone(), "GET", &format!("{metrics}?range=1h"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-metrics' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router.clone(), "GET", &format!("{metrics}?range=1h"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["totals"]["requests"], json!(9));
+    assert!(body["totals"]["p95_ms"].is_null(), "unmeasured stays null");
+
+    let (status, _) = request(router.clone(), "GET", &format!("{metrics}?range=30d"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let stranger = register(router.clone(), "stranger@deploy.test").await;
+    let (status, _) = request(router, "GET", &format!("{metrics}?range=1h"), Some(&stranger), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn runtime_logs_come_back_as_text_lines_whatever_shape_shipyard_sends(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-logs/envs/production/services/web/logs$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "service": "web", "lines": [
+            { "at": "2026-10-28T01:02:03Z", "level": "error", "message": "connect ECONNREFUSED", "service": "web" },
+            "plain line"
+        ] }, "error": null })))
+        .mount(&shipyard)
+        .await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let token = register(router.clone(), "ana@acme.test").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    sqlx::query("UPDATE projects SET shipyard_app = 'todo-logs' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+
+    let (status, body) = request(router.clone(), "GET", &format!("/api/projects/{project_id}/deploy/logs"), Some(&token), None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["lines"], json!(["2026-10-28T01:02:03Z error connect ECONNREFUSED", "plain line"]));
 }

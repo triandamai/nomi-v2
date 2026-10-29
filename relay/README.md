@@ -44,7 +44,7 @@ Today each app carries its own backend, written fresh by Koda every time:
 | Auth | Users, sessions, email codes, and OAuth sign-in: Google, GitHub, Apple, or any OpenID Connect provider. Each project has its own signing key | The browser and the server |
 | Storage | Buckets of files, with signed URLs and per-bucket rules | Uploads and avatars |
 | Realtime | Change feeds on chosen tables, over WebSocket | Live lists and chat-like apps |
-| Functions | TypeScript handlers in `nomi/functions/`, built and run by Shipyard as a Deno service per environment | Any app, and the only server code a static or single-page app has |
+| Functions | TypeScript handlers in `nomi/functions/`, checked and run by Relay's Deno functions runtime, each project environment in its own sandboxed worker | Any app, and the only server code a static or single-page app has |
 
 ## Architecture
 
@@ -61,9 +61,9 @@ Today each app carries its own backend, written fresh by Koda every time:
             │                │          · functions (proxy)                │
             └──────┬───────────────────┬──────────────────┬──────────┬─────┘
                    │                   │                  │          │
-         PostgREST ──► Postgres    S3 prefix per    LISTEN/NOTIFY  Functions service
-         (own DB: paid,            project                         per project/env
-          shared DB: free)                                         (Shipyard, Deno)
+         PostgREST ──► Postgres    S3 prefix per    LISTEN/NOTIFY  Functions runtime
+         (own DB: paid,            project                         (Deno, a worker per
+          shared DB: free)                                          project/env)
 ```
 
 - **One service, many tenants.** It's a Rust/axum service, the same stack as `backend/`, with
@@ -91,6 +91,11 @@ Today each app carries its own backend, written fresh by Koda every time:
   - create or delete a project's backend;
   - apply migrations to an environment;
   - read the schema;
+  - run one SQL statement in an environment, for the project's data sheet in Nomi (reads and
+    writes) and for Iris (reads only, in a read-only transaction). It runs over a connection
+    logged in as the project's owner role, never as Relay's own user, so the SQL can't switch to
+    another project's role: the owner's login is turned on the first time it's needed, with a
+    password derived from Relay's key;
   - rotate keys;
   - set auth, OAuth provider and storage settings;
   - deploy functions to an environment.
@@ -106,14 +111,64 @@ Today each app carries its own backend, written fresh by Koda every time:
     project's schema, and drops any the client sent, so a request can't pick another schema.
   - PostgREST only trusts tokens from the gateway. After checking the app's token, the gateway
     signs a short-lived internal token with the PostgREST instance's key, carrying the project's
-    role (`app_<project>_authenticated`, `_anon` or `_service`) and the user's claims. PostgREST
-    sets the role and `request.jwt.claims`, and row-level security decides what the request can
-    see.
+    role in `db_role` (`app_<project>_anon`, `_authenticated`, or `_owner` for the service key,
+    which bypasses the project's own row-level security and nothing else) and the user's claims.
+    PostgREST sets the role and `request.jwt.claims`, and row-level security decides what the
+    request can see.
+  - PostgREST is started with nothing but its database URL. Relay writes what it needs onto its
+    login role in each shared database (`ALTER ROLE … IN DATABASE … SET pgrst.*`, read because
+    `db-config` is on by default): the JWT secret, which Relay makes and nobody types;
+    `jwt_role_claim_key = .db_role`; and `db_schemas`, kept equal to the free projects' schemas
+    there. Relay grants each project's roles to that login role.
   - After each migration, and when a free project is added to or removed from a shared database,
     the control plane sends `NOTIFY pgrst, 'reload schema'` (and `'reload config'` when the
     schema list changes).
-  - Every PostgREST runs with a statement timeout, `db-max-rows`, and request-size limits set
-    from the project's plan.
+  - For now the gateway caps request bodies at 1 MB and app roles at an 8-second statement
+    timeout; per-plan limits come later.
+
+### Setting Relay up
+
+Relay reads three variables from its environment: `RELAY_DATABASE_URL` (its state),
+`RELAY_ENCRYPTION_KEY` (32 bytes of hex; seals what it keeps) and `RELAY_CONTROL_KEY` (what Nomi
+calls it with), plus an optional `RELAY_BIND`. Everything else is set in Nomi's admin (Relay page)
+and kept sealed in Relay's state: the public domain, the shared dev and production database URLs,
+each PostgREST's URL, PostgREST's login role, the preview origins allowed to call a dev
+backend from the browser, the shared sender for sign-in codes, the S3 bucket (any
+S3-compatible store) every project's files go in, each under `<project>/<env>/<bucket>/`, and the
+functions runtime's address and secret. Saving checks every database and PostgREST first; until saved, Relay
+answers `503 NOT_CONFIGURED`.
+
+### Standalone: one Relay per project
+
+Nomi runs a Relay next to each project on Shipyard, one for its development backend and one for
+production, each in its own database. Setting `RELAY_PROJECT` turns this on:
+
+| Variable | What it is |
+|---|---|
+| `RELAY_PROJECT` | The one project this Relay serves (its Nomi project id) |
+| `RELAY_ENV` | `dev` or `production` (default) |
+| `RELAY_POSTGREST_URL` | The PostgREST next to it, e.g. `http://postgrest:3000` |
+| `RELAY_PGRST_PASSWORD` | The password PostgREST logs in with as `authenticator`; Relay makes that login and sets the password at every start |
+| `RELAY_FUNCTIONS_URL`, `RELAY_FUNCTIONS_SECRET` | The functions runtime next to it (optional, both or neither) |
+
+What changes:
+
+- The project lives in Relay's own database (`RELAY_DATABASE_URL`) as a `dedicated` backend: its
+  tables in `public`, next to the `nomi` schema and Relay's own `relay` schema.
+- Relay serves at once, with nothing saved. PostgREST's JWT secret is derived from
+  `RELAY_ENCRYPTION_KEY`, so it's the same after every restart.
+- `PUT /control/settings` still sets the public domain, preview origins, sender and storage. The
+  database, PostgREST and runtime it's sent are ignored in favour of the environment's.
+  `public_domain` is the instance's own host, and the project's URL is `https://<public_domain>`.
+- One host serves both sides. `/control/…` and `/health` are the control plane (still behind
+  `RELAY_CONTROL_KEY`), and every other path is the project's backend, whatever the hostname.
+- `PUT /control/projects/:id` accepts only `RELAY_PROJECT`; another id is `409 CONFLICT`.
+
+CI publishes the images to Shipyard's registry on every merge to main that touches the service,
+with the repository's `SHIPYARD_REGISTRY_HOST`, `SHIPYARD_IMAGE_PREFIX` and `SHIPYARD_REGISTRY_KEY`
+secrets (the ones the backend and frontend use): `<host>/<prefix>/relay` and
+`<host>/<prefix>/relay-functions`, each tagged `sha-<commit>` and with the npm packages' version.
+Nomi is told where they are in admin (Configuration → Relay).
 
 ## What Koda writes
 
@@ -251,8 +306,18 @@ else to run or keep up.
   it only to subscribers who are allowed to see it. Deletes send just the primary key.
 - **Delivery.** At most once. A client that reconnects gets a `resync` event and refetches, so
   the SDK's live lists never drift.
-- **Limits.** Connections per project and changes per second are plan quotas. A burst beyond
-  them collapses into a single `resync` instead of dropping events silently.
+- **Limits.** Connections per project and changes per second are plan quotas (for now 200
+  sockets per project environment and 50 changes a second per socket). A burst beyond them
+  collapses into a single `resync` instead of dropping events silently.
+
+## Storage
+
+Buckets are declared in `backend.json` (`"storage": { "buckets": [...] }`), each with who may
+`read` and `write` (`anyone`, `signed_in`, `owner` — the user whose id is the path's first
+folder — or `service`), an optional `public` flag, `max_size_mb` and content `types`. The S3
+bucket stays private: the gateway checks each request against the bucket's rules and streams
+the bytes itself. A signed URL (`/storage/sign/…?token=`) opens one file until it expires; a
+public bucket also serves files at `/storage/public/<bucket>/<path>` with no key.
 
 ## Functions
 
@@ -284,24 +349,35 @@ export default defineFunction(async (req, ctx) => {
 - `ctx.env` holds the project's secrets, by name.
 - Imports are npm packages (`npm:` specifiers) or files in `_shared/`.
 
-**How it runs.** Shipyard runs functions the way it runs any app service, on the Deno runtime:
+**How it runs.** Relay runs the functions itself, in its functions runtime
+(`relay/functions-runtime`): a Deno service next to Relay, with its own container and a secret
+only it and Relay share (`RELAY_FUNCTIONS_SECRET`, saved in Relay's settings with the runtime's
+address).
 
-1. Nomi bundles `nomi/functions/` into one Deno entry point: a small router Relay provides,
-   plus every handler. One service per project and environment, not one per function, so a
-   project with ten functions costs the same as one with one.
-2. Shipyard builds and runs that bundle as a service in the project's environment, with the
-   project's secrets and the `NOMI_*` values bound by name.
-3. The gateway proxies `https://<app>.api.<apps-domain>/functions/<name>` to it, after checking
-   the key or token. Only the gateway can reach the service; it isn't exposed on its own.
+1. A deploy sends every file of `nomi/functions/` to Relay, which numbers it as a build and hands
+   it to the runtime with `ctx.env`: the project's secrets and its `NOMI_*` address and keys.
+2. The runtime type-checks it (`deno check`) and loads it into the project environment's own Deno
+   worker. The worker can reach the network and read its own build, nothing else: no process
+   environment, files, subprocesses or FFI. Only a build that loads replaces the one being
+   served; a type error comes back with its file and line.
+3. The gateway serves `https://<app>.api.<apps-domain>/functions/<name>` after checking the key
+   or token, and passes the caller's claims in a header the runtime trusts only with the shared
+   secret. The runtime isn't reachable on its own.
+4. Builds are kept in Relay's state, so a restarted runtime gets the current one back on the
+   next call, and rollback makes the previous good build current again. Changing a project
+   secret loads the current builds again with it.
 
-**Sleeping and waking.** A functions service doesn't stay running while nobody calls it.
-Shipyard stops the Deno runtime when it's idle, and the next call wakes it, which takes a
-couple of seconds. Calls after that are fast until it goes idle again.
-- The gateway holds a call while the service wakes instead of failing it, up to a wake timeout.
-  Calls that arrive during the wake wait for the same start.
+Run the runtime where it can reach the internet and Relay's public address but not Relay's
+databases or other internal services (add `--deny-net=<host>,…` to its command for anything
+else on its network): a function can open any connection its worker's network allows.
+
+**Sleeping and waking.** A worker unused for 10 minutes is stopped, and the next call starts it
+again, which takes a moment. Calls after that are fast until it goes idle again.
+- When the runtime has lost a build (it restarted), the gateway sends it again and retries the
+  call; a runtime that doesn't answer within 10 seconds gets `503` with `Retry-After: 2`.
 - The SDK's `functions.invoke` allows for that first slow call, so apps don't need their own
   retry.
-- A cron `schedule` wakes the service like any other call.
+- A call over the function's timeout answers `504`, and its worker starts fresh.
 - Koda's guide says to keep a function's top-level code light (no big setup on import), since
   it runs on every wake.
 
@@ -461,9 +537,10 @@ REST API and row-level security, and trusted server code through hosted function
 - In a shared database, the gateway alone picks the schema PostgREST uses, and the `nomi`
   tables are guarded by `project_id` row-level security, so one free project can't read
   another's tables or users.
-- Each project's functions run in their own Shipyard service, reachable only through the
-  gateway, with a timeout and the plan's memory limit. One project's functions can't see another
-  project's secrets or database.
+- Each project environment's functions run in their own Deno worker in the functions runtime,
+  reachable only through the gateway, with a timeout, network access and nothing else (no
+  process environment, files, subprocesses or FFI). One project's functions get only that
+  project's secrets, and reach its data only through the gateway like any other client.
 - Per-project rate limits and plan quotas cover rows, storage, requests, function time and
   realtime connections, alongside Nomi's existing plans.
 - Control-plane calls, CLI calls and service-key use are audited.
@@ -488,8 +565,9 @@ it is, because it's the same Shipyard database.
    on the real dev database. First release of `nomi-relay` and `nomi-relay-cli` (login, link,
    migrate, types) on npm.
 3. **Storage and realtime** (`LISTEN/NOTIFY` triggers and the gateway's WebSocket fan-out).
-4. **Hosted functions.** The Deno router and bundler, the per-project Shipyard service, the
-   gateway proxy, `deploy_functions`, cron schedules, and `functions serve` / `deploy` in the CLI.
+4. **Hosted functions.** The functions runtime (a sandboxed Deno worker per project
+   environment), numbered builds with rollback, the gateway proxy, `deploy_functions`, cron
+   schedules, and `functions serve` in the CLI (`functions deploy` comes with the CLI's login).
 5. **The console** in the project sheets.
 
 Each phase ships on its own and is useful by itself. Phase 1 alone fixes the preview-versus-

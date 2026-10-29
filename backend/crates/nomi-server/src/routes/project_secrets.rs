@@ -99,19 +99,28 @@ pub async fn set(
     if count >= MAX_SECRETS {
         return Err((StatusCode::UNPROCESSABLE_ENTITY, format!("a project keeps up to {MAX_SECRETS} secrets")));
     }
-    let client = client(&state)?;
-    let target = target(&state, project_id).await?;
-    let app = crate::shipyard::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
+    store(&state, project_id, &name, &body.value, claims.sub).await?;
+    forward_to_relay(&state, project_id, &name, Some(&body.value)).await?;
+    tracing::info!(%project_id, user = %claims.sub, secret = %name, "project secret set");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Sends `value` to Shipyard as the project's secret `name` and records the name, so it's bound
+/// into the app on every publish. Used by the Secrets sheet and for Relay's keys.
+pub(crate) async fn store(state: &impl crate::project_ops::ShipyardAccess, project_id: Uuid, name: &str, value: &str, user_id: Uuid) -> Result<(), ApiError> {
+    let client = client(state)?;
+    let target = target(state, project_id).await?;
+    let app = crate::shipyard::ensure_app(state.pool(), &client, &target).await.map_err(ensure_error)?;
     let existed: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM project_secrets WHERE project_id = $1 AND name = $2)")
         .bind(project_id)
-        .bind(&name)
-        .fetch_one(&state.pool)
+        .bind(name)
+        .fetch_one(state.pool())
         .await
         .map_err(internal("failed to look up the secret"))?;
-    client.set_secret(&target.org_key(), &app, &name, Some(&body.value), None).await.map_err(shipyard_error)?;
+    client.set_secret(&target.org_key(), &app, name, Some(value), None).await.map_err(shipyard_error)?;
     // A changed value reaches the running app on its next start; a new secret only on the next
     // publish, which binds it. Best-effort: the value is saved either way.
-    if existed && published(&state.pool, project_id).await {
+    if existed && published(state.pool(), project_id).await {
         if let Err(e) = client.restart_env(&target.org_key(), &app, LIVE_ENV).await {
             tracing::warn!(error = %e, %project_id, "couldn't restart the app after a secret changed");
         }
@@ -121,13 +130,29 @@ pub async fn set(
          ON CONFLICT (project_id, name) DO UPDATE SET updated_by = $3, updated_at = now()",
     )
     .bind(project_id)
-    .bind(&name)
-    .bind(claims.sub)
-    .execute(&state.pool)
+    .bind(name)
+    .bind(user_id)
+    .execute(state.pool())
     .await
     .map_err(internal("failed to save the secret"))?;
-    tracing::info!(%project_id, user = %claims.sub, secret = %name, "project secret set");
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
+}
+
+/// A Relay project's secrets go to Relay too: it uses the sign-in ones (`NOMI_SMTP_PASSWORD`,
+/// `NOMI_OAUTH_*`) itself, and hands every one to the project's functions as `ctx.env`.
+async fn forward_to_relay(state: &AppState, project_id: Uuid, name: &str, value: Option<&str>) -> Result<(), ApiError> {
+    let backend: Option<String> = sqlx::query_scalar("SELECT backend FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(internal("failed to read the project"))?;
+    if backend.as_deref() != Some("relay") {
+        return Ok(());
+    }
+    let config = crate::relay_connection::load(&state.pool, Some(&state.settings_key))
+        .await
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "this project is on Relay, and Relay isn't set up on this Nomi".to_string()))?;
+    nomi_relay_client::Relay::new(&state.http_client, &config).put_secret(project_id, name, value).await.map(|_| ()).map_err(crate::relay_ops::relay_error)
 }
 
 /// The environment a changed secret restarts.
@@ -168,6 +193,7 @@ pub async fn remove(
     if removed == 0 {
         return Err((StatusCode::NOT_FOUND, "no such secret".to_string()));
     }
+    forward_to_relay(&state, project_id, &name, None).await?;
     tracing::info!(%project_id, user = %claims.sub, secret = %name, "project secret removed");
     Ok(StatusCode::NO_CONTENT)
 }

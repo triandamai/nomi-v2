@@ -200,7 +200,14 @@ pub struct Event {
 /// to one, for [`apply_event`].
 pub async fn store_event(pool: &PgPool, event: &Event) -> Result<Option<Uuid>, sqlx::Error> {
     let project_id: Option<Uuid> = match &event.app {
-        Some(app) => sqlx::query_scalar("SELECT id FROM projects WHERE shipyard_app = $1").bind(app).fetch_optional(pool).await?,
+        Some(app) => {
+            let base = app.strip_suffix(nomi_shipyard::manifest::BACKEND_SUFFIX);
+            sqlx::query_scalar("SELECT id FROM projects WHERE shipyard_app = $1 OR ($2::text IS NOT NULL AND shipyard_app = $2)")
+                .bind(app)
+                .bind(base)
+                .fetch_optional(pool)
+                .await?
+        }
         None => None,
     };
     let inserted = sqlx::query(
@@ -221,8 +228,86 @@ pub async fn store_event(pool: &PgPool, event: &Event) -> Result<Option<Uuid>, s
     Ok(if inserted { project_id } else { None })
 }
 
+/// Whether an event is for the project's Relay backend on Shipyard rather than its web app.
+pub async fn is_backend_event(pool: &PgPool, project_id: Uuid, event: &Event) -> Result<bool, sqlx::Error> {
+    let Some(event_app) = event.app.as_deref() else {
+        return Ok(false);
+    };
+    let shipyard_app: Option<String> = sqlx::query_scalar("SELECT shipyard_app FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+    let Some(app) = shipyard_app.as_deref() else {
+        return Ok(false);
+    };
+    if crate::relay_backend::backend_app(app) == event_app {
+        return Ok(true);
+    }
+    if app != event_app {
+        return Ok(false);
+    }
+    if matches!(event.service.as_deref(), Some("relay" | "postgrest" | "functions")) {
+        return Ok(true);
+    }
+    if matches!(event.service.as_deref(), Some("web")) {
+        return Ok(false);
+    }
+    if event
+        .data
+        .get("deployments")
+        .and_then(Value::as_array)
+        .is_some_and(|deployments| deployments.iter().any(|d| d.get("service").and_then(Value::as_str) == Some("relay")))
+    {
+        return Ok(true);
+    }
+    if event
+        .data
+        .get("deployments")
+        .and_then(Value::as_array)
+        .is_some_and(|deployments| deployments.iter().any(|d| d.get("service").and_then(Value::as_str) == Some("web")))
+    {
+        return Ok(false);
+    }
+    if event
+        .data
+        .get("services")
+        .and_then(Value::as_array)
+        .is_some_and(|services| services.iter().any(|s| s.as_str() == Some("relay")))
+    {
+        return Ok(true);
+    }
+    if event
+        .data
+        .get("services")
+        .and_then(Value::as_array)
+        .is_some_and(|services| services.iter().any(|s| s.as_str() == Some("web")))
+    {
+        return Ok(false);
+    }
+    let env = event.environment.as_deref().unwrap_or(crate::relay_backend::DEV);
+    if let Some(publish_id) = event.data.get("publish_id").and_then(Value::as_str) {
+        let is_web_publish: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM project_publishes WHERE project_id = $1 AND shipyard_publish_id = $2)",
+        )
+        .bind(project_id)
+        .bind(publish_id)
+        .fetch_one(pool)
+        .await?;
+        if is_web_publish {
+            return Ok(false);
+        }
+    }
+    let has_backend_stack = crate::project_relays::stack(pool, project_id, env)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|stack| env == crate::relay_backend::DEV || stack.state != crate::project_relays::READY);
+    Ok(has_backend_stack)
+}
+
 /// The error text of a failed publish or deployment.
-fn error_text(data: &Value) -> Option<String> {
+pub(crate) fn error_text(data: &Value) -> Option<String> {
     match data.get("error") {
         Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
         Some(Value::Object(o)) => o.get("message").and_then(Value::as_str).map(str::to_string),
@@ -270,8 +355,7 @@ async fn publish_failure(pool: &PgPool, client: &Shipyard<'_>, project_id: Uuid,
             .service_logs(&target.org_key(), app, env, &service, FAILURE_RUNTIME_LOG_LINES, None)
             .await
             .ok()
-            .and_then(|logs| logs.get("lines").and_then(Value::as_array).cloned())
-            .map(|lines| lines.iter().filter_map(|l| l.as_str().map(str::to_string)).collect())
+            .map(|logs| nomi_shipyard::log_lines(&logs))
             .unwrap_or_default()
     } else {
         Vec::new()
@@ -336,6 +420,11 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
     let publish_id = event.data.get("publish_id").and_then(Value::as_str);
     match event.kind.as_str() {
         "publish.succeeded" | "publish.failed" => {
+            if is_backend_event(pool, project_id, event).await? {
+                crate::relay_backend::record_publish_event(pool, client, project_id, event).await;
+                crate::project_events::changed(project_id, &event.kind);
+                return Ok(());
+            }
             let status = if event.kind == "publish.succeeded" { "succeeded" } else { "failed" };
             let url = event
                 .data
@@ -384,6 +473,7 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
                 notify_admins(pool, project_id, "publish_failed", &why).await;
             } else if let Some(url) = url {
                 post_to_project_chat(pool, project_id, &locale.tf("deploy.chat_published", &[("env", environment), ("url", url)]), Vec::new()).await;
+                notify_admins(pool, project_id, "published", url).await;
             }
         }
         "service.crashed" => {
@@ -397,6 +487,13 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
             let value = event.data.get("value").and_then(Value::as_f64).map(|v| format!("{v:.0}%")).unwrap_or_default();
             if !alerted_recently(pool, project_id, &event.kind, &event.id).await? {
                 notify_admins(pool, project_id, "resource_alert", &format!("{metric} {value}")).await;
+            }
+        }
+        "service.error_rate_alert" => {
+            let count = |key: &str| event.data.get(key).and_then(Value::as_u64).unwrap_or_default();
+            let rate = event.data.get("error_rate").and_then(Value::as_f64).map(|v| format!("{v:.0}%")).unwrap_or_default();
+            if !alerted_recently(pool, project_id, &event.kind, &event.id).await? {
+                notify_admins(pool, project_id, "error_rate_alert", &format!("{} of {} ({rate})", count("errors_5xx"), count("requests"))).await;
             }
         }
         _ => {}
@@ -431,7 +528,8 @@ pub async fn project_admins(pool: &PgPool, project_id: Uuid) -> Result<Vec<Uuid>
     .await
 }
 
-async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, detail: &str) {
+/// Tells each of the project's admins, in their language, by notification, push and email.
+pub(crate) async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, detail: &str) {
     let name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
         .bind(project_id)
         .fetch_one(pool)
@@ -441,8 +539,12 @@ async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, detail: &str
     for user_id in admins {
         let locale = person_locale(pool, user_id).await;
         let (title_key, body_key) = match what {
+            "published" => ("deploy.published_title", "deploy.published_body"),
             "publish_failed" => ("deploy.publish_failed_title", "deploy.publish_failed_body"),
+            "backend_failed" => ("deploy.publish_failed_title", "deploy.backend_failed_body"),
+            "backend_setup_failed" => ("deploy.backend_setup_failed_title", "deploy.backend_setup_failed_body"),
             "crashed" => ("deploy.crashed_title", "deploy.crashed_body"),
+            "error_rate_alert" => ("deploy.error_rate_title", "deploy.error_rate_body"),
             _ => ("deploy.resource_title", "deploy.resource_body"),
         };
         let title = locale.tf(title_key, &[("name", &name)]);

@@ -14,7 +14,8 @@ islands written in Svelte (preferred) or React. Server endpoints and SSR need th
     "astro": "^7.3.8", "@astrojs/node": "^11.1.7", "@astrojs/svelte": "^9.0.1", "svelte": "^5.57.0",
     "tailwindcss": "^4.3.0", "@tailwindcss/vite": "^4.3.0"
   },
-  "devDependencies": { "@astrojs/check": "^0.9.10", "typescript": "^6.0.3" }
+  "devDependencies": { "@astrojs/check": "^0.9.10", "typescript": "^6.0.3", "@rolldown/binding-wasm32-wasi": "~1.2.14" },
+  "overrides": { "@napi-rs/wasm-runtime": "1.2.5" }
 }
 ```
 (Leave out `@astrojs/node` and `output: 'server'` for a fully static site.)

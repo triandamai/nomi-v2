@@ -60,8 +60,9 @@ pub const DEFAULT_PUBLISH_ENVIRONMENT: &str = "production";
 #[async_trait]
 pub trait ProjectOps: Send + Sync {
     /// Starts publishing the project's current files to `environment`, as `user_id` (who must be
-    /// one of its admins). Says what happens next and where the app will be.
-    async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String>;
+    /// one of its admins); `agent` is the crew member doing it for them, if any. Says what
+    /// happens next and where the app will be.
+    async fn publish(&self, user_id: Uuid, project_id: Uuid, environment: &str, agent: Option<&str>) -> Result<String, String>;
 
     /// What runs in `environment` now and how the latest publishes went, as text.
     async fn status(&self, user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String>;
@@ -82,7 +83,7 @@ pub struct NoProjectOps;
 
 #[async_trait]
 impl ProjectOps for NoProjectOps {
-    async fn publish(&self, _user_id: Uuid, _project_id: Uuid, _environment: &str) -> Result<String, String> {
+    async fn publish(&self, _user_id: Uuid, _project_id: Uuid, _environment: &str, _agent: Option<&str>) -> Result<String, String> {
         Err(NOT_SET_UP.to_string())
     }
     async fn status(&self, _user_id: Uuid, _project_id: Uuid, _environment: &str) -> Result<String, String> {
@@ -121,8 +122,8 @@ pub fn publish_tool_definition() -> ToolDefinition {
     }
 }
 
-/// Runs `publish_project` with `input`.
-pub async fn publish_from_tool(ops: &dyn ProjectOps, user_id: Uuid, input: &Value) -> Result<String, String> {
+/// Runs `publish_project` with `input`, for `agent` (the crew member calling it).
+pub async fn publish_from_tool(ops: &dyn ProjectOps, user_id: Uuid, agent: &str, input: &Value) -> Result<String, String> {
     let project_id = input
         .get("project_id")
         .and_then(Value::as_str)
@@ -136,7 +137,7 @@ pub async fn publish_from_tool(ops: &dyn ProjectOps, user_id: Uuid, input: &Valu
         .map(str::trim)
         .filter(|e| !e.is_empty())
         .unwrap_or(DEFAULT_PUBLISH_ENVIRONMENT);
-    ops.publish(user_id, project_id, environment).await
+    ops.publish(user_id, project_id, environment, Some(agent)).await
 }
 
 #[cfg(test)]
@@ -147,8 +148,8 @@ mod tests {
 
     #[async_trait]
     impl ProjectOps for Recorder {
-        async fn publish(&self, _user_id: Uuid, project_id: Uuid, environment: &str) -> Result<String, String> {
-            Ok(format!("{project_id} {environment}"))
+        async fn publish(&self, _user_id: Uuid, project_id: Uuid, environment: &str, agent: Option<&str>) -> Result<String, String> {
+            Ok(format!("{project_id} {environment} {}", agent.unwrap_or("-")))
         }
         async fn status(&self, _: Uuid, _: Uuid, _: &str) -> Result<String, String> {
             unimplemented!()
@@ -167,10 +168,10 @@ mod tests {
     #[tokio::test]
     async fn publishes_to_production_unless_told_otherwise() {
         let project_id = Uuid::new_v4();
-        let said = publish_from_tool(&Recorder, Uuid::nil(), &json!({"project_id": project_id.to_string()})).await.unwrap();
-        assert_eq!(said, format!("{project_id} production"));
-        let said = publish_from_tool(&Recorder, Uuid::nil(), &json!({"project_id": project_id.to_string(), "environment": "staging"})).await.unwrap();
-        assert_eq!(said, format!("{project_id} staging"));
-        assert!(publish_from_tool(&Recorder, Uuid::nil(), &json!({"project_id": "nope"})).await.is_err());
+        let said = publish_from_tool(&Recorder, Uuid::nil(), "Koda", &json!({"project_id": project_id.to_string()})).await.unwrap();
+        assert_eq!(said, format!("{project_id} production Koda"));
+        let said = publish_from_tool(&Recorder, Uuid::nil(), "Koda", &json!({"project_id": project_id.to_string(), "environment": "staging"})).await.unwrap();
+        assert_eq!(said, format!("{project_id} staging Koda"));
+        assert!(publish_from_tool(&Recorder, Uuid::nil(), "Koda", &json!({"project_id": "nope"})).await.is_err());
     }
 }

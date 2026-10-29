@@ -24,6 +24,8 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import Avatar from '$lib/components/m3/Avatar.svelte';
+	import { ProjectPresence } from '$lib/projectPresence.svelte';
 	import SheetFrame from '$lib/components/project/SheetFrame.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import ModelManager from '$lib/components/models/ModelManager.svelte';
@@ -34,11 +36,13 @@
 	import DeployPanel from '$lib/components/project/DeployPanel.svelte';
 	import MonitorPanel from '$lib/components/project/MonitorPanel.svelte';
 	import DatabasePanel from '$lib/components/project/DatabasePanel.svelte';
+	import RelayPanel from '$lib/components/project/RelayPanel.svelte';
 	import MembersPanel from '$lib/components/project/MembersPanel.svelte';
 	import SettingsPanel from '$lib/components/project/SettingsPanel.svelte';
 	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
+	import { isBackendEvent } from '$lib/presenceView';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -95,19 +99,28 @@
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
 	});
+	// The open sheet is kept in the address (`?sheet=`) so a link opens it. While the page is
+	// still starting (a link that opens a sheet), SvelteKit's router can't change the address yet,
+	// and throwing then would leave the router broken; the address is already right then anyway.
+	function keepSheetInAddress(which: Sheet | null) {
+		const url = new URL(page.url);
+		if (which) url.searchParams.set('sheet', which);
+		else url.searchParams.delete('sheet');
+		try {
+			replaceState(url, {});
+		} catch {
+			// Before the router started: nothing to change.
+		}
+	}
 	function openSheet(which: Sheet) {
 		sheet = which;
 		sheetOpen = true;
-		const url = new URL(page.url);
-		url.searchParams.set('sheet', which);
-		replaceState(url, {});
+		keepSheetInAddress(which);
 	}
 	$effect(() => {
 		if (sheetOpen) return;
 		if (!page.url.searchParams.has('sheet')) return;
-		const url = new URL(page.url);
-		url.searchParams.delete('sheet');
-		replaceState(url, {});
+		keepSheetInAddress(null);
 	});
 
 	let deploy = $state<ProjectDeploy | null>(null);
@@ -120,8 +133,38 @@
 		deploy = d;
 		void d.refresh();
 		d.listen();
-		return () => d.stop();
+		// Rena puts a project on Relay after the page has loaded: show its Relay sheet then.
+		const stopBackend = d.onEvent((event) => {
+			if (isBackendEvent(event)) {
+				void invalidateAll();
+				void runtime?.refreshRelay();
+			}
+		});
+		const p = new ProjectPresence(id);
+		presence = p;
+		p.start(d);
+		return () => {
+			stopBackend();
+			p.stop();
+			d.stop();
+		};
 	});
+
+	let presence = $state<ProjectPresence | null>(null);
+	/** Shown at most this many faces in the toolbar; the rest are counted in the label. */
+	const TOOLBAR_FACES = 3;
+	const typingLabel = $derived.by(() => {
+		const names = presence?.typing ?? [];
+		if (names.length === 0) return null;
+		if (names.length === 1) return m.pj_typing_one({ name: names[0] });
+		if (names.length === 2) return m.pj_typing_two({ first: names[0], second: names[1] });
+		return m.pj_typing_many({ first: names[0], second: names[1], count: names.length - 2 });
+	});
+	let membersTab = $state<'people' | 'activity'>('people');
+	function openActivity() {
+		membersTab = 'activity';
+		openSheet('members');
+	}
 
 	let openIssues = $state(0);
 	$effect(() => {
@@ -145,11 +188,16 @@
 		ready: m.projects_ready,
 	};
 
+	/** The data sheet is Relay's console for a project on Relay, the Postgres one otherwise. */
+	function dataTitle(): string {
+		return data.project?.backend === 'relay' ? m.pj_tab_relay() : m.pj_tab_database();
+	}
+
 	const TOOLS: { id: Sheet; label: () => string; icon: typeof IconRocket }[] = [
 		{ id: 'deploy', label: m.pj_tab_deploy, icon: IconHistory },
 		{ id: 'domain', label: m.pj_tab_domain, icon: IconLink },
 		{ id: 'monitor', label: m.pj_tab_monitor, icon: IconPulse },
-		{ id: 'database', label: m.pj_tab_database, icon: IconDatabase },
+		{ id: 'database', label: () => dataTitle(), icon: IconDatabase },
 		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
 		{ id: 'settings', label: m.pj_tab_settings, icon: IconSettings },
 	];
@@ -157,7 +205,7 @@
 		deploy: m.pj_tab_deploy,
 		domain: m.pj_tab_domain,
 		monitor: m.pj_tab_monitor,
-		database: m.pj_tab_database,
+		database: () => dataTitle(),
 		members: m.pj_tab_members,
 		issues: m.issues_title,
 		settings: m.pj_tab_settings,
@@ -579,9 +627,18 @@
 				</button>
 			{/each}
 		</nav>
+		{#if presence && presence.people.length > 0}
+			{@const label = m.pj_here_now_people({ names: presence.people.map((p) => p.name).join(', ') })}
+			<button type="button" class="here" onclick={openActivity} aria-label={label} title={label}>
+				{#each presence.people.slice(0, TOOLBAR_FACES) as person (person.user_id)}
+					<span class="here__face"><Avatar name={person.name} avatarUrl={person.avatar_url} size={28} /></span>
+				{/each}
+				{#if presence.people.length > TOOLBAR_FACES}<span class="here__more">+{presence.people.length - TOOLBAR_FACES}</span>{/if}
+			</button>
+		{/if}
 		{#if deploy?.overview?.available && deploy.isAdmin}
-			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
-				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : m.pj_publish()}</span>
+			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running || deploy.preparing} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
+				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : deploy.preparing ? m.pj_preparing() : m.pj_publish()}</span>
 			</Button>
 		{/if}
 	</header>
@@ -609,6 +666,8 @@
 			{modelControl}
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
+			{typingLabel}
+			ontyping={() => presence?.ping()}
 		/>
 	</section>
 
@@ -704,15 +763,19 @@
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
-				<DeployPanel {deploy} />
+				<DeployPanel {deploy} onaskfix={sendToChat} />
 			{:else if sheet === 'domain' && deploy}
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}
-				<MonitorPanel projectId={project.id} {published} />
+				<MonitorPanel projectId={project.id} {published} {deploy} />
 			{:else if sheet === 'database'}
-				<DatabasePanel projectId={project.id} {published} />
+				{#if project.backend === 'relay'}
+					<RelayPanel projectId={project.id} {published} />
+				{:else}
+					<DatabasePanel projectId={project.id} {published} />
+				{/if}
 			{:else if sheet === 'members'}
-				<MembersPanel projectId={project.id} orgId={project.org_id} />
+				<MembersPanel projectId={project.id} orgId={project.org_id} bind:tab={membersTab} {presence} {deploy} />
 			{:else if sheet === 'settings' && deploy}
 				<SettingsPanel {deploy} projectName={project.name} />
 			{/if}
@@ -1057,5 +1120,37 @@
 		line-height: 1.55;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+	.here {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		cursor: pointer;
+	}
+	.here:hover {
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.here:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.here__face {
+		display: inline-flex;
+		margin-left: -8px;
+		border: 2px solid var(--nomi-color-ground);
+		border-radius: 999px;
+	}
+	.here__face:first-child {
+		margin-left: 0;
+	}
+	.here__more {
+		margin-left: 6px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+		font-weight: 600;
 	}
 </style>

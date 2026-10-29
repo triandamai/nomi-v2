@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use nomi_agent_core::project_ops::{publish_from_tool, publish_tool_definition, NoProjectOps, SharedProjectOps, PUBLISH_TOOL_NAME};
+use nomi_agent_core::relay_ops::{NoRelayOps, RelayOps, SharedRelayOps};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -16,6 +17,14 @@ pub const PLANNING_AGENT_TYPE: &str = "planning";
 /// The stacks a project can be built on (see the coding agent's guides).
 pub const STACKS: &[&str] = &["sveltekit", "react", "vue", "astro", "static"];
 
+/// What Rena does when the user wanted Relay and it isn't there: the user decides, not the build.
+const ASK_BEFORE_DRIZZLE: &str = "Tell the user, in your own words, what happened and ask whether to build it on Drizzle (its own database code) instead or wait until Relay is set up. Do not hand the build to the coding agent until they answer; if they say Drizzle, call create_project again with backend drizzle.";
+
+/// What a project's server side is built on: Nomi Relay, or the app's own Drizzle code.
+pub const BACKENDS: &[&str] = &[BACKEND_RELAY, BACKEND_DRIZZLE];
+pub const BACKEND_RELAY: &str = "relay";
+pub const BACKEND_DRIZZLE: &str = "drizzle";
+
 pub fn create_project_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "create_project".to_string(),
@@ -29,6 +38,11 @@ pub fn create_project_tool_definition() -> ToolDefinition {
                     "type": "string",
                     "enum": STACKS,
                     "description": "sveltekit (default: anything with pages and a server or database), react or vue (browser-only apps, when the user asks), astro (content sites), static (a single plain HTML page)"
+                },
+                "backend": {
+                    "type": "string",
+                    "enum": BACKENDS,
+                    "description": "relay for anything that keeps data on a server, signs people in, stores files or calls paid APIs (Nomi Relay gives it a database, sign-in, storage and functions); drizzle only for an app that brings its own database code. Leave it out for browser-only apps."
                 }
             },
             "required": ["name", "description"]
@@ -38,11 +52,18 @@ pub fn create_project_tool_definition() -> ToolDefinition {
 
 pub struct PlanningAgent {
     project_ops: SharedProjectOps,
+    relay_ops: SharedRelayOps,
 }
 
 impl PlanningAgent {
     pub fn new() -> Self {
-        Self { project_ops: std::sync::Arc::new(NoProjectOps) }
+        Self { project_ops: std::sync::Arc::new(NoProjectOps), relay_ops: std::sync::Arc::new(NoRelayOps) }
+    }
+
+    /// Relay backends for the projects Rena creates with `backend: relay`.
+    pub fn with_relay_ops(mut self, relay_ops: SharedRelayOps) -> Self {
+        self.relay_ops = relay_ops;
+        self
     }
 
     /// Publishing (`publish_project`) through the server's Shipyard access.
@@ -108,8 +129,10 @@ impl SubAgent for PlanningAgent {
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
-            "create_project" => create_project(conn, session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            PUBLISH_TOOL_NAME => publish_from_tool(self.project_ops.as_ref(), user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
+            "create_project" => {
+                create_project(conn, session_id, user_id, input, self.relay_ops.as_ref()).await.map(nomi_agent_core::ToolOutcome::text)
+            }
+            PUBLISH_TOOL_NAME => publish_from_tool(self.project_ops.as_ref(), user_id, &self.display_name(), &input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -162,17 +185,27 @@ impl SubAgent for PlanningAgent {
 /// the model reliably calling this tool mid-conversation. Rename that existing row instead of
 /// inserting a second one; only insert fresh when a session organically becomes a project with
 /// no pre-existing row (e.g. "build me X" typed into a plain chat).
+///
+/// `backend` sets what the project's server side is built on (see `choose_backend`); left out,
+/// the project keeps the backend it has (Drizzle for a new one).
 pub async fn create_project(
     conn: &mut PoolConnection<Postgres>,
     session_id: Uuid,
     user_id: Uuid,
     input: Value,
+    relay: &dyn RelayOps,
 ) -> Result<String, String> {
     let name = input.get("name").and_then(|v| v.as_str()).ok_or("name is required")?;
     let description = input.get("description").and_then(|v| v.as_str());
     let stack = input.get("stack").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).unwrap_or("sveltekit");
     if !STACKS.contains(&stack) {
         return Err(format!("stack must be one of {}", STACKS.join(", ")));
+    }
+    let backend = input.get("backend").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
+    if let Some(backend) = backend {
+        if !BACKENDS.contains(&backend) {
+            return Err(format!("backend must be one of {}", BACKENDS.join(", ")));
+        }
     }
 
     let existing_id: Option<Uuid> = sqlx::query_scalar(
@@ -209,7 +242,57 @@ pub async fn create_project(
         .map_err(|e| e.to_string())?,
     };
 
+    let backend_note = match backend {
+        Some(backend) => choose_backend(conn, user_id, project_id, backend, relay).await?,
+        None => None,
+    };
+    let backend_note = backend_note.map(|note| format!("{note} ")).unwrap_or_default();
     Ok(format!(
-        "Project ready (id {project_id}). When you hand the build to the coding agent, start the task with 'Project {project_id}:'."
+        "Project ready (id {project_id}). {backend_note}When you hand the build to the coding agent, start the task with 'Project {project_id}:'."
     ))
+}
+
+/// Puts the project on `backend`, and says what came of it when that isn't simply what was
+/// asked. A project that already has files keeps its backend: moving an app between backends
+/// is a task of its own, never a side effect of renaming it. Relay is used only when this Nomi
+/// has it and it made the project's backend; otherwise the project stays as it was and Rena is told to ask the user.
+async fn choose_backend(
+    conn: &mut PoolConnection<Postgres>,
+    user_id: Uuid,
+    project_id: Uuid,
+    backend: &str,
+    relay: &dyn RelayOps,
+) -> Result<Option<String>, String> {
+    let (current, has_files): (String, bool) =
+        sqlx::query_as("SELECT backend, EXISTS (SELECT 1 FROM project_files WHERE project_id = $1) FROM projects WHERE id = $1")
+            .bind(project_id)
+            .fetch_one(&mut **conn)
+            .await
+            .map_err(|e| e.to_string())?;
+    if backend == current {
+        return Ok(None);
+    }
+    if has_files {
+        return Ok(Some(format!(
+            "It keeps its {current} backend: it already has files, and moving an app to {backend} is a separate task."
+        )));
+    }
+    let note = if backend == BACKEND_RELAY {
+        if !relay.is_available().await {
+            return Ok(Some(format!("Relay isn't set up on this Nomi, so this project is NOT on Relay. {ASK_BEFORE_DRIZZLE}")));
+        }
+        if let Err(e) = relay.ensure_backend(user_id, project_id).await {
+            return Ok(Some(format!("Relay couldn't make this project's backend ({e}), so it is NOT on Relay. {ASK_BEFORE_DRIZZLE}")));
+        }
+        Some("Its backend is Nomi Relay (a database, sign-in, storage and functions). It's being set up in the background and takes a few minutes; that's normal, so hand the build to the coding agent now: its backend tools wait for it.".to_string())
+    } else {
+        None
+    };
+    sqlx::query("UPDATE projects SET backend = $1, updated_at = now() WHERE id = $2")
+        .bind(backend)
+        .bind(project_id)
+        .execute(&mut **conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(note)
 }

@@ -1,5 +1,5 @@
 //! Publishing a project on Shipyard and looking after it once it's live: publish, the history
-//! of publishes (each can be rolled back to), deployment and runtime logs, resource usage, the
+//! of publishes (each can be rolled back to), deployment and runtime logs, resource usage and its history, the
 //! events Shipyard sent, taking an environment offline, and deleting the whole project.
 //!
 //! Everyone who can open a project sees all of it; only its admins (whoever started it, people
@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
-use nomi_shipyard::{manifest, Shipyard, ShipyardError};
+use nomi_shipyard::{manifest, MetricsRange, Shipyard, ShipyardError};
 
 use crate::app::AppState;
 use crate::project_ops::ShipyardAccess;
@@ -133,13 +133,22 @@ pub struct PublishRow {
     pub finished_at: Option<DateTime<Utc>>,
     /// Where a failed publish broke (`shipyard::PublishFailure`), when Shipyard said.
     pub failure: Option<Value>,
+    /// The `files_version` of the publish this one rolled back to.
+    pub rollback_of_version: Option<i64>,
+    /// The crew member who started it through `publish_project`, when it wasn't the person.
+    pub started_by_agent: Option<String>,
+    /// The newest successful publish of its environment: what runs there now. Only the deploy
+    /// overview works it out; a single publish says false.
+    #[sqlx(default)]
+    pub is_live: bool,
 }
 
 const PUBLISH_COLUMNS: &str = "pp.id, pp.environment, pp.status, pp.url, pp.error, pp.files_version, pp.rollback_of, \
      (pp.source_key IS NOT NULL) AS can_roll_back, \
      COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
-     pp.created_at, pp.finished_at, pp.failure \
+     pp.created_at, pp.finished_at, pp.failure, rb.files_version AS rollback_of_version, pp.started_by_agent \
      FROM project_publishes pp \
+     LEFT JOIN project_publishes rb ON rb.id = pp.rollback_of \
      LEFT JOIN user_profiles up ON up.user_id = pp.created_by \
      LEFT JOIN web_credentials w ON w.user_id = pp.created_by \
      LEFT JOIN google_identities g ON g.user_id = pp.created_by";
@@ -167,10 +176,28 @@ pub struct DeployOverview {
     pub publishes: Vec<PublishRow>,
     /// What runs in production right now, from Shipyard; null when nothing does.
     pub live: Option<Value>,
+    /// The app's own production backend while it's being set up before its first publish (or
+    /// when that failed); null otherwise. The publish follows by itself once it's ready.
+    pub backend_setup: Option<BackendSetup>,
+}
+
+#[derive(Serialize)]
+pub struct BackendSetup {
+    pub state: String,
+    pub step: Option<String>,
+    pub error: Option<String>,
+}
+
+/// The production backend of a project with a Relay of its own, when it isn't ready yet.
+async fn backend_setup(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Option<BackendSetup>, ApiError> {
+    let stack = crate::project_relays::stack(pool, project_id, DEFAULT_ENV).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(stack
+        .filter(|s| s.state != crate::project_relays::READY)
+        .map(|s| BackendSetup { state: s.state, step: s.step, error: s.error }))
 }
 
 /// The project's files, as Shipyard gets them (without excluded paths).
-async fn project_files(state: &impl ShipyardAccess, project_id: Uuid) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
+pub(crate) async fn project_files(state: &impl ShipyardAccess, project_id: Uuid) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
     let paths: Vec<String> = sqlx::query_scalar("SELECT path FROM project_files WHERE project_id = $1 ORDER BY path")
         .bind(project_id)
         .fetch_all(state.pool())
@@ -217,12 +244,13 @@ pub async fn overview(
 ) -> Result<Json<DeployOverview>, ApiError> {
     let role = project_role(&state.pool, project_id, claims.sub).await?;
     let target = target(&state, project_id).await?;
-    let publishes: Vec<PublishRow> =
+    let mut publishes: Vec<PublishRow> =
         sqlx::query_as(&format!("SELECT {PUBLISH_COLUMNS} WHERE pp.project_id = $1 ORDER BY pp.created_at DESC LIMIT 30"))
             .bind(project_id)
             .fetch_all(&state.pool)
             .await
             .map_err(internal("failed to list publishes"))?;
+    mark_live(&mut publishes);
     let live = match (client(&state), target.shipyard_app.as_deref()) {
         (Ok(client), Some(app)) => client.get_env(&target.org_key(), app, DEFAULT_ENV).await.ok(),
         _ => None,
@@ -242,7 +270,18 @@ pub async fn overview(
         url,
         publishes,
         live,
+        backend_setup: backend_setup(&state.pool, project_id).await?,
     }))
+}
+
+/// Marks the newest successful publish of each environment as live (`publishes` is newest first).
+fn mark_live(publishes: &mut [PublishRow]) {
+    let mut seen = std::collections::HashSet::new();
+    for publish in publishes.iter_mut() {
+        if publish.status == "succeeded" && seen.insert(publish.environment.clone()) {
+            publish.is_live = true;
+        }
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -261,6 +300,7 @@ async fn send_publish(
     source: Vec<u8>,
     rollback_of: Option<Uuid>,
     user_id: Uuid,
+    agent: Option<&str>,
 ) -> Result<PublishRow, ApiError> {
     let id = Uuid::new_v4();
     let source_key = format!("publishes/{}/{id}.zip", target.id);
@@ -270,8 +310,8 @@ async fn send_publish(
         .await
         .map_err(internal("failed to keep the published source"))?;
     sqlx::query(
-        "INSERT INTO project_publishes (id, project_id, environment, manifest, source_key, files_version, rollback_of, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO project_publishes (id, project_id, environment, manifest, source_key, files_version, rollback_of, created_by, started_by_agent) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(id)
     .bind(target.id)
@@ -281,6 +321,7 @@ async fn send_publish(
     .bind(target.files_version)
     .bind(rollback_of)
     .bind(user_id)
+    .bind(agent)
     .execute(state.pool())
     .await
     .map_err(internal("failed to record the publish"))?;
@@ -316,16 +357,51 @@ pub async fn publish(
     AuthClaims(claims): AuthClaims,
     Path(project_id): Path<Uuid>,
     body: Option<Json<PublishRequest>>,
-) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
+) -> Result<(StatusCode, Json<Value>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let environment = body.and_then(|Json(b)| b.environment).unwrap_or_else(|| DEFAULT_ENV.to_string());
-    let row = start_publish(&state, project_id, claims.sub, &environment).await?;
-    Ok((StatusCode::ACCEPTED, Json(row)))
+    let body = match begin_publish(&state, project_id, claims.sub, &environment, None).await? {
+        Started::Publishing(row) => serde_json::to_value(row).map_err(internal("failed to describe the publish"))?,
+        Started::Preparing(message) => json!({ "preparing": true, "message": message }),
+    };
+    Ok((StatusCode::ACCEPTED, Json(body)))
+}
+
+/// What starting a publish came to.
+pub(crate) enum Started {
+    Publishing(PublishRow),
+    /// The app's own backend is being set up first; the publish follows by itself.
+    Preparing(String),
+}
+
+/// `start_publish`, after making the app's own production backend when it's the first publish
+/// of a project with a Relay of its own.
+pub(crate) async fn begin_publish(
+    state: &impl ShipyardAccess,
+    project_id: Uuid,
+    user_id: Uuid,
+    environment: &str,
+    agent: Option<&str>,
+) -> Result<Started, ApiError> {
+    if let Some(message) = crate::relay_backend::prepare_for_publish(state, project_id, user_id, environment, agent)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+    {
+        return Ok(Started::Preparing(message));
+    }
+    start_publish(state, project_id, user_id, environment, agent).await.map(Started::Publishing)
 }
 
 /// Publishes the project's current files to `environment` as `user_id` (whose right to was
 /// checked by the caller): the Deploy sheet's Publish, and agents' `publish_project`.
-pub(crate) async fn start_publish(state: &impl ShipyardAccess, project_id: Uuid, user_id: Uuid, environment: &str) -> Result<PublishRow, ApiError> {
+/// `agent` is the crew member publishing for `user_id` through `publish_project`, if any.
+pub(crate) async fn start_publish(
+    state: &impl ShipyardAccess,
+    project_id: Uuid,
+    user_id: Uuid,
+    environment: &str,
+    agent: Option<&str>,
+) -> Result<PublishRow, ApiError> {
     valid_env(environment)?;
     let client = client(state)?;
     let running: bool = sqlx::query_scalar(
@@ -351,13 +427,49 @@ pub(crate) async fn start_publish(state: &impl ShipyardAccess, project_id: Uuid,
         let dockerfile = manifest::dockerfile(&target.stack, &files);
         files.push(("Dockerfile".to_string(), dockerfile.into_bytes()));
     }
-    let secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
+    // A Relay project's production database gets its new migrations before the new code goes out.
+    let relay = crate::project_relays::for_request(state.pool(), state.settings_key().as_ref(), project_id, "production").await?;
+    if let Err(refused) = crate::relay_ops::apply_before_publish(state.pool(), state.http_client(), relay.as_ref(), project_id, &files).await {
+        // Koda answers in the chat; the admins may not be watching it.
+        if agent.is_some() {
+            crate::shipyard::notify_admins(state.pool(), project_id, "backend_failed", &refused.1).await;
+        }
+        return Err(refused);
+    }
+    let mut secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
+    if crate::relay_ops::on_relay(state.pool(), project_id).await.unwrap_or(false) {
+        if let Some(ref relay_cfg) = relay {
+            if let Ok(found) = nomi_relay_client::Relay::new(state.http_client(), relay_cfg).backend(project_id).await {
+                if let Some(production) = found.environment("production") {
+                    if !secrets.iter().any(|s| s == crate::relay_ops::SECRET_URL) {
+                        for (name, value) in [
+                            (crate::relay_ops::SECRET_URL, &production.url),
+                            (crate::relay_ops::SECRET_ANON_KEY, &production.anon_key),
+                            (crate::relay_ops::SECRET_SERVICE_KEY, &production.service_key),
+                        ] {
+                            let _ = crate::routes::project_secrets::store(state, project_id, name, value, user_id).await;
+                        }
+                        secrets = crate::routes::project_secrets::names(state.pool(), project_id).await?;
+                    }
+                    if !files.iter().any(|(p, _)| p == ".env.production") {
+                        let env_prod = format!("PUBLIC_NOMI_URL={}\nPUBLIC_NOMI_KEY={}\n", production.url, production.anon_key);
+                        files.push((".env.production".to_string(), env_prod.into_bytes()));
+                    }
+                }
+            }
+        }
+    }
     let mut manifest = manifest::build(database, &secrets);
+    if database == manifest::Database::None
+        && crate::project_relays::stack(state.pool(), project_id, "production").await.ok().flatten().is_some()
+    {
+        manifest["database"] = json!({ "engine": "postgres" });
+    }
     manifest::label(&mut manifest, &project_id.to_string(), &target.stack, target.files_version);
     let source = nomi_shipyard::bundle::zip(&files).map_err(internal("failed to pack the project"))?;
 
     let app = nomi_shipyard_side::ensure_app(state.pool(), &client, &target).await.map_err(ensure_error)?;
-    send_publish(state, &target, &app, environment, manifest, source, None, user_id).await
+    send_publish(state, &target, &app, environment, manifest, source, None, user_id, agent).await
 }
 
 /// `POST /api/projects/:id/deploy/publishes/:publish_id/rollback`: publishes that publish's
@@ -369,15 +481,19 @@ pub async fn rollback(
 ) -> Result<(StatusCode, Json<PublishRow>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let client = client(&state)?;
-    let old: Option<(String, Value, Option<String>)> = sqlx::query_as(
-        "SELECT environment, manifest, source_key FROM project_publishes WHERE project_id = $1 AND id = $2",
+    let old: Option<(String, String, Value, Option<String>)> = sqlx::query_as(
+        "SELECT environment, status, manifest, source_key FROM project_publishes WHERE project_id = $1 AND id = $2",
     )
     .bind(project_id)
     .bind(publish_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(internal("failed to load publish"))?;
-    let (environment, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    let (environment, status, mut manifest, source_key) = old.ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    // Going back to code that never went live would only fail again.
+    if status != "succeeded" {
+        return Err((StatusCode::CONFLICT, "only a publish that succeeded can be rolled back to".to_string()));
+    }
     // The code goes back; the secrets stay as they are now.
     manifest::bind_secrets(&mut manifest, &crate::routes::project_secrets::names(&state.pool, project_id).await?);
     let source_key = source_key.ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
@@ -388,8 +504,11 @@ pub async fn rollback(
         .map_err(internal("failed to read the published source"))?
         .ok_or((StatusCode::GONE, "that publish's source wasn't kept".to_string()))?;
     let target = target(&state, project_id).await?;
+    // A Relay project's functions go back with the code; a failed check stops the rollback.
+    let relay = crate::project_relays::for_request(state.pool(), state.settings_key().as_ref(), project_id, "production").await?;
+    crate::relay_ops::functions_on_rollback(state.pool(), state.http_client(), relay.as_ref(), project_id, &environment, &source).await?;
     let app = nomi_shipyard_side::ensure_app(&state.pool, &client, &target).await.map_err(ensure_error)?;
-    let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub).await?;
+    let row = send_publish(&state, &target, &app, &environment, manifest, source, Some(publish_id), claims.sub, None).await?;
     Ok((StatusCode::ACCEPTED, Json(row)))
 }
 
@@ -557,10 +676,15 @@ pub async fn runtime_logs(
     let app = published_app(&target)?;
     let env = env_of(&EnvQuery { environment: query.environment.clone() })?;
     let service = query.service.clone().unwrap_or_else(|| "web".to_string());
-    let logs = client(&state)?
+    let mut logs = client(&state)?
         .service_logs(&target.org_key(), app, &env, &service, query.tail.unwrap_or(300), query.since.as_deref())
         .await
         .map_err(shipyard_error)?;
+    // The Monitor shows text lines, whichever shape Shipyard sent them in.
+    let lines = nomi_shipyard::log_lines(&logs);
+    if let Some(fields) = logs.as_object_mut() {
+        fields.insert("lines".to_string(), json!(lines));
+    }
     Ok(Json(logs))
 }
 
@@ -577,6 +701,31 @@ pub async fn usage(
     let env = env_of(&query)?;
     let usage = client(&state)?.usage(&target.org_key(), app, &env).await.map_err(shipyard_error)?;
     Ok(Json(usage))
+}
+
+#[derive(Deserialize)]
+pub struct MetricsQuery {
+    pub environment: Option<String>,
+    pub range: Option<String>,
+}
+
+/// `GET /api/projects/:id/deploy/metrics`: traffic and container history over 1h, 24h or 7d.
+pub async fn metrics(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<MetricsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    project_role(&state.pool, project_id, claims.sub).await?;
+    let range = match query.range.as_deref() {
+        None => MetricsRange::default(),
+        Some(range) => MetricsRange::parse(range).ok_or((StatusCode::BAD_REQUEST, "range must be 1h, 24h or 7d".to_string()))?,
+    };
+    let target = target(&state, project_id).await?;
+    let app = published_app(&target)?;
+    let env = env_of(&EnvQuery { environment: query.environment.clone() })?;
+    let metrics = client(&state)?.metrics(&target.org_key(), app, &env, range, None).await.map_err(shipyard_error)?;
+    Ok(Json(metrics))
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -628,12 +777,17 @@ pub async fn take_offline(
     let target = target(&state, project_id).await?;
     let app = published_app(&target)?;
     client(&state)?.delete_env(&target.org_key(), app, &environment).await.map_err(shipyard_error)?;
+    let _ = sqlx::query("DELETE FROM project_relays WHERE project_id = $1 AND env = $2")
+        .bind(project_id)
+        .bind(&environment)
+        .execute(&state.pool)
+        .await;
     crate::routes::showcase::hide_when_offline(&state.pool, project_id, &environment).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `DELETE /api/projects/:id`: terminates the project. Its Shipyard app goes everywhere (every
-/// environment, data, the dev database), then its files and Nomi's record of it. The chat stays.
+/// `DELETE /api/projects/:id`: terminates the project. Its Shipyard apps (the web app and its
+/// backend) go everywhere (every environment, data, the databases), then its files and Nomi's record of it. The chat stays.
 pub async fn delete_project(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -642,9 +796,12 @@ pub async fn delete_project(
     require_admin(&state.pool, project_id, claims.sub).await?;
     let target = target(&state, project_id).await?;
     if let Some(app) = target.shipyard_app.as_deref() {
-        match client(&state)?.delete_app(&target.org_key(), app).await {
-            Ok(_) | Err(ShipyardError::NotFound(_)) => {}
-            Err(e) => return Err(shipyard_error(e)),
+        // The web app, and the backend app holding its own databases and Relay.
+        for app in [app.to_string(), crate::relay_backend::backend_app(app)] {
+            match client(&state)?.delete_app(&target.org_key(), &app).await {
+                Ok(_) | Err(ShipyardError::NotFound(_)) => {}
+                Err(e) => return Err(shipyard_error(e)),
+            }
         }
     }
     for prefix in [project_id.to_string(), format!("publishes/{project_id}")] {
@@ -706,11 +863,14 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
     let pool = state.pool.clone();
     let http = state.http_client.clone();
     let config = config.clone();
+    let settings_key = state.settings_key;
+    let project_storage = state.project_storage.clone();
     tokio::spawn(async move {
         let client = Shipyard::new(&http, &config);
         if let Err(e) = nomi_shipyard_side::apply_event(&pool, Some(&client), project_id, &event).await {
             tracing::error!(error = %e, event = %event.id, "failed to apply a Shipyard event");
         }
+        crate::relay_backend::finish_on_event(&pool, &http, &config, &settings_key, Some(project_storage), project_id, &event).await;
     });
     StatusCode::NO_CONTENT
 }

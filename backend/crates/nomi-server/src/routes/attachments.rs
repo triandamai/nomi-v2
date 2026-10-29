@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use nomi_attachments::{Kind, Limits, Reference};
 use nomi_auth::extractor::AuthClaims;
+use nomi_settings::config;
 
 use crate::app::AppState;
 
@@ -39,9 +40,38 @@ pub struct AttachmentResponse {
     pub reference: String,
 }
 
-fn per_person_quota_bytes() -> i64 {
-    let mb = std::env::var("ATTACHMENT_QUOTA_MB").ok().and_then(|v| v.trim().parse::<i64>().ok()).filter(|v| *v > 0).unwrap_or(2048);
-    mb * 1024 * 1024
+/// What each person may keep stored, unless Admin → Configuration (or ATTACHMENT_QUOTA_MB) says.
+const DEFAULT_QUOTA_MB: u64 = 2048;
+const MB: u64 = 1024 * 1024;
+
+async fn per_person_quota_bytes() -> i64 {
+    let mb = config::current(&config::ATTACHMENTS).await.number("quota_mb").unwrap_or(DEFAULT_QUOTA_MB);
+    (mb * MB) as i64
+}
+
+/// The limits now: Admin → Configuration, else the environment, else the defaults.
+pub(crate) async fn current_limits() -> Limits {
+    let section = config::current(&config::ATTACHMENTS).await;
+    Limits::from_lookup(|field| section.number(field))
+}
+
+#[derive(Serialize)]
+pub struct LimitsResponse {
+    pub max_file_bytes: u64,
+    pub max_video_bytes: u64,
+    pub max_message_bytes: u64,
+    pub max_files: usize,
+}
+
+/// `GET /api/attachments/limits`: what the composer checks before uploading.
+pub async fn limits(AuthClaims(_claims): AuthClaims) -> Json<LimitsResponse> {
+    let limits = current_limits().await;
+    Json(LimitsResponse {
+        max_file_bytes: limits.max_file_bytes,
+        max_video_bytes: limits.max_video_bytes,
+        max_message_bytes: limits.max_message_bytes,
+        max_files: limits.max_files,
+    })
 }
 
 /// `%`-decoding for the file name and transcript headers (headers carry ASCII only).
@@ -99,7 +129,7 @@ impl Drop for TempFile {
 /// `X-Attachment-Kind: voice` for a composer voice note, with the browser's own transcript (if it
 /// made one) in `X-Transcript`.
 pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaims, headers: HeaderMap, body: Body) -> Result<(StatusCode, Json<AttachmentResponse>), ApiError> {
-    let limits = Limits::from_env();
+    let limits = current_limits().await;
     let max = limits.max_upload_bytes();
     let declared: Option<u64> = headers.get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     if declared.is_some_and(|len| len > max) {
@@ -110,7 +140,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
         .fetch_one(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check storage"))?;
-    if used + declared.unwrap_or(0) as i64 > per_person_quota_bytes() {
+    if used + declared.unwrap_or(0) as i64 > per_person_quota_bytes().await {
         return Err((StatusCode::INSUFFICIENT_STORAGE, "storage is full"));
     }
 
@@ -367,7 +397,7 @@ pub async fn check_message_references(pool: &sqlx::PgPool, user_id: Uuid, text: 
     if references.is_empty() {
         return Ok((text.to_string(), Vec::new()));
     }
-    let limits = Limits::from_env();
+    let limits = current_limits().await;
     let mut ids: Vec<Uuid> = references.iter().map(|r| r.id).collect();
     ids.sort();
     ids.dedup();

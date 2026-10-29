@@ -26,6 +26,27 @@ export function toFileTree(files: { path: string; content: string }[]): FileSyst
 	return root;
 }
 
+/** A Relay project's dev backend, as Nomi gives it to the preview (the service key for admins only). */
+export interface RelayPreviewAccess {
+	url: string;
+	anon_key: string;
+	service_key?: string;
+}
+
+/** The preview's environment with its dev backend in the variables the app reads (see the relay guide). */
+export function previewEnv(base: Record<string, string>, access: RelayPreviewAccess | null): Record<string, string> {
+	if (!access) return base;
+	const env: Record<string, string> = {
+		...base,
+		PUBLIC_NOMI_URL: access.url,
+		PUBLIC_NOMI_KEY: access.anon_key,
+		NOMI_URL: access.url,
+		NOMI_ANON_KEY: access.anon_key,
+	};
+	if (access.service_key) env.NOMI_SERVICE_KEY = access.service_key;
+	return env;
+}
+
 /** Which files to fetch (new or changed since) and which to delete, against what's mounted. */
 export function diffManifest(known: Map<string, string>, manifest: ManifestEntry[]): { changed: string[]; removed: string[] } {
 	const current = new Set(manifest.map((f) => f.path));

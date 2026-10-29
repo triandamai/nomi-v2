@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import RecentChats from '$lib/components/RecentChats.svelte';
 	import { isRecentChatActive, loadRecentChats, refreshesAfterNavigation, type RecentsState } from '$lib/drawerRecents';
+	import { onChatsChanged } from '$lib/userActivity';
 
 	// Loads the drawer's Recents and keeps them current: after every navigation (a chat just
 	// started or renamed shows up) and when the person picks another size in Preferences.
@@ -47,7 +48,11 @@
 		void refresh();
 	}
 
-	onMount(() => void refresh());
+	onMount(() => {
+		void refresh();
+		// A chat moved on, here or on another of the person's devices: it goes to the top.
+		return onChatsChanged(() => void refresh());
+	});
 	afterNavigate(({ from, to }) => {
 		if (refreshesAfterNavigation(from, to)) void refresh();
 	});

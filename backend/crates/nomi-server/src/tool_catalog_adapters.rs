@@ -54,7 +54,10 @@ struct CreateProject;
 #[async_trait]
 impl CatalogTool for CreateProject {
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        nomi_agent_planning::create_project(conn, session_id, user_id, input).await.map(ToolOutcome::text)
+        // Custom agents create projects on Drizzle: only Rena gets Relay backends made.
+        nomi_agent_planning::create_project(conn, session_id, user_id, input, &nomi_agent_core::relay_ops::NoRelayOps)
+            .await
+            .map(ToolOutcome::text)
     }
 }
 

@@ -2,10 +2,26 @@
 	// Who can open the project: everyone in its organization, or only the people added to it,
 	// as members (they build it) or admins (they also publish and manage it).
 	import { m } from '$lib/paraglide/messages';
+	import ProjectActivity from '$lib/components/project/ProjectActivity.svelte';
 	import { projectApi } from '$lib/projectApi';
+	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
+	import type { ProjectPresence } from '$lib/projectPresence.svelte';
 	import type { ProjectMembers, ProjectPerson } from '$lib/types';
 
-	let { projectId, orgId }: { projectId: string; orgId: string } = $props();
+	let {
+		projectId,
+		orgId,
+		tab = $bindable('people'),
+		presence = null,
+		deploy = null,
+	}: {
+		projectId: string;
+		orgId: string;
+		/** People: who can open the project. Activity: who's here and what's happening. */
+		tab?: 'people' | 'activity';
+		presence?: ProjectPresence | null;
+		deploy?: ProjectDeploy | null;
+	} = $props();
 
 	let data = $state<ProjectMembers | null>(null);
 	let error = $state<string | null>(null);
@@ -49,6 +65,15 @@
 		return data?.access === 'org' || person.is_owner || person.project_role !== null;
 	}
 </script>
+
+<div class="tabs" role="tablist" aria-label={m.pj_act_tabs()}>
+	<button type="button" role="tab" class="tab" aria-selected={tab === 'people'} onclick={() => (tab = 'people')}>{m.pj_act_tab_people()}</button>
+	<button type="button" role="tab" class="tab" aria-selected={tab === 'activity'} onclick={() => (tab = 'activity')}>{m.pj_act_tab_activity()}</button>
+</div>
+
+{#if tab === 'activity'}
+	<ProjectActivity {projectId} {presence} {deploy} />
+{:else}
 
 {#if !data}
 	<p class="muted">{error ?? m.pj_loading()}</p>
@@ -96,8 +121,40 @@
 	</ul>
 	<p class="muted small">{m.pj_invite_hint()} <a href="/organizations/{orgId}" target="_blank" rel="noopener">{m.pj_open_org()}</a></p>
 {/if}
+{/if}
 
 <style>
+	.tabs {
+		display: flex;
+		gap: 4px;
+		margin-bottom: 16px;
+		padding: 3px;
+		width: fit-content;
+		border-radius: 999px;
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.tab {
+		min-height: 36px;
+		padding: 6px 16px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		font: 500 0.875rem var(--md-ref-typeface-plain);
+		cursor: pointer;
+	}
+	.tab:hover {
+		color: var(--md-sys-color-on-surface);
+	}
+	.tab:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	.tab[aria-selected='true'] {
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+		font-weight: 600;
+	}
 	.section-title {
 		margin: 18px 0 8px;
 		padding: 0;

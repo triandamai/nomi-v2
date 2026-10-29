@@ -6,11 +6,12 @@ export const DEFAULT_SIGNED_URL_SECONDS = 3600;
 /** Uploads can be big; give them longer than a normal request. */
 const UPLOAD_TIMEOUT_MS = 300_000;
 
+/** A file, or a folder (its name ends in `/`, with no size or date), in a listing. */
 export interface FileObject {
   name: string;
   size: number;
   content_type: string | null;
-  updated_at: string;
+  updated_at: string | null;
 }
 
 export interface UploadOptions {

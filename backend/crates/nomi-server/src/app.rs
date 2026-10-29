@@ -225,6 +225,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/support/keys", get(crate::routes::support::list_keys).post(crate::routes::support::create_key))
         .route("/api/admin/support/keys/:id", delete(crate::routes::support::revoke_key))
         .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
+        .route("/api/admin/configuration", get(crate::routes::admin_configuration::get))
+        .route("/api/admin/configuration/:section", axum::routing::put(crate::routes::admin_configuration::save))
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
@@ -318,6 +320,7 @@ pub fn build_router(state: AppState) -> Router {
             // Uploads are streamed and limited by the handler itself (nomi_attachments::Limits).
             post(attachments_routes::upload).layer(axum::extract::DefaultBodyLimit::disable()),
         )
+        .route("/api/attachments/limits", get(attachments_routes::limits))
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
@@ -368,6 +371,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
         .route("/api/projects/:id/deploy/logs", get(crate::routes::deploy::runtime_logs))
         .route("/api/projects/:id/deploy/usage", get(crate::routes::deploy::usage))
+        .route("/api/projects/:id/deploy/metrics", get(crate::routes::deploy::metrics))
         .route("/api/projects/:id/deploy/events", get(crate::routes::deploy::events))
         .route("/api/projects/:id/deploy/environments/:env", delete(crate::routes::deploy::take_offline))
         .route(
@@ -381,6 +385,14 @@ pub fn build_router(state: AppState) -> Router {
             post(crate::routes::project_import::import_batch).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
         .route("/api/projects/:id/members", get(crate::routes::project_members::list))
+        .route(
+            "/api/projects/:id/presence",
+            get(crate::routes::project_presence::list)
+                .post(crate::routes::project_presence::heartbeat)
+                .delete(crate::routes::project_presence::leave),
+        )
+        .route("/api/projects/:id/typing", post(crate::routes::project_presence::typing))
+        .route("/api/projects/:id/activity", get(crate::routes::project_activity::list))
         .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))
         .route(
             "/api/projects/:id/members/:user_id",
@@ -390,6 +402,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/database/credentials", post(crate::routes::project_database::credentials))
         .route("/api/projects/:id/database/tables", get(crate::routes::project_database::tables))
         .route("/api/projects/:id/database/query", post(crate::routes::project_database::run_query))
+        .route("/api/projects/:id/relay/preview", get(crate::routes::project_relay::preview))
+        .route("/api/projects/:id/relay", get(crate::routes::project_relay::overview))
+        .route("/api/projects/:id/relay/query", post(crate::routes::project_relay::run_query))
+        .route("/api/projects/:id/relay/retry", post(crate::routes::project_relay::retry))
         .route("/api/projects/:id/secrets", get(crate::routes::project_secrets::list))
         .route(
             "/api/projects/:id/secrets/:name",

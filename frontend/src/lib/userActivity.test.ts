@@ -1,6 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const shown: { message: string; actionLabel: string; href: string }[] = [];
+const arrived: { id: string; title: string; body?: string; link: string | null }[] = [];
+vi.mock('$lib/notifications.svelte', () => ({ notificationArrived: (item: (typeof arrived)[number]) => arrived.push(item) }));
 vi.mock('$lib/snackbars.svelte', () => ({ showSnackbar: (item: { message: string; actionLabel: string; href: string }) => shown.push(item) }));
 
 class FakeSocket {
@@ -44,6 +46,23 @@ afterEach(() => {
 });
 
 describe("the person's activity feed", () => {
+	it('hands a new inbox item, with what happened, to the inbox', async () => {
+		const { connectUserActivity } = await import('./userActivity');
+		arrived.length = 0;
+		connectUserActivity();
+		const notification = {
+			kind: 'NotificationCreated',
+			notification_id: 'n1',
+			category: 'deploy',
+			title: "Shop's backend couldn't be set up",
+			body: 'Shipyard refused it: plan limit reached (3 environments).',
+			link: '/projects/p1/app?sheet=deploy',
+		};
+		FakeSocket.all[0].emit('message', { data: JSON.stringify(notification) });
+		expect(arrived).toEqual([{ id: 'n1', title: notification.title, body: notification.body, link: notification.link }]);
+		expect(shown).toEqual([]);
+	});
+
 	it('turns a finished chat into a snackbar with a way back', async () => {
 		const { connectUserActivity } = await import('./userActivity');
 		const close = connectUserActivity();
@@ -80,6 +99,20 @@ describe("the person's activity feed", () => {
 		socket.emit('message', { data: JSON.stringify({ kind: 'SomethingNew' }) });
 		socket.emit('message', { data: 'not json' });
 		expect(shown).toEqual([]);
+	});
+
+	it('tells chat lists when a chat moved on elsewhere, without a snackbar', async () => {
+		const { connectUserActivity, onChatsChanged } = await import('./userActivity');
+		connectUserActivity();
+		const changed: string[] = [];
+		const stop = onChatsChanged((sessionId) => changed.push(sessionId));
+		const socket = FakeSocket.all[0];
+		socket.emit('message', { data: JSON.stringify({ kind: 'ChatUpdated', session_id: 's2', project_id: null, title: null }) });
+		socket.emit('message', { data: activity() });
+		stop();
+		socket.emit('message', { data: JSON.stringify({ kind: 'ChatUpdated', session_id: 's3', project_id: null, title: null }) });
+		expect(changed).toEqual(['s2', 's1']);
+		expect(shown).toHaveLength(1);
 	});
 
 	it('reconnects when the feed drops, but not once signed out', async () => {

@@ -5,6 +5,7 @@
 pub mod brief;
 pub mod files;
 pub mod guides;
+pub mod relay;
 pub mod report;
 pub mod runtime;
 
@@ -17,6 +18,7 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::project_ops::{publish_from_tool, publish_tool_definition, NoProjectOps, SharedProjectOps, PUBLISH_TOOL_NAME};
+use nomi_agent_core::relay_ops::{NoRelayOps, SharedRelayOps, RELAY_TOOL_NAMES};
 use nomi_agent_core::prompts::CODING_SYSTEM_PROMPT;
 use nomi_agent_core::{SubAgent, ToolOutcome};
 use nomi_llm::ToolDefinition;
@@ -80,11 +82,18 @@ fn has_project_prefix(task: &str) -> bool {
 pub struct CodingAgent {
     storage: ProjectStore,
     project_ops: SharedProjectOps,
+    relay_ops: SharedRelayOps,
 }
 
 impl CodingAgent {
     pub fn new(storage: ProjectStore) -> Self {
-        Self { storage, project_ops: std::sync::Arc::new(NoProjectOps) }
+        Self { storage, project_ops: std::sync::Arc::new(NoProjectOps), relay_ops: std::sync::Arc::new(NoRelayOps) }
+    }
+
+    /// Migrations and the backend's schema for projects on Relay (see `relay`).
+    pub fn with_relay_ops(mut self, relay_ops: SharedRelayOps) -> Self {
+        self.relay_ops = relay_ops;
+        self
     }
 
     /// Publishing (`publish_project`) through the server's Shipyard access.
@@ -134,9 +143,24 @@ impl SubAgent for CodingAgent {
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         if name == PUBLISH_TOOL_NAME {
-            return publish_from_tool(self.project_ops.as_ref(), user_id, &input).await.map(ToolOutcome::text);
+            return publish_from_tool(self.project_ops.as_ref(), user_id, &self.display_name(), &input).await.map(ToolOutcome::text);
         }
-        execute(conn, &self.storage, user_id, name, input).await
+        if RELAY_TOOL_NAMES.contains(&name) {
+            return relay::execute(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input).await.map(ToolOutcome::text);
+        }
+        let outcome = execute(conn, &self.storage, user_id, name, input.clone()).await?;
+        Ok(relay::after_write(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input, outcome).await)
+    }
+
+    /// The Relay tools, for a project whose backend is Relay.
+    async fn chat_tools(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        session_id: Uuid,
+        user_id: Uuid,
+        messages: &[nomi_llm::LlmMessage],
+    ) -> Vec<ToolDefinition> {
+        relay::chat_tools(conn, session_id, user_id, messages).await
     }
 
     /// The project, its files, Rena's plan and the stack's guides, so a build starts from them
@@ -149,7 +173,7 @@ impl SubAgent for CodingAgent {
         user_id: Uuid,
         messages: &[nomi_llm::LlmMessage],
     ) -> Option<String> {
-        brief::task_brief(conn, s3, session_id, user_id, messages).await
+        brief::task_brief(conn, s3, session_id, user_id, messages, self.relay_ops.as_ref()).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {
@@ -175,10 +199,11 @@ impl SubAgent for CodingAgent {
         true
     }
 
-    /// Koda's tools only touch the project's own files and run commands in the person's own
-    /// browser preview: building shouldn't stop for an approval at every file.
+    /// Koda's tools only touch the project's own files, its own dev backend on Relay, and run
+    /// commands in the person's own browser preview: building shouldn't stop for an approval at
+    /// every file.
     fn tool_needs_approval(&self, tool_name: &str) -> bool {
-        !TOOL_NAMES.contains(&tool_name)
+        !TOOL_NAMES.contains(&tool_name) && !RELAY_TOOL_NAMES.contains(&tool_name)
     }
 
     fn supports_plans(&self) -> bool {

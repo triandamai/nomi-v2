@@ -21,6 +21,73 @@ pub const ENV_KEY: &str = "SHIPYARD_KEY";
 pub const ENV_REVEAL_KEY: &str = "SHIPYARD_REVEAL_KEY";
 pub const ENV_WEBHOOK_SECRET: &str = "SHIPYARD_WEBHOOK_SECRET";
 
+/// How far back the metrics endpoint looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MetricsRange {
+    Hour,
+    #[default]
+    Day,
+    Week,
+}
+
+impl MetricsRange {
+    pub fn parse(range: &str) -> Option<Self> {
+        match range {
+            "1h" => Some(Self::Hour),
+            "24h" => Some(Self::Day),
+            "7d" => Some(Self::Week),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Hour => "1h",
+            Self::Day => "24h",
+            Self::Week => "7d",
+        }
+    }
+
+    /// The bucket size that gives the range a readable number of points (60, 288 or 168).
+    pub fn default_step(self) -> MetricsStep {
+        match self {
+            Self::Hour => MetricsStep::Minute,
+            Self::Day => MetricsStep::FiveMinutes,
+            Self::Week => MetricsStep::Hour,
+        }
+    }
+}
+
+/// The size of each metrics bucket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetricsStep {
+    Minute,
+    FiveMinutes,
+    Hour,
+    Day,
+}
+
+impl MetricsStep {
+    pub fn parse(step: &str) -> Option<Self> {
+        match step {
+            "1m" => Some(Self::Minute),
+            "5m" => Some(Self::FiveMinutes),
+            "1h" => Some(Self::Hour),
+            "1d" => Some(Self::Day),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Minute => "1m",
+            Self::FiveMinutes => "5m",
+            Self::Hour => "1h",
+            Self::Day => "1d",
+        }
+    }
+}
+
 /// How Nomi reaches Shipyard, from the server's environment.
 #[derive(Debug, Clone)]
 pub struct ShipyardConfig {
@@ -327,6 +394,15 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::GET, &format!("{}/usage", Self::env_path(org, app, env)), None).await
     }
 
+    /// Traffic (visitors, requests, 4xx/5xx, p50/p95) and container CPU/memory over `range`, in
+    /// buckets of `step` (the range's own step when None), with totals and the previous range's
+    /// totals. Shipyard keeps 7 days; anything it didn't measure is null.
+    pub async fn metrics(&self, org: &str, app: &str, env: &str, range: MetricsRange, step: Option<MetricsStep>) -> Result<Value, ShipyardError> {
+        let step = step.unwrap_or_else(|| range.default_step());
+        let path = format!("{}/metrics?range={}&step={}", Self::env_path(org, app, env), range.as_str(), step.as_str());
+        self.call(reqwest::Method::GET, &path, None).await
+    }
+
     /// The app's secrets: names, refs, environments and where they're used. Never values.
     pub async fn list_secrets(&self, org: &str, app: &str) -> Result<Value, ShipyardError> {
         self.call(reqwest::Method::GET, &format!("{}/secrets", Self::app_path(org, app)), None).await
@@ -444,6 +520,19 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::PUT, &format!("{}/secrets/{}", Self::app_path(org, app), seg(name)), Some(body)).await
     }
 
+    /// Has Shipyard make a secret's value once, for one environment (`kind`: `hex32`, `base64_32`,
+    /// `uuid` or `password`). Nomi never reads it back; services bind it by name.
+    pub async fn generate_secret(&self, org: &str, app: &str, name: &str, kind: &str, environment: Option<&str>) -> Result<Value, ShipyardError> {
+        let body = json!({ "generate": kind, "environment": environment });
+        self.call(reqwest::Method::PUT, &format!("{}/secrets/{}", Self::app_path(org, app), seg(name)), Some(body)).await
+    }
+
+    /// Sets how many replicas every service of the environment runs; 0 stops them all and keeps
+    /// their volumes (a sleeping development backend), 1 starts them again.
+    pub async fn scale_env(&self, org: &str, app: &str, env: &str, replicas: u32) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::PATCH, &format!("{}/scale", Self::env_path(org, app, env)), Some(json!({ "replicas": replicas }))).await
+    }
+
     pub async fn delete_secret(&self, org: &str, app: &str, name: &str, environment: Option<&str>) -> Result<Value, ShipyardError> {
         let mut path = format!("{}/secrets/{}", Self::app_path(org, app), seg(name));
         if let Some(environment) = environment {
@@ -460,6 +549,26 @@ impl<'a> Shipyard<'a> {
 
 /// A Shipyard app slug for a project: its name in `a-z0-9-` and a piece of its id, so two
 /// projects with the same name don't collide (1–63 chars, no leading or trailing `-`).
+/// A service's runtime log (`GET …/services/{service}/logs`) as text, one line each. Shipyard sends
+/// `{ at, level, message, service }` per line; an older one sent plain strings. The level stays
+/// in the line as a word, so a line can still be told apart by it.
+pub fn log_lines(logs: &Value) -> Vec<String> {
+    logs.get("lines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|line| match line {
+            Value::String(text) => Some(text.clone()),
+            Value::Object(fields) => {
+                let message = fields.get("message").and_then(Value::as_str)?;
+                let prefix: Vec<&str> = ["at", "level"].iter().filter_map(|k| fields.get(*k).and_then(Value::as_str)).collect();
+                Some(if prefix.is_empty() { message.to_string() } else { format!("{} {message}", prefix.join(" ")) })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn app_slug(name: &str, project_id: &str) -> String {
     let mut base = String::new();
     for c in name.to_lowercase().chars() {
@@ -481,6 +590,25 @@ pub fn app_slug(name: &str, project_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn log_lines_reads_structured_and_plain_lines() {
+        let logs = json!({ "service": "web", "lines": [
+            { "at": "2026-10-28T01:02:03Z", "level": "error", "message": "connect ECONNREFUSED", "service": "web" },
+            { "at": "2026-10-28T01:02:04Z", "level": "info", "message": "listening on 3000" },
+            "a line from an older Shipyard",
+            { "level": "warn" }
+        ] });
+        assert_eq!(
+            log_lines(&logs),
+            vec![
+                "2026-10-28T01:02:03Z error connect ECONNREFUSED".to_string(),
+                "2026-10-28T01:02:04Z info listening on 3000".to_string(),
+                "a line from an older Shipyard".to_string(),
+            ]
+        );
+        assert!(log_lines(&json!({})).is_empty());
+    }
+
     use super::*;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -555,6 +683,60 @@ mod tests {
         let failure = Shipyard::new(&http, &config).deployment_failure("org-1", "todo", "production", "d1").await.unwrap().unwrap();
         assert_eq!(failure.phase, "build");
         assert_eq!(failure.tail, vec!["error during build"]);
+    }
+
+    #[tokio::test]
+    async fn a_generated_secret_is_asked_for_by_kind_and_environment() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/orgs/org-1/apps/todo-backend/secrets/RELAY_ENCRYPTION_KEY"))
+            .and(wiremock::matchers::body_json(json!({ "generate": "hex32", "environment": "dev" })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "ref": "sec_9" }, "error": null })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        Shipyard::new(&http, &config).generate_secret("org-1", "todo-backend", "RELAY_ENCRYPTION_KEY", "hex32", Some("dev")).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn scaling_an_environment_sends_the_replica_count() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/orgs/org-1/apps/todo-backend/envs/dev/scale"))
+            .and(wiremock::matchers::body_json(json!({ "replicas": 0 })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "replicas": 0 }, "error": null })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        Shipyard::new(&http, &config).scale_env("org-1", "todo-backend", "dev", 0).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn metrics_ask_for_the_range_with_its_own_step() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orgs/org-1/apps/todo/envs/production/metrics"))
+            .and(wiremock::matchers::query_param("range", "7d"))
+            .and(wiremock::matchers::query_param("step", "1h"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "range": "7d", "step": "1h", "buckets": [], "totals": { "visitors": 3, "p95_ms": null }, "previous_totals": {} },
+                "error": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let metrics = Shipyard::new(&http, &config).metrics("org-1", "todo", "production", MetricsRange::Week, None).await.unwrap();
+        assert_eq!(metrics["totals"]["visitors"], json!(3));
+        assert!(metrics["totals"]["p95_ms"].is_null());
+        assert_eq!(MetricsRange::default().default_step(), MetricsStep::FiveMinutes);
+        assert_eq!(MetricsRange::parse("1h").map(MetricsRange::default_step), Some(MetricsStep::Minute));
+        assert_eq!(MetricsRange::parse("30d"), None);
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@
 // project's socket (`/projects/{id}/ws`) and it reloads then; while a publish runs it also
 // checks now and then, in case an event never arrives.
 
+import { isDeployEvent } from '$lib/presenceView';
 import { projectApi } from '$lib/projectApi';
 import type { DeployOverview, ProjectPublish } from '$lib/types';
 
@@ -22,6 +23,7 @@ export class ProjectDeploy {
 	#socket: WebSocket | null = null;
 	#retry: ReturnType<typeof setTimeout> | null = null;
 	#retryMs = 1000;
+	#listeners = new Set<(data: string) => void>();
 
 	constructor(projectId: string) {
 		this.projectId = projectId;
@@ -34,6 +36,11 @@ export class ProjectDeploy {
 
 	get running(): boolean {
 		return this.overview?.publishes.some((p) => p.status === 'running') ?? false;
+	}
+
+	/** The app's own backend is being set up; the publish follows by itself when it's ready. */
+	get preparing(): boolean {
+		return this.overview?.backend_setup?.state === 'creating';
 	}
 
 	get isAdmin(): boolean {
@@ -52,7 +59,7 @@ export class ProjectDeploy {
 	#schedule() {
 		if (this.#timer) clearTimeout(this.#timer);
 		this.#timer = null;
-		if (this.#stopped || !this.running) return;
+		if (this.#stopped || !(this.running || this.preparing)) return;
 		this.#timer = setTimeout(() => void this.#poll(), FALLBACK_MS);
 	}
 
@@ -66,9 +73,14 @@ export class ProjectDeploy {
 			if (this.#retryMs > 1000) void this.refresh();
 			this.#retryMs = 1000;
 		});
-		socket.addEventListener('message', () => {
-			this.changes += 1;
-			void this.refresh();
+		socket.addEventListener('message', (event: MessageEvent<string>) => {
+			// The same topic carries presence and typing (see projectPresence): only publishing
+			// changes reload the Deploy state.
+			if (isDeployEvent(event.data)) {
+				this.changes += 1;
+				void this.refresh();
+			}
+			for (const listener of this.#listeners) listener(event.data);
 		});
 		socket.addEventListener('close', (event) => {
 			this.#socket = null;
@@ -88,8 +100,9 @@ export class ProjectDeploy {
 		await this.refresh();
 	}
 
-	async publish(): Promise<boolean> {
-		return this.#act(() => projectApi(this.projectId, 'deploy/publish', { method: 'POST', body: {} }));
+	/** Publishes the project's files to `environment` (production unless given). */
+	async publish(environment?: string): Promise<boolean> {
+		return this.#act(() => projectApi(this.projectId, 'deploy/publish', { method: 'POST', body: environment ? { environment } : {} }));
 	}
 
 	async rollback(publishId: string): Promise<boolean> {
@@ -113,6 +126,12 @@ export class ProjectDeploy {
 			this.busy = false;
 			await this.refresh();
 		}
+	}
+
+	/** Calls `listener` with every message on the project's live topic; returns the function that stops it. */
+	onEvent(listener: (data: string) => void): () => void {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
 	}
 
 	stop() {

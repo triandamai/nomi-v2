@@ -1,3 +1,4 @@
+import { DEFAULT_THEME } from '$lib/appearance';
 import { APPEARANCE_COOKIE, APPEARANCE_COOKIE_OPTIONS, formatAppearance } from '$lib/appearanceCookie';
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
@@ -33,7 +34,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 	const preferencesResponse = await apiFetch(fetch, cookies, '/api/preferences');
 	const preferences: Preferences = preferencesResponse.ok
 		? ((await preferencesResponse.json()) as Preferences)
-		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
+		: { theme: 'system', accent_color: DEFAULT_THEME, timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
 
 	// The saved language wins on every device; the cookie makes the next render use it.
 	if (preferencesResponse.ok && preferences.language !== getLocale()) setLanguageCookie(cookies, preferences.language);

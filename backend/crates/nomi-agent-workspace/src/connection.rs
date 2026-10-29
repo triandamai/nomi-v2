@@ -91,11 +91,33 @@ impl GoogleConfig {
     /// The server's OAuth client, from GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
     /// GOOGLE_REDIRECT_URI. `None` until whoever runs Nomi sets all three.
     pub fn from_env() -> Option<Self> {
-        let get = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-        let mut config = Self::new(get("GOOGLE_CLIENT_ID")?, get("GOOGLE_CLIENT_SECRET")?, get("GOOGLE_REDIRECT_URI")?);
-        if let Some(signin) = get("GOOGLE_SIGNIN_REDIRECT_URI") {
+        Self::from_lookup(|field| {
+            let name = match field {
+                "client_id" => "GOOGLE_CLIENT_ID",
+                "client_secret" => "GOOGLE_CLIENT_SECRET",
+                "redirect_uri" => "GOOGLE_REDIRECT_URI",
+                _ => "GOOGLE_SIGNIN_REDIRECT_URI",
+            };
+            std::env::var(name).ok()
+        })
+    }
+
+    /// The OAuth client as Admin → Configuration has it now (the environment fills what isn't
+    /// saved there). `None` until a client id, secret and redirect URI are all set.
+    pub async fn current() -> Option<Self> {
+        let google = nomi_settings::config::current(&nomi_settings::config::GOOGLE).await;
+        Self::from_lookup(|field| google.get(field))
+    }
+
+    /// From Admin → Configuration's Google fields (`client_id`, `client_secret`, `redirect_uri`,
+    /// `signin_redirect_uri`), as `get` answers them.
+    pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Option<Self> {
+        let get = |field: &str| get(field).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let mut config = Self::new(get("client_id")?, get("client_secret")?, get("redirect_uri")?);
+        if let Some(signin) = get("signin_redirect_uri") {
             config.signin_redirect_uri = signin;
         }
+        let get = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
         // Development only: every Google endpoint on one fake server.
         if let Some(base) = get("GOOGLE_FAKE_BASE_URL") {
             let fake = Self::all_at(&base);

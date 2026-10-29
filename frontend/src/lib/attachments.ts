@@ -59,10 +59,21 @@ export interface ComposerFile {
 }
 
 const MB = 1024 * 1024;
-export const MAX_ATTACHMENTS = 10;
-export const MAX_FILE_BYTES = 10 * MB;
-export const MAX_VIDEO_BYTES = 50 * MB;
-export const MAX_TOTAL_BYTES = 100 * MB;
+
+/** What the server allows (`GET /api/attachments/limits`, set in Admin → Configuration). */
+export interface AttachmentLimits {
+	max_file_bytes: number;
+	max_video_bytes: number;
+	max_message_bytes: number;
+	max_files: number;
+}
+
+// The server's defaults, until the app layout passes on what it actually allows.
+let limits: AttachmentLimits = { max_file_bytes: 10 * MB, max_video_bytes: 50 * MB, max_message_bytes: 100 * MB, max_files: 10 };
+
+export function setAttachmentLimits(next: AttachmentLimits): void {
+	limits = next;
+}
 
 export function isVideoFile(name: string, type: string): boolean {
 	return type.startsWith('video/') || /\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(name);
@@ -70,12 +81,12 @@ export function isVideoFile(name: string, type: string): boolean {
 
 /** The most a file may be: videos get more room. */
 export function maxBytesFor(name: string, type: string): number {
-	return isVideoFile(name, type) ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
+	return isVideoFile(name, type) ? limits.max_video_bytes : limits.max_file_bytes;
 }
 
 /** Why `file` can't join `alreadyAttached`, or null when it can. */
 export function refusal(file: { name: string; size: number; type: string }, alreadyAttached: { size: number }[]): string | null {
-	if (alreadyAttached.length >= MAX_ATTACHMENTS) return m.chat_max_files({ count: MAX_ATTACHMENTS });
+	if (alreadyAttached.length >= limits.max_files) return m.chat_max_files({ count: limits.max_files });
 	if (file.size === 0) return m.chat_file_empty({ name: file.name });
 	const max = maxBytesFor(file.name, file.type);
 	if (file.size > max) {
@@ -84,7 +95,7 @@ export function refusal(file: { name: string; size: number; type: string }, alre
 			: m.chat_file_too_big({ name: file.name, max: formatBytes(max) });
 	}
 	const total = alreadyAttached.reduce((sum, f) => sum + f.size, 0);
-	if (total + file.size > MAX_TOTAL_BYTES) return m.chat_total_too_big({ max: formatBytes(MAX_TOTAL_BYTES) });
+	if (total + file.size > limits.max_message_bytes) return m.chat_total_too_big({ max: formatBytes(limits.max_message_bytes) });
 	return null;
 }
 
@@ -159,7 +170,7 @@ export class UploadError extends Error {
 export function uploadErrorMessage(name: string, status: number): string {
 	switch (status) {
 		case 413:
-			return m.chat_file_too_big({ name, max: formatBytes(MAX_FILE_BYTES) });
+			return m.chat_file_too_big({ name, max: formatBytes(limits.max_file_bytes) });
 		case 415:
 			return m.chat_file_refused({ name });
 		case 507:

@@ -2322,3 +2322,161 @@ async fn crew_notes_reach_every_agent_in_the_chat(pool: PgPool) {
     let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
     assert!(system.contains("Crew notes in this chat") && system.contains("- Test: Budget is 5 million rupiah"), "{system}");
 }
+
+/// An agent whose tools depend on the chat it's in: it has `project_tool` only when the chat's
+/// session id is the one it was given.
+struct ChatToolsAgent(Uuid);
+
+#[async_trait::async_trait]
+impl SubAgent for ChatToolsAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builder")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builds")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn chat_tools(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        session_id: Uuid,
+        _user_id: Uuid,
+        _messages: &[nomi_llm::LlmMessage],
+    ) -> Vec<ToolDefinition> {
+        if session_id != self.0 {
+            return vec![];
+        }
+        vec![ToolDefinition { name: "project_tool".into(), description: "only here".into(), input_schema: serde_json::json!({"type": "object"}) }]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        name: &str,
+        _input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        Err(format!("unknown tool: {name}"))
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builder")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("builds")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agent_gets_the_tools_its_chat_calls_for_and_only_there(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let offered = |agent: ChatToolsAgent| {
+        let pool = pool.clone();
+        let embedding_provider = &embedding_provider;
+        async move {
+            let registry = AgentRegistry::new(vec![Box::new(ChatToolsAgent(agent.0))]);
+            let provider = FakeLlmProvider::sequence(vec![text_response("Done", StopReason::EndTurn)]);
+            let mut conn = pool.acquire().await.unwrap();
+            run_agent_turn(&mut conn, None, None, &provider, embedding_provider, &registry, &agent, session_id, agent_session_id, user_id, vec![], 100)
+                .await
+                .unwrap();
+            let requests = provider.received_requests.lock().unwrap();
+            requests[0].tools.iter().any(|t| t.name == "project_tool")
+        }
+    };
+    assert!(offered(ChatToolsAgent(session_id)).await);
+    assert!(!offered(ChatToolsAgent(Uuid::new_v4())).await);
+}
+
+/// An agent with one tool that needs a project, recording what it was called with.
+struct ProjectToolAgent(std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
+
+#[async_trait::async_trait]
+impl SubAgent for ProjectToolAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn display_name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("Test")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![ToolDefinition {
+            name: "publish_it".to_string(),
+            description: "Publish".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {"project_id": {"type": "string", "description": "The project's id."}},
+                "required": ["project_id"]
+            }),
+        }]
+    }
+    async fn execute_tool(
+        &self,
+        _conn: &mut PoolConnection<Postgres>,
+        _session_id: Uuid,
+        _agent_session_id: Uuid,
+        _user_id: Uuid,
+        _name: &str,
+        input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        self.0.lock().unwrap().push(input);
+        Ok(ToolOutcome::text("Publishing started.".to_string()))
+    }
+    fn tool_needs_approval(&self, _name: &str) -> bool {
+        false
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn in_a_projects_chat_the_crew_never_needs_its_id(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let project_id: Uuid = sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name) VALUES ($1, $2, 'Shop') RETURNING id")
+        .bind(user_id)
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let agent = ProjectToolAgent(calls.clone());
+    let provider = FakeLlmProvider::sequence(vec![
+        tool_call("p1", "publish_it", serde_json::json!({})),
+        tool_call("p2", "publish_it", serde_json::json!({"project_id": "shop"})),
+        text_response("It's publishing.", StopReason::EndTurn),
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &agent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, LoopOutcome::Reply { .. }), "{outcome:?}");
+
+    // The tool no longer requires the id, and the prompt names the project.
+    let requests = provider.received_requests.lock().unwrap();
+    let publish = requests[0].tools.iter().find(|t| t.name == "publish_it").unwrap();
+    assert_eq!(publish.input_schema["required"], serde_json::json!([]));
+    let system = requests[0].system.clone().unwrap();
+    assert!(system.contains(&format!("project \"Shop\" (id {project_id})")) && system.contains("Never ask the person for a project id"), "{system}");
+    drop(requests);
+    // Left out or made up, the id is this chat's project.
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert!(calls.iter().all(|input| input["project_id"] == project_id.to_string()), "{calls:?}");
+}

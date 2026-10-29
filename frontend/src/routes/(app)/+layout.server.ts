@@ -1,3 +1,4 @@
+import { DEFAULT_THEME } from '$lib/appearance';
 import { APPEARANCE_COOKIE, APPEARANCE_COOKIE_OPTIONS, formatAppearance } from '$lib/appearanceCookie';
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
@@ -5,6 +6,7 @@ import { maintenanceState } from '$lib/server/maintenance';
 import { getLocale } from '$lib/paraglide/runtime';
 import { setLanguageCookie } from '$lib/server/locale';
 import type { CrewRosterMember } from '$lib/crew';
+import type { AttachmentLimits } from '$lib/attachments';
 import type { Preferences, Profile, UsageBrief } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
@@ -13,20 +15,24 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 	if ((await maintenanceState(fetch)).enabled) throw redirect(307, '/maintenance');
 
 	if (!locals.accessToken) {
-		// Signing in brings them back here (e.g. to a team invite they opened from an email).
-		const back = url.pathname === '/' ? '' : `?redirect_to=${encodeURIComponent(url.pathname + url.search)}`;
-		throw redirect(303, `/login${back}`);
+		// Opening Nomi itself shows the landing page; anything deeper signs in and comes back
+		// (e.g. to a team invite they opened from an email).
+		if (url.pathname === '/') throw redirect(303, '/welcome');
+		throw redirect(303, `/login?redirect_to=${encodeURIComponent(url.pathname + url.search)}`);
 	}
 
 	const userEmail = cookies.get('user_email') ?? '';
 
-	const [profileResponse, preferencesResponse, crewResponse, usageResponse, unreadResponse] = await Promise.all([
+	const [profileResponse, preferencesResponse, crewResponse, usageResponse, unreadResponse, limitsResponse] = await Promise.all([
 		apiFetch(fetch, cookies, '/api/profile'),
 		apiFetch(fetch, cookies, '/api/preferences'),
 		apiFetch(fetch, cookies, '/api/agents'),
 		apiFetch(fetch, cookies, '/api/usage/brief'),
 		apiFetch(fetch, cookies, '/api/notifications/unread'),
+		apiFetch(fetch, cookies, '/api/attachments/limits'),
 	]);
+	// The composer checks files against these before uploading; its defaults stand in otherwise.
+	const attachmentLimits: AttachmentLimits | null = limitsResponse.ok ? ((await limitsResponse.json()) as AttachmentLimits) : null;
 	const unread = unreadResponse.ok ? ((await unreadResponse.json()) as { unread: number }).unread : 0;
 	// The drawer's usage meter; it just doesn't show when usage can't be read.
 	const usage: UsageBrief | null = usageResponse.ok ? ((await usageResponse.json()) as UsageBrief) : null;
@@ -36,7 +42,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 		: { display_name: null, username: null, email: userEmail, avatar_url: null };
 	const preferences: Preferences = preferencesResponse.ok
 		? ((await preferencesResponse.json()) as Preferences)
-		: { theme: 'system', accent_color: 'canopy', timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
+		: { theme: 'system', accent_color: DEFAULT_THEME, timezone: 'UTC', language: getLocale(), has_stored_timezone: false };
 
 	// The saved language wins on every device; the cookie makes the next render use it.
 	if (preferencesResponse.ok && preferences.language !== getLocale()) setLanguageCookie(cookies, preferences.language);
@@ -44,5 +50,5 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 	const appearance = preferencesResponse.ok ? formatAppearance(preferences.theme, preferences.accent_color) : null;
 	if (appearance && cookies.get(APPEARANCE_COOKIE) !== appearance) cookies.set(APPEARANCE_COOKIE, appearance, APPEARANCE_COOKIE_OPTIONS);
 
-	return { userEmail, profile, preferences, crew, usage, unread };
+	return { userEmail, profile, preferences, crew, usage, unread, attachmentLimits };
 };

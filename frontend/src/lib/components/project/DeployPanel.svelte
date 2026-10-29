@@ -1,291 +1,131 @@
 <script lang="ts">
-	// Publishing on Shipyard: where the app lives, what runs there, every publish with its
-	// build and deploy log, and rolling back to an earlier one.
-	import { untrack } from 'svelte';
+	// Publishing on Shipyard: what's live in each environment, every publish with where a failed
+	// one broke, and going back to an earlier version that worked. Tapping a publish opens its
+	// details (steps and logs) in place of the list.
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import IconOpenInNew from '$lib/components/icons/IconOpenInNew.svelte';
 	import IconRocket from '$lib/components/icons/IconRocket.svelte';
-	import IconUndo from '$lib/components/icons/IconUndo.svelte';
-	import { ago, projectApi } from '$lib/projectApi';
+	import PublishDetails from '$lib/components/project/PublishDetails.svelte';
+	import PublishRow from '$lib/components/project/PublishRow.svelte';
+	import { environmentName } from '$lib/components/project/deployLabels';
+	import { canRollBack, environmentsOf } from '$lib/deployView';
+	import { ago } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
-	import type { DeploymentDetail, ProjectPublish, PublishDetail } from '$lib/types';
+	import type { ProjectPublish } from '$lib/types';
 
-	let { deploy }: { deploy: ProjectDeploy } = $props();
+	let { deploy, onaskfix }: { deploy: ProjectDeploy; onaskfix?: (text: string) => void } = $props();
 
-	const overview = $derived(deploy.overview);
 	const locale = getLocale();
+	const overview = $derived(deploy.overview);
+	const role = $derived(overview?.role ?? 'member');
+	const environments = $derived(environmentsOf(overview?.publishes ?? []));
+	let chosenEnvironment = $state<string | null>(null);
+	const environment = $derived(chosenEnvironment && environments.includes(chosenEnvironment) ? chosenEnvironment : (environments[0] ?? 'production'));
+	const publishes = $derived((overview?.publishes ?? []).filter((p) => p.environment === environment));
+	const live = $derived(publishes.find((p) => p.is_live) ?? null);
+	const canPublish = $derived(Boolean(overview?.available) && role === 'admin');
+	// The app's own production backend, set up before its first publish (only production has one).
+	const setup = $derived(environment === 'production' ? (overview?.backend_setup ?? null) : null);
+	const setupFailed = $derived(setup?.state === 'failed');
+	const atStep = $derived(setup?.step ? m.pj_backend_at_step({ step: setup.step }) : '');
 
-	// One publish opened to its deployments, and one deployment to its log.
 	let openId = $state<string | null>(null);
-	let detail = $state<PublishDetail | null>(null);
-	let deployment = $state<DeploymentDetail | null>(null);
-	let detailError = $state<string | null>(null);
-
-	function getDeploymentId(d: any): string | null {
-		return d?.deployment_id ?? d?.id ?? null;
-	}
-
-	async function openPublish(publish: ProjectPublish) {
-		if (openId === publish.id) {
-			openId = null;
-			return;
-		}
-		openId = publish.id;
-		detail = null;
-		deployment = null;
-		detailError = null;
-		try {
-			detail = await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${publish.id}`);
-			// The web service's log is what people want first.
-			const first = detail.deployments?.find((d) => d.service !== 'db') ?? detail.deployments?.[0];
-			let firstId = getDeploymentId(first);
-			if (!firstId && overview?.live?.services) {
-				const liveWeb = overview.live.services.find((s) => s.type !== 'database' && s.name !== 'db') ?? overview.live.services[0];
-				firstId = liveWeb?.last_deployment?.id ?? null;
-			}
-			if (firstId) await openDeployment(publish.environment, firstId, false);
-		} catch (e) {
-			detailError = (e as Error).message;
-		}
-	}
-
-	async function openDeployment(environment: string, deploymentId: string | null | undefined, silentFail = false) {
-		if (!deploymentId) return;
-		try {
-			const res = await projectApi<any>(deploy.projectId, `deploy/deployments/${deploymentId}?environment=${environment}`);
-			if (!res) return;
-			const raw = res.data ?? res.deployment ?? res;
-			const normalized: DeploymentDetail = {
-				id: raw.id ?? raw.deployment_id ?? deploymentId,
-				service: raw.service ?? raw.service_name ?? 'web',
-				status: raw.status ?? 'unknown',
-				image: raw.image ?? null,
-				created_at: raw.created_at ?? new Date().toISOString(),
-				finished_at: raw.finished_at ?? null,
-				steps: Array.isArray(raw.steps) ? raw.steps : [],
-				logs: Array.isArray(raw.logs)
-					? raw.logs.map((l: any) =>
-							typeof l === 'string'
-								? { level: 'info', message: l, at: new Date().toISOString() }
-								: { level: l.level ?? 'info', message: l.message ?? String(l), at: l.at ?? new Date().toISOString() }
-						)
-					: Array.isArray(raw.lines)
-						? raw.lines.map((l: any) =>
-								typeof l === 'string'
-									? { level: 'info', message: l, at: new Date().toISOString() }
-									: { level: l.level ?? 'info', message: l.message ?? String(l), at: l.at ?? new Date().toISOString() }
-							)
-						: typeof raw.logs === 'string'
-							? raw.logs
-									.split('\n')
-									.filter(Boolean)
-									.map((line: string) => ({ level: 'info', message: line, at: new Date().toISOString() }))
-							: []
-			};
-			deployment = normalized;
-			detailError = null;
-		} catch (e) {
-			if (!silentFail) {
-				detailError = (e as Error).message;
-			}
-		}
-	}
-
-	// The open log follows a running publish: only the log is fetched every few seconds (it
-	// isn't in the events). The publish itself is reloaded when the project's socket says it
-	// changed, which is also when a deployment appears or the publish finishes.
-	async function followLog(id: string) {
-		if (!detail) return;
-		const currentId = deployment?.id ?? getDeploymentId(detail.deployments?.find((d) => d.service !== 'db') ?? detail.deployments?.[0]);
-		// While still building, a transient gateway error isn't shown.
-		if (currentId) await openDeployment(detail.environment ?? 'production', currentId, true);
-		else if (openId === id) detail = (await projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`).catch(() => null)) ?? detail;
-	}
-	$effect(() => {
-		const id = openId;
-		const running = overview?.publishes.find((p) => p.id === id)?.status === 'running';
-		if (!id || !running) return;
-		const timer = setInterval(() => {
-			if (!document.hidden) void followLog(id);
-		}, 3000);
-		return () => clearInterval(timer);
-	});
-	// A change pushed for the project: the open publish (its status, its deployments) and its log
-	// are fetched once more, so the last lines show after it finishes.
-	$effect(() => {
-		const changes = deploy.changes;
-		const id = untrack(() => openId);
-		if (!changes || !id) return;
-		void projectApi<PublishDetail>(deploy.projectId, `deploy/publishes/${id}`)
-			.then((fresh) => {
-				if (openId !== id) return;
-				detail = fresh;
-				const currentId = untrack(() => deployment?.id) ?? getDeploymentId(fresh.deployments?.find((d) => d.service !== 'db') ?? fresh.deployments?.[0]);
-				if (currentId) void openDeployment(fresh.environment ?? 'production', currentId, true);
-			})
-			.catch(() => null);
-	});
-
-	// Shipyard's phases of a deployment, in the person's words.
-	const PHASES: Record<string, () => string> = {
-		validate: m.pj_phase_validate,
-		build: m.pj_phase_build,
-		configure: m.pj_phase_configure,
-		deploy: m.pj_phase_deploy,
-		finalize: m.pj_phase_finalize,
-	};
-	function phaseLabel(phase: string): string {
-		return PHASES[phase]?.() ?? phase;
-	}
+	const opened = $derived(openId ? (overview?.publishes.find((p) => p.id === openId) ?? null) : null);
 
 	let rollbackTarget = $state<ProjectPublish | null>(null);
 	let rollbackOpen = $state(false);
-
-	const STATUS: Record<ProjectPublish['status'], () => string> = {
-		running: m.pj_status_running,
-		succeeded: m.pj_status_succeeded,
-		failed: m.pj_status_failed,
-	};
-	const DATABASE: Record<string, () => string> = {
-		postgres: m.pj_db_postgres,
-		sqlite: m.pj_db_sqlite,
-		none: m.pj_db_none,
-	};
-
-	function duration(publish: ProjectPublish): string | null {
-		if (!publish.finished_at) return null;
-		const seconds = Math.max(0, Math.round((new Date(publish.finished_at).getTime() - new Date(publish.created_at).getTime()) / 1000));
-		return seconds < 90 ? `${seconds}s` : `${Math.round(seconds / 60)} min`;
+	function askRollback(publish: ProjectPublish) {
+		rollbackTarget = publish;
+		rollbackOpen = true;
 	}
-
-	function logTime(at: string | undefined): string {
-		if (!at) return '';
-		const d = new Date(at);
-		if (isNaN(d.getTime())) return '';
-		return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(d);
-	}
-
-	const liveService = $derived(overview?.live?.services?.find((s) => s.type !== 'database' && s.name !== 'db') ?? null);
 </script>
 
 {#if !overview}
 	<p class="muted">{deploy.error ?? m.pj_loading()}</p>
+{:else if opened}
+	<PublishDetails
+		{deploy}
+		publish={opened}
+		liveVersion={opened.environment === environment ? (live?.files_version ?? null) : null}
+		{canPublish}
+		canRollBack={canRollBack(opened, role)}
+		onback={() => (openId = null)}
+		{onaskfix}
+		onrollback={() => askRollback(opened)}
+	/>
 {:else}
-	<section class="summary">
-		<div class="summary__main">
-			<p class="summary__label">{m.pj_production()}</p>
-			{#if overview.url}
-				<a class="summary__url" href={overview.url} target="_blank" rel="noopener">{overview.url.replace(/^https?:\/\//, '')}<IconOpenInNew size={16} /></a>
-			{:else}
-				<p class="summary__url summary__url--none">{m.pj_not_published()}</p>
-			{/if}
-			<p class="summary__meta">
-				{DATABASE[overview.database]()}
-				{#if liveService}· {m.pj_replicas({ running: liveService.running, replicas: liveService.replicas })}{/if}
-			</p>
-		</div>
-		{#if overview.available && overview.role === 'admin'}
-			<Button variant="filled" size="m" disabled={deploy.busy || deploy.running} onclick={() => deploy.publish()}>
-				<IconRocket size={18} />{deploy.running ? m.pj_publishing() : overview.url ? m.pj_publish_again() : m.pj_publish()}
-			</Button>
-		{/if}
-	</section>
-
 	{#if !overview.available}
 		<p class="notice">{m.pj_not_available()}</p>
-	{:else if overview.role !== 'admin'}
+	{:else if role !== 'admin'}
 		<p class="notice">{m.pj_admins_only()}</p>
 	{/if}
 	{#if deploy.error}<p class="error" role="alert">{deploy.error}</p>{/if}
 
-	<h3 class="section-title">{m.pj_history()}</h3>
-	{#if overview.publishes.length === 0}
+	{#if environments.length > 1}
+		<div class="chips" role="tablist" aria-label={m.pj_dep_environments()}>
+			{#each environments as env (env)}
+				<button type="button" role="tab" class="chip" aria-selected={env === environment} onclick={() => (chosenEnvironment = env)}>
+					{environmentName(env)}
+				</button>
+			{/each}
+		</div>
+	{/if}
+
+	{#if setup}
+		<section class="setup" class:setup--failed={setupFailed} role="status">
+			{#if setupFailed}
+				<p class="setup__text">
+					{setup.error ? m.pj_backend_failed({ step: atStep, error: setup.error }) : m.pj_backend_failed_plain({ step: atStep })}
+				</p>
+			{:else}
+				<p class="setup__text">{m.pj_backend_setting_up()}</p>
+				{#if setup.step}<p class="setup__step">{m.pj_backend_step({ step: setup.step })}</p>{/if}
+			{/if}
+		</section>
+	{/if}
+
+	<section class="live">
+		{#if live}
+			<div class="live__text">
+				<h3 class="live__title">{m.pj_dep_live_since({ when: ago(live.finished_at ?? live.created_at, locale) })}</h3>
+				{#if live.url}
+					<a class="live__url" href={live.url} target="_blank" rel="noopener">{live.url.replace(/^https?:\/\//, '')}<IconOpenInNew size={14} /></a>
+				{/if}
+				<p class="live__meta">{m.pj_dep_version_by({ version: live.files_version, name: live.started_by_agent ?? live.created_by ?? '—' })}</p>
+			</div>
+			{#if live.url}<Button variant="tonal" size="m" href={live.url} target="_blank" rel="noopener">{m.pj_dep_open()}</Button>{/if}
+		{:else}
+			<p class="live__empty">{m.pj_dep_nothing_live({ env: environmentName(environment) })}</p>
+			{#if canPublish}
+				<Button variant="filled" size="m" disabled={deploy.busy || deploy.running || deploy.preparing} onclick={() => deploy.publish()}>
+					<IconRocket size={18} />{deploy.running ? m.pj_publishing() : deploy.preparing ? m.pj_preparing() : m.pj_publish()}
+				</Button>
+			{/if}
+		{/if}
+	</section>
+
+	{#if publishes.length === 0}
 		<p class="muted">{m.pj_history_empty()}</p>
 	{:else}
-		<ul class="publishes">
-			{#each overview.publishes as publish, index (publish.id)}
-				{@const open = openId === publish.id}
-				<li class="publish" class:publish--open={open}>
-					<div class="publish__row">
-						<button type="button" class="publish__main" aria-expanded={open} onclick={() => openPublish(publish)}>
-							<span class="state state--{publish.status}">{STATUS[publish.status]()}</span>
-							<span class="publish__text">
-								<span class="publish__title">
-									{publish.rollback_of ? m.pj_rollback_title() : m.pj_publish_title({ version: publish.files_version })}
-									{#if index === 0 && publish.status === 'succeeded'}<span class="current">{m.pj_current()}</span>{/if}
-								</span>
-								<span class="publish__meta">
-									{m.pj_by({ name: publish.created_by ?? '—', when: ago(publish.created_at, locale) })}
-									{#if duration(publish)}· {duration(publish)}{/if}
-								</span>
-								{#if publish.error}<span class="publish__error">{publish.error}</span>{/if}
-							</span>
-						</button>
-						{#if overview.role === 'admin' && publish.can_roll_back && publish.status === 'succeeded' && index > 0}
-							<Button variant="text" size="s" disabled={deploy.busy || deploy.running} onclick={() => { rollbackTarget = publish; rollbackOpen = true; }}>
-								<IconUndo size={16} />{m.pj_roll_back()}
-							</Button>
-						{/if}
-					</div>
-					{#if open}
-						<div class="publish__detail">
-							{#if publish.failure}
-								{@const failure = publish.failure}
-								<div class="failure" role="alert">
-									<p class="failure__what">{m.pj_failure_where({ phase: phaseLabel(failure.phase), step: failure.step })}</p>
-									{#if failure.message}<p class="failure__message">{failure.message}</p>{/if}
-									{#if failure.tail.length > 0}<pre class="failure__log">{failure.tail.join('\n')}</pre>{/if}
-									{#if failure.runtime_logs.length > 0}
-										<p class="failure__label">{m.pj_failure_runtime()}</p>
-										<pre class="failure__log">{failure.runtime_logs.join('\n')}</pre>
-									{/if}
-								</div>
-							{/if}
-							{#if detailError}<p class="error">{detailError}</p>{/if}
-							{#if detail && detail.deployments && detail.deployments.length > 1}
-								<div class="services" role="tablist" aria-label={m.pj_services()}>
-									{#each detail.deployments as d (getDeploymentId(d) ?? d.service)}
-										{@const dId = getDeploymentId(d)}
-										<button
-											type="button"
-											role="tab"
-											class="service-tab"
-											aria-selected={deployment?.id === dId}
-											onclick={() => dId && openDeployment(publish.environment, dId)}
-										>{d.service}</button>
-									{/each}
-								</div>
-							{/if}
-							{#if deployment}
-								{#if deployment.steps && deployment.steps.length > 0}
-									<ol class="steps">
-										{#each deployment.steps as step (step.name)}
-											<li class="step step--{step.status}">{step.name}</li>
-										{/each}
-									</ol>
-								{/if}
-								<pre class="log">{#each deployment.logs as line, i (i)}<span class="log__line log__line--{line.level}"><span class="log__time">{logTime(line.at)}</span> {line.message}
-</span>{:else}{m.pj_log_empty()}{/each}</pre>
-							{:else if !detailError}
-								{#if publish.status === 'running'}
-									<p class="muted">{m.pj_waiting_build()}</p>
-								{:else}
-									<p class="muted">{publish.error ?? m.pj_log_empty()}</p>
-								{/if}
-							{/if}
-						</div>
-					{/if}
-				</li>
+		<ul class="list" aria-label={m.pj_history()}>
+			{#each publishes as publish (publish.id)}
+				<PublishRow
+					{publish}
+					canRollBack={canRollBack(publish, role)}
+					busy={deploy.busy || deploy.running}
+					onopen={() => (openId = publish.id)}
+					onrollback={() => askRollback(publish)}
+				/>
 			{/each}
 		</ul>
 	{/if}
 {/if}
 
 <Dialog bind:open={rollbackOpen} headline={m.pj_roll_back()}>
-	{#if rollbackTarget}<p>{m.pj_roll_back_confirm({ when: ago(rollbackTarget.created_at, locale) })}</p>{/if}
+	{#if rollbackTarget}<p>{m.pj_dep_roll_back_confirm({ version: rollbackTarget.files_version })}</p>{/if}
 	{#snippet actions()}
 		<Button variant="text" type="button" onclick={() => (rollbackOpen = false)}>{m.issues_cancel()}</Button>
 		<Button
@@ -294,278 +134,139 @@
 			onclick={async () => {
 				rollbackOpen = false;
 				if (rollbackTarget) await deploy.rollback(rollbackTarget.id);
+				openId = null;
 			}}>{m.pj_roll_back()}</Button
 		>
 	{/snippet}
 </Dialog>
 
 <style>
-	.summary {
+	.setup {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: 14px;
-		padding: 16px 18px;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-surface-container);
-	}
-	.summary__main {
-		min-width: 0;
-	}
-	.summary__label {
-		margin: 0;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
-		font-weight: 600;
-	}
-	.summary__url {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		margin: 2px 0 0;
-		color: var(--md-sys-color-primary);
-		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.1875rem;
-		font-weight: 700;
-		overflow-wrap: anywhere;
-		text-decoration: none;
-	}
-	.summary__url:hover {
-		text-decoration: underline;
-	}
-	.summary__url:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-		border-radius: 4px;
-	}
-	.summary__url--none {
-		color: var(--md-sys-color-on-surface);
-	}
-	.summary__meta {
-		margin: 4px 0 0;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
-	}
-	.notice,
-	.muted {
-		margin: 12px 0 0;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.error {
-		margin: 12px 0 0;
-		color: var(--md-sys-color-error);
-	}
-	.section-title {
-		margin: 24px 0 8px;
-		color: var(--md-sys-color-on-surface);
-		font-size: 0.9375rem;
-		font-weight: 700;
-	}
-	.publishes {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.publish {
-		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-	}
-	.publish__row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-	.publish__main {
-		display: flex;
-		flex: 1;
-		align-items: flex-start;
-		gap: 12px;
-		min-width: 0;
-		min-height: 56px;
-		padding: 10px 8px;
-		border: none;
-		background: none;
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.publish__main:hover,
-	.publish--open .publish__main {
-		background: var(--md-sys-color-surface-container);
-	}
-	.publish__main:focus-visible,
-	.service-tab:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.state {
-		flex: none;
-		min-width: 76px;
-		margin-top: 1px;
-		padding: 2px 8px;
-		border-radius: 4px;
-		background: var(--md-sys-color-surface-container-highest);
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-align: center;
-	}
-	.state--succeeded {
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
-	}
-	.state--failed {
-		background: var(--md-sys-color-error-container);
-		color: var(--md-sys-color-on-error-container);
-	}
-	.publish__text {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-	.publish__title {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		font-weight: 600;
-	}
-	.current {
-		padding: 0 6px;
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: 4px;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.6875rem;
-		font-weight: 600;
-	}
-	.publish__meta {
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.8125rem;
-	}
-	.failure {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		margin-bottom: 12px;
+		gap: 8px 12px;
+		margin: 0 0 12px;
 		padding: 12px 14px;
 		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+		font-size: 0.875rem;
+	}
+	.setup--failed {
 		background: var(--md-sys-color-error-container);
 		color: var(--md-sys-color-on-error-container);
 	}
-	.failure__what {
+	.setup__text {
+		flex: 1 1 220px;
 		margin: 0;
-		font-weight: 650;
+		overflow-wrap: anywhere;
 	}
-	.failure__message,
-	.failure__label {
+	.setup__step {
+		flex-basis: 100%;
 		margin: 0;
+		font-weight: 600;
+		overflow-wrap: anywhere;
+	}
+	.muted {
+		margin: 8px 0;
+		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.875rem;
 	}
-	.failure__log {
-		margin: 0;
-		max-height: 220px;
-		overflow: auto;
-		padding: 8px 10px;
-		border-radius: var(--md-sys-shape-corner-small);
-		background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent);
-		color: var(--md-sys-color-on-surface);
-		font-size: 0.75rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
+	.notice {
+		margin: 0 0 12px;
+		padding: 10px 14px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-surface-container-low);
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
 	}
-	.publish__error {
+	.error {
+		margin: 0 0 12px;
 		color: var(--md-sys-color-error);
-		font-size: 0.8125rem;
-		overflow-wrap: anywhere;
+		font-size: 0.875rem;
 	}
-	.publish__detail {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		padding: 4px 8px 14px;
-		background: var(--md-sys-color-surface-container);
-	}
-	.services {
+	.chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px;
+		gap: 8px;
+		margin-bottom: 14px;
 	}
-	.service-tab {
+	.chip {
 		min-height: 32px;
-		padding: 0 12px;
+		padding: 6px 14px;
 		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-full);
-		background: none;
+		border-radius: 8px;
+		background: transparent;
 		color: var(--md-sys-color-on-surface-variant);
-		font: inherit;
-		font-size: 0.8125rem;
-		font-weight: 600;
+		font: 500 0.8125rem var(--md-ref-typeface-plain);
 		cursor: pointer;
 	}
-	.service-tab[aria-selected='true'] {
-		border-color: transparent;
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
+	.chip:hover {
+		background: var(--md-sys-color-surface-container-low);
 	}
-	.steps {
+	.chip:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.chip[aria-selected='true'] {
+		border-color: transparent;
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+	}
+	.live {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 14px;
-		margin: 0;
-		padding: 0;
-		list-style: none;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px 16px;
+		margin-bottom: 16px;
+		padding: 16px 18px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.live__text {
+		min-width: 0;
+	}
+	.live__title {
+		margin: 0 0 2px;
+		color: var(--md-sys-color-on-surface);
+		font-size: 1rem;
+		font-weight: 600;
+	}
+	.live__url {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--md-sys-color-primary);
+		font-size: 0.875rem;
+		text-decoration: none;
+		overflow-wrap: anywhere;
+	}
+	.live__url:hover {
+		text-decoration: underline;
+	}
+	.live__url:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+	.live__meta,
+	.live__empty {
+		margin: 2px 0 0;
+		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.8125rem;
 	}
-	.step {
-		color: var(--md-sys-color-on-surface-variant);
+	.live__empty {
+		font-size: 0.9375rem;
 	}
-	.step::before {
-		content: '○ ';
-	}
-	.step--success::before,
-	.step--succeeded::before {
-		content: '✓ ';
-		color: var(--md-sys-color-primary);
-	}
-	.step--failed {
-		color: var(--md-sys-color-error);
-	}
-	.step--failed::before {
-		content: '✕ ';
-	}
-	.step--running::before {
-		content: '◐ ';
-	}
-	.log {
-		max-height: 420px;
+	.list {
 		margin: 0;
-		padding: 12px 14px;
-		overflow: auto;
-		border-radius: 8px;
-		background: var(--md-sys-color-surface-container-highest);
-		color: var(--md-sys-color-on-surface);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		line-height: 1.55;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
-	.log__time {
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.log__line--error {
-		color: var(--md-sys-color-error);
-	}
-	@media (max-width: 600px) {
-		.publish__row {
-			flex-wrap: wrap;
-		}
-		.publish__row :global(.m3-button) {
-			margin: 0 0 8px 96px;
-		}
+		padding: 0;
+		overflow: hidden;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-lowest);
+		list-style: none;
 	}
 </style>

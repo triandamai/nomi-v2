@@ -1,0 +1,24 @@
+[package]
+name = "relay-control"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+relay-core = { path = "../relay-core" }
+relay-migrate = { path = "../relay-migrate" }
+relay-auth = { path = "../relay-auth" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+tokio = { version = "1", features = ["sync", "time"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+object_store = { version = "0.11", features = ["aws"] }
+futures = "0.3"
+croner = "2"
+chrono = "0.4"
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { version = "1", features = ["full"] }
+object_store = "0.11"

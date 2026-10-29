@@ -90,7 +90,17 @@ describe('projectTransfer helpers', () => {
 	});
 
 	describe('proxy route ALLOWED_PROJECT_API_PATHS pattern', () => {
-		it('allows the secrets and one secret by name', () => {
+		it("allows the preview's Relay access, the data sheet and its console, and nothing under them", () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview/x')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query/x')).toBe(false);
+		expect(ALLOWED_PROJECT_API_PATHS.test('relay/retry')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('relay/secrets')).toBe(false);
+		});
+
+	it('allows the secrets and one secret by name', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('secrets')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('secrets/STRIPE_KEY')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('secrets/stripe_key')).toBe(false);
@@ -101,6 +111,14 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions/4f2c1a7e-9b3d-4c8e-a1f0-2b3c4d5e6f70')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('agent-permissions/x')).toBe(false);
+		});
+
+		it("allows presence, typing and the activity feed, and nothing under them", () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('presence')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('typing')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('activity')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('presence/other')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('activity/../deploy')).toBe(false);
 		});
 
 		it('allows transfer and transfer/orgs', () => {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
-	import { MODES, THEMES } from '$lib/appearance';
+	import { DEFAULT_THEME, MODES, THEMES } from '$lib/appearance';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import { rememberAppearance } from '$lib/appearanceCookie';
 	import type { AccentColor, Preferences, Theme } from '$lib/types';
@@ -12,7 +12,7 @@
 	let { preferences }: { preferences: Pick<Preferences, 'theme' | 'accent_color'> } = $props();
 
 	let mode = $state<Theme>('system');
-	let theme = $state<AccentColor>('canopy');
+	let theme = $state<AccentColor>(DEFAULT_THEME);
 	$effect.pre(() => {
 		mode = preferences.theme;
 		theme = preferences.accent_color;

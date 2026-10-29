@@ -4,6 +4,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconCopy from '$lib/components/icons/IconCopy.svelte';
+	import QueryResultView from '$lib/components/project/QueryResultView.svelte';
 	import { projectApi } from '$lib/projectApi';
 	import type { DatabaseSource, DatabaseTable, QueryResult } from '$lib/types';
 
@@ -73,11 +74,6 @@
 		setTimeout(() => (copied = false), 1500);
 	}
 
-	function cell(value: unknown): string {
-		if (value === null || value === undefined) return 'NULL';
-		return typeof value === 'object' ? JSON.stringify(value) : String(value);
-	}
-
 	function keydown(event: KeyboardEvent) {
 		if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
 			event.preventDefault();
@@ -134,23 +130,7 @@
 				<Button variant="filled" size="s" disabled={running || !sql.trim()} onclick={run}>{running ? m.pj_db_running() : m.pj_db_run()}</Button>
 			</div>
 			{#if queryError}<p class="error" role="alert">{queryError}</p>{/if}
-			{#if result}
-				{#if result.rows_affected !== null}
-					<p class="muted">{m.pj_db_affected({ count: result.rows_affected, ms: result.took_ms })}</p>
-				{:else}
-					<p class="muted small">{m.pj_db_rows({ count: result.rows.length, ms: result.took_ms })}{result.truncated ? ` · ${m.pj_db_truncated()}` : ''}</p>
-					<div class="grid-wrap">
-						<table class="grid">
-							<thead><tr>{#each result.columns as column, i (i)}<th>{column}</th>{/each}</tr></thead>
-							<tbody>
-								{#each result.rows as row, r (r)}
-									<tr>{#each row as value, c (c)}<td class:null={value === null}>{cell(value)}</td>{/each}</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			{/if}
+			{#if result}<QueryResultView {result} />{/if}
 		</section>
 	</div>
 </div>
@@ -304,36 +284,5 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-	}
-	.grid-wrap {
-		max-height: 52vh;
-		overflow: auto;
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: 8px;
-	}
-	.grid {
-		border-collapse: collapse;
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-	}
-	.grid th,
-	.grid td {
-		max-width: 320px;
-		padding: 6px 10px;
-		overflow: hidden;
-		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-		text-align: left;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.grid th {
-		position: sticky;
-		top: 0;
-		background: var(--md-sys-color-surface-container-high);
-		font-weight: 700;
-	}
-	.null {
-		color: var(--md-sys-color-on-surface-variant);
-		font-style: italic;
 	}
 </style>

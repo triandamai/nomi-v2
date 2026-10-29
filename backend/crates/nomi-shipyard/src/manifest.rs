@@ -1,6 +1,7 @@
 //! What Shipyard is asked to run for a project: one web service on port 3000 built from a
 //! Dockerfile, plus a Postgres database or a data volume when the app keeps data. Projects
-//! without their own Dockerfile get one written for their stack.
+//! without their own Dockerfile get one written for their stack. A project on Relay also gets a
+//! second app, its backend: Relay, PostgREST and the functions runtime next to their own Postgres.
 
 use serde_json::{json, Value};
 
@@ -75,6 +76,52 @@ pub fn dockerfile(stack: &str, files: &[(String, Vec<u8>)]) -> String {
     }
 }
 
+/// The Shipyard app that holds a project's Relay backend: the project's own app slug and this.
+pub const BACKEND_SUFFIX: &str = "-backend";
+/// Where a backend's images are (Admin → Configuration → Relay): Relay's and its functions
+/// runtime's repositories in Shipyard's registry, PostgREST's image, and the tag the first two run
+/// at. The version is raised there when Nomi should move projects to a newer Relay.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Images {
+    /// `<registry>/<prefix>/relay`, without a tag.
+    pub relay: String,
+    /// `<registry>/<prefix>/relay-functions`, without a tag.
+    pub functions: String,
+    /// A full reference, tag included.
+    pub postgrest: String,
+    pub version: String,
+}
+
+/// PostgREST's image when none is set.
+pub const DEFAULT_POSTGREST_IMAGE: &str = "postgrest/postgrest:v12.2.3";
+/// The Relay version to run when none is set (the npm packages' version when this was written).
+pub const DEFAULT_RELAY_VERSION: &str = "0.1.5";
+/// What a backend's services listen on.
+pub const RELAY_PORT: u16 = 8080;
+const POSTGREST_PORT: u16 = 3000;
+const FUNCTIONS_PORT: u16 = 8000;
+/// The secrets a backend environment binds: Nomi sets the control key (it calls Relay with it),
+/// Shipyard generates the rest.
+pub const SECRET_CONTROL_KEY: &str = "RELAY_CONTROL_KEY";
+pub const SECRET_ENCRYPTION_KEY: &str = "RELAY_ENCRYPTION_KEY";
+pub const SECRET_PGRST_PASSWORD: &str = "RELAY_PGRST_PASSWORD";
+pub const SECRET_FUNCTIONS_SECRET: &str = "RELAY_FUNCTIONS_SECRET";
+/// What a development environment's secret names start with. Secrets belong to the app, not to an
+/// environment (an environment doesn't exist until its first deploy), so dev and production each
+/// get their own names.
+const DEV_SECRET_PREFIX: &str = "DEV_";
+
+/// The name a backend secret has in `env`: production keeps `base`, development gets a prefix.
+pub fn secret_name(base: &str, env: &str) -> String {
+    if env == "production" {
+        base.to_string()
+    } else {
+        format!("{DEV_SECRET_PREFIX}{base}")
+    }
+}
+/// The login PostgREST uses (Relay creates it).
+const AUTHENTICATOR: &str = "authenticator";
+
 /// The manifest for a project: a `web` service, a database or volume as its data needs, and
 /// the secrets its owners stored for it (bound by name, never by value).
 pub fn build(database: Database, secret_names: &[String]) -> Value {
@@ -102,12 +149,92 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
             "env": env,
             "volumes": volumes,
         }],
+        "domain": {
+            "service": "web",
+        },
     });
     if database == Database::Postgres {
         manifest["database"] = json!({ "engine": "postgres" });
     }
     bind_secrets(&mut manifest, secret_names);
     manifest
+}
+
+/// A backend environment's services: Relay (the environment's address), PostgREST and, when the
+/// project has functions, the functions runtime, each built from the one-line Dockerfile in
+/// `backend_source` (Shipyard's integration API can't run a prebuilt image yet), and the
+/// environment's own Postgres. `env` is `dev` or `production`; Relay serves exactly this project
+/// in exactly this environment.
+pub fn relay_backend(project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
+    let secret = |name: &str| json!({ "secret": secret_name(name, env) });
+    let mut relay_env = json!({
+        "RELAY_DATABASE_URL": { "database": "url" },
+        "RELAY_ENCRYPTION_KEY": secret(SECRET_ENCRYPTION_KEY),
+        "RELAY_CONTROL_KEY": secret(SECRET_CONTROL_KEY),
+        "RELAY_PROJECT": project_id,
+        "RELAY_ENV": env,
+        "RELAY_POSTGREST_URL": format!("http://postgrest:{POSTGREST_PORT}"),
+        "RELAY_PGRST_PASSWORD": secret(SECRET_PGRST_PASSWORD),
+    });
+    let mut services = vec![
+        json!({ "name": "relay", "kind": "web", "path": "relay", "port": RELAY_PORT, "replicas": 1, "env": {} }),
+        json!({
+            "name": "postgrest", "kind": "worker", "path": "postgrest", "replicas": 1,
+            "env": {
+                "PGRST_DB_URI": "postgresql://",
+                "PGHOST": { "database": "host" },
+                "PGPORT": { "database": "port" },
+                "PGDATABASE": { "database": "name" },
+                "PGUSER": AUTHENTICATOR,
+                "PGPASSWORD": secret(SECRET_PGRST_PASSWORD),
+            },
+        }),
+    ];
+    if has_functions {
+        relay_env["RELAY_FUNCTIONS_URL"] = json!(format!("http://functions:{FUNCTIONS_PORT}"));
+        relay_env["RELAY_FUNCTIONS_SECRET"] = secret(SECRET_FUNCTIONS_SECRET);
+        services.push(json!({
+            "name": "functions", "kind": "worker", "path": "functions", "replicas": 1,
+            "env": { "RELAY_FUNCTIONS_SECRET": secret(SECRET_FUNCTIONS_SECRET) },
+        }));
+    }
+    services[0]["env"] = relay_env;
+    json!({
+        "services": services,
+        "database": { "engine": "postgres" },
+        "labels": { "nomi.app/project": project_id, "nomi.app/role": "relay-backend", "nomi.app/relay-version": version },
+    })
+}
+
+/// [`relay_backend`] inside `app` on Shipyard: Relay gets its own `-backend` subdomain
+/// (`<app>-backend` in production, `<app>-backend-<env>` in development) so it never collides
+/// with the `web` service's domain (`<app>` in production, `<app>-<env>` in dev).
+pub fn relay_backend_for_app(app: &str, project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
+    let mut manifest = relay_backend(project_id, env, has_functions, version);
+    let subdomain = if env == "production" {
+        format!("{app}{BACKEND_SUFFIX}")
+    } else {
+        format!("{app}{BACKEND_SUFFIX}-{env}")
+    };
+    manifest["domain"] = json!({
+        "subdomain": subdomain,
+        "service": "relay",
+    });
+    manifest
+}
+
+/// The source of a backend: one Dockerfile per service, each only naming its image, so building
+/// them just pulls the image.
+pub fn backend_source(images: &Images, has_functions: bool) -> Result<Vec<u8>, String> {
+    let dockerfile = |image: &str| format!("FROM {image}\n").into_bytes();
+    let mut files = vec![
+        ("relay/Dockerfile".to_string(), dockerfile(&format!("{}:{}", images.relay, images.version))),
+        ("postgrest/Dockerfile".to_string(), dockerfile(&images.postgrest)),
+    ];
+    if has_functions {
+        files.push(("functions/Dockerfile".to_string(), dockerfile(&format!("{}:{}", images.functions, images.version))));
+    }
+    crate::bundle::zip(&files)
 }
 
 /// Labels Shipyard shows next to the environment, so support can tell which Nomi project and
@@ -138,6 +265,11 @@ pub fn bind_secrets(manifest: &mut Value, secret_names: &[String]) {
     };
     for name in secret_names {
         env.entry(name.clone()).or_insert_with(|| json!({ "secret": name }));
+        if name == "NOMI_URL" {
+            env.entry("PUBLIC_NOMI_URL".to_string()).or_insert_with(|| json!({ "secret": "NOMI_URL" }));
+        } else if name == "NOMI_ANON_KEY" {
+            env.entry("PUBLIC_NOMI_KEY".to_string()).or_insert_with(|| json!({ "secret": "NOMI_ANON_KEY" }));
+        }
     }
 }
 
@@ -201,9 +333,90 @@ mod tests {
     }
 
     #[test]
+    fn a_backend_is_relay_postgrest_and_a_database() {
+        let manifest = relay_backend("p1", "dev", false, "0.1.5");
+        let services = manifest["services"].as_array().unwrap();
+        let names: Vec<&str> = services.iter().map(|s| s["name"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["relay", "postgrest"]);
+        assert_eq!(manifest["database"]["engine"], "postgres");
+        let relay = &services[0];
+        assert_eq!((relay["kind"].as_str(), relay["port"].as_u64()), (Some("web"), Some(8080)));
+        assert_eq!(relay["env"]["RELAY_PROJECT"], "p1");
+        assert_eq!(relay["env"]["RELAY_ENV"], "dev");
+        assert_eq!(relay["env"]["RELAY_DATABASE_URL"], json!({ "database": "url" }));
+        assert_eq!(relay["env"]["RELAY_POSTGREST_URL"], "http://postgrest:3000");
+        assert_eq!(relay["env"]["RELAY_CONTROL_KEY"], json!({ "secret": "DEV_RELAY_CONTROL_KEY" }));
+        assert!(relay["env"].get("RELAY_FUNCTIONS_URL").is_none());
+        let postgrest = &services[1];
+        assert_eq!(postgrest["kind"], "worker");
+        assert_eq!(postgrest["env"]["PGUSER"], "authenticator");
+        assert_eq!(postgrest["env"]["PGPASSWORD"], relay["env"]["RELAY_PGRST_PASSWORD"], "both ends share one password");
+        assert_eq!(postgrest["env"]["PGHOST"], json!({ "database": "host" }));
+        assert!(!manifest.to_string().contains("DATABASE_URL\":\"postgres"), "no database address is written into the manifest");
+    }
+
+    #[test]
+    fn a_backend_with_functions_runs_the_runtime_and_tells_relay_where() {
+        let manifest = relay_backend("p1", "production", true, "0.1.5");
+        let services = manifest["services"].as_array().unwrap();
+        assert_eq!(services.len(), 3);
+        assert_eq!(services[2]["name"], "functions");
+        assert_eq!(services[0]["env"]["RELAY_ENV"], "production");
+        assert_eq!(services[0]["env"]["RELAY_FUNCTIONS_URL"], "http://functions:8000");
+        assert_eq!(services[0]["env"]["RELAY_FUNCTIONS_SECRET"], services[2]["env"]["RELAY_FUNCTIONS_SECRET"]);
+    }
+
+    #[test]
+    fn a_backends_source_is_one_line_dockerfiles_naming_the_images() {
+        let images = Images {
+            relay: "registry.test/acme/relay".into(),
+            functions: "registry.test/acme/relay-functions".into(),
+            postgrest: "postgrest/postgrest:v12.2.3".into(),
+            version: "0.1.5".into(),
+        };
+        let zip = backend_source(&images, true).unwrap();
+        let files = crate::bundle::files_under(&zip, "").unwrap();
+        let text = |path: &str| String::from_utf8(files.iter().find(|(p, _)| p == path).unwrap().1.clone()).unwrap();
+        assert_eq!(text("relay/Dockerfile"), "FROM registry.test/acme/relay:0.1.5\n");
+        assert_eq!(text("functions/Dockerfile"), "FROM registry.test/acme/relay-functions:0.1.5\n");
+        assert!(text("postgrest/Dockerfile").starts_with("FROM postgrest/postgrest:v"));
+        let without = crate::bundle::files_under(&backend_source(&images, false).unwrap(), "").unwrap();
+        assert!(without.iter().all(|(p, _)| p != "functions/Dockerfile"));
+        // Every service's `path` has its Dockerfile.
+        for service in relay_backend("p1", "dev", true, "0.1.5")["services"].as_array().unwrap() {
+            let dir = service["path"].as_str().unwrap();
+            assert!(files.iter().any(|(p, _)| *p == format!("{dir}/Dockerfile")), "{dir}");
+        }
+    }
+
+    #[test]
     fn labels_say_which_nomi_project_and_files_it_runs() {
         let mut manifest = build(Database::None, &[]);
         label(&mut manifest, "p1", "sveltekit", 7);
         assert_eq!(manifest["labels"], json!({ "nomi.app/project": "p1", "nomi.app/stack": "sveltekit", "nomi.app/files-version": "7" }));
+    }
+
+    #[test]
+    fn dev_and_production_backends_bind_their_own_secret_names() {
+        let secrets = |env: &str| relay_backend("p", env, false, "1")["services"][0]["env"]["RELAY_ENCRYPTION_KEY"].clone();
+        assert_eq!(secrets("production"), json!({ "secret": "RELAY_ENCRYPTION_KEY" }));
+        assert_eq!(secrets("dev"), json!({ "secret": "DEV_RELAY_ENCRYPTION_KEY" }));
+    }
+
+    #[test]
+    fn backend_inside_app_claims_backend_subdomain_in_production_and_binds_public_nomi_vars() {
+        let dev = relay_backend_for_app("todo-1234", "p", "dev", false, "0.1.5");
+        assert_eq!(dev["domain"], json!({ "subdomain": "todo-1234-backend-dev", "service": "relay" }));
+        let prod = relay_backend_for_app("todo-1234", "p", "production", false, "0.1.5");
+        assert_eq!(prod["domain"], json!({ "subdomain": "todo-1234-backend", "service": "relay" }));
+
+        let manifest = build(Database::None, &["NOMI_URL".into(), "NOMI_ANON_KEY".into(), "NOMI_SERVICE_KEY".into()]);
+        assert_eq!(manifest["domain"], json!({ "service": "web" }));
+        let env = &manifest["services"][0]["env"];
+        assert_eq!(env["NOMI_URL"], json!({ "secret": "NOMI_URL" }));
+        assert_eq!(env["PUBLIC_NOMI_URL"], json!({ "secret": "NOMI_URL" }));
+        assert_eq!(env["NOMI_ANON_KEY"], json!({ "secret": "NOMI_ANON_KEY" }));
+        assert_eq!(env["PUBLIC_NOMI_KEY"], json!({ "secret": "NOMI_ANON_KEY" }));
+        assert_eq!(env["NOMI_SERVICE_KEY"], json!({ "secret": "NOMI_SERVICE_KEY" }));
     }
 }

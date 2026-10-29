@@ -326,13 +326,13 @@ pub async fn get_preferences(
         row.unwrap_or((None, None, None, None, None, None, None, None, None));
     Ok(Json(PreferencesResponse {
         theme: theme.unwrap_or_else(|| "system".to_string()),
-        accent_color: accent_color.unwrap_or_else(|| "canopy".to_string()),
+        accent_color: accent_color.unwrap_or_else(|| DEFAULT_ACCENT_COLOR.to_string()),
         has_stored_timezone: timezone.is_some(),
         timezone: timezone.unwrap_or_else(|| "UTC".to_string()),
         language: Locale::from_code_or_default(language.as_deref()).code().to_string(),
         drawer_pins,
         home_layout,
-        animated_backdrop: animated_backdrop.unwrap_or(true),
+        animated_backdrop: animated_backdrop.unwrap_or(false),
         drawer_recents: drawer_recents.unwrap_or(true),
         drawer_recents_limit: drawer_recents_limit.unwrap_or(DEFAULT_DRAWER_RECENTS_LIMIT),
     }))
@@ -366,6 +366,9 @@ fn is_home_layout_slug(value: &str) -> bool {
 const PINNABLE_FEATURES: [&str; 8] = ["money", "reminders", "memory", "notifications", "crew", "connections", "models", "billing"];
 
 const ALLOWED_THEMES: [&str; 3] = ["light", "dark", "system"];
+/// The theme people start on until they pick one (the column default says the same).
+const DEFAULT_ACCENT_COLOR: &str = "lagoon";
+
 /// Appearance themes (Preferences → Appearance); the column keeps its accent_color name.
 const ALLOWED_ACCENT_COLORS: [&str; 12] = ["canopy", "coral-reef", "borneo-dusk", "phantom", "senja-jakarta", "lautan", "matcha", "saffron", "lagoon", "orchid", "ruby", "graphite"];
 
@@ -463,7 +466,7 @@ pub async fn put_preferences(
         Some(row) => row,
         None => sqlx::query_as(
             "INSERT INTO user_preferences (user_id, theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit) \
-             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'canopy'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6, $7, $8, $9, $10) \
+             VALUES ($1, COALESCE($2, 'system'), COALESCE($3, 'lagoon'), COALESCE($4, 'UTC'), COALESCE($5, 'en'), $6, $7, $8, $9, $10) \
              RETURNING theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit",
         )
         .bind(claims.sub)
@@ -500,7 +503,7 @@ pub async fn put_preferences(
         has_stored_timezone: true,
         drawer_pins,
         home_layout,
-        animated_backdrop: animated_backdrop.unwrap_or(true),
+        animated_backdrop: animated_backdrop.unwrap_or(false),
         drawer_recents: drawer_recents.unwrap_or(true),
         drawer_recents_limit: drawer_recents_limit.unwrap_or(DEFAULT_DRAWER_RECENTS_LIMIT),
     }))

@@ -542,6 +542,8 @@ export interface ProjectDetail {
 	org_id: string;
 	org_name: string;
 	open_issues: number;
+	/** Where the app keeps its data: Shipyard's Postgres through Drizzle, or Nomi Relay. */
+	backend: 'drizzle' | 'relay';
 }
 
 export type AdminStreamFrame =
@@ -803,6 +805,12 @@ export interface ProjectPublish {
 	/** The publish this one rolled back to. */
 	rollback_of: string | null;
 	can_roll_back: boolean;
+	/** The version the publish this one rolled back to had. */
+	rollback_of_version: number | null;
+	/** The crew member who published for the person ("Koda"), when it wasn't them. */
+	started_by_agent: string | null;
+	/** What runs in its environment now: the newest publish there that succeeded. */
+	is_live: boolean;
 	created_by: string | null;
 	created_at: string;
 	finished_at: string | null;
@@ -843,6 +851,8 @@ export interface DeployOverview {
 	publishes: ProjectPublish[];
 	/** What runs in production now; null when nothing does. */
 	live: { environment: string; services: ShipyardService[]; last_publish: unknown } | null;
+	/** The app's own production backend while it's set up before the first publish, or when that failed. */
+	backend_setup: RelaySetup | null;
 }
 
 export interface PublishDetail extends ProjectPublish {
@@ -856,8 +866,25 @@ export interface DeploymentDetail {
 	image: string | null;
 	created_at: string;
 	finished_at: string | null;
-	steps: { name: string; status: string; started_at: string | null; finished_at: string | null }[];
-	logs: { level: string; message: string; at: string }[];
+	steps: DeploymentStep[];
+	logs: LogLine[];
+}
+
+/** One step of a Shipyard deployment. Status: succeeded, failed, running, pending or skipped. */
+export interface DeploymentStep {
+	name: string;
+	/** validate, build, configure, deploy or finalize. */
+	phase: string;
+	status: string;
+	started_at: string | null;
+	finished_at: string | null;
+	error?: string | null;
+}
+
+export interface LogLine {
+	level: string;
+	message: string;
+	at: string;
 }
 
 export interface ContainerUsage {
@@ -876,6 +903,40 @@ export interface ContainerUsage {
 		timestamp: string;
 	} | null;
 	limits: { cpu: number | null; memory_mb: number | null };
+}
+
+/** Shipyard's metrics. Every number is null when Shipyard didn't measure it, never 0. */
+export type MetricsRange = '1h' | '24h' | '7d';
+
+export interface MetricsCounters {
+	visitors: number | null;
+	requests: number | null;
+	errors_5xx: number | null;
+	errors_4xx: number | null;
+	p50_ms: number | null;
+	p95_ms: number | null;
+}
+
+export interface ContainerSample {
+	service: string;
+	container_id: string;
+	cpu_percent: number | null;
+	memory_percent: number | null;
+	memory_bytes: number | null;
+	memory_limit_bytes: number | null;
+}
+
+export interface MetricsBucket extends MetricsCounters {
+	at: string;
+	containers: ContainerSample[];
+}
+
+export interface ProjectMetrics {
+	range: MetricsRange;
+	step: string;
+	buckets: MetricsBucket[];
+	totals: MetricsCounters;
+	previous_totals: MetricsCounters;
 }
 
 export interface ShipyardEvent {
@@ -920,6 +981,59 @@ export interface QueryResult {
 	rows_affected: number | null;
 	took_ms: number;
 }
+
+export type RelayRule = 'anyone' | 'signed_in' | 'owner' | 'service';
+
+export interface RelayColumn {
+	name: string;
+	type: string;
+	nullable: boolean;
+	default: string | null;
+	identity: boolean;
+}
+
+export interface RelayTable {
+	name: string;
+	rls_enabled: boolean;
+	columns: RelayColumn[];
+	policies: { name: string; command: string; using: string | null; check: string | null }[];
+}
+
+export interface RelayBucket {
+	name: string;
+	public: boolean;
+	read: RelayRule;
+	write: RelayRule;
+	max_size_mb: number;
+}
+
+export interface RelayFunction {
+	auth: 'required' | 'public';
+	timeout: number;
+	schedule?: string;
+}
+
+/** Where a project's own backend is when it can't be used yet. */
+export interface RelaySetup {
+	state: 'creating' | 'sleeping' | 'waking' | 'failed';
+	step: string | null;
+	error: string | null;
+}
+
+/** A Relay project's backend in one environment, as its data sheet shows it. */
+export type RelayOverview =
+	| { backend: 'drizzle' }
+	| { backend: 'relay'; setup: RelaySetup }
+	| {
+			backend: 'relay';
+			url: string;
+			anon_key: string;
+			tables: RelayTable[];
+			buckets: RelayBucket[];
+			realtime: string[];
+			functions: { version: number; functions: Record<string, RelayFunction> } | null;
+			auth: { methods: string[]; missing_secrets: string[] };
+	  };
 
 export interface TransferOrgSummary {
 	id: string;

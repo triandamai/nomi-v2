@@ -35,7 +35,10 @@ async fn say(pool: &PgPool, session_id: Uuid, from: Option<Uuid>, agent: Option<
 }
 
 fn outcome(envelope: Option<UserEnvelope>) -> Option<(String, Option<String>, Option<String>)> {
-    envelope.map(|UserEnvelope::ChatActivity { outcome, waiting, agent, .. }| (outcome, waiting, agent))
+    envelope.map(|envelope| match envelope {
+        UserEnvelope::ChatActivity { outcome, waiting, agent, .. } => (outcome, waiting, agent),
+        other => panic!("expected ChatActivity, got {other:?}"),
+    })
 }
 
 #[sqlx::test(migrations = "../../migrations")]

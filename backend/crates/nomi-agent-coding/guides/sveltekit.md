@@ -42,7 +42,11 @@ SvelteKit 3 is NOT SvelteKit 2. Things you may remember that are now wrong:
 		"svelte-check": "^4.7.0",
 		"tailwindcss": "^4.3.0",
 		"typescript": "^6.0.3",
-		"vite": "^8.3.0"
+		"vite": "^8.3.0",
+		"@rolldown/binding-wasm32-wasi": "~1.2.14"
+	},
+	"overrides": {
+		"@napi-rs/wasm-runtime": "1.2.5"
 	},
 	"imports": {
 		"#lib": "./src/lib/index.js",
