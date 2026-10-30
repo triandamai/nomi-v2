@@ -10,7 +10,7 @@
 	let { people, onfollow }: Props = $props();
 </script>
 
-<div class="flex w-80 max-w-full flex-col gap-0.5 rounded-md border border-border-strong bg-surface p-1.5 shadow-float">
+<div class="flex w-80 max-w-full flex-col gap-0.5 rounded-md bg-surface p-1.5 shadow-float outline -outline-offset-1 outline-border-strong">
 	<p class="px-2.5 pt-1.5 pb-1 font-mono text-label text-text-3"><span class="tracking-label uppercase">{m.presence_here({ count: String(people.length) })}</span></p>
 	{#each people as person, index (person.initials)}
 		<div class="flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-surface-2">

@@ -20,12 +20,12 @@
 	const log = $derived(lines.map((line) => line.text ?? '').join('\n'));
 </script>
 
-<section class="flex h-130 w-full flex-col overflow-hidden rounded-sm border border-border-strong bg-bg">
+<section class="flex h-130 w-full flex-col overflow-hidden rounded-sm bg-bg outline -outline-offset-1 outline-border-strong">
 	<header class="flex h-10 shrink-0 items-center gap-2.5 border-b border-border px-4">
 		<span class="inline-flex text-text"><Icon icon={SquareTerminal} size={14} /></span>
 		<span class="truncate font-mono text-caption text-text">{run}</span>
 		<span class="min-w-0 flex-1 truncate font-mono text-caption text-text-3">{m.term_meta({ name: 'Koda' })}</span>
-		<button type="button" class="inline-flex h-6.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm border border-border-strong px-2.5 text-caption text-text outline-offset-0 hover:bg-surface-2 focus-visible:outline-3 pointer-coarse:min-h-11" onclick={() => copier.copy(log)}>
+		<button type="button" class="inline-flex h-6.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm border border-border-strong px-2.25 text-caption text-text outline-offset-0 hover:bg-surface-2 focus-visible:outline-3 pointer-coarse:min-h-11" onclick={() => copier.copy(log)}>
 			<Icon icon={copier.copied ? Check : Copy} size={14} />{copier.copied ? m.copy_done() : m.term_copy()}
 		</button>
 	</header>
@@ -47,7 +47,7 @@
 		{/each}
 	</div>
 	{#if failure}
-		<footer class="flex shrink-0 flex-wrap items-center gap-3 border-t border-border bg-surface px-4 py-3">
+		<footer class="flex shrink-0 flex-wrap items-center gap-3 border-t border-border bg-surface px-4 pt-2.75 pb-3">
 			<span class="inline-flex text-danger"><Icon icon={CircleAlert} size={14} /></span>
 			<span class="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
 				<span class="text-ui font-medium text-text">{failure.title}</span>

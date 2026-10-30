@@ -52,8 +52,8 @@
 	}
 </script>
 
-<div class="flex h-150 w-full overflow-hidden rounded-sm border border-border-strong bg-bg">
-	<div class="flex w-58 shrink-0 flex-col gap-0.5 border-r border-border bg-surface px-2 py-3 max-md:hidden">
+<div class="flex h-150 w-full overflow-hidden rounded-sm bg-bg outline -outline-offset-1 outline-border-strong">
+	<div class="flex w-58 shrink-0 flex-col gap-0.5 border-r border-border bg-surface py-3 pr-1.75 pl-2 max-md:hidden">
 		<p class="pb-1.5 font-mono text-label text-text-3"><span class="tracking-label uppercase">{m.files_title()}</span>{#if branch}&nbsp;·&nbsp;{branch}{/if}</p>
 		<div role="tree" aria-label={m.files_title()} class="flex flex-col gap-0.5">
 			{#each tree as entry, index (index)}
@@ -78,7 +78,7 @@
 			<span class="inline-flex text-text-2"><Icon icon={FileCode} size={14} /></span>
 			<span class="truncate font-mono text-caption text-text">{path}</span>
 			<span class="min-w-0 flex-1 truncate font-mono text-caption text-text-3">{meta}</span>
-			<button type="button" class="inline-flex h-6.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm border border-border-strong px-2.5 text-caption text-text outline-offset-0 hover:bg-surface-2 focus-visible:outline-3 pointer-coarse:min-h-11" onclick={onask}>
+			<button type="button" class="inline-flex h-6.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm border border-border-strong px-2.25 text-caption text-text outline-offset-0 hover:bg-surface-2 focus-visible:outline-3 pointer-coarse:min-h-11" onclick={onask}>
 				<Icon icon={MessageSquare} size={14} />{m.code_ask_file({ name: 'Koda' })}
 			</button>
 		</header>

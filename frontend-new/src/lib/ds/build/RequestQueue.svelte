@@ -16,7 +16,7 @@
 	const next = $derived(asks.findIndex((ask) => ask.state === 'next'));
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border bg-surface">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border">
 	<header class="flex items-center gap-2 px-3.5 py-2.5">
 		<Mascot agent="koda" size={20} />
 		<p class="text-ui font-medium text-text">{asks.length === 1 ? m.queue_title_one() : m.queue_title({ count: String(asks.length) })}</p>
@@ -24,7 +24,7 @@
 	</header>
 	<ol>
 		{#each asks as ask, index (index)}
-			<li class="flex items-center gap-2.5 border-t border-border px-3.5 py-2.5">
+			<li class="flex items-center gap-2.5 border-t border-border px-3.5 pt-2.25 pb-2.5">
 				<span class="w-3 shrink-0 font-mono text-label text-text-3">{index + 1}</span>
 				<PeerAvatar initials={ask.who.initials} peer={ask.who.peer} size={20} />
 				<span class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -39,7 +39,7 @@
 			</li>
 		{/each}
 	</ol>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-1.75 pb-2">
 		<span class="min-w-0 flex-1 basis-48 text-caption text-text-3">{m.queue_hint({ agent: 'Koda' })}</span>
 		{#if onfirst && next > 0}
 			<Button label={m.queue_first({ name: asks[next].who.name.split(/\s+/)[0] })} variant="ghost" iconStart={Users} onclick={() => onfirst(next)} />

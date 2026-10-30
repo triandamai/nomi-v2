@@ -23,11 +23,11 @@
 	aria-label={state === 'ready' && count ? m.ws_publish_count({ count: String(count) }) : undefined}
 	onclick={state === 'failed' ? onretry : onpublish}
 	class={[
-		'inline-flex h-7.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm px-3 text-ui whitespace-nowrap outline-offset-0 focus-visible:outline-3 disabled:cursor-default pointer-coarse:min-h-11',
-		state === 'idle' && 'border border-border-strong text-text-2',
-		state === 'ready' && 'bg-accent font-medium text-accent-ink',
-		state === 'publishing' && 'bg-accent-bg font-medium text-accent',
-		state === 'failed' && 'border border-danger-border bg-danger-bg font-medium text-danger',
+		'inline-flex h-7.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm text-ui whitespace-nowrap outline-offset-0 focus-visible:outline-3 disabled:cursor-default pointer-coarse:min-h-11',
+		state === 'idle' && 'border border-border-strong px-2.75 text-text-2',
+		state === 'ready' && 'bg-accent px-3 font-medium text-accent-ink',
+		state === 'publishing' && 'bg-accent-bg px-3 font-medium text-accent',
+		state === 'failed' && 'border border-danger-border bg-danger-bg px-2.75 font-medium text-danger',
 	]}
 >
 	{#if state === 'idle'}

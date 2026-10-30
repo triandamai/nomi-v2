@@ -16,11 +16,11 @@
 	);
 </script>
 
-<article class="flex w-130 max-w-full flex-col gap-4.5 rounded-md border border-border bg-surface p-7">
+<article class="flex w-130 max-w-full flex-col gap-4.5 rounded-md bg-surface p-7 outline -outline-offset-1 outline-border">
 	<p class="flex items-center gap-2"><Mascot agent="nomi" size={20} /><span class="text-ui font-semibold text-text">Nomi</span></p>
 	<h2 class="text-heading font-semibold text-text">{m.invite_title({ from, project })}</h2>
 	<p class="text-ui leading-normal text-text-2">{body}</p>
-	<div class="flex items-center gap-3 rounded-sm border border-border p-3">
+	<div class="flex items-center gap-3 rounded-sm p-3 outline -outline-offset-1 outline-border">
 		<span class="inline-flex size-9 shrink-0 items-center justify-center rounded-xs bg-accent-bg text-accent"><Icon icon={Coffee} /></span>
 		<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 			<span class="font-mono text-ui text-text">{project}</span>

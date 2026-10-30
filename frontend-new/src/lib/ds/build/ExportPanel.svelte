@@ -29,8 +29,8 @@
 	]);
 </script>
 
-<section class="flex w-120 max-w-full flex-col overflow-hidden rounded-md border border-border-strong bg-surface">
-	<header class="flex items-center gap-2.5 border-b border-border px-5 py-4">
+<section class="flex w-120 max-w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border px-5 pt-4 pb-3.75">
 		<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 			<h2 id={titleId} class="text-body font-medium text-text">{m.export_title({ project })}</h2>
 			<span class="text-ui text-text-3">{m.export_sub({ name: 'Koda' })}</span>
@@ -39,9 +39,9 @@
 	</header>
 	<div class="flex flex-col gap-1 p-5">
 		<SectionLabel label={m.export_included()} />
-		<ul>
+		<ul class="flex flex-col gap-1">
 			{#each items as item (item.title)}
-				<li class="flex gap-3 border-b border-border py-2.5">
+				<li class="flex gap-3 border-b border-border pt-2.5 pb-2.25">
 					<span class="inline-flex h-4.5 shrink-0 items-center text-text-2"><Icon icon={item.icon} size={14} /></span>
 					<span class="flex min-w-0 flex-1 flex-col gap-0.75">
 						<span class="text-ui font-medium text-text">{item.title}</span>
@@ -51,9 +51,9 @@
 				</li>
 			{/each}
 		</ul>
-		{#if env}<p class="pt-1 text-ui text-text-3">{m.export_env_note()}</p>{/if}
+		{#if env}<p class="text-ui text-text-3">{m.export_env_note()}</p>{/if}
 	</div>
-	<footer class="grid grid-cols-2 gap-2 border-t border-border px-5 pt-3 pb-4">
+	<footer class="grid grid-cols-2 gap-2 border-t border-border px-5 pt-2.75 pb-4">
 		<Button label={m.export_github()} variant="secondary" iconEnd={GithubMark} onclick={onpush} />
 		<Button label={m.export_zip()} variant="secondary" iconEnd={Download} onclick={ondownload} />
 	</footer>

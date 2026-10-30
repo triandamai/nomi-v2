@@ -10,7 +10,7 @@
 	let { who, meta, onpublish, onreview }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border bg-surface">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border">
 	<header class="flex items-center gap-2.5 px-3.5 py-3">
 		<PeerAvatar initials={who.initials} peer={who.peer} />
 		<span class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -18,7 +18,7 @@
 			{#if meta}<span class="font-mono text-label text-text-3">{meta}</span>{/if}
 		</span>
 	</header>
-	<footer class="flex flex-wrap gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<Button label={m.ws_publish()} iconEnd={ArrowRight} onclick={onpublish} />
 		{#if onreview}<Button label={m.publish_review()} variant="ghost" iconStart={Users} onclick={onreview} />{/if}
 	</footer>

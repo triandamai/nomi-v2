@@ -36,19 +36,19 @@
 	]);
 </script>
 
-<section class="flex w-120 max-w-full flex-col overflow-hidden rounded-md border border-border-strong bg-surface">
-	<header class="flex items-center gap-2.5 border-b border-border px-5 py-4">
+<section class="flex w-120 max-w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border px-5 pt-4 pb-3.75">
 		<h2 id={titleId} class="min-w-0 flex-1 text-body font-medium text-text">{m.share_title()}</h2>
 		<IconButton icon={X} label={m.action_close()} variant="ghost" onclick={onclose} />
 	</header>
 	<div class="flex flex-col gap-4 p-5">
 		<div class="flex items-center gap-2">
-			<span class="flex h-8.5 min-w-0 flex-1 items-center rounded-sm border border-border-strong bg-bg px-2.5">
+			<span class="flex h-8.5 min-w-0 flex-1 items-center rounded-sm bg-bg px-2.5 outline -outline-offset-1 outline-border-strong">
 				<span class="truncate font-mono text-label text-text">{host}</span>
 			</span>
 			<Button label={m.build_copy_link()} variant="secondary" iconEnd={copier.copied ? Check : Copy} onclick={() => copier.copy(url)} />
 		</div>
-		<div class="flex overflow-hidden rounded-sm border border-border">
+		<div class="flex overflow-hidden rounded-sm outline -outline-offset-1 outline-border">
 			{#if preview.image}
 				<img src={preview.image} alt="" class="h-24 w-30 shrink-0 object-cover" />
 			{:else}
@@ -68,19 +68,19 @@
 				<span class="text-ui font-medium text-text">{m.bshare_who()}</span>
 				<span class="text-caption text-text-3">{m.bshare_who_help()}</span>
 			</span>
-			<Segmented
-				surface="bg"
-				label={m.bshare_who()}
-				value={visibility}
-				options={[
-					{ value: 'public', label: m.bshare_public() },
-					{ value: 'unlisted', label: m.bshare_unlisted() },
-				]}
-				onchange={(value) => onvisibility?.(value as 'public' | 'unlisted')}
-			/>
+<span class="shrink-0">			<Segmented
+					surface="bg"
+					label={m.bshare_who()}
+					value={visibility}
+					options={[
+						{ value: 'public', label: m.bshare_public() },
+						{ value: 'unlisted', label: m.bshare_unlisted() },
+					]}
+					onchange={(value) => onvisibility?.(value as 'public' | 'unlisted')}
+				/></span>
 		</div>
 		{#if oninvite}
-			<div class="flex items-center gap-3 rounded-sm border border-border px-3 py-2.5">
+			<div class="flex items-center gap-3 rounded-sm px-3 py-2.5 outline -outline-offset-1 outline-border">
 				<span class="inline-flex shrink-0 text-text"><Icon icon={Users} size={14} /></span>
 				<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 					<span class="text-ui font-medium text-text">{m.bshare_together()}</span>
@@ -97,7 +97,7 @@
 						href={app.href}
 						target={app.href.startsWith('mailto:') ? undefined : '_blank'}
 						rel="noopener noreferrer"
-						class="inline-flex h-7.5 items-center gap-1.5 rounded-sm border border-border-strong px-2.5 text-caption text-text outline-offset-1 hover:bg-surface-2 pointer-coarse:min-h-11"
+						class="inline-flex h-7.5 items-center gap-1.5 rounded-sm border border-border-strong px-2.25 text-caption text-text outline-offset-1 hover:bg-surface-2 pointer-coarse:min-h-11"
 					>
 						<span class="inline-flex text-text-2"><Icon icon={app.icon} size={14} /></span>{app.label}
 					</a>
@@ -105,14 +105,14 @@
 			</div>
 		</div>
 		{#if onmore}
-			<button type="button" class="flex cursor-pointer items-center gap-2 border-t border-border pt-2.5 text-left outline-offset-2" onclick={onmore}>
+			<button type="button" class="flex cursor-pointer items-center gap-2 border-t border-border pt-2.25 text-left outline-offset-2" onclick={onmore}>
 				<span class="inline-flex text-text-2"><Icon icon={ChevronRight} size={14} /></span>
 				<span class="text-ui text-text-2">{m.bshare_more()}</span>
 				<span class="flex-1 text-right font-mono text-label text-text-3">{m.bshare_more_meta()}</span>
 			</button>
 		{/if}
 	</div>
-	<footer class="flex justify-end border-t border-border px-5 py-3">
+	<footer class="flex justify-end border-t border-border px-5 pt-2.75 pb-3">
 		<Button label={m.action_done()} variant="inverse" onclick={ondone} />
 	</footer>
 </section>

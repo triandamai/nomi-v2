@@ -10,7 +10,7 @@
 	let { steps }: { steps: Step[] } = $props();
 </script>
 
-<div class="flex h-75 w-full flex-col items-center justify-center gap-5 rounded-md border border-border">
+<div class="flex h-75 w-full flex-col items-center justify-center gap-5 rounded-md outline -outline-offset-1 outline-border">
 	<div class="flex flex-col items-center gap-1.5 text-center">
 		<span class="inline-flex animate-spin text-text-2 motion-reduce:animate-none"><Icon icon={LoaderCircle} size={22} /></span>
 		<h3 class="text-body font-medium text-text">{m.preview_building_title()}</h3>

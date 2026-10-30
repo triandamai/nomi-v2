@@ -17,7 +17,7 @@
 	];
 </script>
 
-<div role="radiogroup" aria-label={m.role_label()} class="flex w-80 max-w-full flex-col gap-0.5 rounded-md border border-border-strong bg-surface p-1.5 shadow-float">
+<div role="radiogroup" aria-label={m.role_label()} class="flex w-80 max-w-full flex-col gap-0.5 rounded-md bg-surface p-1.5 shadow-float outline -outline-offset-1 outline-border-strong">
 	{#each ROLES as role (role.value)}
 		{@const chosen = role.value === value}
 		<label class={['relative flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-surface-2 has-focus-visible:outline-2 has-focus-visible:outline-focus', chosen && 'bg-surface-2']}>

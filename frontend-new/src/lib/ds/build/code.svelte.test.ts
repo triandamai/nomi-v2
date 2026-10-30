@@ -112,10 +112,12 @@ describe('Phone preview', () => {
 	it('frames the app at phone size, light, behind a bezel', async () => {
 		const { container } = await render(PhoneFrame, { src: 'about:blank', title: 'warung-kopi-menu preview' });
 		const frame = container.querySelector('[data-phone]')!;
-		// The pen's 330×640 screen with its 8px bezel drawn outside it.
-		expect(frame.clientWidth).toBe(330);
-		expect(frame.clientHeight).toBe(640);
-		expect(frame.getBoundingClientRect().width).toBe(346);
+		// The pen's 330×640 phone; its 8px bezel is drawn on the edge (as the pen exports it: an
+		// outline offset -4) and takes no room.
+		expect(frame.getBoundingClientRect().width).toBe(330);
+		expect(frame.getBoundingClientRect().height).toBe(640);
+		expect(getComputedStyle(frame).outlineWidth).toBe('8px');
+		expect(getComputedStyle(frame).outlineOffset).toBe('-4px');
 		expect(getComputedStyle(frame).borderTopLeftRadius).toBe('44px');
 		expect(frame.getAttribute('data-theme')).toBe('light');
 		await expect.element(page.getByTitle('warung-kopi-menu preview')).toBeInTheDocument();

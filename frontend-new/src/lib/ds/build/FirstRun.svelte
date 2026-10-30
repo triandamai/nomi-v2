@@ -17,7 +17,7 @@
 
 <form
 	aria-labelledby="{id}-title"
-	class="flex w-110 max-w-full flex-col gap-6 rounded-md border border-border bg-surface p-8"
+	class="flex w-110 max-w-full flex-col gap-6 rounded-md bg-surface p-8 outline -outline-offset-1 outline-border"
 	onsubmit={(event) => {
 		event.preventDefault();
 		if (value.trim()) oncontinue(value.trim());
