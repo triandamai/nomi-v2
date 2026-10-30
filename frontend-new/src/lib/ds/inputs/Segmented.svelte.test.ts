@@ -16,8 +16,9 @@ describe('Segmented', () => {
 		const all = page.getByRole('radio', { name: 'All 4' });
 		await expect.element(all).toHaveAttribute('aria-checked', 'true');
 		await expect.element(page.getByRole('radio', { name: 'Live 2' })).toHaveAttribute('aria-checked', 'false');
-		expect(getComputedStyle(all.element()).backgroundColor).toBe(tokenBackground('nm-bg'));
-		expect(getComputedStyle(all.element()).height).toBe('26px');
+		const segment = all.element().firstElementChild!;
+		expect(getComputedStyle(segment).backgroundColor).toBe(tokenBackground('nm-bg'));
+		expect(getComputedStyle(segment).height).toBe('26px');
 		const track = page.getByRole('radiogroup', { name: 'Projects' }).element();
 		expect(getComputedStyle(track).backgroundColor).toBe(tokenBackground('nm-surface-2'));
 	});

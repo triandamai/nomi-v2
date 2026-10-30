@@ -98,7 +98,8 @@
 
 	/* Type */
 	--nm-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-	--nm-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+	/* Glyphs Geist Mono lacks (⌘ ⇧ ↵) come from the system font, as in the pen. */
+	--nm-mono: "Geist Mono Variable", "Geist Mono", system-ui, -apple-system, "Segoe UI", sans-serif;
 	--nm-size-display: 28px;
 	--nm-size-body: 15px;
 	--nm-size-ui: 13px;

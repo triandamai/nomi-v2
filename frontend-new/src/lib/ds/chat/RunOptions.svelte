@@ -41,7 +41,7 @@
 			placeholder={m.plan_approval_keep_placeholder({ name: who })}
 			bind:value={changes}
 			oninput={() => (value = options.length)}
-			class="h-8 w-full rounded-sm border border-border bg-surface px-2.5 text-caption text-text placeholder:text-text-3"
+			class="h-8 w-full rounded-sm border border-border bg-surface px-2.25 text-caption text-text placeholder:text-text-3"
 		/>
 	</ChoiceOption>
 </div>

@@ -19,8 +19,8 @@
 	let { title, code, requestId, details = [], actions = [] }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong" role="alert">
-	<header class="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border bg-danger-bg px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md outline -outline-offset-1 outline-border-strong" role="alert">
+	<header class="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border bg-danger-bg px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex text-danger"><Icon icon={CircleAlert} size={14} /></span>
 		<span class="text-ui font-medium text-danger">{title}</span>
 		{#if code}<span class="min-w-0 flex-1 truncate font-mono text-label text-text-3">{code}</span>{:else}<span class="flex-1"></span>{/if}
@@ -37,7 +37,7 @@
 		</dl>
 	{/if}
 	{#if actions.length > 0}
-		<div class="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3.5 py-2.5">
+		<div class="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3.5 pt-2.25 pb-2.5">
 			{#each actions as action, index (action.label)}
 				<Button label={action.label} variant={index === 0 ? 'inverse' : 'secondary'} iconEnd={action.icon} href={action.href} external={action.external} onclick={action.onclick} />
 			{/each}

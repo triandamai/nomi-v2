@@ -27,6 +27,7 @@ describe('Build on mobile section', () => {
 	it('keeps a board title on one line and lets the note wrap, as the pen does', async () => {
 		await page.viewport(1512, 900);
 		await render(MobileBuildSection);
+		await document.fonts.ready;
 		expect(page.getByText('Teammate in chat', { exact: true }).element().getBoundingClientRect().height).toBe(17);
 		const note = page.getByText('their colour, their name, who they asked').element().getBoundingClientRect();
 		expect(note.top).toBe(page.getByText('Teammate in chat', { exact: true }).element().getBoundingClientRect().top);

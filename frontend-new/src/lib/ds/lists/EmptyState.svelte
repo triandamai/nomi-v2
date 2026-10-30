@@ -9,7 +9,7 @@
 	let { icon, title, count, body, action }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col gap-2 rounded-md border border-border p-4">
+<section class="flex w-full flex-col gap-2 rounded-md p-4 outline -outline-offset-1 outline-border">
 	<header class="flex items-center gap-2">
 		<span class="inline-flex text-text-3"><Icon {icon} size={14} /></span>
 		<span class="min-w-0 flex-1 text-ui font-medium text-text">{title}</span>

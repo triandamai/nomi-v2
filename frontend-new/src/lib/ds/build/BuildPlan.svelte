@@ -31,16 +31,16 @@
 </script>
 
 <section class="flex w-full flex-col overflow-hidden rounded-md border border-border bg-surface">
-	<header class="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
+	<header class="flex items-center gap-2.5 border-b border-border px-3.75 py-3.25">
 		<Mascot agent="koda" size={20} />
 		<span class="text-ui font-medium text-text">Koda</span>
 		<span class="min-w-0 flex-1 font-mono text-label text-text-3">{m.build_plan_kind()}</span>
 	</header>
-	<div class="flex flex-col gap-1 px-4 pt-3.5 pb-1">
+	<div class="flex flex-col gap-1 px-3.75 pt-3.5 pb-1">
 		<span class="font-mono text-label text-text-3">{project}</span>
 		<h3 id="{id}-title" class="text-body font-semibold text-text">{summary}</h3>
 	</div>
-	<div class="flex flex-col gap-2 px-4 pt-1.5 pb-3.5">
+	<div class="flex flex-col gap-2 px-3.75 pt-1.5 pb-3.5">
 		<p class="text-ui text-text-2">{m.build_plan_label({ name: 'Koda' })}</p>
 		<ol class="flex flex-col gap-1.5">
 			{#each steps as step, index (index)}
@@ -48,15 +48,15 @@
 			{/each}
 		</ol>
 	</div>
-	<div class="px-4 pb-3.5">
+	<div class="px-3.75 pb-3.5">
 		<p class="flex items-center gap-2.5 rounded-sm bg-accent-bg px-3 py-2.5 text-ui text-text">
 			<span class="inline-flex shrink-0 text-accent"><Icon icon={Sparkles} size={14} /></span>{outcome}
 		</p>
 	</div>
-	<div class="border-t border-border p-3.5">
+	<div class="border-t border-border px-3.25 py-3.5">
 		<RunOptions name="{id}-run" label={summary} {options} who="Koda" bind:value bind:changes />
 	</div>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.25 py-2.25">
 		<span class="min-w-0 flex-1 basis-40 font-mono text-label text-text-3">{cost}</span>
 		<span class="ml-auto">
 			<Button

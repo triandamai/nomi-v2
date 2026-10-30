@@ -18,7 +18,7 @@
 	aria-valuetext={caption ? `${percent}% · ${caption}` : `${percent}%`}
 	class={['flex w-full flex-col', roomy ? 'gap-2.5' : 'gap-1.5']}
 >
-	<div class="flex items-baseline justify-between">
+	<div class="flex items-start justify-between">
 		<span id="{id}-label" class="text-ui font-medium text-text">{label}</span>
 		<span class="font-mono text-label text-text-3">{percent}%</span>
 	</div>

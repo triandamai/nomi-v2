@@ -17,9 +17,15 @@ describe('Inputs & selection section', () => {
 			'Chip / Option',
 			'Chip / Agent',
 			'Chip / Provision',
+			'Segment / Active',
+			'Segment / Inactive',
 			'Segmented (composed)',
-			'Toggle / On · Off',
-			'Check / Checked · Unchecked',
+			'Tab / Active',
+			'Tab / Inactive',
+			'Toggle / On',
+			'Toggle / Off',
+			'Check / Checked',
+			'Check / Unchecked',
 		]) {
 			expect(page.getByText(caption, { exact: true }).elements(), caption).toHaveLength(1);
 		}
