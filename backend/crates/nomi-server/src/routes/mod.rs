@@ -44,6 +44,7 @@ pub mod projects;
 pub mod profile;
 pub mod reminders;
 pub mod sessions;
+pub mod shares;
 pub mod settings;
 pub mod showcase;
 pub mod support;

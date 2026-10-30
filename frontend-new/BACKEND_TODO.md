@@ -21,16 +21,12 @@ Nothing here has been implemented: these are requests for the backend.
 Found by the design-system parity audit (`docs/superpowers/specs/2026-10-30-design-system-parity-audit.md`).
 The old `frontend/` will use the same endpoints.
 
-### Dislike reasons and a note
+### Dislike reasons and a note — done
 - **Needed by:** *Chat responses / Feedback*: DislikeFeedback.
-- **Why:** the person picks any number of reasons and can add a note. They can also attach the chat.
-- **What exists today:** `PUT /api/sessions/:id/messages/:message_id/feedback`.
-  - Body: `{ rating, reason? }`, with one reason from `wrong_memory | not_relevant | too_long | other`.
-  - No note.
-- **Proposed contract:** the same route.
-  - Body: `{ rating: "down", reasons: ("inaccurate"|"ignored"|"wrong_crew"|"too_long"|"outdated"|"unsafe"|"other")[], note?: string, include_chat?: bool }`.
-  - The old single `reason` is still accepted.
-- **Until then:** one reason is sent and the note is left out.
+- **Built:** `PUT /api/sessions/:id/messages/:message_id/feedback` takes `{ rating, reasons?, note?, include_chat? }` (migration `0091_feedback_reasons.sql`).
+  - The reasons are DislikeFeedback's (`inaccurate`, `ignored`, `wrong_crew`, `too_long`, `outdated`, `unsafe`, `other`) and the memory sheet's (`wrong_memory`, `not_relevant`).
+  - The single `reason` older apps send still works and lands in `reasons`.
+  - A thumbs-up keeps none of them. The note is at most 2000 characters.
 
 ### Regenerate a reply, and its versions
 - **Needed by:** *Chat responses / Actions*: RegenerateMenu and VersionSwitcher.
@@ -68,16 +64,18 @@ The old `frontend/` will use the same endpoints.
   - A project's own chat answers 400: it stays with its project.
   - `GET /api/sessions` returns `in_project_id`.
 
-### Share a chat by link
+### Share a chat by link — done
 - **Needed by:** *Chat / Share*: ShareDialog and SharePanel.
-- **Why:** a read-only link with an expiry and three settings.
-  - `ShareSettings` = `{ scope: "reply" | "chat", mask, anyone }`: share one reply or the whole chat, mask personal details, and anyone with the link or only signed-in people.
-- **What exists today:** nothing.
-- **Proposed contract:**
-  - `POST /api/sessions/:id/shares` with `{ scope: "reply"|"chat", message_id?, mask: bool, anyone: bool, expires_in_days?: number|null }` returns `{ id, url, expires_at }`.
-  - `DELETE /api/sessions/:id/shares/:share_id` removes it.
-  - `GET /api/shared/:token` is public and returns the messages.
-- **Until then:** no share item.
+- **Built:** migration `0092_chat_shares.sql`, routes in `backend/crates/nomi-server/src/routes/shares.rs`.
+  - `POST /api/sessions/:id/shares` with `{ scope: "reply"|"chat", message_id?, mask?, anyone?, expires_in_days?: 1|7|30 }` returns `201 { id, token, scope, message_id, mask, anyone, expires_at, preview, chat_messages }`.
+    - `mask` and `anyone` default to true. Without `expires_in_days` the link never expires.
+    - `preview` is what the link opens with, masked when `mask` is on.
+  - `PUT /api/sessions/:id/shares/:share_id` with the same body changes the link's settings; `DELETE` revokes it.
+  - `GET /api/shared/:token` returns `{ title, scope, masked, messages: [{ sender, agent_display_name, content, created_at }], expires_at }`.
+    - It's public when `anyone` is on; otherwise any signed-in person may open it.
+    - A revoked, expired or unknown link is a 404.
+  - Only the chat's owner shares it.
+- **Still open:** masking hides amounts ("Rp •••"), email addresses and phone numbers. SharePanel's help text also promises names as initials; the server has no reliable way to tell a name from other words, so names aren't masked yet.
 
 ### Export a project to GitHub
 - **Needed by:** *Build / Export*: ExportPanel push.
