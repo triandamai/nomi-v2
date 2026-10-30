@@ -4,6 +4,8 @@
 	import TypeSection from '$lib/gallery/TypeSection.svelte';
 	import SpaceSection from '$lib/gallery/SpaceSection.svelte';
 	import ActionsSection from '$lib/gallery/ActionsSection.svelte';
+	import InputsSection from '$lib/gallery/InputsSection.svelte';
+	import AgentsSection from '$lib/gallery/AgentsSection.svelte';
 
 	const principles: [title: string, body: string][] = [
 		['One accent, under 10%', 'Mint marks the single thing to act on. Neutrals do the hierarchy.'],
@@ -41,3 +43,5 @@
 <TypeSection />
 <SpaceSection />
 <ActionsSection />
+<InputsSection />
+<AgentsSection />
