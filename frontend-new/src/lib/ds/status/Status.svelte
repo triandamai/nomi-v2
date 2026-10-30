@@ -4,8 +4,9 @@
 
 	// Design System / Nomi → Status: a 6px dot plus a word, so colour never carries meaning alone.
 	// Who is working shows their mascot instead of a dot. States, not decoration: no pulsing.
-	type Props = { kind: 'live' | 'ready' | 'idle' | 'failed' | 'attention' | 'working'; label: string; agent?: CrewId };
-	let { kind, label, agent }: Props = $props();
+	// `small` sets the word at 11px where the pen does (a build's "Live").
+	type Props = { kind: 'live' | 'ready' | 'idle' | 'failed' | 'attention' | 'working'; label: string; agent?: CrewId; small?: boolean };
+	let { kind, label, agent, small = false }: Props = $props();
 </script>
 
 <span class="inline-flex items-center gap-1.5">
@@ -25,7 +26,7 @@
 	{/if}
 	<span
 		class={[
-			kind === 'ready' || kind === 'idle' ? 'font-mono text-label' : 'text-caption',
+			kind === 'ready' || kind === 'idle' ? 'font-mono text-label' : small ? 'text-label' : 'text-caption',
 			(kind === 'live' || kind === 'working') && 'text-text',
 			kind === 'ready' && 'text-text-2',
 			kind === 'idle' && 'text-text-3',
