@@ -61,6 +61,8 @@ pub struct LimitsResponse {
     pub max_video_bytes: u64,
     pub max_message_bytes: u64,
     pub max_files: usize,
+    /// The most a message's text may hold, in characters.
+    pub max_message_chars: usize,
 }
 
 /// `GET /api/attachments/limits`: what the composer checks before uploading.
@@ -71,6 +73,7 @@ pub async fn limits(AuthClaims(_claims): AuthClaims) -> Json<LimitsResponse> {
         max_video_bytes: limits.max_video_bytes,
         max_message_bytes: limits.max_message_bytes,
         max_files: limits.max_files,
+        max_message_chars: super::sessions::MAX_MESSAGE_CHARS,
     })
 }
 

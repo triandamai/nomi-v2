@@ -804,6 +804,15 @@ pub struct SendMessageRequest {
     pub text: String,
 }
 
+/// The most a message's text may hold, in characters (attached files are counted by name only;
+/// their own limits are in nomi_attachments::limits). Longer goes as a file.
+pub const MAX_MESSAGE_CHARS: usize = 10_000;
+
+/// Whether `text` is over MAX_MESSAGE_CHARS, as the person reads it.
+pub(crate) fn too_long(text: &str) -> bool {
+    nomi_attachments::reference::readable(text).chars().count() > MAX_MESSAGE_CHARS
+}
+
 #[derive(Serialize)]
 pub struct IngestMessageResponse {
     pub user_message: MessageItem,
@@ -824,6 +833,9 @@ pub async fn send_message(
 
     if req.text.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "text must not be empty"));
+    }
+    if too_long(&req.text) {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "message is too long"));
     }
 
     let (channel, chat_type, chat_id, title): (String, String, String, Option<String>) =

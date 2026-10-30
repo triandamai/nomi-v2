@@ -171,6 +171,9 @@ pub async fn edit(
     if text.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "text must not be empty"));
     }
+    if super::sessions::too_long(text) {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "message is too long"));
+    }
     let start = turn_start(&state.pool, session_id, message_id).await?;
     if start != message_id {
         return Err((StatusCode::BAD_REQUEST, "only the person's own message can be edited"));

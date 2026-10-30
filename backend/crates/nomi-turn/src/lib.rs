@@ -307,6 +307,24 @@ async fn run_locked_turn(
         }
     }
 
+    // Addressed by name ("@Dana"): that member answers, whoever was talking before.
+    if let Some(agent) = routing::mentioned_agent(conn, registry, catalog, text).await {
+        if let Some(agent_session_id) = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await? {
+            let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
+            if details.agent_type == agent.agent_type().as_ref() {
+                return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, agent, session_id, agent_session_id, sender_channel_identity_id, user_id).await;
+            }
+            routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, &details.agent_type, "completed", "handed over by mention").await?;
+        }
+        // The default agent never gets an agent_sessions row (see the classification branch below).
+        let agent_session_id = if agent.agent_type() == registry.default_agent().agent_type() {
+            session_id
+        } else {
+            routing::spawn_agent_session(conn, mqtt, session_id, sender_channel_identity_id, agent.agent_type().as_ref(), agent.display_name().as_ref()).await?
+        };
+        return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, agent, session_id, agent_session_id, sender_channel_identity_id, user_id).await;
+    }
+
     let mut active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
     if let (true, true, Some(agent_session_id)) = (planning.is_some(), build_request, active) {
         let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;

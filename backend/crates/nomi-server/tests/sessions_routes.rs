@@ -374,6 +374,23 @@ async fn send_message_rejects_empty_text(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn send_message_takes_text_up_to_the_limit_and_no_more(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "kim@example.com").await;
+    let (_, create_body) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session_id = create_body["session_id"].as_str().unwrap().to_string();
+    let path = format!("/api/sessions/{session_id}/messages");
+    let max = nomi_server::routes::sessions::MAX_MESSAGE_CHARS;
+
+    // Counted in characters, not bytes: "é" is two bytes.
+    let (status, _) = json_request(router.clone(), "POST", &path, json!({"text": "é".repeat(max + 1)}), Some(&token)).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let (status, _) = json_request(router, "POST", &path, json!({"text": "é".repeat(max)}), Some(&token)).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn list_messages_respects_limit_and_before_cursor(pool: PgPool) {
     let router = build_router(test_state(pool));
     let token = register_and_login(router.clone(), "leo@example.com").await;
