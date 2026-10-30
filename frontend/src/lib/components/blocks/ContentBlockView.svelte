@@ -2,13 +2,12 @@
 <script lang="ts">
 	import type { Component } from 'svelte';
 	import TodoListBlock from './TodoListBlock.svelte';
-	import TableBlock from './TableBlock.svelte';
+	import TableTwin from './twins/TableTwin.svelte';
 	import ApprovalTwin from './twins/ApprovalTwin.svelte';
 	import PlanBlock from './PlanBlock.svelte';
 	import ReminderTwin from './twins/ReminderTwin.svelte';
 	import Reasoning from '$lib/components/ds/chat/Reasoning.svelte';
-	import WorkspaceConnectCard from './WorkspaceConnectCard.svelte';
-	import ConnectorConnectCard from './ConnectorConnectCard.svelte';
+	import ConnectTwin from './twins/ConnectTwin.svelte';
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
 	import RunFailedTwin from './twins/RunFailedTwin.svelte';
@@ -46,12 +45,12 @@
 	// build doesn't know shows nothing (the message's text stands in).
 	const BLOCKS: Partial<Record<ContentBlock['kind'], Component<any>>> = {
 		todo_list: TodoListBlock,
-		table: TableBlock,
+		table: TableTwin,
 		approval_request: ApprovalTwin,
 		plan: PlanBlock,
 		reminder: ReminderTwin,
-		workspace_connect: WorkspaceConnectCard,
-		connector_connect: ConnectorConnectCard,
+		workspace_connect: ConnectTwin,
+		connector_connect: ConnectTwin,
 		project_link: ProjectLinkCard,
 		questions: QuestionsTwin,
 		quota_notice: QuotaNoticeCard,

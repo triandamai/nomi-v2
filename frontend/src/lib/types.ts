@@ -32,10 +32,12 @@ export type ContentBlock =
 	| { kind: 'file_writes'; project_id: string; files: { path: string; content: string; previous_content: string | null }[] }
 	| { kind: 'file_delete'; project_id: string; path: string; previous_content?: string | null }
 	| { kind: 'todo_list'; items: TodoItem[] }
-	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
-	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
+	/** `title` and `source` are one line each; older tables have neither. */
+	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[]; title?: string; source?: string }
+	/** `agent_type`: who needs it (older cards don't say). */
+	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[]; agent_type?: string }
 	/** A connector the request needs (Connections → its page); `reason` is not_connected or key_rejected. */
-	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string }
+	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string; agent_type?: string }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
 	/** Next steps the crew offers when it's done: buttons that send their text. */

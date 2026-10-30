@@ -299,7 +299,7 @@
 				<MessageAttachments files={attached.files} />
 				{#if attached.text}<p class="message__plain">{attached.text}</p>{/if}
 			{:else}
-				{@html message.content_html}
+				<div class="message-markdown">{@html message.content_html}</div>
 			{/if}
 		</div>
 
@@ -599,43 +599,47 @@
 
 	/* content_html is server-rendered from trusted markdown+shiki output (sanitized before it
 	   ever reaches this component — see $lib/server/markdown.ts), injected via {@html}. Svelte's
-	   scoped-style attribute isn't applied to {@html} content, so every rule below needs :global. */
-	.message-bubble :global(p) {
+	   scoped-style attribute isn't applied to {@html} content, so every rule below is global. They
+	   hold to .message-markdown (the reply's text, a plan's document), so the cards in a message
+	   keep their own look. */
+	:global(.message-markdown p) {
 		margin: 0;
 	}
-	.message-bubble :global(p + p) {
+	:global(.message-markdown p + p) {
 		margin-top: 0.5em;
 	}
-	.message-bubble :global(pre) {
+	:global(.message-markdown pre) {
 		overflow-x: auto;
 		padding: 12px;
 		border-radius: var(--md-sys-shape-corner-small);
 		margin: 0.5em 0;
 	}
-	.message-bubble :global(pre.shiki-fallback) {
+	:global(.message-markdown pre.shiki-fallback) {
 		background: var(--md-sys-color-surface-container-highest);
 	}
-	.message-bubble :global(code) {
+	:global(.message-markdown code) {
 		font-family: var(--md-ref-typeface-mono);
 		font-size: 0.85em;
 	}
-	.message-bubble :global(:not(pre) > code) {
+	:global(.message-markdown :not(pre) > code) {
 		background: color-mix(in srgb, currentColor 12%, transparent);
 		padding: 0.1em 0.3em;
 		border-radius: var(--md-sys-shape-corner-extra-small);
 	}
-	.message-bubble :global(ul),
-	.message-bubble :global(ol) {
+	:global(.message-markdown ul),
+	:global(.message-markdown ol) {
 		margin: 0.5em 0;
 		padding-left: 1.5em;
 	}
-	.message-bubble :global(blockquote) {
+	:global(.message-markdown blockquote) {
 		margin: 0.75em 0;
 		padding: 10px 14px;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
 	}
-	.message-bubble :global(a) {
+	/* Links in the reply's text (markdown's carry no class); a component's own links and buttons
+	   (a card's Connect, a table's source) keep their look. */
+	:global(.message-markdown a:not([class])) {
 		color: inherit;
 		text-decoration: underline;
 	}
@@ -643,7 +647,7 @@
 	.message-bubble :global(a.attachment-link) {
 		text-decoration: none;
 	}
-	.message-bubble :global(a.citation-chip) {
+	:global(.message-markdown a.citation-chip) {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -659,26 +663,26 @@
 		text-decoration: none;
 		vertical-align: super;
 	}
-	.message-bubble :global(table) {
+	:global(.message-markdown table) {
 		border-collapse: collapse;
 		margin: 0.75em 0;
 		border-radius: var(--md-sys-shape-corner-large-increased);
 		overflow: hidden;
 		background: var(--md-sys-color-surface-container-lowest);
 	}
-	.message-bubble :global(th) {
+	:global(.message-markdown th) {
 		background: var(--md-sys-color-surface-container);
 		text-align: left;
 		font-weight: 650;
 	}
-	.message-bubble :global(th),
-	.message-bubble :global(td) {
+	:global(.message-markdown th),
+	:global(.message-markdown td) {
 		border-top: 1px solid var(--md-sys-color-surface-container);
 		padding: 10px 14px;
 		overflow-wrap: normal;
 	}
 	/* Wide tables scroll inside their own rounded box instead of squeezing words apart. */
-	.message-bubble :global(table) {
+	:global(.message-markdown table) {
 		display: block;
 		max-width: 100%;
 		overflow-x: auto;
@@ -691,18 +695,18 @@
 	   beat that inline style — one single background paints the whole block uniformly, so gaps
 	   between tokens (whitespace, indentation, line breaks not wrapped in any span) can never show
 	   a different color than the syntax-highlighted text around them. */
-	.message-bubble :global(pre.shiki) {
+	:global(.message-markdown pre.shiki) {
 		background-color: var(--shiki-light-bg) !important;
 	}
-	.message-bubble :global(pre.shiki span) {
+	:global(.message-markdown pre.shiki span) {
 		background-color: transparent !important;
 	}
 	@media (prefers-color-scheme: dark) {
-		.message-bubble :global(pre.shiki) {
+		:global(.message-markdown pre.shiki) {
 			background-color: var(--shiki-dark-bg) !important;
 		}
-		.message-bubble :global(.shiki),
-		.message-bubble :global(.shiki span) {
+		:global(.message-markdown .shiki),
+		:global(.message-markdown .shiki span) {
 			/* Every span carries its own inline color (the light-theme value) — beating that
 			   inline style, not just the stylesheet default, needs !important here too, the same
 			   as the background-color rule above. Without it, a token whose light-theme color
@@ -715,17 +719,17 @@
 
 	/* Code block header/collapse chrome — built client-side by enhanceCodeBlocks() above around
 	   the server-rendered <pre>, which ends up nested inside .code-block__body. */
-	.message-bubble :global(.code-block) {
+	:global(.message-markdown .code-block) {
 		margin: 0.75em 0;
 		border-radius: var(--md-sys-shape-corner-large-increased);
 		overflow: hidden;
 		border: 1px solid var(--md-sys-color-outline-variant);
 	}
-	.message-bubble :global(.code-block pre) {
+	:global(.message-markdown .code-block pre) {
 		margin: 0;
 		border-radius: 0;
 	}
-	.message-bubble :global(.code-block__header) {
+	:global(.message-markdown .code-block__header) {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -735,15 +739,15 @@
 		font-size: var(--md-sys-typescale-label-small-size);
 		color: var(--md-sys-color-on-surface-variant);
 	}
-	.message-bubble :global(.code-block__lang) {
+	:global(.message-markdown .code-block__lang) {
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
-	.message-bubble :global(.code-block__actions) {
+	:global(.message-markdown .code-block__actions) {
 		display: flex;
 		gap: 4px;
 	}
-	.message-bubble :global(.code-block__btn) {
+	:global(.message-markdown .code-block__btn) {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -756,14 +760,14 @@
 		color: inherit;
 		cursor: pointer;
 	}
-	.message-bubble :global(.code-block__btn:hover) {
+	:global(.message-markdown .code-block__btn:hover) {
 		background: color-mix(in srgb, currentColor 12%, transparent);
 	}
-	.message-bubble :global(.code-block__body) {
+	:global(.message-markdown .code-block__body) {
 		max-height: 480px;
 		overflow: auto;
 	}
-	.message-bubble :global(.code-block--collapsed .code-block__body) {
+	:global(.message-markdown .code-block--collapsed .code-block__body) {
 		display: none;
 	}
 </style>

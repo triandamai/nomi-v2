@@ -100,7 +100,7 @@ async fn a_user_who_has_not_connected_gets_a_connect_card_even_when_someone_else
 
     let outcome = run(&agent(&server), &pool, budi, "gmail_search", json!({ "query": "invoice" })).await;
 
-    assert_eq!(outcome.block, Some(ContentBlock::WorkspaceConnect { reason: "not_connected".into(), services: vec!["gmail".into()] }));
+    assert_eq!(outcome.block, Some(ContentBlock::WorkspaceConnect { reason: "not_connected".into(), services: vec!["gmail".into()], agent_type: Some("workspace".into()) }));
     // No Gmail call was made with anyone's token.
     let gmail_calls = server.received_requests().await.unwrap().iter().filter(|r| r.url.path().starts_with("/gmail")).count();
     assert_eq!(gmail_calls, 0);
@@ -114,7 +114,7 @@ async fn a_service_the_user_did_not_allow_asks_them_to_turn_it_on(pool: PgPool) 
 
     let outcome = run(&agent(&server), &pool, ana, "sheets_read", json!({ "spreadsheet_id": "s1" })).await;
 
-    assert_eq!(outcome.block, Some(ContentBlock::WorkspaceConnect { reason: "service_not_allowed".into(), services: vec!["sheets".into()] }));
+    assert_eq!(outcome.block, Some(ContentBlock::WorkspaceConnect { reason: "service_not_allowed".into(), services: vec!["sheets".into()], agent_type: Some("workspace".into()) }));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -100,19 +100,14 @@ The old `frontend/` will use the same endpoints.
   - Each change goes out on the project WS.
 - **Until then:** only people who may publish see the button, and nobody else gets a request.
 
-### What a connect prompt says
+### What a connect prompt says — done
 - **Needed by:** *Chat responses / Connect Prompt*: ConnectPrompt.
-- **Why:** the prompt says which crew member needs the tool and why, and exactly what the tool can read, before the person connects it.
-- **What exists today:** the `connector_connect` and `workspace_connect` content blocks.
-  - `connector_connect` carries only `connector` and `reason`.
-  - `workspace_connect` carries `reason` and `services`.
-- **Proposed contract:** both blocks also carry `agent_type` (who asked), `why` (one line, in the person's language) and `reads` (what the connection can read).
-- **Until then:** `frontend/` keeps its own connect cards; ConnectPrompt isn't used.
+- **Built:** `connector_connect` and `workspace_connect` blocks carry `agent_type`: who needs it (optional; older cards have none).
+  - The why and reads lines are the frontend's to write, in the person's language, from the agent, the service and `reason`. The backend sends facts, not sentences, as it does everywhere else.
+  - Older cards: the connector's own agent (`frontend/src/lib/connectors.ts`), or Tara for Google.
 
-### A table's title and source
+### A table's title and source — done
 - **Needed by:** *Chat responses / Table*: DataTable.
-- **Why:** the table is named above its rows (and in its downloaded file), and says where its numbers came from underneath ("Rp · from Dana · 142 transactions").
-- **What exists today:** the `table` content block carries `variant`, `columns` and `rows`, but no title or source.
-- **Proposed contract:** the block also carries `title` (one line, in the person's language) and `source` (optional, one line).
-- **Until then:** `frontend/` keeps its own table block.
-
+- **Built:** the `table` block carries `title` and `source`, one line each (optional; older tables have none).
+  - The inspector fills both: "Query results" with its row count, "Log lines" with how much of the log it shows.
+  - `frontend/` draws a titled data table with DataTable and keeps its old block for older ones.

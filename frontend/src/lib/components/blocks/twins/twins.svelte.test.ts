@@ -7,6 +7,8 @@ import ReminderTwin from './ReminderTwin.svelte';
 import WithChatSend from './WithChatSend.svelte';
 import ApprovalTwin from './ApprovalTwin.svelte';
 import QuestionsTwin from './QuestionsTwin.svelte';
+import ConnectTwin from './ConnectTwin.svelte';
+import TableTwin from './TableTwin.svelte';
 
 // The chat's blocks drawn with the design-system twins keep what the old blocks did: the same
 // requests, the same results.
@@ -194,5 +196,57 @@ describe('QuestionsTwin', () => {
 		const root = render(WithChatSend, { send: vi.fn(), block: QuestionsTwin, props: { block, answered: true } });
 		expect(root.querySelector('input')).toBeNull();
 		expect(root.textContent).toContain('Answered 2 questions');
+	});
+});
+
+describe('ConnectTwin', () => {
+	it('says who needs which Google service and what it can read, and links to connecting it', () => {
+		const root = render(ConnectTwin, { block: { kind: 'workspace_connect', reason: 'not_connected', services: ['gmail'], agent_type: 'workspace' } });
+		expect(root.textContent).toContain('Tara needs Gmail to go on with this.');
+		expect(root.textContent).toContain('Read, search and draft replies');
+		expect(root.querySelector('a')!.getAttribute('href')).toContain('services=gmail');
+	});
+
+	it('asks for a new key when the old one stopped working', () => {
+		const root = render(ConnectTwin, { block: { kind: 'connector_connect', connector: 'hevy', reason: 'key_rejected', agent_type: 'health' } });
+		expect(root.textContent).toContain('Hevy stopped accepting the saved key. Raga needs a new one to go on.');
+		expect(root.querySelector('a')!.getAttribute('href')).toBe('/connections/hevy?reason=key_rejected');
+	});
+
+	it('knows who asked on older cards from the connector itself', () => {
+		const root = render(ConnectTwin, { block: { kind: 'connector_connect', connector: 'hevy', reason: 'not_connected' } });
+		expect(root.textContent).toContain('Raga needs Hevy');
+	});
+
+	it('goes away on Not now', () => {
+		const root = render(ConnectTwin, { block: { kind: 'connector_connect', connector: 'hevy', reason: 'not_connected' } });
+		buttonNamed(root, 'Not now').click();
+		flushSync();
+		expect(root.textContent?.trim()).toBe('');
+	});
+});
+
+describe('TableTwin', () => {
+	const columns = [
+		{ key: 'email', label: 'Email' },
+		{ key: 'visits', label: 'Visits' },
+	];
+	const rows = [
+		{ email: 'a@b.c', visits: 3 },
+		{ email: 'd@e.f', visits: null },
+	];
+
+	it('names the table and says where its rows came from', () => {
+		const root = render(TableTwin, { block: { kind: 'table', variant: 'data', columns, rows, title: 'Query results', source: '2 rows' } });
+		expect(root.textContent).toContain('Query results');
+		expect(root.textContent).toContain('2 rows');
+		expect([...root.querySelectorAll('th')].map((th) => th.textContent?.trim())).toEqual(['Email', 'Visits']);
+		expect(root.querySelector('tbody tr td')?.textContent?.trim()).toBe('a@b.c');
+	});
+
+	it('keeps the old table for one from before tables had a title', () => {
+		const root = render(TableTwin, { block: { kind: 'table', variant: 'data', columns, rows } });
+		expect(root.textContent).not.toContain('Query results');
+		expect(root.textContent).toContain('a@b.c');
 	});
 });

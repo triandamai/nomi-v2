@@ -113,6 +113,12 @@ pub enum ContentBlock {
         variant: TableVariant,
         columns: Vec<TableColumn>,
         rows: Vec<Value>,
+        /// What the table is, one line ("Query results"); older tables have none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// Where its rows came from, one line ("12 rows from the preview database").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
     },
     ApprovalRequest {
         id: Uuid,
@@ -160,6 +166,9 @@ pub enum ContentBlock {
     WorkspaceConnect {
         reason: String,
         services: Vec<String>,
+        /// Who needs it, so the card can say so; older cards have none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_type: Option<String>,
     },
     /// A connector (Connections) the request needs isn't connected, or its key stopped working:
     /// a card linking to its setup page. `connector` is its id ("hevy"); `reason` is
@@ -167,6 +176,9 @@ pub enum ContentBlock {
     ConnectorConnect {
         connector: String,
         reason: String,
+        /// Who needs it, so the card can say so; older cards have none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_type: Option<String>,
     },
     /// The person's allowance on Nomi's models ran out, so this reply couldn't be written: a card
     /// saying so, with where to go next (their own key, or a bigger plan).
@@ -284,5 +296,33 @@ mod tests {
         assert_eq!(json["kind"], "plan");
         assert_eq!(json["title"], "Build the login page");
         assert_eq!(json["version"], 2);
+    }
+
+    #[test]
+    fn a_table_carries_its_title_and_source_and_older_tables_still_read() {
+        let block = ContentBlock::Table {
+            variant: TableVariant::Data,
+            columns: vec![TableColumn { key: "a".into(), label: "A".into() }],
+            rows: vec![serde_json::json!({"a": 1})],
+            title: Some("Query results".into()),
+            source: Some("1 row".into()),
+        };
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["title"], "Query results");
+        assert_eq!(json["source"], "1 row");
+
+        let older: ContentBlock = serde_json::from_value(serde_json::json!({"kind": "table", "variant": "data", "columns": [], "rows": []})).unwrap();
+        assert!(matches!(older, ContentBlock::Table { title: None, source: None, .. }));
+    }
+
+    #[test]
+    fn a_connect_card_names_who_needs_it_and_older_cards_still_read() {
+        let block = ContentBlock::ConnectorConnect { connector: "hevy".into(), reason: "not_connected".into(), agent_type: Some("health".into()) };
+        assert_eq!(serde_json::to_value(&block).unwrap()["agent_type"], "health");
+
+        let older: ContentBlock = serde_json::from_value(serde_json::json!({"kind": "workspace_connect", "reason": "not_connected", "services": ["gmail"]})).unwrap();
+        assert!(matches!(older, ContentBlock::WorkspaceConnect { agent_type: None, .. }));
+        let none = ContentBlock::WorkspaceConnect { reason: "not_connected".into(), services: vec![], agent_type: None };
+        assert!(serde_json::to_value(&none).unwrap().get("agent_type").is_none());
     }
 }
