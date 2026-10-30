@@ -16,7 +16,8 @@ describe('Agents & app chrome section', () => {
 		const board = container.querySelector<HTMLElement>('[data-mascot-board]')!;
 		expect(board.firstElementChild!.firstElementChild!.textContent).toBe('Crew mascots');
 		await expect.element(page.getByText('1 colour + 1 silhouette per agent · flat · no head accessories')).toBeInTheDocument();
-		expect(style(board).borderTopWidth).toBe('1px');
+		expect(style(board).outlineWidth).toBe('1px');
+		expect(style(board).outlineOffset).toBe('-1px');
 		expect(style(board).borderTopLeftRadius).toBe('10px');
 		expect(style(board).padding).toBe('40px');
 

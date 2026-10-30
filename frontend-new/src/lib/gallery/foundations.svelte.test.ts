@@ -124,7 +124,7 @@ describe('Crew colour section', () => {
 		const rules = [...container.querySelectorAll<HTMLElement>('[data-rules]')];
 		expect(rules.map((rule) => rule.firstElementChild!.textContent)).toEqual(['Use it for', 'Never for']);
 		for (const rule of rules) {
-			expect(style(rule).borderTopWidth).toBe('1px');
+			expect(style(rule).outlineWidth).toBe('1px');
 			expect(style(rule).borderTopLeftRadius).toBe('12px');
 			expect(style(rule).padding).toBe('16px');
 			expect(style(rule).rowGap).toBe('8px');
@@ -158,7 +158,7 @@ describe('Type section', () => {
 		await page.viewport(1512, 900);
 		const { container } = await render(TypeSection);
 		const table = container.querySelector<HTMLElement>('[data-type-table]')!;
-		expect(style(table).borderTopWidth).toBe('1px');
+		expect(style(table).outlineWidth).toBe('1px');
 		expect(style(table).borderTopLeftRadius).toBe('10px');
 		expect(style(table).overflow).toBe('hidden');
 		const rows = [...table.children] as HTMLElement[];
@@ -193,7 +193,7 @@ describe('Space, radius and icons section', () => {
 		const blocks = [...section.children] as HTMLElement[];
 		expect(blocks.map((block) => block.firstElementChild!.textContent)).toEqual(['Spacing', 'Radius & depth', 'Iconography']);
 		for (const block of blocks) {
-			expect(style(block).borderTopWidth).toBe('1px');
+			expect(style(block).outlineWidth).toBe('1px');
 			expect(style(block).padding).toBe('24px');
 		}
 		expect(box(blocks[1]).width).toBe(360);
@@ -222,8 +222,8 @@ describe('Space, radius and icons section', () => {
 		const { container } = await render(SpaceSection);
 		for (const text of ['radius-sm · 6px', 'radius-md · 10px', 'Flat + border', 'Floating']) {
 			const sample = page.getByText(text, { exact: true }).element().previousElementSibling!;
-			// 148 in the pen, whose strokes take no room; the block's 1px CSS border takes one each side.
-			expect([box(sample).width, box(sample).height], text).toEqual([147, 56]);
+			// 148, as in the pen: the block's stroke is drawn inside it and takes no room.
+			expect([box(sample).width, box(sample).height], text).toEqual([148, 56]);
 		}
 		const tiles = [...container.querySelectorAll<HTMLElement>('[data-icon-tile]')];
 		expect(tiles.map((tile) => tile.dataset.iconTile)).toEqual(ICONS);

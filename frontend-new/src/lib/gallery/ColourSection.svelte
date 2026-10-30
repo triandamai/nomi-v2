@@ -62,7 +62,7 @@
 >
 	<div class="grid gap-6 md:grid-cols-2">
 		{#each ['dark', 'light'] as theme (theme)}
-			<div data-theme={theme} class="flex min-w-0 flex-col gap-5 rounded-md border border-border bg-bg p-6">
+			<div data-theme={theme} class="flex min-w-0 flex-col gap-5 rounded-md bg-bg p-6 outline -outline-offset-1 outline-border">
 				<p class="font-mono text-label tracking-label text-text uppercase">{theme}</p>
 				{#each groups as group (group.title)}
 					<div class="flex flex-col gap-1.5">

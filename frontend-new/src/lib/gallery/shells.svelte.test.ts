@@ -22,7 +22,7 @@ describe('Layout shells section', () => {
 		expect(diagrams).toHaveLength(3);
 		for (const diagram of diagrams) {
 			expect(box(diagram).height).toBe(220);
-			expect(diagram.classList).toContain('border-border-strong');
+			expect(diagram.classList).toContain('outline-border-strong');
 			expect(style(diagram).padding).toBe('8px');
 			// Diagram, name and use stack at 10px.
 			expect(style(diagram.parentElement!).rowGap).toBe('10px');
@@ -30,15 +30,15 @@ describe('Layout shells section', () => {
 		const region = (label: string) => page.getByText(label, { exact: true }).element().parentElement!;
 		for (const label of ['Sidebar 248', 'Top bar 52', 'Content · pad 32–56', 'Panel 300–380', 'Project bar 52', 'Agent chat 440', 'Preview / Code / Terminal', 'Column 480–720']) {
 			const element = region(label);
-			expect(element.classList, label).toContain('border-border');
+			expect(element.classList, label).toContain('outline-border');
 			expect(element.classList, label).toContain('bg-surface');
 			expect(style(element).borderTopLeftRadius, label).toBe('0px');
 			expect(style(element).padding, label).toBe('8px');
-			// The label sits top-left, in text-2.
+			// The label sits top-left, in text-2, 8 in: the stroke is drawn inside the region.
 			const text = page.getByText(label, { exact: true }).element();
 			expect(text.classList, label).toContain('text-text-2');
-			expect(box(text).top - box(element).top, label).toBe(9);
-			expect(box(text).left - box(element).left, label).toBe(9);
+			expect(box(text).top - box(element).top, label).toBe(8);
+			expect(box(text).left - box(element).left, label).toBe(8);
 		}
 		expect(box(region('Sidebar 248')).width).toBe(62);
 		expect(box(region('Panel 300–380')).width).toBe(90);

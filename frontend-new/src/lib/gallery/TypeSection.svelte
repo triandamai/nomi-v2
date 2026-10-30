@@ -16,9 +16,9 @@
 	description="Two families, five sizes, three weights (400 / 500 / 600). Max four sizes per screen. Sentence case everywhere; uppercase only for the mono label style."
 >
 	<!-- The pen's Type Table: one bordered, rounded table, a row per style. -->
-	<div data-type-table class="flex flex-col overflow-hidden rounded-md border border-border">
+	<div data-type-table class="flex flex-col overflow-hidden rounded-md outline -outline-offset-1 outline-border">
 		{#each styles as style, index (index)}
-			<div class="flex flex-col gap-2 border-b border-border px-5 py-4 last:border-b-0 md:flex-row md:items-center md:gap-6">
+			<div class="flex flex-col gap-2 border-b border-border px-5 pt-4 pb-3.75 last:border-b-0 last:pb-4 md:flex-row md:items-center md:gap-6">
 				<div class="flex shrink-0 flex-col gap-0.5 md:w-50">
 					<span class="font-mono text-label text-text">{style.token}</span>
 					<span class="font-mono text-label text-text-3">{style.spec}</span>

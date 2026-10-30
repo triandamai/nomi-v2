@@ -16,7 +16,7 @@
 	<NavItem href="/inbox" icon={Inbox} label="Inbox" count={3} />
 	<NavGroupLabel label="Talk" />
 	<NavItem href="/chats" icon={MessageSquare} label="Chats" count={12} />
-	<div class="flex items-center justify-between pr-2.5"><NavGroupLabel label="Build" /><WorkspaceChip name="Trian's space" onclick={onswitchworkspace} /></div>
+	<NavGroupLabel label="Build"><WorkspaceChip name="Trian's space" onclick={onswitchworkspace} /></NavGroupLabel>
 	<NavItem href="/projects" icon={Folder} label="Projects" count={4} />
 	<NavGroupLabel label="Life" />
 	<NavItem href="/money" icon={Wallet} label="Money" />

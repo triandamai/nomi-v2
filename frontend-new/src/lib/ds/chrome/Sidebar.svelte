@@ -22,7 +22,7 @@
 	setRowStyle({ dense: true, icon: 'text-2' });
 </script>
 
-<nav aria-label={m.nav_main()} class="flex h-full w-62 shrink-0 flex-col gap-5 border-r border-border bg-bg px-3 py-4">
+<nav aria-label={m.nav_main()} class="flex h-full w-62 shrink-0 flex-col gap-5 border-r border-border bg-bg py-4 pr-2.75 pl-3">
 	<div class="flex items-center justify-between px-2 py-1">
 		<span class="inline-flex items-center gap-2">
 			<Mascot agent="nomi" size={20} />
@@ -41,5 +41,5 @@
 	</a>
 	<div class="flex flex-col gap-0.5">{@render children()}</div>
 	{#if recents}<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">{@render recents()}</div>{:else}<div class="flex-1"></div>{/if}
-	{#if footer}<div class="flex flex-col gap-3">{@render footer()}</div>{/if}
+	{#if footer}<div class="flex flex-col gap-5">{@render footer()}</div>{/if}
 </nav>

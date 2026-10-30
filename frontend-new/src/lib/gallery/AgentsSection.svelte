@@ -27,13 +27,13 @@
 		three in one row at the pen's 1472.
 	-->
 	<div class="flex flex-wrap items-start gap-6">
-		<div data-library="sidebar" class="h-215 shrink-0 overflow-hidden rounded-md border border-border">
+		<div data-library="sidebar" class="h-215.5 shrink-0">
 			<Sidebar newChatHref="#new" oncollapse={() => {}}>
 				<NavItem href="#home" icon={House} label="Home" />
 				<NavItem href="#inbox" icon={Inbox} label="Inbox" count={3} />
 				<NavGroupLabel label="Talk" />
 				<NavItem href="#chats" icon={MessageSquare} label="Chats" count={12} />
-				<div class="flex items-center justify-between pr-2.5"><NavGroupLabel label="Build" /><WorkspaceChip name="Trian's space" /></div>
+				<NavGroupLabel label="Build"><WorkspaceChip name="Trian's space" /></NavGroupLabel>
 				<NavItem href="#projects" icon={Folder} label="Projects" count={4} />
 				<NavGroupLabel label="Life" />
 				<NavItem href="#money" icon={Wallet} label="Money" />
@@ -54,14 +54,15 @@
 				{/snippet}
 			</Sidebar>
 		</div>
-		<div data-library="mascots" data-mascot-board class="flex min-w-0 grow basis-227 flex-col gap-7 rounded-md border border-border bg-bg p-10">
+		<div data-library="mascots" data-mascot-board class="flex min-w-0 grow basis-227 flex-col gap-7 rounded-md bg-bg p-10 outline -outline-offset-1 outline-border">
 			<p class="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
 				<span class="text-body font-medium text-text">Crew mascots</span>
 				<span class="font-mono text-label text-text-3">1 colour + 1 silhouette per agent · flat · no head accessories</span>
 			</p>
 			<div class="flex flex-col gap-7 overflow-x-auto">
-				<!-- Ten 96px cells spread edge to edge; the pen lets the cells overlap a little, as here. -->
-				<div data-size="96" class="grid min-w-204 grid-cols-10 px-2">
+				<!-- Ten 96px cells spread edge to edge (space-between, so they overlap a little): ten columns
+				     with 6px sides put each centre within 0.2px of the pen's. -->
+				<div data-size="96" class="grid min-w-204 grid-cols-10 px-1.5">
 					{#each mascots as member (member.id)}
 						<div class="flex flex-col items-center gap-3">
 							<Mascot agent={member.id} />
@@ -79,7 +80,7 @@
 				</div>
 			</div>
 		</div>
-		<div data-library="settings" class="h-215 shrink-0 overflow-hidden rounded-md border border-border">
+		<div data-library="settings" class="h-215.5 shrink-0">
 			<SettingsNav
 				backHref="#home"
 				active="#plan"
