@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { speechLanguage } from '$lib/i18n';
 	import { onMount } from 'svelte';
+	import VoiceRecorder from '$lib/components/ds/chat/VoiceRecorder.svelte';
 
-	// Records a voice note: the audio itself (uploaded and transcribed by the files model), plus
-	// the browser's own live transcript where it can make one, shown while recording and kept as
-	// a fallback. Shown inside the composer while recording.
+	// Records a voice note in place of the composer (drawn by the VoiceRecorder twin): the audio
+	// itself, its input level as it comes in, and the browser's own live transcript where it can
+	// make one. The page puts the transcript in the message to edit, or, with none, sends the
+	// audio for the files model to transcribe.
 
 	let {
 		onsave,
@@ -27,6 +30,14 @@
 		onerror: ((event: { error: string }) => void) | null;
 	};
 
+	/** How many level bars the recorder shows, and how often a new one comes in. */
+	const BARS = 48;
+	const LEVEL_EVERY_MS = 100;
+	/** The newest bars, still settling, drawn dimmer. */
+	const FADING_BARS = 3;
+	/** An RMS this loud fills a bar; speech rarely goes past it. */
+	const FULL_LEVEL = 0.25;
+
 	/** Opus in WebM (Chrome, Firefox) or Ogg, else AAC in MP4 (Safari). */
 	function audioType(): string | undefined {
 		return ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t));
@@ -36,20 +47,51 @@
 	let seconds = $state(0);
 	let problem = $state<string | null>(null);
 	let ready = $state(false);
+	let levels = $state<number[]>(Array(BARS).fill(0));
 	let recognition: Recognition | null = null;
 	let recorder: MediaRecorder | null = null;
 	let stream: MediaStream | null = null;
+	let audioContext: AudioContext | null = null;
 	let chunks: Blob[] = [];
 	let started = 0;
 	let finished = false;
 
+	const lang = speechLanguage();
+	const language = (() => {
+		try {
+			return new Intl.DisplayNames([getLocale()], { type: 'language' }).of(lang) ?? lang;
+		} catch {
+			return lang;
+		}
+	})();
+
 	function release() {
 		stream?.getTracks().forEach((track) => track.stop());
 		stream = null;
+		void audioContext?.close();
+		audioContext = null;
+	}
+
+	/** The microphone's loudness, a bar every LEVEL_EVERY_MS. */
+	function listen(source: MediaStream): ReturnType<typeof setInterval> | undefined {
+		if (typeof AudioContext === 'undefined') return undefined;
+		audioContext = new AudioContext();
+		const analyser = audioContext.createAnalyser();
+		analyser.fftSize = 1024;
+		audioContext.createMediaStreamSource(source).connect(analyser);
+		const samples = new Float32Array(analyser.fftSize);
+		return setInterval(() => {
+			analyser.getFloatTimeDomainData(samples);
+			let sum = 0;
+			for (const sample of samples) sum += sample * sample;
+			const rms = Math.sqrt(sum / samples.length);
+			levels = [...levels.slice(1), Math.min(1, rms / FULL_LEVEL)];
+		}, LEVEL_EVERY_MS);
 	}
 
 	onMount(() => {
 		let timer: ReturnType<typeof setInterval> | undefined;
+		let meter: ReturnType<typeof setInterval> | undefined;
 		(async () => {
 			if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
 				problem = m.voice_unsupported();
@@ -70,13 +112,14 @@
 			started = Date.now();
 			ready = true;
 			timer = setInterval(() => (seconds = Math.round((Date.now() - started) / 1000)), 250);
+			meter = listen(stream);
 
 			// The live transcript is a bonus: recording works without it.
 			const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
 			const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
 			if (Ctor) {
 				recognition = new Ctor();
-				recognition.lang = speechLanguage();
+				recognition.lang = lang;
 				recognition.continuous = true;
 				recognition.interimResults = true;
 				recognition.onresult = (event) => {
@@ -94,6 +137,7 @@
 		})();
 		return () => {
 			clearInterval(timer);
+			clearInterval(meter);
 			finished = true;
 			recognition?.abort();
 			if (recorder?.state === 'recording') recorder.stop();
@@ -102,7 +146,7 @@
 	});
 
 	function stop() {
-		if (!recorder) return;
+		if (!recorder || !ready || problem) return;
 		finished = true;
 		recognition?.stop();
 		const active = recorder;
@@ -126,94 +170,38 @@
 		oncancel();
 	}
 
-	const clock = $derived(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
+	const clock = $derived(`${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
 </script>
 
-<div class="voice" role="group" aria-label={m.voice_recording()}>
-	<span class="voice__dot" aria-hidden="true"></span>
-	<span class="voice__clock">{clock}</span>
-	<span class="voice__text" aria-live="polite">
+<div class="voice">
+	<VoiceRecorder elapsed={clock} {levels} fading={ready ? FADING_BARS : 0} {language} oncancel={discard} ondone={stop} />
+	<p class="voice__text" aria-live="polite">
 		{#if problem}
-			<span class="voice__problem">{problem}</span>
+			<span class="voice__problem" role="alert">{problem}</span>
 		{:else if transcript}
 			{transcript}
 		{:else}
-			<span class="voice__hint">{m.voice_listening()}</span>
+			{m.voice_listening()}
 		{/if}
-	</span>
-	<button type="button" class="voice__btn" onclick={discard}>{m.voice_discard()}</button>
-	<button type="button" class="voice__btn voice__btn--primary" onclick={stop} disabled={!ready || !!problem}>{m.common_done()}</button>
+	</p>
 </div>
 
 <style>
 	.voice {
-		flex-basis: 100%;
 		display: flex;
-		align-items: center;
-		gap: 10px;
-		min-height: 48px;
-		padding: 4px 4px 4px 12px;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-error-container);
-		color: var(--md-sys-color-on-error-container);
-	}
-	.voice__dot {
-		flex: none;
-		width: 10px;
-		height: 10px;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-error);
-		animation: voice-pulse 1.2s ease-in-out infinite;
-	}
-	@keyframes voice-pulse {
-		50% {
-			scale: 1.5;
-			opacity: 0.6;
-		}
-	}
-	.voice__clock {
-		flex: none;
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.875rem;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
+		flex-direction: column;
+		gap: 6px;
 	}
 	.voice__text {
-		flex: 1;
-		min-width: 0;
-		font-size: 0.9375rem;
+		margin: 0;
+		padding: 0 12px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.voice__hint,
 	.voice__problem {
-		opacity: 0.8;
-	}
-	.voice__btn {
-		flex: none;
-		height: 40px;
-		padding: 0 12px;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: transparent;
-		color: inherit;
-		font: inherit;
-		font-size: 0.875rem;
-		font-weight: 650;
-		cursor: pointer;
-	}
-	.voice__btn--primary {
-		background: var(--md-sys-color-error);
-		color: var(--md-sys-color-on-error);
-	}
-	.voice__btn:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.voice__dot {
-			animation: none;
-		}
+		color: var(--md-sys-color-error);
 	}
 </style>

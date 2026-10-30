@@ -24,7 +24,14 @@
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { createChatLink } from '$lib/chatLink';
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
-	import { buildCrew } from '$lib/crew';
+	import { buildCrew, type CrewRosterMember } from '$lib/crew';
+	import { crewId } from '$lib/crewId';
+	import type { MentionOption } from '$lib/components/ds/chat/mention';
+	import Banner from '$lib/components/ds/chat/Banner.svelte';
+	import SessionExpired from '$lib/components/ds/chat/SessionExpired.svelte';
+	import Modal from '$lib/components/ds/overlays/Modal.svelte';
+	import * as outbox from '$lib/outbox';
+	import { splitAttachments } from '$lib/attachments';
 	import { afterRerun } from '$lib/rerun';
 	import { chatFileName, chatMarkdown } from '$lib/exportChat';
 	import { MoreHorizontal } from '@lucide/svelte';
@@ -296,11 +303,71 @@
 		addFiles(files);
 	}
 
-	function saveVoiceNote(audio: Blob, transcript: string, seconds: number) {
+	// How long the recording was, while the message's text is what the browser heard in it.
+	let transcribed = $state<string | null>(null);
+	$effect(() => {
+		if (!draft.trim()) transcribed = null;
+	});
+
+	// Offline, or signed out mid-chat: the message waits in the outbox (one per chat) and goes out
+	// when it can. `resend` is what the form posts in place of the composer while it does.
+	const chatKey = $derived(page.url.pathname);
+	let online = $state(true);
+	let backOnline = $state<'sent' | 'plain' | null>(null);
+	let resend = $state<string | null>(null);
+	let signedOut = $state<string | null>(null);
+	const signInHref = $derived(`/login?redirect_to=${encodeURIComponent(page.url.pathname)}`);
+	/** How long "Back online" stays up. */
+	const BACK_ONLINE_MS = 4000;
+
+	async function flushOutbox(): Promise<boolean> {
+		if (!navigator.onLine || resend !== null) return false;
+		const kept = outbox.take(chatKey);
+		if (kept === null) return false;
+		resend = kept;
+		await tick();
+		composerForm?.requestSubmit();
+		return true;
+	}
+
+	onMount(() => {
+		online = navigator.onLine;
+		let hide: ReturnType<typeof setTimeout> | undefined;
+		const wentOffline = () => {
+			online = false;
+			backOnline = null;
+		};
+		const cameBack = async () => {
+			online = true;
+			backOnline = (await flushOutbox()) ? 'sent' : 'plain';
+			clearTimeout(hide);
+			hide = setTimeout(() => (backOnline = null), BACK_ONLINE_MS);
+		};
+		window.addEventListener('offline', wentOffline);
+		window.addEventListener('online', cameBack);
+		// Signed back in (or the page reloaded) with a message waiting: it goes now.
+		void flushOutbox();
+		return () => {
+			clearTimeout(hide);
+			window.removeEventListener('offline', wentOffline);
+			window.removeEventListener('online', cameBack);
+		};
+	});
+
+	async function saveVoiceNote(audio: Blob, transcript: string, seconds: number) {
 		recordingVoice = false;
-		// The backend tells the format from the bytes; the name is what the chat shows.
-		const file = new File([audio], voiceNoteName(seconds), { type: audio.type });
-		addFiles([file], { voice: true, transcript });
+		if (transcript) {
+			// Heard: it becomes text to edit before sending, as the design has it.
+			draft = draft.trim() ? `${draft.trimEnd()} ${transcript}` : transcript;
+			await tick();
+			transcribed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+		} else {
+			// Nothing heard by the browser (or it can't listen): the files model transcribes the audio.
+			// The backend tells the format from the bytes; the name is what the chat shows.
+			const file = new File([audio], voiceNoteName(seconds), { type: audio.type });
+			addFiles([file], { voice: true, transcript });
+			await tick();
+		}
 		messageInput?.focus();
 	}
 	function startVoiceNote() {
@@ -595,6 +662,10 @@
 					: null,
 		}),
 	);
+	// "@" in the composer offers the crew by the names the server routes on (nomi_agent_core::mention).
+	const mentionOptions = $derived<MentionOption[]>(
+		((page.data.crew ?? []) as CrewRosterMember[]).map((member) => ({ kind: 'crew', agent: crewId(member.agent_type), name: member.name, role: member.role })),
+	);
 	const involvedCrew = $derived(crew.filter((m) => m.involved));
 	const workingCrew = $derived(crew.filter((m) => m.working));
 	// App-bar meta line: "TRAVEL · NOMI + MONEY + PLANNING"
@@ -793,8 +864,22 @@
 		{/if}
 	{/if}
 
+	<Modal open={signedOut !== null} labelledby="signed-out-title" onclose={() => (signedOut = null)}>
+		<span id="signed-out-title" class="sr-only">{m.session_title()}</span>
+		<SessionExpired draft={signedOut ?? undefined} {signInHref} />
+	</Modal>
+
 	<div class="chat__body">
 		<div class="chat__main">
+			{#if !online}
+				<div class="chat__banner">
+					<Banner kind="offline" text={m.banner_offline()} />
+				</div>
+			{:else if backOnline}
+				<div class="chat__banner">
+					<Banner kind="online" text={backOnline === 'sent' ? m.banner_online_sent() : m.banner_online()} />
+				</div>
+			{/if}
 			<div bind:this={messagesContainer} class="thread" onscroll={onThreadScroll}>
 				<div class="thread__column">
 					{#if olderAvailable && threadItems.length > 0}
@@ -882,7 +967,18 @@
 						if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) dragging = false;
 					}}
 					ondrop={onDrop}
-					use:enhance={() => {
+					use:enhance={({ cancel }) => {
+						const sent = resend ?? composedText;
+						// Offline: it waits here and goes out on reconnecting.
+						if (!navigator.onLine) {
+							cancel();
+							outbox.keep(chatKey, sent);
+							resend = null;
+							draft = '';
+							clearAttachments();
+							online = false;
+							return;
+						}
 						submitting = true;
 						sendingMessage = true;
 						stopRequested = false;
@@ -890,6 +986,14 @@
 						if (touchScreen()) messageInput?.blur();
 						return async ({ result, update }) => {
 							sendingMessage = false;
+							resend = null;
+							// The sign-in ran out: the message waits here and goes out after signing in.
+							if (result.type === 'redirect' && result.location.startsWith('/login')) {
+								submitting = false;
+								outbox.keep(chatKey, sent);
+								signedOut = splitAttachments(sent).text || sent;
+								return;
+							}
 							// A new chat's first message redirects to the chat it created.
 							if (result.type === 'redirect') clearAttachments();
 							await update({ reset: true });
@@ -902,6 +1006,9 @@
 						};
 					}}
 				>
+					{#if recordingVoice}
+						<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
+					{:else}
 					<CompactChatInput
 						bind:value={draft}
 						bind:textarea={messageInput}
@@ -912,20 +1019,18 @@
 						{attachments}
 						{attachError}
 						onremoveattachment={removeAttachment}
-						tray={recordingVoice ? voiceNote : undefined}
+						{mentionOptions}
+						{transcribed}
 						onsubmit={() => composerForm?.requestSubmit()}
 						onfiles={(files) => addFiles(files)}
-						onvoicenote={recordingSupported ? startVoiceNote : undefined}
-						recording={recordingVoice}
+						onrecord={recordingSupported ? startVoiceNote : undefined}
 						busy={isWorking || stopping}
 						stopForm={stopping ? undefined : 'stop-crew'}
 						glass={glass && !project}
 						dropping={dragging}
 					/>
-					{#snippet voiceNote()}
-						<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
-					{/snippet}
-					<input type="hidden" name="text" value={composedText} />
+					{/if}
+					<input type="hidden" name="text" value={resend ?? composedText} />
 					{#if unsaved}<input type="hidden" name="thinking" value={level} />{/if}
 					{#if unsaved && newChatModel}<input type="hidden" name="model" value={newChatModel} />{/if}
 				</form>
@@ -1257,6 +1362,11 @@
 		}
 	}
 
+	.chat__banner {
+		max-width: 780px;
+		width: calc(100% - 2 * clamp(14px, 3vw, 32px));
+		margin: 8px auto 0;
+	}
 	.thread {
 		flex: 1;
 		overflow-y: auto;

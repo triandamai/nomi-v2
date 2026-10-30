@@ -66,13 +66,28 @@ export interface AttachmentLimits {
 	max_video_bytes: number;
 	max_message_bytes: number;
 	max_files: number;
+	/** The most a message's text may hold, in characters (older servers don't say). */
+	max_message_chars?: number;
 }
+
+/** The server's own limit on a message's text, until it says otherwise. */
+export const DEFAULT_MAX_MESSAGE_CHARS = 10_000;
 
 // The server's defaults, until the app layout passes on what it actually allows.
 let limits: AttachmentLimits = { max_file_bytes: 10 * MB, max_video_bytes: 50 * MB, max_message_bytes: 100 * MB, max_files: 10 };
 
 export function setAttachmentLimits(next: AttachmentLimits): void {
 	limits = next;
+}
+
+/** The largest file a chat takes (not a video), for the attach menu's note. */
+export function maxFileBytes(): number {
+	return limits.max_file_bytes;
+}
+
+/** The most a message's text may hold, in characters. */
+export function maxMessageChars(): number {
+	return limits.max_message_chars ?? DEFAULT_MAX_MESSAGE_CHARS;
 }
 
 export function isVideoFile(name: string, type: string): boolean {
