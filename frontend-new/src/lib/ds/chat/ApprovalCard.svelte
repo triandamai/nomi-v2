@@ -7,15 +7,16 @@
 	import Tag from '../status/Tag.svelte';
 	import Mascot from '../agents/Mascot.svelte';
 	import CheckMark from '../inputs/CheckMark.svelte';
-	import type { CrewId } from '../agents/crew';
+	import { CREW, type CrewId } from '../agents/crew';
 
 	// Chat responses → Approval: every send, spend, delete or external write stops here. Pending,
-	// it shows exactly what will go out (fields, the message, what's attached) and waits; once you
-	// act it collapses to a one-line outcome that stays in the thread.
+	// it shows exactly what will go out (fields, the message, what's attached) and waits; editing,
+	// your words go out exactly as written; once you act it collapses to a one-line outcome that
+	// stays in the thread.
 	type Props = {
 		agent: CrewId;
 		title: string;
-		status?: 'pending' | 'approved' | 'rejected';
+		status?: 'pending' | 'editing' | 'approved' | 'rejected';
 		fields?: { key: string; value: string }[];
 		body?: string;
 		attachment?: string;
@@ -31,6 +32,9 @@
 		onapprove?: (choice: { remember: boolean }) => void;
 		onreject?: () => void;
 		onedit?: () => void;
+		/** Editing: send the draft as you wrote it. */
+		onsave?: (body: string) => void;
+		oncancel?: () => void;
 	};
 	let {
 		agent,
@@ -48,18 +52,49 @@
 		onapprove,
 		onreject,
 		onedit,
+		onsave,
+		oncancel,
 	}: Props = $props();
 
+	const id = $props.id();
 	let remember = $state(false);
+	const initialBody = () => body ?? '';
+	let draft = $state(initialBody());
+	const crewName = $derived(CREW.find((member) => member.id === agent)?.name ?? '');
 </script>
 
-<section class={['flex w-full flex-col overflow-hidden rounded-md border bg-bg', status === 'pending' ? 'border-border-strong' : 'border-border']}>
+<section class={['flex w-full flex-col overflow-hidden rounded-md border bg-bg', status === 'pending' || status === 'editing' ? 'border-border-strong' : 'border-border']}>
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
 		<Mascot {agent} size={20} />
-		<p class={['min-w-0 flex-1 text-ui font-medium', status === 'rejected' ? 'text-text-2' : 'text-text']}>{title}</p>
+		<p id="{id}-title" class={['min-w-0 flex-1 text-ui font-medium', status === 'rejected' ? 'text-text-2' : 'text-text']}>{title}</p>
 		{#if status === 'pending'}<Tag kind="neutral" label={m.approval_needs_you()} />{/if}
+		{#if status === 'editing'}<Tag kind="neutral" label={m.approval_editing()} />{/if}
 	</header>
-	{#if status === 'pending'}
+	{#if status === 'editing'}
+		<div class="flex flex-col gap-1.5 px-3.5 py-3">
+			{#if fields.length}
+				<dl class="flex flex-col gap-1.5">
+					{#each fields as field (field.key)}
+						<div class="flex items-baseline gap-3">
+							<dt class="w-14 shrink-0 font-mono text-label text-text-3">{field.key}</dt>
+							<dd class="min-w-0 text-caption break-words text-text-2">{field.value}</dd>
+						</div>
+					{/each}
+				</dl>
+			{/if}
+			<textarea
+				aria-labelledby="{id}-title"
+				bind:value={draft}
+				rows="2"
+				class="field-sizing-content w-full resize-none rounded-sm border border-accent bg-surface px-3 py-2.5 text-caption leading-relaxed text-text outline-none"
+			></textarea>
+			<p class="font-mono text-label text-text-3">{m.approval_edit_hint({ name: crewName })}</p>
+		</div>
+		<footer class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-3.5 py-2.5">
+			{#if oncancel}<Button label={m.action_cancel()} variant="ghost" onclick={oncancel} />{/if}
+			{#if onsave}<Button label={approveLabel ?? m.approval_approve()} iconEnd={approveIcon} disabled={!draft.trim()} onclick={() => onsave(draft.trim())} />{/if}
+		</footer>
+	{:else if status === 'pending'}
 		<div class="flex flex-col gap-1.5 px-3.5 py-3">
 			{#if fields.length}
 				<dl class="flex flex-col gap-1.5">
