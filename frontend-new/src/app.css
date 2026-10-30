@@ -104,6 +104,8 @@
 	--radius-*: initial;
 	--radius-sm: var(--nm-radius-sm);
 	--radius-md: var(--nm-radius-md);
+	/* Only the keyboard key (Kbd) is this small in the design. */
+	--radius-xs: 4px;
 
 	/* Borders over shadows: one shadow, for things that truly float (menus, toasts, dialogs). */
 	--shadow-*: initial;

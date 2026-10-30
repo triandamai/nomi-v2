@@ -17,6 +17,11 @@ describe('classNames', () => {
 		expect(classNames(source).sort()).toEqual(['bg-surface', 'flex', 'gap-2', 'rounded-sm', 'sr-only', 'text-text-2', 'x', 'y'].sort());
 	});
 
+	it('skips strings a class expression only compares against', () => {
+		const source = `<button class={['flex', variant === 'ghost' && 'text-text-2', 'secondary' !== tone && "gap-2"]}></button>`;
+		expect(classNames(source).sort()).toEqual(['flex', 'gap-2', 'text-text-2']);
+	});
+
 	it('ignores script and style blocks', () => {
 		expect(classNames('<script>const c = "class=\\"oops\\"";</script><style>.a { color: red; }</style><p class="flex"></p>')).toEqual(['flex']);
 	});
@@ -42,6 +47,11 @@ describe('findClassProblems', () => {
 
 	it('rejects arbitrary values', () => {
 		expect(findClassProblems('<p class="p-[13px]"></p>', () => true)).toContain('arbitrary value: p-[13px]');
+	});
+
+	it('accepts classes the component defines in its own style block', () => {
+		const source = '<button class="flex lift"></button><style>.lift:hover, .lift[data-hover] { box-shadow: none; }</style>';
+		expect(findClassProblems(source, isKnown)).toEqual([]);
 	});
 
 	it('rejects classes Tailwind generates nothing for', () => {
