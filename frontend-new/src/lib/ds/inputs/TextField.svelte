@@ -47,7 +47,7 @@
 	<div
 		data-focus={showFocus || undefined}
 		class={[
-			'flex h-8.5 w-full items-center gap-2 rounded-sm border bg-surface px-2 focus-within:ring-3 focus-within:ring-focus data-focus:border-accent data-focus:ring-3 data-focus:ring-focus',
+			'flex h-8.5 w-full items-center gap-2 rounded-sm border bg-surface px-2 focus-within:shadow-focus data-focus:border-accent data-focus:shadow-focus',
 			error ? 'border-danger' : disabled ? 'border-border' : 'border-border-strong focus-within:border-accent',
 		]}
 	>
@@ -63,7 +63,7 @@
 			oninput={() => oninput?.(value)}
 			aria-invalid={error ? 'true' : undefined}
 			aria-describedby={note ? `${id}-note` : undefined}
-			class={['min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-text-3 disabled:text-text-3', mono ? 'font-mono' : 'font-sans', 'text-text']}
+			class={['min-w-0 flex-1 bg-transparent text-ui caret-accent outline-none placeholder:text-text-3 disabled:text-text-3', mono ? 'font-mono' : 'font-sans', 'text-text']}
 		/>
 		{#if error}<span class="inline-flex text-danger"><Icon icon={CircleAlert} size={14} /></span>{/if}
 	</div>

@@ -66,6 +66,15 @@ describe('Button', () => {
 		expect(document.activeElement).toBe(button);
 		expect(box(button).outlineColor).toBe(tokenColor('nm-focus'));
 		expect(box(button).outlineStyle).toBe('solid');
+		// As the pen draws it: a 3px ring right against the edge.
+		expect(box(button).outlineWidth).toBe('3px');
+		expect(box(button).outlineOffset).toBe('0px');
+	});
+
+	it('trades a secondary button\'s edge for the ring when focused', async () => {
+		await render(Button, { label: 'Add credits', variant: 'secondary' });
+		await userEvent.tab();
+		expect(box(page.getByRole('button', { name: 'Add credits' }).element()).borderTopColor).toBe('rgba(0, 0, 0, 0)');
 	});
 
 	it('darkens a secondary button on hover', async () => {

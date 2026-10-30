@@ -19,8 +19,8 @@
 			<Icon icon={Globe} size={12} />
 			<span class="truncate font-mono text-label">{host}</span>
 		</span>
-		<span class="text-ui font-medium text-text">{title}</span>
-		{#if description}<span class="text-caption text-text-3">{description}</span>{/if}
+		<span class="text-ui leading-cozy font-medium text-text">{title}</span>
+		{#if description}<span class="text-caption leading-normal text-text-3">{description}</span>{/if}
 	</span>
 	{#if image}
 		<img src={image} alt="" loading="lazy" referrerpolicy="no-referrer" class="h-25 w-35 shrink-0 rounded-sm bg-surface-2 object-cover max-sm:h-18 max-sm:w-24" />

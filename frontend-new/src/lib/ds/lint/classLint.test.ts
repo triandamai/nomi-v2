@@ -41,6 +41,10 @@ describe('findClassProblems', () => {
 		expect(findClassProblems('<p class="dark:bg-surface"></p>', isKnown)).toContain('dark: variant: dark:bg-surface');
 	});
 
+	it('accepts the field focus glow', () => {
+		expect(findClassProblems('<p class="focus-within:shadow-focus"></p>', () => true)).toEqual([]);
+	});
+
 	it('rejects shadows other than the floating one', () => {
 		expect(findClassProblems('<p class="shadow-lg"></p>', () => true)).toContain('shadow on a flat element: shadow-lg');
 	});

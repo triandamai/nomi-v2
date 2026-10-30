@@ -11,6 +11,6 @@
 
 <article class="flex w-full flex-col gap-3">
 	<AgentByline {agent} {name} {meta} />
-	{#if text}<p class="text-body whitespace-pre-wrap text-text-2">{text}</p>{/if}
+	{#if text}<p class="text-body leading-relaxed whitespace-pre-wrap text-text-2">{text}</p>{/if}
 	{@render children?.()}
 </article>

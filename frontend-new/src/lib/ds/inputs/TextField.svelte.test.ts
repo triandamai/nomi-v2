@@ -23,7 +23,7 @@ describe('TextField', () => {
 		expect(getComputedStyle(page.getByRole('textbox').element()).fontFamily).toContain('Geist Mono');
 	});
 
-	it('takes typing and shows the focus ring', async () => {
+	it('takes typing and shows the pen focus: accent edge, a soft focus glow, an accent caret', async () => {
 		await render(TextField, { label: 'Project name' });
 		const input = page.getByRole('textbox', { name: 'Project name' });
 		await userEvent.click(input);
@@ -31,7 +31,8 @@ describe('TextField', () => {
 		await expect.element(input).toHaveValue('warung');
 		const box = getComputedStyle(input.element().parentElement!);
 		expect(box.borderTopColor).toBe(tokenColor('nm-accent'));
-		expect(box.boxShadow).toContain('3px');
+		expect(box.boxShadow).toContain('0px 0px 8px');
+		expect(getComputedStyle(input.element()).caretColor).toBe(tokenColor('nm-accent'));
 	});
 
 	it('says what is wrong and what to do, in place of the helper', async () => {

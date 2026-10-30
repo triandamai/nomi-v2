@@ -32,7 +32,7 @@
 		<button type="button" onclick={action.onclick} class="cursor-pointer rounded-xs text-ui text-text-2 outline-offset-2 hover:text-text">{action.label}</button>
 	{/if}
 	{#if ondismiss}
-		<button type="button" aria-label={m.toast_dismiss()} onclick={ondismiss} class="inline-flex cursor-pointer rounded-xs p-0.5 text-text-3 outline-offset-2 hover:text-text">
+		<button type="button" aria-label={m.toast_dismiss()} onclick={ondismiss} class="-m-0.5 inline-flex cursor-pointer rounded-xs p-0.5 text-text-3 outline-offset-2 hover:text-text">
 			<Icon icon={X} size={14} />
 		</button>
 	{/if}

@@ -1,8 +1,9 @@
 <script lang="ts">
 	// Design System / Nomi → Status: how much of something is used, as a thin bar and in words
 	// ("21.8K / 1M tokens this month"). The real figure, never more than full.
-	type Props = { label: string; value: number; caption?: string };
-	let { label, value, caption }: Props = $props();
+	// `roomy` spaces it 10px apart, as in the sidebar's usage card; on its own it's 6px.
+	type Props = { label: string; value: number; caption?: string; roomy?: boolean };
+	let { label, value, caption, roomy = false }: Props = $props();
 
 	const percent = $derived(Math.round(Math.min(Math.max(value, 0), 1) * 100));
 	const id = $props.id();
@@ -15,7 +16,7 @@
 	aria-valuemax={100}
 	aria-valuenow={percent}
 	aria-valuetext={caption ? `${percent}% · ${caption}` : `${percent}%`}
-	class="flex w-full flex-col gap-1.5"
+	class={['flex w-full flex-col', roomy ? 'gap-2.5' : 'gap-1.5']}
 >
 	<div class="flex items-baseline justify-between">
 		<span id="{id}-label" class="text-ui font-medium text-text">{label}</span>

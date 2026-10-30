@@ -10,7 +10,7 @@
 </script>
 
 <div class="flex flex-col gap-2.5 rounded-md border border-border p-3">
-	<Meter label={plan} value={used} {caption} />
+	<Meter label={plan} value={used} {caption} roomy />
 	<a {href} class="inline-flex items-center gap-1.5 self-start rounded-xs text-ui font-medium text-text outline-offset-2 hover:underline">
 		{m.nav_plan_usage()}
 		<Icon icon={ArrowUpRight} size={14} />

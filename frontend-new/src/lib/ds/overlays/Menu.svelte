@@ -96,7 +96,7 @@
 
 {#snippet row(entry: Item | 'divider')}
 	{#if entry === 'divider'}
-		<hr class="my-0.5 border-border" />
+		<hr class="border-border" />
 	{:else}
 		<button
 			type="button"
@@ -131,7 +131,7 @@
 		style="top: {position.top}px; left: {position.left}px"
 		class={['fixed m-0 flex flex-col gap-0.5 rounded-md border border-border-strong bg-surface p-1 text-text shadow-float', wide ? 'w-70' : 'w-59']}
 	>
-		{#if title}<p class="px-2 pt-1.5 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{title}</p>{/if}
+		{#if title}<p class="font-mono text-label tracking-label text-text-3 uppercase">{title}</p>{/if}
 		{#each sections as section, at (at)}
 			{#if section.label}
 				<div role="group" aria-labelledby="{id}-group-{at}" class="flex flex-col gap-0.5">
@@ -143,7 +143,7 @@
 			{/if}
 		{/each}
 		{#if footer}
-			<hr class="my-0.5 border-border" />
+			<hr class="border-border" />
 			<p class="px-2 py-1.5 font-mono text-label text-text-3">{footer}</p>
 		{/if}
 	</div>

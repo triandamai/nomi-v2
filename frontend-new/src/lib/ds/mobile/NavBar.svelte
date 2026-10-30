@@ -16,7 +16,7 @@
 		<Icon icon={ChevronLeft} size={26} />
 	</button>
 	<div class="flex min-w-0 flex-1 flex-col items-center gap-0.5">
-		<h1 class="max-w-full truncate text-phone leading-tight font-semibold text-text">{title}</h1>
+		<h1 class="max-w-full truncate text-phone font-semibold text-text">{title}</h1>
 		{#if who}
 			<span class="inline-flex items-center gap-1.25 text-caption text-text-3"><Mascot agent={who.agent} size={16} />{who.name}</span>
 		{/if}

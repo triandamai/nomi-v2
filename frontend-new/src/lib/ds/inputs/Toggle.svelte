@@ -17,7 +17,7 @@
 	{disabled}
 	onclick={flip}
 	class={[
-		'inline-flex h-4.5 w-8 shrink-0 cursor-pointer items-center rounded-full border p-0.5 outline-offset-2 disabled:cursor-default disabled:opacity-40',
+		'inline-flex h-4.5 w-8 shrink-0 cursor-pointer items-center rounded-full border p-px outline-offset-2 disabled:cursor-default disabled:opacity-40',
 		checked ? 'justify-end border-accent bg-accent' : 'justify-start border-border-strong bg-surface-2',
 	]}
 >

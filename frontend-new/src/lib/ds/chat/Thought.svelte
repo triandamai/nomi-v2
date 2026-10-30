@@ -6,7 +6,7 @@
 	let { text }: { text: string } = $props();
 </script>
 
-<p class="flex w-full gap-2 text-ui leading-relaxed text-text-3">
+<p class="flex w-full gap-2 text-ui leading-relaxed text-text-3 italic">
 	<span class="inline-flex shrink-0 pt-0.75"><Icon icon={Lightbulb} size={14} /></span>
 	<span>{text}</span>
 </p>

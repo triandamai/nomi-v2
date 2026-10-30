@@ -87,30 +87,37 @@
 	--font-mono: var(--nm-mono);
 	--font-app: 'Fraunces', ui-serif, Georgia, serif;
 
+	/* Line heights are the pen's: the font's own (Geist, about 1.3) rounded to the pixel, as the pen
+	   draws text that sets none. Where the pen sets one (prose, code) the component uses a leading-*. */
 	--text-*: initial;
 	--text-display: var(--nm-size-display);
-	--text-display--line-height: 1.2;
+	--text-display--line-height: 36px;
 	--text-display--letter-spacing: -0.4px;
 	--text-body: var(--nm-size-body);
-	--text-body--line-height: 1.6;
+	--text-body--line-height: 19px;
 	--text-ui: var(--nm-size-ui);
-	--text-ui--line-height: 1.45;
+	--text-ui--line-height: 17px;
 	--text-caption: var(--nm-size-caption);
-	--text-caption--line-height: 1.45;
+	--text-caption--line-height: 16px;
 	--text-label: var(--nm-size-label);
-	--text-label--line-height: 1.35;
+	--text-label--line-height: 14px;
 	/* Below the scale, only where the pen uses 10px: a citation's number, a token's name. */
 	--text-micro: 10px;
-	--text-micro--line-height: 1.4;
+	--text-micro--line-height: 13px;
 	/* Phones (Mobile chat): 16pt body so inputs don't zoom, 17pt sheet titles, 14pt second lines. */
 	--text-phone-title: 17px;
-	--text-phone-title--line-height: 1.3;
+	--text-phone-title--line-height: 22px;
 	--text-phone: 16px;
-	--text-phone--line-height: 1.4;
+	--text-phone--line-height: 21px;
 	--text-phone-sm: 14px;
-	--text-phone-sm--line-height: 1.45;
+	--text-phone-sm--line-height: 18px;
 
-	/* Code blocks and diffs: lines a little apart, so long ones stay readable. */
+	/* The line heights the pen sets explicitly: snug 1.35, cozy 1.4, comfy 1.45, normal 1.5, relaxed
+	   (prose) 1.6, code 1.7. */
+	--leading-snug: 1.35;
+	--leading-cozy: 1.4;
+	--leading-comfy: 1.45;
+	--leading-relaxed: 1.6;
 	--leading-code: 1.7;
 
 	--tracking-*: initial;
@@ -122,7 +129,8 @@
 	--radius-*: initial;
 	--radius-sm: var(--nm-radius-sm);
 	--radius-md: var(--nm-radius-md);
-	/* Only the keyboard key (Kbd) is this small in the design. */
+	/* Only the keyboard key (Kbd) is this small in the design; 2xs is a skeleton's bars. */
+	--radius-2xs: 3px;
 	--radius-xs: 4px;
 	/* Phones only, as the Mobile sheet draws them: buttons 12, options 14, toasts 16, bubbles 18. */
 	--radius-lg: 12px;
@@ -133,6 +141,8 @@
 	/* Borders over shadows: one shadow, for things that truly float (menus, toasts, dialogs). */
 	--shadow-*: initial;
 	--shadow-float: 0 8px 24px var(--nm-shadow);
+	/* Not elevation: the soft glow around a focused field, as the pen draws it. */
+	--shadow-focus: 0 0 8px var(--nm-focus);
 	--inset-shadow-*: initial;
 	--drop-shadow-*: initial;
 	--text-shadow-*: initial;
@@ -154,7 +164,7 @@
 		background: var(--nm-bg);
 		font-family: var(--nm-sans);
 		font-size: var(--nm-size-ui);
-		line-height: 1.45;
+		line-height: 17px;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 	}

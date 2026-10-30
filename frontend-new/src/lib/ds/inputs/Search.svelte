@@ -4,11 +4,12 @@
 	import Kbd from '../actions/Kbd.svelte';
 
 	// Design System / Nomi → Search: a quiet 30px box (nm-border, not -strong) with its shortcut.
-	type Props = { placeholder: string; value?: string; shortcut?: string; label?: string; oninput?: (value: string) => void };
-	let { placeholder, value = $bindable(''), shortcut, label, oninput }: Props = $props();
+	// `plain` is the settings nav's: 10px in, the shortcut as plain mono text instead of a key.
+	type Props = { placeholder: string; value?: string; shortcut?: string; label?: string; plain?: boolean; oninput?: (value: string) => void };
+	let { placeholder, value = $bindable(''), shortcut, label, plain = false, oninput }: Props = $props();
 </script>
 
-<label class="flex h-7.5 w-full items-center gap-2 rounded-sm border border-border px-3 text-text-3 focus-within:border-border-strong focus-within:ring-3 focus-within:ring-focus">
+<label class={['flex h-7.5 w-full items-center gap-2 rounded-sm border border-border text-text-3 focus-within:border-accent focus-within:shadow-focus', plain ? 'px-2.5' : 'px-3']}>
 	<Icon icon={SearchIcon} size={14} />
 	<input
 		type="search"
@@ -18,5 +19,5 @@
 		oninput={() => oninput?.(value)}
 		class="min-w-0 flex-1 bg-transparent text-ui text-text outline-none placeholder:text-text-3"
 	/>
-	{#if shortcut}<Kbd keys={shortcut} />{/if}
+	{#if shortcut && plain}<span class="font-mono text-label text-text-3">{shortcut}</span>{:else if shortcut}<Kbd keys={shortcut} />{/if}
 </label>

@@ -50,10 +50,10 @@
 		rel={external ? 'noopener noreferrer' : undefined}
 		{...rest}
 		class={[
-			'inline-flex h-7.5 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 text-ui whitespace-nowrap outline-offset-1 transition-colors select-none pointer-coarse:min-h-11 data-focus:outline-2 data-focus:outline-focus',
+			'inline-flex h-7.5 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 text-ui whitespace-nowrap outline-offset-0 transition-colors select-none focus-visible:outline-3 pointer-coarse:min-h-11 data-focus:outline-3 data-focus:outline-focus',
 			variant === 'primary' && 'bg-accent font-medium text-accent-ink',
 			variant === 'inverse' && 'bg-text font-medium text-bg',
-			variant === 'secondary' && 'border border-border-strong text-text hover:bg-surface-2 active:bg-border data-active:bg-border data-hover:bg-surface-2',
+			variant === 'secondary' && 'border border-border-strong text-text hover:bg-surface-2 focus-visible:border-transparent active:bg-border data-active:bg-border data-focus:border-transparent data-hover:bg-surface-2',
 			variant === 'ghost' && 'text-text-2 hover:bg-surface-2 hover:text-text data-hover:bg-surface-2 data-hover:text-text',
 			variant === 'ghost-danger' && 'text-danger hover:bg-surface-2 data-hover:bg-surface-2',
 			variant === 'danger' && 'border border-danger-border bg-danger-bg font-medium text-danger hover:border-danger data-hover:border-danger',
@@ -68,10 +68,10 @@
 		aria-busy={loading || undefined}
 		{...rest}
 		class={[
-			'inline-flex h-7.5 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 text-ui whitespace-nowrap outline-offset-1 transition-colors select-none disabled:cursor-default pointer-coarse:min-h-11 data-focus:outline-2 data-focus:outline-focus',
+			'inline-flex h-7.5 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 text-ui whitespace-nowrap outline-offset-0 transition-colors select-none focus-visible:outline-3 disabled:cursor-default pointer-coarse:min-h-11 data-focus:outline-3 data-focus:outline-focus',
 			variant === 'primary' && 'bg-accent font-medium text-accent-ink',
 			variant === 'inverse' && 'bg-text font-medium text-bg',
-			variant === 'secondary' && 'border border-border-strong text-text hover:enabled:bg-surface-2 active:enabled:bg-border data-active:bg-border data-hover:bg-surface-2',
+			variant === 'secondary' && 'border border-border-strong text-text hover:enabled:bg-surface-2 focus-visible:border-transparent active:enabled:bg-border data-active:bg-border data-focus:border-transparent data-hover:bg-surface-2',
 			variant === 'ghost' && 'text-text-2 hover:enabled:bg-surface-2 hover:enabled:text-text data-hover:bg-surface-2 data-hover:text-text',
 			variant === 'ghost-danger' && 'text-danger hover:enabled:bg-surface-2 data-hover:bg-surface-2',
 			variant === 'danger' && 'border border-danger-border bg-danger-bg font-medium text-danger hover:enabled:border-danger data-hover:border-danger',

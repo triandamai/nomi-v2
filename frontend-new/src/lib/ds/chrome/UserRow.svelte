@@ -11,7 +11,7 @@
 <div class="flex items-center gap-2.5 px-2 py-1">
 	<Avatar {name} src={avatar} />
 	<span class="min-w-0 flex-1 truncate text-ui text-text">{name}</span>
-	<a href={settingsHref} aria-label={m.nav_settings()} class="inline-flex size-7.5 items-center justify-center rounded-sm text-text outline-offset-1 hover:bg-surface-2 pointer-coarse:size-11">
+	<a href={settingsHref} aria-label={m.nav_settings()} class="inline-flex items-center justify-center rounded-xs text-text outline-offset-2 hover:text-text-2 pointer-coarse:size-11">
 		<Icon icon={Settings} />
 	</a>
 </div>
