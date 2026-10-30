@@ -97,12 +97,15 @@ replaces are deleted in that phase.
 |---|---|---|
 | 1 ✅ | Primitives: actions, inputs (all but Composer), overlays, status, foundations, agents, identity. Gallery at `/design-system`, gated like frontend-new's. No page uses them yet: pages move onto the primitives as phases 2–6 rebuild their screens. | — |
 | 2 | Shell: navigation, chrome, shells, lists. Sidebar, settings nav and the app frame move onto them. | Gaps 4, 5 (pin, move) ✅ |
-| 3 | Conversation + rich replies: MessageUser/Agent, every block/view twin. `ChatThread` and `MessageBubble` move onto them. | — |
+| 3 (in progress) | Conversation + rich replies, copied from frontend-new as they are (`chat/`, `conversation/`): their token classes point at M3 through `src/lib/styles/ds-twins.css`. Blocks moved onto them so far: suggestions (FollowUps), run failed (ErrorCallout), reminder (Reminder), approval (ApprovalCard), reasoning (Reasoning). Still the old components: questions, plan, table, todo list, views, file changes, voice, connect, project link, quota; and `MessageBubble` itself. | Connect prompt needs `agent_type`, `why` and `reads` on its blocks (BACKEND_TODO). |
 | 4 | Reply and chat actions: ResponseActions, DislikeFeedback, Regenerate/Version, MessageEditor, ChatMenu, Move, Share | Gaps 1, 2, 3, 6 |
 | 5 | Composer (moved here from phase 1) and its extras: mentions, attach menu, voice, limits | — |
 | 6 | Build + mobile: CodeWorkbench and `project/*` move onto the build twins | Gaps 7, 8 |
 
 How a twin is built:
+- **Copied as is (from phase 3).** Where a component is only frontend-new's token classes over the
+  twins of phases 1–2, it's copied byte for byte and `ds-twins.css` maps the tokens to M3 (colours,
+  type scale, shapes; spacing stays). `dsParity.test.ts` keeps `chat/` and `conversation/` identical.
 - **Contract.** Copy the frontend-new component's `Props` type verbatim (names, optional
   flags, callback signatures). Its tests are ported too, with only the selectors that depend on styling changed.
 - **Pure modules.** `clarify.ts`, `stepState.ts`, `table.ts`, `code.ts`, `mention.ts`,

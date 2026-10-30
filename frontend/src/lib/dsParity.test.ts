@@ -11,7 +11,14 @@ const TWINS = fileURLToPath(new URL('./components/ds', import.meta.url));
 const ORIGINALS = fileURLToPath(new URL('../../../frontend-new/src/lib/ds', import.meta.url));
 
 /** Pure modules both apps keep byte for byte. */
-const SHARED_MODULES = ['agents/crew.ts', 'overlays/toasts.svelte.ts', 'navigation/rowStyle.ts'];
+const SHARED_MODULES = ['agents/crew.ts', 'agents/mascots.ts', 'overlays/toasts.svelte.ts', 'navigation/rowStyle.ts', 'actions/copier.svelte.ts'];
+
+/**
+ * Sections copied from frontend-new as they are: their Tailwind classes name frontend-new's tokens,
+ * which $lib/styles/ds-twins.css points at the M3 roles, and the actions, inputs and overlays they
+ * use are this app's M3 twins. Every file in them stays the same as frontend-new's.
+ */
+const COPIED_SECTIONS = ['chat', 'conversation'];
 
 function files(dir: string, extension: string): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -51,6 +58,13 @@ describe('design-system twins', () => {
 	it.each(SHARED_MODULES)('%s is the same file in both apps', (path) => {
 		expect(readFileSync(join(TWINS, path), 'utf8')).toBe(readFileSync(join(ORIGINALS, path), 'utf8'));
 	});
+
+	it.each(COPIED_SECTIONS.flatMap((section) => [...files(join(TWINS, section), '.svelte'), ...files(join(TWINS, section), '.ts')]))(
+		'%s is copied from frontend-new as it is',
+		(path) => {
+			expect(readFileSync(join(TWINS, path), 'utf8')).toBe(readFileSync(join(ORIGINALS, path), 'utf8'));
+		},
+	);
 
 	it.each(files(TWINS, '.svelte'))('%s has the same props as frontend-new', (path) => {
 		const twin = contract(readFileSync(join(TWINS, path), 'utf8'));

@@ -1,0 +1,141 @@
+/*
+ * frontend-new's design-system token names, drawn in Material 3. The twins in
+ * $lib/components/ds that are copied from frontend-new as they are (dsParity.test.ts) use
+ * frontend-new's Tailwind classes (`bg-surface`, `text-text-2`, `rounded-sm`, `text-ui`…); here those
+ * names point at the M3 roles, type scale and shapes in material3.css, so the same component is
+ * drawn in this app's design. Spacing stays Tailwind's.
+ */
+:root {
+	/* Each crew member's colour: their agent tone (m3/shapes.ts), deep in light, bright in dark. */
+	--crew-nomi: light-dark(#0b6b4a, #5be08f);
+	--crew-nomi-bg: color-mix(in srgb, var(--crew-nomi) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-nomi-ink: var(--md-sys-color-on-surface);
+	--crew-koda: light-dark(#0e7490, #3fb8c8);
+	--crew-koda-bg: color-mix(in srgb, var(--crew-koda) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-koda-ink: var(--md-sys-color-on-surface);
+	--crew-dana: light-dark(#b8430f, #ff7a4a);
+	--crew-dana-bg: color-mix(in srgb, var(--crew-dana) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-dana-ink: var(--md-sys-color-on-surface);
+	--crew-kala: light-dark(#a16207, #ffc23c);
+	--crew-kala-bg: color-mix(in srgb, var(--crew-kala) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-kala-ink: var(--md-sys-color-on-surface);
+	--crew-rena: light-dark(#3e7be0, #7ab0ff);
+	--crew-rena-bg: color-mix(in srgb, var(--crew-rena) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-rena-ink: var(--md-sys-color-on-surface);
+	--crew-tara: light-dark(#3e7be0, #7ab0ff);
+	--crew-tara-bg: color-mix(in srgb, var(--crew-tara) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-tara-ink: var(--md-sys-color-on-surface);
+	--crew-maya: light-dark(#475569, #7d93a3);
+	--crew-maya-bg: color-mix(in srgb, var(--crew-maya) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-maya-ink: var(--md-sys-color-on-surface);
+	--crew-raga: light-dark(#be185d, #ff8fa8);
+	--crew-raga-bg: color-mix(in srgb, var(--crew-raga) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-raga-ink: var(--md-sys-color-on-surface);
+	--crew-personality: light-dark(#be185d, #ff8fa8);
+	--crew-personality-bg: color-mix(in srgb, var(--crew-personality) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-personality-ink: var(--md-sys-color-on-surface);
+	--crew-supervisor: light-dark(#6d4fd8, #9b7bff);
+	--crew-supervisor-bg: color-mix(in srgb, var(--crew-supervisor) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-supervisor-ink: var(--md-sys-color-on-surface);
+}
+
+@theme inline {
+	--color-bg: var(--nomi-color-ground);
+	--color-bg-clear: transparent;
+	--color-surface: var(--md-sys-color-surface-container-lowest);
+	--color-surface-2: var(--md-sys-color-surface-container-high);
+	--color-border: var(--md-sys-color-outline-variant);
+	--color-border-strong: var(--md-sys-color-outline);
+	--color-text: var(--md-sys-color-on-surface);
+	--color-text-2: var(--md-sys-color-on-surface-variant);
+	--color-text-3: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 72%, transparent);
+	--color-accent: var(--md-sys-color-primary);
+	--color-accent-ink: var(--md-sys-color-on-primary);
+	--color-accent-bg: var(--md-sys-color-primary-container);
+	--color-danger: var(--md-sys-color-error);
+	--color-danger-bg: var(--md-sys-color-error-container);
+	--color-danger-border: color-mix(in srgb, var(--md-sys-color-error) 40%, transparent);
+	--color-warning: var(--md-sys-color-tertiary);
+	--color-warning-bg: var(--md-sys-color-tertiary-container);
+	--color-focus: color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
+	--color-overlay: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+	--color-shadow: color-mix(in srgb, var(--md-sys-color-scrim) 20%, transparent);
+	--color-code-keyword: var(--md-sys-color-tertiary);
+	--color-code-string: var(--md-sys-color-primary);
+	--color-code-fn: var(--md-sys-color-secondary);
+	--color-code-number: var(--md-sys-color-error);
+	--color-code-type: var(--md-sys-color-tertiary);
+	--color-diff-add: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+	--color-diff-del: color-mix(in srgb, var(--md-sys-color-error) 14%, transparent);
+	--color-crew-nomi: var(--crew-nomi);
+	--color-crew-nomi-bg: var(--crew-nomi-bg);
+	--color-crew-nomi-ink: var(--crew-nomi-ink);
+	--color-crew-koda: var(--crew-koda);
+	--color-crew-koda-bg: var(--crew-koda-bg);
+	--color-crew-koda-ink: var(--crew-koda-ink);
+	--color-crew-dana: var(--crew-dana);
+	--color-crew-dana-bg: var(--crew-dana-bg);
+	--color-crew-dana-ink: var(--crew-dana-ink);
+	--color-crew-kala: var(--crew-kala);
+	--color-crew-kala-bg: var(--crew-kala-bg);
+	--color-crew-kala-ink: var(--crew-kala-ink);
+	--color-crew-rena: var(--crew-rena);
+	--color-crew-rena-bg: var(--crew-rena-bg);
+	--color-crew-rena-ink: var(--crew-rena-ink);
+	--color-crew-tara: var(--crew-tara);
+	--color-crew-tara-bg: var(--crew-tara-bg);
+	--color-crew-tara-ink: var(--crew-tara-ink);
+	--color-crew-maya: var(--crew-maya);
+	--color-crew-maya-bg: var(--crew-maya-bg);
+	--color-crew-maya-ink: var(--crew-maya-ink);
+	--color-crew-raga: var(--crew-raga);
+	--color-crew-raga-bg: var(--crew-raga-bg);
+	--color-crew-raga-ink: var(--crew-raga-ink);
+	--color-crew-personality: var(--crew-personality);
+	--color-crew-personality-bg: var(--crew-personality-bg);
+	--color-crew-personality-ink: var(--crew-personality-ink);
+	--color-crew-supervisor: var(--crew-supervisor);
+	--color-crew-supervisor-bg: var(--crew-supervisor-bg);
+	--color-crew-supervisor-ink: var(--crew-supervisor-ink);
+
+	--font-sans: var(--md-sys-typescale-body-medium-font);
+	--font-mono: var(--md-ref-typeface-mono);
+	--font-app: var(--md-sys-typescale-display-small-font);
+
+	--text-display: var(--md-sys-typescale-headline-small-size);
+	--text-display--line-height: var(--md-sys-typescale-headline-small-line-height);
+	--text-display--letter-spacing: var(--md-sys-typescale-headline-small-tracking);
+	--text-heading: var(--md-sys-typescale-title-large-size);
+	--text-heading--line-height: var(--md-sys-typescale-title-large-line-height);
+	--text-body: var(--md-sys-typescale-body-large-size);
+	--text-body--line-height: var(--md-sys-typescale-body-large-line-height);
+	--text-ui: var(--md-sys-typescale-body-medium-size);
+	--text-ui--line-height: var(--md-sys-typescale-body-medium-line-height);
+	--text-caption: var(--md-sys-typescale-body-small-size);
+	--text-caption--line-height: var(--md-sys-typescale-body-small-line-height);
+	--text-label: var(--md-sys-typescale-label-small-size);
+	--text-label--line-height: var(--md-sys-typescale-label-small-line-height);
+	--text-micro: 10px;
+	--text-micro--line-height: 14px;
+
+	--leading-tight: 1.25;
+	--leading-firm: 1.3;
+	--leading-snug: 1.35;
+	--leading-cozy: 1.4;
+	--leading-comfy: 1.45;
+	--leading-normal: 1.5;
+	--leading-relaxed: 1.6;
+	--leading-code: 1.7;
+
+	--tracking-display: 0;
+	--tracking-label: 0.06em;
+	--tracking-wordmark: 0;
+
+	--radius-2xs: var(--md-sys-shape-corner-extra-small);
+	--radius-xs: var(--md-sys-shape-corner-extra-small);
+	--radius-sm: var(--md-sys-shape-corner-small);
+	--radius-md: var(--md-sys-shape-corner-large);
+
+	--shadow-float: var(--md-sys-elevation-shadow-level2);
+	--shadow-focus: 0 0 0 2px var(--md-sys-color-primary);
+}

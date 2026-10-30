@@ -3,16 +3,17 @@
 	import type { Component } from 'svelte';
 	import TodoListBlock from './TodoListBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
-	import ApprovalCard from './ApprovalCard.svelte';
+	import ApprovalTwin from './twins/ApprovalTwin.svelte';
 	import PlanBlock from './PlanBlock.svelte';
-	import ReasoningDisclosure from './ReasoningDisclosure.svelte';
-	import ReminderBlock from './ReminderBlock.svelte';
+	import ReminderTwin from './twins/ReminderTwin.svelte';
+	import Reasoning from '$lib/components/ds/chat/Reasoning.svelte';
 	import WorkspaceConnectCard from './WorkspaceConnectCard.svelte';
 	import ConnectorConnectCard from './ConnectorConnectCard.svelte';
 	import ProjectLinkCard from './ProjectLinkCard.svelte';
 	import QuotaNoticeCard from './QuotaNoticeCard.svelte';
-	import RunFailedCard from './RunFailedCard.svelte';
-	import SuggestionsBlock from './SuggestionsBlock.svelte';
+	import RunFailedTwin from './twins/RunFailedTwin.svelte';
+	import SuggestionsTwin from './twins/SuggestionsTwin.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import QuestionsCard from './QuestionsCard.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
@@ -46,16 +47,16 @@
 	const BLOCKS: Partial<Record<ContentBlock['kind'], Component<any>>> = {
 		todo_list: TodoListBlock,
 		table: TableBlock,
-		approval_request: ApprovalCard,
+		approval_request: ApprovalTwin,
 		plan: PlanBlock,
-		reminder: ReminderBlock,
+		reminder: ReminderTwin,
 		workspace_connect: WorkspaceConnectCard,
 		connector_connect: ConnectorConnectCard,
 		project_link: ProjectLinkCard,
 		questions: QuestionsCard,
 		quota_notice: QuotaNoticeCard,
-		run_failed: RunFailedCard,
-		suggestions: SuggestionsBlock,
+		run_failed: RunFailedTwin,
+		suggestions: SuggestionsTwin,
 		voice: VoiceBlock,
 		view: ViewBlock
 	};
@@ -80,7 +81,7 @@
 		{/await}
 	</div>
 {:else if block.kind === 'reasoning'}
-	<ReasoningDisclosure steps={[block.text]} />
+	<Reasoning label={m.reasoning_process()} text={block.text} />
 {:else if Block}
 	<Block {block} {messageId} {agent} {fresh} {answered} {text} {onremove} />
 {/if}

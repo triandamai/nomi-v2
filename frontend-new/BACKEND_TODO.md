@@ -99,3 +99,13 @@ The old `frontend/` will use the same endpoints.
   - `POST …/requests/:rid` with `{ action: "approve" | "decline" }` resolves one; approve runs the publish.
   - Each change goes out on the project WS.
 - **Until then:** only people who may publish see the button, and nobody else gets a request.
+
+### What a connect prompt says
+- **Needed by:** *Chat responses / Connect Prompt*: ConnectPrompt.
+- **Why:** the prompt says which crew member needs the tool and why, and exactly what the tool can read, before the person connects it.
+- **What exists today:** the `connector_connect` and `workspace_connect` content blocks.
+  - `connector_connect` carries only `connector` and `reason`.
+  - `workspace_connect` carries `reason` and `services`.
+- **Proposed contract:** both blocks also carry `agent_type` (who asked), `why` (one line, in the person's language) and `reads` (what the connection can read).
+- **Until then:** `frontend/` keeps its own connect cards; ConnectPrompt isn't used.
+
