@@ -15,4 +15,13 @@ describe('Overlays section', () => {
 		expect(page.getByRole('alert').elements()).toHaveLength(1);
 		expect(page.getByRole('status').elements().length).toBeGreaterThanOrEqual(2);
 	});
+
+	it('gives the dialog’s Delete project button the trash icon', async () => {
+		await render(OverlaysSection);
+		await page.getByRole('button', { name: 'Delete project' }).first().click();
+		const dialog = page.getByRole('dialog', { name: 'Delete salah-daily-tracker?' });
+		const remove = dialog.getByRole('button', { name: 'Delete project' }).element();
+		expect(remove.querySelector('svg')?.classList).toContain('lucide-trash-2');
+		await page.getByRole('button', { name: 'Cancel' }).click();
+	});
 });

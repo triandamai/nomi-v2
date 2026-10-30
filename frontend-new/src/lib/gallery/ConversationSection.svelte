@@ -6,6 +6,7 @@
 	import ActivityBlock from '$lib/ds/conversation/ActivityBlock.svelte';
 	import LiveStep from '$lib/ds/conversation/LiveStep.svelte';
 	import EventRow from '$lib/ds/conversation/EventRow.svelte';
+	import FileRow from '$lib/ds/conversation/FileRow.svelte';
 	import KVRow from '$lib/ds/conversation/KVRow.svelte';
 	import ProjectRow from '$lib/ds/lists/ProjectRow.svelte';
 	import SuggestionRow from '$lib/ds/lists/SuggestionRow.svelte';
@@ -48,7 +49,8 @@
 {/snippet}
 
 {#snippet activity()}
-	<div class="grid max-w-180 grid-cols-2 gap-4">
+	<!-- The pen's Agent activity board, one column: the block, a File Row on its own (400 wide), the live step, an event, a KV row. -->
+	<div class="flex max-w-170 flex-col gap-4">
 		<ActivityBlock
 			title="Wrote 3 files"
 			total="+424"
@@ -58,11 +60,10 @@
 				{ path: 'src/lib/storage.ts', change: '+48' },
 			]}
 		/>
-		<div class="flex flex-col gap-3">
-			<LiveStep step="Writing src/routes/menu/+page.svelte" elapsed="01:12" stopLabel="Stop" onstop={() => {}} />
-			<EventRow kind="deploy" text="deploy #14 · main@a3f9c21 · built in 41s" time="15:38" />
-			<KVRow icon={GitBranch} label="Code" value="23 files · main@a3f9c21" />
-		</div>
+		<div data-file-row class="w-100 max-w-full"><FileRow path="src/routes/+page.svelte" change="+214" /></div>
+		<LiveStep step="Writing src/routes/menu/+page.svelte" elapsed="01:12" stopLabel="Stop" onstop={() => {}} />
+		<EventRow kind="deploy" text="deploy #14 · main@a3f9c21 · built in 41s" time="15:38" />
+		<KVRow icon={GitBranch} label="Code" value="23 files · main@a3f9c21" />
 	</div>
 {/snippet}
 
@@ -78,9 +79,9 @@
 			updated="2d"
 		/>
 		<SuggestionRow agent="dana" label="Summarize this week's spending" route="→ dana" />
-		<div class="flex gap-4">
-			<div class="w-80"><EmptyState icon={Bell} title="Reminders" count={0} body="Nothing scheduled today. Ask Kala, or add one yourself." action={{ label: 'Add reminder', href: '#reminders' }} /></div>
-			<div class="w-80"><SkeletonRow label="loading 4 projects…" /></div>
+		<div class="flex flex-wrap gap-4">
+			<div class="w-80 max-w-full"><EmptyState icon={Bell} title="Reminders" count={0} body="Nothing scheduled today. Ask Kala, or add one yourself." action={{ label: 'Add reminder', href: '#reminders' }} /></div>
+			<div class="w-80 max-w-full"><SkeletonRow label="loading 4 projects…" /></div>
 		</div>
 	</div>
 {/snippet}

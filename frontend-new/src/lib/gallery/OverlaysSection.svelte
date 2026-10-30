@@ -69,7 +69,7 @@
 	{#snippet actions()}
 		<Button label="Export repo first" variant="ghost" iconStart={Download} />
 		<Button label="Cancel" variant="secondary" onclick={() => (dialogOpen = false)} />
-		<Button label="Delete project" variant="danger" />
+		<Button label="Delete project" variant="danger" iconStart={Trash2} />
 	{/snippet}
 </Dialog>
 <ToastRegion />

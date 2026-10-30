@@ -34,7 +34,7 @@
 	title="Response feedback"
 	description="Every reply ends with the same quiet bar. Like is one tap; dislike asks why; share masks your numbers by default; delete confirms and can be undone."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Response actions" note="default · liked · disliked">
 			<div class="flex flex-col gap-4">
 				<SectionLabel label="Default" />

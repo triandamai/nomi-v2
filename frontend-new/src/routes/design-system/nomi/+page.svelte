@@ -21,7 +21,7 @@
 	];
 </script>
 
-<header class="flex justify-between gap-12 py-12">
+<header class="flex flex-col gap-12 py-12 md:flex-row md:justify-between">
 	<div class="flex max-w-xl flex-col gap-3">
 		<p class="font-mono text-label tracking-label text-text-3 uppercase">Nomi design system · v1.0</p>
 		<h1 class="text-display font-medium tracking-display text-text">An instrument, not a toy.</h1>
@@ -30,7 +30,7 @@
 			and light.
 		</p>
 	</div>
-	<ol class="flex w-96 shrink-0 flex-col rounded-md border border-border">
+	<ol class="flex flex-col rounded-md border border-border md:w-96 md:shrink-0">
 		{#each principles as [title, body], index (title)}
 			<li class="flex gap-3 border-b border-border p-3 last:border-b-0">
 				<span class="font-mono text-label text-text-3">0{index + 1}</span>

@@ -58,7 +58,7 @@
 	title="Rich content"
 	description="Structure only when the content has it. Tables for comparable rows, cards for things you act on, code and diffs in mono."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Table" note="comparable rows only">
 			<DataTable
 				title="Food spending by week"

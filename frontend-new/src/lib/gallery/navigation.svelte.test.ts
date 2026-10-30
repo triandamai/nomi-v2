@@ -31,4 +31,13 @@ describe('Navigation, identity & status section', () => {
 			expect(page.getByText(caption, { exact: true }).elements(), caption).toHaveLength(1);
 		}
 	});
+
+	it('draws the mascot specimen at 20 and 32 only, as the pen does', async () => {
+		const { container } = await render(NavigationSection);
+		const caption = page.getByText('Mascot 20 / 32 / 96', { exact: true }).element();
+		const sizes = caption.previousElementSibling!;
+		expect([...sizes.querySelectorAll('svg')].map((mascot) => mascot.getAttribute('width'))).toEqual(['20', '32']);
+		expect(getComputedStyle(sizes).columnGap).toBe('12px');
+		expect(container.querySelectorAll('svg[width="96"]')).toHaveLength(0);
+	});
 });

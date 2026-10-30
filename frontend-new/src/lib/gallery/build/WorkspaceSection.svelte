@@ -13,7 +13,7 @@
 	title="Workspace"
 	description="Chat and preview share one screen. The split is draggable, and every project tool opens as a sheet over the preview, so the app you are looking at never closes."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<div class="flex flex-col gap-6">
 			<GalleryBoard title="Resize handle" note="default · hover · dragging" inline>
 				<div class="flex h-40 gap-25">

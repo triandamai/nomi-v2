@@ -21,7 +21,7 @@
 	title="Crew behaviour"
 	description="Hand-offs are visible, limits are explained with an alternative, memory is never silent, and long work can run without you watching."
 >
-	<div class="grid items-start gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Hand-off & limits" note="who answers · what we won't do">
 			<div class="flex flex-col gap-4">
 				<SectionLabel label="Hand-off" />

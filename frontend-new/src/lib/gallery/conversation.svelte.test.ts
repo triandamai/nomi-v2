@@ -21,4 +21,15 @@ describe('Conversation & build section', () => {
 			expect(page.getByText(text, { exact: true }).elements(), text).toHaveLength(1);
 		}
 	});
+
+	it('shows the standalone File Row specimen in the agent activity board, 400 wide', async () => {
+		await page.viewport(1512, 900);
+		const { container } = await render(ConversationSection);
+		// Once inside the Activity Block, once on its own.
+		expect(page.getByText('src/routes/+page.svelte', { exact: true }).elements()).toHaveLength(2);
+		const row = container.querySelector<HTMLElement>('[data-file-row]')!;
+		expect(row.textContent).toContain('src/routes/+page.svelte');
+		expect(row.textContent).toContain('+214');
+		expect(row.getBoundingClientRect().width).toBe(400);
+	});
 });
