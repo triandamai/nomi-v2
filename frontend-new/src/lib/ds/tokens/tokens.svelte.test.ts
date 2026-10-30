@@ -59,11 +59,16 @@ describe('Tailwind theme', () => {
 	});
 
 	it('has no colours, radii or shadows besides the design’s', () => {
-		const style = getComputedStyle(probe('dark', 'bg-red-500 text-blue-600 rounded-xl shadow-lg'));
+		const style = getComputedStyle(probe('dark', 'bg-red-500 text-blue-600 rounded-4xl shadow-lg'));
 		expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
 		expect(style.color).toBe(rgb(tokens['nm-text'].dark!));
 		expect(style.borderTopLeftRadius).toBe('0px');
 		expect(style.boxShadow).toBe('none');
+	});
+
+	it('has the phone radii the Mobile sheet draws: buttons 12, options 14, toasts 16, bubbles 18', () => {
+		const radius = (name: string) => getComputedStyle(probe('dark', name)).borderTopLeftRadius;
+		expect([radius('rounded-lg'), radius('rounded-xl'), radius('rounded-2xl'), radius('rounded-3xl')]).toEqual(['12px', '14px', '16px', '18px']);
 	});
 
 	it('sets the page ground and text from the tokens', () => {

@@ -224,5 +224,11 @@
 	"session_title": "You've been signed out",
 	"session_body": "Your session ended, so this message wasn't sent. It's saved on this device and goes out after you sign in. The crew's running tasks keep going.",
 	"session_draft_kept": "draft kept",
-	"session_sign_in": "Sign in again"
+	"session_sign_in": "Sign in again",
+	"mobile_back": "Back",
+	"mobile_message": "Message Nomi",
+	"mobile_more": "More",
+	"mobile_said": "{provider} said",
+	"mobile_progress": "Question {current} of {total}",
+	"mobile_unread": "Unread"
 }
