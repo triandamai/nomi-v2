@@ -236,6 +236,41 @@ pub async fn revoke(
     if changed.rows_affected() == 0 { Err((StatusCode::NOT_FOUND, "share not found")) } else { Ok(StatusCode::NO_CONTENT) }
 }
 
+#[derive(Serialize, sqlx::FromRow)]
+pub struct ShareListItem {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    /// The chat's title, if it has one yet.
+    pub title: Option<String>,
+    pub scope: String,
+    pub message_id: Option<Uuid>,
+    pub mask: bool,
+    pub anyone: bool,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+pub struct ShareList {
+    pub shares: Vec<ShareListItem>,
+}
+
+/// GET /api/shares — the person's links that still work (not revoked, not expired), newest
+/// first: Settings › Data lists them, each with a way to revoke it.
+pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<ShareList>, (StatusCode, &'static str)> {
+    let shares: Vec<ShareListItem> = sqlx::query_as(
+        "SELECT c.id, c.session_id, s.title, c.scope, c.message_id, c.mask, c.anyone, c.expires_at, c.created_at \
+         FROM chat_shares c JOIN sessions s ON s.id = c.session_id \
+         WHERE c.created_by = $1 AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > now()) \
+         ORDER BY c.created_at DESC",
+    )
+    .bind(claims.sub)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(failed)?;
+    Ok(Json(ShareList { shares }))
+}
+
 #[derive(Serialize)]
 pub struct SharedMessage {
     /// "user" or "assistant".

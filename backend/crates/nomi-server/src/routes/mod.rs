@@ -10,6 +10,7 @@ pub mod attachments;
 pub mod auth;
 pub mod connections;
 pub mod deploy;
+pub mod publish_requests;
 pub mod devices;
 pub mod domain;
 pub mod dynamic_agents;

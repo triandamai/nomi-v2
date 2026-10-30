@@ -180,3 +180,33 @@ async fn a_revoked_or_expired_link_is_gone_and_only_the_owner_shares(pool: PgPoo
     let (status, _) = json_request(router, "GET", &format!("/api/shared/{}", expired["token"].as_str().unwrap()), Value::Null, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_person_lists_their_live_links_newest_first(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "lister@example.com").await;
+    let other = register_and_login(router.clone(), "someone-else@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let shares = format!("/api/sessions/{session_id}/shares");
+    let theirs = start_chat(router.clone(), &other).await;
+    json_request(router.clone(), "POST", &format!("/api/sessions/{theirs}/shares"), json!({ "scope": "chat" }), Some(&other)).await;
+
+    let (_, first) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "anyone": false }), Some(&token)).await;
+    let (_, revoked) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat" }), Some(&token)).await;
+    json_request(router.clone(), "DELETE", &format!("{shares}/{}", revoked["id"].as_str().unwrap()), Value::Null, Some(&token)).await;
+    let (_, expired) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "expires_in_days": 1 }), Some(&token)).await;
+    sqlx::query("UPDATE chat_shares SET expires_at = now() - interval '1 minute' WHERE id = $1")
+        .bind(Uuid::parse_str(expired["id"].as_str().unwrap()).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, last) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "expires_in_days": 7 }), Some(&token)).await;
+
+    let (status, body) = json_request(router, "GET", "/api/shares", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let ids: Vec<&str> = body["shares"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, vec![last["id"].as_str().unwrap(), first["id"].as_str().unwrap()]);
+    assert_eq!(body["shares"][1]["anyone"], false);
+    assert_eq!(body["shares"][1]["session_id"], session_id.as_str());
+    assert!(body["shares"][0]["expires_at"].is_string());
+}

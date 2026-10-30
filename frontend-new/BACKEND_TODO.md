@@ -83,16 +83,13 @@ The old `frontend/` will use the same endpoints.
   - It needs a GitHub connection (a new `/api/connections/github`), since import today reads a public zip and holds no token.
 - **Until then:** download only.
 
-### Publish requests
+### Publish requests — done
 - **Needed by:** *Build / Together*: PublishRequest and RequestQueue.
-- **Why:** an editor asks to publish, and the owner sees the queue and approves or declines.
-- **What exists today:** `POST /api/projects/:id/deploy/publish`, which publishes straight away for whoever is allowed to.
-- **Proposed contract:**
-  - `POST /api/projects/:id/deploy/requests` with `{ note? }` creates a request.
-  - `GET /api/projects/:id/deploy/requests` lists them.
-  - `POST …/requests/:rid` with `{ action: "approve" | "decline" }` resolves one; approve runs the publish.
-  - Each change goes out on the project WS.
-- **Until then:** only people who may publish see the button, and nobody else gets a request.
+- **Built:** migration `0094_publish_requests.sql`, routes in `backend/crates/nomi-server/src/routes/publish_requests.rs`.
+  - `POST /api/projects/:id/deploy/requests` with `{ note?, environment? }` returns `201` and the request. Admins publish themselves (`409`), and a person has one open request at a time (`409`).
+  - `GET /api/projects/:id/deploy/requests` returns `{ requests: [{ id, environment, note, status, requested_by, requested_by_name, decided_by_name, decided_at, publish_id, created_at }] }`, open ones first, then newest first.
+  - `POST …/requests/:rid` with `{ action: "approve" | "decline" | "cancel" }`. Admins approve or decline; the person who asked cancels. Approve publishes as that admin; if the publish can't start, the request stays open and the error comes back.
+  - Each change goes out on the project stream as `DeployChanged` with event `publish_request.changed`. The admins are notified of a request, and the person who asked of the answer.
 
 ### What a connect prompt says — done
 - **Needed by:** *Chat responses / Connect Prompt*: ConnectPrompt.
@@ -106,10 +103,7 @@ The old `frontend/` will use the same endpoints.
   - The inspector fills both: "Query results" with its row count, "Log lines" with how much of the log it shows.
   - `frontend/` draws a titled data table with DataTable and keeps its old block for older ones.
 
-### The person's share links, to revoke
+### The person's share links, to revoke — done
 - **Needed by:** *Chat / Share*: SharePanel's footer says links can be revoked "any time in Settings › Data".
-- **Why:** a link can be revoked (`DELETE /api/sessions/:id/shares/:share_id`), but there's no list to find it in once the dialog is closed.
-- **What exists today:** create, change and revoke, one share at a time.
-- **Proposed contract:** `GET /api/shares` returns the person's live links (`id`, `session_id`, the chat's `title`, `scope`, `mask`, `anyone`, `expires_at`, `created_at`), newest first, for a Settings › Data list with a Revoke button each.
-- **Until then:** the footer's promise has no page behind it, in either app.
-
+- **Built:** `GET /api/shares` returns `{ shares: [{ id, session_id, title, scope, message_id, mask, anyone, expires_at, created_at }] }`: the person's links that still work, newest first. Revoke one with `DELETE /api/sessions/:session_id/shares/:id`.
+- **Still open:** the Settings › Data page itself, in both apps.
