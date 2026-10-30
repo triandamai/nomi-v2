@@ -93,13 +93,13 @@ Not gaps:
 Each phase is its own PR: twins + tests + the pages moved onto them. The old components a phase
 replaces are deleted in that phase.
 
-| Phase | Frontend (M3 twins in `frontend/src/lib/ds/<section>/`) | Backend |
+| Phase | Frontend (M3 twins in `frontend/src/lib/components/ds/<section>/`) | Backend |
 |---|---|---|
-| 1 | Primitives: actions, inputs, overlays, status, foundations, identity | — |
+| 1 ✅ | Primitives: actions, inputs (all but Composer), overlays, status, foundations, agents, identity. Gallery at `/design-system`, gated like frontend-new's. No page uses them yet: pages move onto the primitives as phases 2–6 rebuild their screens. | — |
 | 2 | Shell: navigation, chrome, shells, lists. Sidebar, settings nav and the app frame move onto them. | Gaps 4, 5 (pin, move) |
 | 3 | Conversation + rich replies: MessageUser/Agent, every block/view twin. `ChatThread` and `MessageBubble` move onto them. | — |
 | 4 | Reply and chat actions: ResponseActions, DislikeFeedback, Regenerate/Version, MessageEditor, ChatMenu, Move, Share | Gaps 1, 2, 3, 6 |
-| 5 | Composer extras: mentions, attach menu, voice, limits | — |
+| 5 | Composer (moved here from phase 1) and its extras: mentions, attach menu, voice, limits | — |
 | 6 | Build + mobile: CodeWorkbench and `project/*` move onto the build twins | Gaps 7, 8 |
 
 How a twin is built:
@@ -107,7 +107,8 @@ How a twin is built:
   flags, callback signatures). Its tests are ported too, with only the selectors that depend on styling changed.
 - **Pure modules.** `clarify.ts`, `stepState.ts`, `table.ts`, `code.ts`, `mention.ts`,
   `toasts.svelte.ts` and the agent `crew.ts` are copied together with their tests.
-  - A parity test in each app checks that the copies stay identical: it hashes the file and compares it with the other app's copy.
+  - `frontend/src/lib/dsParity.test.ts` fails when a copy drifts.
+  - The same test compares every twin's props (its types and `$props()` defaults) with frontend-new's.
 - **Copy.** Strings go through each app's own Paraglide messages, with the same keys where the text is the same.
 - **Look.**
   - M3 tokens only, following `frontend/CLAUDE.md`.

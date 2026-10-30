@@ -2440,5 +2440,7 @@
 	"project_tip_7_title": "Responsif di Semua Perangkat",
 	"project_tip_7_body": "Uji tata letak di pratinjau atau buka tautan langsung di tab baru untuk melihat tampilannya di ponsel.",
 	"project_terminal_toggle_show": "Tampilkan log terminal",
-	"project_terminal_toggle_hide": "Sembunyikan log terminal"
+	"project_terminal_toggle_hide": "Sembunyikan log terminal",
+	"toast_dismiss": "Tutup",
+	"toast_region": "Notifikasi"
 }

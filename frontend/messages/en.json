@@ -2440,5 +2440,7 @@
 	"project_tip_7_title": "Responsive on All Devices",
 	"project_tip_7_body": "Test your layout in the preview or open the live link in a new tab to see how it looks on mobile.",
 	"project_terminal_toggle_show": "View terminal log",
-	"project_terminal_toggle_hide": "Hide terminal log"
+	"project_terminal_toggle_hide": "Hide terminal log",
+	"toast_dismiss": "Dismiss",
+	"toast_region": "Notifications"
 }
