@@ -34,7 +34,7 @@
 				<dd class="flex min-w-0 flex-1 basis-48 items-center gap-3">
 					<span class="min-w-0 flex-1 text-ui text-text">{answer.value}</span>
 					{#if answer.isDefault}<Tag kind="neutral" label={m.clarify_default()} />{/if}
-					<IconButton icon={Pencil} label={m.clarify_edit({ topic: answer.topic })} variant="ghost" onclick={() => onedit(index)} />
+					<IconButton icon={Pencil} label={m.clarify_edit({ topic: answer.topic })} variant="ghost" iconSize={14} onclick={() => onedit(index)} />
 				</dd>
 			</div>
 		{/each}

@@ -3,7 +3,7 @@
 	import Icon from '../foundations/Icon.svelte';
 
 	// Design System / Nomi → Actions. A link on its own line ("Upgrade to Pro ↗"), or one inside a
-	// sentence ("…or switch to Nomi credits"), underlined so it isn't told apart by colour alone.
+	// sentence ("…or switch to Nomi credits") in text-2, as the pen draws it; both underline on hover.
 	type Props = {
 		href: string;
 		label: string;
@@ -24,7 +24,7 @@
 		'rounded-xs outline-offset-2',
 		variant === 'standalone' && 'inline-flex items-center gap-1 text-ui hover:underline hover:decoration-border-strong hover:underline-offset-2',
 		variant === 'standalone' && (quiet ? 'text-text-2 hover:text-text' : 'font-medium text-text'),
-		variant === 'inline' && 'text-text-2 underline decoration-border-strong underline-offset-2 hover:text-text hover:decoration-text-3',
+		variant === 'inline' && 'text-text-2 hover:text-text hover:underline hover:decoration-text-3 hover:underline-offset-2',
 	]}
 >
 	{label}

@@ -41,7 +41,7 @@
 					<span class="text-caption text-text-3">{owner.name}</span>
 				</span>
 			{/if}
-			{#if onedit}<IconButton icon={Pencil} label={m.reminder_edit()} variant="ghost" onclick={onedit} />{/if}
+			{#if onedit}<IconButton icon={Pencil} label={m.reminder_edit()} variant="ghost" iconSize={14} onclick={onedit} />{/if}
 		{/if}
 	</span>
 </section>

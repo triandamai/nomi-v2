@@ -39,10 +39,12 @@
 </script>
 
 <section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface py-1 pr-1.5 pl-3.5">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface py-2.5 pr-2 pl-3.5">
 		<Mascot {agent} size={20} />
-		<p class="min-w-0 flex-1 py-1.5 text-ui font-medium text-text">{question}</p>
-		<Button label={all ? m.selection_none() : m.selection_all()} variant="ghost" onclick={() => set(items.map(() => !all))} />
+		<p class="min-w-0 flex-1 text-ui font-medium text-text">{question}</p>
+		<button type="button" class="cursor-pointer rounded-xs px-1.5 text-caption text-text-2 outline-offset-1 hover:text-text pointer-coarse:min-h-11" onclick={() => set(items.map(() => !all))}>
+			{all ? m.selection_none() : m.selection_all()}
+		</button>
 	</header>
 	<ul>
 		{#each items as item, index (index)}

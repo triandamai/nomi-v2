@@ -106,6 +106,9 @@ describe('Share', () => {
 	it('masks amounts and names by default and shows the link in mono', async () => {
 		await render(SharePanel, { preview, chatMessages: 6, url: 'https://nomi.app/s/k7Qe2-r4', expiry: 'in 7 days', onclose: () => {} });
 		await expect.element(page.getByRole('radio', { name: 'This reply' })).toBeChecked();
+		const scope = page.getByRole('radiogroup', { name: 'What to share' }).element();
+		expect(getComputedStyle(scope).backgroundColor).toBe(tokenBackground('nm-bg'));
+		expect(getComputedStyle(scope).borderTopColor).toBe(tokenColor('nm-border'));
 		await expect.element(page.getByRole('radio', { name: /Whole chat/ })).toHaveTextContent('6 msgs');
 		await expect.element(page.getByRole('switch', { name: 'Hide amounts and names' })).toHaveAttribute('aria-checked', 'true');
 		await expect.element(page.getByRole('switch', { name: 'Anyone with the link can view' })).toHaveAttribute('aria-checked', 'true');

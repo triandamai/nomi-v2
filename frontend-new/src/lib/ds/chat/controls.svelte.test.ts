@@ -46,6 +46,7 @@ describe('MessageUser controls', () => {
 		await userEvent.hover(page.getByText('How much did I spend on food in October?'));
 		expect(getComputedStyle(copy.element().parentElement!).opacity).toBe('1');
 		await expect.element(page.getByText('14:02')).toBeVisible();
+		expect(copy.element().querySelector('svg')?.getAttribute('width')).toBe('13');
 		await copy.click();
 		expect(write).toHaveBeenCalledWith('How much did I spend on food in October?');
 		await page.getByRole('button', { name: 'Edit message' }).click();

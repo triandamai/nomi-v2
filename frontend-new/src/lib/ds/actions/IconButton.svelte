@@ -8,6 +8,8 @@
 	type Props = {
 		icon: Component<LucideProps>;
 		label: string;
+		/** 14 where the pen draws a smaller glyph in the same 30px target (a card header's tools). */
+		iconSize?: 16 | 14;
 		variant?: 'outline' | 'ghost' | 'send';
 		disabled?: boolean;
 		type?: 'button' | 'submit';
@@ -15,7 +17,7 @@
 		[attribute: `data-${string}`]: unknown;
 		[attribute: `aria-${string}`]: unknown;
 	};
-	let { icon, label, variant = 'outline', disabled = false, type = 'button', onclick, ...rest }: Props = $props();
+	let { icon, label, iconSize = 16, variant = 'outline', disabled = false, type = 'button', onclick, ...rest }: Props = $props();
 </script>
 
 <button
@@ -31,5 +33,5 @@
 		variant === 'send' && 'bg-accent text-accent-ink disabled:bg-surface-2 disabled:text-text-3',
 	]}
 >
-	<Icon {icon} />
+	<Icon {icon} size={iconSize} />
 </button>

@@ -11,8 +11,8 @@
 	<a
 		{href}
 		aria-label={m.cite_label({ n: String(n), title })}
-		class="inline-flex h-4 items-center rounded-xs bg-surface-2 px-1.25 align-middle font-mono text-label text-text-2 no-underline outline-offset-1 hover:bg-border hover:text-text">{n}</a
+		class="inline-flex h-4 items-center rounded-xs bg-surface-2 px-1.25 align-middle font-mono text-micro text-text-2 no-underline outline-offset-1 hover:bg-border hover:text-text">{n}</a
 	>
 {:else}
-	<span class="inline-flex h-4 items-center rounded-xs bg-surface-2 px-1.25 align-middle font-mono text-label text-text-2">{n}</span>
+	<span class="inline-flex h-4 items-center rounded-xs bg-surface-2 px-1.25 align-middle font-mono text-micro text-text-2">{n}</span>
 {/if}
