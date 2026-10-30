@@ -3,6 +3,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import { createCopier } from '../actions/copier.svelte';
+	import CodeToken from './CodeToken.svelte';
 	import { plainLines, type CodeLine } from './code';
 
 	// Chat responses → Code: mono, numbered, coloured with the nm-code-* tokens (comments recede
@@ -32,15 +33,6 @@
 			<span class="inline-flex text-text-3"><Icon icon={copier.copied ? Check : Copy} size={12} /></span>{copier.copied ? m.copy_done() : m.code_copy()}
 		</button>
 	</figcaption>
-	<pre class="overflow-x-auto py-3 pr-3.5 font-mono text-caption leading-code text-text"><code class="flex min-w-max flex-col">{#each lines as line, index (index)}<span class="flex"><span data-line-number aria-hidden="true" class="w-15 shrink-0 pr-4 text-right text-text-3 select-none">{index + 1}</span><span class="whitespace-pre">{#each line as token, part (part)}<span
-								class={[
-									token.kind === 'keyword' && 'text-code-keyword',
-									token.kind === 'string' && 'text-code-string',
-									token.kind === 'fn' && 'text-code-fn',
-									token.kind === 'number' && 'text-code-number',
-									token.kind === 'type' && 'text-code-type',
-									token.kind === 'comment' && 'text-text-3',
-								]}>{token.text}</span
-							>{/each}</span></span
+	<pre class="overflow-x-auto py-3 pr-3.5 font-mono text-caption leading-code text-text"><code class="flex min-w-max flex-col">{#each lines as line, index (index)}<span class="flex"><span data-line-number aria-hidden="true" class="w-15 shrink-0 pr-4 text-right text-text-3 select-none">{index + 1}</span><span class="whitespace-pre">{#each line as token, part (part)}<CodeToken {token} />{/each}</span></span
 				>{/each}</code></pre>
 </figure>

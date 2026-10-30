@@ -282,5 +282,16 @@
 	"ws_publishing": "Memublikasikan… {elapsed}",
 	"ws_publish_failed": "Gagal publikasi · Coba lagi",
 	"ws_expand": "Perbesar",
-	"ws_sheet_hint": "esc menutup · pratinjau tetap berjalan"
+	"ws_sheet_hint": "esc menutup · pratinjau tetap berjalan",
+	"code_ask_file": "Tanya {name} tentang file ini",
+	"code_ask_lines": "Tanya {name} tentang baris {range}",
+	"code_line": "Baris {n}",
+	"code_readonly": "Hanya baca. Minta {name} di chat untuk mengubah apa pun; setiap perubahan adalah commit yang bisa kamu batalkan.",
+	"term_meta": "{name} menjalankan ini · hanya baca",
+	"term_copy": "Salin log",
+	"term_note": "{name} yang menjalankan perintah. Ingin sesuatu dijalankan? Minta di chat.",
+	"term_fix": "Minta {name} memperbaiki",
+	"device_open_phone": "Buka di ponselmu",
+	"code_quote_ref": "{file} · baris {range}",
+	"code_quote_remove": "Hapus kutipan"
 }

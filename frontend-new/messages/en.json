@@ -282,5 +282,16 @@
 	"ws_publishing": "Publishing… {elapsed}",
 	"ws_publish_failed": "Publish failed · Retry",
 	"ws_expand": "Expand",
-	"ws_sheet_hint": "esc closes · preview keeps running"
+	"ws_sheet_hint": "esc closes · preview keeps running",
+	"code_ask_file": "Ask {name} about this file",
+	"code_ask_lines": "Ask {name} about lines {range}",
+	"code_line": "Line {n}",
+	"code_readonly": "Read-only. Ask {name} in the chat to change anything; every change is a commit you can roll back.",
+	"term_meta": "{name} ran these · read-only",
+	"term_copy": "Copy log",
+	"term_note": "{name} runs the commands. Want something run? Ask in the chat.",
+	"term_fix": "Ask {name} to fix",
+	"device_open_phone": "Open on your phone",
+	"code_quote_ref": "{file} · lines {range}",
+	"code_quote_remove": "Remove quote"
 }
