@@ -109,3 +109,10 @@ The old `frontend/` will use the same endpoints.
 - **Proposed contract:** both blocks also carry `agent_type` (who asked), `why` (one line, in the person's language) and `reads` (what the connection can read).
 - **Until then:** `frontend/` keeps its own connect cards; ConnectPrompt isn't used.
 
+### A table's title and source
+- **Needed by:** *Chat responses / Table*: DataTable.
+- **Why:** the table is named above its rows (and in its downloaded file), and says where its numbers came from underneath ("Rp · from Dana · 142 transactions").
+- **What exists today:** the `table` content block carries `variant`, `columns` and `rows`, but no title or source.
+- **Proposed contract:** the block also carries `title` (one line, in the person's language) and `source` (optional, one line).
+- **Until then:** `frontend/` keeps its own table block.
+

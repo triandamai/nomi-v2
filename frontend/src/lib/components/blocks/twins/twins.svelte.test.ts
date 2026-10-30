@@ -6,6 +6,7 @@ import RunFailedTwin from './RunFailedTwin.svelte';
 import ReminderTwin from './ReminderTwin.svelte';
 import WithChatSend from './WithChatSend.svelte';
 import ApprovalTwin from './ApprovalTwin.svelte';
+import QuestionsTwin from './QuestionsTwin.svelte';
 
 // The chat's blocks drawn with the design-system twins keep what the old blocks did: the same
 // requests, the same results.
@@ -150,5 +151,48 @@ describe('ApprovalTwin', () => {
 		const root = render(ApprovalTwin, { block: { ...block, status: 'approved' }, messageId: 'm1' });
 		expect(buttonNamed(root, 'Approve')).toBeUndefined();
 		expect(root.textContent).toContain('Approved');
+	});
+});
+
+describe('QuestionsTwin', () => {
+	const block = {
+		kind: 'questions',
+		intro: 'A few things first',
+		questions: [
+			{ question: 'Where to?', options: [{ label: 'Bali' }, { label: 'Lombok', detail: 'quieter' }] },
+			{ question: 'What for?', multiple: true, options: [{ label: 'Beach' }, { label: 'Food' }] },
+		],
+	};
+
+	it('asks one question at a time and sends the answers as the next message', async () => {
+		const send = vi.fn();
+		const root = render(WithChatSend, { send, block: QuestionsTwin, props: { block, agent: 'planning' } });
+		expect(root.textContent).toContain('Where to?');
+		root.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].click();
+		flushSync();
+		buttonNamed(root, 'Next').click();
+		flushSync();
+		await tick();
+		expect(root.textContent).toContain('What for?');
+		root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1].click();
+		flushSync();
+		buttonNamed(root, 'Review answers').click();
+		flushSync();
+		expect(send).toHaveBeenCalledWith('Where to? Lombok\nWhat for? Food');
+		expect(root.textContent).toContain('Answered 2 questions');
+	});
+
+	it('skips them all with Escape, and says so in the chat', () => {
+		const send = vi.fn();
+		const root = render(WithChatSend, { send, block: QuestionsTwin, props: { block } });
+		root.querySelector('section, [role="group"], div')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		flushSync();
+		expect(send).toHaveBeenCalledWith('Skip these questions and go with your best guess.');
+	});
+
+	it('folds to one line once the person replied', () => {
+		const root = render(WithChatSend, { send: vi.fn(), block: QuestionsTwin, props: { block, answered: true } });
+		expect(root.querySelector('input')).toBeNull();
+		expect(root.textContent).toContain('Answered 2 questions');
 	});
 });

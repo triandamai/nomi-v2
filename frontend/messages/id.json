@@ -1288,10 +1288,6 @@
 	"notif_empty_read": "Belum ada yang dibaca.",
 	"notif_empty_promo": "Belum ada promo atau kabar.",
 	"questions_title": "Beberapa pertanyaan dulu",
-	"questions_pick_any": "Pilih yang sesuai",
-	"questions_note_label": "Lainnya",
-	"questions_note_placeholder": "Hal lain, atau jawabanmu sendiri…",
-	"questions_send": "Kirim jawaban",
 	"questions_answered": "Sudah dijawab",
 	"chat_load_older": "Muat pesan sebelumnya",
 	"chat_loading_older": "Memuat pesan sebelumnya",
@@ -2561,5 +2557,7 @@
 	"table_download": "Unduh tabel",
 	"version_label": "Versi {current} dari {total}",
 	"version_next": "Versi berikutnya",
-	"version_previous": "Versi sebelumnya"
+	"version_previous": "Versi sebelumnya",
+	"questions_topic": "Pertanyaan {number}",
+	"questions_skip_reply": "Lewati pertanyaan ini dan pakai tebakan terbaikmu."
 }

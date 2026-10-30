@@ -14,7 +14,7 @@
 	import RunFailedTwin from './twins/RunFailedTwin.svelte';
 	import SuggestionsTwin from './twins/SuggestionsTwin.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import QuestionsCard from './QuestionsCard.svelte';
+	import QuestionsTwin from './twins/QuestionsTwin.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
@@ -53,7 +53,7 @@
 		workspace_connect: WorkspaceConnectCard,
 		connector_connect: ConnectorConnectCard,
 		project_link: ProjectLinkCard,
-		questions: QuestionsCard,
+		questions: QuestionsTwin,
 		quota_notice: QuotaNoticeCard,
 		run_failed: RunFailedTwin,
 		suggestions: SuggestionsTwin,
