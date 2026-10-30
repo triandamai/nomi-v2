@@ -23,7 +23,7 @@
 		'flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-sm px-3 py-2',
 		kind === 'offline' && 'bg-warning-bg',
 		kind === 'online' && 'bg-accent-bg',
-		kind !== 'offline' && kind !== 'online' && 'border border-border bg-surface',
+		kind !== 'offline' && kind !== 'online' && 'bg-surface outline -outline-offset-1 outline-border',
 	]}
 >
 	<span class={['inline-flex shrink-0', kind === 'online' ? 'text-accent' : kind === 'quota' ? 'text-text-2' : 'text-warning']}><Icon icon={ICONS[kind]} size={14} /></span>

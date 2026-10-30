@@ -30,7 +30,7 @@ describe('MessageUser states', () => {
 		const onedit = vi.fn();
 		await render(MessageUser, { text: 'Kirim', status: 'failed', onretry, onedit });
 		expect(getComputedStyle(page.getByText('not sent').element()).color).toBe(tokenColor('nm-danger'));
-		expect(getComputedStyle(page.getByText('Kirim').element()).borderTopColor).toBe(tokenColor('nm-danger-border'));
+		expect(getComputedStyle(page.getByText('Kirim').element()).outlineColor).toBe(tokenColor('nm-danger-border'));
 		await page.getByRole('button', { name: 'Retry' }).click();
 		await page.getByRole('button', { name: 'Edit' }).click();
 		expect(onretry).toHaveBeenCalledOnce();
@@ -95,7 +95,7 @@ describe('Banner', () => {
 	it('points to the provider’s status page and to usage, on a bordered surface', async () => {
 		const { container } = await render(Banner, { kind: 'slow', text: 'DeepSeek is slow right now (replies ~14s). Your chats still work.', action: { label: 'DeepSeek status', href: 'https://status.deepseek.com', external: true } });
 		expect(container.querySelector('svg.lucide-activity')).not.toBeNull();
-		expect(getComputedStyle(page.getByRole('status').element()).borderTopColor).toBe(tokenColor('nm-border'));
+		expect(getComputedStyle(page.getByRole('status').element()).outlineColor).toBe(tokenColor('nm-border'));
 		await expect.element(page.getByRole('link', { name: 'DeepSeek status' })).toHaveAttribute('target', '_blank');
 	});
 

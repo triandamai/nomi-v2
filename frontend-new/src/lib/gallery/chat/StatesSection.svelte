@@ -156,6 +156,8 @@
 	];
 
 	const reply = "Food is October's biggest jump: Rp 2,1 jt against Rp 1,4 jt in September. Most of the difference is GoFood after";
+	// Cut off a little earlier, as drawn.
+	const interrupted = "Food is October's biggest jump: Rp 2,1 jt against Rp 1,4 jt in September. Most of the difference is";
 </script>
 
 {#snippet cases(list: Case[])}
@@ -176,7 +178,7 @@
 >
 	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Message states" note="user · assistant">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="User" />
 				<MessageUser text="Kirim bukti transfer ke Bu Sri ya" status="sending" />
 				<MessageUser text="Kirim bukti transfer ke Bu Sri ya" status="queued" oncancel={noop} />
@@ -184,12 +186,12 @@
 				<SectionLabel label="Assistant" />
 				<ReplyText text={reply} status="streaming" />
 				<ReplyText text={reply} status="stopped" elapsed="00:03" oncontinue={noop} />
-				<ReplyText text={reply} status="interrupted" reason="Reply cut off after 18s. DeepSeek closed the stream." onrestart={noop} oncontinue={noop} />
+				<ReplyText text={interrupted} status="interrupted" reason="Reply cut off after 18s. DeepSeek closed the stream." onrestart={noop} oncontinue={noop} />
 			</div>
 		</GalleryBoard>
 
 		<GalleryBoard title="Banners" note="above the thread, one at a time">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Connection" />
 				<Banner kind="offline" text="You're offline. New messages wait in the outbox and send when you reconnect." action={{ label: 'Retry now', onclick: noop }} />
 				<Banner kind="online" text="Back online. 1 queued message sent." />
@@ -201,9 +203,9 @@
 			</div>
 		</GalleryBoard>
 
-		<GalleryBoard title="Provider · key & billing" note="401 · 402 · 404">{@render cases(keyAndBilling)}</GalleryBoard>
-		<GalleryBoard title="Provider · capacity" note="429 · 503 · 504">{@render cases(capacity)}</GalleryBoard>
-		<GalleryBoard title="Content & context" note="400 · 400 · 413">{@render cases(content)}</GalleryBoard>
-		<GalleryBoard title="Connection, tools & plan" note="network · tool · quota">{@render cases(connection)}</GalleryBoard>
+		<GalleryBoard title="Provider · key & billing" note="401 · 402 · 404" spacious>{@render cases(keyAndBilling)}</GalleryBoard>
+		<GalleryBoard title="Provider · capacity" note="429 · 503 · 504" spacious>{@render cases(capacity)}</GalleryBoard>
+		<GalleryBoard title="Content & context" note="400 · 400 · 413" spacious>{@render cases(content)}</GalleryBoard>
+		<GalleryBoard title="Connection, tools & plan" note="network · tool · quota" spacious>{@render cases(connection)}</GalleryBoard>
 	</div>
 </GallerySection>
