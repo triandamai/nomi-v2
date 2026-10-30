@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { Cpu, Sparkles } from '@lucide/svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
 	import VersionSwitcher from '$lib/ds/chat/VersionSwitcher.svelte';
 	import MessageEditor from '$lib/ds/chat/MessageEditor.svelte';
-	import RegenerateMenuFixture from '$lib/ds/chat/RegenerateMenuFixture.svelte';
-	import AttachMenuFixture from '$lib/ds/chat/AttachMenuFixture.svelte';
+	import RegenerateMenu from '$lib/ds/chat/RegenerateMenu.svelte';
+	import AttachMenu from '$lib/ds/chat/AttachMenu.svelte';
 	import CopiedNote from '$lib/ds/chat/CopiedNote.svelte';
 	import StopHint from '$lib/ds/chat/StopHint.svelte';
 	import AttachmentChip from '$lib/ds/chat/AttachmentChip.svelte';
@@ -30,7 +31,7 @@
 >
 	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Message actions" note="hover · edit · branch">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<VersionSwitcher current={2} total={2} onprev={noop} onnext={noop} />
 				<SectionLabel label="Hover" />
 				<MessageUser text="How much did I spend on food in October?" time="14:02" onedit={noop} data-hover />
@@ -42,9 +43,16 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Regenerate & copy" note="from the action bar">
-			<div class="flex flex-col items-start gap-4">
+			<div class="flex flex-col items-start gap-5">
 				<SectionLabel label="Regenerate menu" />
-				<RegenerateMenuFixture onpick={noop} />
+				<RegenerateMenu
+					inline
+					models={[
+						{ name: 'claude-sonnet', source: 'your key', icon: Cpu },
+						{ name: 'deepseek-flash', source: 'Nomi credits', icon: Sparkles },
+					]}
+					onpick={noop}
+				/>
 				<SectionLabel label="Copied" />
 				<CopiedNote label="Copied as Markdown" />
 				<SectionLabel label="Stop" />
@@ -53,9 +61,9 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Attachments" note="menu · uploading · sent">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Attach menu" />
-				<AttachMenuFixture onpick={noop} />
+				<AttachMenu inline driveBy="Tara" max="20 MB" onpick={noop} />
 				<SectionLabel label="Chips" />
 				<div class="flex flex-wrap items-center gap-2">
 					<AttachmentChip name="bca-oct-2026.pdf" progress={0.62} detail="62% · 3,1 of 5 MB" onremove={noop} />
@@ -75,7 +83,7 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Voice & limits" note="record · transcribe · too long">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Recording" />
 				<VoiceRecorder elapsed="00:14" {levels} fading={10} language="Bahasa Indonesia" oncancel={noop} ondone={noop} />
 				<SectionLabel label="Transcribed" />

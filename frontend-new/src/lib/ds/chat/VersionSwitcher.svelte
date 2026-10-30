@@ -14,7 +14,7 @@
 		type="button"
 		aria-label={m.version_previous()}
 		disabled={current <= 1}
-		class="inline-flex cursor-pointer rounded-xs p-0.5 text-text-2 outline-offset-1 hover:enabled:text-text disabled:cursor-default disabled:text-text-3 pointer-coarse:size-11 pointer-coarse:items-center pointer-coarse:justify-center"
+		class="-m-0.5 inline-flex cursor-pointer rounded-xs p-0.5 text-text-2 outline-offset-1 hover:enabled:text-text disabled:cursor-default disabled:text-text-3 pointer-coarse:size-11 pointer-coarse:items-center pointer-coarse:justify-center"
 		onclick={onprev}><Icon icon={ChevronLeft} size={12} /></button
 	>
 	<span class="font-mono text-label text-text-2" aria-label={m.version_label({ current: String(current), total: String(total) })}>{current} / {total}</span>
@@ -22,7 +22,7 @@
 		type="button"
 		aria-label={m.version_next()}
 		disabled={current >= total}
-		class="inline-flex cursor-pointer rounded-xs p-0.5 text-text-2 outline-offset-1 hover:enabled:text-text disabled:cursor-default disabled:text-text-3 pointer-coarse:size-11 pointer-coarse:items-center pointer-coarse:justify-center"
+		class="-m-0.5 inline-flex cursor-pointer rounded-xs p-0.5 text-text-2 outline-offset-1 hover:enabled:text-text disabled:cursor-default disabled:text-text-3 pointer-coarse:size-11 pointer-coarse:items-center pointer-coarse:justify-center"
 		onclick={onnext}><Icon icon={ChevronRight} size={12} /></button
 	>
 </span>

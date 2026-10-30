@@ -8,13 +8,14 @@
 	// with more detail, as a list, or with another model (and what it's paid with).
 	type Model = { name: string; source: string; icon?: Component<LucideProps> };
 	type Choice = { style: 'again' | 'shorter' | 'longer' | 'list' } | { model: string };
-	type Props = { models?: Model[]; onpick: (choice: Choice) => void; trigger: ComponentProps<typeof Menu>['trigger'] };
-	let { models = [], onpick, trigger }: Props = $props();
+	type Props = { models?: Model[]; onpick: (choice: Choice) => void; trigger?: ComponentProps<typeof Menu>['trigger']; inline?: boolean };
+	let { models = [], onpick, trigger, inline = false }: Props = $props();
 </script>
 
 <Menu
 	wide
 	{trigger}
+	{inline}
 	items={[
 		{ label: m.regen_again(), icon: RefreshCw, shortcut: '⌘R', onselect: () => onpick({ style: 'again' }) },
 		{ label: m.regen_shorter(), icon: Minimize2, onselect: () => onpick({ style: 'shorter' }) },

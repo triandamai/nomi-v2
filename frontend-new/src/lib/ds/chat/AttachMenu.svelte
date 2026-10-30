@@ -13,14 +13,17 @@
 		/** The largest file a chat takes, e.g. "20 MB". */
 		max: string;
 		onpick: (source: Source) => void;
-		trigger: ComponentProps<typeof Menu>['trigger'];
+		trigger?: ComponentProps<typeof Menu>['trigger'];
+		/** Shown in place, open, as the design sheet draws it. */
+		inline?: boolean;
 	};
-	let { driveBy, max, onpick, trigger }: Props = $props();
+	let { driveBy, max, onpick, trigger, inline = false }: Props = $props();
 </script>
 
 <Menu
 	wide
 	{trigger}
+	{inline}
 	footer={m.attach_limits({ max })}
 	items={[
 		{ label: m.attach_file(), icon: Paperclip, onselect: () => onpick('file') },

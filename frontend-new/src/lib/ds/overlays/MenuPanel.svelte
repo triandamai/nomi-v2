@@ -39,7 +39,7 @@
 	{#if entry === 'divider'}
 		<hr class="border-border" />
 	{:else}
-		<span class={wide ? 'contents' : 'w-55'}><MenuRow item={entry} {onpick} /></span>
+		<span class={wide ? 'contents' : 'w-55'}><MenuRow item={entry} {wide} {onpick} /></span>
 	{/if}
 {/snippet}
 

@@ -4,8 +4,9 @@
 
 	// Design System / Nomi → Overlays / Menu Item: 30 tall, icon, label, shortcut or meta; danger in
 	// red. `hover` shows the hover without a pointer (the gallery). Lives in a role="menu".
-	type Props = { item: MenuItem; onpick?: (item: MenuItem) => void };
-	let { item, onpick }: Props = $props();
+	// `wide` rows (the chat's regenerate and attach menus) are 32 tall with 10 between their parts.
+	type Props = { item: MenuItem; wide?: boolean; onpick?: (item: MenuItem) => void };
+	let { item, wide = false, onpick }: Props = $props();
 </script>
 
 <button
@@ -15,7 +16,8 @@
 	data-hover={item.hover || undefined}
 	onclick={() => onpick?.(item)}
 	class={[
-		'flex h-7.5 w-full cursor-pointer items-center gap-2 rounded-xs px-2 text-left text-ui outline-none hover:bg-surface-2 focus-visible:bg-surface-2 data-hover:bg-surface-2 pointer-coarse:min-h-11',
+		'flex w-full cursor-pointer items-center rounded-xs px-2 text-left text-ui outline-none hover:bg-surface-2 focus-visible:bg-surface-2 data-hover:bg-surface-2 pointer-coarse:min-h-11',
+		wide ? 'h-8 gap-2.5' : 'h-7.5 gap-2',
 		item.danger ? 'text-danger' : 'text-text',
 	]}
 >
