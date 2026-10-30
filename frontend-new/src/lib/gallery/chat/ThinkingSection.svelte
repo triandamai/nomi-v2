@@ -5,6 +5,7 @@
 	import PlanCard from '$lib/ds/chat/PlanCard.svelte';
 	import DraftPlanCard from '$lib/ds/chat/DraftPlanCard.svelte';
 	import GallerySection from '../GallerySection.svelte';
+	import GalleryBoard from '../GalleryBoard.svelte';
 
 	let draft = $state([
 		{ label: 'Read the rent transfers in your BCA statements', owner: { agent: 'maya' as const, name: 'Maya' } },
@@ -21,13 +22,6 @@
 		draft = next;
 	}
 </script>
-
-{#snippet board(title: string, note: string, content: import('svelte').Snippet)}
-	<div class="flex flex-col gap-4 rounded-md border border-border p-5">
-		<p class="flex items-baseline justify-between text-ui font-medium text-text">{title} <span class="font-mono text-label text-text-3">{note}</span></p>
-		{@render content()}
-	</div>
-{/snippet}
 
 {#snippet reasoning()}
 	<div class="flex flex-col gap-5">
@@ -81,10 +75,10 @@
 {/snippet}
 
 <GallerySection title="Thinking & planning" description="How the crew shows its work. Collapsed by default once the answer lands; live while it runs. Never theatrical.">
-	<div class="grid grid-cols-2 gap-6">
-		{@render board('Reasoning', 'collapsed · live · expanded', reasoning)}
-		{@render board('Thought', 'single · with steps', thought)}
-		{@render board('Plan', 'running · step statuses', plan)}
-		{@render board('Draft plan', 'editable · nothing runs yet', draftPlan)}
+	<div class="grid gap-6 lg:grid-cols-2">
+		<GalleryBoard title="Reasoning" note="collapsed · live · expanded">{@render reasoning()}</GalleryBoard>
+		<GalleryBoard title="Thought" note="single · with steps">{@render thought()}</GalleryBoard>
+		<GalleryBoard title="Plan" note="running · step statuses">{@render plan()}</GalleryBoard>
+		<GalleryBoard title="Draft plan" note="editable · nothing runs yet">{@render draftPlan()}</GalleryBoard>
 	</div>
 </GallerySection>

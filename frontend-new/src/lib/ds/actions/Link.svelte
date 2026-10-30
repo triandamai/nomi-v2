@@ -10,8 +10,10 @@
 		variant?: 'standalone' | 'inline';
 		/** Another site: opens in a new tab, without access to this page. */
 		external?: boolean;
+		/** Standalone only: secondary text in regular weight, for a card's footer ("Open in Sheets ↗"). */
+		quiet?: boolean;
 	};
-	let { href, label, variant = 'standalone', external = false }: Props = $props();
+	let { href, label, variant = 'standalone', external = false, quiet = false }: Props = $props();
 </script>
 
 <a
@@ -20,7 +22,8 @@
 	rel={external ? 'noopener noreferrer' : undefined}
 	class={[
 		'rounded-xs outline-offset-2',
-		variant === 'standalone' && 'inline-flex items-center gap-1 text-ui font-medium text-text hover:underline hover:decoration-border-strong hover:underline-offset-2',
+		variant === 'standalone' && 'inline-flex items-center gap-1 text-ui hover:underline hover:decoration-border-strong hover:underline-offset-2',
+		variant === 'standalone' && (quiet ? 'text-text-2 hover:text-text' : 'font-medium text-text'),
 		variant === 'inline' && 'text-text-2 underline decoration-border-strong underline-offset-2 hover:text-text hover:decoration-text-3',
 	]}
 >
