@@ -7,6 +7,7 @@
 	import InputsSection from '$lib/gallery/InputsSection.svelte';
 	import NavigationSection from '$lib/gallery/NavigationSection.svelte';
 	import ConversationSection from '$lib/gallery/ConversationSection.svelte';
+	import OverlaysSection from '$lib/gallery/OverlaysSection.svelte';
 	import AgentsSection from '$lib/gallery/AgentsSection.svelte';
 
 	const principles: [title: string, body: string][] = [
@@ -48,4 +49,5 @@
 <InputsSection />
 <NavigationSection />
 <ConversationSection />
+<OverlaysSection />
 <AgentsSection />
