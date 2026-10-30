@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Design System / Nomi → Segmented: a few mutually exclusive views of one list ("All 4 · Live 2
 	// · Building 1"). A radio group: arrow keys move the choice, like the platform's own.
-	type Option = { value: string; label: string; count?: number };
+	type Option = { value: string; label: string; count?: number | string };
 	type Props = { label: string; options: Option[]; value?: string; onchange?: (value: string) => void };
 	let { label, options, value = $bindable(options[0]?.value ?? ''), onchange }: Props = $props();
 

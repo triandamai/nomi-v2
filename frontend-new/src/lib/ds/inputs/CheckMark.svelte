@@ -7,15 +7,17 @@
 		checked?: boolean;
 		disabled?: boolean;
 		name?: string;
+		id?: string;
 		onchange?: (checked: boolean) => void;
 		[attribute: `aria-${string}`]: unknown;
 	};
-	let { checked = $bindable(false), disabled = false, name, onchange, ...rest }: Props = $props();
+	let { checked = $bindable(false), disabled = false, name, id, onchange, ...rest }: Props = $props();
 </script>
 
 <span class="relative inline-flex size-4 shrink-0">
 	<input
 		type="checkbox"
+		{id}
 		{name}
 		{disabled}
 		bind:checked
