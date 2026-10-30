@@ -15,7 +15,7 @@
 	const next = $derived(asks.findIndex((ask) => ask.state === 'next'));
 </script>
 
-<section class="flex w-full flex-col gap-3 rounded-3xl border border-border bg-surface p-3.75">
+<section class="flex w-full flex-col gap-3 rounded-3xl bg-surface p-4 outline -outline-offset-1 outline-border">
 	<p class="flex items-center gap-2">
 		<Mascot agent="koda" size={20} />
 		<span class="min-w-0 flex-1 text-body font-medium text-text">{asks.length === 1 ? m.queue_title_one() : m.queue_title({ count: String(asks.length) })}</span>

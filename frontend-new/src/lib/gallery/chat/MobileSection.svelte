@@ -17,6 +17,10 @@
 	import ChatRow from '$lib/ds/mobile/ChatRow.svelte';
 	import GallerySection from '../GallerySection.svelte';
 	import GalleryBoard from '../GalleryBoard.svelte';
+	import PhoneStatusBar from '$lib/ds/build/PhoneStatusBar.svelte';
+	import HomeIndicator from './phone/HomeIndicator.svelte';
+	import Keyboard from './phone/Keyboard.svelte';
+	import Notification from './phone/Notification.svelte';
 
 	const noop = () => {};
 	let picked = $state(false);
@@ -24,15 +28,18 @@
 
 <GallerySection
 	title="Mobile chat"
-	description="Native patterns at 390 pt: sheets instead of popovers, 44 pt targets, 16 pt body text, the composer above the keyboard, banners at the top. Desktop cards are reused only where they fit without losing anything. The phone's own status bar, keyboard, home indicator and notifications aren't drawn by the app."
+	description="Native patterns at 390 pt: sheets instead of popovers, 44 pt targets, 16 pt body text, the composer above the keyboard, banners at the top. Desktop cards are reused only where they fit without losing anything."
 >
+	<!-- The phone's own status bar, home indicator, keyboard and notification are drawn as the pen
+	     draws them, for context; the app itself never renders them. -->
+	<GalleryBoard title="Shell" note="status · nav · composer · keyboard">
+		<div class="w-97.5 max-w-full"><PhoneStatusBar /></div>
+		<div class="w-97.5 max-w-full"><NavBar title="Food spending in October" who={{ agent: 'dana', name: 'Dana' }} onback={noop} onmenu={noop} /></div>
+		<HomeIndicator />
+		<div class="w-97.5 max-w-full"><Composer onsend={noop} onattach={noop} onrecord={noop} /></div>
+		<Keyboard />
+	</GalleryBoard>
 	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
-		<GalleryBoard title="Shell" note="nav · composer">
-			<div class="flex w-97.5 max-w-full flex-col gap-12">
-				<NavBar title="Food spending in October" who={{ agent: 'dana', name: 'Dana' }} onback={noop} onmenu={noop} />
-				<Composer onsend={noop} onattach={noop} onrecord={noop} />
-			</div>
-		</GalleryBoard>
 
 		<GalleryBoard title="Messages" note="bubble · byline · actions · data">
 			<div class="flex w-89.5 max-w-full flex-col gap-5">
@@ -70,14 +77,11 @@
 			</div>
 		</GalleryBoard>
 
-		<GalleryBoard title="Sheets & banners" note="bottom sheet · toast">
-			<div class="flex w-97.5 max-w-full flex-col gap-5">
-				<div class="flex flex-col">
-					<SheetHeader title="Reply" subtitle="Dana · 14:02" onclose={noop} />
-					<SheetRow icon={RefreshCw} label="Regenerate" onclick={noop} />
-				</div>
-				<div class="px-4"><PhoneToast kind="success" title="Link copied" detail="Expires in 7 days" action={{ label: 'Undo', onclick: noop }} /></div>
-			</div>
+		<GalleryBoard title="Sheets & banners" note="bottom sheet · toast · notification">
+			<div class="w-97.5 max-w-full"><SheetHeader title="Reply" subtitle="Dana · 14:02" onclose={noop} /></div>
+			<div class="w-97.5 max-w-full"><SheetRow icon={RefreshCw} label="Regenerate" onclick={noop} /></div>
+			<div class="w-89.5 max-w-full"><PhoneToast kind="success" title="Link copied" detail="Expires in 7 days" action={{ label: 'Undo', onclick: noop }} /></div>
+			<Notification title="Bandung plan: Tara needs your OK" body="4 of 5 done. Share the itinerary with Sari?" />
 		</GalleryBoard>
 
 		<GalleryBoard title="Decide on mobile" note="options · progress · approval">
@@ -101,10 +105,10 @@
 			</div>
 		</GalleryBoard>
 
-		<GalleryBoard title="Chats list" note="the mobile home for conversations">
-			<div class="w-97.5 max-w-full">
-				<ChatRow href="#chat" agent="dana" title="Food spending in October" time="14:02" preview="Dana: Rp 2,1 jt on food, up 20% from September…" />
-			</div>
-		</GalleryBoard>
 	</div>
+	<GalleryBoard title="Chats list" note="the mobile home for conversations">
+		<div class="w-97.5 max-w-full">
+			<ChatRow href="#chat" agent="dana" title="Food spending in October" time="14:02" preview="Dana: Rp 2,1 jt on food, up 20% from September…" />
+		</div>
+	</GalleryBoard>
 </GallerySection>

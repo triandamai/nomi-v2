@@ -30,7 +30,7 @@
 	}
 </script>
 
-<div class="flex w-full flex-col gap-2 border-t border-border bg-bg px-3 py-2">
+<div class="flex w-full flex-col gap-2 border-t border-border bg-bg px-3 pt-1.75 pb-2">
 	{#if attachments}<div class="flex items-center gap-2 overflow-x-auto">{@render attachments()}</div>{/if}
 	{#if notice}<p class="flex items-center gap-1.5 px-1 font-mono text-label text-text-3"><Icon icon={Mic} size={12} />{notice}</p>{/if}
 	<div class="flex items-end gap-2">
@@ -39,7 +39,7 @@
 				<Icon icon={Plus} size={20} />
 			</button>
 		{/if}
-		<div class="flex min-w-0 flex-1 items-end gap-2 rounded-full border border-border-strong bg-surface py-2.25 pr-2.5 pl-3.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+		<div class="flex min-w-0 flex-1 items-end gap-2 rounded-full border border-border-strong bg-surface py-2 pr-2.25 pl-3.25 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
 			<textarea
 				bind:value
 				rows="1"

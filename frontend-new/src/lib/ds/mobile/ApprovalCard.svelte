@@ -25,8 +25,8 @@
 	let { agent, title, to, subject, excerpt, attachment, approveLabel, approveIcon, rejectLabel, onapprove, onreject, onopen }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<button type="button" class="flex cursor-pointer items-center gap-2.5 border-b border-border px-3.5 py-3 text-left -outline-offset-2" onclick={onopen} disabled={!onopen}>
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<button type="button" class="flex cursor-pointer items-center gap-2.5 border-b border-border px-3.5 pt-3 pb-2.75 text-left -outline-offset-2" onclick={onopen} disabled={!onopen}>
 		<Mascot {agent} size={20} />
 		<span class="min-w-0 flex-1 text-body font-semibold text-text">{title}</span>
 		{#if onopen}<span class="inline-flex text-text-3"><Icon icon={ChevronRight} /></span>{/if}

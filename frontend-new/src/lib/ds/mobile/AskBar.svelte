@@ -10,7 +10,7 @@
 	let { onask, onvoice }: Props = $props();
 </script>
 
-<div class="flex h-13 w-full items-center gap-2.5 rounded-full border border-border-strong bg-surface pr-1.25 pl-3.25 shadow-float">
+<div class="flex h-13 w-full items-center gap-2.5 rounded-full bg-surface pr-1.5 pl-3.5 shadow-float outline -outline-offset-1 outline-border-strong">
 	<button type="button" class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-full text-left outline-offset-2" onclick={onask}>
 		<Mascot agent="koda" size={20} />
 		<span class="truncate text-body text-text-3">{m.ask_bar({ agent: 'Koda' })}</span>

@@ -12,8 +12,8 @@
 	let { title, code, provider, reason, meta, primary, secondary }: Props = $props();
 </script>
 
-<section role="alert" class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2 border-b border-border bg-danger-bg px-3.5 py-2.5">
+<section role="alert" class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2 border-b border-border bg-danger-bg px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex text-danger"><Icon icon={CircleAlert} /></span>
 		<span class="min-w-0 flex-1 text-body font-semibold text-danger">{title}</span>
 		{#if code}<span class="font-mono text-label text-text-3">{code}</span>{/if}

@@ -11,7 +11,7 @@
 	let { project, elapsed, step, current, total, label, eta, onstop }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col gap-3 rounded-3xl border border-border bg-surface p-3.75">
+<section class="flex w-full flex-col gap-3 rounded-3xl bg-surface p-4 outline -outline-offset-1 outline-border">
 	<p class="flex items-center gap-2">
 		<Mascot agent="koda" size={20} />
 		<span class="min-w-0 flex-1 text-phone-sm font-medium text-text">{m.bprogress_title({ project })}</span>
