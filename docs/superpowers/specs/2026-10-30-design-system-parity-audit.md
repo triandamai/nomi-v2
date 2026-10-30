@@ -97,7 +97,7 @@ replaces are deleted in that phase.
 |---|---|---|
 | 1 ✅ | Primitives: actions, inputs (all but Composer), overlays, status, foundations, agents, identity. Gallery at `/design-system`, gated like frontend-new's. No page uses them yet: pages move onto the primitives as phases 2–6 rebuild their screens. | — |
 | 2 | Shell: navigation, chrome, shells, lists. Sidebar, settings nav and the app frame move onto them. | Gaps 4, 5 (pin, move) ✅ |
-| 3 (in progress) | Conversation + rich replies, copied from frontend-new as they are (`chat/`, `conversation/`): their token classes point at M3 through `src/lib/styles/ds-twins.css`. Blocks moved onto them: suggestions (FollowUps), run failed (ErrorCallout), reminder (Reminder), approval (ApprovalCard), reasoning (Reasoning), questions (ClarifyCard, folding to ClarifyAnswered). Still the old components, and why:<br>• table and connect: the API doesn't send what the twin shows (BACKEND_TODO).<br>• plan: frontend-new's PlanCard is a running plan (each step's live state and owner, Stop); the old block is a versioned checklist the person ticks. Which behaviour both apps keep is a product decision.<br>• quota: frontend-new shows it as a banner above the thread with one action; the old one is a card in the thread with two ways on and the month's usage.<br>• todo list, project link, voice, file changes, views: their twins come in phases 5–6 (composer, build) or need the views mapped one kind at a time.<br>• `MessageBubble` itself. | Connect prompt needs `agent_type`, `why` and `reads`; a table needs `title` and `source` (BACKEND_TODO). |
+| 3 (in progress) | Conversation + rich replies, copied from frontend-new as they are (`chat/`, `conversation/`): their token classes point at M3 through `src/lib/styles/ds-twins.css`. Blocks moved onto them: suggestions (FollowUps), run failed (ErrorCallout), reminder (Reminder), approval (ApprovalCard), reasoning (Reasoning), questions (ClarifyCard, folding to ClarifyAnswered). Still the old components, and why:<br>• table and connect: the API doesn't send what the twin shows (BACKEND_TODO).<br>• plan: stays the old block, by decision (see Decisions).<br>• quota: frontend-new shows it as a banner above the thread with one action; the old one is a card in the thread with two ways on and the month's usage.<br>• todo list, project link, voice, file changes, views: their twins come in phases 5–6 (composer, build) or need the views mapped one kind at a time.<br>• `MessageBubble` itself. | Connect prompt needs `agent_type`, `why` and `reads`; a table needs `title` and `source` (BACKEND_TODO). |
 | 4 | Reply and chat actions: ResponseActions, DislikeFeedback, Regenerate/Version, MessageEditor, ChatMenu, Move, Share | Gaps 1, 2, 3, 6 |
 | 5 | Composer (moved here from phase 1) and its extras: mentions, attach menu, voice, limits | — |
 | 6 | Build + mobile: CodeWorkbench and `project/*` move onto the build twins | Gaps 7, 8 |
@@ -117,3 +117,15 @@ How a twin is built:
   - M3 tokens only, following `frontend/CLAUDE.md`.
   - Hover and `focus-visible` states, and 44px targets on phones.
   - Checked at 390 px and in dark mode.
+
+## Decisions
+
+- **Plan blocks are a ticked checklist in both apps (2026-10-30).** A plan the crew posts in chat is
+  a versioned checklist the person ticks, as `frontend/`'s `PlanBlock` does today
+  (`PUT /api/sessions/:id/agent-plans/:agent_session_id/:plan_id/items/:index` saves a tick; the
+  newest version is the one a build follows).
+  - `frontend/` keeps `PlanBlock` as it is.
+  - frontend-new's PlanCard (each step's live state and owner, Stop) stays for a plan that's
+    running, not for the plan block. frontend-new needs a checklist design in `Nomi.pen` before it
+    renders plan blocks; until then it leaves them out, as its rules say.
+
