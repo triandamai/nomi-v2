@@ -54,21 +54,19 @@ The old `frontend/` will use the same endpoints.
   - It keeps the earlier text as a version and queues a new turn from that message.
 - **Until then:** no edit.
 
-### Pin a chat
+### Pin a chat — done
 - **Needed by:** *Chat / Menu*: ChatMenu pin and unpin, and the pinned group in the sidebar.
-- **What exists today:** `PATCH /api/sessions/:id` takes `{ title }` only, and `sessions` has no `pinned` column.
-- **Proposed contract:**
-  - `PATCH /api/sessions/:id` with `{ pinned: bool }`.
-  - `GET /api/sessions` returns `pinned` and `pinned_at`.
-- **Until then:** no pin item in the menu.
+- **Built:** `PATCH /api/sessions/:id` with `{ pinned: bool }` (the chat's owner only) returns `{ title, pinned, in_project_id }`.
+  - `GET /api/sessions` returns `pinned` and `pinned_at` for each chat; newest pin first is the list's job.
+  - Migration `0090_session_pins_and_projects.sql`.
 
-### Move a chat into a project
+### Move a chat into a project — done
 - **Needed by:** *Chat / Menu*: MoveDialog.
-- **What exists today:** nothing on `sessions`. `GET /api/projects/by-session/:sessionId` only reads the link.
-- **Proposed contract:**
-  - `PATCH /api/sessions/:id` with `{ project_id: uuid | null }`.
-  - It's checked against the person's access to the project.
-- **Until then:** no move item.
+- **Built:** `PATCH /api/sessions/:id` with `{ in_project_id: uuid | null }` (the chat's owner only); `null` takes it out.
+  - The field is `in_project_id`, since `project_id` in the list already means "this chat is that project's own chat".
+  - Any project the person can open will do, since the chat itself stays private.
+  - A project's own chat answers 400: it stays with its project.
+  - `GET /api/sessions` returns `in_project_id`.
 
 ### Share a chat by link
 - **Needed by:** *Chat / Share*: ShareDialog and SharePanel.

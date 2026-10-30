@@ -11,7 +11,7 @@ const TWINS = fileURLToPath(new URL('./components/ds', import.meta.url));
 const ORIGINALS = fileURLToPath(new URL('../../../frontend-new/src/lib/ds', import.meta.url));
 
 /** Pure modules both apps keep byte for byte. */
-const SHARED_MODULES = ['agents/crew.ts', 'overlays/toasts.svelte.ts'];
+const SHARED_MODULES = ['agents/crew.ts', 'overlays/toasts.svelte.ts', 'navigation/rowStyle.ts'];
 
 function files(dir: string, extension: string): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

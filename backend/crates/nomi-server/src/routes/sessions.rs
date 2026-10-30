@@ -62,6 +62,11 @@ pub struct SessionListItem {
     /// Set when this session has a project attached — the history list uses this to badge it and
     /// route into the project workspace instead of the plain chat page.
     pub project_id: Option<Uuid>,
+    /// Pinned to the top of the list, and since when.
+    pub pinned: bool,
+    pub pinned_at: Option<DateTime<Utc>>,
+    /// The project this chat was moved into (not its own project: that's `project_id`).
+    pub in_project_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -76,13 +81,13 @@ pub async fn list_sessions(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<ListSessionsResponse>, (StatusCode, &'static str)> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>, Option<DateTime<Utc>>, Option<Uuid>)> = sqlx::query_as(
         "SELECT \
             s.id, s.channel, s.chat_type, s.chat_id, s.title, \
             lm.content, lm.created_at, \
             EXISTS (SELECT 1 FROM agent_sessions ag WHERE ag.session_id = s.id AND ag.status = 'active'), \
             COALESCE(lm.created_at, s.created_at), \
-            p.id \
+            p.id, s.pinned_at, s.in_project_id \
          FROM sessions s \
          LEFT JOIN LATERAL ( \
              SELECT content, created_at FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
@@ -103,12 +108,25 @@ pub async fn list_sessions(
 
     let sessions = rows
         .into_iter()
-        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id)| {
+        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id, pinned_at, in_project_id)| {
             let last_message = match (last_content, last_created_at) {
                 (Some(content), Some(created_at)) => Some(LastMessagePreview { content, created_at }),
                 _ => None,
             };
-            SessionListItem { id, channel, chat_type, chat_id, title, last_message, agent_active, updated_at, project_id }
+            SessionListItem {
+                id,
+                channel,
+                chat_type,
+                chat_id,
+                title,
+                last_message,
+                agent_active,
+                updated_at,
+                project_id,
+                pinned: pinned_at.is_some(),
+                pinned_at,
+                in_project_id,
+            }
         })
         .collect();
 
@@ -675,29 +693,109 @@ pub async fn set_agent_plan_item(
 }
 
 #[derive(Deserialize)]
-pub struct RenameSessionRequest {
-    pub title: String,
+pub struct UpdateSessionRequest {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    /// A project id moves the chat into it; `null` takes it out; absent leaves it.
+    #[serde(default, deserialize_with = "present")]
+    pub in_project_id: Option<Option<Uuid>>,
+}
+
+/// Tells a field sent as `null` (`Some(None)`) from one left out (`None`).
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<Uuid>>, D::Error> {
+    Option::<Uuid>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Serialize)]
-pub struct RenameSessionResponse {
-    pub title: String,
+pub struct UpdateSessionResponse {
+    pub title: Option<String>,
+    pub pinned: bool,
+    pub in_project_id: Option<Uuid>,
 }
 
-/// The person renames a chat.
+const UPDATE_FAILED: &str = "failed to update chat";
+
+fn update_failed<E>(_: E) -> (StatusCode, &'static str) {
+    (StatusCode::INTERNAL_SERVER_ERROR, UPDATE_FAILED)
+}
+
+/// The person renames a chat, pins or unpins it, or moves it into one of their projects (or out).
+/// Anyone who can open a project's chat may rename it; pinning and moving are the owner's, since
+/// they change where the chat sits in the owner's own list.
 pub async fn rename_session(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
-    Json(req): Json<RenameSessionRequest>,
-) -> Result<Json<RenameSessionResponse>, (StatusCode, &'static str)> {
+    Json(req): Json<UpdateSessionRequest>,
+) -> Result<Json<UpdateSessionResponse>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
-    let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to rename chat"))?;
-    match nomi_agent_core::chat_title::rename(&mut conn, session_id, &req.title).await {
-        Ok(Some(title)) => Ok(Json(RenameSessionResponse { title })),
-        Ok(None) => Err((StatusCode::BAD_REQUEST, "title must not be empty")),
-        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to rename chat")),
+    if req.title.is_none() && req.pinned.is_none() && req.in_project_id.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "nothing to change"));
     }
+
+    let mut tx = state.pool.begin().await.map_err(update_failed)?;
+    if let Some(title) = &req.title {
+        if nomi_agent_core::chat_title::rename(&mut *tx, session_id, title).await.map_err(update_failed)?.is_none() {
+            return Err((StatusCode::BAD_REQUEST, "title must not be empty"));
+        }
+    }
+
+    if req.pinned.is_some() || req.in_project_id.is_some() {
+        let (owner, own_project): (Option<Uuid>, bool) =
+            sqlx::query_as("SELECT s.user_id, EXISTS (SELECT 1 FROM projects p WHERE p.session_id = s.id) FROM sessions s WHERE s.id = $1")
+        .bind(session_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(update_failed)?;
+        if owner != Some(claims.sub) {
+            return Err((StatusCode::NOT_FOUND, "session not found"));
+        }
+
+        if let Some(pinned) = req.pinned {
+            sqlx::query("UPDATE sessions SET pinned_at = CASE WHEN $2 THEN COALESCE(pinned_at, now()) END WHERE id = $1")
+                .bind(session_id)
+                .bind(pinned)
+                .execute(&mut *tx)
+                .await
+                .map_err(update_failed)?;
+        }
+
+        if let Some(target) = req.in_project_id {
+            if own_project {
+                return Err((StatusCode::BAD_REQUEST, "a project's own chat stays with its project"));
+            }
+            // Filing a chat under a project only changes where it sits in the person's own list:
+            // the chat stays private, so any project they can open will do.
+            if let Some(project_id) = target {
+                let openable: bool = sqlx::query_scalar("SELECT can_open_project($1, $2)")
+                    .bind(project_id)
+                    .bind(claims.sub)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(update_failed)?;
+                if !openable {
+                    return Err((StatusCode::NOT_FOUND, "project not found"));
+                }
+            }
+            sqlx::query("UPDATE sessions SET in_project_id = $2 WHERE id = $1")
+                .bind(session_id)
+                .bind(target)
+                .execute(&mut *tx)
+                .await
+                .map_err(update_failed)?;
+        }
+    }
+
+    let (title, pinned, in_project_id): (Option<String>, bool, Option<Uuid>) =
+        sqlx::query_as("SELECT title, pinned_at IS NOT NULL, in_project_id FROM sessions WHERE id = $1")
+            .bind(session_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(update_failed)?;
+    tx.commit().await.map_err(update_failed)?;
+    Ok(Json(UpdateSessionResponse { title, pinned, in_project_id }))
 }
 
 #[derive(Deserialize)]

@@ -159,6 +159,87 @@ async fn a_chat_can_be_renamed_by_its_owner_only(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+async fn user_id_by_email(pool: &PgPool, email: &str) -> Uuid {
+    sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = $1").bind(email).fetch_one(pool).await.unwrap()
+}
+
+/// A project of `email`'s, built in a chat of its own.
+async fn project_of(router: axum::Router, pool: &PgPool, token: &str, email: &str) -> Uuid {
+    let session_id: Uuid = start_chat(router, token).await.parse().unwrap();
+    sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name, description, plan) VALUES ($1, $2, 'Todo app', 'a list', '1. index.html') RETURNING id")
+        .bind(user_id_by_email(pool, email).await)
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_can_be_pinned_and_unpinned_by_its_owner(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "pin@example.com").await;
+    let outsider = register_and_login(router.clone(), "nosy-pin@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let path = format!("/api/sessions/{session_id}");
+
+    let (_, list_body) = json_request(router.clone(), "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    assert_eq!(list_body["sessions"][0]["pinned"], false);
+
+    let (status, body) = json_request(router.clone(), "PATCH", &path, json!({ "pinned": true }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["pinned"], true);
+    let (_, list_body) = json_request(router.clone(), "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    assert_eq!(list_body["sessions"][0]["pinned"], true);
+    assert!(list_body["sessions"][0]["pinned_at"].is_string());
+
+    let (_, body) = json_request(router.clone(), "PATCH", &path, json!({ "pinned": false }), Some(&token)).await;
+    assert_eq!(body["pinned"], false);
+
+    let (status, _) = json_request(router.clone(), "PATCH", &path, json!({ "pinned": true }), Some(&outsider)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = json_request(router, "PATCH", &path, json!({}), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_can_be_moved_into_a_project_the_person_can_open(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "mover@example.com").await;
+    let stranger = register_and_login(router.clone(), "stranger@example.com").await;
+    let project = project_of(router.clone(), &pool, &token, "mover@example.com").await;
+    let theirs = project_of(router.clone(), &pool, &stranger, "stranger@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let path = format!("/api/sessions/{session_id}");
+
+    let (status, body) = json_request(router.clone(), "PATCH", &path, json!({ "in_project_id": project }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["in_project_id"], project.to_string());
+    let (_, list_body) = json_request(router.clone(), "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    let moved = list_body["sessions"].as_array().unwrap().iter().find(|s| s["id"] == session_id.as_str()).unwrap().clone();
+    assert_eq!(moved["in_project_id"], project.to_string());
+
+    // Someone else's project answers like one that doesn't exist.
+    let (status, _) = json_request(router.clone(), "PATCH", &path, json!({ "in_project_id": theirs }), Some(&token)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // null takes it out again.
+    let (status, body) = json_request(router, "PATCH", &path, json!({ "in_project_id": null }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["in_project_id"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_projects_own_chat_is_not_moved(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "builder@example.com").await;
+    let project = project_of(router.clone(), &pool, &token, "builder@example.com").await;
+    let other = project_of(router.clone(), &pool, &token, "builder@example.com").await;
+    let own_chat: Uuid = sqlx::query_scalar("SELECT session_id FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
+
+    let (status, _) = json_request(router, "PATCH", &format!("/api/sessions/{own_chat}"), json!({ "in_project_id": other }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn create_session_requires_authentication(pool: PgPool) {
     let router = build_router(test_state(pool));

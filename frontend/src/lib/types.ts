@@ -8,7 +8,12 @@ export interface SessionSummary {
 	last_message: { content: string; created_at: string } | null;
 	agent_active: boolean;
 	updated_at: string;
+	/** The project this chat belongs to as its own (Build). */
 	project_id: string | null;
+	pinned: boolean;
+	pinned_at: string | null;
+	/** The project this chat was moved into. */
+	in_project_id: string | null;
 }
 
 export interface TodoItem {

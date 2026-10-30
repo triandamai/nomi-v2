@@ -96,7 +96,7 @@ replaces are deleted in that phase.
 | Phase | Frontend (M3 twins in `frontend/src/lib/components/ds/<section>/`) | Backend |
 |---|---|---|
 | 1 ✅ | Primitives: actions, inputs (all but Composer), overlays, status, foundations, agents, identity. Gallery at `/design-system`, gated like frontend-new's. No page uses them yet: pages move onto the primitives as phases 2–6 rebuild their screens. | — |
-| 2 | Shell: navigation, chrome, shells, lists. Sidebar, settings nav and the app frame move onto them. | Gaps 4, 5 (pin, move) |
+| 2 | Shell: navigation, chrome, shells, lists. Sidebar, settings nav and the app frame move onto them. | Gaps 4, 5 (pin, move) ✅ |
 | 3 | Conversation + rich replies: MessageUser/Agent, every block/view twin. `ChatThread` and `MessageBubble` move onto them. | — |
 | 4 | Reply and chat actions: ResponseActions, DislikeFeedback, Regenerate/Version, MessageEditor, ChatMenu, Move, Share | Gaps 1, 2, 3, 6 |
 | 5 | Composer (moved here from phase 1) and its extras: mentions, attach menu, voice, limits | — |

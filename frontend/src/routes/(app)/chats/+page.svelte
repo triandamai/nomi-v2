@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
+	import { Folder, Pin } from '@lucide/svelte';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
 	import Pagination from '$lib/components/m3/Pagination.svelte';
 	import ListToolbar from '$lib/components/ListToolbar.svelte';
@@ -9,6 +10,7 @@
 	import IconChatBubble from '$lib/components/icons/IconChatBubble.svelte';
 	import { timeAgo } from '$lib/i18n';
 	import { previewText } from '$lib/sessionPreview';
+	import { pinnedFirst } from '$lib/sessionOrder';
 	import { pageCount, pageOf, searchItems, storedLayout, storeLayout, type ListLayout } from '$lib/listView';
 	import type { SessionSummary } from '$lib/types';
 	import type { PageData } from './$types';
@@ -21,7 +23,7 @@
 	let layout = $state<ListLayout>('table');
 	onMount(() => (layout = storedLayout('chats', 'table')));
 
-	const found = $derived(searchItems(data.sessions, query, (s) => `${s.title ?? ''} ${s.last_message?.content ?? ''}`));
+	const found = $derived(searchItems(pinnedFirst(data.sessions), query, (s) => `${s.title ?? ''} ${s.last_message?.content ?? ''}`));
 	const pages = $derived(pageCount(found.length, PAGE_SIZE));
 	const shown = $derived(pageOf(found, page, PAGE_SIZE));
 	// A new search starts from the first page.
@@ -39,6 +41,7 @@
 
 	const href = (s: SessionSummary) => (s.project_id ? `/projects/session/${s.id}` : `/chat/${s.id}`);
 	const title = (s: SessionSummary) => s.title ?? m.nav_new_chat();
+	const projectName = (s: SessionSummary) => data.projects.find((project) => project.id === s.in_project_id)?.name;
 </script>
 
 <div class="list-page">
@@ -63,24 +66,29 @@
 									{#if session.project_id}<IconFolder size={16} />{:else}<IconChatBubble size={16} />{/if}
 								</span>
 								<span class="cell-title__text">{title(session)}</span>
+								{#if session.pinned}<span class="pin" title={m.drawer_pinned()}><Pin size={14} strokeWidth={1.5} role="img" aria-label={m.drawer_pinned()} /></span>{/if}
 							</a>
+							{#if projectName(session)}<span class="in-project"><Folder size={12} strokeWidth={1.5} aria-hidden="true" />{projectName(session)}</span>{/if}
 						</td>
 						<td class="cell-preview">{previewText(session.last_message?.content)}</td>
 						<td class="cell-time">{timeAgo(session.updated_at)}</td>
-						<td class="cell-actions"><SessionActions {session} /></td>
+						<td class="cell-actions"><SessionActions {session} projects={data.projects} /></td>
 					</tr>
 				{/each}
 				{#snippet list()}
 					{#each shown as session (session.id)}
 						<div role="listitem" class="row-item">
 							<a class="row-item__link" href={href(session)} data-sveltekit-reload={session.project_id ? true : undefined}>
-								<span class="row-item__title">{title(session)}</span>
+								<span class="row-item__title">
+									{#if session.pinned}<Pin size={14} strokeWidth={1.5} role="img" aria-label={m.drawer_pinned()} />{/if}
+									{title(session)}
+								</span>
 								<span class="row-item__meta">
-									{session.project_id ? m.session_project() : m.session_chat()} · {timeAgo(session.updated_at)}
+									{projectName(session) ?? (session.project_id ? m.session_project() : m.session_chat())} · {timeAgo(session.updated_at)}
 								</span>
 								<span class="row-item__preview">{previewText(session.last_message?.content)}</span>
 							</a>
-							<SessionActions {session} />
+							<SessionActions {session} projects={data.projects} />
 						</div>
 					{/each}
 				{/snippet}
@@ -90,14 +98,18 @@
 				{#each shown as session (session.id)}
 					<li class="card">
 						<a class="card__link" href={href(session)} data-sveltekit-reload={session.project_id ? true : undefined}>
-							<span class="card__title">{title(session)}</span>
+							<span class="card__title">
+								{#if session.pinned}<Pin size={14} strokeWidth={1.5} role="img" aria-label={m.drawer_pinned()} />{/if}
+								{title(session)}
+							</span>
 						</a>
 						<p class="card__preview">{previewText(session.last_message?.content)}</p>
 						<p class="card__meta">
 							{#if session.project_id}<span class="card__kind"><IconFolder size={14} />{m.session_project()}</span>{/if}
+							{#if projectName(session)}<span class="card__kind"><IconFolder size={14} />{projectName(session)}</span>{/if}
 							<span class="card__time">{timeAgo(session.updated_at)}</span>
 						</p>
-						<div class="card__menu"><SessionActions {session} /></div>
+						<div class="card__menu"><SessionActions {session} projects={data.projects} /></div>
 					</li>
 				{/each}
 			</ul>
@@ -146,6 +158,20 @@
 	.cell-title:hover .cell-title__text {
 		text-decoration: underline;
 		text-underline-offset: 3px;
+	}
+	.pin {
+		display: inline-flex;
+		flex-shrink: 0;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.in-project {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-top: 2px;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: var(--md-sys-typescale-label-small-size);
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.cell-title__text {
 		overflow: hidden;
@@ -199,6 +225,12 @@
 		min-width: 0;
 		color: var(--md-sys-color-on-surface);
 		text-decoration: none;
+	}
+	.row-item__title :global(svg),
+	.card__title :global(svg) {
+		margin-right: 4px;
+		vertical-align: -2px;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.row-item__title {
 		overflow: hidden;

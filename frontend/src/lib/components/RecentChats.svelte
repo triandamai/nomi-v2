@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
+	import { Pin } from '@lucide/svelte';
 	import IconChevronDown from '$lib/components/icons/IconChevronDown.svelte';
 	import type { RecentsState } from '$lib/drawerRecents';
 
@@ -49,7 +50,8 @@
 							{@const active = chat.id === activeId}
 							<li>
 								<a href={chat.href} class="recents__item" class:recents__item--active={active} aria-current={active ? 'page' : undefined} onclick={() => onnavigate?.()}>
-									{chat.title}
+									<span class="recents__title">{chat.title}</span>
+									{#if chat.pinned}<span class="recents__pin" title={m.drawer_pinned()}><Pin size={14} strokeWidth={1.5} aria-label={m.drawer_pinned()} role="img" /></span>{/if}
 								</a>
 							</li>
 						{/each}
@@ -111,8 +113,21 @@
 		font-size: 0.875rem;
 		transition: background-color var(--nomi-motion-effects-fast);
 	}
+	.recents__title {
+		min-width: 0;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.recents__pin {
+		display: inline-flex;
+		flex-shrink: 0;
+		color: var(--md-sys-color-on-surface-variant);
+	}
 	.recents__item {
-		display: block;
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		line-height: 40px;
 		overflow: hidden;
 		white-space: nowrap;

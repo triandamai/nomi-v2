@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
-import { Pencil, Trash2 } from '@lucide/svelte';
+import { createRawSnippet, flushSync, mount, tick, unmount, type Component } from 'svelte';
+import { House, Pencil, Trash2 } from '@lucide/svelte';
 import Button from './actions/Button.svelte';
 import IconButton from './actions/IconButton.svelte';
 import Meter from './status/Meter.svelte';
@@ -19,6 +19,16 @@ import Menu from './overlays/Menu.svelte';
 import Toast from './overlays/Toast.svelte';
 import ToastRegion from './overlays/ToastRegion.svelte';
 import { toasts } from './overlays/toasts.svelte';
+import NavItem from './navigation/NavItem.svelte';
+import RecentsList from './chrome/RecentsList.svelte';
+import Sidebar from './chrome/Sidebar.svelte';
+import SettingsNav from './chrome/SettingsNav.svelte';
+import UsageCard from './chrome/UsageCard.svelte';
+import AppShell from './shells/AppShell.svelte';
+import WorkspaceShell from './shells/WorkspaceShell.svelte';
+import SkeletonRow from './lists/SkeletonRow.svelte';
+import SuggestionRow from './lists/SuggestionRow.svelte';
+import ProjectRow from './lists/ProjectRow.svelte';
 
 // The twins behave like frontend-new's design system: the same roles, keys and events. Their look
 // is Material 3, so nothing here checks styling.
@@ -39,7 +49,9 @@ beforeAll(() => {
 
 let mounted: ReturnType<typeof mount>[] = [];
 
-function render<Props extends Record<string, unknown>>(component: Parameters<typeof mount>[0], props: Props): HTMLElement {
+// Each test mounts a different twin with its own props; the props are checked by the twin itself.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function render(component: Component<any>, props: Record<string, unknown>): HTMLElement {
 	const target = document.body.appendChild(document.createElement('div'));
 	mounted.push(mount(component, { target, props }));
 	flushSync();
@@ -229,5 +241,87 @@ describe('overlays', () => {
 		vi.advanceTimersByTime(6000);
 		flushSync();
 		expect([...root.querySelectorAll('[role="status"], [role="alert"]')].map((toast) => toast.getAttribute('role'))).toEqual(['alert']);
+	});
+});
+
+const html = (markup: string) => createRawSnippet(() => ({ render: () => markup }));
+
+describe('navigation and chrome', () => {
+	it('NavItem marks the page it leads to', () => {
+		expect(render(NavItem, { href: '/', icon: House, label: 'Home', active: true }).querySelector('a')!.getAttribute('aria-current')).toBe('page');
+		expect(render(NavItem, { href: '/chats', icon: House, label: 'Chats', count: 3 }).querySelector('a')!.getAttribute('aria-current')).toBeNull();
+	});
+
+	it('RecentsList folds its rows but keeps the way to every chat', () => {
+		const items = [{ href: '/chat/a', kind: 'chat', title: 'Trip', when: '2h' }];
+		const root = render(RecentsList, { items, allHref: '/chats' });
+		const fold = root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+		expect(root.querySelector('a[href="/chat/a"]')).not.toBeNull();
+		fold.click();
+		flushSync();
+		expect(fold.getAttribute('aria-expanded')).toBe('false');
+		expect(root.querySelector('a[href="/chat/a"]')).toBeNull();
+		expect(root.querySelector('a[href="/chats"]')).not.toBeNull();
+	});
+
+	it('Sidebar is the main navigation, with New chat and the sections it is given', () => {
+		const oncollapse = vi.fn();
+		const root = render(Sidebar, { newChatHref: '/chat/new', oncollapse, children: html('<a href="/money">Money</a>') });
+		expect(root.querySelector('nav')!.getAttribute('aria-label')).toBe('Main');
+		expect(root.querySelector('a[href="/chat/new"]')?.textContent).toContain('⌘K');
+		expect(root.querySelector('a[href="/money"]')).not.toBeNull();
+		root.querySelector<HTMLButtonElement>('button[aria-label]')!.click();
+		expect(oncollapse).toHaveBeenCalledOnce();
+	});
+
+	it('SettingsNav marks the open setting and logs out', () => {
+		const onlogout = vi.fn();
+		const groups = [{ label: 'Account', items: [{ href: '/profile', icon: 'user', label: 'Profile' }, { href: '/billing', icon: 'credit-card', label: 'Billing' }] }];
+		const root = render(SettingsNav, { backHref: '/', groups, active: '/billing', user: { name: 'Ada' }, version: 'v1.2', onlogout });
+		expect(root.querySelector('[aria-current="page"]')?.getAttribute('href')).toBe('/billing');
+		const logout = [...root.querySelectorAll('button')].find((button) => button.textContent?.includes('v1.2'))!;
+		logout.click();
+		expect(onlogout).toHaveBeenCalledOnce();
+	});
+
+	it('UsageCard shows the plan as a meter', () => {
+		const meter = render(UsageCard, { plan: 'Pro', used: 0.25, caption: '250K / 1M', href: '/billing' }).querySelector('[role="meter"]')!;
+		expect(meter.getAttribute('aria-valuenow')).toBe('25');
+	});
+});
+
+describe('shells and lists', () => {
+	it('AppShell opens the navigation as a modal drawer on small screens', () => {
+		const root = render(AppShell, { sidebar: html('<nav>Drawer</nav>'), children: html('<p>Content</p>') });
+		expect(root.querySelector('dialog')).toBeNull();
+		root.querySelector<HTMLButtonElement>('header button')!.click();
+		flushSync();
+		expect(root.querySelector('dialog')?.textContent).toContain('Drawer');
+	});
+
+	it('WorkspaceShell switches between chat and preview', () => {
+		const root = render(WorkspaceShell, { projectbar: html('<span>Todo</span>'), chat: html('<p>Chat</p>'), children: html('<p>Preview</p>') });
+		const group = root.querySelector('[role="radiogroup"]')!;
+		expect(root.querySelector('section')!.classList.contains('shown')).toBe(true);
+		key(group, 'ArrowRight');
+		expect(root.querySelector('section')!.classList.contains('shown')).toBe(false);
+	});
+
+	it('SkeletonRow says what is loading', () => {
+		const status = render(SkeletonRow, { label: 'loading 4 projects…' }).querySelector('[role="status"]')!;
+		expect(status.getAttribute('aria-busy')).toBe('true');
+		expect(status.textContent).toContain('loading 4 projects…');
+	});
+
+	it('SuggestionRow asks when picked', () => {
+		const onclick = vi.fn();
+		render(SuggestionRow, { agent: 'dana', label: 'How much did I spend?', route: '→ dana', onclick }).querySelector('button')!.click();
+		expect(onclick).toHaveBeenCalledOnce();
+	});
+
+	it('ProjectRow links to the project with its status in words', () => {
+		const root = render(ProjectRow, { href: '/projects/1', name: 'todo', tone: 'koda', status: { kind: 'live', label: 'Live' }, url: 'todo.nomi.app', updated: '2h' });
+		expect(root.querySelector('a')!.getAttribute('href')).toBe('/projects/1');
+		expect(root.textContent).toContain('Live');
 	});
 });

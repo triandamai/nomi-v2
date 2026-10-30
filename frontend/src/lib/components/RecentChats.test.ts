@@ -5,8 +5,8 @@ import RecentChats from './RecentChats.svelte';
 import type { RecentsState } from '$lib/drawerRecents';
 
 const chats = [
-	{ id: 'a', title: 'Trip plan', href: '/chat/a' },
-	{ id: 'b', title: 'Budget', href: '/chat/b' },
+	{ id: 'a', title: 'Trip plan', href: '/chat/a', pinned: false },
+	{ id: 'b', title: 'Budget', href: '/chat/b', pinned: true },
 ];
 
 let component: ReturnType<typeof mount> | null = null;
@@ -35,6 +35,12 @@ describe('RecentChats', () => {
 		]);
 		expect(links[0].getAttribute('aria-current')).toBeNull();
 		expect(links[1].getAttribute('aria-current')).toBe('page');
+	});
+
+	it('marks a pinned chat as pinned', () => {
+		const target = render({ state: { status: 'ready', chats } });
+		expect(target.querySelector('a[href="/chat/a"] [role="img"]')).toBeNull();
+		expect(target.querySelector('a[href="/chat/b"] [role="img"]')?.getAttribute('aria-label')).toBe('Pinned');
 	});
 
 	it('closes the drawer when a chat is picked', () => {

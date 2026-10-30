@@ -1,6 +1,7 @@
 // Recent chats listed in the navigation drawer (Preferences → Navigation drawer).
 
 import { m } from '$lib/paraglide/messages';
+import { pinnedFirst } from '$lib/sessionOrder';
 import type { Preferences, SessionSummary } from '$lib/types';
 
 /** The sizes Preferences offers; the backend accepts only these. */
@@ -17,6 +18,7 @@ export interface RecentChat {
 	id: string;
 	title: string;
 	href: string;
+	pinned: boolean;
 }
 
 export type RecentsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: RecentChat[] };
@@ -33,12 +35,19 @@ export function resolveRecents(preferences: Pick<Preferences, 'drawer_recents' |
 	};
 }
 
-/** The newest `limit` chats (sessions come newest first). Project sessions live under Projects. */
+/**
+ * The pinned chats, then the newest `limit` others (sessions come newest first). Pinned ones don't
+ * count against the limit: the person put them there. Project sessions live under Projects.
+ */
 export function toRecentChats(sessions: SessionSummary[], limit: number): RecentChat[] {
-	return sessions
-		.filter((session) => !session.project_id)
-		.slice(0, limit)
-		.map((session) => ({ id: session.id, title: session.title ?? m.nav_new_chat(), href: `/chat/${session.id}` }));
+	const chats = sessions.filter((session) => !session.project_id);
+	const pinned = pinnedFirst(chats).filter((session) => session.pinned);
+	return [...pinned, ...chats.filter((session) => !session.pinned).slice(0, limit)].map((session) => ({
+		id: session.id,
+		title: session.title ?? m.nav_new_chat(),
+		href: `/chat/${session.id}`,
+		pinned: session.pinned,
+	}));
 }
 
 export function isRecentChatActive(pathname: string, id: string): boolean {
