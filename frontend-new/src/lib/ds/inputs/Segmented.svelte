@@ -22,7 +22,7 @@
 	}
 </script>
 
-<div role="radiogroup" aria-label={label} tabindex="-1" {onkeydown} class="inline-flex gap-0.5 rounded-sm bg-surface-2 p-0.5">
+<div role="radiogroup" aria-label={label} tabindex="-1" {onkeydown} class="inline-flex max-w-full flex-wrap gap-0.5 rounded-sm bg-surface-2 p-0.5">
 	{#each options as option, index (option.value)}
 		{@const checked = option.value === value}
 		<button
