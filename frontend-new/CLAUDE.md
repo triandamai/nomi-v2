@@ -57,13 +57,27 @@ of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour 
   no API types. Links, active state and actions come in as props. Pages and flows adapt API data
   to those props.
 
+## Server
+- Every backend call from a load or action goes through `apiFetch(event, path, init)`
+  (`src/lib/server/api.ts`): it sends the person's token and renews the sign-in at most once per
+  request (the hook renews it ahead of expiry; a 401 renews and retries once). When renewal fails
+  they're signed out and sent to `SIGN_IN_PATH`.
+- `server.js` runs in production: uploads stream straight to the backend (`ws-proxy/upload-proxy.js`),
+  live updates go through the WebSocket relay (`ws-proxy/ws-proxy.js`: `/chat/:id/ws`,
+  `/projects/:id/ws`, `/activity/ws`), everything else is SvelteKit. The relay refuses other sites'
+  pages and renews an expired token before it gives up on a connection. `vite dev` and
+  `vite preview` run the same relay (`vite-plugins/dev-ws-proxy.ts`).
+
 ## Tests (test-first, always)
 - Write the failing test, then the code, then refactor. Nothing ships without a test.
 - `*.svelte.test.ts` runs in real Chromium (Vitest browser mode, `vitest-browser-svelte`) with
   the app's CSS: components, roles, keyboard, focus, ARIA, events.
-- Every other `*.test.ts` runs in Node: pure modules, server code, message files.
+- Every other `*.test.ts` (and `ws-proxy/*.test.js`) runs in Node: pure modules, server code,
+  the relay, message files.
+- `e2e/*.e2e.ts` (Playwright) runs the production server on 4175 against a backend: the smoke
+  tests use the stub in `e2e/stub-api.mjs`.
 - Gates, chained so a failure stops the chain:
-  `npm run check && npm run test:unit && npm run test:components && npm run build`.
+  `npm run check && npm run test:unit && npm run test:components && npm run build && npm run test:e2e`.
 
 ## i18n
 - Every string the person reads is a message in `messages/en.json` and `messages/id.json`
