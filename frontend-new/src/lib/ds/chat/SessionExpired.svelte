@@ -16,7 +16,7 @@
 		<h2 class="text-body font-medium text-text">{m.session_title()}</h2>
 		<p class="text-ui leading-normal text-text-2">{m.session_body()}</p>
 		{#if draft}
-			<p class="flex items-center gap-2 rounded-sm border border-border bg-bg px-2.5 py-2">
+			<p class="flex items-center gap-2 rounded-sm bg-bg px-2.5 py-2 outline -outline-offset-1 outline-border">
 				<span class="inline-flex shrink-0 text-text-3"><Icon icon={FilePenLine} size={12} /></span>
 				<span class="min-w-0 flex-1 truncate text-caption text-text-2">{draft}</span>
 				<span class="font-mono text-label text-text-3">{m.session_draft_kept()}</span>

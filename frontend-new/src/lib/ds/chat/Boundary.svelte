@@ -37,10 +37,10 @@
 					href={alternative.href}
 					target={alternative.external ? '_blank' : undefined}
 					rel={alternative.external ? 'noopener noreferrer' : undefined}
-					class="flex items-center gap-2.5 rounded-sm border border-border-strong px-2.5 py-2 outline-offset-2 transition-colors hover:bg-surface">{@render inside(alternative)}</a
+					class="flex items-center gap-2.5 rounded-sm border border-border-strong px-2.25 py-1.75 outline-offset-2 transition-colors hover:bg-surface">{@render inside(alternative)}</a
 				>
 			{:else}
-				<button type="button" class="flex cursor-pointer items-center gap-2.5 rounded-sm border border-border-strong px-2.5 py-2 text-left outline-offset-2 transition-colors hover:bg-surface" onclick={alternative.onclick}>
+				<button type="button" class="flex cursor-pointer items-center gap-2.5 rounded-sm border border-border-strong px-2.25 py-1.75 text-left outline-offset-2 transition-colors hover:bg-surface" onclick={alternative.onclick}>
 					{@render inside(alternative)}
 				</button>
 			{/if}

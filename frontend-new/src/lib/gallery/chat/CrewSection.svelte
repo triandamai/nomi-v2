@@ -23,7 +23,7 @@
 >
 	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Hand-off & limits" note="who answers · what we won't do">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Hand-off" />
 				<Handoff from={{ agent: 'nomi', name: 'Nomi' }} to={{ agent: 'dana', name: 'Dana' }} reason="she has your transaction records" onback={noop} />
 				<SectionLabel label="Can't do that" />
@@ -40,7 +40,7 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Memory & connections" note="never silent">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Memory used" />
 				<MemoryUsed fact="Sari is vegetarian" onmanage={noop} />
 				<SectionLabel label="Memory saved" />
@@ -77,7 +77,7 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Background work & session" note="leave · stop · signed out">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Running in the background" />
 				<BackgroundNote eta="~3 min" />
 				<SectionLabel label="Crew working" />

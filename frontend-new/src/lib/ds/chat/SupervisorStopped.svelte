@@ -23,7 +23,7 @@
 	</header>
 	<ul class="px-3.5 py-1">
 		{#each tasks as task, index (index)}
-			<li class={['flex flex-wrap items-center gap-2.5 py-2', index > 0 && 'border-t border-border']}>
+			<li class={['flex flex-wrap items-center gap-2.5 pb-2', index > 0 ? 'border-t border-border pt-1.75' : 'pt-2']}>
 				<span class={['inline-flex shrink-0', task.state === 'done' ? 'text-accent' : 'text-text-3']}><Icon icon={ICON[task.state]} size={14} /></span>
 				<Mascot agent={task.agent} size={20} />
 				<span class="min-w-0 flex-1 text-ui text-text">{task.title}</span>

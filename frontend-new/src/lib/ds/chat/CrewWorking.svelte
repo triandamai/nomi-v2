@@ -11,7 +11,7 @@
 	let { crew, onstop }: Props = $props();
 </script>
 
-<div role="status" class="flex w-full flex-wrap items-center gap-2.5 rounded-sm border border-border py-1.5 pr-2 pl-3">
+<div role="status" class="flex w-full flex-wrap items-center gap-2.5 rounded-sm py-1.5 pr-2 pl-3 outline -outline-offset-1 outline-border">
 	<span class="flex items-center -space-x-1.5">
 		{#each crew as agent (agent)}<Mascot {agent} size={20} />{/each}
 	</span>
