@@ -6,6 +6,9 @@ import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+	// Rolldown's plugin-timing report prints as a warning on every build; it's a profiling aid, not
+	// a problem with the build.
+	build: { rolldownOptions: { checks: { pluginTimings: false } } },
 	plugins: [
 		tailwindcss(),
 		// English and Indonesian. The person's saved language lives in the cookie; before sign-in,

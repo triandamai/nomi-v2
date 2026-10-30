@@ -38,6 +38,21 @@ of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour 
 ## Code
 - Svelte 5 runes, TypeScript strict, Tailwind v4 with the design tokens only (no raw colours,
   no `dark:` variant: the tokens carry the theme).
+- Tokens live in `src/lib/ds/tokens/tokens.css`, exported from the pen file into `tokens.json`
+  (`tokens.test.ts` fails when the two drift). Tailwind knows nothing else: colours are the token
+  names without `nm-` (`bg-surface`, `text-text-2`, `border-border-strong`, `bg-accent`,
+  `text-accent-ink`, `bg-crew-koda-bg`), sizes `text-display / body / ui / caption / label`,
+  `rounded-sm / md`, `shadow-float` (floating layers only), `tracking-label / display`,
+  `font-sans / mono`. Spacing keeps Tailwind's 4px steps; use only the design's
+  (2, 4, 6, 8, 12, 16, 20, 24, 32, 48 → `0.5 1 1.5 2 3 4 5 6 8 12`).
+- `src/lib/ds/lint` checks every `.svelte` file: no raw colours, no `dark:`, no shadows other
+  than `shadow-float`, no arbitrary values, and no class Tailwind doesn't generate. It reads the
+  markup, so write classes in the markup, not in script variables.
+- Theme: light, dark or system in the `nm_theme` cookie, put on `<html data-theme>` by the server.
+  Any `[data-theme]` subtree re-themes everything inside it.
+- `/design-system` is the gallery: each design sheet rebuilt from the real components, to compare
+  with the pen file (`?theme=dark|light`). On in `npm run dev`, off in production unless
+  `PUBLIC_DS_GALLERY=1`. Its copy is documentation, not app text, so it isn't translated.
 - Design-system components live in `src/lib/ds/<section>/` and are presentational: no `$app/*`,
   no API types. Links, active state and actions come in as props. Pages and flows adapt API data
   to those props.
