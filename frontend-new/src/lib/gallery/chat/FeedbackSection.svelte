@@ -4,11 +4,9 @@
 	import FeedbackSent from '$lib/ds/chat/FeedbackSent.svelte';
 	import DeletedReply from '$lib/ds/chat/DeletedReply.svelte';
 	import DislikeFeedback from '$lib/ds/chat/DislikeFeedback.svelte';
-	import SharePanel from '$lib/ds/chat/SharePanel.svelte';
 	import ShareDialog from '$lib/ds/chat/ShareDialog.svelte';
 	import DeleteReplyDialog from '$lib/ds/chat/DeleteReplyDialog.svelte';
 	import Toast from '$lib/ds/overlays/Toast.svelte';
-	import Button from '$lib/ds/actions/Button.svelte';
 	import SectionLabel from '$lib/ds/status/SectionLabel.svelte';
 	import GallerySection from '../GallerySection.svelte';
 	import GalleryBoard from '../GalleryBoard.svelte';
@@ -18,8 +16,6 @@
 
 	let feedback = $state<'liked' | 'disliked' | null>(null);
 	let masked = $state(true);
-	let shareOpen = $state(false);
-	let deleteOpen = $state(false);
 
 	const preview = $derived({
 		agent: 'nomi' as const,
@@ -36,7 +32,7 @@
 >
 	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Response actions" note="default · liked · disliked">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Default" />
 				<ResponseActions
 					text={reply}
@@ -44,9 +40,9 @@
 					{feedback}
 					onlike={() => (feedback = feedback === 'liked' ? null : 'liked')}
 					ondislike={() => (feedback = feedback === 'disliked' ? null : 'disliked')}
-					onshare={() => (shareOpen = true)}
+					onshare={() => {}}
 					onregenerate={() => {}}
-					ondelete={() => (deleteOpen = true)}
+					ondelete={() => {}}
 				/>
 				<SectionLabel label="Liked" />
 				<ResponseActions text={reply} {meta} feedback="liked" onlike={() => {}} ondislike={() => {}} onshare={() => {}} onregenerate={() => {}} ondelete={() => {}} />
@@ -59,22 +55,22 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Dislike" note="reason, then optional detail">
-			<DislikeFeedback onsend={() => {}} oncancel={() => {}} />
+			<DislikeFeedback
+				initialReasons={['inaccurate', 'wrong_crew']}
+				initialNote="It counted the Rp 300rb of office lunches my work pays back. Those aren't my spending."
+				onsend={() => {}}
+				oncancel={() => {}}
+			/>
 		</GalleryBoard>
 
 		<GalleryBoard title="Share" note="masked by default">
-			<div class="flex flex-col items-start gap-4">
-				<div class="flex w-115 max-w-full flex-col overflow-hidden rounded-md border border-border-strong bg-surface shadow-float">
-					<SharePanel {...share} onchange={(settings) => (masked = settings.mask)} onclose={() => {}} />
-				</div>
-				<Button label="Open as a dialog" variant="secondary" onclick={() => (shareOpen = true)} />
-			</div>
+			<ShareDialog inline {...share} onchange={(settings) => (masked = settings.mask)} />
 		</GalleryBoard>
 
 		<GalleryBoard title="Delete & toasts" note="confirm · undo">
-			<div class="flex flex-col items-start gap-4">
+			<div class="flex flex-col items-start gap-5">
 				<SectionLabel label="Confirm" />
-				<Button label="Delete this reply…" variant="secondary" onclick={() => (deleteOpen = true)} />
+				<DeleteReplyDialog inline name="Nomi" ondelete={() => {}} />
 				<SectionLabel label="Toasts" />
 				<Toast kind="success" title="Link copied" detail="nomi.app/s/k7Qe2-r4 · expires in 7 days" action={{ label: 'Revoke', onclick: () => {} }} ondismiss={() => {}} />
 				<Toast kind="info" icon={Trash2} title="Reply deleted" detail="Undo within 10 seconds" action={{ label: 'Undo', onclick: () => {} }} ondismiss={() => {}} />
@@ -84,5 +80,3 @@
 	</div>
 </GallerySection>
 
-<ShareDialog bind:open={shareOpen} {...share} onchange={(settings) => (masked = settings.mask)} />
-<DeleteReplyDialog bind:open={deleteOpen} name="Nomi" ondelete={() => {}} />

@@ -10,10 +10,13 @@
 	// and names stay masked either way.
 	export type DislikeReason = 'inaccurate' | 'ignored' | 'wrong_crew' | 'too_long' | 'outdated' | 'unsafe' | 'other';
 	type Props = {
+		/** What's already picked and written, e.g. when reopening it. */
+		initialReasons?: DislikeReason[];
+		initialNote?: string;
 		onsend: (feedback: { reasons: DislikeReason[]; note: string; includeChat: boolean }) => void;
 		oncancel: () => void;
 	};
-	let { onsend, oncancel }: Props = $props();
+	let { initialReasons = [], initialNote = '', onsend, oncancel }: Props = $props();
 
 	const id = $props.id();
 	const REASONS: { key: DislikeReason; label: () => string }[] = [
@@ -26,8 +29,9 @@
 		{ key: 'other', label: m.dislike_other },
 	];
 
-	let reasons = $state<DislikeReason[]>([]);
-	let note = $state('');
+	const initial = () => ({ reasons: initialReasons, note: initialNote });
+	let reasons = $state<DislikeReason[]>(initial().reasons);
+	let note = $state(initial().note);
 	let includeChat = $state(false);
 
 	function toggle(key: DislikeReason) {
@@ -38,31 +42,36 @@
 <section aria-labelledby="{id}-title" class="flex w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border-strong">
 	<header class="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
 		<p id="{id}-title" class="min-w-0 flex-1 text-ui font-medium text-text">{m.dislike_title()}</p>
-		<button type="button" aria-label={m.action_close()} class="inline-flex size-6 cursor-pointer items-center justify-center rounded-xs text-text-3 outline-offset-1 hover:text-text pointer-coarse:size-11" onclick={oncancel}>
+		<button type="button" aria-label={m.action_close()} class="inline-flex cursor-pointer items-center justify-center rounded-xs text-text-3 outline-offset-2 hover:text-text pointer-coarse:size-11" onclick={oncancel}>
 			<Icon icon={X} size={14} />
 		</button>
 	</header>
-	<div class="flex flex-wrap gap-2 px-3.5 py-2">
-		{#each REASONS as reason (reason.key)}
-			{@const on = reasons.includes(reason.key)}
-			<button
-				type="button"
-				aria-pressed={on}
-				class={[
-					'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-ui outline-offset-1 transition-colors pointer-coarse:min-h-11',
-					on ? 'border-text bg-text text-bg' : 'border-border-strong text-text-2 hover:text-text',
-				]}
-				onclick={() => toggle(reason.key)}
-			>
-				{#if on}<Icon icon={Check} size={12} />{/if}{reason.label()}
-			</button>
+	<!-- Two rows, as drawn: what was wrong with the answer, then with how it was given. -->
+	<div class="flex flex-col gap-2 px-3.5 py-2">
+		{#each [REASONS.slice(0, 3), REASONS.slice(3)] as row, at (at)}
+			<div class="flex flex-wrap gap-2">
+				{#each row as reason (reason.key)}
+					{@const on = reasons.includes(reason.key)}
+					<button
+						type="button"
+						aria-pressed={on}
+						class={[
+							'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-2.75 text-ui outline-offset-1 transition-colors pointer-coarse:min-h-11',
+							on ? 'border-text bg-text text-bg' : 'border-border-strong text-text-2 hover:text-text',
+						]}
+						onclick={() => toggle(reason.key)}
+					>
+						{#if on}<Icon icon={Check} size={12} />{/if}{reason.label()}
+					</button>
+				{/each}
+			</div>
 		{/each}
 	</div>
 	<div class="px-3.5 pt-1 pb-2.5">
 		<textarea
 			aria-label={m.dislike_title()}
 			bind:value={note}
-			class="h-18 w-full resize-none rounded-sm border border-border-strong bg-bg px-2.5 py-2 text-caption leading-normal text-text placeholder:text-text-3"
+			class="block h-18 w-full resize-none rounded-sm border border-border-strong bg-bg px-2.25 py-1.75 text-caption leading-normal text-text placeholder:text-text-3"
 		></textarea>
 	</div>
 	<div class="flex gap-2 px-3.5 pb-3">
