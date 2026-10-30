@@ -274,5 +274,13 @@
 	"firstrun_line": "Nomi builds real web apps from a description. You get a live link, and the code is yours to export.",
 	"firstrun_name": "Your name",
 	"firstrun_name_help": "Shown on your projects. Change it in Settings › Profile.",
-	"firstrun_continue": "Continue"
+	"firstrun_continue": "Continue",
+	"ws_resize": "Resize chat",
+	"ws_up_to_date": "Up to date",
+	"ws_publish": "Publish",
+	"ws_publish_count": "Publish {count} changes",
+	"ws_publishing": "Publishing… {elapsed}",
+	"ws_publish_failed": "Publish failed · Retry",
+	"ws_expand": "Expand",
+	"ws_sheet_hint": "esc closes · preview keeps running"
 }
