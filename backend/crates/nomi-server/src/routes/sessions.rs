@@ -1100,12 +1100,26 @@ async fn generate_session_title(
 #[derive(Deserialize)]
 pub struct FeedbackRequest {
     pub rating: String,
-    /// Why a reply missed, when the person says (thumbs-down only).
+    /// Why a reply missed, the one reason older apps send (thumbs-down only).
     #[serde(default)]
     pub reason: Option<String>,
+    /// Every reason it missed (thumbs-down only).
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    /// What went wrong in the person's own words (thumbs-down only).
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Whether the chat may be read to look into it (thumbs-down only).
+    #[serde(default)]
+    pub include_chat: bool,
 }
 
-const ALLOWED_REASONS: [&str; 4] = ["wrong_memory", "not_relevant", "too_long", "other"];
+/// Why a reply missed: the memory sheet's reasons (`wrong_memory` opens the memories it used) and
+/// the dislike form's.
+const ALLOWED_REASONS: [&str; 9] = ["wrong_memory", "not_relevant", "too_long", "other", "inaccurate", "ignored", "wrong_crew", "outdated", "unsafe"];
+/// The reasons older apps send one of, which `message_feedback.reason` still holds.
+const SINGLE_REASONS: [&str; 4] = ["wrong_memory", "not_relevant", "too_long", "other"];
+const MAX_NOTE_CHARS: usize = 2000;
 
 async fn previous_rating(pool: &sqlx::PgPool, message_id: Uuid, user_id: Uuid) -> Result<Option<String>, (StatusCode, &'static str)> {
     sqlx::query_scalar("SELECT rating FROM message_feedback WHERE message_id = $1 AND user_id = $2")
@@ -1159,20 +1173,35 @@ pub async fn put_message_feedback(
     if !ALLOWED_RATINGS.contains(&req.rating.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "rating must be 'up' or 'down'"));
     }
-    let reason = req.reason.as_deref().filter(|_| req.rating == "down");
-    if reason.is_some_and(|r| !ALLOWED_REASONS.contains(&r)) {
-        return Err((StatusCode::BAD_REQUEST, "reason must be wrong_memory, not_relevant, too_long or other"));
+    let down = req.rating == "down";
+    let mut reasons: Vec<String> = Vec::new();
+    for reason in req.reasons.iter().chain(req.reason.iter()).filter(|_| down) {
+        if !reasons.contains(reason) {
+            reasons.push(reason.clone());
+        }
     }
+    if reasons.iter().any(|r| !ALLOWED_REASONS.contains(&r.as_str())) {
+        return Err((StatusCode::BAD_REQUEST, "unknown reason"));
+    }
+    let note = req.note.as_deref().map(str::trim).filter(|note| down && !note.is_empty());
+    if note.is_some_and(|note| note.chars().count() > MAX_NOTE_CHARS) {
+        return Err((StatusCode::BAD_REQUEST, "note is too long"));
+    }
+    let reason = reasons.iter().find(|r| SINGLE_REASONS.contains(&r.as_str()));
     let previous = previous_rating(&state.pool, message_id, claims.sub).await?;
 
     sqlx::query(
-        "INSERT INTO message_feedback (message_id, user_id, rating, reason) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason",
+        "INSERT INTO message_feedback (message_id, user_id, rating, reason, reasons, note, include_chat) VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason, \
+         reasons = EXCLUDED.reasons, note = EXCLUDED.note, include_chat = EXCLUDED.include_chat",
     )
     .bind(message_id)
     .bind(claims.sub)
     .bind(&req.rating)
     .bind(reason)
+    .bind(&reasons)
+    .bind(note)
+    .bind(down && req.include_chat)
     .execute(&state.pool)
     .await
     .map_err(|e| {
