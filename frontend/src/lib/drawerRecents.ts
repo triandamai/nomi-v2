@@ -19,6 +19,8 @@ export interface RecentChat {
 	title: string;
 	href: string;
 	pinned: boolean;
+	/** When it last moved (ISO). */
+	updatedAt: string;
 }
 
 export type RecentsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: RecentChat[] };
@@ -47,6 +49,7 @@ export function toRecentChats(sessions: SessionSummary[], limit: number): Recent
 		title: session.title ?? m.nav_new_chat(),
 		href: `/chat/${session.id}`,
 		pinned: session.pinned,
+		updatedAt: session.updated_at,
 	}));
 }
 

@@ -5,8 +5,8 @@ import RecentChats from './RecentChats.svelte';
 import type { RecentsState } from '$lib/drawerRecents';
 
 const chats = [
-	{ id: 'a', title: 'Trip plan', href: '/chat/a', pinned: false },
-	{ id: 'b', title: 'Budget', href: '/chat/b', pinned: true },
+	{ id: 'a', title: 'Trip plan', href: '/chat/a', pinned: false, updatedAt: '2026-10-18T00:00:00Z' },
+	{ id: 'b', title: 'Budget', href: '/chat/b', pinned: true, updatedAt: '2026-10-18T00:00:00Z' },
 ];
 
 let component: ReturnType<typeof mount> | null = null;

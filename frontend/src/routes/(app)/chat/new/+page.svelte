@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import ChatThread from '$lib/components/ChatThread.svelte';
+	import { mobileNav } from '$lib/mobileNav.svelte';
 	import ModelManager from '$lib/components/models/ModelManager.svelte';
 	import ModelSelector from '$lib/components/models/ModelSelector.svelte';
 	import { applyChanges, choiceFor, type ModelChange } from '$lib/modelPicker';
@@ -20,6 +21,7 @@
 </script>
 
 <ChatThread
+	onopenmenu={() => (mobileNav.open = true)}
 	sessionId=""
 	unsaved
 	title={data.title}

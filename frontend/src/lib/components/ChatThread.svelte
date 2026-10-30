@@ -26,6 +26,7 @@
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew, type CrewRosterMember } from '$lib/crew';
 	import { crewId } from '$lib/crewId';
+	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import type { MentionOption } from '$lib/components/ds/chat/mention';
 	import Banner from '$lib/components/ds/chat/Banner.svelte';
 	import SessionExpired from '$lib/components/ds/chat/SessionExpired.svelte';
@@ -65,6 +66,7 @@
 		modelControl,
 		newChatModel = null,
 		compactHeader = false,
+		onopenmenu,
 		thinkingLevel = null,
 		unsaved = false,
 		project = null,
@@ -95,6 +97,8 @@
 		/** The page has its own header with the title (an open project): keep only the crew and
 		 * the controls here, in one slim row. */
 		compactHeader?: boolean;
+		/** Opens the phone's navigation drawer: on a phone this bar is the page's only one. */
+		onopenmenu?: () => void;
 		/** The chat's thinking level; null hides the picker. The page must have a setThinking action. */
 		thinkingLevel?: ThinkingLevel | null;
 		/** A new chat not saved yet: no live connection, and the first send creates it (/chat/new). */
@@ -791,6 +795,9 @@
 <div class="chat" class:chat--project={!!project} class:chat--glass={glass && !project}>
 	{#if glass && !project}<GlassBackdrop busy={isWorking} />{/if}
 	<header class="appbar" class:appbar--compact={compactHeader}>
+		{#if onopenmenu}
+			<button type="button" class="appbar__menu" aria-label={m.nav_open_menu()} onclick={onopenmenu}><IconMenu size={24} /></button>
+		{/if}
 		<div class="appbar__titles" hidden={compactHeader}>
 			{#if project}
 				<span class="appbar__project">
@@ -1101,6 +1108,33 @@
 		align-items: center;
 		gap: 8px;
 		padding: 12px clamp(12px, 3vw, 24px) 10px;
+	}
+	.appbar__menu {
+		display: none;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		margin-left: -6px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		cursor: pointer;
+	}
+	.appbar__menu:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+	.appbar__menu:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	/* Phones only: the desktop drawer is always there. */
+	@media (max-width: 767px) {
+		.appbar__menu {
+			display: inline-flex;
+		}
 	}
 	.appbar__title-button {
 		display: inline-flex;

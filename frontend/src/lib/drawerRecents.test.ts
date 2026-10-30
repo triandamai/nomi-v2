@@ -43,8 +43,8 @@ describe('toRecentChats', () => {
 	it('lists chats newest first up to the limit, leaving project sessions to Projects', () => {
 		const sessions = [session('a', 'Trip plan'), session('p', 'Site', 'project-1'), session('b', 'Budget'), session('c', 'Gym')];
 		expect(toRecentChats(sessions, 2)).toEqual([
-			{ id: 'a', title: 'Trip plan', href: '/chat/a', pinned: false },
-			{ id: 'b', title: 'Budget', href: '/chat/b', pinned: false },
+			{ id: 'a', title: 'Trip plan', href: '/chat/a', pinned: false, updatedAt: '2026-10-18T00:00:00Z' },
+			{ id: 'b', title: 'Budget', href: '/chat/b', pinned: false, updatedAt: '2026-10-18T00:00:00Z' },
 		]);
 	});
 
@@ -94,7 +94,7 @@ describe('refreshesAfterNavigation', () => {
 describe('loadRecentChats', () => {
 	it('reads the recent sessions and keeps the chats', async () => {
 		const fetchFn = vi.fn(async () => Response.json({ sessions: [session('a', 'One'), session('b', 'Two')] }));
-		expect(await loadRecentChats(fetchFn, 1)).toEqual({ status: 'ready', chats: [{ id: 'a', title: 'One', href: '/chat/a', pinned: false }] });
+		expect(await loadRecentChats(fetchFn, 1)).toEqual({ status: 'ready', chats: [{ id: 'a', title: 'One', href: '/chat/a', pinned: false, updatedAt: '2026-10-18T00:00:00Z' }] });
 		expect(fetchFn).toHaveBeenCalledWith('/chats/recent');
 	});
 

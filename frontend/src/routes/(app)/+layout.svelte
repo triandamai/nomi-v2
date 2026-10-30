@@ -9,6 +9,8 @@
 	import { page } from '$app/state';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
+	import { mobileNav } from '$lib/mobileNav.svelte';
 	import { resolveRecents } from '$lib/drawerRecents';
 	import { registerAgentLooks } from '$lib/components/m3/shapes';
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
@@ -23,7 +25,6 @@
 
 	enablePageTransitions();
 
-	let mobileNavOpen = $state(false);
 
 	// Dynamic agents' chosen shapes: registered before any child renders an AgentShape, and again
 	// whenever the crew reloads.
@@ -84,6 +85,8 @@
 
 	// An open project is its own app (it opens in a new tab): no Nomi drawer or app bar around it.
 	const standalone = $derived(page.route.id?.startsWith('/(app)/projects/session/') ?? false);
+	// A chat brings its own app bar, with the menu button in it: one bar on a phone, not two.
+	const ownAppBar = $derived(page.route.id?.startsWith('/(app)/chat/') ?? false);
 
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
@@ -99,10 +102,14 @@
 </div>
 {:else}
 <div class="app-shell flex" style="background: var(--nomi-color-ground)">
-	<Sidebar userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} recents={resolveRecents(data.preferences)} bind:mobileOpen={mobileNavOpen} />
+	<Sidebar userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} recents={resolveRecents(data.preferences)} />
+	<div class="md:hidden">
+		<MobileNavDrawer bind:open={mobileNav.open} userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} recents={resolveRecents(data.preferences)} />
+	</div>
 	<div class="flex flex-1 flex-col overflow-hidden">
+		{#if !ownAppBar}
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
-			<IconButton onclick={() => (mobileNavOpen = true)} aria-label={m.nav_open_menu()}>
+			<IconButton onclick={() => (mobileNav.open = true)} aria-label={m.nav_open_menu()}>
 				<IconMenu />
 			</IconButton>
 			<a href="/" class="flex items-center gap-2" style="color: var(--md-sys-color-on-surface); text-decoration: none">
@@ -114,6 +121,7 @@
 				{#if inbox.unread > 0}<span class="bell__badge" aria-hidden="true">{badgeLabel(inbox.unread)}</span>{/if}
 			</a>
 		</header>
+		{/if}
 		<main class="flex-1 overflow-hidden" style="view-transition-name: page">
 			{@render children()}
 		</main>
