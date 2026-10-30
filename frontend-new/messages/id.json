@@ -242,5 +242,10 @@
 	"build_copy_link": "Salin tautan",
 	"build_open": "Buka",
 	"build_details": "Rincian",
-	"build_after_publish": "Perubahan setelah ini perlu Publish"
+	"build_after_publish": "Perubahan setelah ini perlu Publish",
+	"files_title": "File",
+	"files_written": "{done} dari {total} ditulis",
+	"file_writing": "menulis",
+	"preview_building_title": "Membangun aplikasimu",
+	"preview_building_meta": "Pratinjau terbuka di sini setelah deploy pertama"
 }
