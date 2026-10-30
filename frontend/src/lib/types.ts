@@ -231,9 +231,6 @@ export interface ChatPersonality {
 
 export type MemoryKind = 'preference' | 'person' | 'routine' | 'goal' | 'fact';
 
-/** Why a reply missed, given with a thumbs-down. */
-export type FeedbackReason = 'wrong_memory' | 'not_relevant' | 'too_long' | 'other';
-
 /** A memory a reply drew on (GET …/messages/:id/memories). */
 export interface UsedMemory {
 	id: string;

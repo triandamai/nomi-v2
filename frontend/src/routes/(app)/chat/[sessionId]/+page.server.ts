@@ -97,7 +97,10 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const messageId = data.get('messageId');
 		const rating = data.get('rating');
-		const reason = data.get('reason');
+		// A thumbs-down's reasons, note and whether the chat may be read (DislikeFeedback).
+		const reasons = data.getAll('reasons').filter((reason): reason is string => typeof reason === 'string' && reason !== '');
+		const note = String(data.get('note') ?? '').trim();
+		const includeChat = data.get('includeChat') === 'true';
 
 		if (typeof messageId !== 'string' || !messageId) {
 			return fail(400, { error: m.err_invalid_message() });
@@ -106,7 +109,7 @@ export const actions: Actions = {
 		const path = `/api/sessions/${params.sessionId}/messages/${messageId}/feedback`;
 		const response =
 			rating === 'up' || rating === 'down'
-				? await apiFetch(fetch, cookies, path, { method: 'PUT', body: JSON.stringify({ rating, reason: typeof reason === 'string' && reason ? reason : null }) })
+				? await apiFetch(fetch, cookies, path, { method: 'PUT', body: JSON.stringify({ rating, reasons, note: note || null, include_chat: includeChat }) })
 				: await apiFetch(fetch, cookies, path, { method: 'DELETE' });
 
 		if (!response.ok) {

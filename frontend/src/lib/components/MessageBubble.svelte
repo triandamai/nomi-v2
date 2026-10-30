@@ -14,10 +14,11 @@
 	import IconShare from './icons/IconShare.svelte';
 	import IconDelete from './icons/IconDelete.svelte';
 	import MessageDeleteSheet from './MessageDeleteSheet.svelte';
-	import IconThumbDown from './icons/IconThumbDown.svelte';
-	import IconThumbUp from './icons/IconThumbUp.svelte';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
-	import type { FeedbackReason, RenderedMessage } from '$lib/types';
+	import type { RenderedMessage } from '$lib/types';
+	import ResponseActions from './ds/chat/ResponseActions.svelte';
+	import DislikeFeedback, { type DislikeReason } from './ds/chat/DislikeFeedback.svelte';
+	import FeedbackSent from './ds/chat/FeedbackSent.svelte';
 
 	let {
 		message,
@@ -211,17 +212,32 @@
 		setTimeout(() => (shareCopied = false), 1500);
 	}
 
-	// The memories this reply drew on, and "What was off?" after a thumbs-down.
+	// The memories this reply drew on ("Used 2 memories").
 	let memoriesOpen = $state(false);
-	let askReason = $state(false);
+	// After a thumbs-down: what went wrong (DislikeFeedback), then what was sent (FeedbackSent).
+	let dislikeOpen = $state(false);
+	let dislikeSent = $state<{ withChat: boolean } | null>(null);
 
-	async function sendFeedback(rating: 'up' | 'down' | null, reason?: FeedbackReason): Promise<boolean> {
+	type Dislike = { reasons: DislikeReason[]; note: string; includeChat: boolean };
+
+	async function sendFeedback(rating: 'up' | 'down' | null, dislike?: Dislike): Promise<boolean> {
 		const body = new FormData();
 		body.set('messageId', message.id);
 		if (rating) body.set('rating', rating);
-		if (reason) body.set('reason', reason);
+		if (dislike) {
+			for (const reason of dislike.reasons) body.append('reasons', reason);
+			body.set('note', dislike.note);
+			body.set('includeChat', String(dislike.includeChat));
+		}
 		const response = await fetch('?/feedback', { method: 'POST', body });
 		return deserialize(await response.text()).type === 'success';
+	}
+
+	async function sendDislike(dislike: Dislike) {
+		if (await sendFeedback('down', dislike)) {
+			dislikeOpen = false;
+			dislikeSent = { withChat: dislike.includeChat };
+		}
 	}
 
 	async function setFeedback(rating: 'up' | 'down') {
@@ -232,14 +248,11 @@
 			feedback = previous;
 			return;
 		}
-		if (next === 'down') {
-			askReason = true;
-			memoriesOpen = true;
-		}
+		dislikeOpen = next === 'down';
+		dislikeSent = null;
 	}
 
 	function showMemories() {
-		askReason = false;
 		memoriesOpen = true;
 	}
 </script>
@@ -303,7 +316,24 @@
 			{/if}
 		</div>
 
-		{#if !statusOnly}
+		{#if !statusOnly && message.sender === 'assistant'}
+		<div class="message__reply-actions">
+			<ResponseActions
+				text={message.content}
+				meta={showTimestamp ? formattedTime : undefined}
+				feedback={feedback === 'up' ? 'liked' : feedback === 'down' ? 'disliked' : null}
+				onlike={() => setFeedback('up')}
+				ondislike={() => setFeedback('down')}
+				onshare={shareMessage}
+				ondelete={ondelete && !message.author_name ? () => (deleteOpen = true) : undefined}
+			/>
+		</div>
+		{#if dislikeOpen}
+			<DislikeFeedback onsend={sendDislike} oncancel={() => (dislikeOpen = false)} />
+		{:else if dislikeSent}
+			<FeedbackSent withChat={dislikeSent.withChat} />
+		{/if}
+		{:else if !statusOnly}
 		<div class="message__actions">
 			<button
 				type="button"
@@ -329,28 +359,6 @@
 					<IconShare size={16} />
 				{/if}
 			</button>
-			{#if message.sender === 'assistant'}
-				<button
-					type="button"
-					class="message-action-btn"
-					class:message-action-btn--active={feedback === 'up'}
-					aria-label={m.msg_good()}
-					aria-pressed={feedback === 'up'}
-					onclick={() => setFeedback('up')}
-				>
-					<IconThumbUp size={16} />
-				</button>
-				<button
-					type="button"
-					class="message-action-btn"
-					class:message-action-btn--active={feedback === 'down'}
-					aria-label={m.msg_bad()}
-					aria-pressed={feedback === 'down'}
-					onclick={() => setFeedback('down')}
-				>
-					<IconThumbDown size={16} />
-				</button>
-			{/if}
 			{#if ondelete && !message.author_name}
 				<button type="button" class="message-action-btn" aria-label={m.msg_delete()} title={m.msg_delete()} onclick={() => (deleteOpen = true)}>
 					<IconDelete size={16} />
@@ -381,8 +389,6 @@
 		bind:open={memoriesOpen}
 		messageId={message.id}
 		memoryCount={message.memory_count ?? 0}
-		{askReason}
-		onreason={(reason) => sendFeedback('down', reason)}
 	/>
 {/if}
 
@@ -591,10 +597,8 @@
 	.message-action-btn:hover {
 		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
-	.message-action-btn--active {
-		border-radius: var(--md-sys-shape-corner-small);
-		background: var(--md-sys-color-primary-container);
-		color: var(--md-sys-color-on-primary-container);
+	.message__reply-actions {
+		margin-top: 2px;
 	}
 
 	/* content_html is server-rendered from trusted markdown+shiki output (sanitized before it

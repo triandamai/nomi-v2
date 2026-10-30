@@ -3,51 +3,36 @@
 	import { page } from '$app/state';
 	import { deserialize } from '$app/forms';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
-	import Chip from '$lib/components/m3/Chip.svelte';
 	import MemoryEditForm from '$lib/components/MemoryEditForm.svelte';
 	import { kindLabel } from '$lib/memory';
-	import type { FeedbackReason, UsedMemory } from '$lib/types';
+	import type { UsedMemory } from '$lib/types';
 
-	// Opened from a reply: the memories it drew on ("Used 2 memories"), or, after a thumbs-down,
-	// "What was off?" first. Each memory can be fixed or forgotten right here.
+	// Opened from a reply's "Used 2 memories": the memories it drew on, each fixed or forgotten
+	// right here. (Why a reply missed is the thumbs-down's own form, DislikeFeedback.)
 	let {
 		open = $bindable(false),
 		messageId,
 		memoryCount,
-		askReason = false,
-		onreason,
 	}: {
 		open?: boolean;
 		messageId: string;
 		memoryCount: number;
-		/** Start with "What was off?" (after a thumbs-down). */
-		askReason?: boolean;
-		onreason?: (reason: FeedbackReason) => void;
 	} = $props();
 
 	let memories = $state<UsedMemory[] | null>(null);
 	let loadFailed = $state(false);
-	let reason = $state<FeedbackReason | null>(null);
 	let editing = $state<string | null>(null);
 	let note = $state<string | null>(null);
 
-	const REASONS: { value: FeedbackReason; label: () => string }[] = [
-		{ value: 'wrong_memory', label: m.off_wrong_memory },
-		{ value: 'not_relevant', label: m.off_not_relevant },
-		{ value: 'too_long', label: m.off_too_long },
-		{ value: 'other', label: m.off_other },
-	];
-	const showMemories = $derived(!askReason || reason === 'wrong_memory');
 
 	$effect(() => {
 		if (open) {
-			reason = null;
 			editing = null;
 			note = null;
 		}
 	});
 	$effect(() => {
-		if (open && showMemories && memories === null && memoryCount > 0) load();
+		if (open && memories === null && memoryCount > 0) load();
 	});
 
 	async function load() {
@@ -55,12 +40,6 @@
 		const response = await fetch(`${page.url.pathname}/message/${messageId}/memories`);
 		if (response.ok) memories = (await response.json()) as UsedMemory[];
 		else loadFailed = true;
-	}
-
-	function pick(next: FeedbackReason) {
-		reason = next;
-		onreason?.(next);
-		if (next !== 'wrong_memory') note = m.off_thanks();
 	}
 
 	async function forget(memory: UsedMemory) {
@@ -76,23 +55,10 @@
 
 <BottomSheet bind:open>
 	<div class="sheet">
-		{#if askReason}
-			<h2 class="sheet__title">{m.off_title()}</h2>
-			<p class="sheet__lede">{m.off_lede()}</p>
-			<div class="sheet__reasons" role="group" aria-label={m.off_title()}>
-				{#each REASONS as option (option.value)}
-					{#if option.value !== 'wrong_memory' || memoryCount > 0}
-						<Chip variant="filter" selected={reason === option.value} onclick={() => pick(option.value)}>{option.label()}</Chip>
-					{/if}
-				{/each}
-			</div>
-		{:else}
-			<h2 class="sheet__title">{m.used_title({ count: memoryCount })}</h2>
-			<p class="sheet__lede">{m.used_lede()}</p>
-		{/if}
+		<h2 class="sheet__title">{m.used_title({ count: memoryCount })}</h2>
+		<p class="sheet__lede">{m.used_lede()}</p>
 
-		{#if showMemories && memoryCount > 0}
-			{#if askReason}<p class="sheet__lede">{m.off_which()}</p>{/if}
+		{#if memoryCount > 0}
 			{#if loadFailed}
 				<p class="sheet__note" role="alert">{m.used_load_failed()}</p>
 			{:else if memories === null}
@@ -157,11 +123,6 @@
 	.sheet__note {
 		color: var(--md-sys-color-on-surface);
 		font-weight: 600;
-	}
-	.sheet__reasons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
 	}
 	.used {
 		display: flex;
