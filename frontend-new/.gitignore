@@ -1,0 +1,28 @@
+node_modules
+
+# Output
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Tests
+test-results
+playwright-report
+__screenshots__
+.vitest-attachments
+
+# Paraglide (compiled from messages/ by the Vite plugin and `npm run i18n`)
+/src/lib/paraglide
+/project.inlang/cache

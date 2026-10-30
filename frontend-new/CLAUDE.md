@@ -1,0 +1,60 @@
+# frontend-new: rules for working here
+
+The new Nomi frontend, rebuilt from the pen.dev design system (`Nomi.pen`: the sheets
+*Design System / Nomi*, *Chat responses* and *Build*, plus the flows). `frontend/` is the
+old app: read it for business logic and API usage, never import from it or edit it.
+
+## Boundaries
+- Change files only inside `frontend-new/` (and `.github/workflows/frontend-new.yml`).
+  Never touch `backend/`, `frontend/`, `native/`, `relay/` or the other workflows.
+- The backend API is used exactly as it is. Anything the UI needs that the API doesn't have goes
+  in `BACKEND_TODO.md` (checked against the real backend routes first) and is left out of the
+  UI, never faked.
+
+## Design system
+"An instrument, not a toy." Every value comes from a design token; the pen file is the source
+of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour and copy.
+- One accent (mint), under 10% of a view: it marks the single thing to act on. Neutrals do the
+  hierarchy. Inverse buttons for panel actions.
+- Mono (Geist Mono) for anything a machine produced: paths, IDs, URLs, tokens, money, costs,
+  timestamps, model names. Everything else is Geist.
+- Borders over shadows. Shadows only for things that float: menus, toasts, dialogs.
+- Honest states: show the real tool and target, elapsed time and the current step when the
+  duration is unknown, no fake progress, cost always visible. Ship empty, loading, error and
+  populated states together.
+- Mascots are identity, not decoration: one per agent, flat colour, only where that agent speaks
+  or works.
+- Type: sizes 28 / 15 / 13 / 12 / 11 (max four per screen), weights 400 / 500 / 600, sentence
+  case everywhere; uppercase only in the mono section label.
+- Spacing 2 / 4 / 6 / 8 / 12 / 16 / 20 / 24 / 32 / 48; radius 6 (buttons, chips, rows, inputs)
+  and 10 (panels, composer, callouts). Lucide icons, stroke 1.5: 16px in nav and buttons, 14px
+  inline, 12px in chips.
+- Don't: gradients, glass, glows or a second accent hue; emoji or illustrations in UI chrome;
+  shadows on flat cards or rows; progress bars that creep toward 90%; "magic", "effortless",
+  "AI-powered"; Title Case or ALL CAPS outside the mono label; pure #000 or #FFF surfaces.
+- Every interactive element has hover and `focus-visible` states and a 44px target on phones.
+  Check every screen at 1512 wide and 390 wide, in dark and light.
+
+## Code
+- Svelte 5 runes, TypeScript strict, Tailwind v4 with the design tokens only (no raw colours,
+  no `dark:` variant: the tokens carry the theme).
+- Design-system components live in `src/lib/ds/<section>/` and are presentational: no `$app/*`,
+  no API types. Links, active state and actions come in as props. Pages and flows adapt API data
+  to those props.
+
+## Tests (test-first, always)
+- Write the failing test, then the code, then refactor. Nothing ships without a test.
+- `*.svelte.test.ts` runs in real Chromium (Vitest browser mode, `vitest-browser-svelte`) with
+  the app's CSS: components, roles, keyboard, focus, ARIA, events.
+- Every other `*.test.ts` runs in Node: pure modules, server code, message files.
+- Gates, chained so a failure stops the chain:
+  `npm run check && npm run test:unit && npm run test:components && npm run build`.
+
+## i18n
+- Every string the person reads is a message in `messages/en.json` and `messages/id.json`
+  (Paraglide). Add keys at the end of both files with the Indonesian written at the same time;
+  `src/lib/messages.test.ts` fails on a missing key, an empty string or a dropped placeholder.
+
+## Running
+- `npm run dev` serves on http://localhost:5175 (the old frontend keeps 5173),
+  `npm run preview` on 4175.

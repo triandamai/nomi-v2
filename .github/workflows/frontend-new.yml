@@ -1,0 +1,76 @@
+name: Frontend (new)
+
+# The new SvelteKit frontend under frontend-new/ (rebuilt from the pen.dev design system): type
+# check, unit tests, component tests in a real Chromium, and a production build. Runs on pull
+# requests and merges to main only when frontend-new/ or this file changed, like the other
+# per-area workflows.
+on:
+  pull_request:
+    paths:
+      - 'frontend-new/**'
+      - '.github/workflows/frontend-new.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'frontend-new/**'
+      - '.github/workflows/frontend-new.yml'
+  workflow_call:
+  workflow_dispatch:
+
+# A new commit on a PR cancels that PR's still-running check. Runs on main get a group per
+# ref+commit, so they never cancel or queue behind each other.
+concurrency:
+  group: frontend-new-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}@{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend-new:
+    name: Frontend new (check + unit + component tests + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-new
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      # Component tests run in a real Chromium; cache it by the pinned Playwright version.
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        id: chromium-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.chromium-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Chromium system libraries
+        if: steps.chromium-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Component tests
+        run: npm run test:components
+
+      - name: Build
+        run: npm run build
