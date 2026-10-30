@@ -21,6 +21,12 @@ describe('GallerySection', () => {
 		expect(getComputedStyle(line).color).toBe(tokenColor('nm-text-3'));
 		expect(getComputedStyle(title.parentElement!).alignItems).toBe('flex-end');
 	});
+
+	it('carries no padding of its own: the sheet spaces sections 64 apart, as the pen does', async () => {
+		const children = createRawSnippet(() => ({ render: () => '<p>content</p>' }));
+		const { container } = await render(GallerySection, { title: 'Story sheet', description: 'Values.', children });
+		expect(getComputedStyle(container.querySelector('section')!).paddingTop).toBe('0px');
+	});
 });
 
 describe('GalleryBoard', () => {
