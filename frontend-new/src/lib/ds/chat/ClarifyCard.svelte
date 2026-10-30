@@ -83,8 +83,8 @@
 
 <!-- Keys work anywhere inside the card; each control is also reachable on its own. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg" aria-labelledby="{id}-title" {onkeydown}>
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong" aria-labelledby="{id}-title" {onkeydown}>
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<Mascot {agent} size={20} />
 		<p id="{id}-title" class="min-w-0 flex-1 text-ui font-medium text-text">{title}</p>
 		<span class="font-mono text-label text-text-3">{m.clarify_progress({ n: String(step + 1), total: String(questions.length) })}</span>
@@ -144,7 +144,7 @@
 			</div>
 		{/if}
 	</div>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 basis-48 font-mono text-label text-text-3">
 			{question.multiple
 				? m.clarify_keys_multi({ count: String(answer && 'choices' in answer ? answer.choices.length : 0) })

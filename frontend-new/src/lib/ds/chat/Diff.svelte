@@ -22,8 +22,8 @@
 	const stats = $derived(diffStats(hunks));
 </script>
 
-<figure class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<figcaption class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2">
+<figure class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<figcaption class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2 pb-1.75">
 		<span class="inline-flex text-text-2"><Icon icon={FileDiff} size={14} /></span>
 		<span class="min-w-0 flex-1 truncate font-mono text-label text-text-2">{path}</span>
 		<span class="sr-only">{m.diff_stats({ added: String(stats.added), removed: String(stats.removed) })}</span>
@@ -41,7 +41,7 @@
 						></span
 					>{/each}{/each}</code></pre>
 	{#if request || onapply || onreject}
-		<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+		<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 			<span class="flex min-w-0 flex-1 basis-48 items-center gap-1.5">
 				{#if request}
 					<Mascot agent={request.agent} size={20} />

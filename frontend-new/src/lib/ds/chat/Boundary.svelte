@@ -24,8 +24,8 @@
 	<span class="inline-flex shrink-0 text-text-3"><Icon icon={ChevronRight} size={12} /></span>
 {/snippet}
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex text-text-2"><Icon icon={Shield} size={14} /></span>
 		<p class="min-w-0 flex-1 text-ui font-medium text-text">{title}</p>
 	</header>

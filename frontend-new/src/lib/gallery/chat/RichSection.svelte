@@ -118,10 +118,10 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Links & sources" note="hyperlink · citation · preview">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Hyperlink + citation" />
 				<p class="text-body"><Hyperlink href="#rich-sources-1" label="house rules Bu Sri sent" /></p>
-				<p><Citation n={1} title="Peraturan Kos Mawar 2026.pdf" href="#rich-sources-1" /></p>
+				<p class="flex"><Citation n={1} title="Peraturan Kos Mawar 2026.pdf" href="#rich-sources-1" /></p>
 				<p class="text-body text-text-2">
 					Rent goes up to Rp 2,2 jt from January, per the <Hyperlink href="#rich-sources-1" label="house rules Bu Sri sent" />
 					<Citation n={1} title="Peraturan Kos Mawar 2026.pdf" href="#rich-sources-1" />.
@@ -145,10 +145,10 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Mentions & reminders" note="crew tint only on crew-owned bits">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<SectionLabel label="Mention" />
-				<p><MentionCrew agent="dana" name="Dana" /></p>
-				<p><MentionFile name="rent-2026.xlsx" icon={FileSpreadsheet} /></p>
+				<p class="flex"><MentionCrew agent="dana" name="Dana" /></p>
+				<p class="flex"><MentionFile name="rent-2026.xlsx" icon={FileSpreadsheet} /></p>
 				<p class="text-body text-text-2">Ask <MentionCrew agent="dana" name="Dana" /> to log it in <MentionFile name="rent-2026.xlsx" icon={FileSpreadsheet} /></p>
 				<MentionPicker id="rich-mentions" options={mentionOptions} bind:active={activeMention} onselect={() => {}} />
 				<SectionLabel label="Reminder" />

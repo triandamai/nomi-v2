@@ -16,8 +16,8 @@
 	const done = $derived(steps.filter((step) => step.state === 'done').length);
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex text-text-2"><Icon icon={ListChecks} size={14} /></span>
 		<span class="text-ui font-medium text-text">{m.plan_title()}</span>
 		<span class="min-w-0 flex-1 truncate text-ui text-text-2">{subject}</span>
@@ -25,7 +25,7 @@
 	</header>
 	<ol>
 		{#each steps as step, index (index)}
-			<li class={['flex items-center gap-3 px-3.5 py-2.5', index > 0 && 'border-t border-border']}>
+			<li class={['flex items-center gap-3 px-3.5 pb-2.5', index > 0 ? 'border-t border-border pt-2.25' : 'pt-2.5']}>
 				<span class="font-mono text-label text-text-3">{stepNumber(index)}</span>
 				<span
 					class={[
@@ -47,7 +47,7 @@
 			</li>
 		{/each}
 	</ol>
-	<footer class="flex items-center gap-2 border-t border-border py-1.5 pr-2 pl-3.5">
+	<footer class="flex items-center gap-2 border-t border-border pt-1.25 pr-2 pb-1.5 pl-3.5">
 		<span class="flex-1 text-caption text-text-3">{m.plan_note()}</span>
 		{#if onstop}<Button label={m.plan_stop()} variant="ghost" iconStart={Square} onclick={onstop} />{/if}
 	</footer>

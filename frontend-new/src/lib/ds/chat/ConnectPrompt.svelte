@@ -26,8 +26,8 @@
 	let { agent, icon, service, why, reads, alternative, href, onlater }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex size-7 shrink-0 items-center justify-center rounded-sm" style="background: var(--crew-{agent}-bg); color: var(--crew-{agent}-ink)"><Icon {icon} size={14} /></span>
 		<span class="flex min-w-0 flex-1 flex-col gap-px">
 			<span class="text-ui font-medium text-text">{m.connect_title({ service })}</span>
@@ -39,7 +39,7 @@
 		<li class="flex items-center gap-2"><span class="inline-flex shrink-0 text-accent"><Icon icon={ShieldCheck} size={13} /></span>{m.connect_safe()}</li>
 		<li class="flex items-center gap-2"><span class="inline-flex shrink-0"><Icon icon={Unplug} size={13} /></span>{m.connect_disconnect()}</li>
 	</ul>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 basis-40 text-caption text-text-3">{alternative}</span>
 		<span class="ml-auto flex items-center gap-2">
 			{#if onlater}<Button label={m.connect_later()} variant="ghost" onclick={onlater} />{/if}

@@ -12,7 +12,7 @@
 	{href}
 	target="_blank"
 	rel="noopener noreferrer"
-	class="flex w-full items-center overflow-hidden rounded-md border border-border-strong bg-bg pr-3 outline-offset-2 transition-colors hover:bg-surface"
+	class="flex w-full items-center overflow-hidden rounded-md bg-bg pr-3 outline -outline-offset-1 outline-border-strong transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
 >
 	<span class="flex min-w-0 flex-1 flex-col gap-1.5 p-3.5">
 		<span class="flex items-center gap-1.5 text-text-3">

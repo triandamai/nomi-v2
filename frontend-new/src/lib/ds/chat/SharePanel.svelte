@@ -99,4 +99,4 @@
 		<span class="ml-auto"><Button label={m.share_copy()} iconEnd={copier.copied ? Check : Copy} onclick={copy} /></span>
 	</div>
 </div>
-<p class="border-t border-border px-5 py-2.5 text-caption text-text-3">{m.share_revoke()}</p>
+<p class="border-t border-border px-5 pt-2.25 pb-2.5 text-caption text-text-3">{m.share_revoke()}</p>

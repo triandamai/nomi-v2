@@ -25,7 +25,7 @@
 		use:modal
 		aria-labelledby="{id}-title"
 		onclose={() => (open = false)}
-		class="m-auto flex w-115 max-w-full flex-col overflow-hidden rounded-md border border-border-strong bg-surface p-0 text-text shadow-float backdrop:bg-overlay"
+		class="m-auto flex w-115 max-w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border-strong p-0 text-text shadow-float backdrop:bg-overlay"
 	>
 		<SharePanel {...panel} titleId="{id}-title" onclose={() => (open = false)} />
 	</dialog>

@@ -17,8 +17,8 @@
 	const value = $derived(chosen >= 0 ? chosen : Math.max(0, options.findIndex((option) => option.suggested)));
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex text-text-2"><Icon icon={Split} size={14} /></span>
 		<p id="{id}-question" class="min-w-0 flex-1 text-ui font-medium text-text">{question}</p>
 	</header>
@@ -36,7 +36,7 @@
 			/>
 		{/each}
 	</div>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 basis-40 text-caption text-text-3">{m.decision_own()}</span>
 		<span class="ml-auto"><Button label={m.decision_use({ choice: options[value]?.title ?? '' })} iconEnd={Check} onclick={() => onconfirm(value)} /></span>
 	</footer>

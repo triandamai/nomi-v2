@@ -42,7 +42,7 @@
 	</div>
 {/snippet}
 
-<div {id} role="listbox" aria-label={m.mention_picker()} class="flex w-75 max-w-full flex-col gap-0.5 rounded-md border border-border-strong bg-surface p-1 shadow-float">
+<div {id} role="listbox" aria-label={m.mention_picker()} class="flex w-75 max-w-full flex-col gap-0.5 rounded-md bg-surface outline -outline-offset-1 outline-border-strong p-1 shadow-float">
 	{#if crew.length}
 		<div role="group" aria-labelledby="{id}-crew" class="flex flex-col gap-0.5">
 			<p id="{id}-crew" role="presentation" class="px-2 pt-1.5 pb-0.5 font-mono text-label tracking-label text-text-3 uppercase">{m.mention_crew()}</p>

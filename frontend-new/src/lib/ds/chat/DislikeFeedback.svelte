@@ -35,7 +35,7 @@
 	}
 </script>
 
-<section aria-labelledby="{id}-title" class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-surface">
+<section aria-labelledby="{id}-title" class="flex w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border-strong">
 	<header class="flex items-center gap-2.5 px-3.5 pt-3 pb-1">
 		<p id="{id}-title" class="min-w-0 flex-1 text-ui font-medium text-text">{m.dislike_title()}</p>
 		<button type="button" aria-label={m.action_close()} class="inline-flex size-6 cursor-pointer items-center justify-center rounded-xs text-text-3 outline-offset-1 hover:text-text pointer-coarse:size-11" onclick={oncancel}>
@@ -72,7 +72,7 @@
 			<span id="{id}-chat-help" class="text-caption text-text-3">{m.dislike_include_chat_help()}</span>
 		</span>
 	</div>
-	<footer class="flex items-center justify-end gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex items-center justify-end gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<Button label={m.action_cancel()} variant="ghost" onclick={oncancel} />
 		<Button
 			label={m.dislike_send()}

@@ -75,7 +75,7 @@
 {/snippet}
 
 <GallerySection title="Thinking & planning" description="How the crew shows its work. Collapsed by default once the answer lands; live while it runs. Never theatrical.">
-	<div class="grid gap-6 lg:grid-cols-2">
+	<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
 		<GalleryBoard title="Reasoning" note="collapsed · live · expanded">{@render reasoning()}</GalleryBoard>
 		<GalleryBoard title="Thought" note="single · with steps">{@render thought()}</GalleryBoard>
 		<GalleryBoard title="Plan" note="running · step statuses">{@render plan()}</GalleryBoard>

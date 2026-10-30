@@ -10,7 +10,7 @@
 	let { draft, signInHref }: Props = $props();
 </script>
 
-<section class="flex w-105 max-w-full flex-col overflow-hidden rounded-md border border-border-strong bg-surface shadow-float">
+<section class="flex w-105 max-w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border-strong shadow-float">
 	<div class="flex flex-col gap-2.5 p-5">
 		<span class="inline-flex text-text-2"><Icon icon={LogIn} size={18} /></span>
 		<h2 class="text-body font-medium text-text">{m.session_title()}</h2>
@@ -23,7 +23,7 @@
 			</p>
 		{/if}
 	</div>
-	<footer class="flex justify-end border-t border-border px-5 py-3">
+	<footer class="flex justify-end border-t border-border px-5 pt-2.75 pb-3">
 		<Button label={m.session_sign_in()} href={signInHref} iconEnd={ArrowRight} />
 	</footer>
 </section>

@@ -64,7 +64,7 @@
 </script>
 
 <section class={['flex w-full flex-col overflow-hidden rounded-md border bg-bg', status === 'pending' || status === 'editing' ? 'border-border-strong' : 'border-border']}>
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<Mascot {agent} size={20} />
 		<p id="{id}-title" class={['min-w-0 flex-1 text-ui font-medium', status === 'rejected' ? 'text-text-2' : 'text-text']}>{title}</p>
 		{#if status === 'pending'}<Tag kind="neutral" label={m.approval_needs_you()} />{/if}
@@ -90,7 +90,7 @@
 			></textarea>
 			<p class="font-mono text-label text-text-3">{m.approval_edit_hint({ name: crewName })}</p>
 		</div>
-		<footer class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-3.5 py-2.5">
+		<footer class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 			{#if oncancel}<Button label={m.action_cancel()} variant="ghost" onclick={oncancel} />{/if}
 			{#if onsave}<Button label={approveLabel ?? m.approval_approve()} iconEnd={approveIcon} disabled={!draft.trim()} onclick={() => onsave(draft.trim())} />{/if}
 		</footer>
@@ -114,7 +114,7 @@
 				</p>
 			{/if}
 		</div>
-		<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+		<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 			<span class="flex min-w-0 flex-1 basis-40 items-center">
 				{#if rememberLabel}
 					<label class="inline-flex cursor-pointer items-center gap-2 text-caption text-text-3">
