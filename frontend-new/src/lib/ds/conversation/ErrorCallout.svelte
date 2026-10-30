@@ -1,25 +1,26 @@
 <script lang="ts">
-	import { ArrowUpRight, CircleAlert, RotateCcw } from '@lucide/svelte';
+	import type { Component } from 'svelte';
+	import { CircleAlert, type LucideProps } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
 	import Button from '../actions/Button.svelte';
 
 	// Design System / Nomi → Conversation: a failure, named plainly, with the provider's own words
-	// quoted in mono (code, request id, reason) and the fix one click away.
+	// quoted in mono (code, request id, reason) and the next move one click away: the first action
+	// is the main one (inverse), any other is secondary. A link to another site opens in a new tab.
 	type Detail = { key: string; value: string; strong?: boolean };
+	type Action = { label: string; icon?: Component<LucideProps>; onclick?: () => void; href?: string; external?: boolean };
 	type Props = {
 		title: string;
 		code?: string;
 		requestId?: string;
 		details?: Detail[];
-		retryLabel?: string;
-		onretry?: () => void;
-		fix?: { label: string; href: string };
+		actions?: Action[];
 	};
-	let { title, code, requestId, details = [], retryLabel, onretry, fix }: Props = $props();
+	let { title, code, requestId, details = [], actions = [] }: Props = $props();
 </script>
 
 <section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong" role="alert">
-	<header class="flex items-center gap-2 border-b border-border bg-danger-bg px-3.5 py-2.5">
+	<header class="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border bg-danger-bg px-3.5 py-2.5">
 		<span class="inline-flex text-danger"><Icon icon={CircleAlert} size={14} /></span>
 		<span class="text-ui font-medium text-danger">{title}</span>
 		{#if code}<span class="min-w-0 flex-1 truncate font-mono text-label text-text-3">{code}</span>{:else}<span class="flex-1"></span>{/if}
@@ -30,15 +31,16 @@
 			{#each details as detail (detail.key)}
 				<div class="flex gap-3">
 					<dt class="w-24 shrink-0 font-mono text-label text-text-3">{detail.key}</dt>
-					<dd class={['font-mono text-label', detail.strong ? 'text-text' : 'text-text-2']}>{detail.value}</dd>
+					<dd class={['min-w-0 font-mono text-label break-words', detail.strong ? 'text-text' : 'text-text-2']}>{detail.value}</dd>
 				</div>
 			{/each}
 		</dl>
 	{/if}
-	{#if (retryLabel && onretry) || fix}
-		<div class="flex items-center gap-2 border-t border-border bg-surface px-3.5 py-2.5">
-			{#if retryLabel && onretry}<Button label={retryLabel} variant="inverse" iconStart={RotateCcw} onclick={onretry} />{/if}
-			{#if fix}<Button label={fix.label} variant="secondary" href={fix.href} external iconEnd={ArrowUpRight} />{/if}
+	{#if actions.length > 0}
+		<div class="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3.5 py-2.5">
+			{#each actions as action, index (action.label)}
+				<Button label={action.label} variant={index === 0 ? 'inverse' : 'secondary'} iconEnd={action.icon} href={action.href} external={action.external} onclick={action.onclick} />
+			{/each}
 		</div>
 	{/if}
 </section>

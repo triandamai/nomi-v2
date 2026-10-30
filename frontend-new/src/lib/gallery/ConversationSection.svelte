@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Bell, GitBranch } from '@lucide/svelte';
+	import { ArrowUpRight, Bell, GitBranch, RotateCcw } from '@lucide/svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
 	import MessageAgent from '$lib/ds/conversation/MessageAgent.svelte';
 	import ErrorCallout from '$lib/ds/conversation/ErrorCallout.svelte';
@@ -38,9 +38,10 @@
 					{ key: 'reason', value: 'Insufficient Balance', strong: true },
 					{ key: 'provider', value: 'api.deepseek.com' },
 				]}
-				retryLabel="Retry"
-				onretry={() => {}}
-				fix={{ label: 'Add credits on DeepSeek', href: 'https://platform.deepseek.com' }}
+				actions={[
+					{ label: 'Retry', icon: RotateCcw, onclick: () => {} },
+					{ label: 'Add credits on DeepSeek', icon: ArrowUpRight, href: 'https://platform.deepseek.com', external: true },
+				]}
 			/>
 		</MessageAgent>
 	</div>

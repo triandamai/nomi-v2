@@ -89,7 +89,7 @@
 				{/if}
 			</span>
 			<span class="ml-auto flex flex-wrap items-center justify-end gap-2">
-				{#if onedit}<Button label={m.approval_edit()} variant="ghost" iconStart={Pencil} onclick={onedit} />{/if}
+				{#if onedit}<Button label={m.action_edit()} variant="ghost" iconStart={Pencil} onclick={onedit} />{/if}
 				{#if onreject}<Button label={rejectLabel ?? m.approval_reject()} variant="secondary" onclick={onreject} />{/if}
 				{#if onapprove}<Button label={approveLabel ?? m.approval_approve()} iconEnd={approveIcon} onclick={() => onapprove({ remember })} />{/if}
 			</span>
