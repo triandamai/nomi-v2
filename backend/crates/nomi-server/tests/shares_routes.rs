@@ -105,6 +105,7 @@ async fn a_shared_chat_opens_for_anyone_with_amounts_masked(pool: PgPool) {
     assert_eq!(share["mask"], true);
     assert_eq!(share["chat_messages"], 2);
     assert_eq!(share["preview"], "Food came to Rp ••• this month.");
+    assert_eq!(share["preview_by"], "Dana");
     assert!(share["expires_at"].is_string());
 
     let link = format!("/api/shared/{}", share["token"].as_str().unwrap());

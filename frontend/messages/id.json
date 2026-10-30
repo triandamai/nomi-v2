@@ -2609,5 +2609,6 @@
 	"msg_rerun_failed": "Gagal meminta ulang. Coba lagi sebentar lagi.",
 	"msg_versions_failed": "Gagal memuat versi sebelumnya.",
 	"msg_edit": "Edit pesan",
-	"msg_earlier_version": "Versi sebelumnya · {version} dari {total}"
+	"msg_earlier_version": "Versi sebelumnya · {version} dari {total}",
+	"export_you": "Kamu"
 }

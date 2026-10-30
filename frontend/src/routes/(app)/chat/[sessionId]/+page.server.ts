@@ -4,8 +4,9 @@ import { retryRun } from '$lib/server/retryRun';
 import { loadModelOptions, loadSessionModel, sessionModelActions } from '$lib/server/modelOptions';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { renameSession } from '$lib/server/renameSession';
+import { moveSession, pinSession } from '$lib/server/updateSession';
 import { loadThinkingLevel, saveThinkingLevel } from '$lib/server/thinking';
-import type { AgentStatus, ChatPersonality, MessageItem, PersonalityHistoryResponse, RenderedMessage, SessionSummary } from '$lib/types';
+import type { AgentStatus, ChatPersonality, MessageItem, OrgList, PersonalityHistoryResponse, ProjectList, RenderedMessage, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
@@ -40,7 +41,19 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 	const sessions: SessionSummary[] = sessionsResponse.ok
 		? ((await sessionsResponse.json()) as { sessions: SessionSummary[] }).sessions
 		: [];
-	const title = sessions.find((s) => s.id === params.sessionId)?.title ?? m.nav_new_chat();
+	const session = sessions.find((s) => s.id === params.sessionId);
+	const title = session?.title ?? m.nav_new_chat();
+	// The chat menu: whether it's pinned, the project it's in, and the projects it can move to
+	// (named with their workspace). Best-effort: without them the menu still renames and deletes.
+	const [projectsResponse, orgsResponse] = await Promise.all([apiFetch(fetch, cookies, '/api/projects'), apiFetch(fetch, cookies, '/api/orgs')]);
+	const projectList = projectsResponse.ok ? ((await projectsResponse.json()) as ProjectList) : null;
+	const orgs = orgsResponse.ok ? ((await orgsResponse.json()) as OrgList).orgs : [];
+	const workspace = orgs.find((org) => org.id === projectList?.org_id)?.name ?? '';
+	const chatMenu = {
+		pinned: session?.pinned ?? false,
+		inProjectId: session?.in_project_id ?? null,
+		projects: (projectList?.projects ?? []).map(({ id, name }) => ({ id, name, workspace })),
+	};
 
 	// The composer's model picker: what's on offer, and what this chat uses. Neither can break
 	// the chat; the provider catalog loads only if the person connects one from there.
@@ -49,11 +62,18 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		loadModelOptions(fetch, cookies),
 		loadSessionModel(fetch, cookies, params.sessionId),
 	]);
-	return { messages, hasOlder, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel, modelOptions, sessionModel };
+	return { messages, hasOlder, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel, modelOptions, sessionModel, chatMenu };
 };
 
 export const actions: Actions = {
 	rename: async ({ request, params, cookies, fetch }) => renameSession(fetch, cookies, params.sessionId, await request.formData()),
+	pinSession: async ({ request, params, cookies, fetch }) => pinSession(fetch, cookies, params.sessionId, await request.formData()),
+	moveSession: async ({ request, params, cookies, fetch }) => moveSession(fetch, cookies, params.sessionId, await request.formData()),
+	deleteSession: async ({ params, cookies, fetch }) => {
+		const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}`, { method: 'DELETE' });
+		if (!response.ok) return fail(response.status, { error: m.err_delete_chat() });
+		return { deleted: true };
+	},
 	setThinking: async ({ request, params, cookies, fetch }) => saveThinkingLevel(fetch, cookies, params.sessionId, await request.formData()),
 
 	// Named (not `default`) because this actions object also has the model picker's and the rest —

@@ -5,25 +5,33 @@
 	import { m } from '$lib/paraglide/messages';
 	import ShareDialog from '$lib/components/ds/chat/ShareDialog.svelte';
 	import type { ShareSettings } from '$lib/components/ds/chat/SharePanel.svelte';
-	import { CREW } from '$lib/components/ds/agents/crew';
 	import { crewId } from '$lib/crewId';
 	import { expiryLabel, nextExpiry, plainText, shareUrl, type ExpiryDays } from '$lib/shareLink';
 
-	type Share = { id: string; token: string; preview: string; chat_messages: number };
+	/** `preview_by`: who wrote what the link opens with (none: the person). */
+	type Share = { id: string; token: string; preview: string; preview_by: string | null; chat_messages: number };
 	let {
 		open = $bindable(false),
 		messageId,
 		agent = null,
 		time,
-	}: { open?: boolean; messageId: string; agent?: string | null; time: string } = $props();
+		scope = 'reply',
+	}: {
+		open?: boolean;
+		messageId: string;
+		agent?: string | null;
+		time: string;
+		/** What the link starts with: this reply, or the whole chat (the chat menu's Share). */
+		scope?: 'reply' | 'chat';
+	} = $props();
 
 	let share = $state<Share | null>(null);
-	let settings = $state<ShareSettings>({ scope: 'reply', mask: true, anyone: true });
+	// svelte-ignore state_referenced_locally
+	let settings = $state<ShareSettings>({ scope, mask: true, anyone: true });
 	let expiry = $state<ExpiryDays>(7);
 	let failed = $state(false);
 
 	const sessionId = $derived(page.params.sessionId ?? '');
-	const who = $derived(crewId(agent));
 	const body = () => ({ ...settings, message_id: messageId, expires_in_days: expiry });
 
 	async function save(request: Promise<Response>) {
@@ -47,7 +55,12 @@
 {#if open && share}
 	<ShareDialog
 		bind:open
-		preview={{ agent: who, name: agent ?? CREW.find((member) => member.id === who)?.name ?? 'Nomi', time, excerpt: plainText(share.preview) }}
+		preview={{
+			agent: crewId(share.preview_by ?? agent),
+			name: share.preview_by ?? m.export_you(),
+			time,
+			excerpt: plainText(share.preview),
+		}}
 		chatMessages={share.chat_messages}
 		url={shareUrl(page.url.origin, share.token)}
 		expiry={expiryLabel(expiry)}

@@ -18,6 +18,7 @@
 	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
 	import CompactChatInput from '$lib/components/composer/CompactChatInput.svelte';
 	import { deserialize } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import { composeMessage, discardUpload, refusal, uploadFile, voiceNoteName, type AttachmentKind, type ComposerFile } from '$lib/attachments';
 	import { provideChatSend } from '$lib/chatSend';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
@@ -25,6 +26,14 @@
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
 	import { afterRerun } from '$lib/rerun';
+	import { chatFileName, chatMarkdown } from '$lib/exportChat';
+	import { MoreHorizontal } from '@lucide/svelte';
+	import ChatMenu from './ds/chat/ChatMenu.svelte';
+	import MoveDialog from './ds/chat/MoveDialog.svelte';
+	import Dialog from './ds/overlays/Dialog.svelte';
+	import DsButton from './ds/actions/Button.svelte';
+	import DsIconButton from './ds/actions/IconButton.svelte';
+	import ShareTwin from './blocks/twins/ShareTwin.svelte';
 	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
 
@@ -57,6 +66,7 @@
 		placeholder,
 		typingLabel = null,
 		ontyping,
+		chatMenu = null,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -92,6 +102,9 @@
 		typingLabel?: string | null;
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
+		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
+		 * project's doesn't. The page must have pinSession, moveSession and deleteSession actions. */
+		chatMenu?: { pinned: boolean; inProjectId: string | null; projects: { id: string; name: string; workspace: string }[] } | null;
 	} = $props();
 
 	// Someone writing tells the others in a shared chat (the page throttles it).
@@ -108,6 +121,52 @@
 	let titleDraft = $state('');
 	let titleInput: HTMLInputElement | undefined = $state();
 	let renameError = $state<string | null>(null);
+
+	// The chat menu (chatMenu): pin, move, export, share and delete this chat.
+	// svelte-ignore state_referenced_locally
+	let pinned = $state(chatMenu?.pinned ?? false);
+	// svelte-ignore state_referenced_locally
+	let inProjectId = $state(chatMenu?.inProjectId ?? null);
+	let moveOpen = $state(false);
+	let deleteChatOpen = $state(false);
+	let shareChatOpen = $state(false);
+	let menuError = $state<string | null>(null);
+
+	async function postChatAction(action: 'pinSession' | 'moveSession' | 'deleteSession', fields: Record<string, string> = {}): Promise<boolean> {
+		const body = new FormData();
+		for (const [key, value] of Object.entries(fields)) body.set(key, value);
+		const result = deserialize(await (await fetch(`?/${action}`, { method: 'POST', body })).text());
+		menuError = result.type === 'success' ? null : m.chat_update_failed();
+		return result.type === 'success';
+	}
+
+	function exportChat() {
+		const url = URL.createObjectURL(new Blob([chatMarkdown(shownTitle, localMessages, m.export_you())], { type: 'text/markdown;charset=utf-8' }));
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = chatFileName(shownTitle);
+		anchor.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function onChatMenu(action: 'rename' | 'pin' | 'move' | 'export' | 'share' | 'delete') {
+		if (action === 'rename') void startRename();
+		else if (action === 'pin' && (await postChatAction('pinSession', { pinned: String(!pinned) }))) pinned = !pinned;
+		else if (action === 'move') moveOpen = true;
+		else if (action === 'export') exportChat();
+		else if (action === 'share') shareChatOpen = true;
+		else if (action === 'delete') deleteChatOpen = true;
+	}
+
+	async function moveTo(projectId: string) {
+		moveOpen = false;
+		if (await postChatAction('moveSession', { projectId })) inProjectId = projectId;
+	}
+
+	async function deleteChat() {
+		if (await postChatAction('deleteSession')) await goto('/chats');
+		deleteChatOpen = false;
+	}
 
 	async function startRename() {
 		titleDraft = shownTitle;
@@ -707,12 +766,32 @@
 				<span class="appbar__crew-label">{m.home_working_count({ count: workingCrew.length })}</span>
 			{/if}
 		</button>
-		{#if extraControls}
+		{#if extraControls || (chatMenu && !unsaved)}
 			<div class="appbar__actions">
-				{@render extraControls()}
+				{@render extraControls?.()}
+				{#if chatMenu && !unsaved}
+					<ChatMenu {pinned} onpick={onChatMenu}>
+						{#snippet trigger(props)}
+							<DsIconButton icon={MoreHorizontal} label={m.common_more_options()} variant="ghost" {...props} />
+						{/snippet}
+					</ChatMenu>
+				{/if}
 			</div>
 		{/if}
 	</header>
+	{#if menuError}<p class="appbar__rename-error" role="alert">{menuError}</p>{/if}
+	{#if chatMenu && !unsaved}
+		<MoveDialog bind:open={moveOpen} projects={chatMenu.projects} initialChosen={inProjectId ?? undefined} onmove={moveTo} />
+		<Dialog bind:open={deleteChatOpen} title={m.session_delete_title()} description={m.session_delete_body()}>
+			{#snippet actions()}
+				<DsButton label={m.common_cancel()} variant="ghost" onclick={() => (deleteChatOpen = false)} />
+				<DsButton label={m.common_delete()} variant="danger" onclick={deleteChat} />
+			{/snippet}
+		</Dialog>
+		{#if localMessages.length > 0}
+			<ShareTwin bind:open={shareChatOpen} scope="chat" messageId={localMessages[localMessages.length - 1].id} agent={localMessages[localMessages.length - 1].agent_display_name} time="" />
+		{/if}
+	{/if}
 
 	<div class="chat__body">
 		<div class="chat__main">

@@ -61,6 +61,7 @@
 	sendError={form?.error ?? null}
 	glass={page.data.preferences?.animated_backdrop === true}
 	thinkingLevel={data.thinkingLevel}
+	chatMenu={data.chatMenu}
 >
 	{#snippet modelControl()}
 		{#if modelGroups.length > 0 || sessionModel}

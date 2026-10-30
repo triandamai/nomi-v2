@@ -72,6 +72,8 @@ pub struct ShareResponse {
     pub expires_at: Option<DateTime<Utc>>,
     /// What the link opens with (the reply, or the chat's first reply), masked when `mask` is on.
     pub preview: String,
+    /// Who wrote it: the crew member's name, or none when it's the person's own message.
+    pub preview_by: Option<String>,
     /// How many messages the whole chat would share.
     pub chat_messages: i64,
 }
@@ -138,6 +140,7 @@ async fn respond(pool: &sqlx::PgPool, share_id: Uuid) -> Result<ShareResponse, (
         anyone,
         expires_at,
         preview: if mask_on { mask(&excerpt) } else { excerpt },
+        preview_by: shown.filter(|row| !row.1).map(|row| row.2.clone().unwrap_or_else(|| "Nomi".to_string())),
         chat_messages: rows.len() as i64,
     })
 }

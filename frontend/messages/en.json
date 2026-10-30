@@ -2609,5 +2609,6 @@
 	"msg_rerun_failed": "Couldn't ask again. Try again in a moment.",
 	"msg_versions_failed": "Couldn't load the earlier versions.",
 	"msg_edit": "Edit message",
-	"msg_earlier_version": "Earlier version · {version} of {total}"
+	"msg_earlier_version": "Earlier version · {version} of {total}",
+	"export_you": "You"
 }
