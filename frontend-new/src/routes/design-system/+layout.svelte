@@ -5,7 +5,10 @@
 
 	// ?theme=dark or ?theme=light shows the whole sheet in one theme, to compare with the pen file.
 	const theme = $derived(page.url.searchParams.get('theme'));
-	const sheets = [{ href: '/design-system/nomi', label: 'Nomi' }];
+	const sheets = [
+		{ href: '/design-system/nomi', label: 'Nomi' },
+		{ href: '/design-system/chat', label: 'Chat responses' },
+	];
 </script>
 
 <svelte:head><title>Design system · Nomi</title></svelte:head>

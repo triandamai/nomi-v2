@@ -26,5 +26,17 @@
 	"shell_nav_drawer": "Navigasi",
 	"workspace_view": "Tampilan",
 	"workspace_chat": "Chat",
-	"workspace_preview": "Pratinjau"
+	"workspace_preview": "Pratinjau",
+	"plan_title": "Rencana",
+	"plan_progress": "{done} dari {total} selesai",
+	"plan_note": "Setiap langkah dikerjakan anggota kru yang memegangnya",
+	"plan_stop": "Hentikan rencana",
+	"draft_title": "Draf rencana",
+	"draft_tag": "Draf",
+	"draft_add_step": "Tambah langkah",
+	"draft_discard": "Buang",
+	"draft_changes": "Minta perubahan",
+	"draft_run": "Jalankan rencana",
+	"draft_move": "Pindahkan langkah {index}",
+	"draft_remove": "Hapus langkah {index}"
 }
