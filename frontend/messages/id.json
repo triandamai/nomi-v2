@@ -2605,5 +2605,9 @@
 	"shared_sign_in": "Masuk untuk membuka tautan ini.",
 	"shared_sign_in_action": "Masuk",
 	"shared_gone": "Tautan ini sudah dicabut atau kedaluwarsa.",
-	"shared_expires": "Tautan kedaluwarsa {when}"
+	"shared_expires": "Tautan kedaluwarsa {when}",
+	"msg_rerun_failed": "Gagal meminta ulang. Coba lagi sebentar lagi.",
+	"msg_versions_failed": "Gagal memuat versi sebelumnya.",
+	"msg_edit": "Edit pesan",
+	"msg_earlier_version": "Versi sebelumnya · {version} dari {total}"
 }

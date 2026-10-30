@@ -2605,5 +2605,9 @@
 	"shared_sign_in": "Sign in to open this link.",
 	"shared_sign_in_action": "Sign in",
 	"shared_gone": "This link was revoked or has expired.",
-	"shared_expires": "Link expires {when}"
+	"shared_expires": "Link expires {when}",
+	"msg_rerun_failed": "Couldn't ask again. Try again in a moment.",
+	"msg_versions_failed": "Couldn't load the earlier versions.",
+	"msg_edit": "Edit message",
+	"msg_earlier_version": "Earlier version · {version} of {total}"
 }

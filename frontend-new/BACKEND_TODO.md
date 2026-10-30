@@ -28,27 +28,23 @@ The old `frontend/` will use the same endpoints.
   - The single `reason` older apps send still works and lands in `reasons`.
   - A thumbs-up keeps none of them. The note is at most 2000 characters.
 
-### Regenerate a reply, and its versions
+### Regenerate a reply, and its versions — done
 - **Needed by:** *Chat responses / Actions*: RegenerateMenu and VersionSwitcher.
-- **Why:** the person asks for the reply again, with the same model or another one, and moves between the versions.
-- **What exists today:**
-  - `POST /api/sessions/:id/messages/:message_id/retry` only re-runs a failed run (`RunFailed` block).
-  - Messages have no versions.
-- **Proposed contract:**
-  - `POST /api/sessions/:id/messages/:message_id/regenerate` with `{ model_id? }` returns `202 { version, total }`.
-  - The reply streams over the session WS as usual.
-  - `GET …/messages/:message_id/versions` returns `[{ version, created_at, model }]`.
-  - `GET …/messages/:message_id?version=n` returns that version.
-- **Until then:** no regenerate or version switcher.
+- **Built:** `backend/crates/nomi-server/src/routes/message_rerun.rs`, migration `0093_message_versions.sql`.
+  - `POST /api/sessions/:id/messages/:message_id/regenerate` with `{ style?: "again"|"shorter"|"longer"|"list" }` returns `202 { message_id, version, total, edited_at }`.
+    - `message_id` is the person's message whose turn runs again.
+    - The style's instruction goes to the crew with the message (`nomi-agent-core/src/prompts.rs`); the message itself doesn't change.
+  - `GET …/messages/:message_id/versions` returns `{ message_id, versions: [{ version, text, replies, created_at }], total }`. The live take is number `total`.
+  - Messages in the list carry `versions`: how many earlier takes a person's message has.
+  - Only the latest turn runs again, and only when nothing is running in the chat (409 otherwise).
+  - Before it runs, what the turn made is taken back (replies, transactions, reminders, plans, scheduled tasks), as deleting the message would, so it isn't done twice.
+- **Still open:** RegenerateMenu's "with another model" needs the chat's model list in the menu. The app can already set the chat's model first (`PUT /api/sessions/:id/model`), but the old frontend's menu offers styles only for now.
 
-### Edit a sent message
+### Edit a sent message — done
 - **Needed by:** *Chat responses / Edit*: MessageEditor, and MessageUser `edited` / `version`.
-- **Why:** the person fixes what they asked, and the reply after it runs again.
-- **What exists today:** nothing. A message can only be deleted (`DELETE …/messages/:message_id`).
-- **Proposed contract:**
-  - `PATCH /api/sessions/:id/messages/:message_id` with `{ text }` returns `{ version, edited_at }`.
-  - It keeps the earlier text as a version and queues a new turn from that message.
-- **Until then:** no edit.
+- **Built:** `PATCH /api/sessions/:id/messages/:message_id` with `{ text }` returns `{ message_id, version, total, edited_at }`.
+  - It's the same run-again as regenerate, with the new text saved and `edited_at` set.
+  - The earlier text and its replies stay as a version. Messages carry `edited_at`.
 
 ### Pin a chat — done
 - **Needed by:** *Chat / Menu*: ChatMenu pin and unpin, and the pinned group in the sidebar.

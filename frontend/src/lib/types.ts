@@ -95,6 +95,18 @@ export interface MessageItem {
 	sources?: ReplySource[];
 	/** Who wrote it, when it's a teammate's message in a shared project chat. */
 	author_name?: string;
+	/** When the person last changed their message. */
+	edited_at?: string | null;
+	/** Earlier takes of the person's message and its replies, kept when it ran again. */
+	versions?: number;
+}
+
+/** An earlier take of a turn (GET …/messages/:id/versions): what the person wrote, the replies it got. */
+export interface MessageVersion {
+	version: number;
+	text: string;
+	replies: { content: string; content_html: string; agent_display_name: string | null; created_at: string }[];
+	created_at: string;
 }
 
 export interface ReplyStep {

@@ -96,10 +96,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/sessions/:id/messages/:message_id",
-            get(sessions_routes::get_message).delete(crate::routes::message_delete::delete_message),
+            get(sessions_routes::get_message)
+                .delete(crate::routes::message_delete::delete_message)
+                .patch(crate::routes::message_rerun::edit),
         )
         .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
         .route("/api/sessions/:id/messages/:message_id/retry", post(crate::routes::message_retry::retry_failed_run))
+        .route("/api/sessions/:id/messages/:message_id/regenerate", post(crate::routes::message_rerun::regenerate))
+        .route("/api/sessions/:id/messages/:message_id/versions", get(crate::routes::message_rerun::versions))
         .route(
             "/api/sessions/:id/agent-plans/:agent_session_id",
             get(sessions_routes::list_agent_plans),

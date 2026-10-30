@@ -24,6 +24,7 @@
 	import { createChatLink } from '$lib/chatLink';
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew } from '$lib/crew';
+	import { afterRerun } from '$lib/rerun';
 	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
 
@@ -761,6 +762,7 @@
 							handoffFrom={handoffFrom(threadMessages, i)}
 							answered={i < lastUserIndex}
 							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
+							onrerun={(startId, update) => (localMessages = afterRerun(localMessages, startId, update))}
 						/>
 					{/each}
 					{#if isWorking}

@@ -20,6 +20,12 @@
 	import DislikeFeedback, { type DislikeReason } from './ds/chat/DislikeFeedback.svelte';
 	import FeedbackSent from './ds/chat/FeedbackSent.svelte';
 	import ShareTwin from './blocks/twins/ShareTwin.svelte';
+	import RegenerateMenu from './ds/chat/RegenerateMenu.svelte';
+	import MessageEditor from './ds/chat/MessageEditor.svelte';
+	import VersionSwitcher from './ds/chat/VersionSwitcher.svelte';
+	import { Pencil } from '@lucide/svelte';
+	import { page } from '$app/state';
+	import type { MessageVersion } from '$lib/types';
 
 	let {
 		message,
@@ -32,6 +38,7 @@
 		handoffFrom = null,
 		answered = false,
 		ondelete,
+		onrerun,
 	}: {
 		message: RenderedMessage;
 		chained?: boolean;
@@ -52,6 +59,8 @@
 		answered?: boolean;
 		/** Offers Delete; called with the ids of the messages that went. */
 		ondelete?: (ids: string[]) => void;
+		/** The latest turn ran again (edited, or a reply asked for again): the person's message as it now stands. */
+		onrerun?: (startId: string, update: Partial<RenderedMessage>) => void;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
 	// Buttons or an error bubble the crew posted on their own: no copy, share or rating for them,
@@ -221,6 +230,59 @@
 	// Sharing this reply, or its chat, by link (ShareTwin).
 	let shareOpen = $state(false);
 
+	// The latest turn can run again: the person edits their message, or asks for the reply again
+	// (see message_rerun on the server). Its earlier takes stay, a step back with the version switcher.
+	const latest = $derived(!answered && !message.author_name && !!onrerun);
+	const messageUrl = $derived(`${page.url.pathname}/message/${message.id}`);
+	let regenerateOpen = $state(false);
+	let editing = $state(false);
+	let rerunError = $state(false);
+
+	async function rerun(request: Promise<Response>): Promise<{ message_id: string; total: number; edited_at: string | null } | null> {
+		const response = await request.catch(() => null);
+		rerunError = !response?.ok;
+		if (!response?.ok) return null;
+		// Back to the live take; the list of earlier ones has grown.
+		viewing = null;
+		earlier = null;
+		return await response.json();
+	}
+
+	async function regenerate(choice: { style: 'again' | 'shorter' | 'longer' | 'list' } | { model: string }) {
+		regenerateOpen = false;
+		const style = 'style' in choice ? choice.style : 'again';
+		const done = await rerun(fetch(`${messageUrl}/regenerate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ style }) }));
+		if (done) onrerun?.(done.message_id, { versions: done.total - 1 });
+	}
+
+	async function saveEdit(text: string) {
+		const done = await rerun(fetch(messageUrl, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }));
+		if (!done) return;
+		editing = false;
+		const rendered = await fetch(messageUrl).then((response) => (response.ok ? (response.json() as Promise<RenderedMessage>) : null)).catch(() => null);
+		onrerun?.(done.message_id, rendered ?? { content: text, edited_at: done.edited_at, versions: done.total - 1 });
+	}
+
+	// Stepping through the earlier takes of this message: `viewing` is the take shown (null: the live one).
+	const total = $derived((message.versions ?? 0) + 1);
+	let viewing = $state<number | null>(null);
+	let earlier = $state<MessageVersion[] | null>(null);
+	const shown = $derived(viewing !== null && earlier ? earlier[viewing - 1] : null);
+
+	async function step(by: number) {
+		const next = (viewing ?? total) + by;
+		if (next < 1 || next > total) return;
+		if (next < total && !earlier) {
+			const response = await fetch(`${messageUrl}/versions`).catch(() => null);
+			if (!response?.ok) {
+				rerunError = true;
+				return;
+			}
+			earlier = ((await response.json()) as { versions: MessageVersion[] }).versions;
+		}
+		viewing = next === total ? null : next;
+	}
+
 	type Dislike = { reasons: DislikeReason[]; note: string; includeChat: boolean };
 
 	async function sendFeedback(rating: 'up' | 'down' | null, dislike?: Dislike): Promise<boolean> {
@@ -303,7 +365,9 @@
 			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
 		{/if}
 
-		{#if !thinkingOnly}
+		{#if !thinkingOnly && editing}
+			<MessageEditor value={message.content} version={total > 1 ? `${total} / ${total}` : undefined} onsave={saveEdit} oncancel={() => (editing = false)} />
+		{:else if !thinkingOnly}
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'} class:message-bubble--teammate={!!message.author_name}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
@@ -314,10 +378,29 @@
 			{:else if attached && attached.files.length > 0}
 				<MessageAttachments files={attached.files} />
 				{#if attached.text}<p class="message__plain">{attached.text}</p>{/if}
+			{:else if shown}
+				<p class="message__plain">{shown.text}</p>
 			{:else}
 				<div class="message-markdown">{@html message.content_html}</div>
 			{/if}
 		</div>
+		{#if total > 1}
+			<div class="message__versions">
+				<VersionSwitcher current={viewing ?? total} {total} onprev={() => step(-1)} onnext={() => step(1)} />
+				{#if message.edited_at && viewing === null}<span class="message__edited">{m.msg_edited({ time: new Date(message.edited_at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }) })}</span>{/if}
+			</div>
+		{/if}
+		{#if shown}
+			<div class="message__earlier" role="group" aria-label={m.msg_earlier_version({ version: viewing ?? total, total })}>
+				<p class="message__earlier-label">{m.msg_earlier_version({ version: viewing ?? total, total })}</p>
+				{#each shown.replies as reply, index (index)}
+					<div class="message__earlier-reply">
+						{#if reply.agent_display_name}<span class="message__earlier-name">{reply.agent_display_name}</span>{/if}
+						<div class="message-markdown">{@html reply.content_html}</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
 		{#if !statusOnly && message.sender === 'assistant'}
 		<div class="message__reply-actions">
@@ -328,9 +411,12 @@
 				onlike={() => setFeedback('up')}
 				ondislike={() => setFeedback('down')}
 				onshare={() => (shareOpen = true)}
+				onregenerate={latest ? () => (regenerateOpen = !regenerateOpen) : undefined}
 				ondelete={ondelete && !message.author_name ? () => (deleteOpen = true) : undefined}
 			/>
 		</div>
+		{#if regenerateOpen}<RegenerateMenu inline onpick={regenerate} />{/if}
+		{#if rerunError}<p class="message__error" role="alert">{m.msg_rerun_failed()}</p>{/if}
 		<ShareTwin bind:open={shareOpen} messageId={message.id} agent={message.agent_display_name} time={formattedTime} />
 		{#if dislikeOpen}
 			<DislikeFeedback onsend={sendDislike} oncancel={() => (dislikeOpen = false)} />
@@ -363,6 +449,11 @@
 					<IconShare size={16} />
 				{/if}
 			</button>
+			{#if latest && !(attached && attached.files.length > 0)}
+				<button type="button" class="message-action-btn" aria-label={m.msg_edit()} title={m.msg_edit()} onclick={() => (editing = true)}>
+					<Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
+				</button>
+			{/if}
 			{#if ondelete && !message.author_name}
 				<button type="button" class="message-action-btn" aria-label={m.msg_delete()} title={m.msg_delete()} onclick={() => (deleteOpen = true)}>
 					<IconDelete size={16} />
@@ -603,6 +694,39 @@
 	}
 	.message__reply-actions {
 		margin-top: 2px;
+	}
+	.message__versions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.message--user .message__versions {
+		align-self: flex-end;
+	}
+	.message__edited {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.message__earlier {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.message__earlier-label,
+	.message__earlier-name {
+		margin: 0;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.message__error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+		font-size: var(--md-sys-typescale-body-small-size);
 	}
 
 	/* File cards and image previews (MessageAttachments) aren't text links. */

@@ -269,6 +269,10 @@ pub struct MessageItem {
     pub author_name: Option<String>,
     #[serde(skip)]
     pub sender_identity: Option<Uuid>,
+    /// When the person last changed their message (see message_rerun).
+    pub edited_at: Option<DateTime<Utc>>,
+    /// Earlier takes of the person's message and its replies, kept when it ran again.
+    pub versions: i64,
 }
 
 /// Names the people other than `me` who wrote messages in a shared project chat.
@@ -309,12 +313,13 @@ pub struct ListMessagesResponse {
 /// Messages before `oldest` back to the person's message that started its turn, so a page never
 /// begins halfway through the crew's replies to one request.
 const MESSAGE_COLUMNS: &str = "m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-     (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count";
+     (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count, m.edited_at, \
+     (SELECT count(*) FROM message_versions v WHERE v.message_id = m.id) AS versions";
 
-type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64);
+type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64, Option<DateTime<Utc>>, i64);
 
 fn to_message_item(
-    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count): MessageRow,
+    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count, edited_at, versions): MessageRow,
 ) -> MessageItem {
     MessageItem {
         id,
@@ -329,6 +334,8 @@ fn to_message_item(
         sources: Vec::new(),
         author_name: None,
         sender_identity: sender,
+        edited_at,
+        versions,
     }
 }
 
@@ -343,14 +350,12 @@ pub async fn list_messages(
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
     let rows: Vec<MessageRow> = match query.before {
-        Some(before_id) => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
-             FROM messages m \
+        Some(before_id) => sqlx::query_as(&format!(
+            "SELECT {MESSAGE_COLUMNS} FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $4 \
              WHERE m.session_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2) \
-             ORDER BY m.created_at DESC LIMIT $3",
-        )
+             ORDER BY m.created_at DESC LIMIT $3"
+        ))
         .bind(session_id)
         .bind(before_id)
         .bind(limit)
@@ -358,14 +363,12 @@ pub async fn list_messages(
         .fetch_all(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
-        None => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
-             FROM messages m \
+        None => sqlx::query_as(&format!(
+            "SELECT {MESSAGE_COLUMNS} FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
              WHERE m.session_id = $1 \
-             ORDER BY m.created_at DESC LIMIT $2",
-        )
+             ORDER BY m.created_at DESC LIMIT $2"
+        ))
         .bind(session_id)
         .bind(limit)
         .bind(claims.sub)
@@ -426,13 +429,11 @@ pub async fn get_message(
 ) -> Result<Json<MessageItem>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
 
-    let row: MessageRow = sqlx::query_as(
-        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
-         FROM messages m \
+    let row: MessageRow = sqlx::query_as(&format!(
+        "SELECT {MESSAGE_COLUMNS} FROM messages m \
          LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
-         WHERE m.id = $1 AND m.session_id = $2",
-    )
+         WHERE m.id = $1 AND m.session_id = $2"
+    ))
     .bind(message_id)
     .bind(session_id)
     .bind(claims.sub)
@@ -908,6 +909,8 @@ pub async fn send_message(
         sources: Vec::new(),
         author_name: None,
         sender_identity: None,
+        edited_at: None,
+        versions: 0,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -1002,6 +1005,8 @@ async fn try_stop_command(
         sources: Vec::new(),
         author_name: None,
         sender_identity: None,
+        edited_at: None,
+        versions: 0,
     };
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
@@ -1016,6 +1021,8 @@ async fn try_stop_command(
         sources: Vec::new(),
         author_name: None,
         sender_identity: None,
+        edited_at: None,
+        versions: 0,
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }

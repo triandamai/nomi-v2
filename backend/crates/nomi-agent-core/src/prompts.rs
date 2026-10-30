@@ -262,3 +262,9 @@ pub const BACKEND_APPLIES_WHEN_READY: &str = "Saved. This project's backend is s
 pub const BACKEND_STARTING_GUIDANCE: &str = "This is normal for a new project and needs nothing from the person. \
      Keep building what doesn't need the backend (pages, components, migrations in nomi/migrations), then call \
      this tool again. Don't ask the person about it, don't wait for them, and never suggest Drizzle.";
+
+/// Added after the person's message when they ask for a reply again in another shape (the
+/// regenerate menu). The person's message itself stays as they wrote it.
+pub const REGENERATE_SHORTER: &str = "(Answer this again, shorter: the same substance in fewer words.)";
+pub const REGENERATE_LONGER: &str = "(Answer this again, with more detail: explain your reasoning and add what's useful to know.)";
+pub const REGENERATE_LIST: &str = "(Answer this again as a list: one point per item, no long paragraphs.)";
