@@ -170,16 +170,16 @@
 		</GalleryBoard>
 
 		<GalleryBoard title="Suggestions" note="follow-ups · quick replies">
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<FollowUps items={['Compare with the last three months', 'Set a weekly food budget of Rp 500rb', 'Show only GoFood orders after 21:00']} onpick={() => {}} />
 				<QuickReplies replies={['Yes, set it', 'Change the time', 'Not now']} onpick={() => {}} />
 			</div>
 		</GalleryBoard>
 
 		<GalleryBoard title="Usage notes" note="">
-			<ul class="flex flex-col gap-3 text-ui text-text-2">
+			<ul class="flex flex-col gap-5">
 				{#each ['Approval waits for every send, spend, delete or external write. Read-only work never asks.', 'Decision is one-of-many with tradeoffs written out; Selection is many-of-many with a running total.', 'Forms appear inline and arrive prefilled. Validation sits under the field, never in a toast.', 'After you act, the card collapses to a one-line outcome so the thread stays readable.', 'Follow-ups are optional next questions; Quick Replies answer the last question directly.'] as note (note)}
-					<li class="flex gap-3"><span class="text-text-3">–</span>{note}</li>
+					<li class="flex gap-2.5"><span class="font-mono text-label text-text-3">—</span><span class="text-ui leading-normal text-text-2">{note}</span></li>
 				{/each}
 			</ul>
 		</GalleryBoard>

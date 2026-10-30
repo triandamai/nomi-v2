@@ -3,7 +3,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import Button from '../actions/Button.svelte';
-	import IconButton from '../actions/IconButton.svelte';
 	import Tag from '../status/Tag.svelte';
 
 	// Chat responses → Clarify / Review: your answers before anything is planned. An answer the
@@ -29,12 +28,18 @@
 	</header>
 	<dl class="px-3.5 py-1">
 		{#each answers as answer, index (index)}
-			<div class={['flex flex-wrap items-center gap-x-3 py-1', index > 0 && 'border-t border-border']}>
+			<div class={['flex flex-wrap items-center gap-x-3 pb-2.25', index > 0 ? 'border-t border-border pt-2' : 'pt-2.25']}>
 				<dt class="w-27.5 shrink-0 text-caption text-text-3">{answer.topic}</dt>
 				<dd class="flex min-w-0 flex-1 basis-48 items-center gap-3">
 					<span class="min-w-0 flex-1 text-ui text-text">{answer.value}</span>
 					{#if answer.isDefault}<Tag kind="neutral" label={m.clarify_default()} />{/if}
-					<IconButton icon={Pencil} label={m.clarify_edit({ topic: answer.topic })} variant="ghost" iconSize={14} onclick={() => onedit(index)} />
+					<!-- A bare 14px pencil, as drawn; 44pt to a finger. -->
+					<button
+						type="button"
+						aria-label={m.clarify_edit({ topic: answer.topic })}
+						class="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-xs text-text-3 outline-offset-2 hover:text-text pointer-coarse:size-11"
+						onclick={() => onedit(index)}><Icon icon={Pencil} size={14} /></button
+					>
 				</dd>
 			</div>
 		{/each}

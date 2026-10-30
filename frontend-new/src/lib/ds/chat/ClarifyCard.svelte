@@ -99,7 +99,7 @@
 						type="button"
 						aria-current={current ? 'step' : undefined}
 						class={[
-							'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-caption outline-offset-1 pointer-coarse:min-h-11',
+							'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-full border px-2.25 text-caption outline-offset-1 pointer-coarse:min-h-11',
 							current ? 'border-border-strong bg-surface-2 text-text' : 'border-border hover:text-text',
 							!current && (done ? 'text-text-2' : 'text-text-3'),
 						]}
@@ -129,7 +129,7 @@
 			/>
 		{/each}
 		{#if question.other && !question.multiple}
-			<div class="flex items-center gap-3 rounded-sm border border-border-strong py-1.5 pr-1.5 pl-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+			<div class="flex items-center gap-3 rounded-sm border border-border-strong py-1.25 pr-1.25 pl-2.75 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
 				<span aria-hidden="true" class="inline-flex size-5 shrink-0 items-center justify-center rounded-xs bg-surface-2 font-mono text-label text-text-2">{question.options.length + 1}</span>
 				<input
 					bind:this={otherField}

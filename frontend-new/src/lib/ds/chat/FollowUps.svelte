@@ -10,7 +10,7 @@
 
 <section class="flex w-full flex-col gap-0.5">
 	<SectionLabel label={m.followups_title()} />
-	<ul>
+	<ul class="flex flex-col gap-0.5">
 		{#each items as item (item)}
 			<li>
 				<button

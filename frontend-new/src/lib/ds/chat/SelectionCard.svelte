@@ -49,7 +49,7 @@
 	<ul>
 		{#each items as item, index (index)}
 			<li class={index > 0 ? 'border-t border-border' : undefined}>
-				<label class="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 hover:bg-surface pointer-coarse:min-h-11">
+				<label class={['flex cursor-pointer items-center gap-3 px-3.5 pb-2.5 hover:bg-surface pointer-coarse:min-h-11', index > 0 ? 'pt-2.25' : 'pt-2.5']}>
 					<CheckMark checked={picked[index]} onchange={(checked) => set(picked.map((on, at) => (at === index ? checked : on)))} />
 					<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 						<span class={['text-ui', picked[index] ? 'text-text' : 'text-text-2']}>{item.name}</span>

@@ -63,7 +63,7 @@
 	const crewName = $derived(CREW.find((member) => member.id === agent)?.name ?? '');
 </script>
 
-<section class={['flex w-full flex-col overflow-hidden rounded-md border bg-bg', status === 'pending' || status === 'editing' ? 'border-border-strong' : 'border-border']}>
+<section class={['flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1', status === 'pending' || status === 'editing' ? 'outline-border-strong' : 'outline-border']}>
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<Mascot {agent} size={20} />
 		<p id="{id}-title" class={['min-w-0 flex-1 text-ui font-medium', status === 'rejected' ? 'text-text-2' : 'text-text']}>{title}</p>
@@ -75,7 +75,7 @@
 			{#if fields.length}
 				<dl class="flex flex-col gap-1.5">
 					{#each fields as field (field.key)}
-						<div class="flex items-baseline gap-3">
+						<div class="flex items-start gap-3">
 							<dt class="w-14 shrink-0 font-mono text-label text-text-3">{field.key}</dt>
 							<dd class="min-w-0 text-caption break-words text-text-2">{field.value}</dd>
 						</div>
@@ -86,7 +86,7 @@
 				aria-labelledby="{id}-title"
 				bind:value={draft}
 				rows="2"
-				class="field-sizing-content w-full resize-none rounded-sm border border-accent bg-surface px-3 py-2.5 text-caption leading-relaxed text-text outline-none"
+				class="field-sizing-content w-full resize-none rounded-sm border border-accent bg-surface px-2.75 py-2.25 text-caption leading-relaxed text-text outline-none"
 			></textarea>
 			<p class="font-mono text-label text-text-3">{m.approval_edit_hint({ name: crewName })}</p>
 		</div>
@@ -99,14 +99,14 @@
 			{#if fields.length}
 				<dl class="flex flex-col gap-1.5">
 					{#each fields as field (field.key)}
-						<div class="flex items-baseline gap-3">
+						<div class="flex items-start gap-3">
 							<dt class="w-14 shrink-0 font-mono text-label text-text-3">{field.key}</dt>
 							<dd class="min-w-0 text-caption break-words text-text-2">{field.value}</dd>
 						</div>
 					{/each}
 				</dl>
 			{/if}
-			{#if body}<p class="border-l border-border-strong py-0.5 pl-3 text-caption leading-relaxed whitespace-pre-line text-text-2">{body}</p>{/if}
+			{#if body}<p class="border-l border-border-strong py-0.5 pl-2.75 text-caption leading-relaxed whitespace-pre-line text-text-2">{body}</p>{/if}
 			{#if attachment}
 				<p class="flex items-center gap-1.5 pt-1 text-text-3">
 					<Icon icon={Paperclip} size={12} />

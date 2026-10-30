@@ -29,8 +29,8 @@
 <div role="radiogroup" aria-label={label} tabindex="-1" {onkeydown} class={[
 		'inline-flex max-w-full flex-wrap gap-0.5 self-start rounded-sm p-0.5',
 		surface === 'filled' && 'bg-surface-2',
-		surface === 'bg' && 'border border-border bg-bg',
-		surface === 'surface' && 'border border-border bg-surface',
+		surface === 'bg' && 'bg-bg outline -outline-offset-1 outline-border',
+		surface === 'surface' && 'bg-surface outline -outline-offset-1 outline-border',
 	]}>
 	{#each options as option, index (option.value)}
 		{@const checked = option.value === value}
