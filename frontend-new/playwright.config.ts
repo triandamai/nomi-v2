@@ -21,7 +21,8 @@ export default defineConfig({
 			url: 'http://localhost:4175',
 			reuseExistingServer: !process.env.CI,
 			timeout: 180_000,
-			env: { PORT: '4175', HOST: '127.0.0.1', API_URL: 'http://127.0.0.1:4180', ORIGIN: 'http://localhost:4175' },
+			// The gallery is on so pen-parity.e2e.ts can hold it to the pen.
+			env: { PORT: '4175', HOST: '127.0.0.1', API_URL: 'http://127.0.0.1:4180', ORIGIN: 'http://localhost:4175', PUBLIC_DS_GALLERY: '1' },
 		},
 	],
 });

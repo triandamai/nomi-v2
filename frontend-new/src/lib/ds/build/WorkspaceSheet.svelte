@@ -34,13 +34,13 @@
 		}
 	}}
 >
-	<header class="flex items-center gap-2.5 border-b border-border pt-2.5 pr-2.5 pb-2.25 pl-3.75">
+	<header class="flex items-center gap-2.5 border-b border-border pt-3.5 pr-4 pb-3.25 pl-3.75">
 		<span class="inline-flex text-text-2"><Icon {icon} size={14} /></span>
 		<h2 id="{id}-title" class="text-ui font-medium text-text">{title}</h2>
 		<span class="min-w-0 flex-1 truncate font-mono text-label text-text-3">{meta}</span>
 		{#if onexpand}<IconButton icon={Maximize2} label={m.ws_expand()} variant="ghost" onclick={onexpand} />{/if}
 		<IconButton icon={X} label={m.action_close()} variant="ghost" onclick={onclose} />
 	</header>
-	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">{@render children()}</div>
+	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-5 pr-5 pl-4.75">{@render children()}</div>
 	<footer class="border-t border-border pt-2.25 pr-4 pb-2.5 pl-3.75 font-mono text-label text-text-3">{m.ws_sheet_hint()}</footer>
 </section>

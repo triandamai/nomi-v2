@@ -54,7 +54,7 @@
 
 <div class="flex h-150 w-full overflow-hidden rounded-sm bg-bg outline -outline-offset-1 outline-border-strong">
 	<div class="flex w-58 shrink-0 flex-col gap-0.5 border-r border-border bg-surface py-3 pr-1.75 pl-2 max-md:hidden">
-		<p class="pb-1.5 font-mono text-label text-text-3"><span class="tracking-label uppercase">{m.files_title()}</span>{#if branch}&nbsp;·&nbsp;{branch}{/if}</p>
+		<p class="pb-2 font-mono text-label text-text-3"><span class="uppercase">{m.files_title()}</span>{#if branch}&nbsp;·&nbsp;{branch}{/if}</p>
 		<div role="tree" aria-label={m.files_title()} class="flex flex-col gap-0.5">
 			{#each tree as entry, index (index)}
 				<div

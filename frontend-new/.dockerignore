@@ -9,3 +9,6 @@ playwright-report
 .env
 .env.*
 !.env.example
+pen
+scripts
+e2e

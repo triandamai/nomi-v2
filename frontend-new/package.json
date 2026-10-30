@@ -17,7 +17,10 @@
 		"test:components": "npm run i18n && vitest run --project components",
 		"test": "npm run test:unit && npm run test:components",
 		"test:e2e": "playwright test",
-		"start": "node server.js"
+		"start": "node server.js",
+		"pen:report": "node scripts/pen/report.mjs",
+		"pen:compare": "node scripts/pen/compare.mjs",
+		"pen:boxes": "node scripts/pen/boxes.mjs"
 	},
 	"devDependencies": {
 		"@fontsource-variable/geist": "5.3.0",
