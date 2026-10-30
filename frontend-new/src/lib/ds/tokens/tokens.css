@@ -1,0 +1,132 @@
+/*
+ * Design tokens from Nomi.pen (see tokens.json; tokens.test.ts keeps the two in step).
+ * Themed colours use light-dark(): the page follows the device ("system") unless <html data-theme>
+ * forces a theme, and any [data-theme] subtree can show the other one (the gallery does).
+ */
+:root {
+	color-scheme: light dark;
+
+	/* Surfaces */
+	--nm-bg: light-dark(#F6F6F4, #0A0A0B);
+	--nm-surface: light-dark(#FCFCFB, #111113);
+	--nm-surface-2: light-dark(#EDEDEA, #18181B);
+	--nm-bg-clear: light-dark(#F6F6F400, #0A0A0B00);
+
+	/* Lines */
+	--nm-border: light-dark(#E4E4E0, #1F1F23);
+	--nm-border-strong: light-dark(#D3D3CE, #2C2C31);
+
+	/* Text */
+	--nm-text: light-dark(#17171A, #EDEDEF);
+	--nm-text-2: light-dark(#4E4E56, #A1A1A9);
+	--nm-text-3: light-dark(#7C7C84, #64646C);
+
+	/* Accent: the one action and live colour */
+	--nm-accent: light-dark(#1E9A58, #7BE3A4);
+	--nm-accent-ink: light-dark(#F4FBF6, #06140C);
+	--nm-accent-bg: light-dark(#1E9A5812, #7BE3A414);
+
+	/* Semantic */
+	--nm-danger: light-dark(#C93C32, #F07B72);
+	--nm-danger-bg: light-dark(#C93C320D, #F07B720F);
+	--nm-danger-border: light-dark(#C93C3233, #F07B7233);
+	--nm-warning: light-dark(#A3660A, #E8B04A);
+	--nm-warning-bg: light-dark(#A3660A12, #E8B04A14);
+
+	/* Utility */
+	--nm-focus: light-dark(#1E9A5859, #7BE3A466);
+	--nm-overlay: light-dark(#17171A47, #000000A6);
+	--nm-shadow: light-dark(#17171A1F, #00000099);
+
+	/* Activity heat */
+	--nm-heat-1: light-dark(#1E9A5824, #7BE3A42E);
+	--nm-heat-2: light-dark(#1E9A5852, #7BE3A466);
+	--nm-heat-3: light-dark(#1E9A5894, #7BE3A4A6);
+	--nm-heat-4: light-dark(#1E9A58, #7BE3A4);
+
+	/* Code and diffs */
+	--nm-code-keyword: light-dark(#6F42C1, #B79CFF);
+	--nm-code-string: light-dark(#946000, #E6C07B);
+	--nm-code-fn: light-dark(#0B6BCB, #7CC4FA);
+	--nm-code-number: light-dark(#B3541E, #F2A97B);
+	--nm-code-type: light-dark(#0F7B6C, #6FD3C4);
+	--nm-diff-add: light-dark(#1E9A5814, #7BE3A41A);
+	--nm-diff-del: light-dark(#C93C3214, #F07B721A);
+
+	/* Keyboard */
+	--nm-kb-bg: light-dark(#D2D3D8, #1B1B1E);
+	--nm-kb-key: light-dark(#FFFFFF, #3A3A40);
+	--nm-kb-key-alt: light-dark(#ACAFB8, #2A2A2F);
+
+	/* People building together */
+	--nm-peer-1: light-dark(#B5651D, #F2A65A);
+	--nm-peer-1-bg: light-dark(#FBEBDC, #F2A65A24);
+	--nm-peer-2: light-dark(#5A49D6, #A89BFF);
+	--nm-peer-2-bg: light-dark(#ECE9FF, #A89BFF24);
+
+	/* Crew: one colour per member, only on what belongs to them */
+	--crew-nomi: #61D192;
+	--crew-nomi-bg: light-dark(#E3F5EA, #18291F);
+	--crew-nomi-ink: light-dark(#1E7A4E, #8FE0B2);
+	--crew-koda: #B0DC61;
+	--crew-koda-bg: light-dark(#EFF7DD, #222A16);
+	--crew-koda-ink: light-dark(#4F6B1F, #C7E68E);
+	--crew-dana: #F59B52;
+	--crew-dana-bg: light-dark(#FDEBDB, #2E2016);
+	--crew-dana-ink: light-dark(#A3561A, #F7B680);
+	--crew-kala: #F5CB53;
+	--crew-kala-bg: light-dark(#FCF3D6, #2C2614);
+	--crew-kala-ink: light-dark(#8A6A0E, #F7D884);
+	--crew-rena: #50C7CA;
+	--crew-rena-bg: light-dark(#DDF3F3, #162828);
+	--crew-rena-ink: light-dark(#1F7375, #82D8DA);
+	--crew-tara: #65A2FA;
+	--crew-tara-bg: light-dark(#E0ECFE, #18202F);
+	--crew-tara-ink: light-dark(#2456A8, #93BDFB);
+	--crew-maya: #94ACC4;
+	--crew-maya-bg: light-dark(#E9EEF3, #1F2328);
+	--crew-maya-ink: light-dark(#4A5D72, #B4C5D6);
+	--crew-raga: #F08083;
+	--crew-raga-bg: light-dark(#FCE4E4, #2D1C1C);
+	--crew-raga-ink: light-dark(#A33A3D, #F4A3A5);
+	--crew-personality: #F48CC2;
+	--crew-personality-bg: light-dark(#FCE6F2, #2D1D25);
+	--crew-personality-ink: light-dark(#A33A72, #F7AED4);
+	--crew-supervisor: #A587F2;
+	--crew-supervisor-bg: light-dark(#EDE7FC, #221D2E);
+	--crew-supervisor-ink: light-dark(#5B3FB0, #BFA9F5);
+
+	/* Type */
+	--nm-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	/* Glyphs Geist Mono lacks (⌘ ⇧ ↵) come from the system font, as in the pen. */
+	--nm-mono: "Geist Mono Variable", "Geist Mono", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--nm-size-display: 28px;
+	--nm-size-body: 15px;
+	--nm-size-ui: 13px;
+	--nm-size-caption: 12px;
+	--nm-size-label: 11px;
+
+	/* Space */
+	--nm-space-2xs: 2px;
+	--nm-space-xs: 4px;
+	--nm-space-sm: 6px;
+	--nm-space-md: 8px;
+	--nm-space-lg: 12px;
+	--nm-space-xl: 16px;
+	--nm-space-2xl: 20px;
+	--nm-space-3xl: 24px;
+	--nm-space-4xl: 32px;
+	--nm-space-5xl: 48px;
+
+	/* Radius */
+	--nm-radius-sm: 6px;
+	--nm-radius-md: 10px;
+}
+
+[data-theme='light'] {
+	color-scheme: light;
+}
+
+[data-theme='dark'] {
+	color-scheme: dark;
+}

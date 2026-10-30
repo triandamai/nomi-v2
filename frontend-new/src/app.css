@@ -1,1 +1,202 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+/* Only for the initial on an app's identity tile (Project Row): the person's app, not Nomi's UI. */
+@import '@fontsource/fraunces/latin-600.css';
+@import './lib/ds/tokens/tokens.css';
+
+/*
+ * Only the design system exists. Tailwind's own palette, fonts, sizes, radii and shadows are
+ * switched off and replaced by the tokens in tokens.css, so `bg-surface`, `text-text-2`,
+ * `border-border-strong`, `text-ui`, `rounded-sm` and `shadow-float` are all there is. `inline`
+ * keeps each utility pointing at the token, so a [data-theme] subtree re-themes it.
+ */
+@theme inline {
+	--color-*: initial;
+	--color-bg: var(--nm-bg);
+	--color-surface: var(--nm-surface);
+	--color-surface-2: var(--nm-surface-2);
+	--color-border: var(--nm-border);
+	--color-border-strong: var(--nm-border-strong);
+	--color-text: var(--nm-text);
+	--color-text-2: var(--nm-text-2);
+	--color-text-3: var(--nm-text-3);
+	--color-accent: var(--nm-accent);
+	--color-accent-ink: var(--nm-accent-ink);
+	--color-danger: var(--nm-danger);
+	--color-danger-bg: var(--nm-danger-bg);
+	--color-danger-border: var(--nm-danger-border);
+	--color-focus: var(--nm-focus);
+	--color-overlay: var(--nm-overlay);
+	--color-shadow: var(--nm-shadow);
+	--color-warning: var(--nm-warning);
+	--color-warning-bg: var(--nm-warning-bg);
+	--color-accent-bg: var(--nm-accent-bg);
+	--color-heat-1: var(--nm-heat-1);
+	--color-heat-2: var(--nm-heat-2);
+	--color-heat-3: var(--nm-heat-3);
+	--color-heat-4: var(--nm-heat-4);
+	--color-crew-nomi: var(--crew-nomi);
+	--color-crew-nomi-bg: var(--crew-nomi-bg);
+	--color-crew-nomi-ink: var(--crew-nomi-ink);
+	--color-crew-koda: var(--crew-koda);
+	--color-crew-koda-bg: var(--crew-koda-bg);
+	--color-crew-koda-ink: var(--crew-koda-ink);
+	--color-crew-dana: var(--crew-dana);
+	--color-crew-dana-bg: var(--crew-dana-bg);
+	--color-crew-dana-ink: var(--crew-dana-ink);
+	--color-crew-kala: var(--crew-kala);
+	--color-crew-kala-bg: var(--crew-kala-bg);
+	--color-crew-kala-ink: var(--crew-kala-ink);
+	--color-crew-rena: var(--crew-rena);
+	--color-crew-rena-bg: var(--crew-rena-bg);
+	--color-crew-rena-ink: var(--crew-rena-ink);
+	--color-crew-tara: var(--crew-tara);
+	--color-crew-tara-bg: var(--crew-tara-bg);
+	--color-crew-tara-ink: var(--crew-tara-ink);
+	--color-crew-maya: var(--crew-maya);
+	--color-crew-maya-bg: var(--crew-maya-bg);
+	--color-crew-maya-ink: var(--crew-maya-ink);
+	--color-crew-raga: var(--crew-raga);
+	--color-crew-raga-bg: var(--crew-raga-bg);
+	--color-crew-raga-ink: var(--crew-raga-ink);
+	--color-crew-personality: var(--crew-personality);
+	--color-crew-personality-bg: var(--crew-personality-bg);
+	--color-crew-personality-ink: var(--crew-personality-ink);
+	--color-crew-supervisor: var(--crew-supervisor);
+	--color-crew-supervisor-bg: var(--crew-supervisor-bg);
+	--color-crew-supervisor-ink: var(--crew-supervisor-ink);
+	--color-bg-clear: var(--nm-bg-clear);
+	--color-code-keyword: var(--nm-code-keyword);
+	--color-code-string: var(--nm-code-string);
+	--color-code-fn: var(--nm-code-fn);
+	--color-code-number: var(--nm-code-number);
+	--color-code-type: var(--nm-code-type);
+	--color-diff-add: var(--nm-diff-add);
+	--color-diff-del: var(--nm-diff-del);
+	--color-kb-bg: var(--nm-kb-bg);
+	--color-kb-key: var(--nm-kb-key);
+	--color-kb-key-alt: var(--nm-kb-key-alt);
+	--color-peer-1: var(--nm-peer-1);
+	--color-peer-1-bg: var(--nm-peer-1-bg);
+	--color-peer-2: var(--nm-peer-2);
+	--color-peer-2-bg: var(--nm-peer-2-bg);
+	/* The phone preview's bezel, as the pen draws it: the same in both themes. */
+	--color-bezel: #1b1b1e;
+	/* A wash of black on a coloured bar (the follow bar's stop button), as the pen draws it. */
+	--color-shade: rgb(0 0 0 / 0.08);
+
+	--font-*: initial;
+	--font-sans: var(--nm-sans);
+	--font-mono: var(--nm-mono);
+	--font-app: 'Fraunces', ui-serif, Georgia, serif;
+
+	/* Line heights are the pen's: the font's own (Geist, about 1.3) rounded to the pixel, as the pen
+	   draws text that sets none. Where the pen sets one (prose, code) the component uses a leading-*. */
+	--text-*: initial;
+	--text-display: var(--nm-size-display);
+	--text-display--line-height: 36px;
+	--text-display--letter-spacing: -0.4px;
+	--text-body: var(--nm-size-body);
+	--text-body--line-height: 19px;
+	--text-ui: var(--nm-size-ui);
+	--text-ui--line-height: 17px;
+	--text-caption: var(--nm-size-caption);
+	--text-caption--line-height: 16px;
+	--text-label: var(--nm-size-label);
+	--text-label--line-height: 14px;
+	/* Below the scale, only where the pen uses 10px: a citation's number, a token's name. */
+	--text-micro: 10px;
+	--text-micro--line-height: 13px;
+	/* Only where the pen draws them: initials on a 20px avatar (9), an invite email's title (20). */
+	--text-nano: 9px;
+	--text-nano--line-height: 12px;
+	--text-heading: 20px;
+	--text-heading--line-height: 26px;
+	/* Phones (Mobile chat): 16pt body so inputs don't zoom, 17pt sheet titles, 14pt second lines. */
+	--text-phone-title: 17px;
+	--text-phone-title--line-height: 22px;
+	--text-phone: 16px;
+	--text-phone--line-height: 21px;
+	--text-phone-sm: 14px;
+	--text-phone-sm--line-height: 18px;
+	/* A plan's summary on a phone (Mobile / Build Plan). */
+	--text-phone-heading: 18px;
+	--text-phone-heading--line-height: 23px;
+
+	/* The line heights the pen sets explicitly: tight 1.25, firm 1.3, snug 1.35, cozy 1.4, comfy
+	   1.45, normal 1.5, relaxed (prose) 1.6, code 1.7. The pen rounds each line to a whole pixel
+	   (15px at 1.35 is 20, not 20.25), so these do too, or a list of six steps grows 1.5px. */
+	--leading-tight: round(1.25em, 1px);
+	--leading-firm: round(1.3em, 1px);
+	--leading-snug: round(1.35em, 1px);
+	--leading-cozy: round(1.4em, 1px);
+	--leading-comfy: round(1.45em, 1px);
+	--leading-normal: round(1.5em, 1px);
+	--leading-relaxed: round(1.6em, 1px);
+	--leading-code: round(1.7em, 1px);
+
+	--tracking-*: initial;
+	--tracking-display: -0.4px;
+	--tracking-label: 0.6px;
+	/* The nomi wordmark in the sidebar. */
+	--tracking-wordmark: -0.2px;
+
+	--radius-*: initial;
+	--radius-sm: var(--nm-radius-sm);
+	--radius-md: var(--nm-radius-md);
+	/* Only the keyboard key (Kbd) is this small in the design; 2xs is a skeleton's bars. */
+	--radius-2xs: 3px;
+	--radius-xs: 4px;
+	/* A segment or button sitting inside a 10–12px container on a phone (Workspace Switch, copy). */
+	--radius-inner: 8px;
+	/* Phones only, as the Mobile sheet draws them: buttons 12, options 14, toasts 16, bubbles 18. */
+	--radius-lg: 12px;
+	--radius-xl: 14px;
+	--radius-2xl: 16px;
+	--radius-3xl: 18px;
+	/* The phone preview's corners. */
+	--radius-device: 44px;
+
+	/* Borders over shadows: one shadow, for things that truly float (menus, toasts, dialogs). */
+	--shadow-*: initial;
+	--shadow-float: 0 8px 24px var(--nm-shadow);
+	/* Not elevation: the soft glow around a focused field, as the pen draws it. */
+	--shadow-focus: 0 0 8px var(--nm-focus);
+	--inset-shadow-*: initial;
+	--drop-shadow-*: initial;
+	--text-shadow-*: initial;
+}
+
+@layer base {
+	html {
+		background: var(--nm-bg);
+	}
+
+	/* A [data-theme] subtree takes its own text colour, like the page does. */
+	:root,
+	[data-theme] {
+		color: var(--nm-text);
+	}
+
+	body {
+		margin: 0;
+		background: var(--nm-bg);
+		font-family: var(--nm-sans);
+		font-size: var(--nm-size-ui);
+		line-height: 17px;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	*,
+	::before,
+	::after {
+		border-color: var(--nm-border);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--nm-focus);
+		outline-offset: 2px;
+	}
+}

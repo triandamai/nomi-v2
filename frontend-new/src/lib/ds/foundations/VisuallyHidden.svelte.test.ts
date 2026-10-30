@@ -8,7 +8,7 @@ import VisuallyHidden from './VisuallyHidden.svelte';
 
 describe('VisuallyHidden', () => {
 	it('keeps text for screen readers but takes no visible space', async () => {
-		render(VisuallyHidden, { text: 'Unread messages' });
+		await render(VisuallyHidden, { text: 'Unread messages' });
 
 		const element = page.getByText('Unread messages').element() as HTMLElement;
 		const style = getComputedStyle(element);

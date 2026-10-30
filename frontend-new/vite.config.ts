@@ -4,8 +4,17 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
+import { devWsProxy } from './vite-plugins/dev-ws-proxy.ts';
+import { appVersion } from './app-version.js';
+
+const version = appVersion();
 
 export default defineConfig({
+	// Shown in the app (see $lib/version) and sent to the backend with every call.
+	define: { __APP_VERSION__: JSON.stringify(version) },
+	// Rolldown's plugin-timing report prints as a warning on every build; it's a profiling aid, not
+	// a problem with the build.
+	build: { rolldownOptions: { checks: { pluginTimings: false } } },
 	plugins: [
 		tailwindcss(),
 		// English and Indonesian. The person's saved language lives in the cookie; before sign-in,
@@ -15,16 +24,30 @@ export default defineConfig({
 			outdir: './src/lib/paraglide',
 			strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
 		}),
+		// The live-update relay (ws-proxy), the same one server.js runs in production.
+		devWsProxy({ clientVersion: version }),
 		sveltekit({
 			compilerOptions: {
 				// Runes everywhere except in libraries. Can be removed in Svelte 6.
 				runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true),
 			},
 			adapter: adapter(),
+			// SvelteKit's own update check follows the same version: after a deploy, the next
+			// navigation loads the new build.
+			version: { name: version, pollInterval: 5 * 60_000 },
 		}),
 	],
 	test: {
 		expect: { requireAssertions: true },
+		// `npm run test:coverage` runs both projects and merges them into one report: `text` for the
+		// terminal, `json-summary` for CI's job summary, `html` to browse locally.
+		coverage: {
+			provider: 'v8',
+			include: ['src/**/*.{ts,svelte}', 'ws-proxy/**/*.js', 'server.js'],
+			exclude: ['src/lib/paraglide/**', '**/*.test.ts', '**/*.test.js', '**/*.d.ts'],
+			reporter: ['text-summary', 'json-summary', 'html'],
+			reportsDirectory: './coverage',
+		},
 		projects: [
 			{
 				// Pure TypeScript and server code: no DOM.
@@ -32,7 +55,7 @@ export default defineConfig({
 				test: {
 					name: 'unit',
 					environment: 'node',
-					include: ['src/**/*.test.ts'],
+					include: ['src/**/*.test.ts', 'ws-proxy/**/*.test.js'],
 					exclude: ['src/**/*.svelte.test.ts'],
 				},
 			},
