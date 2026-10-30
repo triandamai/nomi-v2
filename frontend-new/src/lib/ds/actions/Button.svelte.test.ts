@@ -103,6 +103,13 @@ describe('Button', () => {
 		expect(box(link).height).toBe('30px');
 	});
 
+	it('opens another site in a new tab, without handing it this page', async () => {
+		await render(Button, { label: 'Add credits on DeepSeek', variant: 'secondary', href: 'https://platform.deepseek.com', external: true });
+		const link = page.getByRole('link', { name: 'Add credits on DeepSeek' }).element();
+		expect(link.getAttribute('target')).toBe('_blank');
+		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+	});
+
 	it('can be shown hovered or focused for the gallery without a pointer', async () => {
 		await render(Button, { label: 'Add credits', variant: 'secondary', 'data-hover': true });
 		expect(box(page.getByRole('button').element()).backgroundColor).toBe(tokenBackground('nm-surface-2'));

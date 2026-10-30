@@ -6,6 +6,7 @@
 	import ActionsSection from '$lib/gallery/ActionsSection.svelte';
 	import InputsSection from '$lib/gallery/InputsSection.svelte';
 	import NavigationSection from '$lib/gallery/NavigationSection.svelte';
+	import ConversationSection from '$lib/gallery/ConversationSection.svelte';
 	import AgentsSection from '$lib/gallery/AgentsSection.svelte';
 
 	const principles: [title: string, body: string][] = [
@@ -46,4 +47,5 @@
 <ActionsSection />
 <InputsSection />
 <NavigationSection />
+<ConversationSection />
 <AgentsSection />
