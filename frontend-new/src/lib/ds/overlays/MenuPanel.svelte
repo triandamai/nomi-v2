@@ -18,12 +18,14 @@
 		title?: string;
 		footer?: string;
 		wide?: boolean;
+		/** The chat menu is 260 wide; other wide menus 280. */
+		width?: 260;
 		id?: string;
 		element?: HTMLElement;
 		onpick?: (item: MenuItem) => void;
 		[attribute: string]: unknown;
 	};
-	let { items, title, footer, wide = false, id, element = $bindable(), onpick, ...rest }: Props = $props();
+	let { items, title, footer, wide = false, width, id, element = $bindable(), onpick, ...rest }: Props = $props();
 
 	const sections = $derived.by(() => {
 		const out: { label?: string; entries: (MenuItem | 'divider')[] }[] = [{ entries: [] }];
@@ -49,7 +51,7 @@
 	role="menu"
 	tabindex="-1"
 	{...rest}
-	class={['flex flex-col gap-0.5 rounded-md bg-surface p-1 text-text shadow-float outline -outline-offset-1 outline-border-strong', wide ? 'w-70' : 'w-59', rest.class as string | undefined]}
+	class={['flex flex-col gap-0.5 rounded-md bg-surface p-1 text-text shadow-float outline -outline-offset-1 outline-border-strong', width === 260 ? 'w-65' : wide ? 'w-70' : 'w-59', rest.class as string | undefined]}
 >
 	{#if title}<p class="font-mono text-label tracking-label text-text-3 uppercase">{title}</p>{/if}
 	{#each sections as section, at (at)}

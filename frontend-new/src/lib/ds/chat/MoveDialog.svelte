@@ -9,18 +9,19 @@
 	// Chat responses → Move Dialog: pick the project a chat belongs to. Moving into a shared
 	// workspace says who will see it, and what stays yours.
 	type Project = { id: string; name: string; workspace: string; /** The shared workspace's name, when others are in it. */ shared?: string };
-	type Props = { open?: boolean; projects: Project[]; onmove: (id: string) => void };
-	let { open = $bindable(false), projects, onmove }: Props = $props();
+	type Props = { open?: boolean; inline?: boolean; projects: Project[]; initialChosen?: string; onmove: (id: string) => void };
+	let { open = $bindable(false), inline = false, projects, initialChosen, onmove }: Props = $props();
 
 	const id = $props.id();
 	let query = $state('');
-	let chosen = $state<string>();
+	const initial = () => initialChosen;
+	let chosen = $state<string | undefined>(initial());
 
 	const shown = $derived(projects.filter((project) => project.name.toLowerCase().includes(query.trim().toLowerCase())));
 	const target = $derived(projects.find((project) => project.id === chosen));
 </script>
 
-<Dialog bind:open wide title={m.move_title()}>
+<Dialog bind:open {inline} wide title={m.move_title()}>
 	<div class="flex flex-col gap-3 pt-1">
 		<Search placeholder={m.move_search()} bind:value={query} />
 		<div role="radiogroup" aria-label={m.move_title()} class="flex flex-col gap-0.5">

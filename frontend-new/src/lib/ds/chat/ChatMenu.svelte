@@ -7,14 +7,16 @@
 	// Chat responses → Chat Menu, off the top bar's "···": everything you can do to the chat itself.
 	// Delete stands apart, in danger.
 	type Action = 'rename' | 'pin' | 'move' | 'export' | 'share' | 'delete';
-	type Props = { pinned?: boolean; onpick: (action: Action) => void; trigger: ComponentProps<typeof Menu>['trigger'] };
-	let { pinned = false, onpick, trigger }: Props = $props();
+	type Props = { pinned?: boolean; onpick: (action: Action) => void; trigger?: ComponentProps<typeof Menu>['trigger']; inline?: boolean };
+	let { pinned = false, onpick, trigger, inline = false }: Props = $props();
 </script>
 
 <Menu
 	wide
+	width={260}
 	align="end"
 	{trigger}
+	{inline}
 	items={[
 		{ label: m.chat_rename(), icon: Pencil, shortcut: 'F2', onselect: () => onpick('rename') },
 		{ label: pinned ? m.chat_unpin() : m.chat_pin(), icon: pinned ? PinOff : Pin, onselect: () => onpick('pin') },

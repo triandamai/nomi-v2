@@ -10,8 +10,8 @@
 	type Entry = MenuEntry;
 	type TriggerProps = { 'aria-haspopup': 'menu'; 'aria-expanded': boolean; 'aria-controls': string; onclick: () => void };
 	// `inline` shows the panel in place, open, as the design sheets draw it (no trigger needed).
-	type Props = { items: Entry[]; trigger?: Snippet<[TriggerProps]>; inline?: boolean; title?: string; footer?: string; wide?: boolean; align?: 'start' | 'end' };
-	let { items, trigger, inline = false, title, footer, wide = false, align = 'start' }: Props = $props();
+	type Props = { items: Entry[]; trigger?: Snippet<[TriggerProps]>; inline?: boolean; title?: string; footer?: string; wide?: boolean; width?: 260; align?: 'start' | 'end' };
+	let { items, trigger, inline = false, title, footer, wide = false, width, align = 'start' }: Props = $props();
 
 	const id = $props.id();
 	let open = $state(false);
@@ -86,7 +86,7 @@
 </script>
 
 {#if inline}
-	<MenuPanel id="{id}-menu" {items} {title} {footer} {wide} onpick={(item) => item.onselect?.()} />
+	<MenuPanel id="{id}-menu" {items} {title} {footer} {wide} {width} onpick={(item) => item.onselect?.()} />
 {:else}
 	<span bind:this={anchor} class="inline-flex">
 		{@render trigger?.({ 'aria-haspopup': 'menu', 'aria-expanded': open, 'aria-controls': `${id}-menu`, onclick: () => (open ? hide(true) : show()) })}
@@ -100,6 +100,7 @@
 			{title}
 			{footer}
 			{wide}
+			{width}
 			onpick={pick}
 			popover="manual"
 			{onkeydown}
