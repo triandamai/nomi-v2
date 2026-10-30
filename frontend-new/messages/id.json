@@ -10,5 +10,21 @@
 	"composer_hint_newline": "baris baru",
 	"composer_hint_mention": "panggil kru",
 	"toast_dismiss": "Tutup",
-	"toast_region": "Notifikasi"
+	"toast_region": "Notifikasi",
+	"nav_main": "Utama",
+	"nav_new_chat": "Chat baru",
+	"nav_collapse": "Ciutkan sidebar",
+	"nav_recents": "Terbaru",
+	"nav_all_chats": "Semua chat",
+	"nav_plan_usage": "Paket & pemakaian",
+	"nav_settings": "Pengaturan",
+	"settings_nav": "Pengaturan",
+	"settings_back": "Kembali ke Nomi",
+	"settings_search": "Cari pengaturan",
+	"settings_logout": "Keluar",
+	"shell_open_nav": "Buka navigasi",
+	"shell_nav_drawer": "Navigasi",
+	"workspace_view": "Tampilan",
+	"workspace_chat": "Chat",
+	"workspace_preview": "Pratinjau"
 }

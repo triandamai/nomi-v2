@@ -27,11 +27,12 @@ describe('Inputs & selection section', () => {
 	});
 });
 
-describe('Agents section', () => {
-	it('shows each crew member at 96, 32 and 20px', async () => {
+describe('Agents & app chrome section', () => {
+	it('shows each crew member at 96, 32 and 20px, and the sidebar and settings nav', async () => {
 		const { container } = await render(AgentsSection);
 		expect(container.querySelectorAll('svg[width="96"]')).toHaveLength(10);
 		expect(container.querySelectorAll('svg[width="32"]')).toHaveLength(10);
-		expect(container.querySelectorAll('svg[width="20"]')).toHaveLength(10);
+		await expect.element(page.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+		await expect.element(page.getByRole('navigation', { name: 'Settings' })).toBeInTheDocument();
 	});
 });

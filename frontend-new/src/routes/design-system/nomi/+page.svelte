@@ -8,6 +8,8 @@
 	import NavigationSection from '$lib/gallery/NavigationSection.svelte';
 	import ConversationSection from '$lib/gallery/ConversationSection.svelte';
 	import OverlaysSection from '$lib/gallery/OverlaysSection.svelte';
+	import ShellsSection from '$lib/gallery/ShellsSection.svelte';
+	import RulesSection from '$lib/gallery/RulesSection.svelte';
 	import AgentsSection from '$lib/gallery/AgentsSection.svelte';
 
 	const principles: [title: string, body: string][] = [
@@ -50,4 +52,6 @@
 <NavigationSection />
 <ConversationSection />
 <OverlaysSection />
+<ShellsSection />
+<RulesSection />
 <AgentsSection />

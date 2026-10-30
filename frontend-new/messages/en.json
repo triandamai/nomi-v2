@@ -10,5 +10,21 @@
 	"composer_hint_newline": "new line",
 	"composer_hint_mention": "address crew",
 	"toast_dismiss": "Dismiss",
-	"toast_region": "Notifications"
+	"toast_region": "Notifications",
+	"nav_main": "Main",
+	"nav_new_chat": "New chat",
+	"nav_collapse": "Collapse sidebar",
+	"nav_recents": "Recents",
+	"nav_all_chats": "All chats",
+	"nav_plan_usage": "Plan & usage",
+	"nav_settings": "Settings",
+	"settings_nav": "Settings",
+	"settings_back": "Back to Nomi",
+	"settings_search": "Search settings",
+	"settings_logout": "Log out",
+	"shell_open_nav": "Open navigation",
+	"shell_nav_drawer": "Navigation",
+	"workspace_view": "View",
+	"workspace_chat": "Chat",
+	"workspace_preview": "Preview"
 }
