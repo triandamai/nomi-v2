@@ -1,5 +1,17 @@
 <script lang="ts">
-	import { Download, Hourglass, Pencil, Pin, Plus, Send, Share2, Trash2, X } from '@lucide/svelte';
+	import { Download, FolderKanban, House, Hourglass, MessageSquare, Pencil, Pin, Plus, Send, Share2, Trash2, Wallet, X } from '@lucide/svelte';
+	import NavGroupLabel from '$lib/components/ds/navigation/NavGroupLabel.svelte';
+	import NavItem from '$lib/components/ds/navigation/NavItem.svelte';
+	import RecentsList from '$lib/components/ds/chrome/RecentsList.svelte';
+	import Sidebar from '$lib/components/ds/chrome/Sidebar.svelte';
+	import SettingsNav from '$lib/components/ds/chrome/SettingsNav.svelte';
+	import UsageCard from '$lib/components/ds/chrome/UsageCard.svelte';
+	import UserRow from '$lib/components/ds/chrome/UserRow.svelte';
+	import WorkspaceChip from '$lib/components/ds/chrome/WorkspaceChip.svelte';
+	import EmptyState from '$lib/components/ds/lists/EmptyState.svelte';
+	import ProjectRow from '$lib/components/ds/lists/ProjectRow.svelte';
+	import SkeletonRow from '$lib/components/ds/lists/SkeletonRow.svelte';
+	import SuggestionRow from '$lib/components/ds/lists/SuggestionRow.svelte';
 	import Button from '$lib/components/ds/actions/Button.svelte';
 	import IconButton from '$lib/components/ds/actions/IconButton.svelte';
 	import Kbd from '$lib/components/ds/actions/Kbd.svelte';
@@ -178,6 +190,59 @@
 		</Dialog>
 	</section>
 
+	<section>
+		<SectionLabel label="App chrome" count={9} />
+		<div class="frames">
+			<div class="frame">
+				<Sidebar newChatHref="/design-system" oncollapse={() => {}}>
+					<NavItem href="/design-system" icon={House} label="Home" active />
+					<NavItem href="/design-system" icon={MessageSquare} label="Chats" count={12} />
+					<NavGroupLabel label="Build">
+						<WorkspaceChip name="Trian's space" />
+					</NavGroupLabel>
+					<NavItem href="/design-system" icon={FolderKanban} label="Projects" />
+					<NavItem href="/design-system" icon={Wallet} label="Money" />
+					{#snippet recents()}
+						<RecentsList
+							allHref="/design-system"
+							items={[
+								{ href: '/design-system#a', kind: 'chat', title: 'Plan a trip to Bali', when: '2h' },
+								{ href: '/design-system#b', kind: 'project', title: 'landing-page', when: '1d' },
+							]}
+						/>
+					{/snippet}
+					{#snippet footer()}
+						<UsageCard plan="Free" used={0.08} caption="80K / 1M tokens" href="/design-system" />
+						<UserRow name="Ada Lovelace" settingsHref="/design-system" />
+					{/snippet}
+				</Sidebar>
+			</div>
+			<div class="frame">
+				<SettingsNav
+					backHref="/design-system"
+					active="/design-system#billing"
+					user={{ name: 'Ada Lovelace', detail: 'ada@nomi.test' }}
+					version="v1.4.0"
+					onlogout={() => {}}
+					groups={[
+						{ label: 'Account', items: [{ href: '/design-system#profile', icon: 'user', label: 'Profile' }, { href: '/design-system#billing', icon: 'credit-card', label: 'Billing' }] },
+						{ label: 'Workspace', items: [{ href: '/design-system#members', icon: 'users', label: 'Members', count: 3 }, { href: '/design-system#models', icon: 'cpu', label: 'Models' }] },
+					]}
+				/>
+			</div>
+		</div>
+	</section>
+
+	<section>
+		<SectionLabel label="Lists" count={4} />
+		<div class="column">
+			<ProjectRow href="/design-system" name="landing-page" description="A launch page for the app" tone="koda" status={{ kind: 'live', label: 'Live' }} url="landing.nomi.app" updated="2h ago" />
+			<SkeletonRow label="loading 4 projects…" />
+			<EmptyState icon={FolderKanban} title="Projects" count={0} body="Nothing built yet. Ask Koda for an app and it shows up here." action={{ label: 'Start a project', href: '/design-system' }} />
+			<SuggestionRow agent="dana" label="How much did I spend on food this month?" route="→ dana" />
+		</div>
+	</section>
+
 	<ToastRegion />
 </main>
 
@@ -224,6 +289,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
+	}
+	.frames {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 24px;
+	}
+	.frame {
+		height: 720px;
+		max-width: 100%;
+		overflow: hidden;
+		border-radius: var(--md-sys-shape-corner-large);
 	}
 	.narrow {
 		max-width: 360px;
