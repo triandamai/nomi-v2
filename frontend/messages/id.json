@@ -2595,5 +2595,15 @@
 	"dislike_outdated": "Sudah usang",
 	"dislike_too_long": "Terlalu panjang",
 	"dislike_unsafe": "Tidak aman atau berbahaya",
-	"dislike_wrong_crew": "Salah anggota kru"
+	"dislike_wrong_crew": "Salah anggota kru",
+	"share_in_days": "dalam {count} hari",
+	"share_in_a_day": "dalam sehari",
+	"share_never": "tidak pernah",
+	"share_failed": "Gagal membuat tautan. Coba lagi.",
+	"shared_title": "Dibagikan dari Nomi",
+	"shared_masked": "Nominal, alamat email, dan nomor telepon disembunyikan.",
+	"shared_sign_in": "Masuk untuk membuka tautan ini.",
+	"shared_sign_in_action": "Masuk",
+	"shared_gone": "Tautan ini sudah dicabut atau kedaluwarsa.",
+	"shared_expires": "Tautan kedaluwarsa {when}"
 }

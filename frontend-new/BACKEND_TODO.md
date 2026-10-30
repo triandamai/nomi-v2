@@ -109,3 +109,11 @@ The old `frontend/` will use the same endpoints.
 - **Built:** the `table` block carries `title` and `source`, one line each (optional; older tables have none).
   - The inspector fills both: "Query results" with its row count, "Log lines" with how much of the log it shows.
   - `frontend/` draws a titled data table with DataTable and keeps its old block for older ones.
+
+### The person's share links, to revoke
+- **Needed by:** *Chat / Share*: SharePanel's footer says links can be revoked "any time in Settings › Data".
+- **Why:** a link can be revoked (`DELETE /api/sessions/:id/shares/:share_id`), but there's no list to find it in once the dialog is closed.
+- **What exists today:** create, change and revoke, one share at a time.
+- **Proposed contract:** `GET /api/shares` returns the person's live links (`id`, `session_id`, the chat's `title`, `scope`, `mask`, `anyone`, `expires_at`, `created_at`), newest first, for a Settings › Data list with a Revoke button each.
+- **Until then:** the footer's promise has no page behind it, in either app.
+

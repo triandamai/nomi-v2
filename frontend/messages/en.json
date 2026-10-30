@@ -2595,5 +2595,15 @@
 	"dislike_outdated": "Out of date",
 	"dislike_too_long": "Too long",
 	"dislike_unsafe": "Unsafe or harmful",
-	"dislike_wrong_crew": "Wrong crew member"
+	"dislike_wrong_crew": "Wrong crew member",
+	"share_in_days": "in {count} days",
+	"share_in_a_day": "in a day",
+	"share_never": "never",
+	"share_failed": "Couldn't make the link. Try again.",
+	"shared_title": "Shared from Nomi",
+	"shared_masked": "Amounts, email addresses and phone numbers are hidden.",
+	"shared_sign_in": "Sign in to open this link.",
+	"shared_sign_in_action": "Sign in",
+	"shared_gone": "This link was revoked or has expired.",
+	"shared_expires": "Link expires {when}"
 }

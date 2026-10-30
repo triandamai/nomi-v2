@@ -19,6 +19,7 @@
 	import ResponseActions from './ds/chat/ResponseActions.svelte';
 	import DislikeFeedback, { type DislikeReason } from './ds/chat/DislikeFeedback.svelte';
 	import FeedbackSent from './ds/chat/FeedbackSent.svelte';
+	import ShareTwin from './blocks/twins/ShareTwin.svelte';
 
 	let {
 		message,
@@ -205,8 +206,8 @@
 			}
 			return;
 		}
-		// No Web Share API (most desktop browsers) — clipboard is the honest fallback, since this
-		// app has no shareable-link/public-session concept to share a URL to instead.
+		// No Web Share API (most desktop browsers): the clipboard. (A reply shares by link instead,
+		// through ShareTwin.)
 		await navigator.clipboard.writeText(message.content);
 		shareCopied = true;
 		setTimeout(() => (shareCopied = false), 1500);
@@ -217,6 +218,8 @@
 	// After a thumbs-down: what went wrong (DislikeFeedback), then what was sent (FeedbackSent).
 	let dislikeOpen = $state(false);
 	let dislikeSent = $state<{ withChat: boolean } | null>(null);
+	// Sharing this reply, or its chat, by link (ShareTwin).
+	let shareOpen = $state(false);
 
 	type Dislike = { reasons: DislikeReason[]; note: string; includeChat: boolean };
 
@@ -324,10 +327,11 @@
 				feedback={feedback === 'up' ? 'liked' : feedback === 'down' ? 'disliked' : null}
 				onlike={() => setFeedback('up')}
 				ondislike={() => setFeedback('down')}
-				onshare={shareMessage}
+				onshare={() => (shareOpen = true)}
 				ondelete={ondelete && !message.author_name ? () => (deleteOpen = true) : undefined}
 			/>
 		</div>
+		<ShareTwin bind:open={shareOpen} messageId={message.id} agent={message.agent_display_name} time={formattedTime} />
 		{#if dislikeOpen}
 			<DislikeFeedback onsend={sendDislike} oncancel={() => (dislikeOpen = false)} />
 		{:else if dislikeSent}
@@ -601,177 +605,9 @@
 		margin-top: 2px;
 	}
 
-	/* content_html is server-rendered from trusted markdown+shiki output (sanitized before it
-	   ever reaches this component — see $lib/server/markdown.ts), injected via {@html}. Svelte's
-	   scoped-style attribute isn't applied to {@html} content, so every rule below is global. They
-	   hold to .message-markdown (the reply's text, a plan's document), so the cards in a message
-	   keep their own look. */
-	:global(.message-markdown p) {
-		margin: 0;
-	}
-	:global(.message-markdown p + p) {
-		margin-top: 0.5em;
-	}
-	:global(.message-markdown pre) {
-		overflow-x: auto;
-		padding: 12px;
-		border-radius: var(--md-sys-shape-corner-small);
-		margin: 0.5em 0;
-	}
-	:global(.message-markdown pre.shiki-fallback) {
-		background: var(--md-sys-color-surface-container-highest);
-	}
-	:global(.message-markdown code) {
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.85em;
-	}
-	:global(.message-markdown :not(pre) > code) {
-		background: color-mix(in srgb, currentColor 12%, transparent);
-		padding: 0.1em 0.3em;
-		border-radius: var(--md-sys-shape-corner-extra-small);
-	}
-	:global(.message-markdown ul),
-	:global(.message-markdown ol) {
-		margin: 0.5em 0;
-		padding-left: 1.5em;
-	}
-	:global(.message-markdown blockquote) {
-		margin: 0.75em 0;
-		padding: 10px 14px;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-surface-container);
-	}
-	/* Links in the reply's text (markdown's carry no class); a component's own links and buttons
-	   (a card's Connect, a table's source) keep their look. */
-	:global(.message-markdown a:not([class])) {
-		color: inherit;
-		text-decoration: underline;
-	}
 	/* File cards and image previews (MessageAttachments) aren't text links. */
 	.message-bubble :global(a.attachment-link) {
 		text-decoration: none;
 	}
-	:global(.message-markdown a.citation-chip) {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 1.2em;
-		height: 1.2em;
-		padding: 0 0.3em;
-		margin: 0 0.1em;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
-		color: var(--md-sys-color-primary);
-		font-size: 0.7em;
-		font-weight: 600;
-		text-decoration: none;
-		vertical-align: super;
-	}
-	:global(.message-markdown table) {
-		border-collapse: collapse;
-		margin: 0.75em 0;
-		border-radius: var(--md-sys-shape-corner-large-increased);
-		overflow: hidden;
-		background: var(--md-sys-color-surface-container-lowest);
-	}
-	:global(.message-markdown th) {
-		background: var(--md-sys-color-surface-container);
-		text-align: left;
-		font-weight: 650;
-	}
-	:global(.message-markdown th),
-	:global(.message-markdown td) {
-		border-top: 1px solid var(--md-sys-color-surface-container);
-		padding: 10px 14px;
-		overflow-wrap: normal;
-	}
-	/* Wide tables scroll inside their own rounded box instead of squeezing words apart. */
-	:global(.message-markdown table) {
-		display: block;
-		max-width: 100%;
-		overflow-x: auto;
-		width: fit-content;
-	}
 
-	/* Shiki's dual-theme output paints its base (light) background as an inline style on <pre>
-	   itself, with no per-token background at all normally. The background here is intentionally
-	   set ONLY at the <pre> level (never on individual token spans) and forced with !important to
-	   beat that inline style — one single background paints the whole block uniformly, so gaps
-	   between tokens (whitespace, indentation, line breaks not wrapped in any span) can never show
-	   a different color than the syntax-highlighted text around them. */
-	:global(.message-markdown pre.shiki) {
-		background-color: var(--shiki-light-bg) !important;
-	}
-	:global(.message-markdown pre.shiki span) {
-		background-color: transparent !important;
-	}
-	@media (prefers-color-scheme: dark) {
-		:global(.message-markdown pre.shiki) {
-			background-color: var(--shiki-dark-bg) !important;
-		}
-		:global(.message-markdown .shiki),
-		:global(.message-markdown .shiki span) {
-			/* Every span carries its own inline color (the light-theme value) — beating that
-			   inline style, not just the stylesheet default, needs !important here too, the same
-			   as the background-color rule above. Without it, a token whose light-theme color
-			   happens to be close to the forced dark background (plain identifiers, typically a
-			   muted gray in most themes) renders essentially invisible instead of switching to
-			   its --shiki-dark value. */
-			color: var(--shiki-dark) !important;
-		}
-	}
-
-	/* Code block header/collapse chrome — built client-side by enhanceCodeBlocks() above around
-	   the server-rendered <pre>, which ends up nested inside .code-block__body. */
-	:global(.message-markdown .code-block) {
-		margin: 0.75em 0;
-		border-radius: var(--md-sys-shape-corner-large-increased);
-		overflow: hidden;
-		border: 1px solid var(--md-sys-color-outline-variant);
-	}
-	:global(.message-markdown .code-block pre) {
-		margin: 0;
-		border-radius: 0;
-	}
-	:global(.message-markdown .code-block__header) {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 6px 10px;
-		background: var(--md-sys-color-surface-container-highest);
-		font-family: var(--md-sys-typescale-label-small-font);
-		font-size: var(--md-sys-typescale-label-small-size);
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	:global(.message-markdown .code-block__lang) {
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-	:global(.message-markdown .code-block__actions) {
-		display: flex;
-		gap: 4px;
-	}
-	:global(.message-markdown .code-block__btn) {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
-		padding: 0;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-extra-small);
-		background: transparent;
-		color: inherit;
-		cursor: pointer;
-	}
-	:global(.message-markdown .code-block__btn:hover) {
-		background: color-mix(in srgb, currentColor 12%, transparent);
-	}
-	:global(.message-markdown .code-block__body) {
-		max-height: 480px;
-		overflow: auto;
-	}
-	:global(.message-markdown .code-block--collapsed .code-block__body) {
-		display: none;
-	}
 </style>
