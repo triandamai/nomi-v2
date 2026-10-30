@@ -4,6 +4,7 @@
 	import ActionsSection from '$lib/gallery/chat/ActionsSection.svelte';
 	import FeedbackSection from '$lib/gallery/chat/FeedbackSection.svelte';
 	import StatesSection from '$lib/gallery/chat/StatesSection.svelte';
+	import ControlsSection from '$lib/gallery/chat/ControlsSection.svelte';
 </script>
 
 <header class="flex max-w-xl flex-col gap-3 py-12">
@@ -20,3 +21,4 @@
 <ActionsSection />
 <FeedbackSection />
 <StatesSection />
+<ControlsSection />
