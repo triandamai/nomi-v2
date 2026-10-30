@@ -120,14 +120,21 @@
 	--text-phone--line-height: 21px;
 	--text-phone-sm: 14px;
 	--text-phone-sm--line-height: 18px;
+	/* A plan's summary on a phone (Mobile / Build Plan). */
+	--text-phone-heading: 18px;
+	--text-phone-heading--line-height: 23px;
 
-	/* The line heights the pen sets explicitly: snug 1.35, cozy 1.4, comfy 1.45, normal 1.5, relaxed
-	   (prose) 1.6, code 1.7. */
-	--leading-snug: 1.35;
-	--leading-cozy: 1.4;
-	--leading-comfy: 1.45;
-	--leading-relaxed: 1.6;
-	--leading-code: 1.7;
+	/* The line heights the pen sets explicitly: tight 1.25, firm 1.3, snug 1.35, cozy 1.4, comfy
+	   1.45, normal 1.5, relaxed (prose) 1.6, code 1.7. The pen rounds each line to a whole pixel
+	   (15px at 1.35 is 20, not 20.25), so these do too, or a list of six steps grows 1.5px. */
+	--leading-tight: round(1.25em, 1px);
+	--leading-firm: round(1.3em, 1px);
+	--leading-snug: round(1.35em, 1px);
+	--leading-cozy: round(1.4em, 1px);
+	--leading-comfy: round(1.45em, 1px);
+	--leading-normal: round(1.5em, 1px);
+	--leading-relaxed: round(1.6em, 1px);
+	--leading-code: round(1.7em, 1px);
 
 	--tracking-*: initial;
 	--tracking-display: -0.4px;
@@ -141,6 +148,8 @@
 	/* Only the keyboard key (Kbd) is this small in the design; 2xs is a skeleton's bars. */
 	--radius-2xs: 3px;
 	--radius-xs: 4px;
+	/* A segment or button sitting inside a 10–12px container on a phone (Workspace Switch, copy). */
+	--radius-inner: 8px;
 	/* Phones only, as the Mobile sheet draws them: buttons 12, options 14, toasts 16, bubbles 18. */
 	--radius-lg: 12px;
 	--radius-xl: 14px;

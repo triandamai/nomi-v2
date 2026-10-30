@@ -323,5 +323,22 @@
 	"presence_follow": "Ikuti",
 	"follow_label": "Mengikuti {name} · {where}",
 	"follow_stop": "Berhenti mengikuti",
-	"presence_label": "Orang di sini"
+	"presence_label": "Orang di sini",
+	"ws_switch": "Chat atau pratinjau",
+	"ws_chat": "Chat",
+	"ws_preview": "Pratinjau",
+	"ask_bar": "Tanya {agent} tentang layar ini",
+	"bplan_ask_first": "Tanya sebelum live",
+	"bprogress_title": "Membangun {project}",
+	"bprogress_line": "Langkah {current} dari {total} · {label} · {eta}",
+	"bprogress_note": "Kamu bisa menutup aplikasi. Kami kabari saat sudah live.",
+	"dns_name": "Nama: {name}",
+	"dns_waiting": "menunggu",
+	"dns_verified": "terverifikasi",
+	"dns_failed": "tidak ditemukan",
+	"dns_copy": "Salin {value}",
+	"queue_go_first": "Biarkan {name} duluan",
+	"queue_hint_short": "Satu perubahan sekali jalan, jadi suntingan tidak bertabrakan.",
+	"change_ready": "Perubahan {name} sudah siap",
+	"project_options": "Opsi proyek"
 }
