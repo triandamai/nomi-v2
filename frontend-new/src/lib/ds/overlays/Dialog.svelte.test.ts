@@ -15,9 +15,9 @@ describe('Dialog', () => {
 		await expect.element(dialog).toHaveAccessibleDescription(/The live URL stops working/);
 		const element = dialog.element() as HTMLDialogElement;
 		expect(element.matches(':modal')).toBe(true);
-		const style = getComputedStyle(element);
+		const style = getComputedStyle(element.firstElementChild!);
 		expect(style.backgroundColor).toBe(tokenBackground('nm-surface'));
-		expect(style.borderTopColor).toBe(tokenColor('nm-border-strong'));
+		expect(style.outlineColor).toBe(tokenColor('nm-border-strong'));
 		expect(style.boxShadow).toContain('0px 8px 24px');
 		expect(getComputedStyle(element, '::backdrop').backgroundColor).toBe(tokenBackground('nm-overlay'));
 		await expect.element(page.getByRole('textbox', { name: 'Type the project name to confirm' })).toHaveFocus();

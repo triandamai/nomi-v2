@@ -33,7 +33,7 @@
 	{#if files.length || images.length}
 		<ul aria-label={m.msg_files()} class="flex max-w-full flex-wrap items-end justify-end gap-2">
 			{#each files as file (file.name)}
-				<li class="flex w-50 max-w-full items-center gap-2.5 rounded-sm border border-border bg-surface px-2.5 py-2">
+				<li class="flex w-50 max-w-full items-center gap-2.5 rounded-sm bg-surface px-2.5 py-2 outline -outline-offset-1 outline-border">
 					<span class="inline-flex size-7 shrink-0 items-center justify-center rounded-xs bg-surface-2 text-text-2"><Icon icon={FileText} size={14} /></span>
 					<span class="flex min-w-0 flex-1 flex-col gap-px">
 						<span class="truncate font-mono text-caption text-text">{file.name}</span>
@@ -50,7 +50,7 @@
 		class={[
 			'max-w-xl rounded-md bg-surface-2 px-3.5 py-2 text-body whitespace-pre-wrap text-text',
 			status !== 'sent' && 'opacity-85',
-			status === 'failed' && 'border border-danger-border',
+			status === 'failed' && 'outline -outline-offset-1 outline-danger-border',
 		]}
 	>
 		{text}

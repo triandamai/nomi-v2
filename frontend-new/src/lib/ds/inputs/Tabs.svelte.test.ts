@@ -9,10 +9,10 @@ describe('Tabs', () => {
 		await render(TabsFixture);
 		const transcript = page.getByRole('tab', { name: 'Transcript' });
 		await expect.element(transcript).toHaveAttribute('aria-selected', 'true');
-		const style = getComputedStyle(transcript.element());
+		const style = getComputedStyle(transcript.element().firstElementChild!);
 		expect(style.height).toBe('40px');
-		expect(style.borderBottomColor).toBe(tokenColor('nm-text'));
-		expect(getComputedStyle(page.getByRole('tab', { name: 'Events' }).element()).color).toBe(tokenColor('nm-text-3'));
+		expect(getComputedStyle(transcript.element().firstElementChild!, '::after').backgroundColor).toBe(tokenColor('nm-text'));
+		expect(getComputedStyle(page.getByRole('tab', { name: 'Events' }).element().firstElementChild!).color).toBe(tokenColor('nm-text-3'));
 		await expect.element(page.getByRole('tabpanel', { name: 'Transcript' })).toHaveTextContent('Transcript panel');
 	});
 

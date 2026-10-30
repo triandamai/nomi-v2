@@ -12,7 +12,7 @@
 </script>
 
 {#snippet body()}
-	<div {id} class="flex flex-col gap-2.5 border-l border-border-strong py-0.5 pl-3.5">
+	<div {id} class="flex flex-col gap-2.5 border-l border-border-strong py-0.5 pl-3.25">
 		{#each paragraphs as paragraph, index (index)}<p class="text-ui leading-relaxed text-text-3">{paragraph}</p>{/each}
 	</div>
 {/snippet}

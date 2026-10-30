@@ -21,7 +21,7 @@
 	const height = (level: number) => Math.round(4 + Math.min(1, Math.max(0, level)) * 24);
 </script>
 
-<div role="group" aria-label={m.voice_recording()} class="flex w-full items-center gap-3 rounded-md border border-border-strong bg-surface px-3 py-2.5">
+<div role="group" aria-label={m.voice_recording()} class="flex w-full items-center gap-3 rounded-md bg-surface outline -outline-offset-1 outline-border-strong px-3 py-2.5">
 	<IconButton icon={X} label={m.voice_cancel()} variant="ghost" onclick={oncancel} />
 	<span aria-hidden="true" class="size-2 shrink-0 animate-pulse rounded-full bg-danger motion-reduce:animate-none"></span>
 	<span class="font-mono text-label text-text">{elapsed}</span>

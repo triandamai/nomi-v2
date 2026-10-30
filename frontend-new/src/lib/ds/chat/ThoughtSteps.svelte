@@ -26,7 +26,7 @@
 		<span class="inline-flex text-text-3"><Icon icon={open ? ChevronDown : ChevronRight} size={12} /></span>
 	</button>
 	{#if open}
-		<ul {id} class="flex flex-col gap-3 border-l border-border-strong py-0.5 pl-3.5">
+		<ul {id} class="flex flex-col gap-3 border-l border-border-strong py-0.5 pl-3.25">
 			{#each steps as step, index (index)}
 				<li class="flex gap-2.5">
 					<span

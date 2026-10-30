@@ -120,18 +120,18 @@
 				/>
 			</div>
 		</GalleryBoard>
-		<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
-			<GalleryBoard title="Phone preview" note="real phone size · light app inside the dark workspace" inline>
-				<div class="flex flex-col gap-4">
+		<div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+			<div class="lg:w-110 lg:shrink-0"><GalleryBoard title="Phone preview" note="real phone size · light app inside the dark workspace" inline>
+				<div class="flex flex-col gap-5">
 					<DeviceBar device="iPhone 15 · 393 × 852" ondevice={noop} onphone={noop} />
 					<PhoneFrame>
 						<WarungApp />
 					</PhoneFrame>
 				</div>
-			</GalleryBoard>
-			<GalleryBoard title="Code quote" note="selected lines, quoted in the composer" inline>
+			</GalleryBoard></div>
+			<div class="min-w-0 flex-1"><GalleryBoard title="Code quote" note="selected lines, quoted in the composer" inline>
 				<CodeQuote file="+page.svelte" range="14–15" snippet={'<PickupSlots from="07:00" to="11:00" …'} onremove={noop} />
-			</GalleryBoard>
+			</GalleryBoard></div>
 		</div>
 	</div>
 </GallerySection>

@@ -38,8 +38,8 @@
 	}
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface py-2.5 pr-2 pl-3.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface pt-2.5 pr-2 pb-2.25 pl-3.5">
 		<Mascot {agent} size={20} />
 		<p class="min-w-0 flex-1 text-ui font-medium text-text">{question}</p>
 		<button type="button" class="cursor-pointer rounded-xs px-1.5 text-caption text-text-2 outline-offset-1 hover:text-text pointer-coarse:min-h-11" onclick={() => set(items.map(() => !all))}>
@@ -49,7 +49,7 @@
 	<ul>
 		{#each items as item, index (index)}
 			<li class={index > 0 ? 'border-t border-border' : undefined}>
-				<label class="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 hover:bg-surface pointer-coarse:min-h-11">
+				<label class={['flex cursor-pointer items-center gap-3 px-3.5 pb-2.5 hover:bg-surface pointer-coarse:min-h-11', index > 0 ? 'pt-2.25' : 'pt-2.5']}>
 					<CheckMark checked={picked[index]} onchange={(checked) => set(picked.map((on, at) => (at === index ? checked : on)))} />
 					<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 						<span class={['text-ui', picked[index] ? 'text-text' : 'text-text-2']}>{item.name}</span>
@@ -60,7 +60,7 @@
 			</li>
 		{/each}
 	</ul>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 basis-40 font-mono text-label text-text-3">{m.selection_count({ count: String(count) })}{total ? ` · ${total}` : ''}</span>
 		<span class="ml-auto flex items-center gap-2">
 			{#if onskip}<Button label={m.action_skip()} variant="ghost" onclick={onskip} />{/if}

@@ -19,7 +19,7 @@
 	const percent = $derived(Math.round(Math.min(1, Math.max(0, progress ?? 0)) * 100));
 </script>
 
-<span class={['flex max-w-full items-center gap-2.5 rounded-sm border border-border-strong bg-surface py-1.5 pr-2 pl-2.5', uploading && 'w-62.5']}>
+<span class={['flex max-w-full items-center gap-2.5 rounded-sm bg-surface py-1.5 pr-2 pl-2.5 outline -outline-offset-1 outline-border-strong', uploading && 'w-62.5']}>
 	<span class="inline-flex shrink-0 text-text-2"><Icon icon={FileText} /></span>
 	<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 		<span class="truncate font-mono text-caption text-text">{name}</span>

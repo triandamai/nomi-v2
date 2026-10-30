@@ -33,7 +33,7 @@
 			</div>
 		</GalleryBoard>
 		<GalleryBoard title="Asks in line" note="two people, one Koda: one change at a time" inline>
-			<div class="flex flex-col gap-4">
+			<div class="flex flex-col gap-5">
 				<RequestQueue
 					asks={[
 						{ text: 'Make the Pre-order button green', who: mario, state: 'running', meta: 'Mario · running · 00:21' },
@@ -44,11 +44,11 @@
 				<PublishRequest who={sari} meta="Makanan section · 2 files · built and tested in the preview" onpublish={noop} onreview={noop} />
 			</div>
 		</GalleryBoard>
-		<div class="grid items-start gap-x-8 gap-y-6 lg:grid-cols-2">
-			<GalleryBoard title="Roles" note="picked when inviting · changeable later in People" inline>
+		<div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+			<div class="lg:w-95 lg:shrink-0"><GalleryBoard title="Roles" note="picked when inviting · changeable later in People" inline>
 				<RoleMenu value={role} onchange={(next) => (role = next)} />
-			</GalleryBoard>
-			<GalleryBoard title="Invite email" note="what the invited person gets · one clear button" inline>
+			</GalleryBoard></div>
+			<div class="min-w-0 flex-1"><GalleryBoard title="Invite email" note="what the invited person gets · one clear button" inline>
 				<BuildInvite
 					from="Mario Prasetyo"
 					project="warung-kopi-menu"
@@ -58,7 +58,7 @@
 					sentTo="sari.w@gmail.com"
 					expires="in 7 days"
 				/>
-			</GalleryBoard>
+			</GalleryBoard></div>
 		</div>
 		<GalleryBoard title="Live sessions" note="see who's here, what they're looking at, and follow them · like Figma" inline>
 			<div class="flex flex-wrap items-start gap-8">

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import Tab from './Tab.svelte';
 
 	// Design System / Nomi → Tabs: 40px tall, the open one in text colour with a line under it.
 	// Arrow keys move between tabs (and open them, as most apps do).
-	type Tab = { value: string; label: string };
-	type Props = { label: string; tabs: Tab[]; value?: string; panel?: Snippet<[string]>; onchange?: (value: string) => void };
+	type TabItem = { value: string; label: string };
+	type Props = { label: string; tabs: TabItem[]; value?: string; panel?: Snippet<[string]>; onchange?: (value: string) => void };
 	let { label, tabs, value = $bindable(tabs[0]?.value ?? ''), panel, onchange }: Props = $props();
 
 	const id = $props.id();
@@ -38,10 +39,7 @@
 			aria-controls="{id}-panel"
 			tabindex={selected ? 0 : -1}
 			onclick={() => open(tab.value)}
-			class={[
-				'-mb-px inline-flex h-10 cursor-pointer items-center gap-1.5 border-b text-ui outline-offset-1',
-				selected ? 'border-text font-medium text-text' : 'border-transparent text-text-3 hover:text-text-2',
-			]}>{tab.label}</button
+			class="group -mb-px inline-flex cursor-pointer outline-offset-1"><Tab label={tab.label} {selected} /></button
 		>
 	{/each}
 </div>

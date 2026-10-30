@@ -37,15 +37,15 @@
 
 <!-- Keys work anywhere inside the card; each control is also reachable on its own. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg" aria-labelledby="{id}-title" {onkeydown}>
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong" aria-labelledby="{id}-title" {onkeydown}>
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<span class="inline-flex text-text-2"><Icon icon={Play} size={14} /></span>
 		<p id="{id}-title" class="min-w-0 flex-1 text-ui font-medium text-text">{m.plan_approval_title()}</p>
 	</header>
 	<div class="p-3.5">
 		<RunOptions name="{id}-mode" label={m.plan_approval_title()} {options} {who} bind:value bind:changes />
 	</div>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 basis-40 font-mono text-label text-text-3">{m.plan_approval_keys({ count: String(options.length + 1) })}</span>
 		<span class="ml-auto"><Button label={keep ? m.plan_approval_send() : m.plan_approval_run()} iconEnd={keep ? Send : Play} disabled={keep && !changes.trim()} onclick={run} /></span>
 	</footer>

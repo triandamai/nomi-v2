@@ -9,7 +9,7 @@
 	let { name, onundo, onregenerate }: Props = $props();
 </script>
 
-<p class="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-sm border border-border px-3 py-2.5">
+<p class="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-sm px-3 py-2.5 outline -outline-offset-1 outline-border">
 	<span class="inline-flex shrink-0 text-text-3"><Icon icon={Trash2} size={14} /></span>
 	<span class="min-w-0 flex-1 basis-40 text-caption text-text-3 italic">{m.deleted_reply({ name })}</span>
 	<span class="ml-auto flex items-center gap-2">

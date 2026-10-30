@@ -6,6 +6,7 @@
 	import Kbd from '$lib/ds/actions/Kbd.svelte';
 	import KeyHint from '$lib/ds/actions/KeyHint.svelte';
 	import GallerySection from './GallerySection.svelte';
+	import GalleryBoard from './GalleryBoard.svelte';
 </script>
 
 {#snippet specimen(caption: string, item: import('svelte').Snippet)}
@@ -19,9 +20,8 @@
 	title="Actions"
 	description="One primary per view. Inverse for the main action inside panels, so mint stays rare. Height 30, radius-sm, 13px / 500."
 >
-	<div class="flex flex-col gap-3 rounded-md border border-border p-5">
-		<p class="text-ui font-medium text-text">Button <span class="font-mono text-label text-text-3">variants</span></p>
-		<div class="flex flex-wrap items-start gap-6">
+	<GalleryBoard title="Button" note="variants" nomi>
+		<div class="flex flex-wrap items-end gap-6">
 			{#snippet primary()}<Button label="Start building" iconEnd={ArrowRight} />{/snippet}
 			{#snippet inverse()}<Button label="Open workspace" variant="inverse" iconEnd={ArrowRight} />{/snippet}
 			{#snippet secondary()}<Button label="Add credits on DeepSeek" variant="secondary" iconEnd={ArrowUpRight} />{/snippet}
@@ -33,13 +33,10 @@
 			{@render specimen('Ghost', ghost)}
 			{@render specimen('Danger', danger)}
 		</div>
-	</div>
+	</GalleryBoard>
 
-	<div class="flex flex-col gap-3 rounded-md border border-border p-5">
-		<p class="text-ui font-medium text-text">
-			Button states <span class="font-mono text-label text-text-3">hover · focus-visible · active · disabled · loading</span>
-		</p>
-		<div class="flex flex-wrap items-start gap-6">
+	<GalleryBoard title="Button states" note="hover · focus-visible · active · disabled · loading" nomi>
+		<div class="flex flex-wrap items-end gap-6">
 			{#snippet primaryHover()}<Button label="Start building" iconEnd={ArrowRight} data-hover />{/snippet}
 			{#snippet primaryFocus()}<Button label="Start building" iconEnd={ArrowRight} data-focus />{/snippet}
 			{#snippet secondaryHover()}<Button label="Add credits" variant="secondary" data-hover />{/snippet}
@@ -55,13 +52,10 @@
 			{@render specimen('Primary / Disabled', primaryDisabled)}
 			{@render specimen('Inverse / Loading', inverseLoading)}
 		</div>
-	</div>
+	</GalleryBoard>
 
-	<div class="flex flex-col gap-3 rounded-md border border-border p-5">
-		<p class="text-ui font-medium text-text">
-			Icon button, link, kbd <span class="font-mono text-label text-text-3">30×30 hit area, 16px icon</span>
-		</p>
-		<div class="flex flex-wrap items-start gap-6">
+	<GalleryBoard title="Icon button, link, kbd" note="30×30 hit area, 16px icon" nomi>
+		<div class="flex flex-wrap items-end gap-6">
 			{#snippet outline()}<IconButton icon={Plus} label="Add" />{/snippet}
 			{#snippet ghostIcon()}<IconButton icon={Mic} label="Record a voice note" variant="ghost" />{/snippet}
 			{#snippet send()}<IconButton icon={ArrowUp} label="Send" variant="send" />{/snippet}
@@ -85,5 +79,5 @@
 			{@render specimen('Kbd', kbd)}
 			{@render specimen('Key hint', hint)}
 		</div>
-	</div>
+	</GalleryBoard>
 </GallerySection>

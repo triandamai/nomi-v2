@@ -25,7 +25,7 @@
 	setRowStyle({ dense: true, icon: 'text-3' });
 </script>
 
-<nav aria-label={m.settings_nav()} class="flex h-full w-62 shrink-0 flex-col gap-3.5 border-r border-border bg-bg px-3 py-4">
+<nav aria-label={m.settings_nav()} class="flex h-full w-62 shrink-0 flex-col gap-3.5 border-r border-border bg-bg py-4 pr-2.75 pl-3">
 	<a href={backHref} class="flex h-8 items-center gap-2.5 rounded-sm px-2.5 text-ui text-text-2 outline-offset-1 hover:bg-surface-2 hover:text-text pointer-coarse:min-h-11">
 		<span class="inline-flex text-text-3"><Icon icon={ArrowLeft} /></span>
 		<span class="flex-1">{m.settings_back()}</span>
@@ -40,7 +40,7 @@
 			{/each}
 		</div>
 	{/each}
-	<div class="mt-auto flex flex-col gap-1 border-t border-border pt-2">
+	<div class="mt-auto flex flex-col gap-1 border-t border-border pt-1.75">
 		<div class="flex items-center gap-2.5 px-2 py-1.5">
 			<Avatar name={user.name} src={user.avatar} />
 			<span class="flex min-w-0 flex-1 flex-col gap-0.5">

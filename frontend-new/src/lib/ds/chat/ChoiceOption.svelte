@@ -41,7 +41,7 @@
 {/snippet}
 
 <div data-choice class={['flex flex-col gap-2 rounded-sm border transition-colors', chosen ? 'border-accent bg-accent-bg' : 'border-border-strong hover:bg-surface']}>
-	<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 pointer-coarse:min-h-11">
+	<label class={['flex cursor-pointer items-center gap-3 px-2.75 pt-2.25 pointer-coarse:min-h-11', !children && 'pb-2.25']}>
 		{#if control === 'start'}{@render mark()}{/if}
 		{#if key !== undefined}
 			<span aria-hidden="true" class="inline-flex size-5 shrink-0 items-center justify-center rounded-xs bg-surface-2 font-mono text-label text-text-2">{key}</span>
@@ -55,5 +55,5 @@
 		</span>
 		{#if control === 'end'}{@render mark()}{/if}
 	</label>
-	{#if children}<div class="px-3 pb-2.5">{@render children()}</div>{/if}
+	{#if children}<div class="px-2.75 pb-2.25">{@render children()}</div>{/if}
 </div>

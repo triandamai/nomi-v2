@@ -36,7 +36,7 @@
 </script>
 
 <div class="flex w-full justify-end">
-	<div class="flex w-140 max-w-full flex-col gap-3 rounded-md border border-accent bg-surface p-3">
+	<div class="flex w-140 max-w-full flex-col gap-3 rounded-md bg-surface p-3 outline -outline-offset-1 outline-accent">
 		<textarea
 			use:focus
 			bind:value={text}

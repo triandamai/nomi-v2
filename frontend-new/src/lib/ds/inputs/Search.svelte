@@ -9,7 +9,7 @@
 	let { placeholder, value = $bindable(''), shortcut, label, plain = false, oninput }: Props = $props();
 </script>
 
-<label class={['flex h-7.5 w-full items-center gap-2 rounded-sm border border-border text-text-3 focus-within:border-accent focus-within:shadow-focus', plain ? 'px-2.5' : 'px-3']}>
+<label class={['flex h-7.5 w-full items-center gap-2 rounded-sm border border-border text-text-3 focus-within:border-accent focus-within:shadow-focus', plain ? 'px-2.25' : 'px-2.75']}>
 	<Icon icon={SearchIcon} size={14} />
 	<input
 		type="search"

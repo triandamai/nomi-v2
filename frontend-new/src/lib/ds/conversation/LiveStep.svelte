@@ -9,7 +9,7 @@
 	let { step, elapsed, stopLabel, onstop }: Props = $props();
 </script>
 
-<div class="flex w-full items-center gap-2 rounded-sm border border-border px-3 py-2">
+<div class="flex w-full items-center gap-2 rounded-sm px-3 py-2 outline -outline-offset-1 outline-border">
 	<span class="inline-flex animate-spin text-text-2 motion-reduce:animate-none"><Icon icon={LoaderCircle} size={14} /></span>
 	<span role="status" class="min-w-0 flex-1 truncate font-mono text-label text-text">{step}</span>
 	{#if elapsed}<span class="font-mono text-label text-text-3">{elapsed}</span>{/if}

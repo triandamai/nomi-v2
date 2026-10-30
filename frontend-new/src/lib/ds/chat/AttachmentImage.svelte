@@ -10,7 +10,7 @@
 </script>
 
 <span class="group relative inline-flex size-11 shrink-0">
-	<img {src} {alt} class="size-11 rounded-sm border border-border-strong bg-surface-2 object-cover" />
+	<img {src} {alt} class="size-11 rounded-sm bg-surface-2 object-cover outline -outline-offset-1 outline-border-strong" />
 	{#if onremove}
 		<button
 			type="button"

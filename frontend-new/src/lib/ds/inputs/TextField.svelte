@@ -50,7 +50,7 @@
 	<div
 		data-focus={showFocus || undefined}
 		class={[
-			'flex h-8.5 w-full items-center gap-2 rounded-sm border bg-surface px-2 focus-within:shadow-focus data-focus:border-accent data-focus:shadow-focus',
+			'flex h-8.5 w-full items-center gap-2 rounded-sm border bg-surface px-1.75 focus-within:shadow-focus data-focus:border-accent data-focus:shadow-focus',
 			error ? 'border-danger' : disabled ? 'border-border' : 'border-border-strong focus-within:border-accent',
 		]}
 	>

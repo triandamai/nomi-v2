@@ -12,7 +12,7 @@
 	let { from, to, reason, onback }: Props = $props();
 </script>
 
-<p class="flex w-full flex-wrap items-center gap-2 rounded-sm border border-border px-3 py-2">
+<p class="flex w-full flex-wrap items-center gap-2 rounded-sm px-3 py-2 outline -outline-offset-1 outline-border">
 	<Mascot agent={from.agent} size={20} />
 	<span class="inline-flex text-text-3"><Icon icon={ArrowRight} size={12} /></span>
 	<Mascot agent={to.agent} size={20} />

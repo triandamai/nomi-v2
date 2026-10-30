@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
+	import TooltipBubble from './TooltipBubble.svelte';
 
 	// Design System / Nomi → Overlays: an inverted tip with the shortcut, on hover (after a moment)
 	// or keyboard focus. Escape hides it. It describes its trigger to screen readers.
@@ -53,15 +54,5 @@
 </span>
 
 {#if open}
-	<span
-		bind:this={tip}
-		{id}
-		role="tooltip"
-		popover="manual"
-		style="top: {position.top}px; left: {position.left}px"
-		class="pointer-events-none fixed m-0 inline-flex items-center gap-2 rounded-sm bg-text px-2 py-1 text-caption text-bg"
-	>
-		{label}
-		{#if shortcut}<span class="font-mono text-label text-text-3">{shortcut}</span>{/if}
-	</span>
+	<TooltipBubble bind:element={tip} {id} {label} {shortcut} popover="manual" style="top: {position.top}px; left: {position.left}px" class="fixed m-0" />
 {/if}

@@ -13,14 +13,14 @@
 	<span class={['w-10 shrink-0 text-right font-mono text-caption', change?.tone === 'bad' && 'text-danger', change?.tone === 'good' && 'text-accent', !change?.tone && 'text-text-3']}>{change?.value ?? ''}</span>
 {/snippet}
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<header class="flex items-center gap-2 border-b border-border px-3.5 py-3">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<header class="flex items-center gap-2 border-b border-border px-3.5 pt-3 pb-2.75">
 		<h3 class="min-w-0 flex-1 text-body font-semibold text-text">{title}</h3>
 		{#if sub}<span class="font-mono text-label text-text-3">{sub}</span>{/if}
 	</header>
 	<ul>
 		{#each rows as row, index (index)}
-			<li class={['flex flex-col gap-0.75 px-3.5 py-2.5', index > 0 && 'border-t border-border']}>
+			<li class={['flex flex-col gap-0.75 px-3.5 pb-2.5', index > 0 ? 'border-t border-border pt-2.25' : 'pt-2.5']}>
 				<span class="flex items-center gap-2">
 					<span class="min-w-0 flex-1 text-body text-text">{row.label}</span>
 					<span class="font-mono text-phone-sm text-text">{row.value}</span>
@@ -30,7 +30,7 @@
 			</li>
 		{/each}
 		{#if total}
-			<li class="flex items-center gap-2 border-t border-border bg-surface px-3.5 py-3">
+			<li class="flex items-center gap-2 border-t border-border bg-surface px-3.5 pt-2.75 pb-3">
 				<span class="min-w-0 flex-1 text-body font-semibold text-text">{total.label}</span>
 				<span class="font-mono text-phone-sm font-medium text-text">{total.value}</span>
 				{@render delta(total.delta)}

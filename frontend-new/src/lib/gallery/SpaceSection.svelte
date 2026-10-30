@@ -81,8 +81,8 @@
 {/snippet}
 
 <!-- As the pen draws it (Section / Space Radius Icons): no section head, three bordered blocks in a row. -->
-<section class="flex flex-col gap-6 border-t border-border py-12 lg:flex-row lg:items-start" aria-label="Space, radius & icons">
-	<div class="flex min-w-0 flex-1 flex-col gap-4 rounded-md border border-border p-6">
+<section class="flex flex-col gap-6 lg:flex-row lg:items-start" aria-label="Space, radius & icons">
+	<div class="flex min-w-0 flex-1 flex-col gap-4 rounded-md p-6 outline -outline-offset-1 outline-border">
 		{@render head('Spacing', '4px base with 2 / 6 for dense UI. Gaps and padding only from this scale.')}
 		{#each spacing as [step, use] (step)}
 			<div class="flex flex-wrap items-center gap-3 lg:flex-nowrap">
@@ -94,7 +94,7 @@
 		{/each}
 	</div>
 
-	<div class="flex flex-col gap-4 rounded-md border border-border p-6 lg:w-90 lg:shrink-0">
+	<div class="flex flex-col gap-4 rounded-md p-6 outline -outline-offset-1 outline-border lg:w-90 lg:shrink-0">
 		{@render head('Radius & depth', 'Two radii. Borders define edges; one shadow level, only for floating layers.')}
 		<div class="flex gap-4">
 			<div class="flex flex-1 flex-col gap-2">
@@ -120,7 +120,7 @@
 		</div>
 	</div>
 
-	<div class="flex flex-col gap-4 rounded-md border border-border p-6 lg:w-90 lg:shrink-0">
+	<div class="flex flex-col gap-4 rounded-md p-6 outline -outline-offset-1 outline-border lg:w-90 lg:shrink-0">
 		{@render head('Iconography', 'Lucide only, 1.5 stroke. 16px in nav and buttons, 14px inline with text, 12px in chips.')}
 		<div class="flex flex-col gap-3">
 			{#each icons as row, index (index)}

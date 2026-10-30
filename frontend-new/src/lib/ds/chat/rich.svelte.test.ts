@@ -320,7 +320,7 @@ describe('Reminder', () => {
 		const { container } = await render(Reminder, { title: 'Pay kos rent to Bu Sri', when: '25 Nov 09:00 · every month', due: true, doneLabel: 'Mark paid', onsnooze, ondone });
 		const when = page.getByText('due now · 25 Nov 09:00 · every month').element();
 		expect(getComputedStyle(when).color).toBe(tokenColor('nm-warning'));
-		expect(getComputedStyle(container.querySelector('section')!).borderColor).toBe(tokenColor('nm-warning'));
+		expect(getComputedStyle(container.querySelector('section')!).outlineColor).toBe(tokenColor('nm-warning'));
 		expect(container.querySelector('svg.lucide-bell-ring')).not.toBeNull();
 		await page.getByRole('button', { name: 'Snooze 1h' }).click();
 		await page.getByRole('button', { name: 'Mark paid' }).click();

@@ -21,12 +21,12 @@
 
 <div
 	role={kind === 'error' ? 'alert' : 'status'}
-	class="flex w-100 max-w-full items-start gap-3 rounded-md border border-border-strong bg-surface px-3.5 py-3 text-text shadow-float"
+	class="flex w-100 max-w-full items-start gap-3 rounded-md bg-surface px-3.5 py-3 text-text shadow-float outline -outline-offset-1 outline-border-strong"
 >
 	<span class={['inline-flex pt-px', kind === 'success' && 'text-accent', kind === 'error' && 'text-danger', kind === 'info' && 'text-text-2']}><Icon icon={glyph} /></span>
 	<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 		<span class="text-ui font-medium text-text">{title}</span>
-		{#if detail}<span class="font-mono text-label text-text-3">{detail}</span>{/if}
+		{#if detail}<span class="font-mono text-label whitespace-nowrap text-text-3">{detail}</span>{/if}
 	</span>
 	{#if action}
 		<button type="button" onclick={action.onclick} class="cursor-pointer rounded-xs text-ui text-text-2 outline-offset-2 hover:text-text">{action.label}</button>

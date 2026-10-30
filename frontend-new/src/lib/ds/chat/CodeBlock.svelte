@@ -21,8 +21,8 @@
 	const copier = createCopier();
 </script>
 
-<figure class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg">
-	<figcaption class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2">
+<figure class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
+	<figcaption class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2 pb-1.75">
 		{#if language}<span class="font-mono text-label text-text-3">{language}</span>{/if}
 		<span class="min-w-0 flex-1 truncate font-mono text-label text-text-2">{file}</span>
 		<button

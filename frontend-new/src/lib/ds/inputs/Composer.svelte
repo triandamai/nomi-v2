@@ -62,7 +62,7 @@
 	}
 </script>
 
-<div data-composer class="flex w-full flex-col gap-3 rounded-md border border-border-strong bg-surface px-3 pt-3.5 pb-2.5">
+<div data-composer class="flex w-full flex-col gap-3 rounded-md border border-border-strong bg-surface px-2.75 pt-3.25 pb-2.25">
 	<textarea
 		{placeholder}
 		aria-label={m.composer_field()}
@@ -70,7 +70,7 @@
 		bind:value
 		{onkeydown}
 		use:grow
-		class="min-h-6 w-full resize-none bg-transparent px-1 text-body text-text outline-none placeholder:text-text-3"
+		class="w-full resize-none bg-transparent px-1 text-body text-text outline-none placeholder:text-text-3"
 	></textarea>
 	<div class="flex items-center gap-1.5">
 		<IconButton icon={Plus} label={m.composer_attach()} onclick={onattach} />

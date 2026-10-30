@@ -49,7 +49,7 @@
 <div class="flex flex-col gap-4 p-5">
 	<div class="flex items-center gap-2">
 		<h2 id={titleId} class="min-w-0 flex-1 text-body font-medium text-text">{m.share_title()}</h2>
-		<button type="button" aria-label={m.action_close()} class="inline-flex size-6 cursor-pointer items-center justify-center rounded-xs text-text-3 outline-offset-1 hover:text-text pointer-coarse:size-11" onclick={onclose}>
+		<button type="button" aria-label={m.action_close()} class="inline-flex cursor-pointer items-center justify-center rounded-xs text-text-3 outline-offset-2 hover:text-text pointer-coarse:size-11" onclick={onclose}>
 			<Icon icon={X} size={14} />
 		</button>
 	</div>
@@ -63,7 +63,7 @@
 		]}
 		onchange={(scope) => update({ scope: scope as ShareSettings['scope'] })}
 	/>
-	<figure class="flex flex-col gap-1.5 rounded-sm border border-border bg-bg p-3">
+	<figure class="flex flex-col gap-1.5 rounded-sm bg-bg p-3 outline -outline-offset-1 outline-border">
 		<figcaption class="flex items-center gap-1.5">
 			<Mascot agent={preview.agent} size={20} />
 			<span class="text-caption font-medium text-text">{preview.name}</span>
@@ -92,11 +92,11 @@
 		</div>
 	</div>
 	<div class="flex flex-wrap items-center gap-2">
-		<span class="flex h-7.5 min-w-0 flex-1 basis-48 items-center gap-2 rounded-sm border border-border-strong bg-bg px-2.5">
+		<span class="flex h-7.5 min-w-0 flex-1 basis-48 items-center gap-2 rounded-sm bg-bg px-2.5 outline -outline-offset-1 outline-border-strong">
 			<span class="inline-flex shrink-0 text-text-3"><Icon icon={Link2} size={12} /></span>
 			<span class="min-w-0 truncate font-mono text-caption text-text" title={url}>{url.replace(/^https?:\/\//, '')}</span>
 		</span>
 		<span class="ml-auto"><Button label={m.share_copy()} iconEnd={copier.copied ? Check : Copy} onclick={copy} /></span>
 	</div>
 </div>
-<p class="border-t border-border px-5 py-2.5 text-caption text-text-3">{m.share_revoke()}</p>
+<p class="border-t border-border px-5 pt-2.25 pb-2.5 text-caption text-text-3">{m.share_revoke()}</p>

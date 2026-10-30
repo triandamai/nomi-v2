@@ -32,7 +32,7 @@
 		aria-label={m.rename_label()}
 		bind:value={name}
 		{onkeydown}
-		class="h-7 w-75 max-w-full min-w-0 rounded-sm border border-accent bg-surface px-2 text-ui text-text outline-none"
+		class="h-7 w-75 max-w-full min-w-0 rounded-sm border border-accent bg-surface px-1.75 text-ui text-text outline-none"
 	/>
 	<span class="shrink-0 font-mono text-label whitespace-nowrap text-text-3">{m.rename_hint()}</span>
 </span>

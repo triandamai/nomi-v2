@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { Check, X } from '@lucide/svelte';
+	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import GallerySection from './GallerySection.svelte';
 
 	const rules = [
 		{
 			title: 'Do',
+			icon: Check,
 			items: [
 				'Use nm-* tokens for every colour, size, gap and radius',
 				'Mono for paths, IDs, URLs, tokens, money, timestamps',
@@ -16,6 +19,7 @@
 		},
 		{
 			title: "Don't",
+			icon: X,
 			items: [
 				'Gradients, glass, glows, or a second accent hue',
 				'Emoji or illustrations in UI chrome',
@@ -30,14 +34,16 @@
 </script>
 
 <GallerySection title="Rules" description="Checkable. If a frame breaks one, fix it before showing it.">
-	<div class="grid grid-cols-2 gap-6">
+	<div class="grid items-start gap-6 md:grid-cols-2">
 		{#each rules as list (list.title)}
-			<div class="flex flex-col gap-2 rounded-md border border-border p-5">
-				<p class="font-mono text-label tracking-label text-text-3 uppercase">{list.title}</p>
-				<ul class="flex flex-col gap-1.5 text-ui text-text-2">
-					{#each list.items as rule (rule)}<li>{rule}</li>{/each}
+			<section aria-label={list.title} class="flex flex-col overflow-hidden rounded-md outline -outline-offset-1 outline-border">
+				<p class="flex items-center gap-2 border-b border-border bg-surface px-4 pt-2.5 pb-2.25 text-ui font-medium text-text">
+					<span class={['inline-flex', list.icon === Check ? 'text-accent' : 'text-danger']}><Icon icon={list.icon} size={14} /></span>{list.title}
+				</p>
+				<ul>
+					{#each list.items as rule (rule)}<li class="border-b border-border px-4 pt-2.25 pb-2 text-ui text-text-2">{rule}</li>{/each}
 				</ul>
-			</div>
+			</section>
 		{/each}
 	</div>
 </GallerySection>

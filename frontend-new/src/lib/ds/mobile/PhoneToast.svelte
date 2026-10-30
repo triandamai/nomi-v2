@@ -8,7 +8,7 @@
 	let { kind, title, detail, action }: Props = $props();
 </script>
 
-<div role={kind === 'error' ? 'alert' : 'status'} class="flex w-full items-center gap-3 rounded-2xl border border-border-strong bg-surface px-3.5 py-3 shadow-float">
+<div role={kind === 'error' ? 'alert' : 'status'} class="flex w-full items-center gap-3 rounded-2xl bg-surface px-3.5 py-3 shadow-float outline -outline-offset-1 outline-border-strong">
 	<span class={['inline-flex shrink-0', kind === 'success' && 'text-accent', kind === 'error' && 'text-danger', kind === 'info' && 'text-text-2']}>
 		<Icon icon={kind === 'success' ? Check : kind === 'error' ? CircleAlert : Info} size={18} />
 	</span>

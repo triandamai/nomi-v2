@@ -13,7 +13,7 @@
 	const label = $derived(state === 'waiting' ? m.dns_waiting() : state === 'verified' ? m.dns_verified() : m.dns_failed());
 </script>
 
-<div class="flex w-full flex-col gap-2.5 rounded-xl border border-border bg-surface p-3.25">
+<div class="flex w-full flex-col gap-2.5 rounded-xl bg-surface p-3.5 outline -outline-offset-1 outline-border">
 	<p class="flex items-center gap-2">
 		<span class="rounded-sm bg-surface-2 px-2 py-0.5 font-mono text-caption text-text">{type}</span>
 		<span class="min-w-0 flex-1 text-phone-sm text-text">{m.dns_name({ name })}</span>

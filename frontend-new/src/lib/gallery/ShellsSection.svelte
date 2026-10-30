@@ -9,7 +9,7 @@
 	focus column 150).
 -->
 {#snippet region(label: string, classes: string)}
-	<div class={['flex flex-col overflow-hidden border border-border bg-surface p-2 whitespace-nowrap', classes]}>
+	<div class={['flex flex-col overflow-hidden bg-surface p-2 whitespace-nowrap outline -outline-offset-1 outline-border', classes]}>
 		<span class="font-mono text-label text-text-2">{label}</span>
 	</div>
 {/snippet}
@@ -20,7 +20,7 @@
 >
 	<div class="grid gap-6 md:grid-cols-3">
 		<div class="flex min-w-0 flex-col gap-2.5">
-			<div data-diagram class="flex h-55 rounded-md border border-border-strong p-2">
+			<div data-diagram class="flex h-55 rounded-md p-2 outline -outline-offset-1 outline-border-strong">
 				{@render region('Sidebar 248', 'w-15.5 shrink-0')}
 				<div class="flex min-w-0 flex-1 flex-col">
 					{@render region('Top bar 52', 'h-5.5 shrink-0')}
@@ -32,7 +32,7 @@
 			<p class="text-caption text-text-3">Home, Chats, Projects, Money…</p>
 		</div>
 		<div class="flex min-w-0 flex-col gap-2.5">
-			<div data-diagram class="flex h-55 flex-col gap-1.5 rounded-md border border-border-strong p-2">
+			<div data-diagram class="flex h-55 flex-col gap-1.5 rounded-md p-2 outline -outline-offset-1 outline-border-strong">
 				{@render region('Project bar 52', 'h-5.5 shrink-0')}
 				<div class="flex min-h-0 flex-1">
 					{@render region('Agent chat 440', 'w-27.5 shrink-0')}
@@ -43,7 +43,7 @@
 			<p class="text-caption text-text-3">Inside one project</p>
 		</div>
 		<div class="flex min-w-0 flex-col gap-2.5">
-			<div data-diagram class="flex h-55 justify-center rounded-md border border-border-strong p-2">
+			<div data-diagram class="flex h-55 justify-center rounded-md p-2 outline -outline-offset-1 outline-border-strong">
 				{@render region('Column 480–720', 'w-37.5 shrink-0')}
 			</div>
 			<p class="text-ui font-medium text-text">Focus shell</p>

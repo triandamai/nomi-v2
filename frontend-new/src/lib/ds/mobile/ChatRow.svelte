@@ -17,7 +17,7 @@
 			{#if time}<span class="font-mono text-label text-text-3">{time}</span>{/if}
 		</span>
 		<span class="flex items-center gap-2">
-			<span class="min-w-0 flex-1 truncate text-phone-sm text-text-3">{preview}</span>
+			<span class="line-clamp-2 min-w-0 flex-1 text-phone-sm text-text-3">{preview}</span>
 			{#if unread}<span class="size-2 shrink-0 rounded-full bg-accent"><span class="sr-only">{m.mobile_unread()}</span></span>{/if}
 		</span>
 	</span>

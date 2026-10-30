@@ -20,7 +20,8 @@ describe('Menu', () => {
 		await expect.element(menu).toBeVisible();
 		expect(page.getByRole('menuitem').elements()).toHaveLength(4);
 		const style = getComputedStyle(menu.element());
-		expect(style.borderTopColor).toBe(tokenColor('nm-border-strong'));
+		expect(style.outlineColor).toBe(tokenColor('nm-border-strong'));
+		expect(style.outlineOffset).toBe('-1px');
 		expect(style.borderTopLeftRadius).toBe('10px');
 		expect(style.boxShadow).toContain('0px 8px 24px');
 		expect(getComputedStyle(page.getByText('salah-daily-tracker').element()).textTransform).toBe('uppercase');

@@ -20,7 +20,7 @@
 	let { text, status = 'done', elapsed = '', reason = '', oncontinue, onrestart }: Props = $props();
 </script>
 
-<div class="flex w-full flex-col gap-2" aria-busy={status === 'streaming'}>
+<div class={['flex w-full flex-col', status === 'interrupted' ? 'gap-2.5' : 'gap-2']} aria-busy={status === 'streaming'}>
 	<p class="text-body leading-relaxed whitespace-pre-wrap text-text-2">
 		{text}{#if status === 'streaming'}<span data-caret aria-hidden="true" class="ml-0.5 inline-block h-4 w-2 animate-pulse bg-accent align-middle motion-reduce:animate-none"></span><span class="sr-only">{m.reply_writing()}</span>{/if}
 	</p>
@@ -34,7 +34,7 @@
 		<div class="flex flex-wrap items-center gap-2.5 rounded-sm bg-warning-bg py-2 pr-2 pl-3">
 			<span class="inline-flex text-warning"><Icon icon={Unplug} size={14} /></span>
 			<span class="min-w-0 flex-1 basis-48 text-caption text-text">{reason}</span>
-			<span class="ml-auto flex items-center gap-2">
+			<span class="ml-auto flex items-center gap-2.5">
 				{#if onrestart}<Button label={m.reply_start_over()} variant="ghost" iconStart={RotateCcw} onclick={onrestart} />{/if}
 				{#if oncontinue}<Button label={m.reply_continue()} variant="secondary" iconEnd={ArrowRight} onclick={oncontinue} />{/if}
 			</span>

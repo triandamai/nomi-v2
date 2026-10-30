@@ -10,7 +10,7 @@
 	let { who, meta, onpublish, onreview }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col gap-3 rounded-3xl border border-border bg-surface p-3.75">
+<section class="flex w-full flex-col gap-3 rounded-3xl bg-surface p-4 outline -outline-offset-1 outline-border">
 	<div class="flex items-center gap-2.5">
 		<PeerAvatar initials={who.initials} peer={who.peer} />
 		<p class="flex min-w-0 flex-1 flex-col gap-0.5">

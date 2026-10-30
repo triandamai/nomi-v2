@@ -8,7 +8,7 @@
 	let { name, key, title, detail, recommended = false, checked, onselect }: Props = $props();
 </script>
 
-<label class={['flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3.5', checked ? 'border-accent bg-accent-bg' : 'border-border-strong']}>
+<label class={['flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3.25', checked ? 'border-accent bg-accent-bg' : 'border-border-strong']}>
 	{#if key !== undefined}
 		<span aria-hidden="true" class="inline-flex size-6.5 shrink-0 items-center justify-center rounded-full bg-surface-2 font-mono text-caption text-text-2">{key}</span>
 	{/if}

@@ -11,7 +11,7 @@
 
 <button
 	type="button"
-	class="flex w-full cursor-pointer items-center gap-2 rounded-sm border border-border px-3 py-2 text-left outline-offset-2 transition-colors hover:bg-surface pointer-coarse:min-h-11"
+	class="flex w-full cursor-pointer items-center gap-2 rounded-sm border border-border px-2.75 py-1.75 text-left outline-offset-2 transition-colors hover:bg-surface pointer-coarse:min-h-11"
 	onclick={onopen}
 >
 	<span class="inline-flex shrink-0 text-accent"><Icon icon={Check} size={14} /></span>

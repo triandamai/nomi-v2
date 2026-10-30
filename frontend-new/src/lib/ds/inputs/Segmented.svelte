@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Segment from './Segment.svelte';
+
 	// Design System / Nomi → Segmented: a few mutually exclusive views of one list ("All 4 · Live 2
 	// · Building 1"). A radio group: arrow keys move the choice, like the platform's own.
 	type Option = { value: string; label: string; count?: number | string };
@@ -27,8 +29,8 @@
 <div role="radiogroup" aria-label={label} tabindex="-1" {onkeydown} class={[
 		'inline-flex max-w-full flex-wrap gap-0.5 self-start rounded-sm p-0.5',
 		surface === 'filled' && 'bg-surface-2',
-		surface === 'bg' && 'border border-border bg-bg',
-		surface === 'surface' && 'border border-border bg-surface',
+		surface === 'bg' && 'bg-bg outline -outline-offset-1 outline-border',
+		surface === 'surface' && 'bg-surface outline -outline-offset-1 outline-border',
 	]}>
 	{#each options as option, index (option.value)}
 		{@const checked = option.value === value}
@@ -39,13 +41,9 @@
 			aria-checked={checked}
 			tabindex={checked ? 0 : -1}
 			onclick={() => choose(option.value)}
-			class={[
-				'inline-flex h-6.5 cursor-pointer items-center gap-1.5 rounded-sm border px-3 text-ui outline-offset-1 pointer-coarse:min-h-11',
-				checked ? 'border-border-strong bg-bg font-medium text-text' : 'border-transparent text-text-2 hover:text-text',
-			]}
+			class="group inline-flex cursor-pointer items-center rounded-sm outline-offset-1 pointer-coarse:min-h-11"
 		>
-			<span>{option.label}</span>
-			{#if option.count !== undefined}<span class="font-mono text-label font-normal text-text-3">{option.count}</span>{/if}
+			<Segment label={option.label} count={option.count} {checked} />
 		</button>
 	{/each}
 </div>

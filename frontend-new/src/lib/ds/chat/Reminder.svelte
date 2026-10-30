@@ -24,7 +24,7 @@
 	let { title, when, due = false, owner, doneLabel, onedit, onsnooze, ondone }: Props = $props();
 </script>
 
-<section class={['flex w-full flex-wrap items-center gap-3 rounded-md border bg-bg px-3.5 py-3', due ? 'border-warning' : 'border-border-strong']}>
+<section class={['flex w-full flex-wrap items-center gap-3 rounded-md bg-bg px-3.5 py-3 outline -outline-offset-1', due ? 'outline-warning' : 'outline-border-strong']}>
 	<span class="inline-flex size-9 shrink-0 items-center justify-center rounded-sm bg-crew-kala-bg text-crew-kala-ink"><Icon icon={due ? BellRing : Bell} size={16} /></span>
 	<span class="flex min-w-0 flex-1 basis-40 flex-col gap-0.75">
 		<span class="text-ui font-medium text-text">{title}</span>

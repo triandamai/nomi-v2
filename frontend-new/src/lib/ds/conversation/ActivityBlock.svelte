@@ -13,8 +13,8 @@
 	let { title, total, state = 'done', files }: Props = $props();
 </script>
 
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border">
-	<header class="flex items-center gap-2 border-b border-border bg-surface px-3 py-2">
+<section class="flex w-full flex-col overflow-hidden rounded-md outline -outline-offset-1 outline-border">
+	<header class="flex items-center gap-2 border-b border-border bg-surface px-3 pt-2 pb-1.75">
 		<span class={['inline-flex', state === 'done' && 'text-accent', state === 'failed' && 'text-danger', state === 'working' && 'animate-spin text-text-2 motion-reduce:animate-none']}>
 			<Icon icon={state === 'done' ? Check : state === 'failed' ? CircleAlert : LoaderCircle} size={14} />
 		</span>

@@ -83,8 +83,8 @@
 
 <!-- Keys work anywhere inside the card; each control is also reachable on its own. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<section class="flex w-full flex-col overflow-hidden rounded-md border border-border-strong bg-bg" aria-labelledby="{id}-title" {onkeydown}>
-	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 py-2.5">
+<section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong" aria-labelledby="{id}-title" {onkeydown}>
+	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
 		<Mascot {agent} size={20} />
 		<p id="{id}-title" class="min-w-0 flex-1 text-ui font-medium text-text">{title}</p>
 		<span class="font-mono text-label text-text-3">{m.clarify_progress({ n: String(step + 1), total: String(questions.length) })}</span>
@@ -99,7 +99,7 @@
 						type="button"
 						aria-current={current ? 'step' : undefined}
 						class={[
-							'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-caption outline-offset-1 pointer-coarse:min-h-11',
+							'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-full border px-2.25 text-caption outline-offset-1 pointer-coarse:min-h-11',
 							current ? 'border-border-strong bg-surface-2 text-text' : 'border-border hover:text-text',
 							!current && (done ? 'text-text-2' : 'text-text-3'),
 						]}
@@ -129,7 +129,7 @@
 			/>
 		{/each}
 		{#if question.other && !question.multiple}
-			<div class="flex items-center gap-3 rounded-sm border border-border-strong py-1.5 pr-1.5 pl-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+			<div class="flex items-center gap-3 rounded-sm border border-border-strong py-1.25 pr-1.25 pl-2.75 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
 				<span aria-hidden="true" class="inline-flex size-5 shrink-0 items-center justify-center rounded-xs bg-surface-2 font-mono text-label text-text-2">{question.options.length + 1}</span>
 				<input
 					bind:this={otherField}
@@ -144,7 +144,7 @@
 			</div>
 		{/if}
 	</div>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 py-2.5">
+	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 basis-48 font-mono text-label text-text-3">
 			{question.multiple
 				? m.clarify_keys_multi({ count: String(answer && 'choices' in answer ? answer.choices.length : 0) })
