@@ -89,6 +89,8 @@ of truth for look, the prototype (`marioprasetyo/nomi-prototype`) for behaviour 
   tests use the stub in `e2e/stub-api.mjs`.
 - Gates, chained so a failure stops the chain:
   `npm run check && npm run test:unit && npm run test:components && npm run build && npm run test:e2e`.
+- `npm run test:coverage` runs unit and component tests together with one merged coverage report
+  (`coverage/`); CI runs it and puts the summary on the run page.
 
 ## i18n
 - Every string the person reads is a message in `messages/en.json` and `messages/id.json`

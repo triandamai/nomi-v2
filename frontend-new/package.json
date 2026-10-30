@@ -16,6 +16,7 @@
 		"test:unit": "npm run i18n && vitest run --project unit",
 		"test:components": "npm run i18n && vitest run --project components",
 		"test": "npm run test:unit && npm run test:components",
+		"test:coverage": "npm run i18n && vitest run --coverage",
 		"test:e2e": "playwright test",
 		"start": "node server.js"
 	},
@@ -35,6 +36,7 @@
 		"@types/node": "26.2.0",
 		"@types/ws": "8.18.1",
 		"@vitest/browser-playwright": "4.1.12",
+		"@vitest/coverage-v8": "4.1.12",
 		"playwright": "1.62.1",
 		"svelte": "5.56.9",
 		"svelte-check": "4.7.6",

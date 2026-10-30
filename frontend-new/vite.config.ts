@@ -39,6 +39,15 @@ export default defineConfig({
 	],
 	test: {
 		expect: { requireAssertions: true },
+		// `npm run test:coverage` runs both projects and merges them into one report: `text` for the
+		// terminal, `json-summary` for CI's job summary, `html` to browse locally.
+		coverage: {
+			provider: 'v8',
+			include: ['src/**/*.{ts,svelte}', 'ws-proxy/**/*.js', 'server.js'],
+			exclude: ['src/lib/paraglide/**', '**/*.test.ts', '**/*.test.js', '**/*.d.ts'],
+			reporter: ['text-summary', 'json-summary', 'html'],
+			reportsDirectory: './coverage',
+		},
 		projects: [
 			{
 				// Pure TypeScript and server code: no DOM.
