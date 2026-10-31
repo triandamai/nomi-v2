@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -143,6 +144,8 @@ class NomiNavigationTest {
 
     @Test
     fun onAShortWindowTheBrandNewChatAndFootStayWhileTheMiddleScrolls() {
+        var openedSettings = false
+        var loggedOut = false
         val items = listOf(
             NomiNavItem("home", "Home", NomiIcons.Home),
             NomiNavItem("chats", "Chats", NomiIcons.Chat),
@@ -165,6 +168,8 @@ class NomiNavigationTest {
                     onSeeAllChats = {},
                     usage = NomiUsageBrief(planName = "Free", tokensUsed = 80_000, monthlyTokens = 1_000_000, canUpgrade = false),
                     account = NomiAccount(displayName = "Ada Lovelace", email = "ada@nomi.test"),
+                    onOpenSettings = { openedSettings = true },
+                    onLogOut = { loggedOut = true },
                 )
             }
         }
@@ -181,5 +186,9 @@ class NomiNavigationTest {
         rule.onNodeWithText("New chat").assertIsDisplayed()
         rule.onNodeWithText("Free").assertIsDisplayed()
         rule.onNodeWithText("Ada Lovelace").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Settings").assertIsDisplayed().performClick()
+        rule.onNodeWithText("Log out").assertIsDisplayed().performClick()
+        assertTrue(openedSettings)
+        assertTrue(loggedOut)
     }
 }

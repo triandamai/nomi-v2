@@ -145,6 +145,9 @@ private const val ITEM_LABEL_WEIGHT = 600
 private const val ITEM_ACTIVE_WEIGHT = 700
 private const val FILL = 1f
 private val BrandMarkSize = 40.dp
+private val FooterIconSize = 20.dp
+private val FooterRowPadding = 14.dp
+private val FooterRowGap = 12.dp
 
 /**
  * The complete navigation drawer content matching web's `Sidebar.svelte`:
@@ -152,7 +155,7 @@ private val BrandMarkSize = 40.dp
  * 2. `+ New chat` hero gradient button
  * 3. Scrollable navigation list + collapsible Recents section
  * 4. Usage progress meter (tokens used / plan allowance)
- * 5. Account avatar with display name and tap action
+ * 5. Account avatar with display name and tap action, a settings button and Log out
  */
 @Composable
 fun <K> NomiNavDrawerContent(
@@ -173,6 +176,8 @@ fun <K> NomiNavDrawerContent(
     account: NomiAccount? = null,
     onOpenAccount: (() -> Unit)? = null,
     onAccountMenuItemClick: ((NomiAccountMenuItem) -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
+    onLogOut: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
 
@@ -367,35 +372,42 @@ fun <K> NomiNavDrawerContent(
                 var accountMenuExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
                 Box(Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(CircleShape)
-                            .semantics(mergeDescendants = true) {}
-                            .clickable {
-                                if (onAccountMenuItemClick != null) {
-                                    accountMenuExpanded = true
-                                } else {
-                                    onOpenAccount?.invoke()
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier
+                                .weight(FILL)
+                                .clip(CircleShape)
+                                .semantics(mergeDescendants = true) {}
+                                .clickable {
+                                    if (onAccountMenuItemClick != null) {
+                                        accountMenuExpanded = true
+                                    } else {
+                                        onOpenAccount?.invoke()
+                                    }
                                 }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        ai.nomi.designsystem.component.NomiAvatar(
-                            name = label,
-                            avatarUrl = account?.avatarUrl,
-                            size = 36.dp,
-                        )
-                        if (!collapsed) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = colors.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            ai.nomi.designsystem.component.NomiAvatar(
+                                name = label,
+                                avatarUrl = account?.avatarUrl,
+                                size = 36.dp,
                             )
+                            if (!collapsed) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = colors.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        if (!collapsed && onOpenSettings != null) {
+                            IconButton(onClick = onOpenSettings) {
+                                NomiIcon(NomiIcons.Settings, contentDescription = "Settings", tint = colors.onSurfaceVariant, size = FooterIconSize)
+                            }
                         }
                     }
 
@@ -430,6 +442,28 @@ fun <K> NomiNavDrawerContent(
                     }
                 }
             }
+
+            if (footer == null && !collapsed && onLogOut != null) {
+                val colors = MaterialTheme.colorScheme
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(ItemHeight)
+                        .clip(CircleShape)
+                        .semantics(mergeDescendants = true) {}
+                        .clickable(onClick = onLogOut)
+                        .padding(horizontal = FooterRowPadding),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(FooterRowGap),
+                ) {
+                    NomiIcon(NomiIcons.Logout, contentDescription = null, tint = colors.onSurfaceVariant, size = FooterIconSize)
+                    Text(
+                        text = "Log out",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
@@ -455,6 +489,8 @@ fun <K> NomiSidebar(
     account: NomiAccount? = null,
     onOpenAccount: (() -> Unit)? = null,
     onAccountMenuItemClick: ((NomiAccountMenuItem) -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
+    onLogOut: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
     val width by animateDpAsState(if (collapsed) RailWidth else SidebarWidth, MaterialTheme.motionScheme.defaultSpatialSpec())
@@ -479,6 +515,8 @@ fun <K> NomiSidebar(
             account = account,
             onOpenAccount = onOpenAccount,
             onAccountMenuItemClick = onAccountMenuItemClick,
+            onOpenSettings = onOpenSettings,
+            onLogOut = onLogOut,
             footer = footer,
         )
     }
