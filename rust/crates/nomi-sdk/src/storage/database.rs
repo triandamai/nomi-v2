@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn a_read_only_transaction_notifies_nobody() {
         let (_dir, database) = open();
-        let mut versions = database.watch_versions();
+        let versions = database.watch_versions();
         database.write(|_| Ok(())).unwrap();
         assert!(!versions.has_changed().unwrap());
     }
