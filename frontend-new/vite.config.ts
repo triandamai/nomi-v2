@@ -6,6 +6,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 import { devWsProxy } from './vite-plugins/dev-ws-proxy.ts';
+import { dsApi } from './src/lib/docs/api/plugin.ts';
 import { appVersion } from './app-version.js';
 
 const version = appVersion();
@@ -30,6 +31,8 @@ export default defineConfig({
 		}),
 		// The live-update relay (ws-proxy), the same one server.js runs in production.
 		devWsProxy({ clientVersion: version }),
+		// virtual:ds-api: every component's props and relations, read from source for the docs.
+		dsApi(),
 		sveltekit({
 			compilerOptions: {
 				// Runes everywhere except in libraries. Can be removed in Svelte 6.
@@ -40,7 +43,9 @@ export default defineConfig({
 			outDir: galleryStatic ? '.svelte-kit-gallery' : '.svelte-kit',
 			// Share hosts can reserve names starting with `_`, so the static gallery keeps its assets in app/.
 			appDir: galleryStatic ? 'app' : '_app',
-			prerender: galleryStatic ? { crawl: false, entries: ['/design-system/nomi', '/design-system/chat', '/design-system/build'], handleUnseenRoutes: 'ignore' } : undefined,
+			// Every design-system page: the docs, the sheets, and (through their `entries`) each
+			// component and pattern. Links there end in .html, so nothing is found by crawling.
+			prerender: galleryStatic ? { crawl: false, entries: ['*'], handleUnseenRoutes: 'ignore' } : undefined,
 			// SvelteKit's own update check follows the same version: after a deploy, the next
 			// navigation loads the new build.
 			version: { name: version, pollInterval: 5 * 60_000 },
