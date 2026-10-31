@@ -48,6 +48,16 @@ pub enum RealtimeEvent {
         session_id: String,
         title: String,
     },
+    /// Messages left the chat (deleted on any device, replaced when a turn ran again, or a failed
+    /// run's error cleared by a retry).
+    MessagesDeleted {
+        session_id: String,
+        message_ids: Vec<String>,
+    },
+    /// The whole chat was deleted.
+    SessionDeleted {
+        session_id: String,
+    },
     PersonalityChanged {
         session_id: String,
     },
@@ -113,6 +123,10 @@ pub enum RealtimeEvent {
         project_id: Option<String>,
         title: Option<String>,
     },
+    /// One of the person's chats was deleted, on any device.
+    ChatDeleted {
+        session_id: String,
+    },
 
     Unknown {
         kind: Option<String>,
@@ -144,6 +158,10 @@ enum ChatWire {
     SessionRenamed {
         title: String,
     },
+    MessagesDeleted {
+        message_ids: Vec<String>,
+    },
+    SessionDeleted,
     PersonalityChanged,
     AgentDelegationUpdated {
         delegation_id: String,
@@ -193,6 +211,9 @@ enum UserWire {
         session_id: String,
         project_id: Option<String>,
         title: Option<String>,
+    },
+    ChatDeleted {
+        session_id: String,
     },
 }
 
@@ -254,6 +275,11 @@ fn decode_known(topic: &str, payload: &Value) -> Option<RealtimeEvent> {
             ChatWire::SessionRenamed { title } => {
                 RealtimeEvent::SessionRenamed { session_id, title }
             }
+            ChatWire::MessagesDeleted { message_ids } => RealtimeEvent::MessagesDeleted {
+                session_id,
+                message_ids: message_ids.iter().map(|id| id.to_lowercase()).collect(),
+            },
+            ChatWire::SessionDeleted => RealtimeEvent::SessionDeleted { session_id },
             ChatWire::PersonalityChanged => RealtimeEvent::PersonalityChanged { session_id },
             ChatWire::AgentDelegationUpdated { delegation_id } => {
                 RealtimeEvent::AgentDelegationUpdated {
@@ -355,6 +381,9 @@ fn decode_known(topic: &str, payload: &Value) -> Option<RealtimeEvent> {
             session_id: session_id.to_lowercase(),
             project_id,
             title,
+        },
+        UserWire::ChatDeleted { session_id } => RealtimeEvent::ChatDeleted {
+            session_id: session_id.to_lowercase(),
         },
     })
 }
@@ -513,5 +542,34 @@ mod tests {
             decode(CHAT, &json!("not an object")),
             RealtimeEvent::Unknown { kind: None, .. }
         ));
+    }
+
+    #[test]
+    fn decodes_deletes_from_the_chat_and_the_person() {
+        assert_eq!(
+            decode(
+                CHAT,
+                &json!({ "kind": "MessagesDeleted", "message_ids": ["M1", "m2"] })
+            ),
+            RealtimeEvent::MessagesDeleted {
+                session_id: SESSION.into(),
+                message_ids: vec!["m1".into(), "m2".into()],
+            }
+        );
+        assert_eq!(
+            decode(CHAT, &json!({ "kind": "SessionDeleted" })),
+            RealtimeEvent::SessionDeleted {
+                session_id: SESSION.into()
+            }
+        );
+        assert_eq!(
+            decode(
+                USER_TOPIC,
+                &json!({ "kind": "ChatDeleted", "session_id": "S9" })
+            ),
+            RealtimeEvent::ChatDeleted {
+                session_id: "s9".into()
+            }
+        );
     }
 }

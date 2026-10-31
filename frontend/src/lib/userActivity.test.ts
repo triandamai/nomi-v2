@@ -115,6 +115,16 @@ describe("the person's activity feed", () => {
 		expect(shown).toHaveLength(1);
 	});
 
+	it('tells chat lists when a chat was deleted on another device', async () => {
+		const { connectUserActivity, onChatsChanged } = await import('./userActivity');
+		connectUserActivity();
+		const changed: string[] = [];
+		onChatsChanged((sessionId) => changed.push(sessionId));
+		FakeSocket.all[0].emit('message', { data: JSON.stringify({ kind: 'ChatDeleted', session_id: 's4' }) });
+		expect(changed).toEqual(['s4']);
+		expect(shown).toEqual([]);
+	});
+
 	it('reconnects when the feed drops, but not once signed out', async () => {
 		const { connectUserActivity } = await import('./userActivity');
 		connectUserActivity();

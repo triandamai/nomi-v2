@@ -724,7 +724,7 @@
 			}
 		},
 		message(data) {
-			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string };
+			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string; message_ids?: string[] };
 			try {
 				envelope = JSON.parse(String(data));
 			} catch {
@@ -756,6 +756,14 @@
 				refreshPlans(); // a build starting or ending moves its plan on
 			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
 				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
+			} else if (envelope.kind === 'MessagesDeleted') {
+				// Deleted here or on another device, or replaced when a turn ran again.
+				const gone = new Set(envelope.message_ids ?? []);
+				localMessages = localMessages.filter((message) => !gone.has(message.id));
+			} else if (envelope.kind === 'SessionDeleted') {
+				// The chat was deleted, on this device or another: leave it, as deleting it here does.
+				link.follow(null);
+				void goto('/chats', { replaceState: true });
 			} else if (envelope.kind === 'AgentPhaseChanged') {
 				if (typeof envelope.phase === 'string' && !stopRequested) {
 					currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };

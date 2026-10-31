@@ -29,6 +29,12 @@ export interface ChatUpdated {
 	title: string | null;
 }
 
+/** One of the person's chats was deleted, on any device (backend: nomi_realtime::UserEnvelope::ChatDeleted). */
+export interface ChatDeleted {
+	kind: 'ChatDeleted';
+	session_id: string;
+}
+
 /** A new item in the person's inbox (backend: nomi_realtime::UserEvent::NotificationCreated). */
 export interface NotificationCreated {
 	kind: 'NotificationCreated';
@@ -39,11 +45,11 @@ export interface NotificationCreated {
 	link: string | null;
 }
 
-type UserEvent = ChatActivity | ChatUpdated | NotificationCreated;
+type UserEvent = ChatActivity | ChatUpdated | ChatDeleted | NotificationCreated;
 
 const chatsChanged = new Set<(sessionId: string) => void>();
 
-/** Calls `listener` with a chat's id whenever that chat moved on; returns the function that stops it. */
+/** Calls `listener` with a chat's id whenever that chat moved on or was deleted; returns the function that stops it. */
 export function onChatsChanged(listener: (sessionId: string) => void): () => void {
 	chatsChanged.add(listener);
 	return () => chatsChanged.delete(listener);
@@ -69,7 +75,7 @@ export function handleActivity(event: UserEvent) {
 		notificationArrived({ id: event.notification_id, title: event.title, body: event.body, link: event.link });
 		return;
 	}
-	if (event.kind === 'ChatUpdated' || event.kind === 'ChatActivity') {
+	if (event.kind === 'ChatUpdated' || event.kind === 'ChatActivity' || event.kind === 'ChatDeleted') {
 		for (const listener of chatsChanged) listener(event.session_id);
 	}
 	if (event.kind !== 'ChatActivity') return;

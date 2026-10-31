@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use nomi_llm::{PartialBlock, StopReason, StreamEvent};
-use nomi_realtime::StreamEnvelope;
+use nomi_realtime::{StreamEnvelope, UserEnvelope};
 
 #[test]
 fn a_delta_envelope_round_trips_through_json() {
@@ -43,4 +43,14 @@ fn a_text_delta_event_carries_its_text_through_json() {
     let json = serde_json::to_string(&envelope).unwrap();
     let round_tripped: StreamEnvelope = serde_json::from_str(&json).unwrap();
     assert_eq!(round_tripped, envelope);
+}
+
+#[test]
+fn deletes_go_out_in_the_shape_the_apps_read() {
+    let id = Uuid::nil();
+    let deleted = serde_json::to_value(StreamEnvelope::MessagesDeleted { message_ids: vec![id] }).unwrap();
+    assert_eq!(deleted, serde_json::json!({ "kind": "MessagesDeleted", "message_ids": [id] }));
+    assert_eq!(serde_json::to_value(StreamEnvelope::SessionDeleted).unwrap(), serde_json::json!({ "kind": "SessionDeleted" }));
+    let chat = serde_json::to_value(UserEnvelope::ChatDeleted { session_id: id }).unwrap();
+    assert_eq!(chat, serde_json::json!({ "kind": "ChatDeleted", "session_id": id }));
 }
