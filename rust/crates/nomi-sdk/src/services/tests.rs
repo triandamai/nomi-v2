@@ -822,3 +822,23 @@ async fn changes_a_projects_settings() {
         .unwrap();
     h.sdk.delete_project("p".into()).await.unwrap();
 }
+
+#[tokio::test]
+async fn shares_a_reply_as_the_webs_dialog_does_by_default() {
+    let h = Harness::new().await;
+    Mock::given(method("POST"))
+        .and(path("/api/sessions/s1/shares"))
+        .and(body_json(json!({
+            "scope": "reply", "message_id": "m2", "mask": true, "anyone": true, "expires_in_days": 7
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "id": "sh1", "token": "Ab12", "scope": "reply", "message_id": "m2", "mask": true, "anyone": true,
+            "expires_at": null, "preview": "Here's a plan", "preview_by": "Nomi", "chat_messages": 2
+        })))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    let link = h.sdk.share_reply("s1".into(), "m2".into()).await.unwrap();
+    assert_eq!(link.token, "Ab12");
+}

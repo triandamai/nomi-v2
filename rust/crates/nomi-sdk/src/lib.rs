@@ -51,6 +51,7 @@ pub use services::projects::{
 pub use services::reminders::{
     NewReminder, Reminder, ReminderAction, RemindersOverview, ScheduledTask,
 };
+pub use services::shares::ShareLink;
 pub use storage::models::{
     AgentActivity, DatabaseStatus, Draft, Message, MessageCursor, MessagePage, NotificationItem,
     OutboxEntry, OutboxOperation, OutboxState, Session, SessionFilter,

@@ -6,7 +6,7 @@ use crate::storage::database::{Table, Tx};
 use crate::storage::models::{Message, MessageCursor, MessagePage, STATUS_SENT};
 
 const COLUMNS: &str =
-    "id, session_id, role, agent_type, agent_display_name, content, content_json, created_at, status";
+    "id, session_id, role, agent_type, agent_display_name, content, content_json, created_at, status, my_feedback, steps_json";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Message> {
     Ok(Message {
@@ -19,17 +19,20 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Message> {
         content_json: row.get(6)?,
         created_at: row.get(7)?,
         status: row.get(8)?,
+        my_feedback: row.get(9)?,
+        steps_json: row.get(10)?,
     })
 }
 
 pub(crate) fn upsert(tx: &mut Tx<'_>, messages: &[Message]) -> Result<(), NomiError> {
     let connection = tx.writes(Table::Messages);
     let mut statement = connection.prepare_cached(&format!(
-        "INSERT INTO messages ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO messages ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, role = excluded.role,
              agent_type = excluded.agent_type, agent_display_name = excluded.agent_display_name,
              content = excluded.content, content_json = excluded.content_json,
-             created_at = excluded.created_at, status = excluded.status"
+             created_at = excluded.created_at, status = excluded.status,
+             my_feedback = excluded.my_feedback, steps_json = excluded.steps_json"
     ))?;
     for message in messages {
         statement.execute(params![
@@ -41,7 +44,9 @@ pub(crate) fn upsert(tx: &mut Tx<'_>, messages: &[Message]) -> Result<(), NomiEr
             message.content,
             message.content_json,
             message.created_at,
-            message.status
+            message.status,
+            message.my_feedback,
+            message.steps_json
         ])?;
     }
     Ok(())
@@ -50,6 +55,19 @@ pub(crate) fn upsert(tx: &mut Tx<'_>, messages: &[Message]) -> Result<(), NomiEr
 pub(crate) fn delete(tx: &mut Tx<'_>, id: &str) -> Result<(), NomiError> {
     tx.writes(Table::Messages)
         .execute("DELETE FROM messages WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// The person's rating of a reply: `up`, `down`, or none.
+pub(crate) fn set_feedback(
+    tx: &mut Tx<'_>,
+    id: &str,
+    rating: Option<&str>,
+) -> Result<(), NomiError> {
+    tx.writes(Table::Messages).execute(
+        "UPDATE messages SET my_feedback = ?2 WHERE id = ?1",
+        params![id, rating],
+    )?;
     Ok(())
 }
 

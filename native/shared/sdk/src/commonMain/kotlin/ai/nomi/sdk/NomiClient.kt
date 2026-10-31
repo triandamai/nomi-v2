@@ -117,6 +117,21 @@ interface NomiClient {
     /** Approves or denies a pending approval card; [NomiException.Http] 409 when no longer pending. */
     suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean)
 
+    /**
+     * Rates a reply (`up` or `down`); null takes the rating back. A thumbs-down may say what went wrong ([reasons],
+     * [note]) and whether the whole chat goes with it.
+     */
+    suspend fun rateMessage(sessionId: String, messageId: String, rating: String?, reasons: List<String>, note: String?, includeChat: Boolean)
+
+    /** Deletes a message with its replies and what its turn made. */
+    suspend fun deleteMessage(sessionId: String, messageId: String)
+
+    /** Asks for a reply again: `again`, `shorter`, `longer` or `list`. */
+    suspend fun regenerateMessage(sessionId: String, messageId: String, style: String)
+
+    /** A share link to one reply. */
+    suspend fun shareReply(sessionId: String, messageId: String): ShareLink
+
     /** Refetches the inbox's first page. */
     suspend fun refreshNotifications()
 

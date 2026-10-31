@@ -29,6 +29,10 @@ fun desktopApiUrl(): String =
 @Composable
 actual fun rememberReducedMotion(): Boolean = false
 
+/** Desktop has no share sheet: a shared link is copied. */
+@Composable
+actual fun rememberShareText(): ((String) -> Unit)? = null
+
 fun desktopPlatformModule(apiUrl: String = desktopApiUrl()): Module = module {
     val dataDir = desktopDataDir()
     single { ApiConfig(apiUrl) }

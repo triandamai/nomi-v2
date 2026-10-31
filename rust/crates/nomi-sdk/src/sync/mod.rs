@@ -411,6 +411,8 @@ impl Shared {
             agent_display_name: None,
             content: text,
             content_json: None,
+            my_feedback: None,
+            steps_json: None,
             created_at: now,
             status: STATUS_SENDING.to_owned(),
         };
@@ -439,6 +441,65 @@ impl Shared {
         self.api
             .resolve_approval(session_id, message_id, approve, remember)
             .await
+    }
+
+    /// Rates a reply on the backend, then here. `None` takes the rating back.
+    pub async fn rate_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        rating: Option<String>,
+        reasons: Vec<String>,
+        note: Option<String>,
+        include_chat: bool,
+    ) -> Result<(), NomiError> {
+        self.ensure_owner()?;
+        self.api
+            .rate_message(
+                session_id,
+                message_id,
+                rating.as_deref(),
+                &reasons,
+                note.as_deref(),
+                include_chat,
+            )
+            .await?;
+        let id = message_id.to_lowercase();
+        self.store
+            .write(move |tx| messages::set_feedback(tx, &id, rating.as_deref()))
+            .await
+    }
+
+    /// Deletes a message on the backend, then the messages that went with it here.
+    pub async fn delete_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<(), NomiError> {
+        self.ensure_owner()?;
+        let deleted = self.api.delete_message(session_id, message_id).await?;
+        self.store
+            .write(move |tx| {
+                for id in &deleted.message_ids {
+                    messages::delete(tx, &id.to_lowercase())?;
+                }
+                Ok(())
+            })
+            .await
+    }
+
+    /// Asks for a reply again; the old reply goes and the new one streams in.
+    pub async fn regenerate_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        style: &str,
+    ) -> Result<(), NomiError> {
+        self.ensure_owner()?;
+        self.api
+            .regenerate_message(session_id, message_id, style)
+            .await?;
+        self.refresh_messages(session_id).await
     }
 
     // Notifications

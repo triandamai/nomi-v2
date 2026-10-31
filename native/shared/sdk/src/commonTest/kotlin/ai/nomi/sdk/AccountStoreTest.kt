@@ -43,7 +43,7 @@ class AccountStoreTest {
 
     private fun message(id: String, sessionId: String, createdAt: Long) = Message(
         id = id, sessionId = sessionId, role = "user", agentType = null, agentDisplayName = null,
-        content = "text $id", contentJson = null, createdAt = createdAt, status = "sent",
+        content = "text $id", contentJson = null, createdAt = createdAt, status = "sent", myFeedback = null, stepsJson = null,
     )
 
     private val everything = SessionFilter(search = null, unreadOnly = false, limit = ALL)

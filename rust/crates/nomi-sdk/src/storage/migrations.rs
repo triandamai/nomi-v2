@@ -85,6 +85,12 @@ const MIGRATIONS: &[&str] = &[
         value INTEGER NOT NULL
     );
     ",
+    // 3: what the person thought of a reply (`up`/`down`) and what the crew did on the way to it
+    // (the server's steps JSON array), as the reply's actions and its activity line show them.
+    "
+    ALTER TABLE messages ADD COLUMN my_feedback TEXT;
+    ALTER TABLE messages ADD COLUMN steps_json TEXT;
+    ",
 ];
 
 /// The version a fully migrated database reports.

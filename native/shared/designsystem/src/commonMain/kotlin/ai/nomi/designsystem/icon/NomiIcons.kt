@@ -113,6 +113,22 @@ object NomiIcons {
     val Voice = glyph(rect(9f, 3f, 6f, 11f, 3f), "M5 11a7 7 0 0 0 14 0M12 18v3")
     val Spreadsheet = glyph(rect(3f, 3f, 18f, 18f, 2f), "M3 9h18M3 15h18M9 3v18")
     val Presentation = glyph(rect(2f, 3f, 20f, 13f, 2f), "M12 16v5M8 21h8")
+
+    // A reply's actions and activity (`ResponseActions.svelte`, `ActivityDisclosure.svelte`), Lucide's shapes.
+    val ThumbsUp = glyph(
+        "M7 10v12",
+        "M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8a2 2 0 0 1-1.9 1.4H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9z",
+    )
+    val ThumbsDown = glyph(
+        "M17 14V2",
+        "M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.8a2 2 0 0 0-1.8 1.1L12 22a3.1 3.1 0 0 1-3-3.9z",
+    )
+    val Share = glyph(circle(18f, 5f, 3f), circle(6f, 12f, 3f), circle(18f, 19f, 3f), "M8.6 13.5l6.8 4M15.4 6.5l-6.8 4")
+    val Lightbulb = glyph(
+        "M9 18h6M10 21h4",
+        "M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z",
+    )
+    val Alert = glyph(circle(12f, 12f, 9f), "M12 8v4M12 16h.01")
 }
 
 /**

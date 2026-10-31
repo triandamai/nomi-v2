@@ -24,6 +24,10 @@ private const val APPROVAL_FAILED = "Failed to record your decision."
 
 private const val MESSAGE_RETRY_FAILED = "Couldn't retry that message. Try again."
 private const val MESSAGE_DISCARD_FAILED = "Couldn't remove that message. Try again."
+private const val FEEDBACK_FAILED = "Couldn't save your feedback. Try again."
+private const val DELETE_FAILED = "Couldn't delete it. Try again."
+private const val REGENERATE_FAILED = "Couldn't ask again. Try again in a moment."
+private const val SHARE_FAILED = "Couldn't make the link. Try again."
 
 /** The backend's answer to a decision on a card that is no longer pending. */
 private const val HTTP_CONFLICT = 409
@@ -97,6 +101,65 @@ class ChatViewModel(
 
     private fun setApproval(messageId: String, state: ApprovalState) {
         mutableApprovals.update { it + (messageId to state) }
+    }
+
+    private val mutableFeedback = MutableStateFlow<Map<String, ReplyFeedbackState>>(emptyMap())
+
+    /** Each reply's feedback beyond its stored rating (the "what went wrong" form, the thanks), by message id. */
+    val feedback: StateFlow<Map<String, ReplyFeedbackState>> = mutableFeedback.asStateFlow()
+
+    private fun setFeedback(messageId: String, change: (ReplyFeedbackState) -> ReplyFeedbackState) {
+        mutableFeedback.update { it + (messageId to change(it[messageId] ?: ReplyFeedbackState())) }
+    }
+
+    /** Rates a reply, or takes the rating back with null; a thumbs-down then asks what went wrong. */
+    fun rate(messageId: String, rating: String?) {
+        setFeedback(messageId) { ReplyFeedbackState(dislikeOpen = rating == RATING_DOWN) }
+        replyAction(FEEDBACK_FAILED) { chats.rate(sessionId, messageId, rating) }
+    }
+
+    fun closeDislike(messageId: String) = setFeedback(messageId) { it.copy(dislikeOpen = false) }
+
+    fun sendDislike(messageId: String, dislike: Dislike) {
+        setFeedback(messageId) { it.copy(sending = true) }
+        viewModelScope.launch {
+            val sent = attemptOr(FEEDBACK_FAILED) {
+                chats.rate(sessionId, messageId, RATING_DOWN, dislike.reasons.map { it.wire }, dislike.note.ifEmpty { null }, dislike.includeChat)
+            }
+            setFeedback(messageId) { if (sent) ReplyFeedbackState(sentWithChat = dislike.includeChat) else it.copy(sending = false) }
+        }
+    }
+
+    fun deleteReply(messageId: String) = replyAction(DELETE_FAILED) { chats.delete(sessionId, messageId) }
+
+    fun regenerate(messageId: String, style: RegenerateStyle) = replyAction(REGENERATE_FAILED) { chats.regenerate(sessionId, messageId, style.wire) }
+
+    /** Makes a link to the reply and hands it to [deliver] (the share sheet, or the clipboard). */
+    fun shareReply(messageId: String, deliver: (String?) -> Unit) {
+        viewModelScope.launch {
+            var link: String? = null
+            attemptOr(SHARE_FAILED) { link = chats.shareLink(sessionId, messageId) }
+            deliver(link)
+        }
+    }
+
+    private fun replyAction(failure: String, action: suspend () -> Unit) {
+        viewModelScope.launch { attemptOr(failure, action) }
+    }
+
+    /** Runs [action]; a failure shows [failure] over the composer. Returns whether it worked. */
+    private suspend fun attemptOr(failure: String, action: suspend () -> Unit): Boolean {
+        mutableComposer.value = mutableComposer.value.copy(error = null)
+        return try {
+            action()
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log("chat: reply action failed: $e")
+            mutableComposer.value = mutableComposer.value.copy(error = failure)
+            false
+        }
     }
 
     /** Sends a message that wasn't sent again. */

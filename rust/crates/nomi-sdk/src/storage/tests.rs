@@ -58,6 +58,8 @@ fn message(id: &str, session_id: &str, created_at: i64) -> Message {
         agent_display_name: None,
         content: format!("text {id}"),
         content_json: None,
+        my_feedback: None,
+        steps_json: None,
         created_at,
         status: "sent".into(),
     }

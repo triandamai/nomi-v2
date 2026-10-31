@@ -15,4 +15,10 @@ class ApiConfigTest {
         assertEquals("http://localhost:8080", ApiConfig("http://localhost:8080").baseUrl)
         assertEquals("https://nomi.example/base", ApiConfig("https://nomi.example/base").baseUrl)
     }
+
+    @Test
+    fun theWebAppIsTheApisHostWithoutItsPrefix() {
+        assertEquals("https://nomi.trian.space", ApiConfig("https://api-nomi.trian.space").webUrl)
+        assertEquals("http://localhost:8080", ApiConfig("http://localhost:8080/").webUrl)
+    }
 }

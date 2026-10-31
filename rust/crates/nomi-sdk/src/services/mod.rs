@@ -12,6 +12,7 @@ pub(crate) mod money;
 pub(crate) mod project_tools;
 pub(crate) mod projects;
 pub(crate) mod reminders;
+pub(crate) mod shares;
 #[cfg(test)]
 mod tests;
 

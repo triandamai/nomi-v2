@@ -31,6 +31,7 @@ import ai.nomi.feature.chats.ChatsViewModel
 import ai.nomi.feature.home.HomeViewModel
 import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
+import ai.nomi.network.ApiConfig
 import ai.nomi.network.ConnectionsApi
 import ai.nomi.network.HomeApi
 import ai.nomi.network.MemoryApi
@@ -99,7 +100,7 @@ val coreModule: Module = module {
     single { SessionRepository(get()) }
     single { NotificationRepository(get()) }
     single { ActivityRepository(get()) }
-    single { ChatRepository(get(), get(), session = get(), log = ::appLog) }
+    single { ChatRepository(get(), get(), session = get(), log = ::appLog, webUrl = get<ApiConfig>().webUrl) }
     single { MoneyRepository(get(), get()) }
     single { RemindersRepository(get(), get()) }
     single { MemoryRepository(get(), get()) }

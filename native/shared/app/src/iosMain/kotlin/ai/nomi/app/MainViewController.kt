@@ -29,6 +29,10 @@ private var koinStarted = false
 @Composable
 actual fun rememberReducedMotion(): Boolean = remember { UIAccessibilityIsReduceMotionEnabled() }
 
+/** Not wired to UIActivityViewController yet: a shared link is copied. */
+@Composable
+actual fun rememberShareText(): ((String) -> Unit)? = null
+
 fun iosPlatformModule(): Module = module {
     val apiUrl = requireNotNull((NSBundle.mainBundle.objectForInfoDictionaryKey(API_URL_PLIST_KEY) as? String)?.takeIf { it.isNotBlank() }) {
         "Info.plist has no $API_URL_PLIST_KEY: set the NOMI_API_URL build setting"
