@@ -27,3 +27,14 @@ test('hydrates: the sheet links, the theme and the controls work', async ({ page
 	await expect(page).toHaveURL(/\/shared\/nomi-ds\/design-system\/chat\.html$/);
 	await expect(page.getByRole('heading', { level: 1, name: 'Everything Nomi can put in a reply' })).toBeVisible();
 });
+
+test('loads nothing from other hosts, so it works where only its own files are allowed', async ({ page }) => {
+	const elsewhere: string[] = [];
+	page.on('request', (request) => {
+		if (!request.url().startsWith('http://127.0.0.1:4181/') && !request.url().startsWith('data:')) elsewhere.push(request.url());
+	});
+	for (const sheet of ['nomi', 'chat', 'build']) {
+		await page.goto(at(`design-system/${sheet}.html`), { waitUntil: 'networkidle' });
+	}
+	expect(elsewhere).toEqual([]);
+});
