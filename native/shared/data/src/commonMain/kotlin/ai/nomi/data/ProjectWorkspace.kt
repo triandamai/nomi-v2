@@ -21,9 +21,15 @@ data class ProjectInfo(
     val sessionId: String,
     val orgName: String,
     val openIssues: Long,
-)
+    /** `drizzle` or `relay`: where the app keeps its data. */
+    val backend: String = DEFAULT_BACKEND,
+) {
+    val relay: Boolean get() = backend == RELAY_BACKEND
+}
 
-/** One publish. [status] is `queued`, `building`, `deploying`, `live`, `failed` or `superseded`. */
+private const val DEFAULT_BACKEND = "drizzle"
+
+/** One publish. [status] is `running`, `succeeded` or `failed`. */
 data class ProjectPublishInfo(
     val id: String,
     val status: String,
@@ -45,7 +51,7 @@ data class ProjectDeployInfo(
     val publishing: Boolean get() = publishes.firstOrNull()?.status in IN_FLIGHT
 
     private companion object {
-        val IN_FLIGHT = setOf("queued", "building", "deploying")
+        val IN_FLIGHT = setOf("running")
     }
 }
 
@@ -154,7 +160,129 @@ private fun ai.nomi.sdk.ProjectDetail.toInfo() = ProjectInfo(
     sessionId = sessionId,
     orgName = orgName,
     openIssues = openIssues,
+    backend = backend,
 )
 
 private fun ai.nomi.sdk.ProjectIssue.toInfo() =
     ProjectIssueInfo(number, title, body, kind, severity, status == ISSUES_OPEN, createdBy, createdAt)
+
+/** The project's production address; [hostname] is null until the first publish gives it one. */
+data class ProjectAddress(val hostname: String?, val subdomain: String?, val url: String?, val canEdit: Boolean)
+
+/** Whether a name is free; when not, why and free names ([suggestions] are subdomains) instead. */
+data class AddressCheck(val available: Boolean, val hostname: String?, val message: String?, val suggestions: List<String>)
+
+/** A rename's outcome: the new hostname, or why it was refused. */
+sealed interface AddressChange {
+    data class Changed(val hostname: String) : AddressChange
+    data class Refused(val check: AddressCheck) : AddressChange
+}
+
+data class ContainerStat(val service: String, val cpuPercent: Double?, val memoryBytes: Long?, val memoryLimitBytes: Long?)
+
+/** Traffic totals for a period; null where the backend can't tell. */
+data class TrafficTotals(val visitors: Double?, val requests: Double?, val errors5xx: Double?, val errors4xx: Double?, val p50Ms: Double?, val p95Ms: Double?)
+
+/** Production's traffic over [range], requests per bucket for a spark line, against the period before. */
+data class ProjectTrafficInfo(val range: String, val requestsPerBucket: List<Double>, val totals: TrafficTotals, val previous: TrafficTotals)
+
+/** How production is doing: its containers, traffic and latest log lines. */
+data class ProjectHealth(val containers: List<ContainerStat>, val traffic: ProjectTrafficInfo?, val logLines: List<String>, val logNote: String?)
+
+data class DataTable(val name: String, val rows: Long?, val detail: String?)
+
+/** A project's data: its tables, or a Relay backend still being set up ([setupState], [setupError]). */
+data class ProjectData(val relay: Boolean, val tables: List<DataTable>, val setupState: String?, val setupError: String?)
+
+data class DataQueryResult(val columns: List<String>, val rows: List<List<String?>>, val truncated: Boolean, val rowsAffected: Long?, val tookMs: Double)
+
+data class ShowcaseInfo(val showcase: Boolean, val blurb: String?, val canEdit: Boolean)
+
+data class TransferTarget(val id: String, val name: String, val personal: Boolean, val ownerName: String?)
+
+private const val RELAY_BACKEND = "relay"
+
+/** A project's tools: its address, production's health, its data, and its settings. All online. */
+class ProjectToolsRepository(private val engine: NomiEngine) {
+    suspend fun address(projectId: String): ProjectAddress = translated {
+        engine.get().projectDomain(projectId).let { ProjectAddress(it.hostname, it.subdomain, it.url, it.canEdit) }
+    }
+
+    suspend fun checkAddress(projectId: String, subdomain: String): AddressCheck =
+        translated { engine.get().checkProjectDomain(projectId, subdomain).toCheck() }
+
+    suspend fun changeAddress(projectId: String, subdomain: String): AddressChange = translated {
+        when (val change = engine.get().changeProjectDomain(projectId, subdomain)) {
+            is ai.nomi.sdk.DomainChange.Changed -> AddressChange.Changed(change.hostname)
+            is ai.nomi.sdk.DomainChange.Refused -> AddressChange.Refused(change.check.toCheck())
+        }
+    }
+
+    /** Containers, traffic over [range] and logs; parts the backend can't give (nothing published) are left empty. */
+    suspend fun health(projectId: String, range: String): ProjectHealth = translated {
+        val client = engine.get()
+        val containers = runCatching { client.projectUsage(projectId) }.getOrDefault(emptyList())
+        val traffic = runCatching { client.projectTraffic(projectId, range) }.getOrNull()
+        val logs = runCatching { client.projectLogs(projectId) }.getOrNull()
+        ProjectHealth(
+            containers = containers.map { ContainerStat(it.service, it.cpuPercent, it.memoryUsageBytes, it.memoryLimitBytes) },
+            traffic = traffic?.let { t ->
+                ProjectTrafficInfo(t.range, t.buckets.map { it.requests ?: 0.0 }, t.totals.toTotals(), t.previousTotals.toTotals())
+            },
+            logLines = logs?.lines.orEmpty(),
+            logNote = logs?.note,
+        )
+    }
+
+    suspend fun takeOffline(projectId: String) = translated { engine.get().takeProjectOffline(projectId) }
+
+    /** The project's tables in [production] or its development copy; a Relay backend when [relay]. */
+    suspend fun data(projectId: String, relay: Boolean, production: Boolean): ProjectData = translated {
+        val source = source(production)
+        if (relay) {
+            val overview = engine.get().projectRelay(projectId, source)
+            ProjectData(
+                relay = overview.backend == RELAY_BACKEND,
+                tables = overview.tables.map { table ->
+                    DataTable(table.name, rows = null, detail = "${table.columns.size} columns" + if (table.rlsEnabled) " · RLS on" else " · RLS off")
+                },
+                setupState = overview.setup?.state,
+                setupError = overview.setup?.error,
+            )
+        } else {
+            val tables = engine.get().projectTables(projectId, source)
+            ProjectData(false, tables.map { DataTable(it.name, it.rowsEstimate, it.schema) }, null, null)
+        }
+    }
+
+    suspend fun retryRelay(projectId: String, production: Boolean) =
+        translated { engine.get().retryProjectRelay(projectId, source(production)) }
+
+    suspend fun query(projectId: String, sql: String, relay: Boolean, production: Boolean): DataQueryResult = translated {
+        val result = engine.get().queryProjectData(projectId, sql, source(production), relay)
+        DataQueryResult(result.columns, result.rows, result.truncated, result.rowsAffected, result.tookMs)
+    }
+
+    suspend fun showcase(projectId: String): ShowcaseInfo =
+        translated { engine.get().projectShowcase(projectId).let { ShowcaseInfo(it.showcase, it.blurb, it.canEdit) } }
+
+    suspend fun setShowcase(projectId: String, showcase: Boolean, blurb: String?): ShowcaseInfo = translated {
+        engine.get().setProjectShowcase(projectId, showcase, blurb).let { ShowcaseInfo(it.showcase, it.blurb, it.canEdit) }
+    }
+
+    suspend fun transferTargets(projectId: String, query: String): List<TransferTarget> = translated {
+        engine.get().transferOrgs(projectId, query).map { TransferTarget(it.id, it.name, it.isPersonal, it.ownerName) }
+    }
+
+    suspend fun transfer(projectId: String, orgId: String, confirmName: String) =
+        translated { engine.get().transferProject(projectId, orgId, confirmName) }
+
+    suspend fun delete(projectId: String) = translated { engine.get().deleteProject(projectId) }
+
+    private fun source(production: Boolean) =
+        if (production) ai.nomi.sdk.DataSource.PRODUCTION else ai.nomi.sdk.DataSource.DEVELOPMENT
+}
+
+private fun ai.nomi.sdk.DomainCheck.toCheck() = AddressCheck(available, hostname, message, suggestions.map { it.subdomain })
+
+private fun ai.nomi.sdk.TrafficCounters.toTotals() = TrafficTotals(visitors, requests, errors5xx, errors4xx, p50Ms, p95Ms)

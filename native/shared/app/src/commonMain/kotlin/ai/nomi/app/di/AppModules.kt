@@ -108,6 +108,7 @@ val coreModule: Module = module {
     single { ai.nomi.data.ProjectsRepository(get(), get()) }
     single { ai.nomi.data.AttachmentPreviews(get(), log = ::appLog) }
     single { ai.nomi.data.ProjectWorkspaceRepository(get()) }
+    single { ai.nomi.data.ProjectToolsRepository(get()) }
     single { RealtimeSync(get(), get(), get(), session = get(), log = ::appLog) }
     single {
         val home = get<HomeApi>()
@@ -146,6 +147,9 @@ val featureModule: Module = module {
         ai.nomi.app.screens.projects.ProjectsViewModel(get(), onProjectChats = workspaces::rememberProjectChats)
     }
     viewModel { (sessionId: String) -> ai.nomi.app.screens.projects.ProjectWorkspaceViewModel(sessionId, get(), log = ::appLog) }
+    viewModel { (projectId: String, name: String, relay: Boolean) ->
+        ai.nomi.app.screens.projects.ProjectToolsViewModel(projectId, name, relay, get(), log = ::appLog)
+    }
 }
 
 fun appModules(platformModule: Module): List<Module> = listOf(platformModule, coreModule, featureModule)

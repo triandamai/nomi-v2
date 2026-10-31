@@ -599,3 +599,226 @@ async fn publishes_and_works_through_issues() {
         .unwrap();
     assert_eq!(after.status, "closed");
 }
+
+#[tokio::test]
+async fn renames_production_or_says_why_not() {
+    let h = Harness::new().await;
+    h.answer(
+        "GET",
+        "/api/projects/p/domain/check",
+        200,
+        Some(
+            json!({ "subdomain": "bakery", "hostname": null, "available": false, "reason": "taken",
+            "suggestions": [{ "subdomain": "bakery-2", "hostname": "bakery-2.nomi.app" }] }),
+        ),
+    )
+    .await;
+    Mock::given(method("PUT"))
+        .and(path("/api/projects/p/domain"))
+        .and(body_json(json!({ "subdomain": "bakery" })))
+        .respond_with(ResponseTemplate::new(409).set_body_json(
+            json!({ "available": false, "reason": "taken", "message": "taken a moment ago", "suggestions": [] }),
+        ))
+        .up_to_n_times(1)
+        .mount(&h.server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/api/projects/p/domain"))
+        .and(body_json(json!({ "subdomain": "bakery-2" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({ "hostname": "bakery-2.nomi.app", "url": "https://bakery-2.nomi.app" }),
+        ))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    let check = h
+        .sdk
+        .check_project_domain("p".into(), "bakery".into())
+        .await
+        .unwrap();
+    assert!(!check.available);
+    assert_eq!(check.suggestions[0].subdomain, "bakery-2");
+    match h
+        .sdk
+        .change_project_domain("p".into(), "bakery".into())
+        .await
+        .unwrap()
+    {
+        crate::DomainChange::Refused { check } => {
+            assert_eq!(check.message.as_deref(), Some("taken a moment ago"))
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert_eq!(
+        h.sdk
+            .change_project_domain("p".into(), "bakery-2".into())
+            .await
+            .unwrap(),
+        crate::DomainChange::Changed {
+            hostname: "bakery-2.nomi.app".into()
+        }
+    );
+}
+
+#[tokio::test]
+async fn reads_how_production_is_doing() {
+    let h = Harness::new().await;
+    h.answer(
+        "GET",
+        "/api/projects/p/deploy/usage",
+        200,
+        Some(json!({ "containers": [
+            { "service": "web", "container_id": "c1", "limits": { "cpu": null, "memory_mb": 512 },
+              "stats": { "cpu_percent": 3.5, "memory_usage_bytes": 104857600.0, "memory_limit_bytes": 536870912.0,
+                "memory_percent": 19.5, "net_rx_bytes": 0, "net_tx_bytes": 0, "block_read_bytes": 0,
+                "block_write_bytes": 0, "pids": 4, "timestamp": AT } },
+            { "service": "worker", "container_id": "c2", "limits": { "cpu": null, "memory_mb": null }, "stats": null }
+        ] })),
+    )
+    .await;
+    let counters = json!({ "visitors": 40, "requests": 1200, "errors_5xx": 2, "errors_4xx": 9, "p50_ms": 31, "p95_ms": null });
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p/deploy/metrics"))
+        .and(query_param("range", "24h"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "range": "24h", "step": "1h",
+            "buckets": [{ "at": AT, "visitors": 4, "requests": 50, "errors_5xx": 0, "errors_4xx": 1, "p50_ms": 30, "p95_ms": 90 }],
+            "totals": counters, "previous_totals": counters
+        })))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p/deploy/logs"))
+        .and(query_param("tail", "200"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "lines": ["GET / 200"] })))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    let usage = h.sdk.project_usage("p".into()).await.unwrap();
+    assert_eq!(usage[0].memory_usage_bytes, Some(104_857_600));
+    assert_eq!(usage[1].cpu_percent, None);
+    let traffic = h
+        .sdk
+        .project_traffic("p".into(), "24h".into())
+        .await
+        .unwrap();
+    assert_eq!(traffic.totals.requests, Some(1200.0));
+    assert_eq!(traffic.totals.p95_ms, None);
+    assert_eq!(
+        h.sdk.project_logs("p".into()).await.unwrap().lines,
+        vec!["GET / 200"]
+    );
+}
+
+#[tokio::test]
+async fn queries_the_projects_data_as_text_cells() {
+    let h = Harness::new().await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p/database/tables"))
+        .and(query_param("source", "production"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                json!([{ "schema": "public", "name": "orders", "rows_estimate": 42 }]),
+            ),
+        )
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p/relay/query"))
+        .and(body_json(json!({ "sql": "select * from orders", "source": "development" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "columns": ["id", "total", "note", "paid"], "rows": [[1, 9.5, null, true], ["x", "y", "z", false]],
+            "truncated": false, "rows_affected": null, "took_ms": 3.2
+        })))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    let tables = h
+        .sdk
+        .project_tables("p".into(), crate::DataSource::Production)
+        .await
+        .unwrap();
+    assert_eq!(tables[0].rows_estimate, 42);
+    let result = h
+        .sdk
+        .query_project_data(
+            "p".into(),
+            "select * from orders".into(),
+            crate::DataSource::Development,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        result.rows[0],
+        vec![
+            Some("1".into()),
+            Some("9.5".into()),
+            None,
+            Some("true".into())
+        ]
+    );
+    assert_eq!(result.rows[1][0].as_deref(), Some("x"));
+}
+
+#[tokio::test]
+async fn changes_a_projects_settings() {
+    let h = Harness::new().await;
+    Mock::given(method("PUT"))
+        .and(path("/api/projects/p/showcase"))
+        .and(body_json(json!({ "showcase": true, "blurb": "Fresh bread daily" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({ "showcase": true, "blurb": "Fresh bread daily", "url": "https://bakery.nomi.app", "can_edit": true }),
+        ))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    h.answer(
+        "DELETE",
+        "/api/projects/p/deploy/environments/production",
+        204,
+        None,
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p/transfer/orgs"))
+        .and(query_param("q", "acme"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            { "id": "o2", "name": "Acme", "is_personal": false, "owner_id": null, "owner_name": null, "my_role": "admin" }
+        ])))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    h.expect_body(
+        "POST",
+        "/api/projects/p/transfer",
+        json!({ "target_org_id": "o2", "confirm_name": "Bakery site" }),
+        200,
+    )
+    .await;
+    h.answer("DELETE", "/api/projects/p", 204, None).await;
+
+    let showcase = h
+        .sdk
+        .set_project_showcase("p".into(), true, Some("Fresh bread daily".into()))
+        .await
+        .unwrap();
+    assert!(showcase.showcase);
+    h.sdk.take_project_offline("p".into()).await.unwrap();
+    let orgs = h
+        .sdk
+        .transfer_orgs("p".into(), "acme".into())
+        .await
+        .unwrap();
+    assert_eq!(orgs[0].name, "Acme");
+    h.sdk
+        .transfer_project("p".into(), "o2".into(), "Bakery site".into())
+        .await
+        .unwrap();
+    h.sdk.delete_project("p".into()).await.unwrap();
+}

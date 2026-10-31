@@ -97,7 +97,7 @@ private val Published = Loadable.Ready(
     ProjectDeployInfo(
         canPublish = true,
         url = "https://bakery.nomi.app",
-        publishes = listOf(ProjectPublishInfo("u1", "live", "https://bakery.nomi.app", null, "Trian", "2026-10-30T16:20:00Z")),
+        publishes = listOf(ProjectPublishInfo("u1", "succeeded", "https://bakery.nomi.app", null, "Trian", "2026-10-30T16:20:00Z")),
         backendSetupStep = null,
         backendSetupError = null,
     ),

@@ -77,8 +77,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.LaunchedEffect
+import org.koin.core.parameter.parametersOf
+import org.koin.compose.viewmodel.koinViewModel
 
 const val PROJECT_WORKSPACE_TAG = "project_workspace"
+
+/** Keeps a project's tools view model apart from the workspace's on the same entry. */
+private const val TOOLS_KEY_PREFIX = "tools:"
 
 private const val TAB_CHAT = "chat"
 private const val TAB_PREVIEW = "preview"
@@ -116,7 +122,7 @@ private val MemberAvatar = 36.dp
 private val EmptyMaxWidth = 320.dp
 
 /** Which tool sheet is open over the workspace. */
-enum class ProjectSheet { Issues, Deploy, Members }
+enum class ProjectSheet { Issues, Deploy, Domain, Monitor, Database, Members, Settings }
 
 const val PROJECT_TAB_CHAT = TAB_CHAT
 const val PROJECT_TAB_PREVIEW = TAB_PREVIEW
@@ -162,6 +168,14 @@ private fun ProjectWorkspace(
     val file by viewModel.file.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(TAB_CHAT) }
     var sheet by rememberSaveable { mutableStateOf<ProjectSheet?>(null) }
+    val tools: ProjectToolsViewModel = koinViewModel(key = "$TOOLS_KEY_PREFIX${project.id}") {
+        parametersOf(project.id, project.name, project.relay)
+    }
+    val left by tools.left.collectAsStateWithLifecycle()
+    LaunchedEffect(left) {
+        // Moved to another organization or deleted: nothing left to show here.
+        if (left) onBack()
+    }
 
     ProjectWorkspaceContent(
         project = project,
@@ -179,6 +193,10 @@ private fun ProjectWorkspace(
                 ProjectSheet.Issues -> viewModel.refreshIssues()
                 ProjectSheet.Deploy -> viewModel.refreshDeploy()
                 ProjectSheet.Members -> viewModel.refreshTeam()
+                ProjectSheet.Domain -> tools.loadAddress()
+                ProjectSheet.Monitor -> tools.loadHealth()
+                ProjectSheet.Database -> tools.loadData()
+                ProjectSheet.Settings -> tools.loadSettings()
             }
         },
         onDismissNotice = viewModel::noticeShown,
@@ -200,6 +218,40 @@ private fun ProjectWorkspace(
                     ProjectSheet.Issues -> IssuesSheet(project, viewModel)
                     ProjectSheet.Deploy -> DeploySheet(deploy, onPublish = viewModel::publish, onRetry = viewModel::refreshDeploy)
                     ProjectSheet.Members -> MembersSheet(viewModel)
+                    ProjectSheet.Domain -> {
+                        val state by tools.address.collectAsStateWithLifecycle()
+                        DomainSheet(state, onEdit = tools::editAddress, onSave = tools::saveAddress, onRetry = tools::loadAddress)
+                    }
+                    ProjectSheet.Monitor -> {
+                        val state by tools.health.collectAsStateWithLifecycle()
+                        MonitorSheet(state, onRange = { tools.loadHealth(it) }, onRetry = { tools.loadHealth() })
+                    }
+                    ProjectSheet.Database -> {
+                        val state by tools.data.collectAsStateWithLifecycle()
+                        DatabaseSheet(
+                            state,
+                            relay = project.relay,
+                            onSource = { tools.loadData(it) },
+                            onSql = tools::editQuery,
+                            onRun = tools::runQuery,
+                            onRetry = { tools.loadData() },
+                            onRetrySetup = tools::retryRelay,
+                        )
+                    }
+                    ProjectSheet.Settings -> {
+                        val state by tools.settings.collectAsStateWithLifecycle()
+                        SettingsSheet(
+                            state,
+                            projectName = project.name,
+                            canPublish = (deploy as? Loadable.Ready)?.value?.canPublish == true,
+                            onBlurb = tools::editBlurb,
+                            onShowcase = tools::setShowcase,
+                            onTakeOffline = tools::takeOffline,
+                            onSearch = tools::searchTargets,
+                            onTransfer = tools::transfer,
+                            onDelete = tools::delete,
+                        )
+                    }
                 }
             }
         }
@@ -339,9 +391,14 @@ private fun ToolsRow(openIssues: Long, onOpen: (ProjectSheet) -> Unit) {
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = ToolsPaddingH),
         horizontalArrangement = Arrangement.spacedBy(ToolsGap),
     ) {
-        Tool("Issues", NomiIcons.Pin, count = openIssues) { onOpen(ProjectSheet.Issues) }
-        Tool("Deploy", NomiIcons.ArrowForward) { onOpen(ProjectSheet.Deploy) }
+        // In the web toolbar's order.
+        Tool("Issues", NomiIcons.Bug, count = openIssues) { onOpen(ProjectSheet.Issues) }
+        Tool("Deploy", NomiIcons.Rocket) { onOpen(ProjectSheet.Deploy) }
+        Tool("Domain", NomiIcons.Globe) { onOpen(ProjectSheet.Domain) }
+        Tool("Monitor", NomiIcons.Pulse) { onOpen(ProjectSheet.Monitor) }
+        Tool("Database", NomiIcons.Database) { onOpen(ProjectSheet.Database) }
         Tool("Members", NomiIcons.Person) { onOpen(ProjectSheet.Members) }
+        Tool("Settings", NomiIcons.Settings) { onOpen(ProjectSheet.Settings) }
     }
 }
 
@@ -622,12 +679,9 @@ private fun PublishLine(publish: ProjectPublishInfo) {
 private const val DATE_LENGTH = 10
 
 private fun publishLabel(status: String) = when (status) {
-    "queued" -> "Queued"
-    "building" -> "Building"
-    "deploying" -> "Deploying"
-    "live" -> "Live"
+    "running" -> "Publishing"
+    "succeeded" -> "Live"
     "failed" -> "Failed"
-    "superseded" -> "Replaced"
     else -> status.replaceFirstChar { it.uppercase() }
 }
 

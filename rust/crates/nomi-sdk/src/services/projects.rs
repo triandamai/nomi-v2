@@ -42,8 +42,7 @@ pub struct ProjectDetail {
     pub backend: String,
 }
 
-/// One publish of the project. `status` is `queued`, `building`, `deploying`, `live`, `failed` or
-/// `superseded`.
+/// One publish of the project. `status` is `running`, `succeeded` or `failed`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, uniffi::Record)]
 pub struct ProjectPublish {
     pub id: String,

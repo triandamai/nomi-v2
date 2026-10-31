@@ -221,6 +221,54 @@ interface NomiClient {
     /** Who works on the project. */
     suspend fun projectMembers(projectId: String): ProjectMembers
 
+    /** The project's production address. */
+    suspend fun projectDomain(projectId: String): ProjectDomain
+
+    /** Whether [subdomain] is free for the project. */
+    suspend fun checkProjectDomain(projectId: String, subdomain: String): DomainCheck
+
+    /** Moves production to [subdomain]; a refusal comes back with why. */
+    suspend fun changeProjectDomain(projectId: String, subdomain: String): DomainChange
+
+    /** What production's containers use right now. */
+    suspend fun projectUsage(projectId: String): List<ContainerUsage>
+
+    /** Production's traffic over [range] (`1h`, `24h` or `7d`). */
+    suspend fun projectTraffic(projectId: String, range: String): ProjectTraffic
+
+    /** Production's latest log lines. */
+    suspend fun projectLogs(projectId: String): ProjectLogs
+
+    /** Takes production offline. */
+    suspend fun takeProjectOffline(projectId: String)
+
+    /** The tables in the project's database. */
+    suspend fun projectTables(projectId: String, source: DataSource): List<DatabaseTable>
+
+    /** Runs [sql] against the project's data (its Relay backend when [relay]). */
+    suspend fun queryProjectData(projectId: String, sql: String, source: DataSource, relay: Boolean): QueryResult
+
+    /** The project's Relay backend. */
+    suspend fun projectRelay(projectId: String, source: DataSource): RelayOverview
+
+    /** Starts a Relay backend that failed to set up again. */
+    suspend fun retryProjectRelay(projectId: String, source: DataSource)
+
+    /** Whether the project is on the showcase. */
+    suspend fun projectShowcase(projectId: String): ProjectShowcase
+
+    /** Puts the project on the showcase (or takes it off), with a blurb. */
+    suspend fun setProjectShowcase(projectId: String, showcase: Boolean, blurb: String?): ProjectShowcase
+
+    /** Organizations the project can move to, matching [query]. */
+    suspend fun transferOrgs(projectId: String, query: String): List<TransferOrg>
+
+    /** Moves the project to [orgId]; [confirmName] must be its name. */
+    suspend fun transferProject(projectId: String, orgId: String, confirmName: String)
+
+    /** Deletes the project for good. */
+    suspend fun deleteProject(projectId: String)
+
     /** A small preview of an attached image, as the encoded image. */
     suspend fun attachmentPreview(id: String): ByteArray
 

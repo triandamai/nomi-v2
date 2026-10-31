@@ -93,6 +93,17 @@ object NomiIcons {
     )
     val Card = glyph(rect(3f, 5f, 18f, 14f, 2f), "M3 10h18", "M7 15h4")
 
+    // A project's tools (the web's project toolbar).
+    val Bug = glyph("M8 9a4 4 0 0 1 8 0v5a4 4 0 0 1-8 0z", "M4 11h4M16 11h4M4 17h4M16 17h4M12 9v9", "M9 5L7.5 3.5M15 5l1.5-1.5")
+    val Rocket = glyph("M9 15l-3-3 6-7c2-2 5-2 7-2 0 2 0 5-2 7l-7 6z", "M5 15c-1.5 1.5-2 4-2 4s2.5-.5 4-2", circle(15f, 9f, 1.5f))
+    val Pulse = glyph("M3 12h4l3-8 4 16 3-8h4")
+    val Database = glyph(
+        "M4 6c0 1.7 3.6 3 8 3s8-1.3 8-3-3.6-3-8-3-8 1.3-8 3z",
+        "M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6",
+        "M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+    )
+    val Globe = glyph(circle(12f, 12f, 9f), "M3 12h18", "M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z")
+
     // Attached files, one per kind (`AttachmentIcon.svelte`).
     val File = glyph("M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5")
     val Pdf = glyph("M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5", "M9 13h6M9 17h4")
