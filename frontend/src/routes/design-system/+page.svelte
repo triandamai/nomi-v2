@@ -27,6 +27,8 @@
 	import Status from '$lib/components/ds/status/Status.svelte';
 	import Tag from '$lib/components/ds/status/Tag.svelte';
 	import Checkbox from '$lib/components/ds/inputs/Checkbox.svelte';
+	import Composer from '$lib/components/ds/inputs/Composer.svelte';
+	import ShellsSection from '$lib/gallery/ShellsSection.svelte';
 	import Chip from '$lib/components/ds/inputs/Chip.svelte';
 	import Search from '$lib/components/ds/inputs/Search.svelte';
 	import Segmented from '$lib/components/ds/inputs/Segmented.svelte';
@@ -151,6 +153,7 @@
 				{ value: 'logs', label: 'Logs' },
 			]}
 		/>
+		<Composer placeholder="Ask Nomi, or hand something to the crew…" agent={{ id: 'nomi', name: 'Nomi' }} model="deepseek-flash" />
 	</section>
 
 	<section>
@@ -242,6 +245,8 @@
 			<SuggestionRow agent="dana" label="How much did I spend on food this month?" route="→ dana" />
 		</div>
 	</section>
+
+	<ShellsSection />
 
 	<ToastRegion />
 </main>
