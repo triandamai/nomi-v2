@@ -23,6 +23,8 @@ coroutines = "1.11.0"
 serialization = "1.11.0"
 datetime = "0.8.0"
 jna = "5.19.1"
+atomicfu = "0.33.0"
+androidx-annotation = "1.11.0"
 tink = "1.18.0"
 datastore = "1.1.7"
 java-keyring = "1.0.4"
@@ -68,6 +70,9 @@ tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "java-keyring" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
+androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidx-annotation" }
 roborazzi-compose-desktop = { module = "io.github.takahirom.roborazzi:roborazzi-compose-desktop", version.ref = "roborazzi" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
 markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
