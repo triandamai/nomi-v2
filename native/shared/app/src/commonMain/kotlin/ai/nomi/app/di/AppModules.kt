@@ -48,6 +48,7 @@ import ai.nomi.app.screens.reminders.RemindersViewModel
 import ai.nomi.network.TokenStore
 import ai.nomi.sdk.NativeNomiClient
 import ai.nomi.sdk.defaultSdkConfig
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,12 +67,18 @@ private const val LOG_PREFIX = "Nomi: "
 /** Diagnostics for the shared layers. They never pass tokens or message text, only what failed. */
 internal fun appLog(message: String) = println(LOG_PREFIX + message)
 
+/** What app-lifetime and signed-in work does with a failure nothing caught: log it, keep the app running. */
+private val backgroundFailures = CoroutineExceptionHandler { _, failure ->
+    appLog("background work failed: ${failure.stackTraceToString()}")
+}
+
 /**
  * The Rust engine and the repositories over it. A platform module supplies the three platform pieces:
  * [ai.nomi.network.ApiConfig], [TokenStore] and [SdkSetup].
  */
 val coreModule: Module = module {
-    single<CoroutineScope>(AppScope) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+    // A failure in background work is logged, never fatal: without a handler, one failed task ends the app.
+    single<CoroutineScope>(AppScope) { CoroutineScope(SupervisorJob() + Dispatchers.Main + backgroundFailures) }
 
     // The Rust engine: chats, messages, notifications, agent activity, realtime and the session.
     single { ForegroundChat() }

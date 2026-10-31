@@ -1,5 +1,6 @@
 package ai.nomi.sdk
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -24,8 +25,12 @@ import kotlinx.coroutines.launch
 class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiClient {
     private val sdk = NomiSdk(config, credentials)
 
-    /** Keeps [user] and [connection] in step with the engine's events until [close]. */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Keeps [user] and [connection] in step with the engine's events until [close]; a failure there is logged, not fatal. */
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, failure ->
+            println("Nomi: engine events failed: ${failure.stackTraceToString()}")
+        },
+    )
 
     private val mutableState = MutableStateFlow(sdk.state())
     private val mutableAccount = MutableStateFlow(sdk.currentAccount())
