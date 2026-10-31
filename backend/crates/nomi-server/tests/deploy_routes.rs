@@ -646,3 +646,113 @@ async fn runtime_logs_come_back_as_text_lines_whatever_shape_shipyard_sends(pool
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["lines"], json!(["2026-10-28T01:02:03Z error connect ECONNREFUSED", "plain line"]));
 }
+
+/// The owner's project with a teammate who works on it but isn't an admin: (project, owner, teammate).
+async fn project_with_teammate(router: axum::Router, pool: &PgPool) -> (Uuid, String, String) {
+    let owner = register(router.clone(), "ana@acme.test").await;
+    let teammate = register(router.clone(), "budi@acme.test").await;
+    let (project_id, org_id) = project_with_files(router, &owner).await;
+    sqlx::query("INSERT INTO memberships (org_id, user_id, role, status) VALUES ($1, $2, 'member', 'active')")
+        .bind(org_id)
+        .bind(user_id(pool, "budi@acme.test").await)
+        .execute(pool)
+        .await
+        .unwrap();
+    (project_id, owner, teammate)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_teammate_asks_to_publish_and_an_admin_approves(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    mount_shipyard(&shipyard).await;
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/[^/]+/envs/production/publish$"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+            "data": { "publish_id": "pub-1", "status": "running", "url": "https://todo.apps.test", "warnings": [] }, "error": null
+        })))
+        .mount(&shipyard)
+        .await;
+    let router = build_router(test_state(pool.clone(), Some(&shipyard)));
+    let (project_id, owner, teammate) = project_with_teammate(router.clone(), &pool).await;
+    let requests = format!("/api/projects/{project_id}/deploy/requests");
+
+    // The teammate can't publish, so they ask; once is enough until it's answered.
+    let (status, _) = request(router.clone(), "POST", &format!("/api/projects/{project_id}/deploy/publish"), Some(&teammate), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, asked) = request(router.clone(), "POST", &requests, Some(&teammate), Some(json!({ "note": "  Ready for the demo  " }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{asked}");
+    assert_eq!(asked["status"], "pending");
+    assert_eq!(asked["note"], "Ready for the demo");
+    assert_eq!(asked["requested_by_name"], "budi");
+    let (status, _) = request(router.clone(), "POST", &requests, Some(&teammate), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    // An admin publishes themselves.
+    let (status, _) = request(router.clone(), "POST", &requests, Some(&owner), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // The admins hear of it.
+    let owner_id = user_id(&pool, "ana@acme.test").await;
+    let heard: String = sqlx::query_scalar("SELECT body FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1")
+        .bind(owner_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(heard.contains("budi asked to publish it: “Ready for the demo”"), "{heard}");
+
+    // Only an admin answers it; approving publishes.
+    let id = asked["id"].as_str().unwrap();
+    let (status, _) = request(router.clone(), "POST", &format!("{requests}/{id}"), Some(&teammate), Some(json!({ "action": "approve" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, approved) = request(router.clone(), "POST", &format!("{requests}/{id}"), Some(&owner), Some(json!({ "action": "approve" }))).await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(approved["status"], "approved");
+    assert_eq!(approved["decided_by_name"], "ana");
+    assert!(approved["publish_id"].is_string());
+    assert!(shipyard.received_requests().await.unwrap().iter().any(|r| r.url.path().ends_with("/publish")));
+    let (status, _) = request(router.clone(), "POST", &format!("{requests}/{id}"), Some(&owner), Some(json!({ "action": "decline" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // The teammate hears the answer, and sees the queue.
+    let budi = user_id(&pool, "budi@acme.test").await;
+    let answer: String = sqlx::query_scalar("SELECT body FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1")
+        .bind(budi)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(answer.contains("ana approved"), "{answer}");
+    let (status, list) = request(router, "GET", &requests, Some(&teammate), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["requests"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_request_can_be_declined_or_taken_back_and_stays_open_when_publishing_fails(pool: PgPool) {
+    // No Shipyard: approving can't publish, so the request waits.
+    let router = build_router(test_state(pool.clone(), None));
+    let (project_id, owner, teammate) = project_with_teammate(router.clone(), &pool).await;
+    let requests = format!("/api/projects/{project_id}/deploy/requests");
+
+    let (_, first) = request(router.clone(), "POST", &requests, Some(&teammate), None).await;
+    let first_id = first["id"].as_str().unwrap();
+    let (status, _) = request(router.clone(), "POST", &format!("{requests}/{first_id}"), Some(&owner), Some(json!({ "action": "approve" }))).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    let (status, declined) = request(router.clone(), "POST", &format!("{requests}/{first_id}"), Some(&owner), Some(json!({ "action": "decline" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(declined["status"], "declined");
+
+    // Answered, so they may ask again; then take it back (only they can).
+    let (status, second) = request(router.clone(), "POST", &requests, Some(&teammate), None).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let second_id = second["id"].as_str().unwrap();
+    let (status, _) = request(router.clone(), "POST", &format!("{requests}/{second_id}"), Some(&owner), Some(json!({ "action": "cancel" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, cancelled) = request(router.clone(), "POST", &format!("{requests}/{second_id}"), Some(&teammate), Some(json!({ "action": "cancel" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cancelled["status"], "cancelled");
+
+    // Open ones first, then newest first.
+    let (_, third) = request(router.clone(), "POST", &requests, Some(&teammate), None).await;
+    let (_, list) = request(router, "GET", &requests, Some(&owner), None).await;
+    let order: Vec<&str> = list["requests"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert_eq!(order, vec![third["id"].as_str().unwrap(), second_id, first_id]);
+}

@@ -62,6 +62,11 @@ pub struct SessionListItem {
     /// Set when this session has a project attached — the history list uses this to badge it and
     /// route into the project workspace instead of the plain chat page.
     pub project_id: Option<Uuid>,
+    /// Pinned to the top of the list, and since when.
+    pub pinned: bool,
+    pub pinned_at: Option<DateTime<Utc>>,
+    /// The project this chat was moved into (not its own project: that's `project_id`).
+    pub in_project_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -76,13 +81,13 @@ pub async fn list_sessions(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<ListSessionsResponse>, (StatusCode, &'static str)> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>, Option<DateTime<Utc>>, Option<Uuid>)> = sqlx::query_as(
         "SELECT \
             s.id, s.channel, s.chat_type, s.chat_id, s.title, \
             lm.content, lm.created_at, \
             EXISTS (SELECT 1 FROM agent_sessions ag WHERE ag.session_id = s.id AND ag.status = 'active'), \
             COALESCE(lm.created_at, s.created_at), \
-            p.id \
+            p.id, s.pinned_at, s.in_project_id \
          FROM sessions s \
          LEFT JOIN LATERAL ( \
              SELECT content, created_at FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
@@ -103,12 +108,25 @@ pub async fn list_sessions(
 
     let sessions = rows
         .into_iter()
-        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id)| {
+        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id, pinned_at, in_project_id)| {
             let last_message = match (last_content, last_created_at) {
                 (Some(content), Some(created_at)) => Some(LastMessagePreview { content, created_at }),
                 _ => None,
             };
-            SessionListItem { id, channel, chat_type, chat_id, title, last_message, agent_active, updated_at, project_id }
+            SessionListItem {
+                id,
+                channel,
+                chat_type,
+                chat_id,
+                title,
+                last_message,
+                agent_active,
+                updated_at,
+                project_id,
+                pinned: pinned_at.is_some(),
+                pinned_at,
+                in_project_id,
+            }
         })
         .collect();
 
@@ -251,6 +269,10 @@ pub struct MessageItem {
     pub author_name: Option<String>,
     #[serde(skip)]
     pub sender_identity: Option<Uuid>,
+    /// When the person last changed their message (see message_rerun).
+    pub edited_at: Option<DateTime<Utc>>,
+    /// Earlier takes of the person's message and its replies, kept when it ran again.
+    pub versions: i64,
 }
 
 /// Names the people other than `me` who wrote messages in a shared project chat.
@@ -291,12 +313,13 @@ pub struct ListMessagesResponse {
 /// Messages before `oldest` back to the person's message that started its turn, so a page never
 /// begins halfway through the crew's replies to one request.
 const MESSAGE_COLUMNS: &str = "m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-     (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count";
+     (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count, m.edited_at, \
+     (SELECT count(*) FROM message_versions v WHERE v.message_id = m.id) AS versions";
 
-type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64);
+type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64, Option<DateTime<Utc>>, i64);
 
 fn to_message_item(
-    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count): MessageRow,
+    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count, edited_at, versions): MessageRow,
 ) -> MessageItem {
     MessageItem {
         id,
@@ -311,6 +334,8 @@ fn to_message_item(
         sources: Vec::new(),
         author_name: None,
         sender_identity: sender,
+        edited_at,
+        versions,
     }
 }
 
@@ -325,14 +350,12 @@ pub async fn list_messages(
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
 
     let rows: Vec<MessageRow> = match query.before {
-        Some(before_id) => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
-             FROM messages m \
+        Some(before_id) => sqlx::query_as(&format!(
+            "SELECT {MESSAGE_COLUMNS} FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $4 \
              WHERE m.session_id = $1 AND m.created_at < (SELECT created_at FROM messages WHERE id = $2) \
-             ORDER BY m.created_at DESC LIMIT $3",
-        )
+             ORDER BY m.created_at DESC LIMIT $3"
+        ))
         .bind(session_id)
         .bind(before_id)
         .bind(limit)
@@ -340,14 +363,12 @@ pub async fn list_messages(
         .fetch_all(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch messages"))?,
-        None => sqlx::query_as(
-            "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
-             FROM messages m \
+        None => sqlx::query_as(&format!(
+            "SELECT {MESSAGE_COLUMNS} FROM messages m \
              LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
              WHERE m.session_id = $1 \
-             ORDER BY m.created_at DESC LIMIT $2",
-        )
+             ORDER BY m.created_at DESC LIMIT $2"
+        ))
         .bind(session_id)
         .bind(limit)
         .bind(claims.sub)
@@ -408,13 +429,11 @@ pub async fn get_message(
 ) -> Result<Json<MessageItem>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
 
-    let row: MessageRow = sqlx::query_as(
-        "SELECT m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
-                    (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count \
-         FROM messages m \
+    let row: MessageRow = sqlx::query_as(&format!(
+        "SELECT {MESSAGE_COLUMNS} FROM messages m \
          LEFT JOIN message_feedback mf ON mf.message_id = m.id AND mf.user_id = $3 \
-         WHERE m.id = $1 AND m.session_id = $2",
-    )
+         WHERE m.id = $1 AND m.session_id = $2"
+    ))
     .bind(message_id)
     .bind(session_id)
     .bind(claims.sub)
@@ -675,34 +694,123 @@ pub async fn set_agent_plan_item(
 }
 
 #[derive(Deserialize)]
-pub struct RenameSessionRequest {
-    pub title: String,
+pub struct UpdateSessionRequest {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    /// A project id moves the chat into it; `null` takes it out; absent leaves it.
+    #[serde(default, deserialize_with = "present")]
+    pub in_project_id: Option<Option<Uuid>>,
+}
+
+/// Tells a field sent as `null` (`Some(None)`) from one left out (`None`).
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<Uuid>>, D::Error> {
+    Option::<Uuid>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Serialize)]
-pub struct RenameSessionResponse {
-    pub title: String,
+pub struct UpdateSessionResponse {
+    pub title: Option<String>,
+    pub pinned: bool,
+    pub in_project_id: Option<Uuid>,
 }
 
-/// The person renames a chat.
+const UPDATE_FAILED: &str = "failed to update chat";
+
+fn update_failed<E>(_: E) -> (StatusCode, &'static str) {
+    (StatusCode::INTERNAL_SERVER_ERROR, UPDATE_FAILED)
+}
+
+/// The person renames a chat, pins or unpins it, or moves it into one of their projects (or out).
+/// Anyone who can open a project's chat may rename it; pinning and moving are the owner's, since
+/// they change where the chat sits in the owner's own list.
 pub async fn rename_session(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
-    Json(req): Json<RenameSessionRequest>,
-) -> Result<Json<RenameSessionResponse>, (StatusCode, &'static str)> {
+    Json(req): Json<UpdateSessionRequest>,
+) -> Result<Json<UpdateSessionResponse>, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
-    let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to rename chat"))?;
-    match nomi_agent_core::chat_title::rename(&mut conn, session_id, &req.title).await {
-        Ok(Some(title)) => Ok(Json(RenameSessionResponse { title })),
-        Ok(None) => Err((StatusCode::BAD_REQUEST, "title must not be empty")),
-        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to rename chat")),
+    if req.title.is_none() && req.pinned.is_none() && req.in_project_id.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "nothing to change"));
     }
+
+    let mut tx = state.pool.begin().await.map_err(update_failed)?;
+    if let Some(title) = &req.title {
+        if nomi_agent_core::chat_title::rename(&mut *tx, session_id, title).await.map_err(update_failed)?.is_none() {
+            return Err((StatusCode::BAD_REQUEST, "title must not be empty"));
+        }
+    }
+
+    if req.pinned.is_some() || req.in_project_id.is_some() {
+        let (owner, own_project): (Option<Uuid>, bool) =
+            sqlx::query_as("SELECT s.user_id, EXISTS (SELECT 1 FROM projects p WHERE p.session_id = s.id) FROM sessions s WHERE s.id = $1")
+        .bind(session_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(update_failed)?;
+        if owner != Some(claims.sub) {
+            return Err((StatusCode::NOT_FOUND, "session not found"));
+        }
+
+        if let Some(pinned) = req.pinned {
+            sqlx::query("UPDATE sessions SET pinned_at = CASE WHEN $2 THEN COALESCE(pinned_at, now()) END WHERE id = $1")
+                .bind(session_id)
+                .bind(pinned)
+                .execute(&mut *tx)
+                .await
+                .map_err(update_failed)?;
+        }
+
+        if let Some(target) = req.in_project_id {
+            if own_project {
+                return Err((StatusCode::BAD_REQUEST, "a project's own chat stays with its project"));
+            }
+            // Filing a chat under a project only changes where it sits in the person's own list:
+            // the chat stays private, so any project they can open will do.
+            if let Some(project_id) = target {
+                let openable: bool = sqlx::query_scalar("SELECT can_open_project($1, $2)")
+                    .bind(project_id)
+                    .bind(claims.sub)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(update_failed)?;
+                if !openable {
+                    return Err((StatusCode::NOT_FOUND, "project not found"));
+                }
+            }
+            sqlx::query("UPDATE sessions SET in_project_id = $2 WHERE id = $1")
+                .bind(session_id)
+                .bind(target)
+                .execute(&mut *tx)
+                .await
+                .map_err(update_failed)?;
+        }
+    }
+
+    let (title, pinned, in_project_id): (Option<String>, bool, Option<Uuid>) =
+        sqlx::query_as("SELECT title, pinned_at IS NOT NULL, in_project_id FROM sessions WHERE id = $1")
+            .bind(session_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(update_failed)?;
+    tx.commit().await.map_err(update_failed)?;
+    Ok(Json(UpdateSessionResponse { title, pinned, in_project_id }))
 }
 
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub text: String,
+}
+
+/// The most a message's text may hold, in characters (attached files are counted by name only;
+/// their own limits are in nomi_attachments::limits). Longer goes as a file.
+pub const MAX_MESSAGE_CHARS: usize = 10_000;
+
+/// Whether `text` is over MAX_MESSAGE_CHARS, as the person reads it.
+pub(crate) fn too_long(text: &str) -> bool {
+    nomi_attachments::reference::readable(text).chars().count() > MAX_MESSAGE_CHARS
 }
 
 #[derive(Serialize)]
@@ -725,6 +833,9 @@ pub async fn send_message(
 
     if req.text.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "text must not be empty"));
+    }
+    if too_long(&req.text) {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "message is too long"));
     }
 
     let (channel, chat_type, chat_id, title): (String, String, String, Option<String>) =
@@ -810,6 +921,8 @@ pub async fn send_message(
         sources: Vec::new(),
         author_name: None,
         sender_identity: None,
+        edited_at: None,
+        versions: 0,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -904,6 +1017,8 @@ async fn try_stop_command(
         sources: Vec::new(),
         author_name: None,
         sender_identity: None,
+        edited_at: None,
+        versions: 0,
     };
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
@@ -918,6 +1033,8 @@ async fn try_stop_command(
         sources: Vec::new(),
         author_name: None,
         sender_identity: None,
+        edited_at: None,
+        versions: 0,
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }
@@ -1002,12 +1119,26 @@ async fn generate_session_title(
 #[derive(Deserialize)]
 pub struct FeedbackRequest {
     pub rating: String,
-    /// Why a reply missed, when the person says (thumbs-down only).
+    /// Why a reply missed, the one reason older apps send (thumbs-down only).
     #[serde(default)]
     pub reason: Option<String>,
+    /// Every reason it missed (thumbs-down only).
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    /// What went wrong in the person's own words (thumbs-down only).
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Whether the chat may be read to look into it (thumbs-down only).
+    #[serde(default)]
+    pub include_chat: bool,
 }
 
-const ALLOWED_REASONS: [&str; 4] = ["wrong_memory", "not_relevant", "too_long", "other"];
+/// Why a reply missed: the memory sheet's reasons (`wrong_memory` opens the memories it used) and
+/// the dislike form's.
+const ALLOWED_REASONS: [&str; 9] = ["wrong_memory", "not_relevant", "too_long", "other", "inaccurate", "ignored", "wrong_crew", "outdated", "unsafe"];
+/// The reasons older apps send one of, which `message_feedback.reason` still holds.
+const SINGLE_REASONS: [&str; 4] = ["wrong_memory", "not_relevant", "too_long", "other"];
+const MAX_NOTE_CHARS: usize = 2000;
 
 async fn previous_rating(pool: &sqlx::PgPool, message_id: Uuid, user_id: Uuid) -> Result<Option<String>, (StatusCode, &'static str)> {
     sqlx::query_scalar("SELECT rating FROM message_feedback WHERE message_id = $1 AND user_id = $2")
@@ -1061,20 +1192,35 @@ pub async fn put_message_feedback(
     if !ALLOWED_RATINGS.contains(&req.rating.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "rating must be 'up' or 'down'"));
     }
-    let reason = req.reason.as_deref().filter(|_| req.rating == "down");
-    if reason.is_some_and(|r| !ALLOWED_REASONS.contains(&r)) {
-        return Err((StatusCode::BAD_REQUEST, "reason must be wrong_memory, not_relevant, too_long or other"));
+    let down = req.rating == "down";
+    let mut reasons: Vec<String> = Vec::new();
+    for reason in req.reasons.iter().chain(req.reason.iter()).filter(|_| down) {
+        if !reasons.contains(reason) {
+            reasons.push(reason.clone());
+        }
     }
+    if reasons.iter().any(|r| !ALLOWED_REASONS.contains(&r.as_str())) {
+        return Err((StatusCode::BAD_REQUEST, "unknown reason"));
+    }
+    let note = req.note.as_deref().map(str::trim).filter(|note| down && !note.is_empty());
+    if note.is_some_and(|note| note.chars().count() > MAX_NOTE_CHARS) {
+        return Err((StatusCode::BAD_REQUEST, "note is too long"));
+    }
+    let reason = reasons.iter().find(|r| SINGLE_REASONS.contains(&r.as_str()));
     let previous = previous_rating(&state.pool, message_id, claims.sub).await?;
 
     sqlx::query(
-        "INSERT INTO message_feedback (message_id, user_id, rating, reason) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason",
+        "INSERT INTO message_feedback (message_id, user_id, rating, reason, reasons, note, include_chat) VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         ON CONFLICT (message_id, user_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason, \
+         reasons = EXCLUDED.reasons, note = EXCLUDED.note, include_chat = EXCLUDED.include_chat",
     )
     .bind(message_id)
     .bind(claims.sub)
     .bind(&req.rating)
     .bind(reason)
+    .bind(&reasons)
+    .bind(note)
+    .bind(down && req.include_chat)
     .execute(&state.pool)
     .await
     .map_err(|e| {

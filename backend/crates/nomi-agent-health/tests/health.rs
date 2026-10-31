@@ -128,7 +128,7 @@ async fn tools_answer_with_short_text_or_a_connect_card(pool: PgPool) {
 
     // Not connected yet: a card to connect Hevy.
     let outcome = agent.execute_tool(&mut conn, session, agent_session, ana, "hevy_workouts", json!({})).await.unwrap();
-    assert!(matches!(outcome.block, Some(ContentBlock::ConnectorConnect { ref connector, ref reason }) if connector == "hevy" && reason == "not_connected"));
+    assert!(matches!(outcome.block, Some(ContentBlock::ConnectorConnect { ref connector, ref reason, ref agent_type }) if connector == "hevy" && reason == "not_connected" && agent_type.as_deref() == Some("health")));
 
     connection::connect_hevy(&mut conn, &reqwest::Client::new(), &server.uri(), &KEY, ana, "k").await.unwrap();
     let outcome = agent.execute_tool(&mut conn, session, agent_session, ana, "hevy_workouts", json!({})).await.unwrap();

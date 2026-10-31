@@ -136,7 +136,14 @@ fn clip(text: &str, max: usize) -> String {
 }
 
 fn connect_card(reason: &str, service: &str, text: String) -> ToolOutcome {
-    ToolOutcome { display_text: text, block: Some(ContentBlock::WorkspaceConnect { reason: reason.to_string(), services: vec![service.to_string()] }) }
+    ToolOutcome {
+        display_text: text,
+        block: Some(ContentBlock::WorkspaceConnect {
+            reason: reason.to_string(),
+            services: vec![service.to_string()],
+            agent_type: Some(WORKSPACE_AGENT_TYPE.to_string()),
+        }),
+    }
 }
 
 #[async_trait]

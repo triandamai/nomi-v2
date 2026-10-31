@@ -233,3 +233,27 @@ pub async fn complete_agent_session(
 
     Ok(())
 }
+
+/// The crew member the person addressed by name ("@Dana"), built-in or dynamic: the first name in
+/// the message that is one of theirs, matched without case. `None` when nobody is addressed.
+pub async fn mentioned_agent(
+    conn: &mut PoolConnection<Postgres>,
+    registry: &AgentRegistry,
+    catalog: &Arc<ToolCatalog>,
+    text: &str,
+) -> Option<Arc<dyn SubAgent>> {
+    let names = nomi_agent_core::mention::mentioned_names(text);
+    if names.is_empty() {
+        return None;
+    }
+    let dynamic = nomi_agent_core::dynamic_agent::fetch_active_dynamic_agents(conn).await.unwrap_or_default();
+    for name in names {
+        if let Some(agent) = registry.agents().iter().find(|a| a.display_name().eq_ignore_ascii_case(name)) {
+            return Some(agent.clone());
+        }
+        if let Some(row) = dynamic.iter().find(|row| row.name.eq_ignore_ascii_case(name)) {
+            return Some(Arc::new(DynamicAgent::from_row(row.clone(), catalog.clone())) as Arc<dyn SubAgent>);
+        }
+    }
+    None
+}

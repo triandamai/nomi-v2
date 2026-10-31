@@ -104,7 +104,7 @@ fn published_app(target: &ProjectTarget) -> Result<&str, ApiError> {
     target.shipyard_app.as_deref().ok_or((StatusCode::NOT_FOUND, "this project hasn't been published yet".to_string()))
 }
 
-fn valid_env(env: &str) -> Result<(), ApiError> {
+pub(crate) fn valid_env(env: &str) -> Result<(), ApiError> {
     let ok = !env.is_empty()
         && env.len() <= 40
         && env.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')

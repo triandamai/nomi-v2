@@ -176,55 +176,72 @@ pub async fn delete_message(
 ) -> Result<Json<Related>, ApiError> {
     super::sessions::authorize_session_access(&state.pool, claims.sub, session_id).await?;
     let related = related_to(&state.pool, claims.sub, session_id, message_id).await?;
+    let mut tx = state.pool.begin().await.map_err(internal("failed to delete message"))?;
+    let blobs = remove(&mut tx, &related, None).await?;
+    tx.commit().await.map_err(internal("failed to delete message"))?;
+    drop_blobs(blobs).await;
+
+    Ok(Json(related))
+}
+
+/// Storage keys to drop once the rows that pointed at them are gone.
+pub(crate) struct Blobs(Vec<String>);
+
+/// Removes everything `related` lists, except `keep`: a person's message whose turn runs again
+/// keeps itself and the files attached to it, and loses the replies and what the turn made.
+pub(crate) async fn remove(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, related: &Related, keep: Option<Uuid>) -> Result<Blobs, ApiError> {
     let ids = |items: &[RelatedItem]| items.iter().map(|i| i.id).collect::<Vec<Uuid>>();
+    let message_ids: Vec<Uuid> = related.message_ids.iter().copied().filter(|id| Some(*id) != keep).collect();
+    let file_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM attachments WHERE id = ANY($1) AND message_id IS DISTINCT FROM $2")
+        .bind(ids(&related.files))
+        .bind(keep)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(internal("failed to delete message"))?;
 
     // Recordings the crew read out loud in these messages (the speak tool's `/voice/...` files).
     let blocks: Vec<Option<serde_json::Value>> = sqlx::query_scalar("SELECT content_blocks FROM messages WHERE id = ANY($1)")
-        .bind(&related.message_ids)
-        .fetch_all(&state.pool)
+        .bind(&message_ids)
+        .fetch_all(&mut **tx)
         .await
         .map_err(internal("failed to delete message"))?;
-    let recordings: Vec<String> = blocks
+    let mut keys: Vec<String> = blocks
         .iter()
         .filter_map(|b| b.as_ref()?.as_array())
         .flatten()
         .filter(|block| block.get("kind").and_then(|k| k.as_str()) == Some("voice"))
         .filter_map(|block| block.get("url")?.as_str()?.strip_prefix("/voice/").map(|rest| format!("voice/{rest}")))
         .collect();
-
     let file_keys: Vec<(String, Option<String>)> = sqlx::query_as("SELECT storage_key, preview_key FROM attachments WHERE id = ANY($1)")
-        .bind(ids(&related.files))
-        .fetch_all(&state.pool)
+        .bind(&file_ids)
+        .fetch_all(&mut **tx)
         .await
         .map_err(internal("failed to delete message"))?;
+    keys.extend(file_keys.into_iter().flat_map(|(key, preview)| std::iter::once(key).chain(preview)));
 
-    let mut tx = state.pool.begin().await.map_err(internal("failed to delete message"))?;
     for (sql, list) in [
         ("DELETE FROM money_transactions WHERE id = ANY($1)", ids(&related.transactions)),
         ("DELETE FROM reminders WHERE id = ANY($1)", ids(&related.reminders)),
         ("DELETE FROM agent_plans WHERE id = ANY($1)", ids(&related.plans)),
         ("DELETE FROM scheduled_jobs WHERE id = ANY($1)", ids(&related.tasks)),
-        ("DELETE FROM attachments WHERE id = ANY($1)", ids(&related.files)),
-        ("DELETE FROM approval_resumes WHERE message_id = ANY($1)", related.message_ids.clone()),
-        ("DELETE FROM messages WHERE id = ANY($1)", related.message_ids.clone()),
+        ("DELETE FROM attachments WHERE id = ANY($1)", file_ids),
+        ("DELETE FROM approval_resumes WHERE message_id = ANY($1)", message_ids.clone()),
+        ("DELETE FROM messages WHERE id = ANY($1)", message_ids),
     ] {
         if list.is_empty() {
             continue;
         }
-        sqlx::query(sql).bind(&list).execute(&mut *tx).await.map_err(internal("failed to delete message"))?;
+        sqlx::query(sql).bind(&list).execute(&mut **tx).await.map_err(internal("failed to delete message"))?;
     }
-    tx.commit().await.map_err(internal("failed to delete message"))?;
-
-    let store = nomi_storage::blob::attachment_store();
-    for (key, preview) in file_keys {
-        let _ = store.delete(&key).await;
-        if let Some(preview) = preview {
-            let _ = store.delete(&preview).await;
-        }
-    }
-    for key in recordings {
-        let _ = store.delete(&key).await;
-    }
-
-    Ok(Json(related))
+    Ok(Blobs(keys))
 }
+
+/// Drops the files `remove` freed, after its transaction committed. Best effort: a file left
+/// behind is only storage, and nothing points at it any more.
+pub(crate) async fn drop_blobs(Blobs(keys): Blobs) {
+    let store = nomi_storage::blob::attachment_store();
+    for key in keys {
+        let _ = store.delete(&key).await;
+    }
+}
+

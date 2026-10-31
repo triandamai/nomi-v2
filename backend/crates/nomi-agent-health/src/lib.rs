@@ -179,7 +179,14 @@ fn pick(input: &Value, keys: &[&str]) -> Value {
 }
 
 fn connect_card(reason: &str, text: &str) -> ToolOutcome {
-    ToolOutcome { display_text: text.to_string(), block: Some(ContentBlock::ConnectorConnect { connector: connection::HEVY.to_string(), reason: reason.to_string() }) }
+    ToolOutcome {
+        display_text: text.to_string(),
+        block: Some(ContentBlock::ConnectorConnect {
+            connector: connection::HEVY.to_string(),
+            reason: reason.to_string(),
+            agent_type: Some(HEALTH_AGENT_TYPE.to_string()),
+        }),
+    }
 }
 
 /// Every person's exercise templates, kept for a few hours: the list rarely changes and is a

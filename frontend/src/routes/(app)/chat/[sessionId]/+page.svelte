@@ -4,6 +4,7 @@
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import ChatThread from '$lib/components/ChatThread.svelte';
+	import { mobileNav } from '$lib/mobileNav.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
@@ -52,6 +53,7 @@
 </script>
 
 <ChatThread
+	onopenmenu={() => (mobileNav.open = true)}
 	sessionId={page.params.sessionId as string}
 	title={data.title}
 	messages={data.messages}
@@ -61,6 +63,7 @@
 	sendError={form?.error ?? null}
 	glass={page.data.preferences?.animated_backdrop === true}
 	thinkingLevel={data.thinkingLevel}
+	chatMenu={data.chatMenu}
 >
 	{#snippet modelControl()}
 		{#if modelGroups.length > 0 || sessionModel}

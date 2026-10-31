@@ -180,3 +180,36 @@ async fn people_can_fix_confirm_and_retire_their_memories(pool: PgPool) {
     let (status, _) = send(router, "POST", &format!("{uri}/confirm"), &budi_token, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_thumbs_down_keeps_every_reason_the_note_and_whether_to_share_the_chat(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (token, session_id, message_id, _) = reply_with_memory(router.clone(), &pool).await;
+    let feedback = format!("/api/sessions/{session_id}/messages/{message_id}/feedback");
+
+    let body = json!({ "rating": "down", "reasons": ["inaccurate", "too_long"], "note": "  The total is off by a month.  ", "include_chat": true });
+    let (status, _) = send(router.clone(), "PUT", &feedback, &token, Some(body)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (reasons, note, include_chat): (Vec<String>, Option<String>, bool) =
+        sqlx::query_as("SELECT reasons, note, include_chat FROM message_feedback WHERE message_id = $1").bind(message_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(reasons, vec!["inaccurate", "too_long"]);
+    assert_eq!(note.as_deref(), Some("The total is off by a month."));
+    assert!(include_chat);
+
+    // The one reason older apps send still lands in the list.
+    send(router.clone(), "PUT", &feedback, &token, Some(json!({ "rating": "down", "reason": "wrong_memory" }))).await;
+    let reasons: Vec<String> = sqlx::query_scalar("SELECT reasons FROM message_feedback WHERE message_id = $1").bind(message_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(reasons, vec!["wrong_memory"]);
+
+    // A thumbs-up keeps no reasons or note.
+    send(router.clone(), "PUT", &feedback, &token, Some(json!({ "rating": "up", "reasons": ["inaccurate"], "note": "nice" }))).await;
+    let (reasons, note): (Vec<String>, Option<String>) =
+        sqlx::query_as("SELECT reasons, note FROM message_feedback WHERE message_id = $1").bind(message_id).fetch_one(&pool).await.unwrap();
+    assert!(reasons.is_empty());
+    assert!(note.is_none());
+
+    let (status, _) = send(router.clone(), "PUT", &feedback, &token, Some(json!({ "rating": "down", "reasons": ["inaccurate", "rude"] }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = send(router, "PUT", &feedback, &token, Some(json!({ "rating": "down", "note": "x".repeat(2001) }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

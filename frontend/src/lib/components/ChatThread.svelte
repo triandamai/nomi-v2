@@ -18,12 +18,30 @@
 	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
 	import CompactChatInput from '$lib/components/composer/CompactChatInput.svelte';
 	import { deserialize } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import { composeMessage, discardUpload, refusal, uploadFile, voiceNoteName, type AttachmentKind, type ComposerFile } from '$lib/attachments';
 	import { provideChatSend } from '$lib/chatSend';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { createChatLink } from '$lib/chatLink';
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
-	import { buildCrew } from '$lib/crew';
+	import { buildCrew, type CrewRosterMember } from '$lib/crew';
+	import { crewId } from '$lib/crewId';
+	import IconMenu from '$lib/components/icons/IconMenu.svelte';
+	import type { MentionOption } from '$lib/components/ds/chat/mention';
+	import Banner from '$lib/components/ds/chat/Banner.svelte';
+	import SessionExpired from '$lib/components/ds/chat/SessionExpired.svelte';
+	import Modal from '$lib/components/ds/overlays/Modal.svelte';
+	import * as outbox from '$lib/outbox';
+	import { splitAttachments } from '$lib/attachments';
+	import { afterRerun } from '$lib/rerun';
+	import { chatFileName, chatMarkdown } from '$lib/exportChat';
+	import { MoreHorizontal } from '@lucide/svelte';
+	import ChatMenu from './ds/chat/ChatMenu.svelte';
+	import MoveDialog from './ds/chat/MoveDialog.svelte';
+	import Dialog from './ds/overlays/Dialog.svelte';
+	import DsButton from './ds/actions/Button.svelte';
+	import DsIconButton from './ds/actions/IconButton.svelte';
+	import ShareTwin from './blocks/twins/ShareTwin.svelte';
 	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
 
@@ -48,6 +66,7 @@
 		modelControl,
 		newChatModel = null,
 		compactHeader = false,
+		onopenmenu,
 		thinkingLevel = null,
 		unsaved = false,
 		project = null,
@@ -56,6 +75,7 @@
 		placeholder,
 		typingLabel = null,
 		ontyping,
+		chatMenu = null,
 	}: {
 		sessionId: string;
 		messages: RenderedMessage[];
@@ -77,6 +97,8 @@
 		/** The page has its own header with the title (an open project): keep only the crew and
 		 * the controls here, in one slim row. */
 		compactHeader?: boolean;
+		/** Opens the phone's navigation drawer: on a phone this bar is the page's only one. */
+		onopenmenu?: () => void;
 		/** The chat's thinking level; null hides the picker. The page must have a setThinking action. */
 		thinkingLevel?: ThinkingLevel | null;
 		/** A new chat not saved yet: no live connection, and the first send creates it (/chat/new). */
@@ -91,6 +113,9 @@
 		typingLabel?: string | null;
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
+		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
+		 * project's doesn't. The page must have pinSession, moveSession and deleteSession actions. */
+		chatMenu?: { pinned: boolean; inProjectId: string | null; projects: { id: string; name: string; workspace: string }[] } | null;
 	} = $props();
 
 	// Someone writing tells the others in a shared chat (the page throttles it).
@@ -107,6 +132,52 @@
 	let titleDraft = $state('');
 	let titleInput: HTMLInputElement | undefined = $state();
 	let renameError = $state<string | null>(null);
+
+	// The chat menu (chatMenu): pin, move, export, share and delete this chat.
+	// svelte-ignore state_referenced_locally
+	let pinned = $state(chatMenu?.pinned ?? false);
+	// svelte-ignore state_referenced_locally
+	let inProjectId = $state(chatMenu?.inProjectId ?? null);
+	let moveOpen = $state(false);
+	let deleteChatOpen = $state(false);
+	let shareChatOpen = $state(false);
+	let menuError = $state<string | null>(null);
+
+	async function postChatAction(action: 'pinSession' | 'moveSession' | 'deleteSession', fields: Record<string, string> = {}): Promise<boolean> {
+		const body = new FormData();
+		for (const [key, value] of Object.entries(fields)) body.set(key, value);
+		const result = deserialize(await (await fetch(`?/${action}`, { method: 'POST', body })).text());
+		menuError = result.type === 'success' ? null : m.chat_update_failed();
+		return result.type === 'success';
+	}
+
+	function exportChat() {
+		const url = URL.createObjectURL(new Blob([chatMarkdown(shownTitle, localMessages, m.export_you())], { type: 'text/markdown;charset=utf-8' }));
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = chatFileName(shownTitle);
+		anchor.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function onChatMenu(action: 'rename' | 'pin' | 'move' | 'export' | 'share' | 'delete') {
+		if (action === 'rename') void startRename();
+		else if (action === 'pin' && (await postChatAction('pinSession', { pinned: String(!pinned) }))) pinned = !pinned;
+		else if (action === 'move') moveOpen = true;
+		else if (action === 'export') exportChat();
+		else if (action === 'share') shareChatOpen = true;
+		else if (action === 'delete') deleteChatOpen = true;
+	}
+
+	async function moveTo(projectId: string) {
+		moveOpen = false;
+		if (await postChatAction('moveSession', { projectId })) inProjectId = projectId;
+	}
+
+	async function deleteChat() {
+		if (await postChatAction('deleteSession')) await goto('/chats');
+		deleteChatOpen = false;
+	}
 
 	async function startRename() {
 		titleDraft = shownTitle;
@@ -236,11 +307,71 @@
 		addFiles(files);
 	}
 
-	function saveVoiceNote(audio: Blob, transcript: string, seconds: number) {
+	// How long the recording was, while the message's text is what the browser heard in it.
+	let transcribed = $state<string | null>(null);
+	$effect(() => {
+		if (!draft.trim()) transcribed = null;
+	});
+
+	// Offline, or signed out mid-chat: the message waits in the outbox (one per chat) and goes out
+	// when it can. `resend` is what the form posts in place of the composer while it does.
+	const chatKey = $derived(page.url.pathname);
+	let online = $state(true);
+	let backOnline = $state<'sent' | 'plain' | null>(null);
+	let resend = $state<string | null>(null);
+	let signedOut = $state<string | null>(null);
+	const signInHref = $derived(`/login?redirect_to=${encodeURIComponent(page.url.pathname)}`);
+	/** How long "Back online" stays up. */
+	const BACK_ONLINE_MS = 4000;
+
+	async function flushOutbox(): Promise<boolean> {
+		if (!navigator.onLine || resend !== null) return false;
+		const kept = outbox.take(chatKey);
+		if (kept === null) return false;
+		resend = kept;
+		await tick();
+		composerForm?.requestSubmit();
+		return true;
+	}
+
+	onMount(() => {
+		online = navigator.onLine;
+		let hide: ReturnType<typeof setTimeout> | undefined;
+		const wentOffline = () => {
+			online = false;
+			backOnline = null;
+		};
+		const cameBack = async () => {
+			online = true;
+			backOnline = (await flushOutbox()) ? 'sent' : 'plain';
+			clearTimeout(hide);
+			hide = setTimeout(() => (backOnline = null), BACK_ONLINE_MS);
+		};
+		window.addEventListener('offline', wentOffline);
+		window.addEventListener('online', cameBack);
+		// Signed back in (or the page reloaded) with a message waiting: it goes now.
+		void flushOutbox();
+		return () => {
+			clearTimeout(hide);
+			window.removeEventListener('offline', wentOffline);
+			window.removeEventListener('online', cameBack);
+		};
+	});
+
+	async function saveVoiceNote(audio: Blob, transcript: string, seconds: number) {
 		recordingVoice = false;
-		// The backend tells the format from the bytes; the name is what the chat shows.
-		const file = new File([audio], voiceNoteName(seconds), { type: audio.type });
-		addFiles([file], { voice: true, transcript });
+		if (transcript) {
+			// Heard: it becomes text to edit before sending, as the design has it.
+			draft = draft.trim() ? `${draft.trimEnd()} ${transcript}` : transcript;
+			await tick();
+			transcribed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+		} else {
+			// Nothing heard by the browser (or it can't listen): the files model transcribes the audio.
+			// The backend tells the format from the bytes; the name is what the chat shows.
+			const file = new File([audio], voiceNoteName(seconds), { type: audio.type });
+			addFiles([file], { voice: true, transcript });
+			await tick();
+		}
 		messageInput?.focus();
 	}
 	function startVoiceNote() {
@@ -535,6 +666,10 @@
 					: null,
 		}),
 	);
+	// "@" in the composer offers the crew by the names the server routes on (nomi_agent_core::mention).
+	const mentionOptions = $derived<MentionOption[]>(
+		((page.data.crew ?? []) as CrewRosterMember[]).map((member) => ({ kind: 'crew', agent: crewId(member.agent_type), name: member.name, role: member.role })),
+	);
 	const involvedCrew = $derived(crew.filter((m) => m.involved));
 	const workingCrew = $derived(crew.filter((m) => m.working));
 	// App-bar meta line: "TRAVEL · NOMI + MONEY + PLANNING"
@@ -660,6 +795,9 @@
 <div class="chat" class:chat--project={!!project} class:chat--glass={glass && !project}>
 	{#if glass && !project}<GlassBackdrop busy={isWorking} />{/if}
 	<header class="appbar" class:appbar--compact={compactHeader}>
+		{#if onopenmenu}
+			<button type="button" class="appbar__menu" aria-label={m.nav_open_menu()} onclick={onopenmenu}><IconMenu size={24} /></button>
+		{/if}
 		<div class="appbar__titles" hidden={compactHeader}>
 			{#if project}
 				<span class="appbar__project">
@@ -706,15 +844,49 @@
 				<span class="appbar__crew-label">{m.home_working_count({ count: workingCrew.length })}</span>
 			{/if}
 		</button>
-		{#if extraControls}
+		{#if extraControls || (chatMenu && !unsaved)}
 			<div class="appbar__actions">
-				{@render extraControls()}
+				{@render extraControls?.()}
+				{#if chatMenu && !unsaved}
+					<ChatMenu {pinned} onpick={onChatMenu}>
+						{#snippet trigger(props)}
+							<DsIconButton icon={MoreHorizontal} label={m.common_more_options()} variant="ghost" {...props} />
+						{/snippet}
+					</ChatMenu>
+				{/if}
 			</div>
 		{/if}
 	</header>
+	{#if menuError}<p class="appbar__rename-error" role="alert">{menuError}</p>{/if}
+	{#if chatMenu && !unsaved}
+		<MoveDialog bind:open={moveOpen} projects={chatMenu.projects} initialChosen={inProjectId ?? undefined} onmove={moveTo} />
+		<Dialog bind:open={deleteChatOpen} title={m.session_delete_title()} description={m.session_delete_body()}>
+			{#snippet actions()}
+				<DsButton label={m.common_cancel()} variant="ghost" onclick={() => (deleteChatOpen = false)} />
+				<DsButton label={m.common_delete()} variant="danger" onclick={deleteChat} />
+			{/snippet}
+		</Dialog>
+		{#if localMessages.length > 0}
+			<ShareTwin bind:open={shareChatOpen} scope="chat" messageId={localMessages[localMessages.length - 1].id} agent={localMessages[localMessages.length - 1].agent_display_name} time="" />
+		{/if}
+	{/if}
+
+	<Modal open={signedOut !== null} labelledby="signed-out-title" onclose={() => (signedOut = null)}>
+		<span id="signed-out-title" class="sr-only">{m.session_title()}</span>
+		<SessionExpired draft={signedOut ?? undefined} {signInHref} />
+	</Modal>
 
 	<div class="chat__body">
 		<div class="chat__main">
+			{#if !online}
+				<div class="chat__banner">
+					<Banner kind="offline" text={m.banner_offline()} />
+				</div>
+			{:else if backOnline}
+				<div class="chat__banner">
+					<Banner kind="online" text={backOnline === 'sent' ? m.banner_online_sent() : m.banner_online()} />
+				</div>
+			{/if}
 			<div bind:this={messagesContainer} class="thread" onscroll={onThreadScroll}>
 				<div class="thread__column">
 					{#if olderAvailable && threadItems.length > 0}
@@ -761,6 +933,7 @@
 							handoffFrom={handoffFrom(threadMessages, i)}
 							answered={i < lastUserIndex}
 							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
+							onrerun={(startId, update) => (localMessages = afterRerun(localMessages, startId, update))}
 						/>
 					{/each}
 					{#if isWorking}
@@ -801,7 +974,18 @@
 						if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) dragging = false;
 					}}
 					ondrop={onDrop}
-					use:enhance={() => {
+					use:enhance={({ cancel }) => {
+						const sent = resend ?? composedText;
+						// Offline: it waits here and goes out on reconnecting.
+						if (!navigator.onLine) {
+							cancel();
+							outbox.keep(chatKey, sent);
+							resend = null;
+							draft = '';
+							clearAttachments();
+							online = false;
+							return;
+						}
 						submitting = true;
 						sendingMessage = true;
 						stopRequested = false;
@@ -809,6 +993,14 @@
 						if (touchScreen()) messageInput?.blur();
 						return async ({ result, update }) => {
 							sendingMessage = false;
+							resend = null;
+							// The sign-in ran out: the message waits here and goes out after signing in.
+							if (result.type === 'redirect' && result.location.startsWith('/login')) {
+								submitting = false;
+								outbox.keep(chatKey, sent);
+								signedOut = splitAttachments(sent).text || sent;
+								return;
+							}
 							// A new chat's first message redirects to the chat it created.
 							if (result.type === 'redirect') clearAttachments();
 							await update({ reset: true });
@@ -821,6 +1013,9 @@
 						};
 					}}
 				>
+					{#if recordingVoice}
+						<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
+					{:else}
 					<CompactChatInput
 						bind:value={draft}
 						bind:textarea={messageInput}
@@ -831,20 +1026,18 @@
 						{attachments}
 						{attachError}
 						onremoveattachment={removeAttachment}
-						tray={recordingVoice ? voiceNote : undefined}
+						{mentionOptions}
+						{transcribed}
 						onsubmit={() => composerForm?.requestSubmit()}
 						onfiles={(files) => addFiles(files)}
-						onvoicenote={recordingSupported ? startVoiceNote : undefined}
-						recording={recordingVoice}
+						onrecord={recordingSupported ? startVoiceNote : undefined}
 						busy={isWorking || stopping}
 						stopForm={stopping ? undefined : 'stop-crew'}
 						glass={glass && !project}
 						dropping={dragging}
 					/>
-					{#snippet voiceNote()}
-						<VoiceNoteRecorder onsave={saveVoiceNote} oncancel={() => (recordingVoice = false)} />
-					{/snippet}
-					<input type="hidden" name="text" value={composedText} />
+					{/if}
+					<input type="hidden" name="text" value={resend ?? composedText} />
 					{#if unsaved}<input type="hidden" name="thinking" value={level} />{/if}
 					{#if unsaved && newChatModel}<input type="hidden" name="model" value={newChatModel} />{/if}
 				</form>
@@ -915,6 +1108,33 @@
 		align-items: center;
 		gap: 8px;
 		padding: 12px clamp(12px, 3vw, 24px) 10px;
+	}
+	.appbar__menu {
+		display: none;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		margin-left: -6px;
+		border: none;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: transparent;
+		color: var(--md-sys-color-on-surface);
+		cursor: pointer;
+	}
+	.appbar__menu:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+	.appbar__menu:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	/* Phones only: the desktop drawer is always there. */
+	@media (max-width: 767px) {
+		.appbar__menu {
+			display: inline-flex;
+		}
 	}
 	.appbar__title-button {
 		display: inline-flex;
@@ -1176,6 +1396,11 @@
 		}
 	}
 
+	.chat__banner {
+		max-width: 780px;
+		width: calc(100% - 2 * clamp(14px, 3vw, 32px));
+		margin: 8px auto 0;
+	}
 	.thread {
 		flex: 1;
 		overflow-y: auto;

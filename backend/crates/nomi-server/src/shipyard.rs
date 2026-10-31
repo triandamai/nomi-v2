@@ -545,6 +545,7 @@ pub(crate) async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, d
             "backend_setup_failed" => ("deploy.backend_setup_failed_title", "deploy.backend_setup_failed_body"),
             "crashed" => ("deploy.crashed_title", "deploy.crashed_body"),
             "error_rate_alert" => ("deploy.error_rate_title", "deploy.error_rate_body"),
+            "publish_requested" => ("deploy.request_title", "deploy.request_body"),
             _ => ("deploy.resource_title", "deploy.resource_body"),
         };
         let title = locale.tf(title_key, &[("name", &name)]);
@@ -556,7 +557,7 @@ pub(crate) async fn notify_admins(pool: &PgPool, project_id: Uuid, what: &str, d
     }
 }
 
-async fn person_locale(pool: &PgPool, user_id: Uuid) -> nomi_i18n::Locale {
+pub(crate) async fn person_locale(pool: &PgPool, user_id: Uuid) -> nomi_i18n::Locale {
     let language: Option<String> = sqlx::query_scalar("SELECT language FROM user_preferences WHERE user_id = $1")
         .bind(user_id)
         .fetch_optional(pool)

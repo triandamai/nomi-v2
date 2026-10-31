@@ -9,8 +9,7 @@
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
-	import IconClose from '$lib/components/icons/IconClose.svelte';
-	import { inbox } from '$lib/notifications.svelte';
+		import { inbox } from '$lib/notifications.svelte';
 	import IconApps from '$lib/components/icons/IconApps.svelte';
 	import { FEATURES, PERMANENT } from '$lib/features';
 	import { currentPins } from '$lib/drawerStore.svelte';
@@ -30,10 +29,9 @@
 		userEmail,
 		profile,
 		usage = null,
-		mobileOpen = $bindable(false),
 		savedPins = null,
 		recents = { enabled: true, limit: DEFAULT_RECENTS_LIMIT },
-	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; mobileOpen?: boolean; savedPins?: string[] | null; recents?: RecentsSettings } = $props();
+	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; savedPins?: string[] | null; recents?: RecentsSettings } = $props();
 
 	let proOpen = $state(false);
 	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
@@ -53,10 +51,8 @@
 
 	const accountLabel = $derived(profile.display_name || userEmail);
 
-	// The desktop "collapse to icon rail" preference shouldn't also shrink the mobile drawer —
-	// a temporary overlay with no labels is a worse tap target, so the drawer always renders
-	// fully expanded regardless of what's persisted for the desktop rail.
-	const effectiveCollapsed = $derived(collapsed && !mobileOpen);
+	// The desktop drawer only: phones get MobileNavDrawer, which scrolls as one.
+	const effectiveCollapsed = $derived(collapsed);
 
 	// Home, Chats and Projects, then the person's pins in their order, then More (everything).
 	const NAV = $derived([
@@ -76,25 +72,12 @@
 
 	function goToAccountPage(path: string) {
 		accountMenuOpen = false;
-		mobileOpen = false;
 		goto(path);
 	}
 </script>
 
-{#if mobileOpen}
-	<button
-		type="button"
-		class="fixed inset-0 z-40 md:hidden"
-		style="background: color-mix(in srgb, black 40%, transparent); border: none; padding: 0; cursor: default"
-		aria-label={m.nav_close_menu()}
-		onclick={() => (mobileOpen = false)}
-	></button>
-{/if}
-
 <aside
-	class="fixed inset-y-0 left-0 z-50 flex w-72 flex-col transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-[width] {mobileOpen
-		? 'translate-x-0'
-		: '-translate-x-full'} {collapsed ? 'md:w-24 md:items-center' : 'md:w-72'}"
+	class="hidden flex-col md:flex md:transition-[width] {collapsed ? 'md:w-24 md:items-center' : 'md:w-72'}"
 	style="background: var(--md-sys-color-surface-container-low)"
 >
 	<div
@@ -102,7 +85,7 @@
 		class:justify-center={effectiveCollapsed}
 		class:justify-between={!effectiveCollapsed}
 	>
-		<a href="/" class="nomi-brand" aria-label={m.nav_nomi_home()} onclick={() => (mobileOpen = false)}>
+		<a href="/" class="nomi-brand" aria-label={m.nav_nomi_home()}>
 			<AgentShape size={40} face />
 			{#if !effectiveCollapsed}<span class="nomi-brand__word">nomi</span>{/if}
 		</a>
@@ -117,16 +100,11 @@
 				</IconButton>
 			</div>
 		{/if}
-		<div class="md:hidden">
-			<IconButton onclick={() => (mobileOpen = false)} aria-label={m.nav_close_menu()}>
-				<IconClose />
-			</IconButton>
-		</div>
 	</div>
 
 	<div class={effectiveCollapsed ? 'pt-2' : 'px-4 pt-2'}>
 		<!-- Opens an empty chat; nothing is saved until its first message is sent. -->
-		<a href="/chat/new" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label={m.nav_new_chat()} onclick={() => (mobileOpen = false)}>
+		<a href="/chat/new" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label={m.nav_new_chat()}>
 			<IconPlus size={24} />
 			{#if !effectiveCollapsed}<span>{m.nav_new_chat()}</span>{/if}
 		</a>
@@ -135,10 +113,10 @@
 	<!-- Scrolls on its own when the screen is shorter than the drawer, keeping the brand,
 	     New chat and the account row in place. -->
 	<div class="drawer-scroll">
-		<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} onnavigate={() => (mobileOpen = false)} />
+		<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} />
 		<!-- Chat titles need the labelled drawer; the icon rail has no room for them. -->
 		{#if recents.enabled && !effectiveCollapsed}
-			<DrawerRecents limit={recents.limit} onnavigate={() => (mobileOpen = false)} />
+			<DrawerRecents limit={recents.limit} />
 		{/if}
 	</div>
 
@@ -153,7 +131,7 @@
 	<div class="w-full px-3 pb-4">
 		{#if usage && !effectiveCollapsed}
 			<div class="usage" class:usage--over={share >= 1}>
-				<a href="/billing" class="usage__meter" onclick={() => (mobileOpen = false)} aria-label={m.usage_meter_label({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}>
+				<a href="/billing" class="usage__meter" aria-label={m.usage_meter_label({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}>
 					<span class="usage__top">
 						<span class="usage__plan">{usage.plan.name}</span>
 						<span class="usage__share">{formatShare(share)}</span>

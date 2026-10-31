@@ -4,6 +4,7 @@ import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
 import CompactChatInput from './CompactChatInput.svelte';
 import type { ComposerFile } from '$lib/attachments';
 import type { ThinkingLevel } from '$lib/types';
+import type { MentionOption } from '$lib/components/ds/chat/mention';
 
 // jsdom has no popover API or ResizeObserver; the menus only need them to exist.
 beforeAll(() => {
@@ -26,7 +27,9 @@ interface Props {
 	attachments?: ComposerFile[];
 	onsubmit?: (payload: Payload) => void;
 	onfiles?: (files: File[]) => void;
-	onvoicenote?: () => void;
+	onrecord?: () => void;
+	mentionOptions?: MentionOption[];
+	transcribed?: string | null;
 	disabled?: boolean;
 	busy?: boolean;
 	withModel?: boolean;
@@ -65,8 +68,16 @@ afterEach(() => {
 const field = (root: ParentNode) => root.querySelector('textarea')!;
 const send = (root: ParentNode) => root.querySelector<HTMLButtonElement>('.nomi-send')!;
 const fileInput = (root: ParentNode) => root.querySelector<HTMLInputElement>('input[type="file"]')!;
-const plus = (root: ParentNode) => root.querySelector<HTMLButtonElement>('button[aria-label="Attach files or a voice note"]')!;
-const plusItems = (root: ParentNode) => [...plus(root).closest('.m3-menu-anchor')!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+const photoInput = (root: ParentNode) => root.querySelector<HTMLInputElement>('input[type="file"][accept="image/*"]')!;
+const plus = (root: ParentNode) => root.querySelector<HTMLButtonElement>('button[aria-label="Attach a file"]')!;
+
+/** Opens the [+] menu (in the top layer, outside `root`) and gives its items. */
+async function plusItems(root: ParentNode) {
+	plus(root).click();
+	await tick();
+	flushSync();
+	return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+}
 
 function type(root: ParentNode, text: string) {
 	const input = field(root);
@@ -195,30 +206,50 @@ describe('CompactChatInput', () => {
 		expect(root.querySelector('[role="menuitemradio"]')).toBeNull();
 	});
 
-	it('offers exactly "Images and files" and "Record a voice note" under +', () => {
-		const root = render({ onvoicenote: () => {} });
-		const items = plusItems(root);
-		expect(items.map((item) => item.querySelector('[data-label]')?.textContent?.trim())).toEqual(['Images and files', 'Record a voice note']);
-		expect(items[0].querySelector('kbd')?.textContent?.trim()).toBe('Ctrl U');
-		expect(items[1].querySelector('kbd')).toBeNull();
+	it('offers a file, a photo and a link under +, with the limit underneath', async () => {
+		const items = await plusItems(render());
+		expect(items.map((item) => item.textContent?.trim())).toEqual(['Upload a file', 'Photo or screenshot', 'Paste a link']);
+		expect(document.body.textContent).toContain('max 10 MB');
 	});
 
-	it('shows ⌘U on a Mac', () => {
+	it('names the file shortcut on [+], ⌘U on a Mac', () => {
+		expect(plus(render()).title).toContain('Ctrl U');
+		unmount(component!);
 		setPlatform('MacIntel');
-		const root = render();
-		expect(plusItems(root)[0].querySelector('kbd')?.textContent?.trim()).toBe('⌘U');
+		expect(plus(render()).title).toContain('⌘U');
 	});
 
-	it('leaves voice notes out where they can’t be recorded', () => {
+	it('opens the file picker from "Upload a file", the photo picker from "Photo or screenshot"', async () => {
 		const root = render();
-		expect(plusItems(root).map((item) => item.querySelector('[data-label]')?.textContent?.trim())).toEqual(['Images and files']);
+		const files = vi.spyOn(fileInput(root), 'click').mockImplementation(() => {});
+		const photos = vi.spyOn(photoInput(root), 'click').mockImplementation(() => {});
+		(await plusItems(root))[0].click();
+		(await plusItems(root))[1].click();
+		expect(files).toHaveBeenCalledTimes(1);
+		expect(photos).toHaveBeenCalledTimes(1);
 	});
 
-	it('opens the file picker from "Images and files"', () => {
-		const root = render();
-		const click = vi.spyOn(fileInput(root), 'click').mockImplementation(() => {});
-		plusItems(root)[0].click();
-		expect(click).toHaveBeenCalledTimes(1);
+	it('puts a pasted link in the message, on its own line', async () => {
+		const root = render({ value: 'Read this' });
+		(await plusItems(root))[2].click();
+		await tick();
+		flushSync();
+		const link = root.querySelector<HTMLInputElement>('input[type="url"]')!;
+		link.value = 'https://example.com/a';
+		link.dispatchEvent(new Event('input', { bubbles: true }));
+		flushSync();
+		link.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+		flushSync();
+		expect(field(root).value).toBe('Read this\nhttps://example.com/a');
+		expect(root.querySelector('input[type="url"]')).toBeNull();
+	});
+
+	it('records a voice note from the mic when it can, and says when the text came from one', () => {
+		const onrecord = vi.fn();
+		const root = render({ onrecord, value: 'Coffee 25k', transcribed: '0:14' });
+		root.querySelector<HTMLButtonElement>('button[aria-label="Record a voice note"]')!.click();
+		expect(onrecord).toHaveBeenCalledTimes(1);
+		expect(root.textContent).toContain('transcribed from 0:14 of audio');
 	});
 
 	it('hands picked files over', () => {
@@ -229,13 +260,6 @@ describe('CompactChatInput', () => {
 		Object.defineProperty(input, 'files', { value: [file], configurable: true });
 		input.dispatchEvent(new Event('change', { bubbles: true }));
 		expect(onfiles).toHaveBeenCalledWith([file]);
-	});
-
-	it('starts a voice note from "Record a voice note"', () => {
-		const onvoicenote = vi.fn();
-		const root = render({ onvoicenote });
-		plusItems(root)[1].click();
-		expect(onvoicenote).toHaveBeenCalledTimes(1);
 	});
 
 	it('opens the file picker on Ctrl+U', () => {
@@ -277,5 +301,56 @@ describe('CompactChatInput', () => {
 		const root = render({ busy: true, value: 'Next thing', onsubmit });
 		key(root, { key: 'Enter' });
 		expect(onsubmit).not.toHaveBeenCalled();
+	});
+
+	describe('"@"', () => {
+		const crew: MentionOption[] = [
+			{ kind: 'crew', agent: 'dana', name: 'Dana', role: 'Money' },
+			{ kind: 'crew', agent: 'koda', name: 'Koda', role: 'Code' },
+			{ kind: 'crew', agent: 'kala', name: 'Kala', role: 'Reminders' },
+		];
+		const options = (root: ParentNode) => [...root.querySelectorAll('[role="option"]')].map((option) => option.textContent?.replace('↵', '').replace(/\s+/g, ' ').trim());
+
+		it('lists the crew matching what follows it, and Enter picks one instead of sending', () => {
+			const onsubmit = vi.fn();
+			const root = render({ mentionOptions: crew, onsubmit });
+			type(root, 'ask @k');
+			expect(options(root)).toEqual(['Koda Code', 'Kala Reminders']);
+			expect(field(root).getAttribute('aria-expanded')).toBe('true');
+			key(root, { key: 'ArrowDown' });
+			expect(field(root).getAttribute('aria-activedescendant')).toMatch(/-option-1$/);
+			key(root, { key: 'Enter' });
+			expect(onsubmit).not.toHaveBeenCalled();
+			expect(field(root).value).toBe('ask @Kala ');
+			expect(root.querySelector('[role="listbox"]')).toBeNull();
+		});
+
+		it('closes on Escape, and stays out of an email address', () => {
+			const root = render({ mentionOptions: crew });
+			type(root, '@d');
+			key(root, { key: 'Escape' });
+			expect(root.querySelector('[role="listbox"]')).toBeNull();
+			type(root, 'mail dana@d');
+			expect(root.querySelector('[role="listbox"]')).toBeNull();
+		});
+	});
+
+	describe('the length limit', () => {
+		it('holds Send over the limit and offers to send the text as a file', () => {
+			const onfiles = vi.fn();
+			const onsubmit = vi.fn();
+			const root = render({ onfiles, onsubmit });
+			type(root, 'a'.repeat(10_001));
+			expect(root.querySelector('[role="alert"]')?.textContent).toContain('10,001 / 10,000');
+			expect(send(root).disabled).toBe(true);
+			key(root, { key: 'Enter' });
+			expect(onsubmit).not.toHaveBeenCalled();
+			[...root.querySelectorAll('button')].find((button) => button.textContent === 'Send as a file instead')!.click();
+			flushSync();
+			const [[files]] = onfiles.mock.calls as [[File[]]];
+			expect(files[0].name).toBe('message.txt');
+			expect(files[0].size).toBe(10_001);
+			expect(field(root).value).toBe('');
+		});
 	});
 });

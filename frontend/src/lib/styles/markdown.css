@@ -1,0 +1,167 @@
+/* Markdown the server rendered ($lib/server/markdown.ts, sanitized there), shown with {@html}: a
+   reply's text, a plan's document, a shared chat. Everything here holds to .message-markdown, so
+   cards in a message keep their own look. */
+.message-markdown p {
+	margin: 0;
+}
+.message-markdown p + p {
+	margin-top: 0.5em;
+}
+.message-markdown pre {
+	overflow-x: auto;
+	padding: 12px;
+	border-radius: var(--md-sys-shape-corner-small);
+	margin: 0.5em 0;
+}
+.message-markdown pre.shiki-fallback {
+	background: var(--md-sys-color-surface-container-highest);
+}
+.message-markdown code {
+	font-family: var(--md-ref-typeface-mono);
+	font-size: 0.85em;
+}
+.message-markdown :not(pre) > code {
+	background: color-mix(in srgb, currentColor 12%, transparent);
+	padding: 0.1em 0.3em;
+	border-radius: var(--md-sys-shape-corner-extra-small);
+}
+.message-markdown ul,
+.message-markdown ol {
+	margin: 0.5em 0;
+	padding-left: 1.5em;
+}
+.message-markdown blockquote {
+	margin: 0.75em 0;
+	padding: 10px 14px;
+	border-radius: var(--md-sys-shape-corner-large);
+	background: var(--md-sys-color-surface-container);
+}
+/* Links in the reply's text (markdown's carry no class); a component's own links and buttons
+   (a card's Connect, a table's source) keep their look. */
+.message-markdown a:not([class]) {
+	color: inherit;
+	text-decoration: underline;
+}
+.message-markdown a.citation-chip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.2em;
+	height: 1.2em;
+	padding: 0 0.3em;
+	margin: 0 0.1em;
+	border-radius: var(--md-sys-shape-corner-full);
+	background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+	color: var(--md-sys-color-primary);
+	font-size: 0.7em;
+	font-weight: 600;
+	text-decoration: none;
+	vertical-align: super;
+}
+.message-markdown table {
+	border-collapse: collapse;
+	margin: 0.75em 0;
+	border-radius: var(--md-sys-shape-corner-large-increased);
+	overflow: hidden;
+	background: var(--md-sys-color-surface-container-lowest);
+}
+.message-markdown th {
+	background: var(--md-sys-color-surface-container);
+	text-align: left;
+	font-weight: 650;
+}
+.message-markdown th,
+.message-markdown td {
+	border-top: 1px solid var(--md-sys-color-surface-container);
+	padding: 10px 14px;
+	overflow-wrap: normal;
+}
+/* Wide tables scroll inside their own rounded box instead of squeezing words apart. */
+.message-markdown table {
+	display: block;
+	max-width: 100%;
+	overflow-x: auto;
+	width: fit-content;
+}
+
+/* Shiki's dual-theme output paints its base (light) background as an inline style on <pre>
+   itself, with no per-token background at all normally. The background here is intentionally
+   set ONLY at the <pre> level (never on individual token spans) and forced with !important to
+   beat that inline style — one single background paints the whole block uniformly, so gaps
+   between tokens (whitespace, indentation, line breaks not wrapped in any span) can never show
+   a different color than the syntax-highlighted text around them. */
+.message-markdown pre.shiki {
+	background-color: var(--shiki-light-bg) !important;
+}
+.message-markdown pre.shiki span {
+	background-color: transparent !important;
+}
+@media (prefers-color-scheme: dark) {
+	.message-markdown pre.shiki {
+		background-color: var(--shiki-dark-bg) !important;
+	}
+	.message-markdown .shiki,
+	.message-markdown .shiki span {
+		/* Every span carries its own inline color (the light-theme value) — beating that
+		   inline style, not just the stylesheet default, needs !important here too, the same
+		   as the background-color rule above. Without it, a token whose light-theme color
+		   happens to be close to the forced dark background (plain identifiers, typically a
+		   muted gray in most themes) renders essentially invisible instead of switching to
+		   its --shiki-dark value. */
+		color: var(--shiki-dark) !important;
+	}
+}
+
+/* Code block header/collapse chrome — built client-side by enhanceCodeBlocks() above around
+   the server-rendered <pre>, which ends up nested inside .code-block__body. */
+.message-markdown .code-block {
+	margin: 0.75em 0;
+	border-radius: var(--md-sys-shape-corner-large-increased);
+	overflow: hidden;
+	border: 1px solid var(--md-sys-color-outline-variant);
+}
+.message-markdown .code-block pre {
+	margin: 0;
+	border-radius: 0;
+}
+.message-markdown .code-block__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 10px;
+	background: var(--md-sys-color-surface-container-highest);
+	font-family: var(--md-sys-typescale-label-small-font);
+	font-size: var(--md-sys-typescale-label-small-size);
+	color: var(--md-sys-color-on-surface-variant);
+}
+.message-markdown .code-block__lang {
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+.message-markdown .code-block__actions {
+	display: flex;
+	gap: 4px;
+}
+.message-markdown .code-block__btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: var(--md-sys-shape-corner-extra-small);
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+.message-markdown .code-block__btn:hover {
+	background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.message-markdown .code-block__body {
+	max-height: 480px;
+	overflow: auto;
+}
+.message-markdown .code-block--collapsed .code-block__body {
+	display: none;
+}

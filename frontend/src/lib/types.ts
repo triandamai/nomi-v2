@@ -8,7 +8,12 @@ export interface SessionSummary {
 	last_message: { content: string; created_at: string } | null;
 	agent_active: boolean;
 	updated_at: string;
+	/** The project this chat belongs to as its own (Build). */
 	project_id: string | null;
+	pinned: boolean;
+	pinned_at: string | null;
+	/** The project this chat was moved into. */
+	in_project_id: string | null;
 }
 
 export interface TodoItem {
@@ -27,10 +32,12 @@ export type ContentBlock =
 	| { kind: 'file_writes'; project_id: string; files: { path: string; content: string; previous_content: string | null }[] }
 	| { kind: 'file_delete'; project_id: string; path: string; previous_content?: string | null }
 	| { kind: 'todo_list'; items: TodoItem[] }
-	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[] }
-	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[] }
+	/** `title` and `source` are one line each; older tables have neither. */
+	| { kind: 'table'; variant: 'data' | 'comparison'; columns: TableColumn[]; rows: Record<string, unknown>[]; title?: string; source?: string }
+	/** `agent_type`: who needs it (older cards don't say). */
+	| { kind: 'workspace_connect'; reason: 'not_connected' | 'service_not_allowed' | string; services: string[]; agent_type?: string }
 	/** A connector the request needs (Connections → its page); `reason` is not_connected or key_rejected. */
-	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string }
+	| { kind: 'connector_connect'; connector: string; reason: 'not_connected' | 'key_rejected' | string; agent_type?: string }
 	| { kind: 'project_link'; project_id: string; session_id: string; name: string }
 	| { kind: 'quota_notice'; reason: string }
 	/** Next steps the crew offers when it's done: buttons that send their text. */
@@ -88,6 +95,18 @@ export interface MessageItem {
 	sources?: ReplySource[];
 	/** Who wrote it, when it's a teammate's message in a shared project chat. */
 	author_name?: string;
+	/** When the person last changed their message. */
+	edited_at?: string | null;
+	/** Earlier takes of the person's message and its replies, kept when it ran again. */
+	versions?: number;
+}
+
+/** An earlier take of a turn (GET …/messages/:id/versions): what the person wrote, the replies it got. */
+export interface MessageVersion {
+	version: number;
+	text: string;
+	replies: { content: string; content_html: string; agent_display_name: string | null; created_at: string }[];
+	created_at: string;
 }
 
 export interface ReplyStep {
@@ -223,9 +242,6 @@ export interface ChatPersonality {
 }
 
 export type MemoryKind = 'preference' | 'person' | 'routine' | 'goal' | 'fact';
-
-/** Why a reply missed, given with a thumbs-down. */
-export type FeedbackReason = 'wrong_memory' | 'not_relevant' | 'too_long' | 'other';
 
 /** A memory a reply drew on (GET …/messages/:id/memories). */
 export interface UsedMemory {

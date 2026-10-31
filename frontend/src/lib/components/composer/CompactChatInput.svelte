@@ -11,22 +11,30 @@
 </script>
 
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount, tick, type Snippet } from 'svelte';
+	import { Mic } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { formatBytes } from '$lib/attachments';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import { formatBytes, maxFileBytes, maxMessageChars } from '$lib/attachments';
+	import { filterMentions, insertMention, mentionAt } from '$lib/mentions';
+	import { nextOption, type MentionOption } from '$lib/components/ds/chat/mention';
 	import { touchScreen } from '$lib/touch';
-	import Menu from '$lib/components/m3/Menu.svelte';
-	import MenuItem from '$lib/components/m3/MenuItem.svelte';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
-	import AttachmentIcon from '$lib/components/AttachmentIcon.svelte';
+	import AttachMenu from '$lib/components/ds/chat/AttachMenu.svelte';
+	import AttachmentChip from '$lib/components/ds/chat/AttachmentChip.svelte';
+	import AttachmentImage from '$lib/components/ds/chat/AttachmentImage.svelte';
+	import MentionPicker from '$lib/components/ds/chat/MentionPicker.svelte';
+	import ComposerLimit from '$lib/components/ds/chat/ComposerLimit.svelte';
+	import VoiceTranscribed from '$lib/components/ds/chat/VoiceTranscribed.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import EffortMenu from './EffortMenu.svelte';
 
 	// The chat's message bar: one rounded box with the message on top and a toolbar under it
-	// ([+] · model · thinking on the left, dictation and Send on the right). It holds no form of
-	// its own: Send (and Enter with a keyboard) calls `onsubmit`, and the page posts the message
-	// its own way (ChatThread submits its form).
+	// ([+] · model · thinking on the left, voice and Send on the right). It holds no form of its
+	// own: Send (and Enter with a keyboard) calls `onsubmit`, and the page posts the message its
+	// own way (ChatThread submits its form). The design system's pieces do the parts it shares with
+	// frontend-new: the attach menu, attachment chips, the "@" picker, the length limit.
 
 	let {
 		placeholder = m.composer_placeholder(),
@@ -40,10 +48,11 @@
 		attachError = null,
 		onremoveattachment,
 		tray,
+		mentionOptions = [],
+		transcribed = null,
 		onsubmit,
 		onfiles,
-		onvoicenote,
-		recording = false,
+		onrecord,
 		disabled = false,
 		busy = false,
 		stopForm,
@@ -67,15 +76,17 @@
 		/** Why a file couldn't be added. */
 		attachError?: string | null;
 		onremoveattachment?: (key: string) => void;
-		/** More to show with the chips: the voice-note recorder while it's open. */
+		/** More to show with the chips. */
 		tray?: Snippet;
+		/** Who (and which files) "@" offers: the crew, then a project's files. */
+		mentionOptions?: MentionOption[];
+		/** How long the recording was, when the text came from one (e.g. "0:14"). */
+		transcribed?: string | null;
 		onsubmit: (payload: ComposerSubmit) => void;
 		/** Files picked in the file picker or pasted into the field. */
 		onfiles?: (files: File[]) => void;
-		/** Starts a voice note; without it the [+] menu doesn't offer one. */
-		onvoicenote?: () => void;
-		/** A voice note is being recorded: no second one. */
-		recording?: boolean;
+		/** Records a voice note in place of the bar; without it the mic dictates into the field. */
+		onrecord?: () => void;
 		disabled?: boolean;
 		/** Sending, or the crew is working: Send shows progress (and stops the crew with `stopForm`). */
 		busy?: boolean;
@@ -89,7 +100,10 @@
 
 	const uid = $props.id();
 	let fileInput: HTMLInputElement | undefined = $state();
-	let actionsOpen = $state(false);
+	let photoInput: HTMLInputElement | undefined = $state();
+	let linkField: HTMLInputElement | undefined = $state();
+	let linkOpen = $state(false);
+	let link = $state('');
 	// The pill shows a pick straight away; the page may still put it back (a failed save).
 	let level = $derived(thinkingLevel);
 
@@ -100,8 +114,14 @@
 		mac = /mac|iphone|ipad|ipod/i.test(nav.userAgentData?.platform || nav.platform || '');
 	});
 
+	// Counted as the server counts: characters, not UTF-16 units.
+	const length = $derived([...value].length);
+	const max = maxMessageChars();
+	const tooLong = $derived(length > max);
+	const number = (n: number) => n.toLocaleString(getLocale());
+
 	const uploading = $derived(attachments.some((file) => !file.uploaded));
-	const canSend = $derived((value.trim().length > 0 || attachments.length > 0) && !uploading && !disabled);
+	const canSend = $derived((value.trim().length > 0 || attachments.length > 0) && !uploading && !disabled && !tooLong);
 
 	function submit() {
 		if (!canSend || busy) return;
@@ -118,9 +138,76 @@
 		onthinkingchange?.(next);
 	}
 
+	function onpick(source: 'file' | 'photo' | 'drive' | 'link') {
+		if (source === 'file') pickFiles();
+		else if (source === 'photo') photoInput?.click();
+		else if (source === 'link') {
+			linkOpen = true;
+			tick().then(() => linkField?.focus());
+		}
+	}
+
+	/** The link goes into the message, on a line of its own; the crew reads it from there. */
+	function addLink() {
+		const url = link.trim();
+		if (url) value = value.trim() ? `${value.trimEnd()}\n${url}` : url;
+		link = '';
+		linkOpen = false;
+		textarea?.focus();
+	}
+
+	/** Too long for one message: the text goes as a file instead. */
+	function sendAsFile() {
+		onfiles?.([new File([value], 'message.txt', { type: 'text/plain' })]);
+		value = '';
+	}
+
+	// "@" names a crew member (or a project file): the picker opens under the "@query" being typed.
+	let caret = $state(0);
+	let active = $state(0);
+	let dismissed = $state<number | null>(null);
+	const typing = $derived(mentionOptions.length > 0 ? mentionAt(value, caret) : null);
+	const matches = $derived(typing ? filterMentions(mentionOptions, typing.query) : []);
+	const picking = $derived(typing !== null && matches.length > 0 && dismissed !== typing.start);
+	$effect(() => {
+		void typing?.query;
+		active = 0;
+	});
+
+	function trackCaret() {
+		caret = textarea?.selectionStart ?? value.length;
+	}
+
+	async function choose(option: MentionOption) {
+		if (!typing) return;
+		const next = insertMention(value, typing.start, caret, option.name);
+		value = next.text;
+		caret = next.caret;
+		await tick();
+		textarea?.setSelectionRange(next.caret, next.caret);
+		textarea?.focus();
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		// An input method (Japanese, Chinese, …) uses Enter to accept a word, not to send.
 		if (event.isComposing || event.keyCode === 229) return;
+		if (picking) {
+			if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+				event.preventDefault();
+				active = nextOption(active, event.key, matches.length);
+				return;
+			}
+			if (event.key === 'Enter' || event.key === 'Tab') {
+				event.preventDefault();
+				choose(matches[active]);
+				return;
+			}
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				dismissed = typing?.start ?? null;
+				return;
+			}
+		}
 		if (event.key.toLowerCase() === 'u' && (mac ? event.metaKey : event.ctrlKey) && !event.altKey && !event.shiftKey) {
 			event.preventDefault();
 			pickFiles();
@@ -157,6 +244,13 @@
 		if (final) dictationBase = value;
 	}
 
+	/** What a chip says under the name: progress while uploading, then the type and size. */
+	function detail(file: ComposerFile): string {
+		if (!file.uploaded) return `${Math.round(file.progress * 100)}% · ${formatBytes(file.size * file.progress)} / ${formatBytes(file.size)}`;
+		const type = file.kind === 'voice' ? m.chat_record_voice() : (file.name.split('.').pop() ?? '').toUpperCase();
+		return `${type} · ${formatBytes(file.size)}`;
+	}
+
 	// The field grows with what's typed (up to its max height) instead of scrolling inside one
 	// line: browsers without `field-sizing` get it measured here.
 	function autoGrow(field: HTMLTextAreaElement, _value: string) {
@@ -171,6 +265,11 @@
 </script>
 
 <div class="cci" class:cci--glass={glass} class:cci--drop={dropping} class:cci--disabled={disabled}>
+	{#if picking}
+		<div class="cci__mentions">
+			<MentionPicker id="{uid}-mentions" options={matches} bind:active onselect={choose} />
+		</div>
+	{/if}
 	<label for="{uid}-message" class="sr-only">{label}</label>
 	<textarea
 		id="{uid}-message"
@@ -180,36 +279,63 @@
 		{placeholder}
 		{disabled}
 		class="cci__input"
+		role={mentionOptions.length > 0 ? 'combobox' : undefined}
+		aria-autocomplete={mentionOptions.length > 0 ? 'list' : undefined}
+		aria-expanded={mentionOptions.length > 0 ? picking : undefined}
+		aria-controls={picking ? `${uid}-mentions` : undefined}
+		aria-activedescendant={picking ? `${uid}-mentions-option-${active}` : undefined}
 		use:autoGrow={value}
 		onkeydown={onKeydown}
+		onkeyup={trackCaret}
+		onclick={trackCaret}
+		oninput={trackCaret}
 		onpaste={onPaste}
 		onfocus={() => (dictationBase = value)}
+		onblur={() => (dismissed = typing?.start ?? null)}
 	></textarea>
+
+	{#if transcribed && !tooLong}
+		<div class="cci__note"><VoiceTranscribed duration={transcribed} /></div>
+	{/if}
+	{#if tooLong}
+		<div class="cci__note"><ComposerLimit count={number(length)} max={number(max)} onfile={onfiles ? sendAsFile : undefined} /></div>
+	{/if}
+
+	{#if linkOpen}
+		<div class="cci__link" role="group" aria-label={m.composer_link_field()}>
+			<label for="{uid}-link" class="sr-only">{m.composer_link_field()}</label>
+			<input
+				id="{uid}-link"
+				bind:this={linkField}
+				bind:value={link}
+				type="url"
+				inputmode="url"
+				placeholder="https://"
+				class="cci__link-input"
+				onkeydown={(event) => {
+					// Enter adds the link (it would otherwise send the chat's form).
+					if (event.key === 'Enter') {
+						event.preventDefault();
+						addLink();
+					} else if (event.key === 'Escape') {
+						linkOpen = false;
+						textarea?.focus();
+					}
+				}}
+			/>
+			<button type="button" class="cci__link-add" disabled={!link.trim()} onclick={addLink}>{m.composer_link_add()}</button>
+			<button type="button" class="cci__link-cancel" onclick={() => (linkOpen = false)}>{m.common_cancel()}</button>
+		</div>
+	{/if}
 
 	{#if attachments.length > 0 || attachError || tray}
 		<div class="cci__files">
 			{#each attachments as file (file.key)}
-				<span class="file-chip" class:file-chip--voice={file.kind === 'voice'} class:file-chip--busy={!file.uploaded}>
-					{#if file.thumb}
-						<img class="file-chip__thumb" src={file.thumb} alt="" />
-					{:else}
-						<AttachmentIcon kind={file.kind} size={16} />
-					{/if}
-					<span class="file-chip__name">{file.name}</span>
-					<span class="file-chip__size">
-						{#if file.uploaded}
-							{formatBytes(file.size)}
-						{:else}
-							<span class="sr-only">{m.chat_uploading()}</span>{Math.round(file.progress * 100)}%
-						{/if}
-					</span>
-					{#if !file.uploaded}
-						<span class="file-chip__progress" style:--progress={file.progress} aria-hidden="true"></span>
-					{/if}
-					<button type="button" class="file-chip__remove" aria-label={m.chat_remove_file({ name: file.name })} onclick={() => onremoveattachment?.(file.key)}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-					</button>
-				</span>
+				{#if file.thumb && file.uploaded}
+					<AttachmentImage src={file.thumb} alt={file.name} onremove={() => onremoveattachment?.(file.key)} />
+				{:else}
+					<AttachmentChip name={file.name} detail={detail(file)} progress={file.uploaded ? undefined : file.progress} onremove={() => onremoveattachment?.(file.key)} />
+				{/if}
 			{/each}
 			{@render tray?.()}
 			{#if attachError}
@@ -220,54 +346,35 @@
 
 	<div class="cci__toolbar" data-composer-toolbar>
 		<div class="cci__start">
-			<Menu bind:open={actionsOpen} align="start">
-				{#snippet trigger({ toggle })}
+			<AttachMenu max={formatBytes(maxFileBytes())} {onpick}>
+				{#snippet trigger(props)}
 					<button
 						type="button"
 						class="cci__plus"
-						aria-label={m.chat_attach_title()}
-						aria-haspopup="menu"
-						aria-expanded={actionsOpen}
-						title={m.chat_attach_title()}
+						{...props}
+						aria-label={m.composer_attach()}
+						title="{m.composer_attach()} ({mac ? '⌘U' : 'Ctrl U'})"
 						{disabled}
-						onclick={toggle}
 					>
 						<IconPlus size={20} />
 					</button>
 				{/snippet}
-				<MenuItem
-					type="button"
-					title={m.chat_attach_files_hint()}
-					onclick={() => {
-						actionsOpen = false;
-						pickFiles();
-					}}
-				>
-					<span data-label>{m.composer_images_files()}</span>
-					<kbd class="cci__key">{mac ? '⌘U' : 'Ctrl U'}</kbd>
-				</MenuItem>
-				{#if onvoicenote}
-					<MenuItem
-						type="button"
-						title={m.chat_record_voice_hint()}
-						disabled={recording}
-						onclick={() => {
-							actionsOpen = false;
-							onvoicenote();
-						}}
-					>
-						<span data-label>{m.chat_record_voice()}</span>
-					</MenuItem>
-				{/if}
-			</Menu>
+			</AttachMenu>
 			<input bind:this={fileInput} type="file" multiple hidden onchange={onPicked} />
+			<input bind:this={photoInput} type="file" accept="image/*" multiple hidden onchange={onPicked} />
 			{@render modelControl?.()}
 			{#if level}
 				<EffortMenu {level} onchange={pickLevel} {disabled} />
 			{/if}
 		</div>
 		<div class="cci__end">
-			<MicButton ontranscript={onTranscript} {disabled} />
+			{#if onrecord}
+				<button type="button" class="cci__mic" aria-label={m.chat_record_voice()} title={m.chat_record_voice()} {disabled} onclick={onrecord}>
+					<Mic size={20} aria-hidden="true" />
+				</button>
+			{:else}
+				<MicButton ontranscript={onTranscript} {disabled} />
+			{/if}
 			<SendButton
 				size={44}
 				working={busy}
@@ -284,6 +391,7 @@
 	/* The bar lays itself out by its own width (a phone, a project's side column), not the
 	   viewport's: the model selector and the thinking pill read the same container. */
 	.cci {
+		position: relative;
 		container-type: inline-size;
 		display: flex;
 		flex-direction: column;
@@ -405,20 +513,11 @@
 			border-radius: 22px;
 		}
 	}
-	.cci__key {
-		flex: none;
-		padding: 1px 6px;
-		border-radius: var(--md-sys-shape-corner-small);
-		background: var(--md-sys-color-surface-container-highest);
-		color: var(--md-sys-color-on-surface-variant);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		white-space: nowrap;
-	}
 
 	.cci__files {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 6px;
 		padding: 2px 4px 6px;
 	}
@@ -428,85 +527,103 @@
 		font-size: 0.8125rem;
 		color: var(--md-sys-color-error);
 	}
-	.file-chip {
-		position: relative;
-		overflow: hidden;
-		display: inline-flex;
+	.cci__mentions {
+		position: absolute;
+		left: 8px;
+		right: 8px;
+		bottom: calc(100% + 6px);
+		z-index: 2;
+	}
+	.cci__note {
+		padding: 0 8px 4px;
+	}
+	.cci__link {
+		display: flex;
 		align-items: center;
 		gap: 6px;
-		max-width: 100%;
-		height: 36px;
-		padding: 0 4px 0 10px;
+		padding: 2px 4px 6px;
+	}
+	.cci__link-input {
+		flex: 1;
+		min-width: 0;
+		height: 40px;
+		padding: 0 12px;
+		border: 1px solid var(--md-sys-color-outline-variant);
 		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface-container);
+		background: var(--md-sys-color-surface-container-low);
 		color: var(--md-sys-color-on-surface);
-		font-size: 0.8125rem;
+		font: inherit;
+		font-size: 0.875rem;
 	}
-	.file-chip--voice {
-		background: var(--md-sys-color-tertiary-container);
-		color: var(--md-sys-color-on-tertiary-container);
+	.cci__link-input:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: -1px;
 	}
-	.file-chip--busy .file-chip__name {
-		opacity: 0.75;
-	}
-	.file-chip__thumb {
+	.cci__link-add,
+	.cci__link-cancel {
 		flex: none;
-		width: 26px;
-		height: 26px;
-		margin-left: -4px;
-		border-radius: var(--md-sys-shape-corner-small);
-		object-fit: cover;
-	}
-	/* Upload progress: a bar along the chip's bottom edge. */
-	.file-chip__progress {
-		position: absolute;
-		left: 0;
-		bottom: 0;
-		height: 3px;
-		width: calc(var(--progress) * 100%);
-		background: var(--md-sys-color-primary);
-		transition: width 160ms linear;
-	}
-	.file-chip__name {
-		font-weight: 600;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 220px;
-	}
-	.file-chip__size {
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.file-chip__remove {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
+		height: 40px;
+		padding: 0 12px;
 		border: none;
 		border-radius: var(--md-sys-shape-corner-full);
 		background: transparent;
-		color: inherit;
+		color: var(--md-sys-color-primary);
+		font: inherit;
+		font-size: 0.875rem;
+		font-weight: 600;
 		cursor: pointer;
 	}
-	.file-chip__remove:hover {
-		background: var(--md-sys-color-surface-container-highest);
+	.cci__link-add:hover:not(:disabled),
+	.cci__link-cancel:hover {
+		background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 	}
-	.file-chip__remove:focus-visible {
+	.cci__link-add:focus-visible,
+	.cci__link-cancel:focus-visible {
 		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 1px;
+		outline-offset: 2px;
 	}
-	/* A 44px target on touch: the chip grows to hold it. */
+	.cci__link-add:disabled {
+		opacity: 0.38;
+		cursor: not-allowed;
+	}
+	.cci__link-cancel {
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.cci__mic {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border: none;
+		border-radius: 20px;
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		cursor: pointer;
+	}
+	.cci__mic:hover:not(:disabled) {
+		background: var(--md-sys-color-surface-container-high);
+		color: var(--md-sys-color-on-surface);
+	}
+	.cci__mic:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.cci__mic:disabled {
+		opacity: 0.38;
+		cursor: not-allowed;
+	}
 	@media (pointer: coarse) {
-		.file-chip {
+		.cci__link-input,
+		.cci__link-add,
+		.cci__link-cancel {
 			height: 44px;
-			padding-right: 0;
 		}
-		.file-chip__remove {
+		.cci__mic {
 			width: 44px;
 			height: 44px;
+			border-radius: 22px;
 		}
 	}
 </style>

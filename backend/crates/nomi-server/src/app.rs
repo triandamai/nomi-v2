@@ -96,10 +96,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/sessions/:id/messages/:message_id",
-            get(sessions_routes::get_message).delete(crate::routes::message_delete::delete_message),
+            get(sessions_routes::get_message)
+                .delete(crate::routes::message_delete::delete_message)
+                .patch(crate::routes::message_rerun::edit),
         )
         .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
         .route("/api/sessions/:id/messages/:message_id/retry", post(crate::routes::message_retry::retry_failed_run))
+        .route("/api/sessions/:id/messages/:message_id/regenerate", post(crate::routes::message_rerun::regenerate))
+        .route("/api/sessions/:id/messages/:message_id/versions", get(crate::routes::message_rerun::versions))
         .route(
             "/api/sessions/:id/agent-plans/:agent_session_id",
             get(sessions_routes::list_agent_plans),
@@ -190,6 +194,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/connections/hevy", get(connections_routes::get_hevy).put(connections_routes::connect_hevy).delete(connections_routes::disconnect_hevy))
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
+        .route("/api/connections/github", get(crate::routes::github::get).put(crate::routes::github::connect_token).delete(crate::routes::github::disconnect))
+        .route("/api/connections/github/start", post(crate::routes::github::start))
+        .route("/api/connections/github/callback", post(crate::routes::github::callback))
         .route("/api/connections/google/callback", post(connections_routes::complete_google))
         .route("/api/reminders", get(reminders_routes::list_reminders).post(reminders_routes::create_reminder))
         .route("/api/reminders/:id", post(reminders_routes::reminder_action))
@@ -212,6 +219,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
         .route("/api/maintenance", get(crate::routes::maintenance::get))
         .route("/api/showcase", get(crate::routes::showcase::list))
+        .route("/api/sessions/:id/shares", post(crate::routes::shares::create))
+        .route("/api/sessions/:id/shares/:share_id", put(crate::routes::shares::update).delete(crate::routes::shares::revoke))
+        .route("/api/shared/:token", get(crate::routes::shares::read))
+        .route("/api/shares", get(crate::routes::shares::list))
         .route("/api/admin/maintenance", get(crate::routes::maintenance::admin_get).put(crate::routes::maintenance::put))
         .route("/api/support/v1/ask", post(crate::routes::support::ask))
         .route("/api/admin/support/articles", get(crate::routes::support::list_articles).post(crate::routes::support::create_article))
@@ -363,6 +374,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/deploy", get(crate::routes::deploy::overview))
         .route("/api/projects/:id/showcase", get(crate::routes::showcase::get).put(crate::routes::showcase::put))
         .route("/api/projects/:id/deploy/publish", post(crate::routes::deploy::publish))
+        .route("/api/projects/:id/deploy/requests", get(crate::routes::publish_requests::list).post(crate::routes::publish_requests::ask))
+        .route("/api/projects/:id/deploy/requests/:request_id", post(crate::routes::publish_requests::resolve))
         .route("/api/projects/:id/ws", get(crate::routes::deploy::project_stream))
         .route("/api/projects/:id/domain", get(crate::routes::domain::get).put(crate::routes::domain::change))
         .route("/api/projects/:id/domain/check", get(crate::routes::domain::check))
@@ -380,6 +393,7 @@ pub fn build_router(state: AppState) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(crate::routes::project_import::MAX_ARCHIVE_BYTES)),
         )
         .route("/api/projects/:id/import/github", post(crate::routes::project_import::import_github))
+        .route("/api/projects/:id/export/github", post(crate::routes::github::export))
         .route(
             "/api/projects/:id/import/files",
             post(crate::routes::project_import::import_batch).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),

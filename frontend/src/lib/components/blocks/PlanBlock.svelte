@@ -219,7 +219,7 @@
 			</header>
 
 			{#if active.content_html !== null}
-				<div class="plan-sheet__doc">{@html active.content_html}</div>
+				<div class="plan-sheet__doc message-markdown">{@html active.content_html}</div>
 			{:else}
 				<p class="plan-sheet__error">{m.plan_version_failed()}</p>
 			{/if}

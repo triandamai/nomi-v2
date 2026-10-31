@@ -65,6 +65,15 @@
 				signin_redirect_uri: { label: m.config_google_signin_redirect_uri, hint: m.config_google_signin_redirect_uri_hint },
 			},
 		},
+		github: {
+			title: m.config_github,
+			lede: m.config_github_lede,
+			fields: {
+				client_id: { label: m.config_github_client_id },
+				client_secret: { label: m.config_github_client_secret },
+				redirect_uri: { label: m.config_github_redirect_uri, hint: m.config_github_redirect_uri_hint },
+			},
+		},
 		smtp: {
 			title: m.config_smtp,
 			lede: m.config_smtp_lede,

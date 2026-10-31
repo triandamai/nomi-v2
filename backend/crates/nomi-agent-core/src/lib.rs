@@ -14,6 +14,7 @@ pub mod engine;
 pub mod error;
 pub mod locale;
 pub mod memory;
+pub mod mention;
 pub mod notification;
 pub mod permissions;
 pub mod personality;

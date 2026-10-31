@@ -127,7 +127,7 @@
 	.checklist__count {
 		color: inherit;
 	}
-	/* Doubled class: outranks the bubble's markdown list rule (.message-bubble ul). */
+	/* Doubled class: outranks a markdown list rule, should the checklist sit in one. */
 	.checklist .checklist__items {
 		list-style: none;
 		margin: 0;

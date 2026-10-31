@@ -10,7 +10,7 @@ import {
 } from './drawerRecents';
 import type { SessionSummary } from './types';
 
-function session(id: string, title: string | null, projectId: string | null = null): SessionSummary {
+function session(id: string, title: string | null, projectId: string | null = null, pinnedAt: string | null = null): SessionSummary {
 	return {
 		id,
 		channel: 'web',
@@ -21,6 +21,9 @@ function session(id: string, title: string | null, projectId: string | null = nu
 		agent_active: false,
 		updated_at: '2026-10-18T00:00:00Z',
 		project_id: projectId,
+		pinned: pinnedAt !== null,
+		pinned_at: pinnedAt,
+		in_project_id: null,
 	};
 }
 
@@ -40,8 +43,22 @@ describe('toRecentChats', () => {
 	it('lists chats newest first up to the limit, leaving project sessions to Projects', () => {
 		const sessions = [session('a', 'Trip plan'), session('p', 'Site', 'project-1'), session('b', 'Budget'), session('c', 'Gym')];
 		expect(toRecentChats(sessions, 2)).toEqual([
-			{ id: 'a', title: 'Trip plan', href: '/chat/a' },
-			{ id: 'b', title: 'Budget', href: '/chat/b' },
+			{ id: 'a', title: 'Trip plan', href: '/chat/a', pinned: false, updatedAt: '2026-10-18T00:00:00Z' },
+			{ id: 'b', title: 'Budget', href: '/chat/b', pinned: false, updatedAt: '2026-10-18T00:00:00Z' },
+		]);
+	});
+
+	it('keeps pinned chats on top, newest pin first, and always shows them', () => {
+		const sessions = [
+			session('a', 'Trip plan'),
+			session('b', 'Budget', null, '2026-10-01T00:00:00Z'),
+			session('c', 'Gym'),
+			session('d', 'Taxes', null, '2026-10-20T00:00:00Z'),
+		];
+		expect(toRecentChats(sessions, 1).map((chat) => [chat.id, chat.pinned])).toEqual([
+			['d', true],
+			['b', true],
+			['a', false],
 		]);
 	});
 
@@ -77,7 +94,7 @@ describe('refreshesAfterNavigation', () => {
 describe('loadRecentChats', () => {
 	it('reads the recent sessions and keeps the chats', async () => {
 		const fetchFn = vi.fn(async () => Response.json({ sessions: [session('a', 'One'), session('b', 'Two')] }));
-		expect(await loadRecentChats(fetchFn, 1)).toEqual({ status: 'ready', chats: [{ id: 'a', title: 'One', href: '/chat/a' }] });
+		expect(await loadRecentChats(fetchFn, 1)).toEqual({ status: 'ready', chats: [{ id: 'a', title: 'One', href: '/chat/a', pinned: false, updatedAt: '2026-10-18T00:00:00Z' }] });
 		expect(fetchFn).toHaveBeenCalledWith('/chats/recent');
 	});
 

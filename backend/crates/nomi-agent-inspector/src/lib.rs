@@ -196,6 +196,8 @@ fn log_table(lines: &[String]) -> ContentBlock {
         variant: TableVariant::Data,
         columns: vec![TableColumn { key: "level".into(), label: "Level".into() }, TableColumn { key: "line".into(), label: "Line".into() }],
         rows: shown.iter().map(|line| json!({"level": severity(line).unwrap_or(""), "line": line})).collect(),
+        title: Some("Log lines".into()),
+        source: Some(format!("The newest {} of {} lines", shown.len(), lines.len())),
     }
 }
 
@@ -230,6 +232,13 @@ fn rows_table(result: &QueryRows) -> ContentBlock {
             .take(MAX_SHOWN_ROWS)
             .map(|row| Value::Object(result.columns.iter().cloned().zip(row.iter().cloned()).collect::<Map<String, Value>>()))
             .collect(),
+        title: Some("Query results".into()),
+        source: Some(format!(
+            "{} row{}{}",
+            result.rows.len(),
+            if result.rows.len() == 1 { "" } else { "s" },
+            if result.rows.len() > MAX_SHOWN_ROWS || result.truncated { ", more matched than shown" } else { "" }
+        )),
     }
 }
 
@@ -364,6 +373,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn log_tables_say_how_much_of_the_log_they_show() {
+        let lines = vec!["GET / 200".to_string(), "warn: slow".to_string()];
+        let ContentBlock::Table { title, source, .. } = log_table(&lines) else { panic!("a table") };
+        assert_eq!(title.as_deref(), Some("Log lines"));
+        assert_eq!(source.as_deref(), Some("The newest 2 of 2 lines"));
+    }
+
+    #[test]
     fn blind_log_summaries_count_without_quoting() {
         let lines = vec!["GET / 200".to_string(), "Error: secret value leaked".to_string(), "warn: slow".to_string()];
         let summary = blind_log_summary(&lines);
@@ -381,8 +398,10 @@ mod tests {
         let summary = blind_rows_summary(&result);
         assert!(summary.starts_with("2 rows. Columns: email (2 with a value), note (1 with a value)."));
         assert!(!summary.contains("a@b.c"));
-        let ContentBlock::Table { rows, .. } = rows_table(&result) else { panic!("a table") };
+        let ContentBlock::Table { rows, title, source, .. } = rows_table(&result) else { panic!("a table") };
         assert_eq!(rows[0], json!({"email": "a@b.c", "note": null}));
+        assert_eq!(title.as_deref(), Some("Query results"));
+        assert_eq!(source.as_deref(), Some("2 rows"));
     }
 
     #[test]

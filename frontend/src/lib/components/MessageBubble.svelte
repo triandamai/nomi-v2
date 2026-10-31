@@ -14,10 +14,18 @@
 	import IconShare from './icons/IconShare.svelte';
 	import IconDelete from './icons/IconDelete.svelte';
 	import MessageDeleteSheet from './MessageDeleteSheet.svelte';
-	import IconThumbDown from './icons/IconThumbDown.svelte';
-	import IconThumbUp from './icons/IconThumbUp.svelte';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
-	import type { FeedbackReason, RenderedMessage } from '$lib/types';
+	import type { RenderedMessage } from '$lib/types';
+	import ResponseActions from './ds/chat/ResponseActions.svelte';
+	import DislikeFeedback, { type DislikeReason } from './ds/chat/DislikeFeedback.svelte';
+	import FeedbackSent from './ds/chat/FeedbackSent.svelte';
+	import ShareTwin from './blocks/twins/ShareTwin.svelte';
+	import RegenerateMenu from './ds/chat/RegenerateMenu.svelte';
+	import MessageEditor from './ds/chat/MessageEditor.svelte';
+	import VersionSwitcher from './ds/chat/VersionSwitcher.svelte';
+	import { Pencil } from '@lucide/svelte';
+	import { page } from '$app/state';
+	import type { MessageVersion } from '$lib/types';
 
 	let {
 		message,
@@ -30,6 +38,7 @@
 		handoffFrom = null,
 		answered = false,
 		ondelete,
+		onrerun,
 	}: {
 		message: RenderedMessage;
 		chained?: boolean;
@@ -50,6 +59,8 @@
 		answered?: boolean;
 		/** Offers Delete; called with the ids of the messages that went. */
 		ondelete?: (ids: string[]) => void;
+		/** The latest turn ran again (edited, or a reply asked for again): the person's message as it now stands. */
+		onrerun?: (startId: string, update: Partial<RenderedMessage>) => void;
 	} = $props();
 	const steps = $derived(message.steps ?? []);
 	// Buttons or an error bubble the crew posted on their own: no copy, share or rating for them,
@@ -204,24 +215,94 @@
 			}
 			return;
 		}
-		// No Web Share API (most desktop browsers) — clipboard is the honest fallback, since this
-		// app has no shareable-link/public-session concept to share a URL to instead.
+		// No Web Share API (most desktop browsers): the clipboard. (A reply shares by link instead,
+		// through ShareTwin.)
 		await navigator.clipboard.writeText(message.content);
 		shareCopied = true;
 		setTimeout(() => (shareCopied = false), 1500);
 	}
 
-	// The memories this reply drew on, and "What was off?" after a thumbs-down.
+	// The memories this reply drew on ("Used 2 memories").
 	let memoriesOpen = $state(false);
-	let askReason = $state(false);
+	// After a thumbs-down: what went wrong (DislikeFeedback), then what was sent (FeedbackSent).
+	let dislikeOpen = $state(false);
+	let dislikeSent = $state<{ withChat: boolean } | null>(null);
+	// Sharing this reply, or its chat, by link (ShareTwin).
+	let shareOpen = $state(false);
 
-	async function sendFeedback(rating: 'up' | 'down' | null, reason?: FeedbackReason): Promise<boolean> {
+	// The latest turn can run again: the person edits their message, or asks for the reply again
+	// (see message_rerun on the server). Its earlier takes stay, a step back with the version switcher.
+	const latest = $derived(!answered && !message.author_name && !!onrerun);
+	const messageUrl = $derived(`${page.url.pathname}/message/${message.id}`);
+	let regenerateOpen = $state(false);
+	let editing = $state(false);
+	let rerunError = $state(false);
+
+	async function rerun(request: Promise<Response>): Promise<{ message_id: string; total: number; edited_at: string | null } | null> {
+		const response = await request.catch(() => null);
+		rerunError = !response?.ok;
+		if (!response?.ok) return null;
+		// Back to the live take; the list of earlier ones has grown.
+		viewing = null;
+		earlier = null;
+		return await response.json();
+	}
+
+	async function regenerate(choice: { style: 'again' | 'shorter' | 'longer' | 'list' } | { model: string }) {
+		regenerateOpen = false;
+		const style = 'style' in choice ? choice.style : 'again';
+		const done = await rerun(fetch(`${messageUrl}/regenerate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ style }) }));
+		if (done) onrerun?.(done.message_id, { versions: done.total - 1 });
+	}
+
+	async function saveEdit(text: string) {
+		const done = await rerun(fetch(messageUrl, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }));
+		if (!done) return;
+		editing = false;
+		const rendered = await fetch(messageUrl).then((response) => (response.ok ? (response.json() as Promise<RenderedMessage>) : null)).catch(() => null);
+		onrerun?.(done.message_id, rendered ?? { content: text, edited_at: done.edited_at, versions: done.total - 1 });
+	}
+
+	// Stepping through the earlier takes of this message: `viewing` is the take shown (null: the live one).
+	const total = $derived((message.versions ?? 0) + 1);
+	let viewing = $state<number | null>(null);
+	let earlier = $state<MessageVersion[] | null>(null);
+	const shown = $derived(viewing !== null && earlier ? earlier[viewing - 1] : null);
+
+	async function step(by: number) {
+		const next = (viewing ?? total) + by;
+		if (next < 1 || next > total) return;
+		if (next < total && !earlier) {
+			const response = await fetch(`${messageUrl}/versions`).catch(() => null);
+			if (!response?.ok) {
+				rerunError = true;
+				return;
+			}
+			earlier = ((await response.json()) as { versions: MessageVersion[] }).versions;
+		}
+		viewing = next === total ? null : next;
+	}
+
+	type Dislike = { reasons: DislikeReason[]; note: string; includeChat: boolean };
+
+	async function sendFeedback(rating: 'up' | 'down' | null, dislike?: Dislike): Promise<boolean> {
 		const body = new FormData();
 		body.set('messageId', message.id);
 		if (rating) body.set('rating', rating);
-		if (reason) body.set('reason', reason);
+		if (dislike) {
+			for (const reason of dislike.reasons) body.append('reasons', reason);
+			body.set('note', dislike.note);
+			body.set('includeChat', String(dislike.includeChat));
+		}
 		const response = await fetch('?/feedback', { method: 'POST', body });
 		return deserialize(await response.text()).type === 'success';
+	}
+
+	async function sendDislike(dislike: Dislike) {
+		if (await sendFeedback('down', dislike)) {
+			dislikeOpen = false;
+			dislikeSent = { withChat: dislike.includeChat };
+		}
 	}
 
 	async function setFeedback(rating: 'up' | 'down') {
@@ -232,14 +313,11 @@
 			feedback = previous;
 			return;
 		}
-		if (next === 'down') {
-			askReason = true;
-			memoriesOpen = true;
-		}
+		dislikeOpen = next === 'down';
+		dislikeSent = null;
 	}
 
 	function showMemories() {
-		askReason = false;
 		memoriesOpen = true;
 	}
 </script>
@@ -287,7 +365,9 @@
 			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
 		{/if}
 
-		{#if !thinkingOnly}
+		{#if !thinkingOnly && editing}
+			<MessageEditor value={message.content} version={total > 1 ? `${total} / ${total}` : undefined} onsave={saveEdit} oncancel={() => (editing = false)} />
+		{:else if !thinkingOnly}
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'} class:message-bubble--teammate={!!message.author_name}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
@@ -298,12 +378,52 @@
 			{:else if attached && attached.files.length > 0}
 				<MessageAttachments files={attached.files} />
 				{#if attached.text}<p class="message__plain">{attached.text}</p>{/if}
+			{:else if shown}
+				<p class="message__plain">{shown.text}</p>
 			{:else}
-				{@html message.content_html}
+				<div class="message-markdown">{@html message.content_html}</div>
 			{/if}
 		</div>
+		{#if total > 1}
+			<div class="message__versions">
+				<VersionSwitcher current={viewing ?? total} {total} onprev={() => step(-1)} onnext={() => step(1)} />
+				{#if message.edited_at && viewing === null}<span class="message__edited">{m.msg_edited({ time: new Date(message.edited_at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }) })}</span>{/if}
+			</div>
+		{/if}
+		{#if shown}
+			<div class="message__earlier" role="group" aria-label={m.msg_earlier_version({ version: viewing ?? total, total })}>
+				<p class="message__earlier-label">{m.msg_earlier_version({ version: viewing ?? total, total })}</p>
+				{#each shown.replies as reply, index (index)}
+					<div class="message__earlier-reply">
+						{#if reply.agent_display_name}<span class="message__earlier-name">{reply.agent_display_name}</span>{/if}
+						<div class="message-markdown">{@html reply.content_html}</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
-		{#if !statusOnly}
+		{#if !statusOnly && message.sender === 'assistant'}
+		<div class="message__reply-actions">
+			<ResponseActions
+				text={message.content}
+				meta={showTimestamp ? formattedTime : undefined}
+				feedback={feedback === 'up' ? 'liked' : feedback === 'down' ? 'disliked' : null}
+				onlike={() => setFeedback('up')}
+				ondislike={() => setFeedback('down')}
+				onshare={() => (shareOpen = true)}
+				onregenerate={latest ? () => (regenerateOpen = !regenerateOpen) : undefined}
+				ondelete={ondelete && !message.author_name ? () => (deleteOpen = true) : undefined}
+			/>
+		</div>
+		{#if regenerateOpen}<RegenerateMenu inline onpick={regenerate} />{/if}
+		{#if rerunError}<p class="message__error" role="alert">{m.msg_rerun_failed()}</p>{/if}
+		<ShareTwin bind:open={shareOpen} messageId={message.id} agent={message.agent_display_name} time={formattedTime} />
+		{#if dislikeOpen}
+			<DislikeFeedback onsend={sendDislike} oncancel={() => (dislikeOpen = false)} />
+		{:else if dislikeSent}
+			<FeedbackSent withChat={dislikeSent.withChat} />
+		{/if}
+		{:else if !statusOnly}
 		<div class="message__actions">
 			<button
 				type="button"
@@ -329,26 +449,9 @@
 					<IconShare size={16} />
 				{/if}
 			</button>
-			{#if message.sender === 'assistant'}
-				<button
-					type="button"
-					class="message-action-btn"
-					class:message-action-btn--active={feedback === 'up'}
-					aria-label={m.msg_good()}
-					aria-pressed={feedback === 'up'}
-					onclick={() => setFeedback('up')}
-				>
-					<IconThumbUp size={16} />
-				</button>
-				<button
-					type="button"
-					class="message-action-btn"
-					class:message-action-btn--active={feedback === 'down'}
-					aria-label={m.msg_bad()}
-					aria-pressed={feedback === 'down'}
-					onclick={() => setFeedback('down')}
-				>
-					<IconThumbDown size={16} />
+			{#if latest && !(attached && attached.files.length > 0)}
+				<button type="button" class="message-action-btn" aria-label={m.msg_edit()} title={m.msg_edit()} onclick={() => (editing = true)}>
+					<Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
 				</button>
 			{/if}
 			{#if ondelete && !message.author_name}
@@ -381,8 +484,6 @@
 		bind:open={memoriesOpen}
 		messageId={message.id}
 		memoryCount={message.memory_count ?? 0}
-		{askReason}
-		onreason={(reason) => sendFeedback('down', reason)}
 	/>
 {/if}
 
@@ -591,179 +692,46 @@
 	.message-action-btn:hover {
 		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
-	.message-action-btn--active {
-		border-radius: var(--md-sys-shape-corner-small);
-		background: var(--md-sys-color-primary-container);
-		color: var(--md-sys-color-on-primary-container);
+	.message__reply-actions {
+		margin-top: 2px;
+	}
+	.message__versions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.message--user .message__versions {
+		align-self: flex-end;
+	}
+	.message__edited {
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.message__earlier {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.message__earlier-label,
+	.message__earlier-name {
+		margin: 0;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.message__error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+		font-size: var(--md-sys-typescale-body-small-size);
 	}
 
-	/* content_html is server-rendered from trusted markdown+shiki output (sanitized before it
-	   ever reaches this component — see $lib/server/markdown.ts), injected via {@html}. Svelte's
-	   scoped-style attribute isn't applied to {@html} content, so every rule below needs :global. */
-	.message-bubble :global(p) {
-		margin: 0;
-	}
-	.message-bubble :global(p + p) {
-		margin-top: 0.5em;
-	}
-	.message-bubble :global(pre) {
-		overflow-x: auto;
-		padding: 12px;
-		border-radius: var(--md-sys-shape-corner-small);
-		margin: 0.5em 0;
-	}
-	.message-bubble :global(pre.shiki-fallback) {
-		background: var(--md-sys-color-surface-container-highest);
-	}
-	.message-bubble :global(code) {
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.85em;
-	}
-	.message-bubble :global(:not(pre) > code) {
-		background: color-mix(in srgb, currentColor 12%, transparent);
-		padding: 0.1em 0.3em;
-		border-radius: var(--md-sys-shape-corner-extra-small);
-	}
-	.message-bubble :global(ul),
-	.message-bubble :global(ol) {
-		margin: 0.5em 0;
-		padding-left: 1.5em;
-	}
-	.message-bubble :global(blockquote) {
-		margin: 0.75em 0;
-		padding: 10px 14px;
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-surface-container);
-	}
-	.message-bubble :global(a) {
-		color: inherit;
-		text-decoration: underline;
-	}
 	/* File cards and image previews (MessageAttachments) aren't text links. */
 	.message-bubble :global(a.attachment-link) {
 		text-decoration: none;
 	}
-	.message-bubble :global(a.citation-chip) {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 1.2em;
-		height: 1.2em;
-		padding: 0 0.3em;
-		margin: 0 0.1em;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
-		color: var(--md-sys-color-primary);
-		font-size: 0.7em;
-		font-weight: 600;
-		text-decoration: none;
-		vertical-align: super;
-	}
-	.message-bubble :global(table) {
-		border-collapse: collapse;
-		margin: 0.75em 0;
-		border-radius: var(--md-sys-shape-corner-large-increased);
-		overflow: hidden;
-		background: var(--md-sys-color-surface-container-lowest);
-	}
-	.message-bubble :global(th) {
-		background: var(--md-sys-color-surface-container);
-		text-align: left;
-		font-weight: 650;
-	}
-	.message-bubble :global(th),
-	.message-bubble :global(td) {
-		border-top: 1px solid var(--md-sys-color-surface-container);
-		padding: 10px 14px;
-		overflow-wrap: normal;
-	}
-	/* Wide tables scroll inside their own rounded box instead of squeezing words apart. */
-	.message-bubble :global(table) {
-		display: block;
-		max-width: 100%;
-		overflow-x: auto;
-		width: fit-content;
-	}
 
-	/* Shiki's dual-theme output paints its base (light) background as an inline style on <pre>
-	   itself, with no per-token background at all normally. The background here is intentionally
-	   set ONLY at the <pre> level (never on individual token spans) and forced with !important to
-	   beat that inline style — one single background paints the whole block uniformly, so gaps
-	   between tokens (whitespace, indentation, line breaks not wrapped in any span) can never show
-	   a different color than the syntax-highlighted text around them. */
-	.message-bubble :global(pre.shiki) {
-		background-color: var(--shiki-light-bg) !important;
-	}
-	.message-bubble :global(pre.shiki span) {
-		background-color: transparent !important;
-	}
-	@media (prefers-color-scheme: dark) {
-		.message-bubble :global(pre.shiki) {
-			background-color: var(--shiki-dark-bg) !important;
-		}
-		.message-bubble :global(.shiki),
-		.message-bubble :global(.shiki span) {
-			/* Every span carries its own inline color (the light-theme value) — beating that
-			   inline style, not just the stylesheet default, needs !important here too, the same
-			   as the background-color rule above. Without it, a token whose light-theme color
-			   happens to be close to the forced dark background (plain identifiers, typically a
-			   muted gray in most themes) renders essentially invisible instead of switching to
-			   its --shiki-dark value. */
-			color: var(--shiki-dark) !important;
-		}
-	}
-
-	/* Code block header/collapse chrome — built client-side by enhanceCodeBlocks() above around
-	   the server-rendered <pre>, which ends up nested inside .code-block__body. */
-	.message-bubble :global(.code-block) {
-		margin: 0.75em 0;
-		border-radius: var(--md-sys-shape-corner-large-increased);
-		overflow: hidden;
-		border: 1px solid var(--md-sys-color-outline-variant);
-	}
-	.message-bubble :global(.code-block pre) {
-		margin: 0;
-		border-radius: 0;
-	}
-	.message-bubble :global(.code-block__header) {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 6px 10px;
-		background: var(--md-sys-color-surface-container-highest);
-		font-family: var(--md-sys-typescale-label-small-font);
-		font-size: var(--md-sys-typescale-label-small-size);
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.message-bubble :global(.code-block__lang) {
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-	.message-bubble :global(.code-block__actions) {
-		display: flex;
-		gap: 4px;
-	}
-	.message-bubble :global(.code-block__btn) {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
-		padding: 0;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-extra-small);
-		background: transparent;
-		color: inherit;
-		cursor: pointer;
-	}
-	.message-bubble :global(.code-block__btn:hover) {
-		background: color-mix(in srgb, currentColor 12%, transparent);
-	}
-	.message-bubble :global(.code-block__body) {
-		max-height: 480px;
-		overflow: auto;
-	}
-	.message-bubble :global(.code-block--collapsed .code-block__body) {
-		display: none;
-	}
 </style>

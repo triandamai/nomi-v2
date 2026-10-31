@@ -4,6 +4,7 @@ pub mod attachment_worker;
 pub mod background_worker;
 pub mod bootstrap;
 pub mod delegation_worker;
+pub mod github;
 pub mod routes;
 pub mod memory_worker;
 pub mod notifications;

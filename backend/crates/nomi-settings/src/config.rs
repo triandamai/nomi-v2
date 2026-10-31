@@ -1,5 +1,5 @@
 //! Nomi's configuration as set in Admin → Configuration: attachments, file storage, Google,
-//! email and the agent loop. Each field has the environment variable it replaces, which stays
+//! GitHub, email and the agent loop. Each field has the environment variable it replaces, which stays
 //! the fallback for anything not saved here. Secrets are encrypted with the settings key and never
 //! shown back. The server and the worker read the saved values (cached for a few seconds), so a
 //! save takes effect without a restart.
@@ -79,6 +79,17 @@ pub const GOOGLE: SectionDef = SectionDef {
     ],
 };
 
+/// Nomi's GitHub OAuth app, for people to connect GitHub and push a project to a repository.
+/// Without it they can still connect with a token of their own.
+pub const GITHUB: SectionDef = SectionDef {
+    name: "github",
+    fields: &[
+        field("client_id", "GITHUB_CLIENT_ID", Kind::Text),
+        field("client_secret", "GITHUB_CLIENT_SECRET", Kind::Secret),
+        field("redirect_uri", "GITHUB_REDIRECT_URI", Kind::Text),
+    ],
+};
+
 pub const SMTP_SECURITY: &[&str] = &["starttls", "tls", "none"];
 
 pub const SMTP: SectionDef = SectionDef {
@@ -119,7 +130,7 @@ pub const RELAY: SectionDef = SectionDef {
     ],
 };
 
-pub const SECTIONS: [&SectionDef; 6] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &SMTP, &AGENT_LOOP, &RELAY];
+pub const SECTIONS: [&SectionDef; 7] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)
