@@ -59,6 +59,15 @@ interface NomiClient {
     /** Skips any backoff wait and reconnects the socket now (e.g. back online). */
     fun reconnect()
 
+    /** The id this device keeps for good: made on the first run, the same on every run after. */
+    val deviceId: String
+
+    /** What this device says about itself in the person's device list; registered now when signed in, and after each sign-in. */
+    suspend fun setDevice(info: DeviceInfo)
+
+    /** Whether the app is in front: the person's other apps see this device online or away. */
+    fun setForeground(foreground: Boolean)
+
     /**
      * Events for one realtime topic (`chat:<id>`, `project:<id>`, `user`): [SdkEvent.Realtime],
      * [SdkEvent.TopicResynced] and [SdkEvent.TopicAccessLost]. The topic is watched while collected.

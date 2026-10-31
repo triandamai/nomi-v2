@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import Button from '$lib/components/m3/Button.svelte';
 	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
+	import DeviceList from './DeviceList.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { ActionData, PageData } from './$types';
 
@@ -66,6 +67,20 @@
 			<p class="hint">
 				{m.account_google_hint()} <a href="/connections">{m.nav_connections()}</a>.
 			</p>
+		</section>
+
+		<section class="section" aria-labelledby="devices-title">
+			<h2 id="devices-title" class="section__label">{m.account_devices()}</h2>
+			{#if form && 'signedOut' in form && form.signedOut}
+				<p class="note note--ok" role="status">{m.account_device_signed_out({ name: form.signedOut })}</p>
+			{/if}
+			{#if form && 'deviceError' in form && form.deviceError}
+				<p class="note note--error" role="alert">{form.deviceError}</p>
+			{/if}
+			{#if data.devices}
+				<DeviceList devices={data.devices} />
+			{/if}
+			<p class="hint">{m.account_devices_hint()}</p>
 		</section>
 	</div>
 </div>

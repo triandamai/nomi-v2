@@ -70,7 +70,7 @@
 
 	// The person's own live feed, open as long as the app is: a chat the crew finishes (or that
 	// waits on them) anywhere but on screen comes in as a snackbar with a way back.
-	$effect(() => connectUserActivity());
+	$effect(() => connectUserActivity(data.deviceId));
 
 	// Snackbars show one at a time, the next once the last one goes.
 	let snackbarOpen = $state(false);

@@ -97,6 +97,12 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
 
     override fun reconnect() = sdk.reconnect()
 
+    override val deviceId: String get() = sdk.deviceId()
+
+    override suspend fun setDevice(info: DeviceInfo) = sdk.setDevice(info)
+
+    override fun setForeground(foreground: Boolean) = sdk.setForeground(foreground)
+
     override fun topicEvents(topic: String): Flow<SdkEvent> {
         // Validated eagerly, so a malformed topic fails at the call, not at collection.
         val wire = realtimeTopic(topic)

@@ -124,6 +124,45 @@ describe('session-stream-proxy', () => {
 		expect(message.toString()).toBe('finished');
 	});
 
+	it('names the browser and tab upstream, so the backend can call its broker connection after them', async () => {
+		const upstream = await startFakeUpstream();
+		cleanups.push(() => upstream.server.close());
+		const seen = new Promise((resolve) => upstream.wss.on('connection', (ws, request) => {
+			ws.send('hi');
+			resolve(request.headers);
+		}));
+
+		const proxy = await startProxyServer({ apiUrl: upstream.url });
+		cleanups.push(() => proxy.server.close());
+
+		const deviceId = '0f8e1c2a-3b4d-4e5f-8a6b-7c8d9e0f1a2b';
+		const browser = new WebSocket(`ws://127.0.0.1:${proxy.port}/activity/ws?tab=k3j9x0ab`, { headers: { cookie: `access_token=test-token; device_id=${deviceId}` } });
+		cleanups.push(() => browser.close());
+		await waitFor(browser, 'message');
+		const headers = /** @type {Record<string, string>} */ (await seen);
+		expect(headers['x-device-id']).toBe(deviceId);
+		expect(headers['x-tab-id']).toBe('k3j9x0ab');
+	});
+
+	it('drops a tab id the backend would refuse', async () => {
+		const upstream = await startFakeUpstream();
+		cleanups.push(() => upstream.server.close());
+		const seen = new Promise((resolve) => upstream.wss.on('connection', (ws, request) => {
+			ws.send('hi');
+			resolve(request.headers);
+		}));
+
+		const proxy = await startProxyServer({ apiUrl: upstream.url });
+		cleanups.push(() => proxy.server.close());
+
+		const browser = new WebSocket(`ws://127.0.0.1:${proxy.port}/activity/ws?tab=a%2Fb`, { headers: { cookie: 'access_token=test-token' } });
+		cleanups.push(() => browser.close());
+		await waitFor(browser, 'message');
+		const headers = /** @type {Record<string, string>} */ (await seen);
+		expect(headers['x-tab-id']).toBeUndefined();
+		expect(headers['x-device-id']).toBeUndefined();
+	});
+
 	it('maps a 401 from the upstream to close code 4401', async () => {
 		const upstream = await startFakeUpstream({ rejectStatus: 401 });
 		cleanups.push(() => upstream.server.close());

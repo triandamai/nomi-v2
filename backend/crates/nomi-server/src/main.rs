@@ -45,6 +45,8 @@ async fn main() {
     nomi_server::public_url::warn_if_unknown();
     nomi_server::project_events::init(&mqtt_broker_host, mqtt_broker_port);
     nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
+    // Which of each person's devices are on, from what their apps' connections say on MQTT.
+    tokio::spawn(nomi_server::presence::run(pool.clone(), mqtt_broker_host.clone(), mqtt_broker_port));
     // Inbox items and chat replies reach phones by FCM / APNs when those are configured.
     let push = nomi_server::push::from_env(http_client.clone());
     nomi_server::push::init(push.clone());

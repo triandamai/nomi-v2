@@ -85,7 +85,9 @@ val coreModule: Module = module {
     single {
         val setup = get<SdkSetup>()
         val credentials = TokenStoreCredentials(get<TokenStore>(), log = ::appLog)
-        NomiEngine(get(AppScope), get()) { NativeNomiClient(defaultSdkConfig(setup.baseUrl, setup.dataDir), credentials) }
+        NomiEngine(get(AppScope), get(), setup.device, log = ::appLog) {
+            NativeNomiClient(defaultSdkConfig(setup.baseUrl, setup.dataDir), credentials)
+        }
     }
     single<AuthRepository> { SdkAuthRepository(get(), get()) }
     single<SessionEngine> { EngineSession(get()) }

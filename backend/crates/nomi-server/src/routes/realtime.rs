@@ -9,7 +9,7 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -21,7 +21,8 @@ use crate::app::AppState;
 /// Topics a client may ask for, not counting the implicit user topic every socket has.
 const MAX_CLIENT_TOPICS_PER_SOCKET: usize = 64;
 const BROKER_EVENT_CAPACITY: usize = 256;
-const MQTT_KEEP_ALIVE: Duration = Duration::from_secs(30);
+/// What the gateway's broker connection is called when the app sent no device id.
+const GATEWAY_RELAY: &str = "realtime-gw";
 const MQTT_CHANNEL_CAPACITY: usize = 64;
 const CLOSE_BROKER_LOST: u16 = 1011;
 /// Private-range close code: the access token the socket was opened with has expired. The app
@@ -31,6 +32,7 @@ const CLOSE_TOKEN_EXPIRED: u16 = 4001;
 pub async fn realtime_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
+    headers: axum::http::HeaderMap,
     ws: WebSocketUpgrade,
 ) -> axum::response::Response {
     let expires_in = token_time_left(claims.exp, chrono::Utc::now().timestamp());
@@ -39,7 +41,9 @@ pub async fn realtime_stream(
     if expires_in.is_zero() {
         return (StatusCode::UNAUTHORIZED, "token expired").into_response();
     }
-    ws.on_upgrade(move |socket| run(socket, state, claims.sub, expires_in))
+    // The app's one socket says whether its device is on; its broker client id is the device id.
+    let identity = crate::presence::RelayIdentity::presence(&headers, claims.sub, GATEWAY_RELAY);
+    ws.on_upgrade(move |socket| run(socket, state, identity, claims.sub, expires_in))
 }
 
 /// How long until a token whose `exp` is `exp` runs out, as of `now` (both unix seconds).
@@ -105,12 +109,10 @@ fn echo(parsed: Option<Topic>, raw: String) -> String {
     parsed.map(|t| t.wire()).unwrap_or(raw)
 }
 
-async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid, expires_in: Duration) {
+async fn run(mut socket: WebSocket, state: AppState, identity: crate::presence::RelayIdentity, user_id: Uuid, expires_in: Duration) {
     let token_expiry = tokio::time::sleep(expires_in);
     tokio::pin!(token_expiry);
-    let mut options = MqttOptions::new(format!("realtime-gw-{}", Uuid::new_v4()), state.mqtt_broker_host.clone(), state.mqtt_broker_port);
-    options.set_keep_alive(MQTT_KEEP_ALIVE);
-    let (client, mut eventloop) = AsyncClient::new(options, MQTT_CHANNEL_CAPACITY);
+    let (client, mut eventloop) = AsyncClient::new(identity.options(state.mqtt_broker_host.clone(), state.mqtt_broker_port), MQTT_CHANNEL_CAPACITY);
 
     // The event loop is polled only here, in its own task: it is not cancel-safe, and the
     // socket task must be free to await subscribe/unsubscribe (which the loop has to drain).
@@ -139,6 +141,9 @@ async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid, expires_in: 
         }
     }
     let mut topics: HashSet<Topic> = HashSet::from([user_topic]); // always holds the user topic
+    if let Some(speaker) = &identity.presence {
+        speaker.say(&client, nomi_realtime::PresenceState::Online).await;
+    }
     if !send(&mut socket, &ServerFrame::Ready { user_id }).await {
         return;
     }
@@ -169,6 +174,13 @@ async fn run(mut socket: WebSocket, state: AppState, user_id: Uuid, expires_in: 
                 let reply = match serde_json::from_str::<ClientFrame>(&text) {
                     Err(_) => ServerFrame::Error { message: "unreadable frame".into() },
                     Ok(ClientFrame::Ping) => ServerFrame::Pong,
+                    // Foreground or background: nothing to answer.
+                    Ok(ClientFrame::Presence { state }) => {
+                        if let Some(speaker) = &identity.presence {
+                            speaker.say(&client, state).await;
+                        }
+                        continue;
+                    }
                     Ok(ClientFrame::Subscribe { topic: name }) => {
                         let parsed = Topic::parse_client(&name);
                         match parsed {

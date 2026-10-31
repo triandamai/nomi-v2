@@ -5,6 +5,8 @@ import ai.nomi.network.ApiConfig
 import ai.nomi.network.DesktopTokenStore
 import ai.nomi.network.TokenStore
 import ai.nomi.network.desktopDataDir
+import ai.nomi.sdk.DeviceInfo
+import java.net.InetAddress
 import androidx.compose.runtime.Composable
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -37,5 +39,30 @@ fun desktopPlatformModule(apiUrl: String = desktopApiUrl()): Module = module {
     val dataDir = desktopDataDir()
     single { ApiConfig(apiUrl) }
     single<TokenStore> { DesktopTokenStore(dataDir) }
-    single { SdkSetup(get<ApiConfig>().baseUrl, dataDir.resolve(SDK_DIR).path) }
+    single { SdkSetup(get<ApiConfig>().baseUrl, dataDir.resolve(SDK_DIR).path, desktopDevice()) }
+}
+
+/** The version a packaged app was built as (jpackage), or the one Gradle passes when run from source. */
+private val VERSION_PROPERTIES = listOf("jpackage.app-version", "nomi.version")
+private const val DEV_VERSION = "dev"
+private const val LOCAL_SUFFIX = ".local"
+
+/** This computer, as the person's device list shows it: its name, its maker, the OS and version. */
+private fun desktopDevice(): DeviceInfo {
+    val os = System.getProperty("os.name").orEmpty()
+    val platform = when {
+        os.startsWith("Mac", ignoreCase = true) -> "macos"
+        os.startsWith("Windows", ignoreCase = true) -> "windows"
+        else -> "linux"
+    }
+    val host = runCatching { InetAddress.getLocalHost().hostName.removeSuffix(LOCAL_SUFFIX) }.getOrNull()?.takeIf { it.isNotBlank() }
+    return DeviceInfo(
+        platform = platform,
+        name = host ?: os,
+        brand = if (platform == "macos") "Apple" else null,
+        model = System.getProperty("os.arch"),
+        osName = os.takeIf { it.isNotBlank() },
+        osVersion = System.getProperty("os.version"),
+        appVersion = VERSION_PROPERTIES.firstNotNullOfOrNull { System.getProperty(it)?.takeIf(String::isNotBlank) } ?: DEV_VERSION,
+    )
 }

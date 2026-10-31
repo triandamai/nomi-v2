@@ -451,6 +451,8 @@ struct Gateway {
 
 struct Socket {
     token: String,
+    /// The `X-Device-Id` the client opened the socket with.
+    device_id: String,
     ws: WebSocketStream<TcpStream>,
 }
 
@@ -491,7 +493,14 @@ impl Gateway {
 #[allow(clippy::result_large_err)]
 async fn upgrade(stream: TcpStream, tx: mpsc::UnboundedSender<Socket>) {
     let mut token = String::new();
+    let mut device_id = String::new();
     let callback = |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
+        device_id = request
+            .headers()
+            .get("x-device-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
         let bearer = request
             .headers()
             .get("authorization")
@@ -506,7 +515,11 @@ async fn upgrade(stream: TcpStream, tx: mpsc::UnboundedSender<Socket>) {
         Ok(response)
     };
     if let Ok(ws) = tokio_tungstenite::accept_hdr_async(stream, callback).await {
-        let _ = tx.send(Socket { token, ws });
+        let _ = tx.send(Socket {
+            token,
+            device_id,
+            ws,
+        });
     }
 }
 
@@ -900,4 +913,142 @@ async fn signing_out_closes_the_socket_and_signing_in_opens_one() {
         .unwrap();
     let socket = gateway.accept().await;
     assert_eq!(socket.token, token(USER, "a"));
+}
+
+// This device
+
+fn this_device() -> crate::device::DeviceInfo {
+    crate::device::DeviceInfo {
+        platform: "android".into(),
+        name: Some("Pixel 9".into()),
+        brand: Some("google".into()),
+        model: Some("Pixel 9".into()),
+        os_name: Some("Android".into()),
+        os_version: Some("15".into()),
+        app_version: "1.4.0".into(),
+    }
+}
+
+#[tokio::test]
+async fn every_request_and_the_socket_name_this_device() {
+    let harness = Harness::new(signed_in()).await;
+    let device_id = harness.sdk.device_id();
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(header("x-device-id", device_id.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(profile_body()))
+        .mount(&harness.server)
+        .await;
+    harness.sdk.fetch_profile().await.unwrap();
+
+    let (harness, mut gateway) = realtime_harness(signed_in(), settings(), no_rest()).await;
+    let socket = connected(&harness, &mut gateway).await;
+    assert_eq!(socket.device_id, harness.sdk.device_id());
+}
+
+#[tokio::test]
+async fn the_device_id_is_kept_across_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let make = || {
+        let config = default_sdk_config(
+            "http://localhost:1".into(),
+            dir.path().display().to_string(),
+        );
+        NomiSdk::with_settings(config, MemoryCredentials::default().boxed(), settings()).unwrap()
+    };
+    let first = make().device_id();
+    assert_eq!(make().device_id(), first);
+}
+
+#[tokio::test]
+async fn the_device_registers_with_its_details_after_signing_in() {
+    let harness = Harness::new(MemoryCredentials::default()).await;
+    let device_id = harness.sdk.device_id();
+    Mock::given(method("POST"))
+        .and(path("/api/auth/login"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_pair(USER, "a")))
+        .mount(&harness.server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/devices"))
+        .and(body_json(json!({
+            "device_id": device_id, "platform": "android", "name": "Pixel 9", "brand": "google",
+            "model": "Pixel 9", "os_name": "Android", "os_version": "15", "app_version": "1.4.0"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": device_id })))
+        .expect(1)
+        .mount(&harness.server)
+        .await;
+    harness.sdk.start().await.unwrap();
+    // Not signed in yet: kept until someone is.
+    harness.sdk.set_device(this_device()).await.unwrap();
+
+    harness
+        .sdk
+        .sign_in("a@nomi.test".into(), "pw".into())
+        .await
+        .unwrap();
+
+    tokio::time::timeout(EVENT_TIMEOUT, async {
+        while harness
+            .server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.url.path() != "/api/devices")
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the device never registered");
+}
+
+#[tokio::test]
+async fn the_socket_says_when_the_app_goes_to_the_background_and_comes_back() {
+    let (harness, mut gateway) = realtime_harness(signed_in(), settings(), no_rest()).await;
+    let mut socket = connected(&harness, &mut gateway).await;
+
+    harness.sdk.set_foreground(false);
+    assert_eq!(
+        socket.receive().await,
+        json!({ "op": "presence", "state": "away" })
+    );
+    harness.sdk.set_foreground(true);
+    assert_eq!(
+        socket.receive().await,
+        json!({ "op": "presence", "state": "online" })
+    );
+
+    // In the background when the socket comes back: the new one says so once ready.
+    harness.sdk.set_foreground(false);
+    assert_eq!(socket.receive().await["state"], "away");
+    socket.close(1000).await;
+    let mut again = gateway.accept().await;
+    again.ready().await;
+    assert_eq!(
+        again.receive().await,
+        json!({ "op": "presence", "state": "away" })
+    );
+}
+
+#[tokio::test]
+async fn signed_out_from_another_device_signs_this_one_out() {
+    let (harness, mut gateway) = realtime_harness(signed_in(), settings(), no_rest()).await;
+    let mut socket = connected(&harness, &mut gateway).await;
+
+    // Another device signed out: nothing happens here.
+    socket.send(json!({ "type": "event", "topic": "user", "payload": { "kind": "DeviceSignedOut", "device_id": "someone-else" } })).await;
+    let this = harness.sdk.device_id().to_uppercase();
+    socket.send(json!({ "type": "event", "topic": "user", "payload": { "kind": "DeviceSignedOut", "device_id": this } })).await;
+
+    let reason = harness
+        .next_matching(|event| match event {
+            SdkEvent::SignedOut { reason } => Some(reason),
+            _ => None,
+        })
+        .await;
+    assert_eq!(reason, SignOutReason::SignedOutElsewhere);
+    assert_eq!(harness.store.get(), None);
 }

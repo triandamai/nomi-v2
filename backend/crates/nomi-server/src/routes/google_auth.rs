@@ -80,7 +80,7 @@ pub struct CallbackResponse {
     pub refresh_token: Option<String>,
 }
 
-pub async fn callback(State(state): State<AppState>, Json(req): Json<CallbackRequest>) -> Result<Json<CallbackResponse>, (StatusCode, String)> {
+pub async fn callback(State(state): State<AppState>, headers: axum::http::HeaderMap, Json(req): Json<CallbackRequest>) -> Result<Json<CallbackResponse>, (StatusCode, String)> {
     let config = sign_in_config().await.ok_or_else(not_configured)?;
     let finished = google_sign_in::finish(&state.pool, &state.http_client, &config, &req.code, &req.state).await.map_err(sign_in_error)?;
     match finished {
@@ -91,6 +91,7 @@ pub async fn callback(State(state): State<AppState>, Json(req): Json<CallbackReq
             let refresh_token = nomi_auth::refresh_token::issue_refresh_token(&state.pool, user_id)
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Signed in, but couldn't start your session. Try again.".to_string()))?;
+            super::auth::note_device(&state, &headers, &refresh_token).await;
             Ok(Json(CallbackResponse { email, is_new, linked: false, access_token: Some(access_token), refresh_token: Some(refresh_token) }))
         }
     }

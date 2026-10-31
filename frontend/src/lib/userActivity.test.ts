@@ -9,6 +9,9 @@ class FakeSocket {
 	static all: FakeSocket[] = [];
 	listeners: Record<string, ((event: { data?: string; code?: number }) => void)[]> = {};
 	closed = false;
+	readyState = 1;
+	sent: string[] = [];
+	static OPEN = 1;
 	constructor(public url: string) {
 		FakeSocket.all.push(this);
 	}
@@ -17,6 +20,9 @@ class FakeSocket {
 	}
 	close() {
 		this.closed = true;
+	}
+	send(frame: string) {
+		this.sent.push(frame);
 	}
 	emit(type: string, event: { data?: string; code?: number } = {}) {
 		for (const fn of this.listeners[type] ?? []) fn(event);
@@ -67,7 +73,7 @@ describe("the person's activity feed", () => {
 		const { connectUserActivity } = await import('./userActivity');
 		const close = connectUserActivity();
 		const socket = FakeSocket.all[0];
-		expect(socket.url).toBe('/activity/ws');
+		expect(socket.url).toMatch(/^\/activity\/ws\?tab=[a-z0-9]+$/);
 		socket.emit('message', { data: activity() });
 		expect(shown).toEqual([expect.objectContaining({ message: 'Finley finished in “Trip to Bandung”', actionLabel: 'Open', href: '/chat/s1' })]);
 		close();
@@ -134,5 +140,56 @@ describe("the person's activity feed", () => {
 		FakeSocket.all[1].emit('close', { code: 4401 });
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(FakeSocket.all).toHaveLength(2);
+	});
+
+	it("says when the tab is hidden and shown again, on the tab's own connection", async () => {
+		const visibility: (() => void)[] = [];
+		const page = { hidden: false, cookie: '', addEventListener: (_: string, fn: () => void) => visibility.push(fn), removeEventListener: () => visibility.pop() };
+		vi.stubGlobal('document', page);
+		const { connectUserActivity } = await import('./userActivity');
+		const close = connectUserActivity('d1');
+		const socket = FakeSocket.all[0];
+		socket.emit('open');
+		expect(socket.sent).toEqual([]); // a shown tab is online from the start
+
+		page.hidden = true;
+		visibility.forEach((fn) => fn());
+		page.hidden = false;
+		visibility.forEach((fn) => fn());
+		expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
+			{ op: 'presence', state: 'away' },
+			{ op: 'presence', state: 'online' },
+		]);
+		close();
+		expect(visibility).toHaveLength(0);
+	});
+
+	it("tells the device list when one of the person's devices comes and goes", async () => {
+		const { connectUserActivity, onDevicePresence } = await import('./userActivity');
+		connectUserActivity('d1');
+		const seen: string[] = [];
+		const stop = onDevicePresence((event) => seen.push(`${event.device_id}:${event.presence}`));
+		FakeSocket.all[0].emit('message', { data: JSON.stringify({ kind: 'DevicePresence', device_id: 'd2', presence: 'away', last_seen_at: '2026-11-01T10:00:00+00:00' }) });
+		stop();
+		expect(seen).toEqual(['d2:away']);
+		expect(shown).toEqual([]);
+	});
+
+	it('leaves when this browser was signed out from another device, and only then', async () => {
+		const posted: string[] = [];
+		vi.stubGlobal('fetch', async (url: string) => {
+			posted.push(url);
+			return new Response(null);
+		});
+		const assigned: string[] = [];
+		vi.stubGlobal('location', { pathname: '/chat/other', assign: (to: string) => assigned.push(to) });
+		const { connectUserActivity } = await import('./userActivity');
+		connectUserActivity('D1-THIS');
+		const socket = FakeSocket.all[0];
+		socket.emit('message', { data: JSON.stringify({ kind: 'DeviceSignedOut', device_id: 'someone-else' }) });
+		socket.emit('message', { data: JSON.stringify({ kind: 'DeviceSignedOut', device_id: 'd1-this' }) });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(posted).toEqual(['/logout']);
+		expect(assigned).toEqual(['/login']);
 	});
 });

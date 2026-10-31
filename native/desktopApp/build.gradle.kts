@@ -23,6 +23,8 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "ai.nomi.desktop.MainKt"
+        // The version the person's device list shows for this computer.
+        jvmArgs += "-Dnomi.version=${providers.gradleProperty("nomi.versionName").get()}"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

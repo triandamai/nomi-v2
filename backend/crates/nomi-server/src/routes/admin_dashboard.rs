@@ -4,9 +4,8 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{DateTime, Utc};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use uuid::Uuid;
 
 use crate::app::AppState;
@@ -163,12 +162,14 @@ enum AdminStreamFrame {
 pub async fn admin_agents_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
+    headers: axum::http::HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
     crate::routes::admin_access::require_admin(&claims, "dashboard", "view")?;
     let broker_host = state.mqtt_broker_host.clone();
     let broker_port = state.mqtt_broker_port;
-    Ok(ws.on_upgrade(move |socket| relay_admin_agents_stream(socket, broker_host, broker_port)))
+    let identity = crate::presence::RelayIdentity::relay(&headers, ADMIN_RELAY);
+    Ok(ws.on_upgrade(move |socket| relay_admin_agents_stream(socket, broker_host, broker_port, identity)))
 }
 
 /// Extracts the session id from a `chat/{session_id}/stream` topic — the only way this relay
@@ -198,10 +199,11 @@ fn admin_frame_for(topic_session_id: Uuid, payload: &[u8]) -> Option<AdminStream
     }
 }
 
-async fn relay_admin_agents_stream(mut socket: WebSocket, broker_host: String, broker_port: u16) {
-    let mut options = MqttOptions::new(format!("admin-agents-ws-bridge-{}", Uuid::new_v4()), broker_host, broker_port);
-    options.set_keep_alive(Duration::from_secs(30));
-    let (client, mut eventloop) = AsyncClient::new(options, 16);
+/// What the admin dashboard's broker connections are called, after the device id.
+const ADMIN_RELAY: &str = "admin-agents-ws-bridge";
+
+async fn relay_admin_agents_stream(mut socket: WebSocket, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
+    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host, broker_port), 16);
     // Single-level MQTT wildcard: matches chat/{any session_id}/stream in one subscription —
     // this is what makes the relay admin-wide instead of per-session.
     if client.subscribe("chat/+/stream", QoS::AtMostOnce).await.is_err() {
