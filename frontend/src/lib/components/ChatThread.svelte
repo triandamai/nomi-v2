@@ -42,6 +42,11 @@
 	import DsButton from './ds/actions/Button.svelte';
 	import DsIconButton from './ds/actions/IconButton.svelte';
 	import ShareTwin from './blocks/twins/ShareTwin.svelte';
+	import DateDivider from './ds/chat/DateDivider.svelte';
+	import JumpToLatest from './ds/chat/JumpToLatest.svelte';
+	import LoadingOlder from './ds/chat/LoadingOlder.svelte';
+	import { dayLabel, toISODate } from '$lib/dates';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupReasoning } from '$lib/reasoning';
 	import type { AgentStatus, RenderedMessage, ThinkingLevel } from '$lib/types';
 
@@ -545,9 +550,28 @@
 		}
 	}
 
+	/** How close to the bottom still counts as reading the latest, so new messages follow. */
+	const LATEST_WITHIN_PX = 80;
+	/** Whether the person is at the latest message; scrolled up, new ones wait behind JumpToLatest. */
+	let atLatest = $state(true);
+	/** Messages that came in while scrolled up. */
+	let unseen = $state(0);
+
 	function onThreadScroll() {
-		if (messagesContainer && messagesContainer.scrollTop < 240) void loadOlder();
+		if (!messagesContainer) return;
+		if (messagesContainer.scrollTop < 240) void loadOlder();
+		const { scrollHeight, scrollTop, clientHeight } = messagesContainer;
+		atLatest = scrollHeight - scrollTop - clientHeight < LATEST_WITHIN_PX;
+		if (atLatest) unseen = 0;
 	}
+
+	function jumpToLatest() {
+		messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+		atLatest = true;
+		unseen = 0;
+	}
+
+	const dayOf = (message: RenderedMessage) => toISODate(new Date(message.created_at));
 
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 	const STOP_COMMAND = /^\W*(stop|cancel|abort|halt|berhenti|hentikan|batalkan)\b/i;
@@ -693,13 +717,23 @@
 	// previous count so an in-place `MessageUpdated` patch — which this task's whole point is to
 	// apply without visibly jumping the viewport — doesn't yank the scroll position, while a
 	// genuinely new message (or live progress while `isWorking`) still does.
+	//
+	// Scrolled up to read, the view stays put: what arrives is counted on JumpToLatest instead,
+	// except the person's own message, which always brings them back down.
 	$effect(() => {
 		const currentCount = localMessages.length;
-		const grew = currentCount > lastMessageCount;
+		const added = lastMessageCount < 0 ? currentCount : currentCount - lastMessageCount;
 		lastMessageCount = currentCount;
 		if (prepending) return;
-		if (grew || isWorking) {
-			messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+		const sentByYou = added > 0 && localMessages[currentCount - 1]?.sender === 'user';
+		if (untrack(() => atLatest) || sentByYou) {
+			if (added > 0 || isWorking) {
+				messagesContainer?.scrollTo({ top: messagesContainer.scrollHeight });
+				atLatest = true;
+				unseen = 0;
+			}
+		} else if (added > 0) {
+			unseen = untrack(() => unseen) + added;
 		}
 	});
 
@@ -900,7 +934,7 @@
 					{#if olderAvailable && threadItems.length > 0}
 						<div class="thread__older">
 							{#if loadingOlder}
-								<LoadingIndicator size={24} label={m.chat_loading_older()} />
+								<LoadingOlder />
 							{:else}
 								<button type="button" class="thread__older-btn" onclick={loadOlder}>
 									{olderError ? m.chat_older_retry() : m.chat_load_older()}
@@ -930,6 +964,9 @@
 						</div>
 					{/if}
 					{#each threadItems as item, i (item.message.id)}
+						{#if i === 0 || dayOf(item.message) !== dayOf(threadMessages[i - 1])}
+							<div class="thread__day"><DateDivider label={dayLabel(new Date(item.message.created_at), getLocale())} /></div>
+						{/if}
 						<MessageBubble
 							message={item.message}
 							reasoning={item.reasoning}
@@ -963,6 +1000,9 @@
 					{/if}
 					{#if connectionLost}
 						<div class="thread__notice"><ErrorBubble text={m.chat_connection_lost()} /></div>
+					{/if}
+					{#if !atLatest && threadItems.length > 0}
+						<div class="thread__jump"><JumpToLatest count={unseen} onclick={jumpToLatest} /></div>
 					{/if}
 				</div>
 			</div>
@@ -1433,6 +1473,21 @@
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
+	}
+	.thread__day {
+		padding: 14px 0 6px;
+	}
+	/* Sticks to the bottom of the thread while scrolled up, just above the composer. */
+	.thread__jump {
+		position: sticky;
+		bottom: 8px;
+		display: flex;
+		justify-content: center;
+		margin-top: 8px;
+		pointer-events: none;
+	}
+	.thread__jump > :global(*) {
+		pointer-events: auto;
 	}
 	.thread__older-btn:hover {
 		background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);

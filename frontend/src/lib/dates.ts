@@ -127,3 +127,25 @@ export function to12Hour(hour: number): { hour: number; pm: boolean } {
 export function from12Hour(hour: number, pm: boolean): number {
 	return (hour % 12) + (pm ? 12 : 0);
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Local midnight of the day `at` falls on. */
+function startOfDay(at: Date): number {
+	return new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
+}
+
+/**
+ * The break between days in a chat: "Today", "Yesterday", else the weekday and date ("Mon 27 Oct"),
+ * with the year once it isn't this year. Intl words it in the person's language.
+ */
+export function dayLabel(at: Date, locale: string, now = new Date()): string {
+	// Rounded, so a day that's 23 or 25 hours long (a clock change) still counts as one.
+	const daysAgo = Math.round((startOfDay(now) - startOfDay(at)) / DAY_MS);
+	if (daysAgo === 0 || daysAgo === 1) {
+		const word = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-daysAgo, 'day');
+		return word.charAt(0).toLocaleUpperCase(locale) + word.slice(1);
+	}
+	const year = at.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' as const };
+	return new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', ...year }).format(at);
+}
