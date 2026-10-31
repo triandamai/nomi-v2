@@ -141,6 +141,62 @@ interface NomiClient {
     /** The chat on screen, or null: a reply there doesn't mark it unread. */
     fun setForegroundChat(sessionId: String?)
 
+    // Account pages: online calls, nothing stored. Throws [NomiException.NotSignedIn] without a session.
+
+    /** The person's crew and what each member is doing. */
+    suspend fun crew(): List<CrewMember>
+
+    /** Appearance and layout preferences. */
+    suspend fun preferences(): Preferences
+
+    /** Changes the preferences set in [update]; returns them all. */
+    suspend fun updatePreferences(update: PreferencesUpdate): Preferences
+
+    /** The home page's status: what happened while away, today, plans. */
+    suspend fun homeSummary(): HomeSummary
+
+    /** The money month starting in [month] (`YYYY-MM`), or the current one. */
+    suspend fun moneySummary(month: String?): MoneySummary
+
+    /** Adds a transaction; amounts are in cents. */
+    suspend fun addTransaction(transaction: NewTransaction)
+
+    /** Sets a category's monthly budget. */
+    suspend fun setBudget(category: String, limitCents: Long)
+
+    /** Upcoming and past reminders, and agent work scheduled for later. */
+    suspend fun reminders(): RemindersOverview
+
+    /** Creates a reminder. */
+    suspend fun createReminder(reminder: NewReminder): Reminder
+
+    /** Marks a reminder done, cancels it, or snoozes it. */
+    suspend fun actOnReminder(id: String, action: ReminderAction)
+
+    /** Cancels agent work scheduled for later. */
+    suspend fun cancelScheduledTask(id: String)
+
+    /** What Nomi remembers about the person. */
+    suspend fun memories(): List<Memory>
+
+    /** Rewrites a memory; [kind] changes its kind too. */
+    suspend fun editMemory(id: String, content: String, kind: String?)
+
+    /** Confirms a memory is still true. */
+    suspend fun confirmMemory(id: String)
+
+    /** Forgets a memory. */
+    suspend fun deleteMemory(id: String)
+
+    /** The person's connected services. */
+    suspend fun connections(): ConnectionsOverview
+
+    /** This month's allowance and how much is used. */
+    suspend fun usageBrief(): UsageBrief
+
+    /** Projects in [orgId], or in the organization picked for projects. */
+    suspend fun projects(orgId: String?): List<Project>
+
     /** Stops background work for good and completes every [events] stream. A no-op once closed. */
     suspend fun close()
 }

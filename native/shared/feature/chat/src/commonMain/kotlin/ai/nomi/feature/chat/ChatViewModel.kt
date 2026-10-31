@@ -9,7 +9,6 @@ import ai.nomi.data.SessionRepository
 import ai.nomi.network.ApiException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +21,9 @@ import kotlinx.coroutines.launch
 
 private const val MESSAGE_SEND_FAILED = "Couldn't send. Check your connection and try again."
 private const val APPROVAL_FAILED = "Failed to record your decision."
+
+/** The backend's answer to a decision on a card that is no longer pending. */
+private const val HTTP_CONFLICT = 409
 
 data class ChatComposerState(val draft: String = "", val sending: Boolean = false, val error: String? = null)
 
@@ -81,7 +83,7 @@ class ChatViewModel(
                 throw e
             } catch (e: ApiException) {
                 log("chat: approval failed: $e")
-                if (e.status == HttpStatusCode.Conflict.value) ApprovalState(expired = true) else ApprovalState(error = APPROVAL_FAILED)
+                if (e.status == HTTP_CONFLICT) ApprovalState(expired = true) else ApprovalState(error = APPROVAL_FAILED)
             } catch (e: Exception) {
                 log("chat: approval failed: $e")
                 ApprovalState(error = APPROVAL_FAILED)

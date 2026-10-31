@@ -4,12 +4,10 @@ import ai.nomi.data.SdkSetup
 import ai.nomi.network.AndroidTokenStore
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.TokenStore
-import ai.nomi.network.defaultHttpEngine
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import io.ktor.client.engine.HttpClientEngine
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -35,5 +33,4 @@ fun androidPlatformModule(apiUrl: String): Module = module {
     single { ApiConfig(apiUrl) }
     single<TokenStore> { AndroidTokenStore(androidContext()) }
     single { SdkSetup(get<ApiConfig>().baseUrl, androidContext().filesDir.resolve(SDK_DIR).path) }
-    single<HttpClientEngine> { defaultHttpEngine() }
 }

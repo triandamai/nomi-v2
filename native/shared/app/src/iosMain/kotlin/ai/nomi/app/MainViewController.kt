@@ -5,11 +5,9 @@ import ai.nomi.data.SdkSetup
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.IosTokenStore
 import ai.nomi.network.TokenStore
-import ai.nomi.network.defaultHttpEngine
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.ComposeUIViewController
-import io.ktor.client.engine.HttpClientEngine
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -38,7 +36,6 @@ fun iosPlatformModule(): Module = module {
     single { ApiConfig(apiUrl) }
     single<TokenStore> { IosTokenStore() }
     single { SdkSetup(get<ApiConfig>().baseUrl, applicationSupportPath() + "/" + SDK_DIR) }
-    single<HttpClientEngine> { defaultHttpEngine() }
 }
 
 @OptIn(ExperimentalForeignApi::class)

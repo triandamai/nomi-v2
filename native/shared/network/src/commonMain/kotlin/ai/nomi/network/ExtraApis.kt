@@ -1,16 +1,5 @@
 package ai.nomi.network
 
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.delete
-import io.ktor.client.request.get
-import io.ktor.client.request.parameter
-import io.ktor.client.request.post
-import io.ktor.client.request.put
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -94,36 +83,9 @@ data class CreateBudgetRequestDto(
 
 interface MoneyApi {
     suspend fun summary(month: String? = null): MoneySummaryDto
-    suspend fun createTransaction(request: CreateTransactionRequestDto): TransactionDto
-    suspend fun setBudget(request: CreateBudgetRequestDto): BudgetDto
-}
-
-class HttpMoneyApi(private val client: HttpClient, private val config: ApiConfig) : MoneyApi {
-    override suspend fun summary(month: String?): MoneySummaryDto {
-        val response = client.get(config.url("/api/money")) {
-            if (month != null) parameter("month", month)
-        }
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "money summary failed")
-        return response.body()
-    }
-
-    override suspend fun createTransaction(request: CreateTransactionRequestDto): TransactionDto {
-        val response = client.post(config.url("/api/money/transactions")) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "create transaction failed")
-        return response.body()
-    }
-
-    override suspend fun setBudget(request: CreateBudgetRequestDto): BudgetDto {
-        val response = client.post(config.url("/api/money/budgets")) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "set budget failed")
-        return response.body()
-    }
+    /** The backend answers with no body; reload the summary to see it. */
+    suspend fun createTransaction(request: CreateTransactionRequestDto)
+    suspend fun setBudget(request: CreateBudgetRequestDto)
 }
 
 // --- Reminders ---
@@ -179,36 +141,6 @@ interface RemindersApi {
     suspend fun cancelScheduledTask(id: String)
 }
 
-class HttpRemindersApi(private val client: HttpClient, private val config: ApiConfig) : RemindersApi {
-    override suspend fun list(): RemindersResponseDto {
-        val response = client.get(config.url("/api/reminders"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "list reminders failed")
-        return response.body()
-    }
-
-    override suspend fun create(request: CreateReminderRequestDto): ReminderDto {
-        val response = client.post(config.url("/api/reminders")) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "create reminder failed")
-        return response.body()
-    }
-
-    override suspend fun action(id: String, request: ReminderActionRequestDto) {
-        val response = client.post(config.url("/api/reminders/$id/action")) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "reminder action failed")
-    }
-
-    override suspend fun cancelScheduledTask(id: String) {
-        val response = client.delete(config.url("/api/reminders/tasks/$id"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "cancel task failed")
-    }
-}
-
 // --- Memory ---
 
 @Serializable
@@ -243,32 +175,6 @@ interface MemoryApi {
     suspend fun confirm(id: String)
 }
 
-class HttpMemoryApi(private val client: HttpClient, private val config: ApiConfig) : MemoryApi {
-    override suspend fun list(): MemoryListResponseDto {
-        val response = client.get(config.url("/api/memory"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "list memories failed")
-        return response.body()
-    }
-
-    override suspend fun delete(id: String) {
-        val response = client.delete(config.url("/api/memory/$id"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "delete memory failed")
-    }
-
-    override suspend fun edit(id: String, request: EditMemoryRequestDto) {
-        val response = client.put(config.url("/api/memory/$id")) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "edit memory failed")
-    }
-
-    override suspend fun confirm(id: String) {
-        val response = client.post(config.url("/api/memory/$id/confirm"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "confirm memory failed")
-    }
-}
-
 // --- Connections ---
 
 @Serializable
@@ -295,14 +201,6 @@ interface ConnectionsApi {
     suspend fun overview(): ConnectionsOverviewDto
 }
 
-class HttpConnectionsApi(private val client: HttpClient, private val config: ApiConfig) : ConnectionsApi {
-    override suspend fun overview(): ConnectionsOverviewDto {
-        val response = client.get(config.url("/api/connections"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "connections overview failed")
-        return response.body()
-    }
-}
-
 // --- Usage ---
 
 @Serializable
@@ -321,14 +219,6 @@ data class UsageBriefDto(
 
 interface UsageApi {
     suspend fun brief(): UsageBriefDto
-}
-
-class HttpUsageApi(private val client: HttpClient, private val config: ApiConfig) : UsageApi {
-    override suspend fun brief(): UsageBriefDto {
-        val response = client.get(config.url("/api/usage/brief"))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "usage brief failed")
-        return response.body()
-    }
 }
 
 // --- Projects ---
@@ -354,14 +244,5 @@ data class ListProjectsResponse(
 
 interface ProjectsApi {
     suspend fun list(orgId: String? = null): List<ProjectDto>
-}
-
-class HttpProjectsApi(private val client: HttpClient, private val config: ApiConfig) : ProjectsApi {
-    override suspend fun list(orgId: String?): List<ProjectDto> {
-        val url = if (orgId != null) config.url("/api/projects?org_id=$orgId") else config.url("/api/projects")
-        val response = client.get(url)
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "projects list failed")
-        return response.body<ListProjectsResponse>().projects
-    }
 }
 

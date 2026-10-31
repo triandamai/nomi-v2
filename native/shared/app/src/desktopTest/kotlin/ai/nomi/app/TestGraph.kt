@@ -18,10 +18,6 @@ import ai.nomi.network.VerificationInfo
 import ai.nomi.sdk.NativeNomiClient
 import ai.nomi.sdk.NomiClient
 import ai.nomi.sdk.defaultSdkConfig
-import io.ktor.client.engine.HttpClientEngine
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -129,7 +125,6 @@ val testPlatformModule: Module = module {
     single { ApiConfig("http://nomi.test") }
     single<TokenStore> { FakeTokenStore() }
     single { SdkSetup(UNREACHABLE_BASE_URL, Files.createTempDirectory("nomi-app-test").toFile().apply { deleteOnExit() }.path) }
-    single<HttpClientEngine> { MockEngine { respond("", HttpStatusCode.ServiceUnavailable) } }
 }
 
 /** A port nothing listens on: the engine's requests are refused at once. */

@@ -56,6 +56,9 @@ class NavigationTest {
     @Test
     fun links_map_to_routes() {
         assertEquals(Chat("abc"), NomiRoute.fromLink("/chat/abc"))
+        // Ids are percent-decoded as UTF-8 after splitting, so an encoded '/' stays in the id.
+        assertEquals(Chat("a/b é"), NomiRoute.fromLink("/chat/a%2Fb%20%C3%A9"))
+        assertEquals(Chat("100%"), NomiRoute.fromLink("/chat/100%"))
         assertEquals(Chat("abc"), NomiRoute.fromLink("https://nomi.example/chat/abc?from=push"))
         assertEquals(Notifications, NomiRoute.fromLink("/notifications"))
         assertEquals(ai.nomi.app.nav.Projects, NomiRoute.fromLink("/projects"))

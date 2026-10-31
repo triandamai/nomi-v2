@@ -9,7 +9,14 @@ import ai.nomi.data.CompanionPreferences
 import ai.nomi.data.EngineSession
 import ai.nomi.data.NomiEngine
 import ai.nomi.data.SdkAuthRepository
+import ai.nomi.data.SdkConnectionsApi
+import ai.nomi.data.SdkHomeApi
+import ai.nomi.data.SdkMemoryApi
+import ai.nomi.data.SdkMoneyApi
+import ai.nomi.data.SdkProjectsApi
+import ai.nomi.data.SdkRemindersApi
 import ai.nomi.data.SdkSetup
+import ai.nomi.data.SdkUsageApi
 import ai.nomi.data.SessionEngine
 import ai.nomi.data.TokenStoreCredentials
 import ai.nomi.data.ForegroundChat
@@ -26,15 +33,9 @@ import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
 import ai.nomi.network.ConnectionsApi
 import ai.nomi.network.HomeApi
-import ai.nomi.network.HttpConnectionsApi
-import ai.nomi.network.HttpHomeApi
-import ai.nomi.network.HttpMemoryApi
-import ai.nomi.network.HttpMoneyApi
-import ai.nomi.network.HttpRemindersApi
 import ai.nomi.network.MemoryApi
 import ai.nomi.network.MoneyApi
 import ai.nomi.network.RemindersApi
-import ai.nomi.network.nomiHttpClient
 import ai.nomi.data.ConnectionsRepository
 import ai.nomi.data.MemoryRepository
 import ai.nomi.data.MoneyRepository
@@ -46,7 +47,6 @@ import ai.nomi.app.screens.reminders.RemindersViewModel
 import ai.nomi.network.TokenStore
 import ai.nomi.sdk.NativeNomiClient
 import ai.nomi.sdk.defaultSdkConfig
-import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,8 +66,8 @@ private const val LOG_PREFIX = "Nomi: "
 internal fun appLog(message: String) = println(LOG_PREFIX + message)
 
 /**
- * The Rust engine, the remaining Ktor APIs and the repositories. A platform module supplies the four platform pieces:
- * [ai.nomi.network.ApiConfig], [TokenStore], [SdkSetup] and [io.ktor.client.engine.HttpClientEngine].
+ * The Rust engine and the repositories over it. A platform module supplies the three platform pieces:
+ * [ai.nomi.network.ApiConfig], [TokenStore] and [SdkSetup].
  */
 val coreModule: Module = module {
     single<CoroutineScope>(AppScope) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
@@ -82,16 +82,14 @@ val coreModule: Module = module {
     single<AuthRepository> { SdkAuthRepository(get(), get()) }
     single<SessionEngine> { EngineSession(get()) }
 
-    // The APIs the engine doesn't cover yet, on Ktor with the same session (TokenStore). A refresh the server rejects
-    // ends the session; resolved lazily, SessionGate needs this client itself.
-    single<HttpClient> { nomiHttpClient(get(), get(), get(), onSignedOut = { get<SessionGate>().signOut() }) }
-    single<HomeApi> { HttpHomeApi(get(), get()) }
-    single<MoneyApi> { HttpMoneyApi(get(), get()) }
-    single<RemindersApi> { HttpRemindersApi(get(), get()) }
-    single<MemoryApi> { HttpMemoryApi(get(), get()) }
-    single<ConnectionsApi> { HttpConnectionsApi(get(), get()) }
-    single<ai.nomi.network.UsageApi> { ai.nomi.network.HttpUsageApi(get(), get()) }
-    single<ai.nomi.network.ProjectsApi> { ai.nomi.network.HttpProjectsApi(get(), get()) }
+    // The account pages, on the engine too.
+    single<HomeApi> { SdkHomeApi(get()) }
+    single<MoneyApi> { SdkMoneyApi(get()) }
+    single<RemindersApi> { SdkRemindersApi(get()) }
+    single<MemoryApi> { SdkMemoryApi(get()) }
+    single<ConnectionsApi> { SdkConnectionsApi(get()) }
+    single<ai.nomi.network.UsageApi> { SdkUsageApi(get()) }
+    single<ai.nomi.network.ProjectsApi> { SdkProjectsApi(get()) }
 
     // The signed-in account's work (a child of AppScope); SessionGate opens it at sign-in and closes it before the wipe.
     single { SessionScope(get(AppScope)) }

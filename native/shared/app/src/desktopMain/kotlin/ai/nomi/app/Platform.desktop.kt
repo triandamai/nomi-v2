@@ -4,10 +4,8 @@ import ai.nomi.data.SdkSetup
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.DesktopTokenStore
 import ai.nomi.network.TokenStore
-import ai.nomi.network.defaultHttpEngine
 import ai.nomi.network.desktopDataDir
 import androidx.compose.runtime.Composable
-import io.ktor.client.engine.HttpClientEngine
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
@@ -36,5 +34,4 @@ fun desktopPlatformModule(apiUrl: String = desktopApiUrl()): Module = module {
     single { ApiConfig(apiUrl) }
     single<TokenStore> { DesktopTokenStore(dataDir) }
     single { SdkSetup(get<ApiConfig>().baseUrl, dataDir.resolve(SDK_DIR).path) }
-    single<HttpClientEngine> { defaultHttpEngine() }
 }

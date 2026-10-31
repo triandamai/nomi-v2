@@ -1,7 +1,6 @@
 package ai.nomi.app.nav
 
 import androidx.navigation3.runtime.NavKey
-import io.ktor.http.decodeURLPart
 import kotlinx.serialization.Serializable
 
 private const val SCHEME_SEPARATOR = "://"
@@ -19,6 +18,34 @@ private const val SEGMENT_CONNECTIONS = "connections"
 private const val SEGMENT_SETTINGS = "settings"
 private const val CHAT_PATH_SEGMENTS = 2
 private const val CHAT_ID_SEGMENT = 1
+private const val PERCENT = '%'
+private const val HEX_RADIX = 16
+private const val ESCAPE_LENGTH = 3
+
+/**
+ * Percent-decodes a path segment as UTF-8 (`%2F` → `/`, `%C3%A9` → `é`). A `%` not followed by two hex digits is
+ * kept as it is.
+ */
+internal fun String.decodePercent(): String {
+    if (PERCENT !in this) return this
+    val bytes = ArrayList<Byte>(length)
+    var index = 0
+    while (index < length) {
+        val escaped = if (this[index] == PERCENT && index + ESCAPE_LENGTH <= length) {
+            substring(index + 1, index + ESCAPE_LENGTH).toIntOrNull(HEX_RADIX)
+        } else {
+            null
+        }
+        if (escaped != null) {
+            bytes += escaped.toByte()
+            index += ESCAPE_LENGTH
+        } else {
+            this[index].toString().encodeToByteArray().forEach { bytes += it }
+            index++
+        }
+    }
+    return bytes.toByteArray().decodeToString()
+}
 
 /** Every screen the shell can show. Home is always the root of a signed-in back stack. */
 @Serializable
@@ -43,7 +70,7 @@ sealed interface NomiRoute : NavKey {
             val segments = path.substringBefore('?').substringBefore('#').split(PATH_SEPARATOR).filter { it.isNotEmpty() }
             return when {
                 segments.size == CHAT_PATH_SEGMENTS && segments.first() == SEGMENT_CHAT ->
-                    Chat(segments[CHAT_ID_SEGMENT].decodeURLPart())
+                    Chat(segments[CHAT_ID_SEGMENT].decodePercent())
                 segments.firstOrNull() == SEGMENT_PROJECTS -> Projects
                 segments.firstOrNull() == SEGMENT_NOTIFICATIONS -> Notifications
                 segments.firstOrNull() == SEGMENT_MONEY -> Money
