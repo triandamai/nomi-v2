@@ -14,6 +14,7 @@ import org.koin.android.ext.android.inject
 class MainActivity : ComponentActivity() {
     private val overlayController: BubbleOverlayController by inject()
     private val companion: CompanionController by inject()
+    private val permissions = StartupPermissions(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent { NomiApp() }
+        if (savedInstanceState == null) permissions.request()
     }
 
     override fun onNewIntent(intent: Intent) {
