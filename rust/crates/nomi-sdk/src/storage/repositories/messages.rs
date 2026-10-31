@@ -1,9 +1,9 @@
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::clamp_limit;
 use crate::error::NomiError;
 use crate::storage::database::{Table, Tx};
-use crate::storage::models::{Message, MessageCursor, MessagePage};
+use crate::storage::models::{Message, MessageCursor, MessagePage, STATUS_SENT};
 
 const COLUMNS: &str =
     "id, session_id, role, agent_type, agent_display_name, content, content_json, created_at, status";
@@ -93,4 +93,67 @@ pub(crate) fn page(
         messages: newest_first,
         older,
     })
+}
+
+#[cfg(test)]
+pub(crate) fn get(connection: &Connection, id: &str) -> Result<Option<Message>, NomiError> {
+    Ok(connection
+        .prepare_cached(&format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"))?
+        .query_row([id], from_row)
+        .optional()?)
+}
+
+pub(crate) fn set_status(tx: &mut Tx<'_>, id: &str, status: &str) -> Result<(), NomiError> {
+    tx.writes(Table::Messages).execute(
+        "UPDATE messages SET status = ?2 WHERE id = ?1 AND status != ?2",
+        params![id, status],
+    )?;
+    Ok(())
+}
+
+/// The oldest message of the chat the server has stored, as a cursor.
+pub(crate) fn oldest_sent(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Option<MessageCursor>, NomiError> {
+    Ok(connection
+        .prepare_cached(
+            "SELECT created_at, id FROM messages WHERE session_id = ?1 AND status = ?2
+             ORDER BY created_at, id LIMIT 1",
+        )?
+        .query_row(params![session_id, STATUS_SENT], |row| {
+            Ok(MessageCursor {
+                created_at: row.get(0)?,
+                id: row.get(1)?,
+            })
+        })
+        .optional()?)
+}
+
+/// Deletes the chat's server messages created strictly between `after` and `until` that are not
+/// in `keep`: the server's page for that span no longer has them, so they were deleted there.
+/// The ends are exclusive, so a message that merely shares a timestamp with a page edge stays.
+/// Local `sending`/`failed` rows are left alone.
+pub(crate) fn remove_missing(
+    tx: &mut Tx<'_>,
+    session_id: &str,
+    after: i64,
+    until: i64,
+    keep: &[String],
+) -> Result<usize, NomiError> {
+    let connection = tx.writes(Table::Messages);
+    let mut statement = connection.prepare_cached(
+        "SELECT id FROM messages
+         WHERE session_id = ?1 AND status = ?2 AND created_at > ?3 AND created_at < ?4",
+    )?;
+    let present: Vec<String> = statement
+        .query_map(params![session_id, STATUS_SENT, after, until], |row| {
+            row.get(0)
+        })?
+        .collect::<Result<_, _>>()?;
+    let mut removed = 0;
+    for id in present.iter().filter(|id| !keep.contains(id)) {
+        removed += connection.execute("DELETE FROM messages WHERE id = ?1", [id])?;
+    }
+    Ok(removed)
 }

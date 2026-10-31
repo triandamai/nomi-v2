@@ -2,7 +2,8 @@
 //! socket. Endpoints and wire shapes follow the backend as it is (`backend/crates/nomi-server`).
 
 pub(crate) mod auth;
-mod http;
+pub(crate) mod events;
+pub(crate) mod http;
 pub(crate) mod realtime;
 #[cfg(test)]
 mod tests;

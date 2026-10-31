@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::clamp_limit;
 use crate::error::NomiError;
@@ -64,6 +64,26 @@ pub(crate) fn mark_all_read(tx: &mut Tx<'_>, read_at: i64) -> Result<(), NomiErr
     tx.writes(Table::Notifications).execute(
         "UPDATE notifications SET read_at = ?1 WHERE read_at IS NULL",
         [read_at],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn get(
+    connection: &Connection,
+    id: &str,
+) -> Result<Option<NotificationItem>, NomiError> {
+    Ok(connection
+        .prepare_cached(&format!(
+            "SELECT {COLUMNS} FROM notifications WHERE id = ?1"
+        ))?
+        .query_row([id], from_row)
+        .optional()?)
+}
+
+pub(crate) fn mark_read(tx: &mut Tx<'_>, id: &str, read_at: i64) -> Result<(), NomiError> {
+    tx.writes(Table::Notifications).execute(
+        "UPDATE notifications SET read_at = ?2 WHERE id = ?1 AND read_at IS NULL",
+        params![id, read_at],
     )?;
     Ok(())
 }

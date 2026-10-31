@@ -24,6 +24,7 @@ rust/
         │   ├── tls.rs            rustls on ring + Mozilla roots, shared by HTTP and the socket
         │   ├── http.rs           pooled reqwest client, timeouts, error mapping
         │   ├── auth.rs           CredentialStore (host callback), sign-in, refresh, sign-out
+        │   ├── events.rs         RealtimeEvent: realtime payloads decoded into typed events
         │   └── realtime.rs       the realtime socket: topics, ping, watchdog, backoff, re-auth
         └── storage/
             ├── mod.rs            Accounts: one database per account, open/switch/remove
@@ -33,6 +34,11 @@ rust/
             ├── repositories/     SQL per table
             ├── observation.rs    snapshot-plus-change streams
             └── store.rs          AccountStore: the API Kotlin reads and writes through
+        └── sync/
+            ├── mod.rs            SyncEngine: refreshes, paging cursors, sending, ChatBinding
+            ├── api.rs            the chat and inbox endpoints, wire shapes, mapping to models
+            ├── realtime.rs       realtime events applied to storage, one ordered lane per topic
+            └── outbox.rs         the outbox worker: delivery, retry, echo check, replay
 native/shared/sdk/                Kotlin module: generated bindings, NomiClient / NativeNomiClient,
                                   AccountStore flows, topic flows
 ```
@@ -123,8 +129,9 @@ Kotlin tests on the desktop JVM and the iOS simulator.
   are `Flow`s, like Room's.
 - **Paging:** messages page with a `(created_at, id)` cursor. Every query is capped at 500 rows.
 
-The write methods (`upsert_*`, `append_draft`, …) stand in for sync until Milestones 3 and 4. They
-let the current Kotlin repositories store server data through Rust instead of Room.
+The write methods (`upsert_*`, `append_draft`, …) let the current Kotlin repositories store server
+data through Rust instead of Room while screens move over; sync (Milestone 4) writes through the
+same repositories.
 
 **3 — Connected engine (done).** Rust talks to the backend as it is today. The endpoints and wire
 shapes come from `backend/crates/nomi-server` and `nomi-realtime`, and the behaviour from the Kotlin
@@ -155,12 +162,57 @@ Kotlin tests on the desktop JVM and the iOS simulator.
 - **Kotlin:** `NomiClient.user` and `NomiClient.connection` are `StateFlow`s, and
   `topicEvents(topic)` holds a watch for as long as it is collected.
 
-The REST endpoints that feed local data (sessions, messages, notifications) arrive with Milestone 4,
-where sync writes what they return into storage. Until then, the authenticated `fetch_profile`
-proves the bearer-and-refresh path.
+The REST endpoints that feed local data (sessions, messages, notifications) came with Milestone 4,
+where sync writes what they return into storage.
 
-**4 — Reliable engine.** Durable outbox with idempotency keys, cursors, deduplication, retry with
-backoff, and replay.
+**4 — Reliable engine (done).** Rust keeps the open account's data in step with the backend, which
+the Kotlin `SessionRepository`, `ChatRepository`, `NotificationRepository`, `ActivityRepository` and
+`RealtimeSync` do today. Endpoints are the backend's as they are (`/api/sessions`,
+`/api/sessions/:id/messages[/:id[/approval]]`, `/api/notifications[/:id/read | /read-all]`). This is
+verified by 125 Rust tests (wiremock for REST, with realtime events put on the event stream), plus 25
+Kotlin tests on the desktop JVM and the iOS simulator.
+
+- **Engine:** one per open account, started by `open_account` and stopped when the account closes.
+  It only does network work while that account's user is signed in.
+- **Reads:** `refresh_sessions` mirrors the server's chat list. The unread flag stays the
+  device's, and a chat the server dropped goes unless the outbox still owes it a message.
+  `refresh_messages` and `load_older_messages` page with the server's `before` cursor, and a
+  message the server deleted inside a page's span is removed. Paging cursors (`has_older_messages`,
+  inbox pages) live in `sync_state` and survive restarts.
+- **Realtime:** `SdkEvent::Realtime` carries a typed `RealtimeEvent` (Kotlin can also call
+  `decode_realtime_event`). Sync applies each topic's events in order on its own lane:
+  - Deltas stream into the draft, and a delta after its turn finished is dropped.
+  - A finished turn fetches its message and clears only its own draft; a failed one sends
+    `ChatTurnFailed`.
+  - Agent phases feed agent activity.
+  - User events update the inbox and the chat list. `ChatUpdated`, which the Kotlin app ignored,
+    moves the chat up or refetches the list.
+  - `TopicResynced` and `EventsDropped` refetch, and drop drafts and agents only a live event would
+    have ended.
+  - `bind_chat` (`syncChat` in Kotlin) holds a chat's topic while its screen is open. The first
+    binding resyncs, later ones refresh.
+- **Outbox:** sending a message and marking notifications read are written locally at once, then
+  queued in SQLite under an idempotency key.
+  - Entries in one lane (a chat, or the inbox) go out in order.
+  - Network errors, 408, 429 and 5xx are retried with full-jitter backoff (1 s doubling to 5 min,
+    8 attempts). Any other refusal fails the entry: its message shows `failed` until
+    `retry_outbox` or `discard_outbox`.
+  - Coming back online makes waiting entries due at once, and entries left by a previous run are
+    replayed.
+  - "Mark all read" folds in single reads still waiting. Finished entries stay 24 h as idempotency
+    records.
+- **No double sends without backend support:** the backend has no idempotency keys, so a message
+  whose attempt may have landed (a timeout, an unreadable answer, a crash mid-request) isn't simply
+  posted again. Before retrying, the worker looks in the chat's newest page for the person's message
+  with the same text, created no more than 5 minutes before it was queued and not claimed by an
+  earlier entry. If one is there, it claims it instead of sending.
+  - One limitation: if the backend rewrites the text (attachment tags), no match is found and the
+    message can be sent twice.
+  - Until the backend answers, a realtime echo of the message can briefly show next to its
+    `sending` row.
+
+`resolve_approval` and `create_session` are direct calls, not queued: an approval only matters while
+the turn waits, and a new chat's id is needed at once.
 
 **5 — Full migration.** Screens move to `NomiClient`, then Room, Ktor Client and the Kotlin
 repositories are removed.

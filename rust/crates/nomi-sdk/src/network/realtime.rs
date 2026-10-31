@@ -417,8 +417,9 @@ impl Hub {
             ServerFrame::Ready { user_id } => self.on_ready(user_id),
             ServerFrame::Event { topic, payload } => {
                 self.bus.emit(SdkEvent::Realtime {
-                    topic,
+                    event: super::events::decode(&topic, &payload),
                     payload_json: payload.to_string(),
+                    topic,
                 });
             }
             ServerFrame::Denied { topic } => {

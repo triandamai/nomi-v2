@@ -10,6 +10,7 @@ use base64::Engine as _;
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
+use url::Url;
 
 use super::http::{self, Http};
 use crate::error::{EmailCodeError, NomiError};
@@ -21,6 +22,7 @@ const RESEND_PATH: &str = "/api/auth/resend";
 const REFRESH_PATH: &str = "/api/auth/refresh";
 const LOGOUT_PATH: &str = "/api/auth/logout";
 const PROFILE_PATH: &str = "/api/profile";
+const API_ROOT: &str = "/api";
 const JWT_SEGMENTS: usize = 3;
 
 /// The session's tokens, as the host stores them.
@@ -338,6 +340,15 @@ impl Auth {
             Refresh::Rejected => Err(NomiError::Unauthorized),
             Refresh::NotSignedIn => Err(NomiError::NotSignedIn),
         }
+    }
+
+    /// `/api/<segments...>` under the base URL, each segment percent-encoded.
+    pub fn api_url(&self, segments: &[&str]) -> Url {
+        let mut url = self.http.url(API_ROOT);
+        url.path_segments_mut()
+            .expect("an http(s) base URL has a path")
+            .extend(segments);
+        url
     }
 
     pub async fn profile(&self) -> Result<Profile, NomiError> {

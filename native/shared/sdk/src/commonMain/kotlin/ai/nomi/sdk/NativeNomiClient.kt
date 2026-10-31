@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,6 +113,48 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
     override suspend fun removeAccount(accountId: String) = accountChange { sdk.removeAccount(accountId) }
 
     override suspend fun resetStorage() = accountChange { sdk.resetStorage() }
+
+    override suspend fun refreshSessions() = sdk.refreshSessions()
+
+    override suspend fun createSession(): String = sdk.createSession()
+
+    override fun syncChat(sessionId: String): Flow<Nothing> = flow {
+        val binding = sdk.bindChat(sessionId)
+        try {
+            val accountId = account.value?.accountId()
+            account.first { it?.accountId() != accountId }
+        } finally {
+            binding.release()
+            binding.destroy()
+        }
+    }
+
+    override suspend fun refreshMessages(sessionId: String) = sdk.refreshMessages(sessionId)
+
+    override suspend fun loadOlderMessages(sessionId: String): Boolean = sdk.loadOlderMessages(sessionId)
+
+    override suspend fun hasOlderMessages(sessionId: String): Boolean = sdk.hasOlderMessages(sessionId)
+
+    override suspend fun sendMessage(sessionId: String, text: String): String = sdk.sendMessage(sessionId, text)
+
+    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) =
+        sdk.resolveApproval(sessionId, messageId, approve, remember)
+
+    override suspend fun refreshNotifications() = sdk.refreshNotifications()
+
+    override suspend fun loadMoreNotifications(): Boolean = sdk.loadMoreNotifications()
+
+    override suspend fun markNotificationRead(notificationId: String) = sdk.markNotificationRead(notificationId)
+
+    override suspend fun markAllNotificationsRead() = sdk.markAllNotificationsRead()
+
+    override suspend fun retryOutbox(key: String): Boolean = sdk.retryOutbox(key)
+
+    override suspend fun discardOutbox(key: String): Boolean = sdk.discardOutbox(key)
+
+    override suspend fun syncNow() = sdk.syncNow()
+
+    override fun setForegroundChat(sessionId: String?) = sdk.setForegroundChat(sessionId)
 
     override suspend fun close() {
         try {

@@ -61,6 +61,30 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX agent_activity_by_session ON agent_activity (session_id);
     ",
+    // 2: sync. The outbox holds writes until the backend has them; finished entries stay a while
+    // as idempotency records. sync_state keeps paging cursors and similar small numbers.
+    "
+    CREATE TABLE outbox (
+        seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+        key             TEXT NOT NULL UNIQUE,
+        lane            TEXT NOT NULL,
+        operation       TEXT NOT NULL,
+        state           TEXT NOT NULL,
+        attempts        INTEGER NOT NULL,
+        next_attempt_at INTEGER NOT NULL,
+        in_flight       INTEGER NOT NULL,
+        last_error      TEXT,
+        result_id       TEXT,
+        created_at      INTEGER NOT NULL,
+        updated_at      INTEGER NOT NULL
+    );
+    CREATE INDEX outbox_by_state ON outbox (state, lane, seq);
+
+    CREATE TABLE sync_state (
+        key   TEXT PRIMARY KEY NOT NULL,
+        value INTEGER NOT NULL
+    );
+    ",
 ];
 
 /// The version a fully migrated database reports.
@@ -128,8 +152,11 @@ mod tests {
                 "agent_activity",
                 "messages",
                 "notifications",
+                "outbox",
                 "sessions",
-                "streaming_drafts"
+                "sqlite_sequence",
+                "streaming_drafts",
+                "sync_state"
             ]
         );
     }

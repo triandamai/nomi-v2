@@ -5,7 +5,9 @@ pub(crate) mod activity;
 pub(crate) mod drafts;
 pub(crate) mod messages;
 pub(crate) mod notifications;
+pub(crate) mod outbox;
 pub(crate) mod sessions;
+pub(crate) mod sync_state;
 
 /// The largest page any query returns, whatever the caller asks for.
 pub(crate) const MAX_PAGE_SIZE: u32 = 500;

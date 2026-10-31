@@ -14,6 +14,7 @@ mod event;
 mod logging;
 mod network;
 mod storage;
+mod sync;
 #[cfg(test)]
 mod test_support;
 
@@ -25,16 +26,18 @@ pub use network::auth::{
     CredentialStore, Credentials, Profile, SignInResult, SignOutReason, SignedInUser,
     VerificationInfo,
 };
+pub use network::events::RealtimeEvent;
 pub use network::realtime::{ConnectionState, TopicWatch};
 pub use storage::models::{
     AgentActivity, DatabaseStatus, Draft, Message, MessageCursor, MessagePage, NotificationItem,
-    Session, SessionFilter,
+    OutboxEntry, OutboxOperation, OutboxState, Session, SessionFilter,
 };
 pub use storage::observation::{
     AgentActivityObservation, DraftObservation, DraftState, MessagesObservation,
-    NotificationsObservation, SessionsObservation, UnreadCountObservation,
+    NotificationsObservation, OutboxObservation, SessionsObservation, UnreadCountObservation,
 };
 pub use storage::AccountStore;
+pub use sync::ChatBinding;
 
 /// The SDK's own version, as Cargo knows it.
 #[uniffi::export]
@@ -47,6 +50,19 @@ pub fn sdk_version() -> String {
 #[uniffi::export]
 pub fn realtime_topic(raw: String) -> Result<String, NomiError> {
     network::realtime::normalize_topic(&raw)
+}
+
+/// Decodes a realtime payload (`payload_json` of an event on `topic`) as `SdkEvent::Realtime`
+/// carries it. Never fails: what doesn't decode is `RealtimeEvent::Unknown`.
+#[uniffi::export]
+pub fn decode_realtime_event(topic: String, payload_json: String) -> RealtimeEvent {
+    match serde_json::from_str(&payload_json) {
+        Ok(payload) => network::events::decode(&topic, &payload),
+        Err(_) => RealtimeEvent::Unknown {
+            kind: None,
+            payload_json,
+        },
+    }
 }
 
 /// A configuration with every optional setting at its default.

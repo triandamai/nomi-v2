@@ -21,6 +21,7 @@ use super::realtime::{backoff_delay, normalize_topic, ConnectionState, RealtimeS
 use crate::error::{EmailCodeError, NomiError};
 use crate::event::{EventSubscription, SdkEvent};
 use crate::network::auth::{SignInResult, SignOutReason};
+use crate::network::events::RealtimeEvent;
 use crate::test_support::{credentials, token, MemoryCredentials};
 use crate::{default_sdk_config, NomiSdk};
 
@@ -699,20 +700,28 @@ async fn delivers_events_and_follows_watch_and_release() {
     );
     let second = harness.sdk.watch_topic("chat:c1".into()).unwrap();
 
-    socket.send(json!({ "type": "event", "topic": "chat:c1", "payload": { "kind": "message_created", "id": "m1" } })).await;
-    let (topic, payload) = harness
+    socket.send(json!({ "type": "event", "topic": "chat:c1", "payload": { "kind": "MessageCreated", "message_id": "m1" } })).await;
+    let (topic, event, payload) = harness
         .next_matching(|event| match event {
             SdkEvent::Realtime {
                 topic,
+                event,
                 payload_json,
-            } => Some((topic, payload_json)),
+            } => Some((topic, event, payload_json)),
             _ => None,
         })
         .await;
     assert_eq!(topic, "chat:c1");
     assert_eq!(
+        event,
+        RealtimeEvent::MessageCreated {
+            session_id: "c1".into(),
+            message_id: "m1".into()
+        }
+    );
+    assert_eq!(
         serde_json::from_str::<Value>(&payload).unwrap(),
-        json!({ "kind": "message_created", "id": "m1" })
+        json!({ "kind": "MessageCreated", "message_id": "m1" })
     );
 
     // Only the last release unsubscribes.
