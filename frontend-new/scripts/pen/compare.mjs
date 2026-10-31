@@ -40,7 +40,7 @@ html = html.replace('</head>', `<style>
 const refFile = `${tmpdir()}/pen-ref-${sheet}--${slug}.html`;
 writeFileSync(refFile, html);
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--font-render-hinting=none'] }); // as playwright.config.ts
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 await page.goto(`file://${refFile}`);
 await page.evaluate(() => document.fonts.ready);

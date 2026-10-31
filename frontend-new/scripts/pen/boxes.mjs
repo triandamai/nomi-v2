@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 const args = process.argv.slice(2);
 const base = args.includes('--url') ? args[args.indexOf('--url') + 1] : 'http://localhost:5175';
 const [sheet, selector, depth = '3', index = '0'] = args.filter((arg, at) => !arg.startsWith('--') && args[at - 1] !== '--url');
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--font-render-hinting=none'] }); // as playwright.config.ts
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 await page.goto(`${base}/design-system/${sheet}?theme=dark`, { waitUntil: 'networkidle' });
 await page.evaluate(() => document.fonts.ready);

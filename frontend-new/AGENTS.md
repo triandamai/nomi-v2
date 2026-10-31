@@ -263,7 +263,9 @@ app's heading) go in that file's scoped `<style>` with a comment.
      frame bounds.
 4. **CI**: `e2e/pen-parity.e2e.ts` asserts every section's offset and height and every board's
    box on all three sheets. It must stay green; if the pen itself changed, re-export
-   `pen/bounds.json` and `pen/export/` in the same PR.
+   `pen/bounds.json` and `pen/export/` in the same PR. The e2e browser and the `pen:*` tools run
+   Chromium with `--font-render-hinting=none`, so Linux measures text as the Mac the pen is drawn
+   on does (hinted, Linux rounds every glyph to whole pixels and lines wrap early). Keep it.
 5. Look at it in both themes, at 1512 and 390.
 
 The HTML export is a good reference, not a perfect one: it collapses trailing spaces between

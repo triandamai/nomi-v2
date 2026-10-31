@@ -16,7 +16,7 @@ const pen = JSON.parse(readFileSync(new URL('../../pen/bounds.json', import.meta
 const sheets = args.filter((arg, index) => !arg.startsWith('--') && args[index - 1] !== '--url');
 const normalise = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--font-render-hinting=none'] }); // as playwright.config.ts
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 let off = 0;
 for (const sheet of sheets.length ? sheets : Object.keys(pen)) {
