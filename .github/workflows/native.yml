@@ -101,10 +101,11 @@ jobs:
       - name: Android SDK platform
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "$ANDROID_PLATFORM" > /dev/null
 
-      # allTests runs each module's desktop and Android host tests here (iOS runs on the macOS job below);
+      # Each module's desktop and Android host tests (iOS runs on the macOS job below). Not allTests:
+      # it compiles the iOS tests too, and the SDK's iOS build needs Apple's toolchain.
       # --continue reports every module's failures, not just the first.
       - name: Run tests
-        run: ./gradlew allTests :desktopApp:test --continue
+        run: ./gradlew desktopTest testAndroidHostTest :desktopApp:test --continue
 
       - name: Test report
         if: always()
