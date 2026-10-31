@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { PATTERNS } from './patterns';
-import { patternDocs } from './pattern-docs';
-import type { PatternDoc } from './types';
+import { PATTERNS } from '../patterns';
+import { patternDocs } from './index';
+import type { PatternDoc } from '../types';
 
 // Every section of the Chat responses and Build sheets is a pattern page, and each page opens with
 // its doc. The docs live one sheet per file in pattern-docs/; read them raw too, so a doc written
 // twice (which the index would silently collapse) is caught.
-const files = import.meta.glob<PatternDoc[]>(['./pattern-docs/*.ts', '!./pattern-docs/index.ts'], { eager: true, import: 'default' });
+const files = import.meta.glob<PatternDoc[]>(['./*.ts', '!./index.ts', '!./*.test.ts'], { eager: true, import: 'default' });
 const docs = Object.values(files).flat();
 const key = (item: { sheet: string; id: string }) => `${item.sheet}/${item.id}`;
 

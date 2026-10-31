@@ -2,7 +2,6 @@
 	import DocPage from '$lib/docs/ui/DocPage.svelte';
 	import DocSection from '$lib/docs/ui/DocSection.svelte';
 	import SheetEmbed from '$lib/docs/ui/SheetEmbed.svelte';
-	import Guidance from '$lib/docs/ui/Guidance.svelte';
 	import DoDont from '$lib/docs/ui/DoDont.svelte';
 	import LinkCard from '$lib/docs/ui/LinkCard.svelte';
 	import { componentDocs } from '$lib/docs/entries';
@@ -17,7 +16,11 @@
 {#key `${data.pattern.sheet}/${data.pattern.id}`}
 	<DocPage eyebrow="Pattern · {SHEETS[data.pattern.sheet]}" title={data.pattern.title} lede={data.doc?.summary} wide>
 		{#if data.doc?.use?.length}
-			<DocSection title="When it comes up"><Guidance use={data.doc.use} /></DocSection>
+			<DocSection title="When it comes up">
+				<ul>
+					{#each data.doc.use as item (item)}<li>{item}</li>{/each}
+				</ul>
+			</DocSection>
 		{/if}
 		<DocSection title="On the sheet" lede="The real components, laid out exactly as the pen's section. Scroll sideways on smaller screens.">
 			<SheetEmbed sheet={data.pattern.sheet} id={data.pattern.id} label={data.pattern.title}>

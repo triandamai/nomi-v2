@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Menu } from '@lucide/svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
@@ -68,7 +69,13 @@
 
 	// System, dark or light, remembered on this device. ?theme= (as on the sheets) sets it too.
 	let menu = $state(false);
+	afterNavigate(() => (menu = false));
 	let theme = $state('system');
+	const themes = [
+		{ value: 'system', label: 'System' },
+		{ value: 'dark', label: 'Dark' },
+		{ value: 'light', label: 'Light' },
+	];
 	onMount(() => {
 		document.querySelector('aside [aria-current="page"]')?.scrollIntoView({ block: 'center' });
 		try {
@@ -104,24 +111,17 @@
 		</nav>
 		<div class="ml-auto flex items-center gap-3">
 			<div class="w-72 max-md:hidden"><DocsSearch {entries} /></div>
-			<span class="max-sm:hidden">
-				<Segmented
-					label="Theme"
-					bind:value={theme}
-					options={[
-						{ value: 'system', label: 'System' },
-						{ value: 'dark', label: 'Dark' },
-						{ value: 'light', label: 'Light' },
-					]}
-				/>
-			</span>
+			<span class="max-sm:hidden"><Segmented label="Theme" bind:value={theme} options={themes} /></span>
 			<details class="relative lg:hidden" bind:open={menu}>
 				<summary class="menu flex size-7.5 cursor-pointer list-none items-center justify-center rounded-sm border border-border-strong text-text-2" aria-label="Menu">
 					<Icon icon={Menu} size={16} />
 				</summary>
 				{#if menu}
 					<div class="menu-panel fixed inset-x-0 top-13 overflow-y-auto border-b border-border bg-bg px-4 pb-6">
-						<div class="py-3 md:hidden"><DocsSearch {entries} /></div>
+						<div class="flex flex-col gap-3 py-3 md:hidden">
+							<DocsSearch {entries} />
+							<span class="sm:hidden"><Segmented label="Theme" bind:value={theme} options={themes} /></span>
+						</div>
 						<DocsNav {groups} />
 					</div>
 				{/if}
