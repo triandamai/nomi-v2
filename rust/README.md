@@ -19,6 +19,12 @@ rust/
         ├── error.rs              NomiError (NomiException in Kotlin)
         ├── event.rs              SdkEvent, SdkState, EventBus, EventSubscription
         ├── logging.rs            tracing → SdkEvent::Log
+        ├── network/
+        │   ├── mod.rs            Network: the HTTP client, the session, the realtime hub
+        │   ├── tls.rs            rustls on ring + Mozilla roots, shared by HTTP and the socket
+        │   ├── http.rs           pooled reqwest client, timeouts, error mapping
+        │   ├── auth.rs           CredentialStore (host callback), sign-in, refresh, sign-out
+        │   └── realtime.rs       the realtime socket: topics, ping, watchdog, backoff, re-auth
         └── storage/
             ├── mod.rs            Accounts: one database per account, open/switch/remove
             ├── database.rs       connection, transactions, per-table change counters
@@ -28,7 +34,7 @@ rust/
             ├── observation.rs    snapshot-plus-change streams
             └── store.rs          AccountStore: the API Kotlin reads and writes through
 native/shared/sdk/                Kotlin module: generated bindings, NomiClient / NativeNomiClient,
-                                  AccountStore flows
+                                  AccountStore flows, topic flows
 ```
 
 ## Bindings
@@ -51,6 +57,10 @@ So `native/shared/sdk/build.gradle.kts` runs cargo and the generator itself:
 | `cargoBuildIosArm64`, `cargoBuildIosSimulatorArm64` | build the staticlib that cinterop embeds |
 
 Add `-Pnomi.rust.release=true` for an optimized build. The default is a debug build.
+
+The iOS static library is compiled for iOS 15 (`IPHONEOS_DEPLOYMENT_TARGET`), the oldest any
+binary linking it targets. `src/nativeInterop/cinterop/nomi_sdk.def` adds the system frameworks
+it needs (`Security`) to every binary that links it.
 
 ## Working on it
 
@@ -116,9 +126,38 @@ Kotlin tests on the desktop JVM and the iOS simulator.
 The write methods (`upsert_*`, `append_draft`, …) stand in for sync until Milestones 3 and 4. They
 let the current Kotlin repositories store server data through Rust instead of Room.
 
-**3 — Connected engine.** reqwest and tokio-tungstenite against the existing REST and realtime
-contracts (`native/shared/network`, `native/shared/realtime`, `backend/crates/nomi-realtime`), with
-token refresh, reconnect and heartbeat.
+**3 — Connected engine (done).** Rust talks to the backend as it is today. The endpoints and wire
+shapes come from `backend/crates/nomi-server` and `nomi-realtime`, and the behaviour from the Kotlin
+`AuthApi` and `RealtimeHub` this replaces. This is verified by 83 Rust tests against a fake backend
+(wiremock for REST, and a tokio-tungstenite gateway that also answers the auth endpoints), plus 19
+Kotlin tests on the desktop JVM and the iOS simulator.
+
+- **HTTP:** one pooled reqwest client with a 10 s connect timeout and a 30 s request timeout. It
+  never follows redirects, so a bearer token can't leak. Failures map to `Network`, `Http { status }`,
+  `InvalidResponse`, `Unauthorized` or `NotSignedIn`. Cancelling a Kotlin call aborts its request.
+- **TLS:** rustls on `ring` with webpki roots on every platform. `aws-lc-rs` would need cmake to
+  cross-compile, and the platform verifier needs JNI setup on Android. One consequence: CAs a user
+  installs on the device aren't trusted.
+- **Session:** tokens live in the platform's secure store, through the `CredentialStore` callback
+  Kotlin implements. Sign-in handles the emailed-code challenge (`EmailCode` errors mirror
+  `code_error`). A 401 triggers one shared refresh and a retry. If the backend refuses the refresh,
+  the session ends with `SignedOut { SessionExpired }`. A refresh that a newer sign-in overtook
+  changes nothing. Sign-out revokes the session best effort.
+- **Realtime:**
+  - Watched topics are reference-counted into subscriptions. After each `ready`, every live topic
+    gets `TopicResynced`. `denied` becomes `TopicAccessLost`, and `unavailable` is retried with
+    backoff.
+  - A ping goes out every 25 s, and a socket silent for 60 s is recycled. Reconnects use
+    full-jitter backoff from 0.5 s up to 30 s, which resets after 10 s of stable connection.
+  - A 401 upgrade or close code 4001 triggers one token refresh. If the socket is still refused, the
+    session ends with `AccessRevoked`.
+  - The socket runs exactly while the SDK is started and someone is signed in.
+- **Kotlin:** `NomiClient.user` and `NomiClient.connection` are `StateFlow`s, and
+  `topicEvents(topic)` holds a watch for as long as it is collected.
+
+The REST endpoints that feed local data (sessions, messages, notifications) arrive with Milestone 4,
+where sync writes what they return into storage. Until then, the authenticated `fetch_profile`
+proves the bearer-and-refresh path.
 
 **4 — Reliable engine.** Durable outbox with idempotency keys, cursors, deduplication, retry with
 backoff, and replay.

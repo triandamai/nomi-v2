@@ -28,7 +28,7 @@ class AccountStoreTest {
         if (!hostCanLoadSdk) return@runTest
         withContext(Dispatchers.Default) {
             withTimeout(TEST_TIMEOUT) {
-                val client = NativeNomiClient(defaultSdkConfig(BASE_URL, newDataDir()))
+                val client = NativeNomiClient(defaultSdkConfig(BASE_URL, newDataDir()), MemoryCredentialStore())
                 try {
                     body(client)
                 } finally {

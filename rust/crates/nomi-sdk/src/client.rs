@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -9,6 +10,11 @@ use crate::config::{SdkConfig, ValidatedConfig};
 use crate::error::NomiError;
 use crate::event::{EventBus, EventSubscription, SdkEvent, SdkState};
 use crate::logging;
+use crate::network::auth::{
+    CredentialStore, Profile, Refresh, SignInResult, SignedInUser, VerificationInfo,
+};
+use crate::network::realtime::{normalize_topic, ConnectionState, RealtimeSettings, TopicWatch};
+use crate::network::Network;
 use crate::storage::{AccountStore, Accounts};
 
 /// Worker threads for the SDK's runtime: background work is I/O-bound, and phones are small.
@@ -40,6 +46,7 @@ pub struct NomiSdk {
     config: ValidatedConfig,
     bus: Arc<EventBus>,
     accounts: Arc<Accounts>,
+    network: Network,
     inner: Mutex<Inner>,
 }
 
@@ -62,39 +69,13 @@ impl Drop for Inner {
 
 #[uniffi::export]
 impl NomiSdk {
+    /// `credentials` is the platform's secure store for the session's tokens.
     #[uniffi::constructor]
-    pub fn new(config: SdkConfig) -> Result<Arc<Self>, NomiError> {
-        let config = config.validate()?;
-        std::fs::create_dir_all(&config.data_dir).map_err(|error| NomiError::Storage {
-            reason: format!(
-                "can't create data_dir `{}`: {error}",
-                config.data_dir.display()
-            ),
-        })?;
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(WORKER_THREADS)
-            .thread_name(THREAD_NAME)
-            .enable_all()
-            .build()
-            .map_err(|error| NomiError::Internal {
-                reason: format!("can't build the async runtime: {error}"),
-            })?;
-        logging::init();
-
-        let sdk = Arc::new(Self {
-            accounts: Arc::new(Accounts::new(&config.data_dir)),
-            bus: Arc::new(EventBus::new(config.event_buffer_capacity)),
-            config,
-            inner: Mutex::new(Inner {
-                state: SdkState::Initialized,
-                runtime: Some(runtime),
-                stop: None,
-                tasks: Vec::new(),
-                started_at_ms: None,
-            }),
-        });
-        tracing::info!(base_url = %sdk.config.base_url, "initialized");
-        Ok(sdk)
+    pub fn new(
+        config: SdkConfig,
+        credentials: Box<dyn CredentialStore>,
+    ) -> Result<Arc<Self>, NomiError> {
+        Self::with_settings(config, credentials, RealtimeSettings::default())
     }
 
     /// Launches background work. A no-op while already running.
@@ -123,7 +104,92 @@ impl NomiSdk {
             state: SdkState::Running,
         });
         tracing::info!("started");
+        self.network.realtime.enable();
         Ok(())
+    }
+
+    // Session
+
+    /// Signs in with email and password. The backend may answer with an emailed-code challenge
+    /// instead; finish it with `verify_email_code`.
+    pub async fn sign_in(
+        &self,
+        email: String,
+        password: String,
+    ) -> Result<SignInResult, NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move { auth.sign_in(&email, &password).await })
+            .await
+    }
+
+    pub async fn verify_email_code(
+        &self,
+        challenge_id: String,
+        code: String,
+    ) -> Result<SignedInUser, NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move { auth.verify_email_code(&challenge_id, &code).await })
+            .await
+    }
+
+    /// Emails a fresh code; the previous one stops working.
+    pub async fn resend_email_code(
+        &self,
+        challenge_id: String,
+    ) -> Result<VerificationInfo, NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move { auth.resend_email_code(&challenge_id).await })
+            .await
+    }
+
+    /// Exchanges the refresh token for a new access token. `false` when there is no session or
+    /// the backend refused it (the session has then ended); an error says nothing about the session.
+    pub async fn refresh_session(&self) -> Result<bool, NomiError> {
+        let auth = self.network.auth.clone();
+        let outcome = self
+            .on_runtime(async move { auth.refresh(None).await })
+            .await?;
+        Ok(outcome == Refresh::Refreshed)
+    }
+
+    /// Signs out: forgets the session, closes the realtime socket and the open account (its data
+    /// stays until `remove_account`), and revokes the session on the backend, best effort.
+    pub async fn sign_out(&self) -> Result<(), NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move {
+            auth.sign_out().await;
+            Ok(())
+        })
+        .await?;
+        self.close_account().await
+    }
+
+    /// Who is signed in, if anyone. Known at construction from the stored session.
+    pub fn signed_in_user(&self) -> Option<SignedInUser> {
+        self.network.auth.user()
+    }
+
+    pub async fn fetch_profile(&self) -> Result<Profile, NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move { auth.profile().await }).await
+    }
+
+    // Realtime
+
+    pub fn connection_state(&self) -> ConnectionState {
+        self.network.realtime.state()
+    }
+
+    /// Skips any backoff wait and reconnects now (e.g. when the device comes back online).
+    pub fn reconnect(&self) {
+        self.network.realtime.reconnect();
+    }
+
+    /// Watches a realtime topic (`chat:<id>`, `project:<id>`, or `user`): its events arrive as
+    /// `SdkEvent::Realtime` while any watch for it is held.
+    pub fn watch_topic(&self, topic: String) -> Result<Arc<TopicWatch>, NomiError> {
+        let topic = normalize_topic(&topic)?;
+        Ok(Arc::new(self.network.realtime.watch(topic)))
     }
 
     /// The local store for `account_id`, opening and migrating its database if needed. Opening a
@@ -211,12 +277,15 @@ impl NomiSdk {
             )
         };
         tracing::info!("shutting down");
+        self.network.realtime.disable();
         if let Some(stop) = stop {
             stop.send_replace(true);
         }
         if let Some(runtime) = runtime {
+            let realtime = self.network.realtime.clone();
             let drained = runtime.spawn(async move {
                 let joined = async {
+                    realtime.wait_idle().await;
                     for task in tasks {
                         let _ = task.await;
                     }
@@ -258,6 +327,53 @@ impl NomiSdk {
 }
 
 impl NomiSdk {
+    pub(crate) fn with_settings(
+        config: SdkConfig,
+        credentials: Box<dyn CredentialStore>,
+        settings: RealtimeSettings,
+    ) -> Result<Arc<Self>, NomiError> {
+        let config = config.validate()?;
+        std::fs::create_dir_all(&config.data_dir).map_err(|error| NomiError::Storage {
+            reason: format!(
+                "can't create data_dir `{}`: {error}",
+                config.data_dir.display()
+            ),
+        })?;
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(WORKER_THREADS)
+            .thread_name(THREAD_NAME)
+            .enable_all()
+            .build()
+            .map_err(|error| NomiError::Internal {
+                reason: format!("can't build the async runtime: {error}"),
+            })?;
+        logging::init();
+
+        let bus = Arc::new(EventBus::new(config.event_buffer_capacity));
+        let network = Network::new(
+            runtime.handle(),
+            config.base_url.clone(),
+            credentials,
+            bus.clone(),
+            settings,
+        )?;
+        let sdk = Arc::new(Self {
+            accounts: Arc::new(Accounts::new(&config.data_dir)),
+            bus,
+            network,
+            config,
+            inner: Mutex::new(Inner {
+                state: SdkState::Initialized,
+                runtime: Some(runtime),
+                stop: None,
+                tasks: Vec::new(),
+                started_at_ms: None,
+            }),
+        });
+        tracing::info!(base_url = %sdk.config.base_url, "initialized");
+        Ok(sdk)
+    }
+
     /// The SDK's runtime, for blocking work such as SQLite; `ShutDown` once it is gone.
     fn runtime(&self) -> Result<Handle, NomiError> {
         let inner = self.lock();
@@ -265,6 +381,16 @@ impl NomiSdk {
             (SdkState::ShutDown, _) | (_, None) => Err(NomiError::ShutDown),
             (_, Some(runtime)) => Ok(runtime.handle().clone()),
         }
+    }
+
+    /// Runs `work` on the SDK's runtime (network futures need it). Dropping the returned future,
+    /// as a cancelled Kotlin coroutine does, aborts the work.
+    async fn on_runtime<T: Send + 'static>(
+        &self,
+        work: impl Future<Output = Result<T, NomiError>> + Send + 'static,
+    ) -> Result<T, NomiError> {
+        let task = AbortOnDrop(self.runtime()?.spawn(work));
+        task.join().await
     }
 
     fn announce_closed(&self, closed: bool) {
@@ -279,20 +405,36 @@ impl NomiSdk {
     }
 }
 
+/// A spawned task that is aborted if whoever awaits it goes away.
+struct AbortOnDrop<T>(JoinHandle<Result<T, NomiError>>);
+
+impl<T> AbortOnDrop<T> {
+    async fn join(mut self) -> Result<T, NomiError> {
+        (&mut self.0).await.map_err(|_| NomiError::ShutDown)?
+    }
+}
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::LogLevel;
     use crate::default_sdk_config;
+    use crate::test_support::MemoryCredentials;
 
     const BASE_URL: &str = "https://api-nomi.trian.space";
     const EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 
     fn sdk(dir: &tempfile::TempDir) -> Arc<NomiSdk> {
-        NomiSdk::new(default_sdk_config(
-            BASE_URL.to_owned(),
-            dir.path().display().to_string(),
-        ))
+        NomiSdk::new(
+            default_sdk_config(BASE_URL.to_owned(), dir.path().display().to_string()),
+            MemoryCredentials::default().boxed(),
+        )
         .unwrap()
     }
 
@@ -373,7 +515,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut config = default_sdk_config(BASE_URL.to_owned(), dir.path().display().to_string());
         config.log_level = LogLevel::Info;
-        let sdk = NomiSdk::new(config).unwrap();
+        let sdk = NomiSdk::new(config, MemoryCredentials::default().boxed()).unwrap();
         let subscription = sdk.subscribe();
         sdk.start().await.unwrap();
 
@@ -401,10 +543,10 @@ mod tests {
     async fn creates_the_data_dir() {
         let dir = tempfile::tempdir().unwrap();
         let nested = dir.path().join("accounts").join("default");
-        NomiSdk::new(default_sdk_config(
-            BASE_URL.to_owned(),
-            nested.display().to_string(),
-        ))
+        NomiSdk::new(
+            default_sdk_config(BASE_URL.to_owned(), nested.display().to_string()),
+            MemoryCredentials::default().boxed(),
+        )
         .unwrap();
         assert!(nested.is_dir());
     }
@@ -419,7 +561,7 @@ mod tests {
             file.join("nested").display().to_string(),
         );
         assert!(matches!(
-            NomiSdk::new(config),
+            NomiSdk::new(config, MemoryCredentials::default().boxed()),
             Err(NomiError::Storage { .. })
         ));
     }
