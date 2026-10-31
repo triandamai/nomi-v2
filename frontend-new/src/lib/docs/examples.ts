@@ -6,8 +6,10 @@ import type { Component } from 'svelte';
 
 export type Example = { title: string; description: string; code: string; component: Component };
 
-const modules = import.meta.glob<{ default: Component }>('./examples/*/*.svelte');
-const sources = import.meta.glob<string>('./examples/*/*.svelte', { query: '?raw', import: 'default' });
+// Bundled with the component page rather than one file each: the static copy has to stay within
+// what a share host accepts (about 500 files).
+const modules = import.meta.glob<{ default: Component }>('./examples/*/*.svelte', { eager: true });
+const sources = import.meta.glob<string>('./examples/*/*.svelte', { query: '?raw', import: 'default', eager: true });
 
 export function parseExample(path: string, raw: string): Omit<Example, 'component'> {
 	const comment = raw.match(/^\s*<!--\s*([\s\S]*?)\s*-->\s*\n?/);
@@ -21,9 +23,9 @@ export function parseExample(path: string, raw: string): Omit<Example, 'componen
 	};
 }
 
-export async function examplesFor(slug: string): Promise<Example[]> {
+export function examplesFor(slug: string): Example[] {
 	const paths = Object.keys(modules)
 		.filter((path) => path.startsWith(`./examples/${slug}/`))
 		.sort();
-	return Promise.all(paths.map(async (path) => ({ ...parseExample(path, await sources[path]()), component: (await modules[path]()).default })));
+	return paths.map((path) => ({ ...parseExample(path, sources[path]), component: modules[path].default }));
 }

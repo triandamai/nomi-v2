@@ -9,5 +9,5 @@ export const entries: EntryGenerator = () => components.map((item) => ({ slug: i
 export const load: PageLoad = async ({ params }) => {
 	const item = components.find((candidate) => candidate.slug === params.slug);
 	if (!item) error(404, 'No component by that name');
-	return { item, api: api[item.file], doc: componentDocs[item.file], examples: await examplesFor(item.slug) };
+	return { item, api: api[item.file], doc: componentDocs[item.file], examples: examplesFor(item.slug) };
 };

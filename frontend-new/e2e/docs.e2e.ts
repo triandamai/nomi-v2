@@ -45,6 +45,12 @@ test('remembers the theme across pages', async ({ page }) => {
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
+test('fits on a share host: under 500 files', () => {
+	const files = (dir: string): string[] =>
+		readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? files(join(dir, entry.name)) : entry.name === '__data.json' ? [] : [entry.name]));
+	expect(files(root).length).toBeLessThan(500);
+});
+
 // Every page, in four parts that run side by side.
 for (const part of [0, 1, 2, 3]) {
 	test(`every page loads with a title, without errors, and only from its own files (part ${part + 1} of 4)`, async ({ page }) => {

@@ -19,7 +19,14 @@ export default defineConfig({
 	define: { __APP_VERSION__: JSON.stringify(version), __DS_STATIC__: JSON.stringify(galleryStatic) },
 	// Rolldown's plugin-timing report prints as a warning on every build; it's a profiling aid, not
 	// a problem with the build.
-	build: { rolldownOptions: { checks: { pluginTimings: false } } },
+	build: {
+		rolldownOptions: {
+			checks: { pluginTimings: false },
+			// The static copy goes to share hosts that cap a site at about 500 files, so its design-system
+			// code ships as one shared chunk instead of hundreds of small ones.
+			output: galleryStatic ? { advancedChunks: { groups: [{ name: 'design-system', test: /src[\\/]lib[\\/](ds|gallery|docs)[\\/]/ }] } } : undefined,
+		},
+	},
 	plugins: [
 		tailwindcss(),
 		// English and Indonesian. The person's saved language lives in the cookie; before sign-in,
