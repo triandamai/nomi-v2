@@ -20,6 +20,7 @@ import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.agentIdentity
 import ai.nomi.designsystem.theme.NomiTheme
+import ai.nomi.feature.chat.blocks.ContentBlock
 import ai.nomi.feature.chat.blocks.MessageBlocks
 import ai.nomi.feature.chat.blocks.parseContentBlocks
 import ai.nomi.feature.chat.markdown.NomiMarkdown
@@ -47,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -118,15 +120,11 @@ private const val OPAQUE = 1f
 
 private val Suggestions = listOf("Plan my week", "What did I spend on food?", "Remind me to call mom tomorrow")
 
-/** What the backend's agent phases read as on screen (`phaseText` on the web). */
-private fun phaseLabel(phase: String): String = when (phase) {
-    "thinking" -> "thinking"
-    "calling_tool" -> "using a tool"
-    "writing_reply", "writing" -> "writing"
-    "running_command" -> "running a command"
-    "retrying" -> "trying again"
-    else -> phase.replace('_', ' ')
-}
+/**
+ * Hands text to the platform's share sheet; null where there is none, and a shared link goes to the clipboard
+ * instead.
+ */
+val LocalShareText = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 /** [onBack] adds a back action for shells without a system back gesture (desktop); null hides it. */
 @Composable
@@ -142,6 +140,26 @@ fun ChatScreen(
     val composer by viewModel.composer.collectAsStateWithLifecycle()
     val title by viewModel.title.collectAsStateWithLifecycle()
     val approvals by viewModel.approvals.collectAsStateWithLifecycle()
+    val feedback by viewModel.feedback.collectAsStateWithLifecycle()
+    val shareText = LocalShareText.current
+    val clipboard = LocalClipboardManager.current
+    val replies = remember(viewModel, shareText) {
+        ReplyHandlers(
+            rate = viewModel::rate,
+            sendDislike = viewModel::sendDislike,
+            closeDislike = viewModel::closeDislike,
+            delete = viewModel::deleteReply,
+            regenerate = viewModel::regenerate,
+            share = { messageId, done ->
+                viewModel.shareReply(messageId) { link ->
+                    if (link != null) {
+                        if (shareText != null) shareText(link) else clipboard.setText(AnnotatedString(link))
+                    }
+                    done(link != null)
+                }
+            },
+        )
+    }
     LifecycleResumeEffect(viewModel) {
         viewModel.onVisible()
         onPauseOrDispose { viewModel.onHidden() }
@@ -162,6 +180,8 @@ fun ChatScreen(
         onDiscardSend = viewModel::discardSend,
         showAppBar = !embedded,
         placeholder = placeholder,
+        feedback = feedback,
+        replies = replies,
     )
 }
 
@@ -187,6 +207,9 @@ fun ChatContent(
     onDiscardSend: (String) -> Unit = {},
     showAppBar: Boolean = true,
     placeholder: String = PLACEHOLDER,
+    /** Each reply's feedback beyond its stored rating, by message id. */
+    feedback: Map<String, ReplyFeedbackState> = emptyMap(),
+    replies: ReplyHandlers = ReplyHandlers(),
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).testTag(CHAT_SCREEN_TAG)) {
         val phone = maxWidth < PhoneBreakpoint
@@ -196,7 +219,7 @@ fun ChatContent(
                 when {
                     chat == null -> NomiLoadingIndicator(Modifier.align(Alignment.Center), contentDescription = "Loading messages")
                     chat.messages.isEmpty() && chat.draft == null && chat.activeAgent == null -> EmptyThread(onSuggestion, Modifier.align(Alignment.Center))
-                    else -> Thread(chat, timeZone, approvals, onResolveApproval, onSendAnswer, onRetrySend, onDiscardSend)
+                    else -> Thread(chat, timeZone, approvals, onResolveApproval, onSendAnswer, onRetrySend, onDiscardSend, feedback, replies)
                 }
             }
             Column(
@@ -256,10 +279,13 @@ private fun AppBar(title: String, messageCount: Int, phone: Boolean, onBack: (()
     }
 }
 
-/** One row of the thread: a message, or the reply streaming in. */
+/** One row of the thread: a message (with the thinking that led to it), or the reply streaming in. */
 private sealed interface ThreadItem {
     val key: String
-    data class Stored(val message: Message) : ThreadItem { override val key get() = message.id }
+    data class Stored(val entry: ThreadEntry) : ThreadItem {
+        val message get() = entry.message
+        override val key get() = message.id
+    }
     data class Streaming(val turnJobId: String, val text: String, val agentType: String?) : ThreadItem { override val key get() = turnJobId }
 }
 
@@ -274,6 +300,12 @@ private fun agentName(agentType: String): String =
     if (agentType == ActivityRepository.UNKNOWN_AGENT_TYPE || agentType == "chitchat") FALLBACK_AGENT
     else agentType.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
+/** Blocks the crew posts on its own (next-step buttons, a failed run): no copy, share or rating for them. */
+private val StatusOnlyKinds = setOf("suggestions", "run_failed")
+
+/** What's being deleted, and how the dialog names it. */
+private data class Deleting(val messageId: String, val name: String?)
+
 @Composable
 private fun Thread(
     chat: ChatState,
@@ -283,14 +315,19 @@ private fun Thread(
     onSendAnswer: ((String) -> Unit)?,
     onRetrySend: (String) -> Unit,
     onDiscardSend: (String) -> Unit,
+    feedback: Map<String, ReplyFeedbackState>,
+    replies: ReplyHandlers,
 ) {
+    val working = chat.activeAgent != null || chat.draft != null
+    val entries = remember(chat.messages) { groupThinking(chat.messages) }
     // A message the person has replied after is settled: its questions, decisions and forms show as answered.
-    val lastUserIndex = chat.messages.indexOfLast { it.role == ROLE_USER }
-    val items = chat.messages.map { ThreadItem.Stored(it) } +
+    val lastUserIndex = entries.indexOfLast { it.message.role == ROLE_USER }
+    val items = entries.map { ThreadItem.Stored(it) } +
         listOfNotNull(chat.draft?.let { ThreadItem.Streaming(it.turnJobId, it.text, chat.activeAgent?.agentType) })
     val list = rememberLazyListState()
-    val working = chat.activeAgent != null || chat.draft != null
     val count = items.size + if (working) LAST_OFFSET else NO_ITEMS
+    var deleting by remember { mutableStateOf<Deleting?>(null) }
+    var regenerating by remember { mutableStateOf<String?>(null) }
     // Follow the conversation: new messages and streaming text keep the newest line in view.
     LaunchedEffect(count, chat.draft?.text?.length) {
         if (count > NO_ITEMS) list.scrollToItem(count - LAST_OFFSET)
@@ -311,12 +348,19 @@ private fun Thread(
                             if (lastInChain) clock(message.createdAt, timeZone) else null,
                             onRetry = { onRetrySend(message.id) },
                             onDiscard = { onDiscardSend(message.id) },
+                            onDelete = { deleting = Deleting(message.id, name = null) },
                         )
                     }
                     item is ThreadItem.Stored -> {
-                        val message = item.message
-                        AssistantTurn(item.author(), chained, if (lastInChain) clock(message.createdAt, timeZone) else null, message.agentType, messageContent = message.content) { identity ->
-                            val blocks = remember(message.contentJson) { parseContentBlocks(message.contentJson) }
+                        val entry = item.entry
+                        val message = entry.message
+                        val blocks = remember(message.contentJson) { parseContentBlocks(message.contentJson) }
+                        val steps = remember(message.stepsJson) { parseReplySteps(message.stepsJson) }
+                        val statusOnly = blocks.isNotEmpty() && blocks.all { it is ContentBlock.Unknown && it.kind in StatusOnlyKinds }
+                        val latest = i > lastUserIndex && !working
+                        AssistantTurn(item.author(), chained, agentType = message.agentType, streaming = entry.thinkingOnly && working) { identity ->
+                            ActivityDisclosure(entry.thinking, steps, live = entry.thinkingOnly && working, Modifier.padding(bottom = ChainGap))
+                            if (entry.thinkingOnly) return@AssistantTurn
                             if (blocks.isEmpty()) {
                                 MessageText(message.content)
                             } else {
@@ -328,9 +372,39 @@ private fun Thread(
                                     timeZone = timeZone,
                                 )
                             }
+                            if (statusOnly) return@AssistantTurn
+                            val state = feedback[message.id] ?: ReplyFeedbackState()
+                            ResponseActions(
+                                text = message.content,
+                                time = if (lastInChain) clock(message.createdAt, timeZone) else null,
+                                feedback = message.myFeedback,
+                                onRate = { replies.rate(message.id, it) },
+                                onShare = { done -> replies.share(message.id, done) },
+                                onRegenerate = if (latest) ({ regenerating = if (regenerating == message.id) null else message.id }) else null,
+                                onDelete = { deleting = Deleting(message.id, item.author()) },
+                                modifier = Modifier.padding(top = ChainGap),
+                            )
+                            if (regenerating == message.id) {
+                                RegenerateChoices(
+                                    onPick = { style ->
+                                        regenerating = null
+                                        replies.regenerate(message.id, style)
+                                    },
+                                    modifier = Modifier.padding(top = ChainGap),
+                                )
+                            }
+                            when {
+                                state.dislikeOpen -> DislikeForm(
+                                    sending = state.sending,
+                                    onSend = { replies.sendDislike(message.id, it) },
+                                    onCancel = { replies.closeDislike(message.id) },
+                                    modifier = Modifier.padding(top = ChainGap),
+                                )
+                                state.sentWithChat != null -> FeedbackSent(state.sentWithChat, Modifier.padding(top = ChainGap))
+                            }
                         }
                     }
-                    item is ThreadItem.Streaming -> AssistantTurn(item.author(), chained, time = null, agentType = item.agentType, streaming = true) {
+                    item is ThreadItem.Streaming -> AssistantTurn(item.author(), chained, agentType = item.agentType, streaming = true) {
                         MessageText(item.text, Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                     }
                 }
@@ -345,6 +419,14 @@ private fun Thread(
         }
         item(key = "end") { Box(Modifier.padding(bottom = TurnGap)) }
     }
+    deleting?.let { target ->
+        val dismiss = { deleting = null }
+        if (target.name != null) {
+            DeleteReplyDialog(target.name, onDelete = { replies.delete(target.messageId); dismiss() }, onDismiss = dismiss)
+        } else {
+            DeleteMessageDialog(onDelete = { replies.delete(target.messageId); dismiss() }, onDismiss = dismiss)
+        }
+    }
 }
 
 private fun clock(epochMs: Long, timeZone: TimeZone): String {
@@ -353,11 +435,12 @@ private fun clock(epochMs: Long, timeZone: TimeZone): String {
 }
 
 /**
- * `.message-bubble--user`: a primary bubble with the tight corner at the bottom end, up to 78% wide. A message still
- * in the outbox is dimmed and says it is sending; one that wasn't sent says so, with [onRetry] and [onDiscard].
+ * `.message-bubble--user`: a primary bubble with the tight corner at the bottom end, up to 78% wide, with copy and
+ * delete under it. A message still in the outbox is dimmed and says it is sending; one that wasn't sent says so,
+ * with [onRetry] and [onDiscard].
  */
 @Composable
-private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDiscard: () -> Unit) {
+private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDiscard: () -> Unit, onDelete: () -> Unit) {
     val sending = message.status == MESSAGE_STATUS_SENDING
     val failed = message.status == MESSAGE_STATUS_FAILED
     val clipboard = LocalClipboardManager.current
@@ -400,23 +483,46 @@ private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDis
                 horizontalArrangement = Arrangement.spacedBy(ActionGap),
             ) {
                 if (sending) Meta("Sending…") else time?.let { Meta(it) }
-                IconButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(split.text.ifEmpty { message.content }))
-                        copied = true
-                    },
-                    modifier = Modifier.size(ActionIconSize),
-                ) {
-                    NomiIcon(
-                        glyph = if (copied) NomiIcons.Check else NomiIcons.Copy,
-                        contentDescription = if (copied) "Copied" else "Copy message",
-                        size = ActionGlyphSize,
-                        tint = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                UserAction(if (copied) NomiIcons.Check else NomiIcons.Copy, if (copied) "Copied" else "Copy message", active = copied) {
+                    clipboard.setText(AnnotatedString(split.text.ifEmpty { message.content }))
+                    copied = true
                 }
+                if (!sending) UserAction(NomiIcons.Delete, "Delete message", onClick = onDelete)
             }
         }
     }
+}
+
+@Composable
+private fun UserAction(glyph: ai.nomi.designsystem.icon.NomiGlyph, label: String, active: Boolean = false, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(ActionIconSize)) {
+        NomiIcon(
+            glyph = glyph,
+            contentDescription = label,
+            size = ActionGlyphSize,
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** `MessageDeleteSheet.svelte`, short: the person's message goes with the crew's reply to it. */
+@Composable
+private fun DeleteMessageDialog(onDelete: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete this message?") },
+        text = { Text("It's removed from the chat, and the crew's reply to it goes too. This can't be undone.") },
+        confirmButton = {
+            NomiButton(
+                onClick = onDelete,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) { Text("Delete") }
+        },
+        dismissButton = { NomiButton(onClick = onDismiss, variant = NomiButtonVariant.Text) { Text("Cancel") } },
+    )
 }
 
 /** Under a message that wasn't sent: why it stands out, and what can be done about it. */
@@ -438,14 +544,15 @@ private fun NotSent(onRetry: () -> Unit, onDiscard: () -> Unit) {
     }
 }
 
-/** Assistant turns are editorial: the agent's shape as avatar, its name, then the [body] (markdown or blocks), no bubble. */
+/**
+ * Assistant turns are editorial: the agent's shape as avatar, its name, then the [body] (how it got there, the
+ * markdown or blocks, and its actions), no bubble.
+ */
 @Composable
 private fun AssistantTurn(
     author: String?,
     chained: Boolean,
-    time: String?,
     agentType: String?,
-    messageContent: String? = null,
     streaming: Boolean = false,
     body: @Composable (AgentIdentity) -> Unit,
 ) {
@@ -463,37 +570,6 @@ private fun AssistantTurn(
                 )
             }
             body(identity)
-            Row(
-                Modifier.padding(top = ChainGap),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ActionGap),
-            ) {
-                time?.let { Meta(it) }
-                if (messageContent != null && !streaming) {
-                    val clipboard = LocalClipboardManager.current
-                    var copied by remember { mutableStateOf(false) }
-                    LaunchedEffect(copied) {
-                        if (copied) {
-                            delay(COPIED_RESET_MS)
-                            copied = false
-                        }
-                    }
-                    IconButton(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(messageContent))
-                            copied = true
-                        },
-                        modifier = Modifier.size(ActionIconSize),
-                    ) {
-                        NomiIcon(
-                            glyph = if (copied) NomiIcons.Check else NomiIcons.Copy,
-                            contentDescription = if (copied) "Copied" else "Copy message",
-                            size = ActionGlyphSize,
-                            tint = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -515,19 +591,19 @@ private fun Meta(text: String, modifier: Modifier = Modifier) {
 }
 
 private val LoaderSize = 28.dp
+private val StatusPaddingStart = 4.dp
 
-/** `.thread__status`: the morphing loader and what the crew is doing. */
+/** `.thread__status`: the morphing loader and what the crew is doing ("Nomi is checking your transactions…"). */
 @Composable
 private fun WorkingLine(agent: AgentActivity?) {
-    val name = agent?.agentType?.let(::agentName) ?: FALLBACK_AGENT
-    val activity = agent?.let { phaseLabel(it.phase) } ?: "working"
+    val activity = agent?.let { phaseActivity(it.phase, it.detail) } ?: "working"
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(MessageGap),
-        modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        modifier = Modifier.padding(start = StatusPaddingStart).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
     ) {
-        NomiLoadingIndicator(size = LoaderSize, contentDescription = null)
-        Text("$name is $activity…", style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        NomiLoadingIndicator(size = LoaderSize, contentDescription = "Nomi is working")
+        Text("Nomi is $activity…", style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

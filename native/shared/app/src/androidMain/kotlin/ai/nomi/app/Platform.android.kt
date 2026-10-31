@@ -4,6 +4,7 @@ import ai.nomi.data.SdkSetup
 import ai.nomi.network.AndroidTokenStore
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.TokenStore
+import android.content.Intent
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -26,6 +27,20 @@ actual fun rememberReducedMotion(): Boolean {
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, DEFAULT_ANIMATOR_SCALE) == ANIMATIONS_OFF
     }
 }
+
+/** Android's share sheet, for a shared reply's link. */
+@Composable
+actual fun rememberShareText(): ((String) -> Unit)? {
+    val context = LocalContext.current
+    return remember(context) {
+        { text ->
+            val send = Intent(Intent.ACTION_SEND).setType(TEXT_PLAIN).putExtra(Intent.EXTRA_TEXT, text)
+            context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+}
+
+private const val TEXT_PLAIN = "text/plain"
 
 /** Android's platform pieces; start Koin with `androidContext(application)`. [apiUrl] comes from BuildConfig. */
 fun androidPlatformModule(apiUrl: String): Module = module {

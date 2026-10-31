@@ -17,6 +17,8 @@ use crate::storage::models::{Message, NotificationItem, Session, STATUS_SENT};
 const SESSIONS: &str = "sessions";
 const MESSAGES: &str = "messages";
 const APPROVAL: &str = "approval";
+const FEEDBACK: &str = "feedback";
+const REGENERATE: &str = "regenerate";
 const NOTIFICATIONS: &str = "notifications";
 const READ: &str = "read";
 const READ_ALL: &str = "read-all";
@@ -60,6 +62,10 @@ pub(crate) struct MessageDto {
     pub content_blocks: Option<Value>,
     pub created_at: String,
     pub agent_display_name: Option<String>,
+    #[serde(default)]
+    pub my_feedback: Option<String>,
+    #[serde(default)]
+    pub steps: Option<Value>,
 }
 
 /// `ListMessagesResponse`: oldest first; `has_more` means older messages exist.
@@ -86,6 +92,27 @@ struct SendMessageRequest<'a> {
 struct ApprovalRequest {
     decision: &'static str,
     remember: bool,
+}
+
+/// `FeedbackRequest`: a thumbs-down may say what went wrong (`reasons`, a `note`) and whether the
+/// whole chat may be read with it.
+#[derive(Serialize)]
+struct FeedbackRequest<'a> {
+    rating: &'a str,
+    reasons: &'a [String],
+    note: Option<&'a str>,
+    include_chat: bool,
+}
+
+#[derive(Serialize)]
+struct RegenerateRequest<'a> {
+    style: &'a str,
+}
+
+/// What a deleted message took with it: its own id and its replies' (`Related::message_ids`).
+#[derive(Deserialize)]
+pub(crate) struct DeletedDto {
+    pub message_ids: Vec<String>,
 }
 
 /// `NotificationItem`: the server says only whether it was read, not when.
@@ -211,6 +238,68 @@ impl Api {
         http::success(response).await.map(drop)
     }
 
+    /// Rates a reply; `None` takes the rating back.
+    pub async fn rate_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        rating: Option<&str>,
+        reasons: &[String],
+        note: Option<&str>,
+        include_chat: bool,
+    ) -> Result<(), NomiError> {
+        let url = self
+            .auth
+            .api_url(&[SESSIONS, session_id, MESSAGES, message_id, FEEDBACK]);
+        let response = match rating {
+            Some(rating) => {
+                let body = FeedbackRequest {
+                    rating,
+                    reasons,
+                    note,
+                    include_chat,
+                };
+                self.auth
+                    .send(|client| client.put(url.clone()).json(&body))
+                    .await?
+            }
+            None => self.auth.send(|client| client.delete(url.clone())).await?,
+        };
+        http::success(response).await.map(drop)
+    }
+
+    /// Deletes a message with its replies and what its turn made.
+    pub async fn delete_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<DeletedDto, NomiError> {
+        let url = self
+            .auth
+            .api_url(&[SESSIONS, session_id, MESSAGES, message_id]);
+        let response = self.auth.send(|client| client.delete(url.clone())).await?;
+        http::json(response).await
+    }
+
+    /// Asks the crew for its reply again (`again`, `shorter`, `longer` or `list`); the new reply
+    /// arrives over realtime.
+    pub async fn regenerate_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        style: &str,
+    ) -> Result<(), NomiError> {
+        let url = self
+            .auth
+            .api_url(&[SESSIONS, session_id, MESSAGES, message_id, REGENERATE]);
+        let body = RegenerateRequest { style };
+        let response = self
+            .auth
+            .send(|client| client.post(url.clone()).json(&body))
+            .await?;
+        http::success(response).await.map(drop)
+    }
+
     pub async fn notifications(&self, page: u32) -> Result<NotificationPageDto, NomiError> {
         let mut url = self.auth.api_url(&[NOTIFICATIONS]);
         url.query_pairs_mut()
@@ -270,6 +359,11 @@ impl MessageDto {
                 .filter(|blocks| !blocks.is_null())
                 .map(|blocks| blocks.to_string()),
             status: STATUS_SENT.to_owned(),
+            my_feedback: self.my_feedback,
+            steps_json: self
+                .steps
+                .filter(|steps| steps.as_array().is_some_and(|steps| !steps.is_empty()))
+                .map(|steps| steps.to_string()),
         })
     }
 }

@@ -26,6 +26,7 @@ use crate::services::projects::{
     DeployOverview, NewProjectIssue, ProjectDetail, ProjectIssue, ProjectIssues, ProjectMembers,
 };
 use crate::services::reminders::{NewReminder, Reminder, ReminderAction, RemindersOverview};
+use crate::services::shares::ShareLink;
 use crate::services::Services;
 use crate::storage::{AccountStore, Accounts};
 use crate::sync::{ChatBinding, Shared, SyncEngine, SyncSettings};
@@ -301,6 +302,70 @@ impl NomiSdk {
                 .await
         })
         .await
+    }
+
+    /// Rates a reply (`up` or `down`); `None` takes the rating back. A thumbs-down may carry
+    /// `reasons` (`inaccurate`, `ignored`, `wrong_crew`, `too_long`, `outdated`, `unsafe`,
+    /// `other`), a `note`, and whether the whole chat goes with it.
+    pub async fn rate_message(
+        &self,
+        session_id: String,
+        message_id: String,
+        rating: Option<String>,
+        reasons: Vec<String>,
+        note: Option<String>,
+        include_chat: bool,
+    ) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move {
+            sync.rate_message(
+                &session_id,
+                &message_id,
+                rating,
+                reasons,
+                note,
+                include_chat,
+            )
+            .await
+        })
+        .await
+    }
+
+    /// Deletes a message with its replies and what its turn made.
+    pub async fn delete_message(
+        &self,
+        session_id: String,
+        message_id: String,
+    ) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.delete_message(&session_id, &message_id).await })
+            .await
+    }
+
+    /// Asks for a reply again: `again`, `shorter`, `longer` or `list`.
+    pub async fn regenerate_message(
+        &self,
+        session_id: String,
+        message_id: String,
+        style: String,
+    ) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move {
+            sync.regenerate_message(&session_id, &message_id, &style)
+                .await
+        })
+        .await
+    }
+
+    /// A share link to one reply.
+    pub async fn share_reply(
+        &self,
+        session_id: String,
+        message_id: String,
+    ) -> Result<ShareLink, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.share_reply(&session_id, &message_id).await })
+            .await
     }
 
     /// Refetches the inbox's first page.

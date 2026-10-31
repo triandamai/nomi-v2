@@ -24,6 +24,10 @@ data class Message(
     val contentJson: String?,
     val createdAt: Long,
     val status: String,
+    /** The person's rating of a reply: `up`, `down`, or none. */
+    val myFeedback: String? = null,
+    /** What the crew did on the way to this reply, as the server's steps JSON array. */
+    val stepsJson: String? = null,
 )
 
 /** The assistant reply streaming in for the current turn. */

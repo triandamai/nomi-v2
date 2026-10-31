@@ -42,6 +42,7 @@ import ai.nomi.data.THEME_LIGHT
 import ai.nomi.data.UsageRepository
 import ai.nomi.designsystem.layout.LocalNomiPageTopPadding
 import ai.nomi.feature.chat.LocalAttachmentPreviews
+import ai.nomi.feature.chat.LocalShareText
 import ai.nomi.data.AttachmentPreviews
 import ai.nomi.designsystem.layout.PageTopPadding
 import ai.nomi.designsystem.layout.PageTopUnderBar
@@ -395,6 +396,7 @@ private fun NomiShell(signedIn: Boolean) {
                     CompositionLocalProvider(
                         LocalNomiPageTopPadding provides if (phoneTopBar) PageTopUnderBar else PageTopPadding,
                         LocalAttachmentPreviews provides attachmentPreviews::preview,
+                        LocalShareText provides rememberShareText(),
                     ) {
                         NomiNavDisplay(backStack, Modifier.fillMaxSize(), wide = wide)
                     }
@@ -630,6 +632,10 @@ private fun InAppFloatingBubbleOverlay(
         }
     }
 }
+
+/** The platform's share sheet for text (a shared reply's link); null where there is none (the link is copied). */
+@Composable
+expect fun rememberShareText(): ((String) -> Unit)?
 
 /** Whether the person asked the system for less motion (read where it is cheap; desktop has no such setting here). */
 @Composable

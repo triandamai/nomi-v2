@@ -19,6 +19,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.compose.components.markdownComponents
+import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
+import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
@@ -107,6 +110,15 @@ fun NomiMarkdown(
             codeBlock = PaddingValues(CodeBlockPadding),
             blockQuote = PaddingValues(horizontal = QuotePaddingH, vertical = NoGap),
             blockQuoteText = PaddingValues(vertical = QuotePaddingV),
+        ),
+        // Fenced and indented code get the web's code block: a header with the language, Copy and Collapse.
+        components = markdownComponents(
+            codeFence = { model ->
+                MarkdownCodeFence(model.content, model.node, model.typography.code) { code, language, style -> CodeBlock(code, language, style) }
+            },
+            codeBlock = { model ->
+                MarkdownCodeBlock(model.content, model.node, model.typography.code) { code, language, style -> CodeBlock(code, language, style) }
+            },
         ),
         dimens = markdownDimens(codeBackgroundCornerSize = NomiCorners.small.dp, tableCornerSize = NomiCorners.largeIncreased.dp),
         modifier = modifier.fillMaxWidth(),

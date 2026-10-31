@@ -83,6 +83,8 @@ fn stored_message(id: &str, role: &str, content: &str, seconds: u32) -> Message 
         agent_display_name: None,
         content: content.into(),
         content_json: None,
+        my_feedback: None,
+        steps_json: None,
         created_at: at_ms(seconds),
         status: STATUS_SENT.into(),
     }
@@ -1261,4 +1263,121 @@ fn realtime_events_are_carried_typed() {
         crate::decode_realtime_event(CHAT_TOPIC.into(), "not json".into()),
         RealtimeEvent::Unknown { kind: None, .. }
     ));
+}
+
+#[tokio::test]
+async fn a_chat_keeps_each_replys_rating_and_steps() {
+    let h = Harness::new().await;
+    let mut reply = message_json("m1", "assistant", "Done", 20);
+    reply["my_feedback"] = json!("up");
+    reply["steps"] = json!([{ "tool": "web_search", "detail": "rust", "ok": true }]);
+    h.mock(get(MESSAGES_PATH).respond_with(ok(page(vec![reply], false))))
+        .await;
+
+    h.sdk.refresh_messages(CHAT.into()).await.unwrap();
+
+    let stored = &h.messages().await[0];
+    assert_eq!(stored.my_feedback.as_deref(), Some("up"));
+    assert_eq!(
+        stored.steps_json.as_deref(),
+        Some(r#"[{"detail":"rust","ok":true,"tool":"web_search"}]"#)
+    );
+}
+
+#[tokio::test]
+async fn rating_a_reply_saves_it_on_the_backend_and_here() {
+    let h = Harness::new().await;
+    h.store
+        .upsert_messages(vec![stored_message("m1", "assistant", "Done", 20)])
+        .await
+        .unwrap();
+    h.mock(
+        Mock::given(method("PUT"))
+            .and(path("/api/sessions/s1/messages/m1/feedback"))
+            .and(body_json(json!({
+                "rating": "down", "reasons": ["too_long"], "note": "Shorter please", "include_chat": false
+            })))
+            .respond_with(ResponseTemplate::new(204)),
+    )
+    .await;
+    h.mock(
+        Mock::given(method("DELETE"))
+            .and(path("/api/sessions/s1/messages/m1/feedback"))
+            .respond_with(ResponseTemplate::new(204)),
+    )
+    .await;
+
+    h.sdk
+        .rate_message(
+            CHAT.into(),
+            "m1".into(),
+            Some("down".into()),
+            vec!["too_long".into()],
+            Some("Shorter please".into()),
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(h.messages().await[0].my_feedback.as_deref(), Some("down"));
+
+    h.sdk
+        .rate_message(CHAT.into(), "m1".into(), None, vec![], None, false)
+        .await
+        .unwrap();
+    assert_eq!(h.messages().await[0].my_feedback, None);
+}
+
+#[tokio::test]
+async fn deleting_a_message_removes_what_went_with_it() {
+    let h = Harness::new().await;
+    h.store
+        .upsert_messages(vec![
+            stored_message("m1", "user", "Plan my week", 10),
+            stored_message("m2", "assistant", "Here's a plan", 20),
+            stored_message("m3", "user", "Thanks", 30),
+        ])
+        .await
+        .unwrap();
+    h.mock(
+        Mock::given(method("DELETE"))
+            .and(path("/api/sessions/s1/messages/m2"))
+            .respond_with(ok(json!({
+                "message_ids": ["M2"], "transactions": [], "reminders": [], "plans": [], "tasks": [], "files": []
+            }))),
+    )
+    .await;
+
+    h.sdk
+        .delete_message(CHAT.into(), "m2".into())
+        .await
+        .unwrap();
+
+    let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
+    assert_eq!(ids, ["m1", "m3"]);
+}
+
+#[tokio::test]
+async fn regenerating_a_reply_asks_in_the_chosen_style_and_resyncs() {
+    let h = Harness::new().await;
+    h.mock(
+        post("/api/sessions/s1/messages/m2/regenerate")
+            .and(body_json(json!({ "style": "shorter" })))
+            .respond_with(
+                ResponseTemplate::new(202).set_body_json(json!({ "message_id": "m1", "total": 2 })),
+            ),
+    )
+    .await;
+    h.mock(get(MESSAGES_PATH).respond_with(ok(page(
+        vec![message_json("m1", "user", "Plan my week", 10)],
+        false,
+    ))))
+    .await;
+
+    h.sdk
+        .regenerate_message(CHAT.into(), "m2".into(), "shorter".into())
+        .await
+        .unwrap();
+
+    let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
+    assert_eq!(ids, ["m1"]);
 }

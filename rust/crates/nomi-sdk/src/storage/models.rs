@@ -20,7 +20,8 @@ pub(crate) const STATUS_FAILED: &str = "failed";
 /// One chat message. `role` is `user` or `assistant`; `content` is the markdown text and
 /// `content_json` the server's content-blocks JSON array, when the message has one. `status` is
 /// `sent` for what the server stored, and `sending` or `failed` for the person's message still in
-/// the outbox (its `id` is then local, `local-<outbox key>`).
+/// the outbox (its `id` is then local, `local-<outbox key>`). `my_feedback` is the person's rating
+/// of a reply (`up` or `down`), and `steps_json` the server's steps array (tools the crew used).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Message {
     pub id: String,
@@ -32,6 +33,8 @@ pub struct Message {
     pub content_json: Option<String>,
     pub created_at: i64,
     pub status: String,
+    pub my_feedback: Option<String>,
+    pub steps_json: Option<String>,
 }
 
 /// The assistant reply streaming in for a chat's current turn.

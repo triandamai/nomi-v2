@@ -140,6 +140,16 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
     override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) =
         sdk.resolveApproval(sessionId, messageId, approve, remember)
 
+    override suspend fun rateMessage(sessionId: String, messageId: String, rating: String?, reasons: List<String>, note: String?, includeChat: Boolean) =
+        sdk.rateMessage(sessionId, messageId, rating, reasons, note, includeChat)
+
+    override suspend fun deleteMessage(sessionId: String, messageId: String) = sdk.deleteMessage(sessionId, messageId)
+
+    override suspend fun regenerateMessage(sessionId: String, messageId: String, style: String) =
+        sdk.regenerateMessage(sessionId, messageId, style)
+
+    override suspend fun shareReply(sessionId: String, messageId: String): ShareLink = sdk.shareReply(sessionId, messageId)
+
     override suspend fun refreshNotifications() = sdk.refreshNotifications()
 
     override suspend fun loadMoreNotifications(): Boolean = sdk.loadMoreNotifications()

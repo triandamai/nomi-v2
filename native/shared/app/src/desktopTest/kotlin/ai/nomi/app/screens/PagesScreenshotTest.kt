@@ -20,6 +20,7 @@ import ai.nomi.data.Message
 import ai.nomi.data.NotificationItem
 import ai.nomi.feature.chat.ChatComposerState
 import ai.nomi.feature.chat.ChatContent
+import ai.nomi.feature.chat.ReplyFeedbackState
 import ai.nomi.feature.chats.ChatsContent
 import ai.nomi.feature.notifications.NotificationsContent
 import ai.nomi.feature.settings.SettingsContent
@@ -71,6 +72,29 @@ private val WithFiles = ChatState(
             "<attachment id=\"f2\" name=\"counter-2.jpg\" kind=\"image\" mime=\"image/jpeg\" size=\"198000\"/>\n\n" +
             "<attachment id=\"f3\" name=\"menu-draft.pdf\" kind=\"pdf\" mime=\"application/pdf\" size=\"1258291\"/>", 6),
         msg("m2", "assistant", "Got them. The menu reads well; I'd move the pastries above the drinks.", 5, "chitchat", "Nomi"),
+    ),
+    draft = null,
+    activeAgent = null,
+)
+
+/** A reply with thinking and steps before it, a code block, a like, and the dislike form open on another. */
+private val Replies = ChatState(
+    messages = listOf(
+        msg("r1", "user", "How do I read the bakery's orders file in Kotlin?", 9),
+        msg("r2", "assistant", "", 8, "coding", "Koda").copy(
+            content = "Thinking about the file format",
+            contentJson = """[{"kind":"reasoning","text":"The orders file is CSV, one order per line. Read it lazily."}]""",
+        ),
+        msg(
+            "r3", "assistant",
+            "Read it line by line, so a big file never sits in memory:\n\n```kotlin\n// One order per line\nfun orders(path: String) = File(path).useLines { lines ->\n    lines.drop(1).map { it.split(\",\") }.toList()\n}\n```\n\nThe first line is the header, so it's skipped.",
+            7, "coding", "Koda",
+        ).copy(
+            myFeedback = "up",
+            stepsJson = """[{"tool":"read_file","detail":"orders.csv","ok":true},{"tool":"web_search","detail":"kotlin useLines","ok":true}]""",
+        ),
+        msg("r4", "user", "And the total per day?", 6),
+        msg("r5", "assistant", "Group by the date column and sum the amounts.", 5, "coding", "Koda").copy(myFeedback = "down"),
     ),
     draft = null,
     activeAgent = null,
@@ -138,6 +162,17 @@ class PagesScreenshotTest {
 
     @Test fun chatAttachmentsPhoneLight() = rule.captureScreen("chat_attachments", Device.Phone, false) {
         ChatContent("Bakery menu", WithFiles, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
+    }
+
+    @Test fun chatRepliesPhoneLight() = rule.captureScreen("chat_replies", Device.Phone, false) {
+        ChatContent(
+            "Orders file", Replies, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc,
+            feedback = mapOf("r5" to ReplyFeedbackState(dislikeOpen = true)),
+        )
+    }
+
+    @Test fun chatRepliesPhoneDark() = rule.captureScreen("chat_replies", Device.Phone, true) {
+        ChatContent("Orders file", Replies, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
     }
 
     private fun workspace(tab: String, openFile: OpenFile? = null): @androidx.compose.runtime.Composable () -> Unit = {

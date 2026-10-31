@@ -27,11 +27,16 @@ private const val CHAT_TOPIC_PREFIX = "chat:"
  * [bind] is how a chat screen goes live: while bound, the engine watches the chat's topic and applies its events.
  * Call [bind] and [ListenerHandle.remove] from one thread (the main thread, like ViewModel init / onCleared).
  */
+/** Where a shared reply opens on the web app (`frontend/src/lib/shareLink.ts`). */
+private const val SHARED_PATH = "shared"
+
 class ChatRepository(
     private val engine: NomiEngine,
     private val activity: ActivityRepository,
     private val session: SessionScope,
     private val log: (String) -> Unit = {},
+    /** The web app, where shared replies open (`ApiConfig.webUrl`). */
+    private val webUrl: String = "",
 ) {
     /** Per-chat state the store doesn't keep: it only matters while the chat is on screen. */
     private data class Flags(val lastError: String? = null, val accessLost: Boolean = false)
@@ -106,6 +111,32 @@ class ChatRepository(
      */
     suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) = translated {
         engine.get().resolveApproval(sessionId, messageId, approve, remember)
+    }
+
+    /**
+     * Rates a reply (`up`, `down`, or null to take it back); the stored message shows it once the backend has it. A
+     * thumbs-down may carry what went wrong ([reasons], [note]) and whether the whole chat goes with it.
+     */
+    suspend fun rate(
+        sessionId: String,
+        messageId: String,
+        rating: String?,
+        reasons: List<String> = emptyList(),
+        note: String? = null,
+        includeChat: Boolean = false,
+    ) = translated { engine.get().rateMessage(sessionId, messageId, rating, reasons, note, includeChat) }
+
+    /** Deletes a message with its replies and what its turn made, here and on the backend. */
+    suspend fun delete(sessionId: String, messageId: String) = translated { engine.get().deleteMessage(sessionId, messageId) }
+
+    /** Asks for a reply again in [style] (`again`, `shorter`, `longer`, `list`); the new reply streams in. */
+    suspend fun regenerate(sessionId: String, messageId: String, style: String) = translated {
+        engine.get().regenerateMessage(sessionId, messageId, style)
+    }
+
+    /** A link anyone can open to one reply, on the web app. */
+    suspend fun shareLink(sessionId: String, messageId: String): String = translated {
+        "$webUrl/$SHARED_PATH/${engine.get().shareReply(sessionId, messageId).token}"
     }
 
     /**

@@ -16,7 +16,7 @@ private const val HTTP_UNAUTHORIZED = 401
 internal fun ai.nomi.sdk.Session.toDomain() = Session(id, title, lastMessagePreview, updatedAt, unread)
 
 internal fun ai.nomi.sdk.Message.toDomain() =
-    Message(id, sessionId, role, agentType, agentDisplayName, content, contentJson, createdAt, status)
+    Message(id, sessionId, role, agentType, agentDisplayName, content, contentJson, createdAt, status, myFeedback, stepsJson)
 
 internal fun ai.nomi.sdk.Draft.toDomain() = Draft(turnJobId, text, phase, updatedAt)
 
