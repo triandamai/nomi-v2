@@ -1,4 +1,7 @@
 <script lang="ts">
+	// Sample photos (Unsplash), bundled so the gallery needs nothing from elsewhere.
+	import receipt from '../images/receipt.jpg';
+	import statement from '../images/statement.jpg';
 	import { Cpu, Sparkles } from '@lucide/svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
 	import VersionSwitcher from '$lib/ds/chat/VersionSwitcher.svelte';
@@ -21,8 +24,6 @@
 	const heights = [6, 10, 16, 22, 14, 8, 18, 26, 20, 12, 6, 9, 15, 24, 28, 18, 10, 7, 12, 20, 16, 9, 5, 8, 14, 22, 18, 11, 6, 4, 6, 10, 14, 8, 5, 4, 4, 4, 4, 4];
 	const levels = heights.map((height) => (height - 4) / 24);
 	// The pen's own pictures: a receipt in the composer, a bank statement sent with the message.
-	const receipt = 'https://images.unsplash.com/photo-1721320147450-c57904a10999?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200';
-	const statement = 'https://images.unsplash.com/photo-1587602526256-e0ca9705305e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400';
 </script>
 
 <GallerySection

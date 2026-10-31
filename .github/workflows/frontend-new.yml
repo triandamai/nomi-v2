@@ -2,8 +2,9 @@ name: Frontend (new)
 
 # The new SvelteKit frontend under frontend-new/ (rebuilt from the pen.dev design system): type
 # check, unit tests and component tests in a real Chromium (with a coverage summary on the run
-# page), a production build, end-to-end smoke tests and the Docker image build. Runs on pull requests and merges to main only when
-# frontend-new/ or this file changed, like the other per-area workflows. Also called by
+# page), a production build, end-to-end smoke tests and the Docker image build, then the
+# design-system docs published to Cloudflare Pages. Runs on pull requests and merges to main only
+# when frontend-new/ or this file changed, like the other per-area workflows. Also called by
 # release.yml, so a tagged build never publishes without a green run.
 on:
   pull_request:
@@ -108,3 +109,57 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontend-new
           cache-to: type=gha,mode=max,scope=frontend-new
+
+  # The design-system docs for the whole team: the static copy (npm run build:gallery) on Cloudflare
+  # Pages, once the checks above pass. A merge to main updates the live site; a pull request from
+  # this repository publishes a preview of its branch; a release (which calls this workflow from a
+  # tag) leaves it alone. Skipped, with a notice, until the repository has CLOUDFLARE_API_TOKEN
+  # (Pages: edit) and CLOUDFLARE_ACCOUNT_ID as secrets.
+  docs:
+    name: Frontend new (design-system docs on Cloudflare Pages)
+    needs: frontend-new
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      DOCS_PAGES_PROJECT: ${{ vars.DOCS_PAGES_PROJECT || 'nomi-design-system' }}
+    steps:
+      - name: Cloudflare credentials
+        id: credentials
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Docs not published: add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under Settings > Secrets and variables > Actions."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.credentials.outputs.ready == 'true'
+
+      - name: Install Node
+        if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: npm ci
+        if: steps.credentials.outputs.ready == 'true'
+        working-directory: frontend-new
+        run: npm ci
+
+      - name: Build the static docs
+        if: steps.credentials.outputs.ready == 'true'
+        working-directory: frontend-new
+        run: npm run build:gallery
+
+      - name: Publish to Cloudflare Pages
+        if: steps.credentials.outputs.ready == 'true'
+        working-directory: frontend-new
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/docs/deploy.mjs --branch "$BRANCH" --sha "$SHA"

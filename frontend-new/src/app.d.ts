@@ -2,6 +2,8 @@
 declare global {
 	/** Set at build time from the release tag (see app-version.js). */
 	const __APP_VERSION__: string;
+	/** True in `npm run build:gallery`, the static copy of the design-system gallery. */
+	const __DS_STATIC__: boolean;
 
 	namespace App {
 		interface Locals {

@@ -1,16 +1,11 @@
 <script lang="ts">
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
+	import { PRINCIPLES } from '$lib/docs/principles';
 
 	/**
 	 * The Nomi sheet's DS Header: the title block beside the five principles, a divider under both.
 	 */
-	const principles: [title: string, body: string][] = [
-		['One accent, under 10%', 'Mint marks the single thing to act on. Neutrals do the hierarchy.'],
-		['Mono for machine output', 'Paths, IDs, URLs, tokens, costs, timestamps, model names.'],
-		['Borders over shadows', 'Shadows only for things that truly float: menus, toasts, dialogs.'],
-		['Honest states', 'Show the real tool and target. No fake progress. Cost always visible.'],
-		['Mascots are identity, not decoration', 'One per agent, flat colour, used only where an agent is speaking or working.'],
-	];
+	const principles = PRINCIPLES;
 </script>
 
 <header class="flex flex-col gap-12 border-b border-border pb-9.75 lg:flex-row">

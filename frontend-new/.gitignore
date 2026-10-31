@@ -27,3 +27,7 @@ __screenshots__
 /src/lib/paraglide
 /project.inlang/cache
 coverage
+
+# The static gallery (npm run build:gallery)
+/build-gallery
+/.svelte-kit-gallery
