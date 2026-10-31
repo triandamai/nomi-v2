@@ -22,6 +22,9 @@ import kotlinx.coroutines.launch
 private const val MESSAGE_SEND_FAILED = "Couldn't send. Check your connection and try again."
 private const val APPROVAL_FAILED = "Failed to record your decision."
 
+private const val MESSAGE_RETRY_FAILED = "Couldn't retry that message. Try again."
+private const val MESSAGE_DISCARD_FAILED = "Couldn't remove that message. Try again."
+
 /** The backend's answer to a decision on a card that is no longer pending. */
 private const val HTTP_CONFLICT = 409
 
@@ -94,6 +97,27 @@ class ChatViewModel(
 
     private fun setApproval(messageId: String, state: ApprovalState) {
         mutableApprovals.update { it + (messageId to state) }
+    }
+
+    /** Sends a message that wasn't sent again. */
+    fun retrySend(messageId: String) = outboxAction(messageId, MESSAGE_RETRY_FAILED) { chats.retrySend(it) }
+
+    /** Drops a message that wasn't sent. */
+    fun discardSend(messageId: String) = outboxAction(messageId, MESSAGE_DISCARD_FAILED) { chats.discardSend(it) }
+
+    private fun outboxAction(messageId: String, failure: String, action: suspend (String) -> Boolean) {
+        mutableComposer.value = mutableComposer.value.copy(error = null)
+        viewModelScope.launch {
+            try {
+                // False: it was delivered or removed meanwhile, and the thread already shows that.
+                action(messageId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("chat: outbox action failed: $e")
+                mutableComposer.value = mutableComposer.value.copy(error = failure)
+            }
+        }
     }
 
     fun onDraftChange(value: String) {

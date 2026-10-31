@@ -61,3 +61,8 @@ data class ChatState(
     val lastError: String? = null,
     val accessLost: Boolean = false,
 )
+
+/** [Message.status] values. */
+const val MESSAGE_STATUS_SENT = "sent"
+const val MESSAGE_STATUS_SENDING = "sending"
+const val MESSAGE_STATUS_FAILED = "failed"

@@ -290,8 +290,9 @@ in the simulator.
   the outbox. Their timestamps stay RFC 3339 strings.
 - Endpoints the apps never called aren't ported (budget deletion, money period, connecting services,
   project details and files, usage by month).
-- Show the outbox in the chat screen: a `failed` message with retry and discard
-  (`retryOutbox` / `discardOutbox`). Today only the status string changes.
+- The chat screen shows the outbox (a queued message dimmed with "Sending…", a failed one with
+  "Not sent", Retry and Discard), but not why it failed: the entry's `last_error` isn't surfaced, and
+  queued notification reads have no UI.
 - Move ViewModels from the repository wrappers to `NomiClient` and the `AccountStore` flows directly,
   then drop the duplicate app models and DTOs (`ai.nomi.data.Session`, `MoneySummaryDto`, …) in
   favour of the SDK's.
