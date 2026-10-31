@@ -4,9 +4,9 @@ import ai.nomi.core.STATE_STOP_TIMEOUT_MS
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.ChatState
 import ai.nomi.data.ForegroundChat
+import ai.nomi.data.ListenerHandle
 import ai.nomi.data.SessionRepository
 import ai.nomi.network.ApiException
-import ai.nomi.realtime.ListenerHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.ktor.http.HttpStatusCode
@@ -44,7 +44,7 @@ class ChatViewModel(
 ) : ViewModel() {
     private val binding: ListenerHandle = chats.bind(sessionId)
 
-    /** Null until Room's first read. */
+    /** Null until the store's first read. */
     val chat: StateFlow<ChatState?> =
         chats.observe(sessionId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), null)
 

@@ -61,6 +61,8 @@ So `native/shared/sdk/build.gradle.kts` runs cargo and the generator itself:
 | `generateUniffiBindings` | generates bindings from that library into `build/generated/uniffi/bindings` |
 | `stageDesktopLibrary` | copies the library to `<jna-prefix>/` on the desktop classpath |
 | `cargoBuildIosArm64`, `cargoBuildIosSimulatorArm64` | build the staticlib that cinterop embeds |
+| `installCargoNdk` | `cargo install cargo-ndk@4.1.2` into `rust/target/tools` |
+| `cargoBuildAndroid` | builds `libnomi_sdk.so` for arm64-v8a, armeabi-v7a and x86_64 into `build/generated/uniffi/jniLibs`, which `androidApp` packages |
 
 Add `-Pnomi.rust.release=true` for an optimized build. The default is a debug build.
 
@@ -78,7 +80,9 @@ cd rust && cargo test && cargo clippy --all-targets -- -D warnings
 cd native && ./gradlew :shared:sdk:desktopTest :shared:sdk:iosSimulatorArm64Test
 ```
 
-The iOS tasks need `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`.
+The iOS tasks need `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`. The Android build needs
+`rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android` and an NDK:
+`ANDROID_NDK_HOME`, else `<sdk>/ndk/<nomi.android.ndkVersion>`, else the newest NDK in the SDK.
 
 API rules for the FFI boundary:
 
@@ -104,12 +108,7 @@ library on the desktop JVM and on the iOS simulator. Lifecycle rules:
 - A slow subscriber gets `EventsDropped { count }` instead of blocking the engine.
 - Dropping a running SDK doesn't panic, even inside an async context.
 
-Still open from Milestone 1:
-
-- **Android packaging.** No `.so` is bundled yet: that needs cargo-ndk and the Android Rust targets,
-  which is Phase 6 work. Android host tests compile but skip the native calls.
-- **App wiring.** `:shared:sdk` isn't wired into the app or Koin yet. That happens in Milestone 5,
-  when screens move over.
+Android packaging and app wiring, left open here, were done in Milestone 5.
 
 **2 — Local engine (done).** Rust owns the local data the apps kept in Room: sessions, messages,
 streaming drafts, notifications and agent activity. This is verified by 56 Rust tests, plus 13
@@ -214,8 +213,80 @@ Kotlin tests on the desktop JVM and the iOS simulator.
 `resolve_approval` and `create_session` are direct calls, not queued: an approval only matters while
 the turn waits, and a new chat's id is needed at once.
 
-**5 — Full migration.** Screens move to `NomiClient`, then Room, Ktor Client and the Kotlin
-repositories are removed.
+**5 — The app runs on the engine (first pass done).** The apps use the Rust engine for everything it
+covers: the session, chats, messages, notifications, agent activity and realtime. Room
+(`:shared:database`) and the Kotlin realtime hub (`:shared:realtime`) are gone, and so are Ktor's
+sessions, messages, notifications and auth clients. This is verified by 477 desktop and Android host
+tests, 106 iOS simulator tests, the debug APK, the macOS installer, and the iOS app built and launched
+in the simulator.
+
+- **Android:** `cargoBuildAndroid` builds the engine for arm64-v8a, armeabi-v7a and x86_64, and the
+  app packages it with JNA's own library. `abiFilters` keeps the APK to those three ABIs, so no device
+  installs it without the engine.
+- **Data layer:** the public APIs of `SessionRepository`, `ChatRepository`, `NotificationRepository`,
+  `ActivityRepository`, `RealtimeSync` and `SessionGate` are unchanged, so screens and ViewModels
+  barely moved. They now read the engine's store and call `NomiClient`.
+  - `NomiEngine` creates the client off the main thread on first use, because creating it reads the
+    stored session.
+  - `TokenStoreCredentials` is the engine's `CredentialStore` over the existing secure token stores
+    (Keystore, Keychain, desktop). An unreadable store counts as signed out, and nothing is thrown
+    back into the engine.
+  - `SdkAuthRepository` signs in through the engine.
+  - `EngineSession` starts the engine at sign-in, opens the user's account and wipes local data at
+    sign-out. When the engine ends the session itself, `SessionGate` signs out too.
+- **Errors:** errors map to what screens already handle: `ApiException`, `EmailCodeException` and
+  `SessionEndedException`.
+- **Data on disk:** each platform keeps the engine's data under its private app storage
+  (`filesDir/nomi-sdk`, Application Support `nomi-sdk`, `<desktop data dir>/sdk`).
+- **CI:** the Android and desktop-installer jobs install Rust; Android also gets its targets and the
+  runner's NDK.
+
+## What's left, by milestone
+
+**1 — Native SDK**
+- Release builds don't turn on the optimized Rust build by themselves: pass `-Pnomi.rust.release=true`.
+  Tie it to the release variant and to the desktop distribution task.
+- 32-bit x86 Android (old emulators only) isn't built.
+- Linux and Windows desktop libraries are only built by CI's installer jobs, and not run there.
+
+**2 — Local engine**
+- Observations cap at 500 rows: a chat with more than 500 stored messages can't show its oldest
+  ones. This needs a windowed message observation.
+- The old Room database file (`nomi.db` in each platform's app storage) is left on disk. Nothing is
+  lost (the server has it all), but it should be deleted once.
+
+**3 — Connected engine**
+- Certificate authorities a user installs on the device aren't trusted (webpki roots, not the
+  platform verifier).
+- While Ktor still serves the remaining APIs, it and the engine both refresh tokens from the shared
+  store. That is harmless (the refresh token isn't rotated) but redundant. It goes away with Ktor.
+- Sign-out revokes the session inside `SessionGate`'s lock. Offline, a new sign-in waits up to the
+  request timeout.
+
+**4 — Reliable engine**
+- The no-double-send check matches on text: a message whose text the backend rewrites (attachment
+  tags) can be sent twice. Backend idempotency keys on `POST /messages` would close this.
+- Until the backend answers, a realtime echo of a queued message can briefly show next to its
+  `sending` row.
+- Chats resync from the newest page on every bind: the backend has no "changes since" endpoint.
+- The inbox's filters and counts (`counts`, `filter=unread|read|promo`) aren't mirrored.
+
+**5 — The app runs on the engine**
+- Port the APIs still on Ktor to the engine: home/profile and appearance preferences, money,
+  reminders, memory, connections, usage, projects. Then delete `NomiHttpClient`, Ktor and the
+  `TokenStore`-based refresh.
+- Show the outbox in the chat screen: a `failed` message with retry and discard
+  (`retryOutbox` / `discardOutbox`). Today only the status string changes.
+- Move ViewModels from the repository wrappers to `NomiClient` and the `AccountStore` flows directly,
+  then drop the duplicate app models (`ai.nomi.data.Session`, …) in favour of the SDK's.
+- Not verified yet: a real sign-in and chat end to end. The debug build points at the hosted API and
+  no local backend ran. Running the Android app on an emulator or device.
+
+**6 — Production ready**
+- Release profiles everywhere (above); sign and size-check the artifacts (debug `.so` files are
+  10–19 MB per ABI).
+- Recovery tests: a corrupt database, a full disk, a migration interrupted mid-way. Integration
+  tests against a real backend on every platform.
 
 **6 — Production ready.** Android, desktop Linux and Windows artifacts, plus recovery and integration
 tests on every platform.

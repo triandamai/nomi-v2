@@ -46,25 +46,25 @@ class ApprovalDecisionTest {
     @Test
     fun a_decision_is_sent_once_and_the_card_waits_for_the_server() {
         assertEquals(ApprovalState(sent = true), decide(approve = true, remember = true))
-        assertEquals(listOf(Triple(MESSAGE_ID, true, true)), graph.messagesApi.approvals)
+        assertEquals(listOf(Triple(MESSAGE_ID, true, true)), graph.backend.approvals)
 
         // A second tap while the card hasn't flipped yet sends nothing.
         runBlocking(Dispatchers.Main) { viewModel.resolveApproval(MESSAGE_ID, false, false) }
-        assertEquals(1, graph.messagesApi.approvals.size)
+        assertEquals(1, graph.backend.approvals.size)
     }
 
     @Test
     fun a_card_no_longer_pending_reads_as_expired() {
-        graph.messagesApi.approvalFailure = ApiException(CONFLICT, "this action is no longer pending")
+        graph.backend.approvalFailure = ApiException(CONFLICT, "this action is no longer pending")
         assertEquals(ApprovalState(expired = true), decide(approve = false, remember = false))
     }
 
     @Test
     fun any_other_failure_can_be_retried() {
-        graph.messagesApi.approvalFailure = ApiException(SERVER_ERROR, "failed to queue approval decision")
+        graph.backend.approvalFailure = ApiException(SERVER_ERROR, "failed to queue approval decision")
         assertEquals(ApprovalState(error = "Failed to record your decision."), decide(approve = true, remember = false))
 
-        graph.messagesApi.approvalFailure = null
+        graph.backend.approvalFailure = null
         assertEquals(ApprovalState(sent = true), decide(approve = true, remember = false))
     }
 

@@ -4,8 +4,8 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
@@ -151,63 +151,9 @@ class NomiHttpClientTest {
             respond("", HttpStatusCode.Unauthorized)
         }
         val client = nomiHttpClient(engine, prefixed, store) { error("must not sign out") }
-        AuthApi(client, prefixed, store).also {
-            runCatching { it.login("a@b.c", "bad") }
-        }
+        client.post(prefixed.url(LOGIN_PATH))
         assertEquals(0, refreshes)
         assertEquals(Tokens("a", "r"), store.read())
-    }
-
-    @Test
-    fun logoutSurvivesNetworkFailureAndStillClears() = runTest {
-        val store = FakeTokenStore(Tokens("a", "r"))
-        val engine = MockEngine { throw RuntimeException("offline") }
-        AuthApi(nomiHttpClient(engine, config, store) {}, config, store).logout()
-        assertNull(store.read())
-    }
-
-    @Test
-    fun loginParsesTokensAndEmailCodeChallenge() = runTest {
-        val tokenEngine = MockEngine { request ->
-            assertEquals(HttpMethod.Post, request.method)
-            assertEquals("/api/auth/login", request.url.encodedPath)
-            assertEquals("""{"email":"a@b.c","password":"pw"}""", request.body.toByteArray().decodeToString())
-            respond("""{"access_token":"a","refresh_token":"r"}""", HttpStatusCode.OK, json)
-        }
-        val store = FakeTokenStore()
-        val tokenApi = AuthApi(nomiHttpClient(tokenEngine, config, store) {}, config, store)
-        assertEquals(SignInResult.SignedIn(Tokens("a", "r")), tokenApi.login("a@b.c", "pw"))
-        assertEquals(Tokens("a", "r"), store.read())
-
-        val challengeEngine = MockEngine {
-            respond(
-                """{"verification":{"challenge_id":"c1","purpose":"login","email":"a***@b.c","expires_in":600,"resend_in":30,"sends_left":4}}""",
-                HttpStatusCode.OK,
-                json,
-            )
-        }
-        val challengeStore = FakeTokenStore()
-        val challengeApi = AuthApi(nomiHttpClient(challengeEngine, config, challengeStore) {}, config, challengeStore)
-        val result = challengeApi.login("a@b.c", "pw")
-        assertEquals(
-            SignInResult.EmailCode(VerificationInfo("c1", "login", "a***@b.c", 600, 30, 4)),
-            result,
-        )
-        assertNull(challengeStore.read())
-    }
-
-    @Test
-    fun logoutSendsRefreshTokenAndClearsLocalState() = runTest {
-        val store = FakeTokenStore(Tokens("a", "r"))
-        var body = ""
-        val engine = MockEngine { request ->
-            body = request.body.toByteArray().decodeToString()
-            respond("", HttpStatusCode.NoContent)
-        }
-        val client = nomiHttpClient(engine, config, store) {}
-        AuthApi(client, config, store).logout()
-        assertEquals("""{"refresh_token":"r"}""", body)
-        assertNull(store.read())
     }
 
     @Test
@@ -246,10 +192,7 @@ class NomiHttpClientTest {
         }
         val customConfig = ApiConfig("http://redirect.example")
         val client = nomiHttpClient(engine, customConfig, store) {}
-        val api = AuthApi(client, customConfig, store)
-        val result = api.login("a@b.c", "pw")
-        assertEquals(SignInResult.SignedIn(Tokens("a", "r")), result)
-        assertEquals(Tokens("a", "r"), store.read())
+        assertEquals(HttpStatusCode.OK, client.post(customConfig.url(LOGIN_PATH)).status)
     }
 }
 

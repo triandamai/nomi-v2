@@ -1,79 +1,79 @@
 package ai.nomi.app
 
+import ai.nomi.app.di.AppScope
 import ai.nomi.app.di.appModules
 import ai.nomi.data.AuthRepository
-import ai.nomi.database.DatabaseFactory
-import ai.nomi.database.NomiDatabase
+import ai.nomi.data.NomiEngine
+import ai.nomi.data.SdkSetup
+import ai.nomi.data.SessionEngine
+import ai.nomi.data.TokenStoreCredentials
 import ai.nomi.network.ApiConfig
-import ai.nomi.network.MessageDto
-import ai.nomi.network.MessagePageDto
-import ai.nomi.network.MessagesApi
-import ai.nomi.network.NotificationPageDto
-import ai.nomi.network.NotificationsApi
-import ai.nomi.network.SendMessageResponseDto
-import ai.nomi.network.SessionDto
-import ai.nomi.network.SessionsApi
 import ai.nomi.network.CrewMemberDto
 import ai.nomi.network.HomeApi
 import ai.nomi.network.ProfileDto
 import ai.nomi.network.SignInResult
-import ai.nomi.network.VerificationInfo
 import ai.nomi.network.TokenStore
 import ai.nomi.network.Tokens
-import ai.nomi.network.UnreadCountDto
-import ai.nomi.realtime.ConnectionState
-import ai.nomi.realtime.ListenerHandle
-import ai.nomi.realtime.RealtimeEvent
-import ai.nomi.realtime.RealtimeHub
-import ai.nomi.realtime.RealtimeListener
-import ai.nomi.realtime.Topic
-import androidx.room.Room
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import ai.nomi.network.VerificationInfo
+import ai.nomi.sdk.NativeNomiClient
+import ai.nomi.sdk.NomiClient
+import ai.nomi.sdk.defaultSdkConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.update
 import org.koin.core.module.Module
 import org.koin.dsl.module
+import java.nio.file.Files
 
-/** Records listeners per topic, so tests can see when a screen stops listening. Main-thread only. */
-class FakeRealtimeHub : RealtimeHub {
-    override val state: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Idle)
-    private val listeners = mutableListOf<Pair<Topic, RealtimeListener>>()
-    var starts = 0
-        private set
-    var stops = 0
-        private set
+/** What screens asked the engine to do on the backend: approval decisions, and the chats kept in sync right now. */
+class BackendRecorder {
+    val approvals = mutableListOf<Triple<String, Boolean, Boolean>>()
 
-    override fun start() {
-        starts++
+    /** Thrown by the next approval decisions instead of recording them, while set. */
+    var approvalFailure: Exception? = null
+    val syncing = MutableStateFlow<Map<String, Int>>(emptyMap())
+}
+
+/** The real engine (against a backend that can't be reached) with the screens' backend calls going to [backend]. */
+class RecordingNomiClient(private val real: NomiClient, private val backend: BackendRecorder) : NomiClient by real {
+    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
+        backend.approvalFailure?.let { throw it }
+        backend.approvals += Triple(messageId, approve, remember)
     }
 
-    override fun stop() {
-        stops++
-    }
-
-    override fun addListener(topic: Topic, listener: RealtimeListener): ListenerHandle {
-        val entry = topic to listener
-        listeners += entry
-        return object : ListenerHandle {
-            override fun remove() {
-                listeners.remove(entry)
-            }
+    override fun syncChat(sessionId: String): Flow<Nothing> = flow {
+        backend.syncing.update { it + (sessionId to (it[sessionId] ?: 0) + 1) }
+        try {
+            emitAll(real.syncChat(sessionId))
+        } finally {
+            backend.syncing.update { it + (sessionId to (it[sessionId] ?: 1) - 1) }
         }
     }
+}
 
-    override fun events(topic: Topic): Flow<RealtimeEvent> = callbackFlow {
-        val handle = addListener(topic) { trySend(it) }
-        awaitClose { handle.remove() }
+/** Records what the session gate asked of the engine. */
+class FakeSessionEngine : SessionEngine {
+    var begins = 0
+        private set
+    var wipes = 0
+        private set
+
+    override suspend fun begin() {
+        begins++
     }
 
-    fun listenerCount(topic: Topic): Int = listeners.count { it.first == topic }
+    override suspend fun wipe() {
+        wipes++
+    }
+
+    override val ended: Flow<Unit> = emptyFlow()
 }
 
 class FakeTokenStore(private var tokens: Tokens? = null) : TokenStore {
@@ -102,9 +102,9 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
     var nextResend: Result<VerificationInfo> = Result.success(VerificationInfo("c1", "login", "a***@b.c", 600, 60, 2))
     val resends = mutableListOf<String>()
 
-    override suspend fun verifyCode(challengeId: String, code: String): Tokens {
+    override suspend fun verifyCode(challengeId: String, code: String) {
         verified += challengeId to code
-        return nextCode.getOrThrow().also { session = it }
+        session = nextCode.getOrThrow()
     }
 
     override suspend fun resendCode(challengeId: String): VerificationInfo {
@@ -112,11 +112,9 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
         return nextResend.getOrThrow()
     }
 
-    override suspend fun refresh(): Boolean = session != null
-
-    override suspend fun forgetSession(): String? = session?.refresh.also { session = null }
-
-    override suspend fun revoke(refreshToken: String) = Unit
+    override suspend fun signOut() {
+        session = null
+    }
 }
 
 class FakeHomeApi : HomeApi {
@@ -126,73 +124,33 @@ class FakeHomeApi : HomeApi {
     override suspend fun crew() = crew
 }
 
-class FakeSessionsApi : SessionsApi {
-    var sessions: List<SessionDto> = emptyList()
-    override suspend fun list(): List<SessionDto> = sessions
-    override suspend fun create(): String = CREATED_SESSION_ID
-
-    companion object {
-        const val CREATED_SESSION_ID = "created"
-    }
-}
-
-class FakeMessagesApi : MessagesApi {
-    /** Every approval decision as (message id, approve, remember); [approvalFailure] is thrown instead when set. */
-    val approvals = mutableListOf<Triple<String, Boolean, Boolean>>()
-    var approvalFailure: Exception? = null
-
-    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
-        approvalFailure?.let { throw it }
-        approvals += Triple(messageId, approve, remember)
-    }
-
-    val sent = mutableListOf<Pair<String, String>>()
-
-    override suspend fun page(sessionId: String, before: String?, limit: Int) = MessagePageDto(emptyList(), hasMore = false)
-
-    override suspend fun get(sessionId: String, messageId: String): MessageDto = error("no message $messageId")
-
-    override suspend fun send(sessionId: String, text: String): SendMessageResponseDto {
-        sent += sessionId to text
-        return SendMessageResponseDto(
-            MessageDto(id = "u${sent.size}", sender = "user", content = text, contentBlocks = null, createdAt = "2026-10-18T10:00:00Z", agentDisplayName = null),
-        )
-    }
-}
-
-class FakeNotificationsApi : NotificationsApi {
-    override suspend fun list(filter: String?, page: Int?) = NotificationPageDto(items = emptyList(), unread = 0)
-    override suspend fun unread() = UnreadCountDto(0, latest = null)
-    override suspend fun markRead(id: String) = Unit
-    override suspend fun markAllRead() = Unit
-}
-
-class InMemoryDatabaseFactory : DatabaseFactory {
-    override fun create(): NomiDatabase =
-        Room.inMemoryDatabaseBuilder<NomiDatabase>().setDriver(BundledSQLiteDriver()).build()
-}
-
-/** What a platform module provides, with nothing touching the network or disk. */
+/** What a platform module provides, with nothing touching the network; the engine's data goes to a temp folder. */
 val testPlatformModule: Module = module {
     single { ApiConfig("http://nomi.test") }
     single<TokenStore> { FakeTokenStore() }
-    single<DatabaseFactory> { InMemoryDatabaseFactory() }
+    single { SdkSetup(UNREACHABLE_BASE_URL, Files.createTempDirectory("nomi-app-test").toFile().apply { deleteOnExit() }.path) }
     single<HttpClientEngine> { MockEngine { respond("", HttpStatusCode.ServiceUnavailable) } }
 }
 
-/** The real graph with the realtime hub, auth and REST APIs swapped for fakes. */
+/** A port nothing listens on: the engine's requests are refused at once. */
+const val UNREACHABLE_BASE_URL = "http://127.0.0.1:9"
+
+/** The real graph with auth and the engine's session swapped for fakes, and the engine's backend calls recorded. */
 class TestGraph {
-    val hub = FakeRealtimeHub()
     val auth = FakeAuthRepository()
-    val sessionsApi = FakeSessionsApi()
-    val messagesApi = FakeMessagesApi()
+    val engine = FakeSessionEngine()
+    val backend = BackendRecorder()
 
     val modules: List<Module> = appModules(testPlatformModule) + module {
-        single<RealtimeHub> { hub }
         single<AuthRepository> { auth }
-        single<SessionsApi> { sessionsApi }
-        single<MessagesApi> { messagesApi }
-        single<NotificationsApi> { FakeNotificationsApi() }
+        single<SessionEngine> { engine }
         single<HomeApi> { FakeHomeApi() }
+        single {
+            val setup = get<SdkSetup>()
+            NomiEngine(get(AppScope), get()) {
+                val real = NativeNomiClient(defaultSdkConfig(setup.baseUrl, setup.dataDir), TokenStoreCredentials(FakeTokenStore()))
+                RecordingNomiClient(real, backend)
+            }
+        }
     }
 }

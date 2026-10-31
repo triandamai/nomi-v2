@@ -6,41 +6,34 @@ import ai.nomi.data.AppearanceRepository
 import ai.nomi.data.AuthRepository
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.CompanionPreferences
-import ai.nomi.data.DefaultAuthRepository
-import ai.nomi.data.EpochClock
+import ai.nomi.data.EngineSession
+import ai.nomi.data.NomiEngine
+import ai.nomi.data.SdkAuthRepository
+import ai.nomi.data.SdkSetup
+import ai.nomi.data.SessionEngine
+import ai.nomi.data.TokenStoreCredentials
 import ai.nomi.data.ForegroundChat
 import ai.nomi.data.NotificationRepository
 import ai.nomi.data.RealtimeSync
 import ai.nomi.data.SessionGate
 import ai.nomi.data.SessionRepository
 import ai.nomi.data.SessionScope
-import ai.nomi.data.SystemEpochClock
-import ai.nomi.database.DatabaseFactory
-import ai.nomi.database.NomiDatabase
-import ai.nomi.database.clearAll
 import ai.nomi.feature.auth.SignInViewModel
 import ai.nomi.feature.chat.ChatViewModel
 import ai.nomi.feature.chats.ChatsViewModel
 import ai.nomi.feature.home.HomeViewModel
 import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
-import ai.nomi.network.AuthApi
 import ai.nomi.network.ConnectionsApi
 import ai.nomi.network.HomeApi
 import ai.nomi.network.HttpConnectionsApi
 import ai.nomi.network.HttpHomeApi
 import ai.nomi.network.HttpMemoryApi
-import ai.nomi.network.HttpMessagesApi
 import ai.nomi.network.HttpMoneyApi
-import ai.nomi.network.HttpNotificationsApi
 import ai.nomi.network.HttpRemindersApi
-import ai.nomi.network.HttpSessionsApi
 import ai.nomi.network.MemoryApi
-import ai.nomi.network.MessagesApi
 import ai.nomi.network.MoneyApi
-import ai.nomi.network.NotificationsApi
 import ai.nomi.network.RemindersApi
-import ai.nomi.network.SessionsApi
 import ai.nomi.network.nomiHttpClient
 import ai.nomi.data.ConnectionsRepository
 import ai.nomi.data.MemoryRepository
@@ -50,10 +43,9 @@ import ai.nomi.app.screens.connections.ConnectionsViewModel
 import ai.nomi.app.screens.memory.MemoryViewModel
 import ai.nomi.app.screens.money.MoneyViewModel
 import ai.nomi.app.screens.reminders.RemindersViewModel
-import ai.nomi.realtime.DefaultRealtimeHub
-import ai.nomi.realtime.KtorRealtimeTransport
-import ai.nomi.realtime.RealtimeHub
-import ai.nomi.realtime.RealtimeTransport
+import ai.nomi.network.TokenStore
+import ai.nomi.sdk.NativeNomiClient
+import ai.nomi.sdk.defaultSdkConfig
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +57,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
-/** The app-lifetime main-thread scope: the realtime hub's actor runs on it, and each signed-in [SessionScope] is its child. */
+/** The app-lifetime main-thread scope; each signed-in [SessionScope] is its child. */
 val AppScope = named("app")
 
 private const val LOG_PREFIX = "Nomi: "
@@ -74,20 +66,25 @@ private const val LOG_PREFIX = "Nomi: "
 internal fun appLog(message: String) = println(LOG_PREFIX + message)
 
 /**
- * Network, realtime, database and repositories. A platform module supplies the four platform pieces:
- * [ai.nomi.network.ApiConfig], [ai.nomi.network.TokenStore], [DatabaseFactory] and
- * [io.ktor.client.engine.HttpClientEngine].
+ * The Rust engine, the remaining Ktor APIs and the repositories. A platform module supplies the four platform pieces:
+ * [ai.nomi.network.ApiConfig], [TokenStore], [SdkSetup] and [io.ktor.client.engine.HttpClientEngine].
  */
 val coreModule: Module = module {
     single<CoroutineScope>(AppScope) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
-    single<EpochClock> { SystemEpochClock }
 
-    // A refresh the server rejects ends the session; resolved lazily, SessionGate needs this client itself.
+    // The Rust engine: chats, messages, notifications, agent activity, realtime and the session.
+    single { ForegroundChat() }
+    single {
+        val setup = get<SdkSetup>()
+        val credentials = TokenStoreCredentials(get<TokenStore>(), log = ::appLog)
+        NomiEngine(get(AppScope), get()) { NativeNomiClient(defaultSdkConfig(setup.baseUrl, setup.dataDir), credentials) }
+    }
+    single<AuthRepository> { SdkAuthRepository(get(), get()) }
+    single<SessionEngine> { EngineSession(get()) }
+
+    // The APIs the engine doesn't cover yet, on Ktor with the same session (TokenStore). A refresh the server rejects
+    // ends the session; resolved lazily, SessionGate needs this client itself.
     single<HttpClient> { nomiHttpClient(get(), get(), get(), onSignedOut = { get<SessionGate>().signOut() }) }
-    single { AuthApi(get(), get(), get()) }
-    single<SessionsApi> { HttpSessionsApi(get(), get()) }
-    single<MessagesApi> { HttpMessagesApi(get(), get()) }
-    single<NotificationsApi> { HttpNotificationsApi(get(), get()) }
     single<HomeApi> { HttpHomeApi(get(), get()) }
     single<MoneyApi> { HttpMoneyApi(get(), get()) }
     single<RemindersApi> { HttpRemindersApi(get(), get()) }
@@ -95,50 +92,24 @@ val coreModule: Module = module {
     single<ConnectionsApi> { HttpConnectionsApi(get(), get()) }
     single<ai.nomi.network.UsageApi> { ai.nomi.network.HttpUsageApi(get(), get()) }
     single<ai.nomi.network.ProjectsApi> { ai.nomi.network.HttpProjectsApi(get(), get()) }
-    single<AuthRepository> { DefaultAuthRepository(get(), get()) }
 
-    single<RealtimeTransport> { KtorRealtimeTransport(get(), get(), log = ::appLog) }
-    single<RealtimeHub> {
-        DefaultRealtimeHub(
-            transport = get(),
-            refreshToken = { get<SessionGate>().refreshSession() },
-            scope = get(AppScope),
-            log = ::appLog,
-            // Rejected even with a freshly refreshed token: back to sign-in rather than a silently dead socket.
-            onAuthLost = { get<SessionGate>().signOut() },
-        )
-    }
-
-    single<NomiDatabase> { get<DatabaseFactory>().create() }
     // The signed-in account's work (a child of AppScope); SessionGate opens it at sign-in and closes it before the wipe.
     single { SessionScope(get(AppScope)) }
     single { AppearanceRepository(get(), get(), log = ::appLog) }
     single { CompanionPreferences() }
-    single { SessionRepository(get(), get(), get(), get()) }
-    single { NotificationRepository(get(), get(), get(), get()) }
-    single { ActivityRepository(get(), get()) }
-    single { ForegroundChat() }
-    single { ChatRepository(get(), get(), get(), get(), session = get(), clock = get(), log = ::appLog) }
+    single { SessionRepository(get()) }
+    single { NotificationRepository(get()) }
+    single { ActivityRepository(get()) }
+    single { ChatRepository(get(), get(), session = get(), log = ::appLog) }
     single { MoneyRepository(get(), get()) }
     single { RemindersRepository(get(), get()) }
     single { MemoryRepository(get(), get()) }
     single { ConnectionsRepository(get(), get()) }
     single { ai.nomi.data.UsageRepository(get(), get()) }
     single { ai.nomi.data.ProjectsRepository(get(), get()) }
-    single { RealtimeSync(get(), get(), get(), get(), get(), session = get(), log = ::appLog) }
+    single { RealtimeSync(get(), get(), get(), session = get(), log = ::appLog) }
     single { CompanionController(get(AppScope), get(), get(), get(), sessionRepository = get(), log = ::appLog) }
-    single {
-        val database = get<NomiDatabase>()
-        SessionGate(
-            auth = get(),
-            hub = get(),
-            sync = get(),
-            session = get(),
-            clearLocalData = { database.clearAll() },
-            scope = get(AppScope),
-            log = ::appLog,
-        )
-    }
+    single { SessionGate(auth = get(), engine = get(), sync = get(), session = get(), scope = get(AppScope), log = ::appLog) }
 }
 
 /** One ViewModel per screen; the chat's takes its session id as a parameter. */

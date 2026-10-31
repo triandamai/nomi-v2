@@ -20,8 +20,6 @@ kotlin {
             api(projects.shared.core)
             api(projects.shared.designsystem)
             implementation(projects.shared.network)
-            api(projects.shared.realtime)
-            implementation(projects.shared.database)
             api(projects.shared.data)
             implementation(projects.shared.feature.auth)
             implementation(projects.shared.feature.home)

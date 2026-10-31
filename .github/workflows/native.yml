@@ -196,8 +196,21 @@ jobs:
       - name: Android SDK platform
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "$ANDROID_PLATFORM" > /dev/null
 
+      # :shared:sdk builds the Rust SDK for each packaged ABI with cargo-ndk and the runner's NDK.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - name: Assemble debug APK
-        run: ./gradlew :androidApp:assembleDebug
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          ./gradlew :androidApp:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
@@ -227,6 +240,15 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - uses: gradle/actions/setup-gradle@v5
+
+      # The installer carries the Rust SDK built for this OS (:shared:sdk puts it on the classpath for JNA).
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
 
       - name: Package for this OS
         run: ./gradlew :desktopApp:packageDistributionForCurrentOS
