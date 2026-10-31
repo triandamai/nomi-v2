@@ -1,0 +1,3 @@
+# The Rust SDK's static library; its header and the library itself are added by build.gradle.kts.
+# reqwest's rustls support pulls in rustls-platform-verifier, which references Security.framework.
+linkerOpts = -framework Security

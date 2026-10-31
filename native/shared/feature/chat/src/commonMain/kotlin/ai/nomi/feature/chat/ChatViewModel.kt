@@ -4,12 +4,11 @@ import ai.nomi.core.STATE_STOP_TIMEOUT_MS
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.ChatState
 import ai.nomi.data.ForegroundChat
+import ai.nomi.data.ListenerHandle
 import ai.nomi.data.SessionRepository
 import ai.nomi.network.ApiException
-import ai.nomi.realtime.ListenerHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +21,12 @@ import kotlinx.coroutines.launch
 
 private const val MESSAGE_SEND_FAILED = "Couldn't send. Check your connection and try again."
 private const val APPROVAL_FAILED = "Failed to record your decision."
+
+private const val MESSAGE_RETRY_FAILED = "Couldn't retry that message. Try again."
+private const val MESSAGE_DISCARD_FAILED = "Couldn't remove that message. Try again."
+
+/** The backend's answer to a decision on a card that is no longer pending. */
+private const val HTTP_CONFLICT = 409
 
 data class ChatComposerState(val draft: String = "", val sending: Boolean = false, val error: String? = null)
 
@@ -44,7 +49,7 @@ class ChatViewModel(
 ) : ViewModel() {
     private val binding: ListenerHandle = chats.bind(sessionId)
 
-    /** Null until Room's first read. */
+    /** Null until the store's first read. */
     val chat: StateFlow<ChatState?> =
         chats.observe(sessionId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS), null)
 
@@ -81,7 +86,7 @@ class ChatViewModel(
                 throw e
             } catch (e: ApiException) {
                 log("chat: approval failed: $e")
-                if (e.status == HttpStatusCode.Conflict.value) ApprovalState(expired = true) else ApprovalState(error = APPROVAL_FAILED)
+                if (e.status == HTTP_CONFLICT) ApprovalState(expired = true) else ApprovalState(error = APPROVAL_FAILED)
             } catch (e: Exception) {
                 log("chat: approval failed: $e")
                 ApprovalState(error = APPROVAL_FAILED)
@@ -92,6 +97,27 @@ class ChatViewModel(
 
     private fun setApproval(messageId: String, state: ApprovalState) {
         mutableApprovals.update { it + (messageId to state) }
+    }
+
+    /** Sends a message that wasn't sent again. */
+    fun retrySend(messageId: String) = outboxAction(messageId, MESSAGE_RETRY_FAILED) { chats.retrySend(it) }
+
+    /** Drops a message that wasn't sent. */
+    fun discardSend(messageId: String) = outboxAction(messageId, MESSAGE_DISCARD_FAILED) { chats.discardSend(it) }
+
+    private fun outboxAction(messageId: String, failure: String, action: suspend (String) -> Boolean) {
+        mutableComposer.value = mutableComposer.value.copy(error = null)
+        viewModelScope.launch {
+            try {
+                // False: it was delivered or removed meanwhile, and the thread already shows that.
+                action(messageId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("chat: outbox action failed: $e")
+                mutableComposer.value = mutableComposer.value.copy(error = failure)
+            }
+        }
     }
 
     fun onDraftChange(value: String) {

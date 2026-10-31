@@ -1,19 +1,19 @@
 package ai.nomi.app
 
-import ai.nomi.database.AndroidDatabaseFactory
-import ai.nomi.database.DatabaseFactory
+import ai.nomi.data.SdkSetup
 import ai.nomi.network.AndroidTokenStore
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.TokenStore
-import ai.nomi.network.defaultHttpEngine
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import io.ktor.client.engine.HttpClientEngine
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
 import org.koin.dsl.module
+
+/** The Rust engine's data, under the app's private files. */
+private const val SDK_DIR = "nomi-sdk"
 
 /** Animations are off when the developer/accessibility "animator duration scale" is 0. */
 private const val ANIMATIONS_OFF = 0f
@@ -32,6 +32,5 @@ fun androidPlatformModule(apiUrl: String): Module = module {
     require(apiUrl.isNotBlank()) { "No backend URL: build release with -Pnomi.apiUrl.release=https://…" }
     single { ApiConfig(apiUrl) }
     single<TokenStore> { AndroidTokenStore(androidContext()) }
-    single<DatabaseFactory> { AndroidDatabaseFactory(androidContext()) }
-    single<HttpClientEngine> { defaultHttpEngine() }
+    single { SdkSetup(get<ApiConfig>().baseUrl, androidContext().filesDir.resolve(SDK_DIR).path) }
 }

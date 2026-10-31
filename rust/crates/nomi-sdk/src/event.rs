@@ -3,6 +3,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, watch};
 
 use crate::config::LogLevel;
+use crate::network::auth::SignOutReason;
+use crate::network::events::RealtimeEvent;
+use crate::network::realtime::ConnectionState;
 
 /// Where the SDK is in its lifecycle. `ShutDown` is terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -30,6 +33,43 @@ pub struct LogRecord {
 pub enum SdkEvent {
     StateChanged {
         state: SdkState,
+    },
+    /// Someone signed in; open their store with `user_id`.
+    SignedIn {
+        user_id: String,
+    },
+    /// The session ended. The account's local data stays until `remove_account`.
+    SignedOut {
+        reason: SignOutReason,
+    },
+    /// The realtime socket's state changed.
+    ConnectionChanged {
+        state: ConnectionState,
+    },
+    /// An event on a watched realtime topic: `event` decoded, `payload_json` as the gateway sent it.
+    Realtime {
+        topic: String,
+        event: RealtimeEvent,
+        payload_json: String,
+    },
+    /// The socket (re)connected: whatever is shown for `topic` may have missed events, refetch it.
+    TopicResynced {
+        topic: String,
+    },
+    /// The backend refused `topic` (deleted, or access revoked). Watching it again retries.
+    TopicAccessLost {
+        topic: String,
+    },
+    /// A turn in a watched chat failed; its streaming draft is gone. Sync sends this once it has
+    /// cleaned up after the turn.
+    ChatTurnFailed {
+        session_id: String,
+        turn_job_id: String,
+        error: String,
+    },
+    /// The open account changed: `Some` after one was opened, `None` after it was closed or removed.
+    AccountChanged {
+        account_id: Option<String>,
     },
     Log {
         record: LogRecord,

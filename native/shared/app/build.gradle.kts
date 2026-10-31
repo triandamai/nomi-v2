@@ -20,8 +20,6 @@ kotlin {
             api(projects.shared.core)
             api(projects.shared.designsystem)
             implementation(projects.shared.network)
-            api(projects.shared.realtime)
-            implementation(projects.shared.database)
             api(projects.shared.data)
             implementation(projects.shared.feature.auth)
             implementation(projects.shared.feature.home)
@@ -54,7 +52,6 @@ kotlin {
                 implementation(compose.desktop.uiTestJUnit4)
                 implementation(libs.junit4)
                 implementation(libs.koin.test)
-                implementation(libs.ktor.client.mock)
                 implementation(libs.roborazzi.compose.desktop)
                 implementation(libs.datetime)
                 // The desktop app's Main dispatcher (desktopApp ships the same).

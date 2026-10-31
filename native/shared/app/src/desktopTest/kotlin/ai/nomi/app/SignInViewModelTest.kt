@@ -41,7 +41,7 @@ class SignInViewModelTest {
     }
 
     @Test
-    fun successful_sign_in_signs_the_gate_in_and_starts_the_hub() {
+    fun successful_sign_in_signs_the_gate_in_and_begins_the_engine_session() {
         val vm = koin.get<SignInViewModel>()
         vm.onEmailChange("a@b.c")
         vm.onPasswordChange("pw")
@@ -49,7 +49,7 @@ class SignInViewModelTest {
         vm.submit()
 
         assertTrue(koin.get<SessionGate>().signedIn.value)
-        assertEquals(1, graph.hub.starts)
+        assertEquals(1, graph.engine.begins)
         assertEquals(listOf("a@b.c" to "pw"), graph.auth.signIns)
         assertFalse(vm.state.value.busy)
     }
@@ -65,7 +65,7 @@ class SignInViewModelTest {
 
         assertEquals("a***@b.c", vm.state.value.challenge?.email)
         assertFalse(koin.get<SessionGate>().signedIn.value)
-        assertEquals(0, graph.hub.starts)
+        assertEquals(0, graph.engine.begins)
     }
 
     @Test
@@ -89,7 +89,7 @@ class SignInViewModelTest {
     }
 
     @Test
-    fun right_code_signs_in_and_starts_the_hub() {
+    fun right_code_signs_in_and_begins_the_engine_session() {
         val vm = atCodeStep()
         vm.onCodeChange(" 12a3-456 ")
 
@@ -97,7 +97,7 @@ class SignInViewModelTest {
 
         assertEquals(listOf("c1" to "123456"), graph.auth.verified)
         assertTrue(koin.get<SessionGate>().signedIn.value)
-        assertEquals(1, graph.hub.starts)
+        assertEquals(1, graph.engine.begins)
     }
 
     @Test

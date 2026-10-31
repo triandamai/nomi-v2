@@ -1,19 +1,7 @@
 package ai.nomi.network
 
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import io.ktor.client.request.put
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-
-private const val PROFILE_PATH = "/api/profile"
-private const val CREW_PATH = "/api/agents"
-private const val PREFERENCES_PATH = "/api/preferences"
 
 /** `ProfileResponse` in routes/profile.rs. */
 @Serializable
@@ -107,11 +95,6 @@ data class HomeSummaryDto(
     @SerialName("plans_total") val plansTotal: Int = 0,
 )
 
-@Serializable
-internal data class CrewResponse(val agents: List<CrewMemberDto>)
-
-private const val HOME_SUMMARY_PATH = "/api/home"
-
 /** `/api/profile`, `/api/agents`, `/api/preferences` and `/api/home`: who the person is, their crew, appearance, and status. */
 interface HomeApi {
     suspend fun profile(): ProfileDto
@@ -124,29 +107,3 @@ interface HomeApi {
     suspend fun summary(): HomeSummaryDto = HomeSummaryDto()
 }
 
-class HttpHomeApi(private val client: HttpClient, private val config: ApiConfig) : HomeApi {
-    override suspend fun profile(): ProfileDto = get(PROFILE_PATH, "profile")
-
-    override suspend fun crew(): List<CrewMemberDto> = get<CrewResponse>(CREW_PATH, "crew").agents
-
-    override suspend fun preferences(): PreferencesDto = get(PREFERENCES_PATH, "preferences")
-
-    override suspend fun summary(): HomeSummaryDto = get(HOME_SUMMARY_PATH, "home summary")
-
-    override suspend fun updatePreferences(request: UpdatePreferencesDto): PreferencesDto {
-        val response = client.put(config.url(PREFERENCES_PATH)) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-        if (!response.status.isSuccess()) {
-            throw ApiException(response.status.value, "update preferences failed (${response.status.value})")
-        }
-        return response.body()
-    }
-
-    private suspend inline fun <reified T> get(path: String, what: String): T {
-        val response = client.get(config.url(path))
-        if (!response.status.isSuccess()) throw ApiException(response.status.value, "$what failed (${response.status.value})")
-        return response.body()
-    }
-}

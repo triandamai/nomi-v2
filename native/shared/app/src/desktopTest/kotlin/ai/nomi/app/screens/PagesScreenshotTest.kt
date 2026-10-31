@@ -3,6 +3,9 @@ package ai.nomi.app.screens
 import ai.nomi.data.AgentActivity
 import ai.nomi.data.ChatState
 import ai.nomi.data.Draft
+import ai.nomi.data.MESSAGE_STATUS_FAILED
+import ai.nomi.data.MESSAGE_STATUS_SENDING
+import ai.nomi.data.MESSAGE_STATUS_SENT
 import ai.nomi.data.Message
 import ai.nomi.data.NotificationItem
 import ai.nomi.feature.chat.ChatComposerState
@@ -38,6 +41,18 @@ private val Inbox = listOf(
     NotificationItem("n3", "account", "Welcome to Nomi", "Your crew is ready when you are.", null, SNAPSHOT_NOW - 3 * 24 * 60 * MINUTE, SNAPSHOT_NOW),
 )
 
+/** The person's messages in each outbox state: sent, failed, then one still sending. */
+private val Outbox = ChatState(
+    messages = listOf(
+        msg("m1", "user", "Book a table for Friday at 7.", 20).copy(status = MESSAGE_STATUS_SENT),
+        msg("m2", "assistant", "Done — a table for two at Lumen, Friday 7pm.", 19, "chitchat", "Nomi"),
+        msg("local-a", "user", "Make it four people instead.", 3).copy(status = MESSAGE_STATUS_FAILED),
+        msg("local-b", "user", "And ask for a window seat.", 1).copy(status = MESSAGE_STATUS_SENDING),
+    ),
+    draft = null,
+    activeAgent = null,
+)
+
 class PagesScreenshotTest {
     @get:Rule val rule = createComposeRule()
 
@@ -61,6 +76,14 @@ class PagesScreenshotTest {
 
     @Test fun chatWideLight() = rule.captureScreen("chat", Device.Wide, false) {
         InShell(Device.Wide, "chats") { ChatContent("Saturday plan", Conversation, ChatComposerState(draft = "And the hike?"), {}, {}, {}, onBack = null, modifier = it, timeZone = utc) }
+    }
+
+    @Test fun chatOutboxPhoneLight() = rule.captureScreen("chat_outbox", Device.Phone, false) {
+        ChatContent("Friday dinner", Outbox, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
+    }
+
+    @Test fun chatOutboxPhoneDark() = rule.captureScreen("chat_outbox", Device.Phone, true) {
+        ChatContent("Friday dinner", Outbox, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
     }
 
     @Test fun chatEmptyPhoneLight() = rule.captureScreen("chat_empty", Device.Phone, false) {

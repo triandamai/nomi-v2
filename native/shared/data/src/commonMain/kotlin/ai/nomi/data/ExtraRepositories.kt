@@ -25,11 +25,11 @@ class MoneyRepository(
         session.run { api.summary(month) }
     }
 
-    suspend fun createTransaction(request: CreateTransactionRequestDto): Result<TransactionDto> = runCatching {
+    suspend fun createTransaction(request: CreateTransactionRequestDto): Result<Unit> = runCatching {
         session.run { api.createTransaction(request) }
     }
 
-    suspend fun setBudget(request: CreateBudgetRequestDto): Result<BudgetDto> = runCatching {
+    suspend fun setBudget(request: CreateBudgetRequestDto): Result<Unit> = runCatching {
         session.run { api.setBudget(request) }
     }
 }

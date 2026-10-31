@@ -13,11 +13,24 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [dependencies]
 uniffi.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+rusqlite.workspace = true
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+rustls.workspace = true
+webpki-roots.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+fastrand.workspace = true
+time.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+wiremock.workspace = true
+tokio-tungstenite = { workspace = true, features = ["handshake"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }

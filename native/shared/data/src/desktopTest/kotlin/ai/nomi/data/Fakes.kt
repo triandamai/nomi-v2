@@ -1,148 +1,120 @@
 package ai.nomi.data
 
-import ai.nomi.database.NomiDatabase
-import ai.nomi.network.MessageDto
-import ai.nomi.network.MessagePageDto
-import ai.nomi.network.MessagesApi
-import ai.nomi.network.NotificationPageDto
-import ai.nomi.network.NotificationsApi
-import ai.nomi.network.SendMessageResponseDto
-import ai.nomi.network.SessionDto
-import ai.nomi.network.SessionsApi
-import ai.nomi.network.UnreadCountDto
-import ai.nomi.realtime.ConnectionState
-import ai.nomi.realtime.ListenerHandle
-import ai.nomi.realtime.RealtimeEvent
-import ai.nomi.realtime.RealtimeHub
-import ai.nomi.realtime.RealtimeListener
-import ai.nomi.realtime.Topic
-import androidx.room.Room
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import ai.nomi.network.SignInResult
+import ai.nomi.network.TokenStore
+import ai.nomi.network.Tokens
+import ai.nomi.network.VerificationInfo
+import ai.nomi.sdk.CredentialStore
+import ai.nomi.sdk.Credentials
+import ai.nomi.sdk.NativeNomiClient
+import ai.nomi.sdk.defaultSdkConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import java.nio.file.Files
 
-fun inMemoryDb(): NomiDatabase = Room.inMemoryDatabaseBuilder<NomiDatabase>().setDriver(BundledSQLiteDriver()).build()
+/** A port nothing listens on: the engine's requests are refused at once. */
+const val UNREACHABLE_BASE_URL = "http://127.0.0.1:9"
 
 /** A signed-in session's scope, already open, child of this scope. */
 fun CoroutineScope.openSession(): SessionScope = SessionScope(this).also { it.open() }
 
-/** Dispatches [emit]ted events synchronously to the listeners registered for the event's topic. */
-class FakeRealtimeHub : RealtimeHub {
-    override val state: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Idle)
-    private val listeners = mutableListOf<Pair<Topic, RealtimeListener>>()
+/** An unsigned JWT-shaped access token naming [userId] in `sub`, as the backend's do. */
+fun accessToken(userId: String): String {
+    val encoder = java.util.Base64.getUrlEncoder().withoutPadding()
+    val encode = { json: String -> encoder.encodeToString(json.encodeToByteArray()) }
+    return "${encode("""{"alg":"none"}""")}.${encode("""{"sub":"$userId"}""")}.signature"
+}
 
-    var starts = 0
-        private set
-    var stops = 0
-        private set
+class MemoryCredentials(var stored: Credentials? = null) : CredentialStore {
+    override fun load(): Credentials? = stored
 
-    override fun start() {
-        starts++
+    override fun save(credentials: Credentials) {
+        stored = credentials
     }
 
-    override fun stop() {
-        stops++
-    }
-
-    override fun addListener(topic: Topic, listener: RealtimeListener): ListenerHandle {
-        val entry = topic to listener
-        listeners += entry
-        return object : ListenerHandle {
-            override fun remove() {
-                listeners.remove(entry)
-            }
-        }
-    }
-
-    override fun events(topic: Topic): Flow<RealtimeEvent> = callbackFlow {
-        val handle = addListener(topic) { trySend(it) }
-        awaitClose { handle.remove() }
-    }
-
-    fun listenerCount(topic: Topic): Int = listeners.count { it.first == topic }
-
-    fun emit(event: RealtimeEvent) {
-        listeners.filter { it.first == event.topic }.forEach { it.second.onEvent(event) }
+    override fun clear() {
+        stored = null
     }
 }
 
-fun messageDto(id: String, sender: String = "assistant", content: String = "text $id", createdAt: String = "2026-10-18T10:00:00Z") =
-    MessageDto(id = id, sender = sender, content = content, contentBlocks = null, createdAt = createdAt, agentDisplayName = null)
-
-class FakeMessagesApi : MessagesApi {
-    /** Every approval decision as (message id, approve, remember); [approvalFailure] is thrown instead when set. */
-    val approvals = mutableListOf<Triple<String, Boolean, Boolean>>()
-    var approvalFailure: Exception? = null
-
-    override suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) {
-        approvalFailure?.let { throw it }
-        approvals += Triple(messageId, approve, remember)
-    }
-
-    /** Served by [page]; tests swap it to simulate the server changing. */
-    var latest: List<MessageDto> = emptyList()
-    val byId = mutableMapOf<String, MessageDto>()
-    var pageCalls = 0
-    val sent = mutableListOf<Pair<String, String>>()
-
-    override suspend fun page(sessionId: String, before: String?, limit: Int): MessagePageDto {
-        pageCalls++
-        return MessagePageDto(latest, hasMore = false)
-    }
-
-    override suspend fun get(sessionId: String, messageId: String): MessageDto =
-        byId[messageId] ?: error("no message $messageId")
-
-    override suspend fun send(sessionId: String, text: String): SendMessageResponseDto {
-        sent += sessionId to text
-        return SendMessageResponseDto(messageDto("u-${sent.size}", sender = "user", content = text))
+/** A real engine on a fresh data directory, against a backend that can't be reached. */
+fun CoroutineScope.testEngine(
+    credentials: CredentialStore = MemoryCredentials(),
+    foreground: ForegroundChat = ForegroundChat(),
+): NomiEngine {
+    val dataDir = Files.createTempDirectory("nomi-data-test").toFile().apply { deleteOnExit() }
+    return NomiEngine(this, foreground) {
+        NativeNomiClient(defaultSdkConfig(UNREACHABLE_BASE_URL, dataDir.path), credentials)
     }
 }
 
-class FakeSessionsApi : SessionsApi {
-    var sessions: List<SessionDto> = emptyList()
-    var listCalls = 0
+class FakeTokenStore(var tokens: Tokens? = null) : TokenStore {
+    override suspend fun read(): Tokens? = tokens
 
-    /** When set, [list] suspends until it completes: a list request still in flight. */
-    var listGate: CompletableDeferred<Unit>? = null
-
-    override suspend fun list(): List<SessionDto> {
-        listCalls++
-        listGate?.await()
-        return sessions
+    override suspend fun write(tokens: Tokens) {
+        this.tokens = tokens
     }
 
-    override suspend fun create(): String = "created"
+    override suspend fun clear() {
+        tokens = null
+    }
 }
 
-class FakeNotificationsApi : NotificationsApi {
-    var page = NotificationPageDto(items = emptyList(), unread = 0)
-    var listCalls = 0
-    val markedRead = mutableListOf<String>()
+/** Scripted [AuthRepository]: [session] is what a token store would hold. */
+class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
+    var nextSignIn: SignInResult = SignInResult.SignedIn(Tokens("a", "r"))
+    var signOuts = 0
 
-    override suspend fun list(filter: String?, page: Int?): NotificationPageDto {
-        listCalls++
-        return this.page
+    /** When set, [signIn] suspends until it completes: a login still in flight. */
+    var signInGate: CompletableDeferred<Unit>? = null
+    var failRead = false
+
+    override suspend fun hasSession(): Boolean {
+        if (failRead) error("keychain unavailable")
+        return session != null
     }
 
-    override suspend fun unread(): UnreadCountDto = UnreadCountDto(page.unread, latest = null)
-
-    override suspend fun markRead(id: String) {
-        markedRead += id
+    override suspend fun signIn(email: String, password: String): SignInResult {
+        signInGate?.await()
+        return nextSignIn.also { if (it is SignInResult.SignedIn) session = it.tokens }
     }
 
-    override suspend fun markAllRead() = Unit
+    /** What [verifyCode] does: store these tokens, or throw this error. */
+    var nextCode: Result<Tokens> = Result.success(Tokens("a-code", "r-code"))
+    val verified = mutableListOf<Pair<String, String>>()
+
+    override suspend fun verifyCode(challengeId: String, code: String) {
+        verified += challengeId to code
+        session = nextCode.getOrThrow()
+    }
+
+    override suspend fun resendCode(challengeId: String): VerificationInfo =
+        VerificationInfo(challengeId, "login", "a***@b.c", 600, 60, 2)
+
+    override suspend fun signOut() {
+        signOuts++
+        session = null
+    }
 }
 
-class FakeClock(var now: Long = START_MILLIS) : () -> Long {
-    override fun invoke(): Long = now
+/** Records what [SessionGate] asked of the engine; [end] plays the engine ending the session itself. */
+class FakeSessionEngine : SessionEngine {
+    var begins = 0
+    var wipes = 0
+    private val endings = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
-    companion object {
-        const val START_MILLIS = 1_760_000_000_000L
+    override suspend fun begin() {
+        begins++
+    }
+
+    override suspend fun wipe() {
+        wipes++
+    }
+
+    override val ended = endings
+
+    fun end() {
+        endings.tryEmit(Unit)
     }
 }
