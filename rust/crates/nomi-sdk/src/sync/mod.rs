@@ -271,15 +271,24 @@ impl Shared {
     }
 
     /// Loads the chat's newest page. The first load also records whether older messages exist.
+    /// The newest page is the whole tail of the chat: a stored message newer than its oldest that it
+    /// lacks was deleted on the server (a reply a regenerate replaced, a delete from another device),
+    /// up to when the page was asked for, so a message arriving meanwhile stays.
     pub async fn refresh_messages(&self, session_id: &str) -> Result<(), NomiError> {
         self.ensure_owner()?;
+        let asked_at = Self::now();
         let page = self
             .api
             .messages(session_id, None, MESSAGE_PAGE_SIZE)
             .await?;
         let has_more = page.has_more;
+        let empty = page.messages.is_empty();
         let session = session_id.to_owned();
-        self.store_page(session_id, page, None, move |tx| {
+        self.store_page(session_id, page, Some(asked_at), move |tx| {
+            // The server has nothing left in this chat: what was sent before is gone.
+            if empty && !has_more {
+                messages::remove_missing(tx, &session, i64::MIN, asked_at, &[])?;
+            }
             let key = older_key(&session);
             if sync_state::get(tx.raw(), &key)?.is_none() {
                 sync_state::set(tx, &key, i64::from(has_more))?;
@@ -325,8 +334,8 @@ impl Shared {
     }
 
     /// Stores a page, drops what the server no longer has inside the span the page covers (up to
-    /// `until`, the message the page was fetched before, or the page's newest), then runs `also`
-    /// in the same transaction.
+    /// `until`: the message an older page was fetched before, or when the newest page was asked
+    /// for; never short of the page's newest), then runs `also` in the same transaction.
     async fn store_page(
         &self,
         session_id: &str,
@@ -345,7 +354,8 @@ impl Shared {
                 messages::upsert(tx, &stored)?;
                 if let (Some(oldest), Some(newest)) = (stored.first(), stored.last()) {
                     let keep: Vec<String> = stored.iter().map(|m| m.id.clone()).collect();
-                    let until = until.unwrap_or(newest.created_at);
+                    let until =
+                        until.map_or(newest.created_at, |until| until.max(newest.created_at));
                     messages::remove_missing(tx, &session, oldest.created_at, until, &keep)?;
                 }
                 also(tx)
@@ -477,15 +487,24 @@ impl Shared {
         message_id: &str,
     ) -> Result<(), NomiError> {
         self.ensure_owner()?;
-        let deleted = self.api.delete_message(session_id, message_id).await?;
+        let deleted = match self.api.delete_message(session_id, message_id).await {
+            Ok(deleted) => deleted.message_ids,
+            // Already gone there (deleted elsewhere, or replaced by a regenerate): drop it here and
+            // resync, which takes whatever went with it.
+            Err(NomiError::Http { status, .. }) if status == HTTP_NOT_FOUND => {
+                vec![message_id.to_owned()]
+            }
+            Err(error) => return Err(error),
+        };
         self.store
             .write(move |tx| {
-                for id in &deleted.message_ids {
+                for id in &deleted {
                     messages::delete(tx, &id.to_lowercase())?;
                 }
                 Ok(())
             })
-            .await
+            .await?;
+        self.refresh_messages(session_id).await
     }
 
     /// Asks for a reply again; the old reply goes and the new one streams in.
