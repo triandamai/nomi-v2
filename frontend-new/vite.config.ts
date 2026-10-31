@@ -38,6 +38,8 @@ export default defineConfig({
 			adapter: galleryStatic ? adapterStatic({ pages: 'build-gallery', assets: 'build-gallery', strict: false }) : adapter(),
 			// The static gallery builds into its own folder, so it never clobbers the app's build.
 			outDir: galleryStatic ? '.svelte-kit-gallery' : '.svelte-kit',
+			// Share hosts can reserve names starting with `_`, so the static gallery keeps its assets in app/.
+			appDir: galleryStatic ? 'app' : '_app',
 			prerender: galleryStatic ? { crawl: false, entries: ['/design-system/nomi', '/design-system/chat', '/design-system/build'], handleUnseenRoutes: 'ignore' } : undefined,
 			// SvelteKit's own update check follows the same version: after a deploy, the next
 			// navigation loads the new build.
