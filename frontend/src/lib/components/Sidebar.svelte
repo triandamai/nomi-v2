@@ -53,9 +53,9 @@
 
 <aside class="sidebar" class:sidebar--rail={collapsed && !inSettings}>
 	{#if inSettings}
-		<SettingsDrawer {userEmail} {profile} />
+		<div class="scroll"><SettingsDrawer {userEmail} {profile} /></div>
 	{:else if !collapsed}
-		<NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} />
+		<div class="scroll"><NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} /></div>
 	{:else}
 		<nav class="rail" aria-label={m.nav_main()}>
 			<a href="/" class="rail__brand" aria-label={m.nav_nomi_home()}><Mascot agent="nomi" size={32} /></a>
@@ -94,6 +94,23 @@
 			height: 100%;
 			flex-shrink: 0;
 		}
+	}
+	/* The whole drawer scrolls, top to bottom, as the phone's does: the Sidebar twin's own layout
+	   scrolls only its recents inside a fixed column, which on a shorter window shows a sliver. */
+	.scroll {
+		height: 100%;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-width: thin;
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.scroll :global(.drawer) {
+		height: auto;
+		min-height: 100%;
+	}
+	.scroll :global(.recents) {
+		flex: 1 0 auto;
+		overflow: visible;
 	}
 	.rail {
 		display: flex;
