@@ -124,7 +124,9 @@ Nothing polls. A client opens one WebSocket and subscribes to what's on screen:
   `Delta` (the crew is writing), `TurnCompleted` / `TurnFailed` (the turn ended; a failure
   also posts its `run_failed` message), `AgentPhaseChanged` (thinking, calling a tool, waiting),
   `AgentDelegationUpdated` (a background job moved on), `SessionRenamed`, `PersonalityChanged`.
-- User events: `NotificationCreated` and `ChatReply` (a reply landed in another chat). The
+- User events: `NotificationCreated`, `ChatReply` (a reply landed in another chat), and
+  `MessagesDeleted` / `MessageUpdated` with their `session_id` (the same change as on the chat's
+  topic, for devices not showing that chat). The
   person's activity feed (`GET /api/me/activity/ws`) sends `ChatActivity`: a chat elsewhere
   finished, failed or needs them.
 

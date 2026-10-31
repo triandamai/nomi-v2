@@ -1467,6 +1467,30 @@ async fn messages_deleted_on_another_device_leave_this_one() {
 }
 
 #[tokio::test]
+async fn messages_deleted_in_a_chat_this_device_isnt_showing_leave_it_too() {
+    let h = Harness::new().await;
+    h.store
+        .upsert_messages(vec![
+            stored_message("m1", "user", "Plan my week", 10),
+            stored_message("m2", "assistant", "Here's a plan", 20),
+        ])
+        .await
+        .unwrap();
+
+    // Not watching the chat's topic: the person's own topic carries it.
+    h.event(
+        "user",
+        json!({ "kind": "MessagesDeleted", "session_id": CHAT, "message_ids": ["M2"] }),
+    );
+
+    eventually("the delete", || async {
+        let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
+        (ids == ["m1"]).then_some(())
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_chat_deleted_on_another_device_leaves_this_one() {
     let h = Harness::new().await;
     let chat = |id: &str| Session {

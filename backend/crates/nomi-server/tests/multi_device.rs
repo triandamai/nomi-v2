@@ -154,7 +154,8 @@ async fn a_message_sent_on_one_device_reaches_the_persons_other_devices(pool: Pg
     let arrived = first_of_kind(&mut laptop, "NotificationCreated").await;
     assert_eq!(arrived["body"], "Shipyard refused it: plan limit reached");
 
-    // Deleting the message on this device takes it off the tablet showing the chat.
+    // Deleting the message on this device takes it off the tablet showing the chat, and off the
+    // laptop that isn't showing it.
     let message_id = sent["user_message"]["id"].as_str().unwrap().to_string();
     let deleted = client
         .delete(format!("{http_base}/api/sessions/{session_id}/messages/{message_id}"))
@@ -165,6 +166,9 @@ async fn a_message_sent_on_one_device_reaches_the_persons_other_devices(pool: Pg
     assert!(deleted.status().is_success());
     let gone = first_of_kind(&mut tablet, "MessagesDeleted").await;
     assert_eq!(gone["message_ids"][0], json!(message_id));
+    let gone_elsewhere = first_of_kind(&mut laptop, "MessagesDeleted").await;
+    assert_eq!(gone_elsewhere["session_id"], json!(session_id));
+    assert_eq!(gone_elsewhere["message_ids"][0], json!(message_id));
 
     // Deleting the chat closes it on the tablet and drops it from the laptop's list.
     let removed = client.delete(format!("{http_base}/api/sessions/{session_id}")).bearer_auth(&token).send().await.unwrap();

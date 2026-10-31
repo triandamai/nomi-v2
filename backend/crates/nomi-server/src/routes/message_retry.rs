@@ -66,7 +66,7 @@ pub async fn retry_failed_run(
     }
     sqlx::query("DELETE FROM messages WHERE id = $1").bind(message_id).execute(&mut *tx).await.map_err(internal("failed to clear the error"))?;
     tx.commit().await.map_err(internal("failed to retry"))?;
-    crate::chat_events::messages_deleted(session_id, vec![message_id]);
+    crate::chat_events::messages_deleted(claims.sub, session_id, vec![message_id]);
 
     Ok(Json(RetryResponse { removed_message_id: message_id }))
 }

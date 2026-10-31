@@ -93,4 +93,9 @@ pub enum UserEnvelope {
     ChatUpdated { session_id: Uuid, project_id: Option<Uuid>, title: Option<String> },
     /// One of the person's chats was deleted, on any device: every device drops it from its list.
     ChatDeleted { session_id: Uuid },
+    /// Messages left one of the person's chats (see `StreamEnvelope::MessagesDeleted`): every
+    /// device drops them, whichever chat it has open.
+    MessagesDeleted { session_id: Uuid, message_ids: Vec<Uuid> },
+    /// A message in one of the person's chats changed in place: every device fetches it again.
+    MessageUpdated { session_id: Uuid, message_id: Uuid },
 }
