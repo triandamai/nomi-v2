@@ -19,7 +19,7 @@
 		{#if code}<span class="font-mono text-label text-text-3">{code}</span>{/if}
 	</header>
 	<div class="flex flex-col gap-3 p-3.5">
-		<blockquote class="flex flex-col gap-1 border-l-2 border-border-strong pl-3">
+		<blockquote class="flex flex-col gap-1 border-l-2 border-border-strong pl-2.5">
 			<span class="font-mono text-label tracking-label text-text-3 uppercase">{m.mobile_said({ provider })}</span>
 			<span class="font-mono text-phone-sm text-text">{reason}</span>
 		</blockquote>
