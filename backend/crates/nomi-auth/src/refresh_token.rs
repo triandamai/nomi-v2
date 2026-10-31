@@ -77,6 +77,27 @@ pub async fn refresh_access_token(
     Ok(claims.encode(jwt_secret)?)
 }
 
+/// Notes the device a sign-in belongs to, so signing that device out ends it. An older sign-in is
+/// tagged the first time its device refreshes with it.
+pub async fn tag_device(pool: &PgPool, raw_refresh_token: &str, device_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE refresh_tokens SET device_id = $2 WHERE token_hash = $1")
+        .bind(hash_token(raw_refresh_token))
+        .bind(device_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Ends every sign-in made on `device_id`; returns how many there were.
+pub async fn revoke_device(pool: &PgPool, user_id: Uuid, device_id: Uuid) -> Result<u64, sqlx::Error> {
+    let revoked = sqlx::query("UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL")
+        .bind(user_id)
+        .bind(device_id)
+        .execute(pool)
+        .await?;
+    Ok(revoked.rows_affected())
+}
+
 pub async fn revoke_refresh_token(pool: &PgPool, raw_refresh_token: &str) -> Result<(), sqlx::Error> {
     let token_hash = hash_token(raw_refresh_token);
     sqlx::query("UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1")

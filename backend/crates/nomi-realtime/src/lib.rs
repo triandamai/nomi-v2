@@ -1,8 +1,10 @@
 pub mod gateway;
 pub mod mqtt;
+pub mod presence;
 
 pub use gateway::{ClientFrame, ServerFrame, Topic};
 pub use mqtt::{user_topic, MqttError, MqttPublisher};
+pub use presence::{device_client_id, offline_will, parse_presence_topic, presence_topic, valid_tab_id, PresenceState, PresenceUpdate, PRESENCE_FILTER};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -93,4 +95,9 @@ pub enum UserEnvelope {
     ChatUpdated { session_id: Uuid, project_id: Option<Uuid>, title: Option<String> },
     /// One of the person's chats was deleted, on any device: every device drops it from its list.
     ChatDeleted { session_id: Uuid },
+    /// One of the person's devices came on, went to the background, or went off. `last_seen_at`
+    /// is RFC 3339.
+    DevicePresence { device_id: Uuid, presence: PresenceState, last_seen_at: String },
+    /// One of the person's devices was signed out from another: that device signs itself out.
+    DeviceSignedOut { device_id: Uuid },
 }

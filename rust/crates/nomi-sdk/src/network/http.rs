@@ -19,6 +19,8 @@ const POOL_IDLE_PER_HOST: usize = 4;
 /// How much of an error body ends up in a `NomiError::Http` reason.
 const MAX_ERROR_BODY: usize = 200;
 const USER_AGENT: &str = concat!("nomi-sdk/", env!("CARGO_PKG_VERSION"));
+/// The header every request names this device in (the backend's `routes/devices.rs`).
+pub(crate) const DEVICE_ID_HEADER: &str = "x-device-id";
 
 /// One pooled client for every REST call, addressing paths under the backend's base URL.
 #[derive(Clone)]
@@ -28,8 +30,16 @@ pub(crate) struct Http {
 }
 
 impl Http {
-    pub fn new(base: Url, tls: Arc<ClientConfig>) -> Result<Self, NomiError> {
+    /// Every request says it comes from `device_id` (`X-Device-Id`).
+    pub fn new(base: Url, tls: Arc<ClientConfig>, device_id: &str) -> Result<Self, NomiError> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        let device =
+            reqwest::header::HeaderValue::from_str(device_id).map_err(|_| NomiError::Internal {
+                reason: format!("the device id `{device_id}` isn't a valid header value"),
+            })?;
+        headers.insert(DEVICE_ID_HEADER, device);
         let client = Client::builder()
+            .default_headers(headers)
             .use_preconfigured_tls((*tls).clone())
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
@@ -141,6 +151,7 @@ mod tests {
         Http::new(
             Url::parse(base).unwrap(),
             super::super::tls::client_config().unwrap(),
+            "00000000-0000-0000-0000-000000000000",
         )
         .unwrap()
     }

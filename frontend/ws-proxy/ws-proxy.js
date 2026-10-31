@@ -97,15 +97,42 @@ function toUpstreamUrl(upstreamPath, options) {
 }
 
 /**
+ * Which browser and tab a socket is: the `device_id` cookie and the page's `?tab=`. The backend
+ * names the socket's broker connection after them.
+ * @typedef {Object} Caller
+ * @property {string | undefined} accessToken
+ * @property {string | undefined} deviceId
+ * @property {string | undefined} tabId
+ */
+
+const TAB_ID = /^[A-Za-z0-9-]{1,32}$/;
+
+/**
+ * @param {import('node:http').IncomingMessage} request
+ * @param {URL} url
+ * @returns {Caller}
+ */
+export function callerOf(request, url) {
+	const tab = url.searchParams.get('tab');
+	return {
+		accessToken: readCookie(request.headers.cookie, 'access_token'),
+		deviceId: readCookie(request.headers.cookie, 'device_id'),
+		tabId: tab && TAB_ID.test(tab) ? tab : undefined
+	};
+}
+
+/**
  * @param {string} upstreamPath
- * @param {string | undefined} accessToken
+ * @param {Caller} caller
  * @param {ProxyOptions} options
  * @returns {WebSocket}
  */
-function connectUpstream(upstreamPath, accessToken, options) {
+function connectUpstream(upstreamPath, caller, options) {
 	/** @type {Record<string, string>} */
 	const headers = { 'x-client-version': resolveClientVersion(options) };
-	if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+	if (caller.accessToken) headers.authorization = `Bearer ${caller.accessToken}`;
+	if (caller.deviceId) headers['x-device-id'] = caller.deviceId;
+	if (caller.tabId) headers['x-tab-id'] = caller.tabId;
 	return new WebSocket(toUpstreamUrl(upstreamPath, options), { headers });
 }
 
@@ -133,8 +160,8 @@ export function attachWsProxy(server, options = {}) {
 		if (!route) return; // not ours; let it fall through untouched
 
 		const upstreamPath = route.upstreamPath(route.match);
-		const accessToken = readCookie(request.headers.cookie, 'access_token');
-		const upstream = connectUpstream(upstreamPath, accessToken, options);
+		const caller = callerOf(request, url);
+		const upstream = connectUpstream(upstreamPath, caller, options);
 
 		const cleanup = () => {
 			upstream.off('open', onOpen);
@@ -144,7 +171,7 @@ export function attachWsProxy(server, options = {}) {
 		const onOpen = () => {
 			cleanup();
 			wss.handleUpgrade(request, socket, head, (browserWs) => {
-				relay(browserWs, upstream, upstreamPath, accessToken, options);
+				relay(browserWs, upstream, upstreamPath, caller, options);
 			});
 		};
 		/**
@@ -187,10 +214,10 @@ function acceptThenClose(request, socket, head, wss, code) {
  * @param {WebSocket} browserWs
  * @param {WebSocket} initialUpstream
  * @param {string} upstreamPath
- * @param {string | undefined} accessToken
+ * @param {Caller} caller
  * @param {ProxyOptions} options
  */
-function relay(browserWs, initialUpstream, upstreamPath, accessToken, options) {
+function relay(browserWs, initialUpstream, upstreamPath, caller, options) {
 	const initialRetryDelayMs = options.initialRetryDelayMs ?? DEFAULT_INITIAL_RETRY_DELAY_MS;
 	const maxRetryDelayMs = options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
 	const maxTotalRetryMs = options.maxTotalRetryMs ?? DEFAULT_MAX_TOTAL_RETRY_MS;
@@ -234,7 +261,7 @@ function relay(browserWs, initialUpstream, upstreamPath, accessToken, options) {
 
 	function attemptReconnect() {
 		if (finished) return;
-		const next = connectUpstream(upstreamPath, accessToken, options);
+		const next = connectUpstream(upstreamPath, caller, options);
 		let settled = false;
 		/** @param {() => void} fn */
 		const settleOnce = (fn) => {

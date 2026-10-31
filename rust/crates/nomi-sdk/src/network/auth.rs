@@ -83,6 +83,8 @@ pub enum SignOutReason {
     SessionExpired,
     /// The backend still refused the session right after a successful refresh.
     AccessRevoked,
+    /// The person signed this device out from another of their devices.
+    SignedOutElsewhere,
 }
 
 /// `ProfileResponse` in the backend's `routes/profile.rs`.

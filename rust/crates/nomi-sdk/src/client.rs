@@ -7,12 +7,14 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::config::{SdkConfig, ValidatedConfig};
+use crate::device::DeviceInfo;
 use crate::error::NomiError;
 use crate::event::{EventBus, EventSubscription, SdkEvent, SdkState};
 use crate::logging;
 use crate::network::auth::{
     CredentialStore, Profile, Refresh, SignInResult, SignedInUser, VerificationInfo,
 };
+use crate::network::events::RealtimeEvent;
 use crate::network::realtime::{normalize_topic, ConnectionState, RealtimeSettings, TopicWatch};
 use crate::network::Network;
 use crate::services::account::{ConnectionsOverview, Memory, Project, UsageBrief};
@@ -83,6 +85,10 @@ pub struct NomiSdk {
     sync: Mutex<Option<SyncEngine>>,
     /// The chat on screen, if any: replies there don't mark it unread.
     foreground: Arc<Mutex<Option<String>>>,
+    /// This device's id, made on the first run and kept (`crate::device`).
+    device_id: String,
+    /// What this device says about itself, once the app has told the SDK.
+    device: Arc<Mutex<Option<DeviceInfo>>>,
     inner: Mutex<Inner>,
 }
 
@@ -139,6 +145,7 @@ impl NomiSdk {
         self.bus.emit(SdkEvent::StateChanged {
             state: SdkState::Running,
         });
+        self.watch_device();
         tracing::info!("started");
         self.network.realtime.enable();
         Ok(())
@@ -208,6 +215,30 @@ impl NomiSdk {
     pub async fn fetch_profile(&self) -> Result<Profile, NomiError> {
         let auth = self.network.auth.clone();
         self.on_runtime(async move { auth.profile().await }).await
+    }
+
+    // This device
+
+    /// The id this device keeps for good: made on the first run, the same on every run after.
+    pub fn device_id(&self) -> String {
+        self.device_id.clone()
+    }
+
+    /// What this device says about itself in the person's device list. Registered now when
+    /// someone is signed in, and again after every sign-in.
+    pub async fn set_device(&self, info: DeviceInfo) -> Result<(), NomiError> {
+        *self.device.lock().expect("device poisoned") = Some(info.clone());
+        if self.network.auth.user().is_none() {
+            return Ok(());
+        }
+        let (services, device_id) = (self.services.clone(), self.device_id.clone());
+        self.on_runtime(async move { services.register_device(&device_id, &info).await })
+            .await
+    }
+
+    /// Whether the app is in front: the person's other apps see this device online or away.
+    pub fn set_foreground(&self, foreground: bool) {
+        self.network.realtime.set_foreground(foreground);
     }
 
     // Realtime
@@ -988,6 +1019,7 @@ impl NomiSdk {
             })?;
         logging::init();
 
+        let device_id = crate::device::load_or_create(&config.data_dir)?;
         let bus = Arc::new(EventBus::new(config.event_buffer_capacity));
         let network = Network::new(
             runtime.handle(),
@@ -995,6 +1027,7 @@ impl NomiSdk {
             credentials,
             bus.clone(),
             settings.realtime,
+            &device_id,
         )?;
         let sdk = Arc::new(Self {
             accounts: Arc::new(Accounts::new(&config.data_dir)),
@@ -1005,6 +1038,8 @@ impl NomiSdk {
             sync_settings: settings.sync,
             sync: Mutex::new(None),
             foreground: Arc::new(Mutex::new(None)),
+            device_id,
+            device: Arc::new(Mutex::new(None)),
             inner: Mutex::new(Inner {
                 state: SdkState::Initialized,
                 runtime: Some(runtime),
@@ -1015,6 +1050,41 @@ impl NomiSdk {
         });
         tracing::info!(base_url = %sdk.config.base_url, "initialized");
         Ok(sdk)
+    }
+
+    /// Registers this device after each sign-in, and signs out when another of the person's
+    /// devices signed this one out.
+    fn watch_device(&self) {
+        let Ok(runtime) = self.runtime() else { return };
+        let events = self.bus.subscribe();
+        let (services, auth, device, device_id) = (
+            self.services.clone(),
+            self.network.auth.clone(),
+            self.device.clone(),
+            self.device_id.clone(),
+        );
+        let task = runtime.spawn(async move {
+            while let Some(event) = events.next_event().await {
+                match event {
+                    SdkEvent::SignedIn { .. } => {
+                        let info = device.lock().expect("device poisoned").clone();
+                        if let Some(info) = info {
+                            if let Err(error) = services.register_device(&device_id, &info).await {
+                                tracing::warn!(%error, "couldn't add this device to the person's list");
+                            }
+                        }
+                    }
+                    SdkEvent::Realtime {
+                        event: RealtimeEvent::DeviceSignedOut { device_id: signed_out },
+                        ..
+                    } if signed_out.eq_ignore_ascii_case(&device_id) => {
+                        auth.end_session(crate::network::auth::SignOutReason::SignedOutElsewhere);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        self.lock().tasks.push(task);
     }
 
     /// Puts `event` on the SDK's event stream, as the engine itself would.

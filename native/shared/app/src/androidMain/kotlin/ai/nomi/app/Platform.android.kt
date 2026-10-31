@@ -4,6 +4,9 @@ import ai.nomi.data.SdkSetup
 import ai.nomi.network.AndroidTokenStore
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.TokenStore
+import ai.nomi.sdk.DeviceInfo
+import android.content.Context
+import android.os.Build
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.runtime.Composable
@@ -47,5 +50,27 @@ fun androidPlatformModule(apiUrl: String): Module = module {
     require(apiUrl.isNotBlank()) { "No backend URL: build release with -Pnomi.apiUrl.release=https://…" }
     single { ApiConfig(apiUrl) }
     single<TokenStore> { AndroidTokenStore(androidContext()) }
-    single { SdkSetup(get<ApiConfig>().baseUrl, androidContext().filesDir.resolve(SDK_DIR).path) }
+    single { SdkSetup(get<ApiConfig>().baseUrl, androidContext().filesDir.resolve(SDK_DIR).path, androidDevice(androidContext())) }
+}
+
+private const val PLATFORM_ANDROID = "android"
+private const val OS_ANDROID = "Android"
+private const val UNKNOWN_VERSION = "unknown"
+
+/** This phone or tablet, as the person's device list shows it: "Pixel 9", google, Android 15. */
+private fun androidDevice(context: Context): DeviceInfo {
+    val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+    val brand = Build.BRAND.takeIf { it.isNotBlank() }
+    val model = Build.MODEL.takeIf { it.isNotBlank() }
+    // A model that already names its maker ("Samsung SM-S918B" vs "Pixel 9") isn't prefixed again.
+    val name = model?.let { if (brand == null || it.startsWith(brand, ignoreCase = true)) it else "${brand.replaceFirstChar(Char::uppercase)} $it" }
+    return DeviceInfo(
+        platform = PLATFORM_ANDROID,
+        name = name,
+        brand = brand,
+        model = model,
+        osName = OS_ANDROID,
+        osVersion = Build.VERSION.RELEASE,
+        appVersion = version ?: UNKNOWN_VERSION,
+    )
 }

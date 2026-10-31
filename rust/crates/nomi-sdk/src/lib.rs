@@ -9,6 +9,7 @@ uniffi::setup_scaffolding!();
 
 mod client;
 mod config;
+mod device;
 mod error;
 mod event;
 mod logging;
@@ -21,6 +22,7 @@ mod test_support;
 
 pub use client::{Diagnostics, NomiSdk};
 pub use config::{LogLevel, SdkConfig, DEFAULT_EVENT_BUFFER_CAPACITY};
+pub use device::DeviceInfo;
 pub use error::{EmailCodeError, NomiError};
 pub use event::{EventSubscription, LogRecord, SdkEvent, SdkState};
 pub use network::auth::{

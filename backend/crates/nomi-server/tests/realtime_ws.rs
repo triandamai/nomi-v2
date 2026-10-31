@@ -332,3 +332,48 @@ async fn upgrade_with_an_already_expired_token_is_rejected(pool: PgPool) {
     let token = claims.encode(SECRET).unwrap();
     assert!(connect(&ws_base, Some(&token)).await.is_err());
 }
+
+/// What the broker carries on one presence topic, in order.
+async fn next_presence(eventloop: &mut rumqttc::EventLoop) -> Value {
+    loop {
+        let event = tokio::time::timeout(FRAME_TIMEOUT, eventloop.poll()).await.expect("no presence arrived").unwrap();
+        if let rumqttc::Event::Incoming(rumqttc::Packet::Publish(p)) = event {
+            return serde_json::from_slice(&p.payload).unwrap();
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_apps_socket_says_its_device_is_on_away_and_gone_over_mqtt(pool: PgPool) {
+    let (base, ws_base) = spawn_app(pool.clone()).await;
+    let client = reqwest::Client::new();
+    let token = register_and_login(&client, &base, "rt-presence@nomi.test").await;
+    let user: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = $1").bind("rt-presence@nomi.test").fetch_one(&pool).await.unwrap();
+    let device = Uuid::new_v4();
+
+    // Listen where the device's connection speaks: its client id is the device id.
+    let mut options = rumqttc::MqttOptions::new(format!("test-presence-{}", Uuid::new_v4()), nomi_test_support::TEST_MQTT_BROKER_HOST, nomi_test_support::TEST_MQTT_BROKER_PORT);
+    options.set_keep_alive(Duration::from_secs(30));
+    let (listener, mut eventloop) = rumqttc::AsyncClient::new(options, 16);
+    listener.subscribe(nomi_realtime::presence_topic(user, &device.to_string()), rumqttc::QoS::AtLeastOnce).await.unwrap();
+    loop {
+        if let rumqttc::Event::Incoming(rumqttc::Packet::SubAck(_)) = tokio::time::timeout(FRAME_TIMEOUT, eventloop.poll()).await.unwrap().unwrap() { break; }
+    }
+
+    let mut req = format!("{ws_base}/api/realtime/ws").into_client_request().unwrap();
+    req.headers_mut().insert("Authorization", format!("Bearer {token}").parse().unwrap());
+    req.headers_mut().insert("x-device-id", device.to_string().parse().unwrap());
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    next_json(&mut ws).await; // ready
+
+    let online = next_presence(&mut eventloop).await;
+    assert_eq!(online["state"], "online");
+    assert_eq!(online["device_id"], json!(device));
+    send(&mut ws, json!({"op":"presence","state":"away"})).await;
+    assert_eq!(next_presence(&mut eventloop).await["state"], "away");
+
+    drop(ws); // the app goes: the broker sends the connection's last will
+    let gone = next_presence(&mut eventloop).await;
+    assert_eq!(gone["state"], "offline");
+    assert_eq!(gone["connection"], online["connection"]);
+}

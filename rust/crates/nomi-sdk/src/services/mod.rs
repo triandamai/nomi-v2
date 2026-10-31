@@ -7,6 +7,7 @@
 
 pub(crate) mod account;
 pub(crate) mod attachments;
+pub(crate) mod devices;
 pub(crate) mod home;
 pub(crate) mod money;
 pub(crate) mod project_tools;

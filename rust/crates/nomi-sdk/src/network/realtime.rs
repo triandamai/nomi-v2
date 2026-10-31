@@ -29,6 +29,8 @@ use crate::event::{EventBus, SdkEvent};
 
 pub(crate) const REALTIME_PATH: &str = "/api/realtime/ws";
 const USER_TOPIC: &str = "user";
+const PRESENCE_ONLINE: &str = "online";
+const PRESENCE_AWAY: &str = "away";
 const CHAT_PREFIX: &str = "chat:";
 const PROJECT_PREFIX: &str = "project:";
 /// The backend's private close code for "the access token this socket was opened with expired".
@@ -87,9 +89,17 @@ pub enum ConnectionState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum ClientFrame {
-    Subscribe { topic: String },
-    Unsubscribe { topic: String },
+    Subscribe {
+        topic: String,
+    },
+    Unsubscribe {
+        topic: String,
+    },
     Ping,
+    /// The app went to the background (`away`) or came back (`online`).
+    Presence {
+        state: &'static str,
+    },
 }
 
 /// Frames the gateway sends (`ServerFrame`, tag `type`).
@@ -162,6 +172,7 @@ impl Realtime {
         auth: Arc<Auth>,
         bus: Arc<EventBus>,
         settings: RealtimeSettings,
+        device_id: String,
     ) -> Self {
         let (commands, inbox) = mpsc::unbounded_channel();
         let (state_tx, state) = watch::channel(ConnectionState::Idle);
@@ -170,6 +181,8 @@ impl Realtime {
             runtime: runtime.clone(),
             url,
             tls,
+            device_id,
+            background: false,
             session: auth.watch_session(),
             auth,
             bus,
@@ -206,6 +219,11 @@ impl Realtime {
     /// Skips any backoff wait and connects now.
     pub fn reconnect(&self) {
         self.post(Msg::Reconnect);
+    }
+
+    /// Whether the app is in front; the device shows as online or away to the person's other apps.
+    pub fn set_foreground(&self, foreground: bool) {
+        self.post(Msg::Foreground(foreground));
     }
 
     pub fn state(&self) -> ConnectionState {
@@ -269,6 +287,7 @@ enum Msg {
     Enable,
     Disable,
     Reconnect,
+    Foreground(bool),
     Watch(String),
     Release(String),
     Frame(u64, ServerFrame),
@@ -286,6 +305,10 @@ struct Hub {
     runtime: Handle,
     url: Url,
     tls: Arc<ClientConfig>,
+    /// The MQTT client id the backend gives this socket, and its `X-Device-Id`.
+    device_id: String,
+    /// The app is in the background: the socket says `away` once it's ready.
+    background: bool,
     auth: Arc<Auth>,
     session: watch::Receiver<Option<super::auth::SignedInUser>>,
     bus: Arc<EventBus>,
@@ -346,6 +369,10 @@ impl Hub {
                     self.failures = 0;
                     self.connect();
                 }
+            }
+            Msg::Foreground(foreground) => {
+                self.background = !foreground;
+                self.send_presence();
             }
             Msg::Watch(topic) => self.on_watch(topic),
             Msg::Release(topic) => self.on_release(&topic),
@@ -458,6 +485,10 @@ impl Hub {
         for topic in &live {
             self.send_subscription(topic, true);
         }
+        // The gateway takes a new socket for one in front.
+        if self.background {
+            self.send_presence();
+        }
         // Also on the first `ready`: anything watched before it may have missed events.
         for topic in live {
             self.bus.emit(SdkEvent::TopicResynced { topic });
@@ -477,6 +508,21 @@ impl Hub {
         };
         if let Some(outgoing) = &self.outgoing {
             let _ = outgoing.send(frame);
+        }
+    }
+
+    /// Tells the gateway whether the app is in front; before `ready`, `ready` does.
+    fn send_presence(&self) {
+        if !self.ready {
+            return;
+        }
+        let state = if self.background {
+            PRESENCE_AWAY
+        } else {
+            PRESENCE_ONLINE
+        };
+        if let Some(outgoing) = &self.outgoing {
+            let _ = outgoing.send(ClientFrame::Presence { state });
         }
     }
 
@@ -518,6 +564,7 @@ impl Hub {
         let connection = Connection {
             generation: self.generation,
             url: self.url.clone(),
+            device_id: self.device_id.clone(),
             token: credentials.access_token,
             tls: self.tls.clone(),
             tx: self.tx.clone(),
@@ -630,6 +677,7 @@ impl Hub {
 struct Connection {
     generation: u64,
     url: Url,
+    device_id: String,
     token: String,
     tls: Arc<ClientConfig>,
     tx: mpsc::UnboundedSender<Msg>,
@@ -665,6 +713,12 @@ impl Connection {
         match HeaderValue::from_str(&format!("Bearer {}", self.token)) {
             Ok(value) => request.headers_mut().insert(header::AUTHORIZATION, value),
             Err(_) => return Ending::Failed("the access token isn't a valid header value".into()),
+        };
+        match HeaderValue::from_str(&self.device_id) {
+            Ok(value) => request
+                .headers_mut()
+                .insert(super::http::DEVICE_ID_HEADER, value),
+            Err(_) => return Ending::Failed("the device id isn't a valid header value".into()),
         };
         let connector = Connector::Rustls(self.tls.clone());
         let handshake =

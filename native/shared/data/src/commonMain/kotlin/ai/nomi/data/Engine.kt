@@ -5,7 +5,9 @@ import ai.nomi.network.Tokens
 import ai.nomi.sdk.AccountStore
 import ai.nomi.sdk.CredentialStore
 import ai.nomi.sdk.Credentials
+import ai.nomi.sdk.DeviceInfo
 import ai.nomi.sdk.NomiClient
+import ai.nomi.sdk.NomiException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,8 +23,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
-/** Where the Rust engine talks to and keeps its data; each platform module provides it. */
-data class SdkSetup(val baseUrl: String, val dataDir: String)
+/**
+ * Where the Rust engine talks to and keeps its data, and what this device says about itself in the person's device
+ * list; each platform module provides it.
+ */
+data class SdkSetup(val baseUrl: String, val dataDir: String, val device: DeviceInfo? = null)
 
 /**
  * The app's one Rust engine ([NomiClient]). It is created on first use, off the main thread: creating it reads the
@@ -32,6 +37,9 @@ data class SdkSetup(val baseUrl: String, val dataDir: String)
 class NomiEngine(
     private val scope: CoroutineScope,
     private val foreground: ForegroundChat,
+    /** This device, for the person's device list; registered once the engine exists. */
+    private val device: DeviceInfo? = null,
+    private val log: (String) -> Unit = {},
     private val create: () -> NomiClient,
 ) {
     private val lock = Mutex()
@@ -43,7 +51,21 @@ class NomiEngine(
         created ?: withContext(Dispatchers.Default) { create() }.also { client ->
             created = client
             scope.launch { foreground.sessionId.collect { client.setForegroundChat(it) } }
+            if (device != null) {
+                scope.launch {
+                    try {
+                        client.setDevice(device)
+                    } catch (e: NomiException) {
+                        log("data: couldn't add this device to the list: ${e.message}")
+                    }
+                }
+            }
         }
+    }
+
+    /** The app came to the front or went to the background: the person's other apps see this device online or away. */
+    fun appInForeground(foreground: Boolean) {
+        scope.launch { get().setForeground(foreground) }
     }
 
     /**

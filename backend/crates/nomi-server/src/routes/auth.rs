@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use crate::sign_in_codes::{code_email, EmailCodes};
 use nomi_auth::{
     email_code::{self, Challenge, CodeError, Purpose},
     login::{check_password, issue_access_token, login},
-    refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token},
+    refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token, tag_device},
     registration::{register_user, OrgMode},
 };
 
@@ -105,14 +105,24 @@ fn code_error(e: CodeError) -> JsonError {
     }
 }
 
-async fn tokens_for(state: &AppState, user_id: Uuid) -> Result<TokenPairResponse, JsonError> {
+async fn tokens_for(state: &AppState, headers: &HeaderMap, user_id: Uuid) -> Result<TokenPairResponse, JsonError> {
     let access_token = issue_access_token(&state.pool, user_id, &state.jwt_secret)
         .await
         .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed to issue tokens"))?;
     let refresh_token = issue_refresh_token(&state.pool, user_id)
         .await
         .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed to issue refresh token"))?;
+    note_device(state, headers, &refresh_token).await;
     Ok(TokenPairResponse { access_token, refresh_token })
+}
+
+/// Ties a sign-in to the device that made it (`X-Device-Id`), when it said. Best effort: without
+/// it the sign-in still works, it just can't be ended from the device list.
+pub(crate) async fn note_device(state: &AppState, headers: &HeaderMap, refresh_token: &str) {
+    let Some(device_id) = super::devices::device_id(headers) else { return };
+    if let Err(e) = tag_device(&state.pool, refresh_token, device_id).await {
+        tracing::warn!(error = %e, %device_id, "couldn't tie a sign-in to its device");
+    }
 }
 
 async fn email_the_code(mailer: &dyn nomi_mail::Mailer, challenge: &Challenge, code: &str, locale: nomi_i18n::Locale) -> Result<(), JsonError> {
@@ -138,6 +148,7 @@ async fn send_code(state: &AppState, mailer: &dyn nomi_mail::Mailer, user_id: Uu
 
 pub async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<SignInResponse>, (StatusCode, &'static str)> {
     let user_id = register_user(&state.pool, &req.email, &req.password, req.org.into())
@@ -173,6 +184,7 @@ pub async fn register(
     let refresh_token = issue_refresh_token(&state.pool, user_id)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to issue refresh token"))?;
+    note_device(&state, &headers, &refresh_token).await;
 
     Ok(Json(SignInResponse::Tokens(TokenPairResponse { access_token, refresh_token })))
 }
@@ -187,6 +199,7 @@ pub struct LoginRequest {
 /// the tokens come from `POST /api/auth/verify`.
 pub async fn login_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<SignInResponse>, JsonError> {
     let user_id = check_password(&state.pool, &req.email, &req.password).await.map_err(|e| match e {
@@ -195,7 +208,7 @@ pub async fn login_handler(
     })?;
     match &state.email_codes {
         EmailCodes::Required(mailer) => Ok(Json(send_code(&state, mailer.as_ref(), user_id, Purpose::Login, None).await?)),
-        EmailCodes::Off => Ok(Json(SignInResponse::Tokens(tokens_for(&state, user_id).await?))),
+        EmailCodes::Off => Ok(Json(SignInResponse::Tokens(tokens_for(&state, &headers, user_id).await?))),
     }
 }
 
@@ -206,9 +219,9 @@ pub struct VerifyRequest {
 }
 
 /// Finishes a sign-in (or a new account) with the emailed code.
-pub async fn verify_handler(State(state): State<AppState>, Json(req): Json<VerifyRequest>) -> Result<Json<TokenPairResponse>, JsonError> {
+pub async fn verify_handler(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<VerifyRequest>) -> Result<Json<TokenPairResponse>, JsonError> {
     let (user_id, _) = email_code::verify(&state.pool, req.challenge_id, &req.code).await.map_err(code_error)?;
-    Ok(Json(tokens_for(&state, user_id).await?))
+    Ok(Json(tokens_for(&state, &headers, user_id).await?))
 }
 
 #[derive(Deserialize)]
@@ -249,6 +262,7 @@ pub struct AccessTokenResponse {
 
 pub async fn refresh_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<AccessTokenResponse>, (StatusCode, &'static str)> {
     let access_token = refresh_access_token(&state.pool, &req.refresh_token, &state.jwt_secret)
@@ -259,6 +273,7 @@ pub async fn refresh_handler(
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "refresh failed"),
         })?;
+    note_device(&state, &headers, &req.refresh_token).await;
 
     Ok(Json(AccessTokenResponse { access_token }))
 }
