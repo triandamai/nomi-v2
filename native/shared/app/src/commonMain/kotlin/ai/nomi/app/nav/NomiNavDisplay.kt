@@ -11,7 +11,9 @@ import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.layout.NomiPage
 import ai.nomi.feature.auth.SignInScreen
-import ai.nomi.feature.chat.ChatScreen
+import ai.nomi.app.screens.projects.ChatDestination
+import ai.nomi.data.ProjectWorkspaceRepository
+import org.koin.compose.koinInject
 import ai.nomi.feature.chats.ChatsScreen
 import ai.nomi.feature.home.HomeScreen
 import ai.nomi.app.screens.connections.ConnectionsScreen
@@ -76,7 +78,13 @@ fun NomiNavDisplay(
                 )
             }
             entry<Chat>(metadata = DetailPaneMetadata) { key ->
-                ChatScreen(koinViewModel(key = key.sessionId) { parametersOf(key.sessionId) }, onBack = { backStack.back() })
+                val projects = koinInject<ProjectWorkspaceRepository>()
+                ChatDestination(
+                    workspace = koinViewModel(key = "$PROJECT_KEY_PREFIX${key.sessionId}") { parametersOf(key.sessionId) },
+                    chat = koinViewModel(key = key.sessionId) { parametersOf(key.sessionId) },
+                    knownProject = projects.isProjectChat(key.sessionId),
+                    onBack = { backStack.back() },
+                )
             }
             entry<Projects> { ai.nomi.app.screens.projects.ProjectsScreen(koinViewModel(), onOpenChat = backStack::openChat) }
             entry<Money> { MoneyScreen(koinViewModel()) }
@@ -89,6 +97,9 @@ fun NomiNavDisplay(
     )
 }
 
+
+/** Keeps a chat's workspace view model apart from its chat view model on the same entry. */
+private const val PROJECT_KEY_PREFIX = "project:"
 /** Medium width and up: room for two panes. */
 @Composable
 fun isWideWindow(): Boolean =

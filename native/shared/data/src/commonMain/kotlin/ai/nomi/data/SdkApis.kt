@@ -1,5 +1,6 @@
 package ai.nomi.data
 
+import ai.nomi.network.AttachmentsApi
 import ai.nomi.network.BudgetDto
 import ai.nomi.network.CategoryTotalDto
 import ai.nomi.network.ConnectionsApi
@@ -234,4 +235,10 @@ class SdkProjectsApi(private val engine: NomiEngine) : ProjectsApi {
             ProjectDto(it.id, it.sessionId, it.name, it.description, it.status, it.createdAt, it.updatedAt, it.createdBy, it.openIssues)
         }
     }
+}
+
+class SdkAttachmentsApi(private val engine: NomiEngine) : AttachmentsApi {
+    override suspend fun preview(id: String): ByteArray = translated { engine.get().attachmentPreview(id) }
+
+    override suspend fun content(id: String): ByteArray = translated { engine.get().attachmentContent(id) }
 }

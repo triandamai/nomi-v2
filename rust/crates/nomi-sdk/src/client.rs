@@ -18,6 +18,13 @@ use crate::network::Network;
 use crate::services::account::{ConnectionsOverview, Memory, Project, UsageBrief};
 use crate::services::home::{CrewMember, HomeSummary, Preferences, PreferencesUpdate};
 use crate::services::money::{MoneySummary, NewTransaction};
+use crate::services::project_tools::{
+    ContainerUsage, DataSource, DatabaseTable, DomainChange, DomainCheck, ProjectDomain,
+    ProjectLogs, ProjectShowcase, ProjectTraffic, QueryResult, RelayOverview, TransferOrg,
+};
+use crate::services::projects::{
+    DeployOverview, NewProjectIssue, ProjectDetail, ProjectIssue, ProjectIssues, ProjectMembers,
+};
 use crate::services::reminders::{NewReminder, Reminder, ReminderAction, RemindersOverview};
 use crate::services::Services;
 use crate::storage::{AccountStore, Accounts};
@@ -481,6 +488,272 @@ impl NomiSdk {
     pub async fn usage_brief(&self) -> Result<UsageBrief, NomiError> {
         let services = self.services.clone();
         self.on_runtime(async move { services.usage_brief().await })
+            .await
+    }
+
+    /// The project whose chat is `session_id`; `NomiError::Http` 404 for an ordinary chat.
+    pub async fn project_for_chat(&self, session_id: String) -> Result<ProjectDetail, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_for_chat(&session_id).await })
+            .await
+    }
+
+    /// A project file's content, as stored.
+    pub async fn project_file(
+        &self,
+        project_id: String,
+        path: String,
+    ) -> Result<Vec<u8>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_file(&project_id, &path).await })
+            .await
+    }
+
+    /// Where the project is published, and its publishes.
+    pub async fn project_deploy(&self, project_id: String) -> Result<DeployOverview, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_deploy(&project_id).await })
+            .await
+    }
+
+    /// Publishes the project to production.
+    pub async fn publish_project(&self, project_id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.publish_project(&project_id).await })
+            .await
+    }
+
+    /// The project's issues with `status` `open`, `closed` or `all`.
+    pub async fn project_issues(
+        &self,
+        project_id: String,
+        status: String,
+    ) -> Result<ProjectIssues, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_issues(&project_id, &status).await })
+            .await
+    }
+
+    /// Files an issue on the project.
+    pub async fn file_project_issue(
+        &self,
+        project_id: String,
+        issue: NewProjectIssue,
+    ) -> Result<ProjectIssue, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.file_project_issue(&project_id, &issue).await })
+            .await
+    }
+
+    /// Closes or reopens a project issue.
+    pub async fn set_project_issue_status(
+        &self,
+        project_id: String,
+        number: i32,
+        status: String,
+    ) -> Result<ProjectIssue, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move {
+            services
+                .set_project_issue_status(&project_id, number, &status)
+                .await
+        })
+        .await
+    }
+
+    /// Who works on the project.
+    pub async fn project_members(&self, project_id: String) -> Result<ProjectMembers, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_members(&project_id).await })
+            .await
+    }
+
+    /// The project's production address.
+    pub async fn project_domain(&self, project_id: String) -> Result<ProjectDomain, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_domain(&project_id).await })
+            .await
+    }
+
+    /// Whether `subdomain` is free for the project.
+    pub async fn check_project_domain(
+        &self,
+        project_id: String,
+        subdomain: String,
+    ) -> Result<DomainCheck, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.check_project_domain(&project_id, &subdomain).await })
+            .await
+    }
+
+    /// Moves production to `subdomain`; a refusal comes back with why.
+    pub async fn change_project_domain(
+        &self,
+        project_id: String,
+        subdomain: String,
+    ) -> Result<DomainChange, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move {
+            services
+                .change_project_domain(&project_id, &subdomain)
+                .await
+        })
+        .await
+    }
+
+    /// What production's containers use right now.
+    pub async fn project_usage(
+        &self,
+        project_id: String,
+    ) -> Result<Vec<ContainerUsage>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_usage(&project_id).await })
+            .await
+    }
+
+    /// Production's traffic over `range` (`1h`, `24h` or `7d`).
+    pub async fn project_traffic(
+        &self,
+        project_id: String,
+        range: String,
+    ) -> Result<ProjectTraffic, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_traffic(&project_id, &range).await })
+            .await
+    }
+
+    /// Production's latest log lines.
+    pub async fn project_logs(&self, project_id: String) -> Result<ProjectLogs, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_logs(&project_id).await })
+            .await
+    }
+
+    /// Takes production offline.
+    pub async fn take_project_offline(&self, project_id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.take_project_offline(&project_id).await })
+            .await
+    }
+
+    /// The tables in the project's database.
+    pub async fn project_tables(
+        &self,
+        project_id: String,
+        source: DataSource,
+    ) -> Result<Vec<DatabaseTable>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_tables(&project_id, source).await })
+            .await
+    }
+
+    /// Runs `sql` against the project's data (its Relay backend when `relay`).
+    pub async fn query_project_data(
+        &self,
+        project_id: String,
+        sql: String,
+        source: DataSource,
+        relay: bool,
+    ) -> Result<QueryResult, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move {
+            services
+                .query_project_data(&project_id, &sql, source, relay)
+                .await
+        })
+        .await
+    }
+
+    /// The project's Relay backend.
+    pub async fn project_relay(
+        &self,
+        project_id: String,
+        source: DataSource,
+    ) -> Result<RelayOverview, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_relay(&project_id, source).await })
+            .await
+    }
+
+    /// Starts a Relay backend that failed to set up again.
+    pub async fn retry_project_relay(
+        &self,
+        project_id: String,
+        source: DataSource,
+    ) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.retry_project_relay(&project_id, source).await })
+            .await
+    }
+
+    /// Whether the project is on the showcase.
+    pub async fn project_showcase(&self, project_id: String) -> Result<ProjectShowcase, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_showcase(&project_id).await })
+            .await
+    }
+
+    /// Puts the project on the showcase (or takes it off), with a blurb.
+    pub async fn set_project_showcase(
+        &self,
+        project_id: String,
+        showcase: bool,
+        blurb: Option<String>,
+    ) -> Result<ProjectShowcase, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move {
+            services
+                .set_project_showcase(&project_id, showcase, blurb.as_deref())
+                .await
+        })
+        .await
+    }
+
+    /// Organizations the project can move to, matching `query`.
+    pub async fn transfer_orgs(
+        &self,
+        project_id: String,
+        query: String,
+    ) -> Result<Vec<TransferOrg>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.transfer_orgs(&project_id, &query).await })
+            .await
+    }
+
+    /// Moves the project to `org_id`; `confirm_name` must be its name.
+    pub async fn transfer_project(
+        &self,
+        project_id: String,
+        org_id: String,
+        confirm_name: String,
+    ) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move {
+            services
+                .transfer_project(&project_id, &org_id, &confirm_name)
+                .await
+        })
+        .await
+    }
+
+    /// Deletes the project for good.
+    pub async fn delete_project(&self, project_id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.delete_project(&project_id).await })
+            .await
+    }
+
+    /// A small preview of an attached image, as the encoded image.
+    pub async fn attachment_preview(&self, id: String) -> Result<Vec<u8>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.attachment_preview(&id).await })
+            .await
+    }
+
+    /// An attached file's content as uploaded.
+    pub async fn attachment_content(&self, id: String) -> Result<Vec<u8>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.attachment_content(&id).await })
             .await
     }
 

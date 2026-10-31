@@ -268,7 +268,9 @@ class BubbleOverlayController(
                 }
 
                 val isExpanded = uiState is CompanionUiState.Expanded
+                val overview by companion.overview.collectAsStateWithLifecycle()
                 LaunchedEffect(isExpanded) {
+                    if (isExpanded) companion.refreshOverview()
                     if (!isExpanded) {
                         kotlinx.coroutines.delay(FOCUS_RELEASE_DELAY_MS)
                     }
@@ -284,12 +286,15 @@ class BubbleOverlayController(
                         dockedRight = dockedRight,
                         liquidStretchX = liquidStretchX,
                         liquidStretchY = liquidStretchY,
-                        onQuickReply = companion::sendQuickReply,
                         onDismiss = {
                             dismissedUntilNextPeek = true
                             companion.stateMachine.collapse()
                             removeViews()
                         },
+                        overview = overview,
+                        onAsk = companion::ask,
+                        onNewConversation = companion::newConversation,
+                        onOpenConversation = { launchMainActivityWithLink(companion.conversationLink()) },
                     )
                 }
             }

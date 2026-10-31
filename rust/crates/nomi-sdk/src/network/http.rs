@@ -89,6 +89,26 @@ pub(crate) async fn json<T: DeserializeOwned>(response: Response) -> Result<T, N
     })
 }
 
+/// The body as `T` whatever the status (for answers that explain a refusal in their body).
+pub(crate) async fn json_any<T: DeserializeOwned>(response: Response) -> Result<T, NomiError> {
+    response.json().await.map_err(|error| {
+        if error.is_decode() {
+            NomiError::InvalidResponse {
+                reason: error.to_string(),
+            }
+        } else {
+            transport_error(error)
+        }
+    })
+}
+
+/// The raw body of a 2xx response, otherwise `NomiError::Http`.
+pub(crate) async fn bytes(response: Response) -> Result<Vec<u8>, NomiError> {
+    let response = success(response).await?;
+    let body = response.bytes().await.map_err(transport_error)?;
+    Ok(body.to_vec())
+}
+
 /// The response itself when it is 2xx, otherwise `NomiError::Http`.
 pub(crate) async fn success(response: Response) -> Result<Response, NomiError> {
     let status = response.status();

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -34,7 +35,12 @@ private const val FILL = 1f
 /** The list and account pages' column (`.list-page`). */
 private val PageMaxWidth = 880.dp
 private val PagePaddingH = 20.dp
-private val PagePaddingTop = 28.dp
+/** Above a page's title: the web's 28px on its own, less under the phone's top bar. */
+val PageTopPadding = 28.dp
+val PageTopUnderBar = 8.dp
+
+/** How far a page's title sits below the top of its area, set by the shell around the pages. */
+val LocalNomiPageTopPadding = staticCompositionLocalOf { PageTopPadding }
 private val PageGap = 20.dp
 
 /**
@@ -50,7 +56,7 @@ fun NomiPage(
 ) {
     Box(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.widthIn(max = PageMaxWidth).fillMaxSize().padding(start = PagePaddingH, end = PagePaddingH, top = PagePaddingTop),
+            Modifier.widthIn(max = PageMaxWidth).fillMaxSize().padding(start = PagePaddingH, end = PagePaddingH, top = LocalNomiPageTopPadding.current),
             verticalArrangement = Arrangement.spacedBy(PageGap),
         ) {
             if (title.isNotEmpty()) {
