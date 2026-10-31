@@ -78,6 +78,22 @@ class EngineRepositoriesTest {
     }
 
     @Test
+    fun a_queued_message_can_be_discarded_and_only_a_failed_one_retried() = engineTest { engine, session ->
+        val chats = ChatRepository(engine, ActivityRepository(engine), session)
+        chats.send(CHAT, "Never mind")
+        val queued = chats.observe(CHAT).first { it.messages.isNotEmpty() }.messages.single()
+
+        // Still waiting to go out (the backend can't be reached), not failed: nothing to retry.
+        assertEquals(false, chats.retrySend(queued.id))
+        assertTrue(chats.discardSend(queued.id))
+
+        chats.observe(CHAT).first { it.messages.isEmpty() }
+        assertTrue(engine.account().outboxEntries().isEmpty())
+        assertEquals(false, chats.discardSend(queued.id))
+        assertEquals(false, chats.retrySend("m-not-local"))
+    }
+
+    @Test
     fun the_engines_errors_reach_screens_as_they_expect() = engineTest { engine, session ->
         val chats = ChatRepository(engine, ActivityRepository(engine), session)
         assertFailsWith<NomiException.Network> { SessionRepository(engine).refresh() }

@@ -1,6 +1,7 @@
 package ai.nomi.data
 
 import ai.nomi.sdk.NomiException
+import ai.nomi.sdk.OutboxOperation
 import ai.nomi.sdk.RealtimeEvent
 import ai.nomi.sdk.SdkEvent
 import ai.nomi.sdk.draft
@@ -106,6 +107,25 @@ class ChatRepository(
     suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean) = translated {
         engine.get().resolveApproval(sessionId, messageId, approve, remember)
     }
+
+    /**
+     * Sends a `failed` message again (it shows as `sending` until the backend has it). False when [messageId] isn't
+     * one of the person's messages still in the outbox.
+     */
+    suspend fun retrySend(messageId: String): Boolean = translated {
+        outboxKey(messageId)?.let { engine.get().retryOutbox(it) } ?: false
+    }
+
+    /** Drops a message that wasn't sent, and its row. False when [messageId] isn't one still in the outbox. */
+    suspend fun discardSend(messageId: String): Boolean = translated {
+        outboxKey(messageId)?.let { engine.get().discardOutbox(it) } ?: false
+    }
+
+    /** The outbox entry that sends the local message [messageId]. */
+    private suspend fun outboxKey(messageId: String): String? =
+        engine.account().outboxEntries().firstOrNull { entry ->
+            (entry.operation as? OutboxOperation.SendMessage)?.localMessageId == messageId
+        }?.key
 
     fun clearError(sessionId: String) = updateFlags(sessionId) { it.copy(lastError = null) }
 

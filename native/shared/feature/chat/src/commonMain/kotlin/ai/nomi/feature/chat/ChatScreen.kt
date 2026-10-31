@@ -3,9 +3,14 @@ package ai.nomi.feature.chat
 import ai.nomi.data.ActivityRepository
 import ai.nomi.data.AgentActivity
 import ai.nomi.data.ChatState
+import ai.nomi.data.MESSAGE_STATUS_FAILED
+import ai.nomi.data.MESSAGE_STATUS_SENDING
 import ai.nomi.data.Message
 import ai.nomi.designsystem.brand.brandStyle
 import ai.nomi.designsystem.component.Composer
+import ai.nomi.designsystem.component.NomiButton
+import ai.nomi.designsystem.component.NomiButtonSize
+import ai.nomi.designsystem.component.NomiButtonVariant
 import ai.nomi.designsystem.component.NomiLoadingIndicator
 import ai.nomi.designsystem.component.NomiSuggestionChip
 import ai.nomi.designsystem.icon.NomiIcon
@@ -48,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
@@ -106,6 +112,9 @@ private val ActionIconSize = 24.dp
 private val ActionGlyphSize = 14.dp
 private val ActionGap = 6.dp
 private const val COPIED_RESET_MS = 2000L
+/** A message still waiting in the outbox reads as not there yet. */
+private const val SENDING_ALPHA = 0.6f
+private const val OPAQUE = 1f
 
 private val Suggestions = listOf("Plan my week", "What did I spend on food?", "Remind me to call mom tomorrow")
 
@@ -142,6 +151,8 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier, onBack: 
         approvals = approvals,
         onResolveApproval = viewModel::resolveApproval,
         onSendAnswer = viewModel::sendAnswer,
+        onRetrySend = viewModel::retrySend,
+        onDiscardSend = viewModel::discardSend,
     )
 }
 
@@ -161,6 +172,10 @@ fun ChatContent(
     onResolveApproval: (messageId: String, approve: Boolean, remember: Boolean) -> Unit = { _, _, _ -> },
     /** Sends what a view answered for the person (a suggestion, decision, form…); null leaves views read-only. */
     onSendAnswer: ((String) -> Unit)? = null,
+    /** Sends a message that wasn't sent again, by its id. */
+    onRetrySend: (String) -> Unit = {},
+    /** Drops a message that wasn't sent, by its id. */
+    onDiscardSend: (String) -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).testTag(CHAT_SCREEN_TAG)) {
         val phone = maxWidth < PhoneBreakpoint
@@ -170,7 +185,7 @@ fun ChatContent(
                 when {
                     chat == null -> NomiLoadingIndicator(Modifier.align(Alignment.Center), contentDescription = "Loading messages")
                     chat.messages.isEmpty() && chat.draft == null && chat.activeAgent == null -> EmptyThread(onSuggestion, Modifier.align(Alignment.Center))
-                    else -> Thread(chat, timeZone, approvals, onResolveApproval, onSendAnswer)
+                    else -> Thread(chat, timeZone, approvals, onResolveApproval, onSendAnswer, onRetrySend, onDiscardSend)
                 }
             }
             Column(
@@ -255,6 +270,8 @@ private fun Thread(
     approvals: Map<String, ApprovalState>,
     onResolveApproval: (messageId: String, approve: Boolean, remember: Boolean) -> Unit,
     onSendAnswer: ((String) -> Unit)?,
+    onRetrySend: (String) -> Unit,
+    onDiscardSend: (String) -> Unit,
 ) {
     // A message the person has replied after is settled: its questions, decisions and forms show as answered.
     val lastUserIndex = chat.messages.indexOfLast { it.role == ROLE_USER }
@@ -276,7 +293,15 @@ private fun Thread(
             val lastInChain = next == null || next.isUser() != item.isUser() || next.author() != item.author()
             Box(Modifier.widthIn(max = ColumnMaxWidth).fillMaxWidth().padding(horizontal = ThreadPaddingH).padding(top = if (i == 0) TurnGap else if (chained) ChainGap else TurnGap)) {
                 when {
-                    item.isUser() -> UserTurn((item as ThreadItem.Stored).message, if (lastInChain) clock(item.message.createdAt, timeZone) else null)
+                    item.isUser() -> {
+                        val message = (item as ThreadItem.Stored).message
+                        UserTurn(
+                            message,
+                            if (lastInChain) clock(message.createdAt, timeZone) else null,
+                            onRetry = { onRetrySend(message.id) },
+                            onDiscard = { onDiscardSend(message.id) },
+                        )
+                    }
                     item is ThreadItem.Stored -> {
                         val message = item.message
                         AssistantTurn(item.author(), chained, if (lastInChain) clock(message.createdAt, timeZone) else null, message.agentType, messageContent = message.content) { identity ->
@@ -316,9 +341,14 @@ private fun clock(epochMs: Long, timeZone: TimeZone): String {
     return "${local.hour}:${local.minute.toString().padStart(MINUTES_PAD, '0')}"
 }
 
-/** `.message-bubble--user`: a primary bubble with the tight corner at the bottom end, up to 78% wide. */
+/**
+ * `.message-bubble--user`: a primary bubble with the tight corner at the bottom end, up to 78% wide. A message still
+ * in the outbox is dimmed and says it is sending; one that wasn't sent says so, with [onRetry] and [onDiscard].
+ */
 @Composable
-private fun UserTurn(message: Message, time: String?) {
+private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDiscard: () -> Unit) {
+    val sending = message.status == MESSAGE_STATUS_SENDING
+    val failed = message.status == MESSAGE_STATUS_FAILED
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
@@ -335,15 +365,20 @@ private fun UserTurn(message: Message, time: String?) {
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp, lineHeight = (USER_SP * USER_LINE_HEIGHT).sp),
                 color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
+                    .alpha(if (sending) SENDING_ALPHA else OPAQUE)
                     .background(MaterialTheme.colorScheme.primary, NomiTheme.bubbleShapes.end)
                     .padding(horizontal = UserBubblePaddingH, vertical = UserBubblePaddingV),
             )
+            if (failed) {
+                NotSent(onRetry, onDiscard)
+                return@Column
+            }
             Row(
                 Modifier.padding(top = ChainGap),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ActionGap),
             ) {
-                time?.let { Meta(it) }
+                if (sending) Meta("Sending…") else time?.let { Meta(it) }
                 IconButton(
                     onClick = {
                         clipboard.setText(AnnotatedString(message.content))
@@ -360,6 +395,25 @@ private fun UserTurn(message: Message, time: String?) {
                 }
             }
         }
+    }
+}
+
+/** Under a message that wasn't sent: why it stands out, and what can be done about it. */
+@Composable
+private fun NotSent(onRetry: () -> Unit, onDiscard: () -> Unit) {
+    Row(
+        Modifier.padding(top = ChainGap),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ActionGap),
+    ) {
+        Text(
+            "Not sent",
+            style = NomiTheme.metaStyle,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        NomiButton(onClick = onRetry, variant = NomiButtonVariant.Text, size = NomiButtonSize.ExtraSmall) { Text("Retry") }
+        NomiButton(onClick = onDiscard, variant = NomiButtonVariant.Text, size = NomiButtonSize.ExtraSmall) { Text("Discard") }
     }
 }
 
