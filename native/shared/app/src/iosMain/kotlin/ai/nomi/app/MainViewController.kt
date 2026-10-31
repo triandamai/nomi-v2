@@ -11,9 +11,13 @@ import androidx.compose.ui.window.ComposeUIViewController
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlin.experimental.ExperimentalNativeApi
+import kotlin.native.setUnhandledExceptionHook
+import kotlin.native.terminateWithUnhandledException
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSBundle
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLog
 import platform.Foundation.NSUserDomainMask
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIViewController
@@ -53,9 +57,22 @@ private fun applicationSupportPath(): String = requireNotNull(
     )?.path,
 ) { "Application Support directory unavailable" }
 
+/**
+ * A crash's cause goes to the system log before the app stops (Kotlin prints it only to stdout, which a release
+ * build and a device away from Xcode don't keep): Xcode's console and Console.app show it.
+ */
+@OptIn(ExperimentalNativeApi::class)
+private fun logCrashes() {
+    setUnhandledExceptionHook { failure ->
+        NSLog("Nomi crashed: %@", failure.stackTraceToString())
+        terminateWithUnhandledException(failure)
+    }
+}
+
 /** Entry point for the SwiftUI host: `MainViewControllerKt.MainViewController()`. Starts Koin on first call. */
 fun MainViewController(): UIViewController {
     if (!koinStarted) {
+        logCrashes()
         initKoin(iosPlatformModule())
         koinStarted = true
     }
