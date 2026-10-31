@@ -125,6 +125,10 @@
 		overscroll-behavior: contain;
 		scrollbar-width: thin;
 	}
+	/* Rows keep their height and the column scrolls; as flex items they'd otherwise shrink to fit. */
+	.nav-drawer :global(.sections > *) {
+		flex-shrink: 0;
+	}
 	/* With no recents snippet the twin adds a spacer; the scrolling column fills that space instead. */
 	.nav-drawer :global(.spacer) {
 		display: none;
