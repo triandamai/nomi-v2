@@ -48,9 +48,10 @@ targets:
           - -framework
           - Shared
       configs:
-        # The simulator reaches the Mac's local backend (nomi-server listens on 8080).
+        # The hosted API, as the desktop app uses. For the Mac's local backend (nomi-server listens on 8080), build
+        # with NOMI_API_URL=http://localhost:8080.
         Debug:
-          NOMI_API_URL: http://localhost:8080
+          NOMI_API_URL: https://api-nomi.trian.space
         # Must be set for release builds (NOMI_API_URL=https://… xcodebuild …); the build fails without it.
         Release:
           NOMI_API_URL: ""

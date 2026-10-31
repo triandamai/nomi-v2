@@ -62,9 +62,11 @@ class ProjectsViewModelTest {
         val fakeApi = FakeProjectsApi()
         val session = SessionScope(backgroundScope).also { it.open() }
         val repo = ProjectsRepository(fakeApi, session)
-        val vm = ProjectsViewModel(repo)
+        var projectChats = emptyList<String>()
+        val vm = ProjectsViewModel(repo, onProjectChats = { projectChats = it })
 
         val state = vm.uiState.filterIsInstance<ProjectsUiState.Ready>().first()
+        assertEquals(listOf("s1", "s2"), projectChats)
         assertEquals(2, state.projects.size)
         assertEquals("Project Alpha", state.projects[0].name)
         assertEquals("ready", state.projects[0].status)

@@ -40,6 +40,11 @@ import ai.nomi.data.SessionRepository
 import ai.nomi.data.THEME_DARK
 import ai.nomi.data.THEME_LIGHT
 import ai.nomi.data.UsageRepository
+import ai.nomi.designsystem.layout.LocalNomiPageTopPadding
+import ai.nomi.feature.chat.LocalAttachmentPreviews
+import ai.nomi.data.AttachmentPreviews
+import ai.nomi.designsystem.layout.PageTopPadding
+import ai.nomi.designsystem.layout.PageTopUnderBar
 import ai.nomi.designsystem.component.ComposerPlatform
 import ai.nomi.designsystem.component.LocalComposerPlatform
 import ai.nomi.designsystem.component.NomiLoadingIndicator
@@ -74,6 +79,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -100,6 +106,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -273,6 +280,7 @@ private fun NomiShell(signedIn: Boolean) {
         }
     }
 
+    val attachmentPreviews = koinInject<AttachmentPreviews>()
     val sessionRepo = koinInject<SessionRepository>()
     val allSessions by sessionRepo.observeAll().collectAsStateWithLifecycle(emptyList())
     val usageRepo = koinInject<UsageRepository>()
@@ -335,7 +343,8 @@ private fun NomiShell(signedIn: Boolean) {
                 )
             }
             Column(Modifier.weight(FILL).fillMaxHeight()) {
-                if (inApp && !wide && backStack.lastOrNull() !is Chat) {
+                val phoneTopBar = inApp && !wide && backStack.lastOrNull() !is Chat
+                if (phoneTopBar) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -380,8 +389,15 @@ private fun NomiShell(signedIn: Boolean) {
                         }
                     }
                 }
-                Box(Modifier.weight(FILL)) {
-                    NomiNavDisplay(backStack, Modifier.fillMaxSize(), wide = wide)
+                // The top bar already sits below the status bar: pages under it mustn't pad for it again.
+                val underTopBar = if (phoneTopBar) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier
+                Box(Modifier.weight(FILL).then(underTopBar)) {
+                    CompositionLocalProvider(
+                        LocalNomiPageTopPadding provides if (phoneTopBar) PageTopUnderBar else PageTopPadding,
+                        LocalAttachmentPreviews provides attachmentPreviews::preview,
+                    ) {
+                        NomiNavDisplay(backStack, Modifier.fillMaxSize(), wide = wide)
+                    }
                     if (showInAppBubble) {
                         InAppFloatingBubbleOverlay(
                             state = companionState,
@@ -454,6 +470,11 @@ private fun InAppFloatingBubbleOverlay(
     onDismissBubble: () -> Unit,
 ) {
     val density = LocalDensity.current
+    val overview by companion.overview.collectAsStateWithLifecycle()
+    val open = state is CompanionUiState.Expanded
+    LaunchedEffect(open) {
+        if (open) companion.refreshOverview()
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val widthPx = constraints.maxWidth
         val heightPx = constraints.maxHeight
@@ -589,8 +610,11 @@ private fun InAppFloatingBubbleOverlay(
                         dockedRight = snapped.x >= widthPx / HALF
                     }
                 },
-                onQuickReply = companion::sendQuickReply,
                 onDismiss = onDismissBubble,
+                overview = overview,
+                onAsk = companion::ask,
+                onNewConversation = companion::newConversation,
+                onOpenConversation = companion::openConversation,
             )
         }
 

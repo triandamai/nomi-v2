@@ -152,8 +152,14 @@ private fun DesktopIslandWindow(
     onRevealMainWindow: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val isExpanded = uiState is CompanionUiState.Expanded || uiState is CompanionUiState.Peeking
+    val isOpen = uiState is CompanionUiState.Expanded
+    val isPeeking = uiState is CompanionUiState.Peeking
+    val isExpanded = isOpen || isPeeking
     val isWorking = uiState is CompanionUiState.Working
+    val overview by companion.overview.collectAsState()
+    LaunchedEffect(isOpen) {
+        if (isOpen) companion.refreshOverview()
+    }
 
     val displays = remember(os) { readDesktopDisplays(os) }
     val initialPlacement = remember(displays) {
@@ -171,7 +177,7 @@ private fun DesktopIslandWindow(
     val cursorSample by tracker.sample.collectAsState()
 
     val activeDisplay = selectDisplayForCursor(displays, cursorSample?.xDp, cursorSample?.yDp)
-    val placement = computeIslandPlacement(activeDisplay, isExpanded = isExpanded, isWorking = isWorking)
+    val placement = computeIslandPlacement(activeDisplay, isExpanded = isOpen, isWorking = isWorking, isPeeking = isPeeking)
 
     LaunchedEffect(cursorSample?.insideIsland) {
         val inside = cursorSample?.insideIsland ?: false
@@ -252,8 +258,15 @@ private fun DesktopIslandWindow(
                     lookAt = cursorSample?.lookAt,
                     collapsedWidth = placement.collapsedPillWidthDp.dp,
                     notchMode = activeDisplay.notchWidthDp != null,
-                    onQuickReply = companion::sendQuickReply,
+                    notchHeight = activeDisplay.menuBarHeightDp.dp,
                     onClickCollapsed = { companion.stateMachine.toggleExpanded() },
+                    overview = overview,
+                    onAsk = companion::ask,
+                    onNewConversation = companion::newConversation,
+                    onOpenConversation = {
+                        onRevealMainWindow()
+                        companion.openConversation()
+                    },
                 )
             }
         }
@@ -287,7 +300,8 @@ private fun readDesktopDisplays(os: DesktopOs): List<DisplayBoundsDp> {
             widthDp = bounds.width,
             heightDp = bounds.height,
             menuBarHeightDp = topInset,
-            notchWidthDp = if (index == 0) defaultNotch else null,
+            // Only the built-in screen has a notch, and only notched screens have a menu bar as tall as one.
+            notchWidthDp = if (index == 0 && hasNotch(topInset)) defaultNotch else null,
         )
     }
 }

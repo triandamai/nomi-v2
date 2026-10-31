@@ -1,25 +1,19 @@
 package ai.nomi.companion
 
-import ai.nomi.designsystem.component.NomiButton
-import ai.nomi.designsystem.component.NomiButtonSize
-import ai.nomi.designsystem.component.NomiButtonVariant
 import ai.nomi.designsystem.icon.NomiIcon
 import ai.nomi.designsystem.icon.NomiIcons
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.agentIdentity
-import ai.nomi.designsystem.theme.NomiTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,16 +23,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -52,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -60,9 +49,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 
 const val MESSENGER_BUBBLE_TAG = "messenger-bubble"
@@ -73,7 +60,8 @@ val BubbleSizeDp = 60.dp
 val DismissTargetSizeDp = 56.dp
 
 private val SpeechCardMaxWidth = 264.dp
-private val QuickChatWidth = 312.dp
+private val QuickChatWidth = 360.dp
+private val QuickChatMaxHeight = 520.dp
 private val BubbleShadow = 10.dp
 private val CardShadow = 14.dp
 private val CardCorner = 22.dp
@@ -82,12 +70,8 @@ private val SpeechPadding = 12.dp
 private val RowGap = 10.dp
 private val SmallGap = 6.dp
 private val BorderWidth = 1.dp
-private val QuickInputHeight = 40.dp
-private val QuickInputPadding = 12.dp
-private const val FILL = 1f
 private const val TITLE_WEIGHT = 700
 private const val PREVIEW_MAX_LINES = 2
-private const val EXPANDED_MAX_LINES = 4
 private const val CAPTURED_SCALE = 1.18f
 private const val NORMAL_SCALE = 1f
 private const val EXPANDED_HEAD_SCALE = 0.92f
@@ -121,8 +105,11 @@ fun MessengerBubble(
     onDragStart: () -> Unit = {},
     onDragBy: (Offset) -> Unit = {},
     onDragEnd: () -> Unit = {},
-    onQuickReply: ((sessionId: String, text: String) -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
+    overview: CompanionOverview = CompanionOverview(),
+    onAsk: (text: String, sessionId: String?) -> Unit = { _, _ -> },
+    onNewConversation: () -> Unit = {},
+    onOpenConversation: () -> Unit = onOpenApp,
 ) {
     if (state is CompanionUiState.Snoozed) return
 
@@ -235,12 +222,15 @@ fun MessengerBubble(
         ) {
             BubbleQuickChatCard(
                 card = card,
-                working = workingSignal,
+                working = (state as? CompanionUiState.Expanded)?.working,
+                overview = overview,
                 onOpenLink = onOpenLink,
                 onOpenApp = onOpenApp,
                 onClose = onTapHead,
                 onDismiss = onDismiss,
-                onQuickReply = onQuickReply,
+                onAsk = onAsk,
+                onNewConversation = onNewConversation,
+                onOpenConversation = onOpenConversation,
             )
         }
     }
@@ -363,139 +353,52 @@ fun BubbleSpeechCard(
     }
 }
 
-/** Compact chat & status panel shown when the Messenger bubble is tapped open. */
+/** The companion panel, opened from the bubble: crew at work, recent chats, projects, and answers in place. */
 @Composable
 fun BubbleQuickChatCard(
     card: CompanionCard?,
-    working: CompanionUiState.Working?,
+    working: ai.nomi.data.CompanionSignal.Working?,
+    overview: CompanionOverview,
     onOpenLink: (String) -> Unit,
     onOpenApp: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     onDismiss: (() -> Unit)? = null,
-    onQuickReply: ((sessionId: String, text: String) -> Unit)? = null,
+    onAsk: (text: String, sessionId: String?) -> Unit = { _, _ -> },
+    onNewConversation: () -> Unit = {},
+    onOpenConversation: () -> Unit = onOpenApp,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(CardCorner)
-    var replyDraft by remember(card?.sessionId) { mutableStateOf("") }
-
-    Column(
-        modifier
+    CompanionPanel(
+        overview = overview,
+        card = card,
+        working = working,
+        palette = surfacePalette(),
+        onAsk = onAsk,
+        onOpenLink = onOpenLink,
+        onOpenApp = onOpenApp,
+        onNewConversation = onNewConversation,
+        onOpenConversation = onOpenConversation,
+        modifier = modifier
             .testTag(BUBBLE_QUICK_CHAT_TAG)
             .widthIn(max = QuickChatWidth)
+            .heightIn(max = QuickChatMaxHeight)
             .shadow(CardShadow, shape)
             .clip(shape)
             .background(colors.surfaceContainerLowest)
             .border(BorderWidth, colors.outlineVariant, shape)
             .padding(CardPadding),
-        verticalArrangement = Arrangement.spacedBy(RowGap),
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(SmallGap),
-        ) {
-            Column(Modifier.weight(FILL)) {
-                Text(
-                    text = card?.title ?: if (working != null) formatAgentPhase(working.phase) else "Nomi",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight(TITLE_WEIGHT)),
-                    color = colors.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+        trailing = {
+            IconButton(onClick = onDismiss ?: onClose) {
+                NomiIcon(
+                    NomiIcons.Close,
+                    contentDescription = if (onDismiss != null) "Hide bubble" else "Collapse",
+                    tint = colors.onSurfaceVariant,
                 )
-                if (working != null && card != null) {
-                    Text(
-                        text = formatAgentPhase(working.phase),
-                        style = NomiTheme.metaStyle,
-                        color = colors.onSurfaceVariant,
-                    )
-                }
             }
-            if (onDismiss != null) {
-                IconButton(onClick = onDismiss) {
-                    NomiIcon(NomiIcons.Close, contentDescription = "Hide bubble", tint = colors.onSurfaceVariant)
-                }
-            } else {
-                IconButton(onClick = onClose) {
-                    NomiIcon(NomiIcons.Close, contentDescription = "Collapse", tint = colors.onSurfaceVariant)
-                }
-            }
-        }
-
-        Text(
-            text = card?.body ?: "Send a quick message to Nomi, or tap Open in Nomi for the full chat.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurfaceVariant,
-            maxLines = EXPANDED_MAX_LINES,
-            overflow = TextOverflow.Ellipsis,
-        )
-
-        if (onQuickReply != null) {
-            val targetSessionId = card?.sessionId.orEmpty()
-            val sendReply = {
-                val trimmed = replyDraft.trim()
-                if (trimmed.isNotEmpty()) {
-                    onQuickReply(targetSessionId, trimmed)
-                    replyDraft = ""
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(SmallGap),
-            ) {
-                BasicTextField(
-                    value = replyDraft,
-                    onValueChange = { replyDraft = it },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
-                    cursorBrush = SolidColor(colors.primary),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { sendReply() }),
-                    modifier = Modifier.weight(FILL),
-                    decorationBox = { inner ->
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = QuickInputHeight)
-                                .clip(CircleShape)
-                                .background(colors.surfaceContainerHigh)
-                                .padding(horizontal = QuickInputPadding),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            if (replyDraft.isEmpty()) {
-                                Text(
-                                    if (card != null) "Reply…" else "Ask Nomi…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = colors.onSurfaceVariant,
-                                )
-                            }
-                            inner()
-                        }
-                    },
-                )
-                IconButton(
-                    onClick = sendReply,
-                    enabled = replyDraft.isNotBlank(),
-                ) {
-                    NomiIcon(NomiIcons.ArrowForward, contentDescription = "Send reply", tint = colors.primary)
-                }
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            NomiButton(
-                onClick = { if (card != null) onOpenLink(card.link) else onOpenApp() },
-                variant = NomiButtonVariant.Tonal,
-                size = NomiButtonSize.Small,
-            ) {
-                Text("Open in Nomi")
-            }
-        }
-    }
+        },
+    )
 }
 
 /** Bottom-center dismiss target shown while dragging the Messenger bubble on Android. */

@@ -192,6 +192,60 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
 
     override suspend fun projects(orgId: String?): List<Project> = sdk.projects(orgId)
 
+    override suspend fun projectForChat(sessionId: String): ProjectDetail = sdk.projectForChat(sessionId)
+
+    override suspend fun projectFile(projectId: String, path: String): ByteArray = sdk.projectFile(projectId, path)
+
+    override suspend fun projectDeploy(projectId: String): DeployOverview = sdk.projectDeploy(projectId)
+
+    override suspend fun publishProject(projectId: String) = sdk.publishProject(projectId)
+
+    override suspend fun projectIssues(projectId: String, status: String): ProjectIssues = sdk.projectIssues(projectId, status)
+
+    override suspend fun fileProjectIssue(projectId: String, issue: NewProjectIssue): ProjectIssue =
+        sdk.fileProjectIssue(projectId, issue)
+
+    override suspend fun setProjectIssueStatus(projectId: String, number: Int, status: String): ProjectIssue =
+        sdk.setProjectIssueStatus(projectId, number, status)
+
+    override suspend fun projectMembers(projectId: String): ProjectMembers = sdk.projectMembers(projectId)
+
+    override suspend fun projectDomain(projectId: String): ProjectDomain = sdk.projectDomain(projectId)
+
+    override suspend fun checkProjectDomain(projectId: String, subdomain: String): DomainCheck = sdk.checkProjectDomain(projectId, subdomain)
+
+    override suspend fun changeProjectDomain(projectId: String, subdomain: String): DomainChange = sdk.changeProjectDomain(projectId, subdomain)
+
+    override suspend fun projectUsage(projectId: String): List<ContainerUsage> = sdk.projectUsage(projectId)
+
+    override suspend fun projectTraffic(projectId: String, range: String): ProjectTraffic = sdk.projectTraffic(projectId, range)
+
+    override suspend fun projectLogs(projectId: String): ProjectLogs = sdk.projectLogs(projectId)
+
+    override suspend fun takeProjectOffline(projectId: String) = sdk.takeProjectOffline(projectId)
+
+    override suspend fun projectTables(projectId: String, source: DataSource): List<DatabaseTable> = sdk.projectTables(projectId, source)
+
+    override suspend fun queryProjectData(projectId: String, sql: String, source: DataSource, relay: Boolean): QueryResult = sdk.queryProjectData(projectId, sql, source, relay)
+
+    override suspend fun projectRelay(projectId: String, source: DataSource): RelayOverview = sdk.projectRelay(projectId, source)
+
+    override suspend fun retryProjectRelay(projectId: String, source: DataSource) = sdk.retryProjectRelay(projectId, source)
+
+    override suspend fun projectShowcase(projectId: String): ProjectShowcase = sdk.projectShowcase(projectId)
+
+    override suspend fun setProjectShowcase(projectId: String, showcase: Boolean, blurb: String?): ProjectShowcase = sdk.setProjectShowcase(projectId, showcase, blurb)
+
+    override suspend fun transferOrgs(projectId: String, query: String): List<TransferOrg> = sdk.transferOrgs(projectId, query)
+
+    override suspend fun transferProject(projectId: String, orgId: String, confirmName: String) = sdk.transferProject(projectId, orgId, confirmName)
+
+    override suspend fun deleteProject(projectId: String) = sdk.deleteProject(projectId)
+
+    override suspend fun attachmentPreview(id: String): ByteArray = sdk.attachmentPreview(id)
+
+    override suspend fun attachmentContent(id: String): ByteArray = sdk.attachmentContent(id)
+
     override suspend fun close() {
         try {
             sdk.shutdown()

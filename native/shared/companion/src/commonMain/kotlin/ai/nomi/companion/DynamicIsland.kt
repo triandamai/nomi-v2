@@ -3,8 +3,6 @@ package ai.nomi.companion
 import ai.nomi.designsystem.component.NomiButton
 import ai.nomi.designsystem.component.NomiButtonSize
 import ai.nomi.designsystem.component.NomiButtonVariant
-import ai.nomi.designsystem.icon.NomiIcon
-import ai.nomi.designsystem.icon.NomiIcons
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.agentIdentity
@@ -22,6 +20,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,32 +29,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,11 +57,15 @@ const val DYNAMIC_ISLAND_TAG = "dynamic-island"
 
 val IslandCollapsedWidth = 188.dp
 val IslandWorkingWidth = 248.dp
-val IslandExpandedWidth = 340.dp
+/** A peek is wide enough for a reply's first lines; the open panel for the crew, chats and an answer. */
+val IslandPeekWidth = 420.dp
+val IslandExpandedWidth = 460.dp
 val IslandCollapsedHeight = 32.dp
 val IslandWorkingHeight = 36.dp
-val IslandExpandedMinHeight = 88.dp
-val IslandExpandedWithReplyHeight = 124.dp
+val IslandPeekHeight = 96.dp
+val IslandExpandedHeight = 440.dp
+/** A notched Mac's camera housing, when the screen doesn't say how tall its menu bar is. */
+val DefaultNotchHeight = 38.dp
 
 private const val NOTCH_BLACK_ARGB = 0xFF000000L
 private const val NOTCH_FG_ARGB = 0xFFF4F7F5L
@@ -97,17 +94,15 @@ private val ExpandedAvatarSize = 28.dp
 private val CompactHorizontalPadding = 12.dp
 private val CompactVerticalPadding = 4.dp
 private val ExpandedPadding = 12.dp
-private val NotchCameraClearance = 16.dp
+private val BelowNotchGap = 8.dp
 private val ItemGap = 8.dp
 private val SmallGap = 6.dp
 private val BadgeHorizontalPadding = 7.dp
 private val BadgeVerticalPadding = 2.dp
-private val QuickInputHeight = 32.dp
-private val QuickInputPadding = 12.dp
 private const val FILL = 1f
 private const val BRAND_WEIGHT = 800
 private const val TITLE_WEIGHT = 700
-private const val BODY_MAX_LINES = 1
+private const val PEEK_BODY_MAX_LINES = 2
 
 /**
  * The Dynamic-Island-style companion pill: pure black notch surface that stays smaller than the physical Mac notch
@@ -123,8 +118,13 @@ fun DynamicIslandPill(
     collapsedWidth: Dp = IslandCollapsedWidth,
     notchMode: Boolean = false,
     onHoverChange: ((Boolean) -> Unit)? = null,
-    onQuickReply: ((sessionId: String, text: String) -> Unit)? = null,
     onClickCollapsed: (() -> Unit)? = null,
+    overview: CompanionOverview = CompanionOverview(),
+    onAsk: ((text: String, sessionId: String?) -> Unit)? = null,
+    onNewConversation: () -> Unit = {},
+    onOpenConversation: () -> Unit = onOpenApp,
+    /** How tall the hardware notch is: in [notchMode] content starts below it, never under the camera. */
+    notchHeight: Dp = DefaultNotchHeight,
 ) {
     if (state is CompanionUiState.Snoozed) return
 
@@ -140,20 +140,23 @@ fun DynamicIslandPill(
     val isExpanded = state is CompanionUiState.Expanded || state is CompanionUiState.Peeking
     val isActiveOrHovered = isExpanded || state is CompanionUiState.Working
 
-    val expandedBaseHeight = if (onQuickReply != null) IslandExpandedWithReplyHeight else IslandExpandedMinHeight
-    val expandedFullHeight = if (notchMode) expandedBaseHeight + NotchCameraClearance else expandedBaseHeight
-    val workingFullHeight = if (notchMode) IslandWorkingHeight + NotchCameraClearance else IslandWorkingHeight
+    val clearance = if (notchMode) notchHeight else 0.dp
+    val peekFullHeight = IslandPeekHeight + clearance
+    val expandedFullHeight = IslandExpandedHeight + clearance
+    val workingFullHeight = if (notchMode) maxOf(notchHeight, IslandWorkingHeight) else IslandWorkingHeight
 
     val targetWidth = when (state) {
         is CompanionUiState.Idle -> collapsedWidth
         is CompanionUiState.Working -> maxOf(collapsedWidth, IslandWorkingWidth)
-        is CompanionUiState.Peeking, is CompanionUiState.Expanded -> maxOf(collapsedWidth, IslandExpandedWidth)
+        is CompanionUiState.Peeking -> maxOf(collapsedWidth, IslandPeekWidth)
+        is CompanionUiState.Expanded -> maxOf(collapsedWidth, IslandExpandedWidth)
         CompanionUiState.Snoozed -> collapsedWidth
     }
     val targetHeight = when (state) {
         is CompanionUiState.Idle -> IslandCollapsedHeight
         is CompanionUiState.Working -> workingFullHeight
-        is CompanionUiState.Peeking, is CompanionUiState.Expanded -> expandedFullHeight
+        is CompanionUiState.Peeking -> peekFullHeight
+        is CompanionUiState.Expanded -> expandedFullHeight
         CompanionUiState.Snoozed -> IslandCollapsedHeight
     }
     val targetCorner = if (isExpanded) ExpandedCorner else CollapsedCorner
@@ -218,12 +221,14 @@ fun DynamicIslandPill(
 
     val contentTargetWidth = when (displayState) {
         is CompanionUiState.Working -> maxOf(collapsedWidth, IslandWorkingWidth)
-        is CompanionUiState.Peeking, is CompanionUiState.Expanded -> maxOf(collapsedWidth, IslandExpandedWidth)
+        is CompanionUiState.Peeking -> maxOf(collapsedWidth, IslandPeekWidth)
+        is CompanionUiState.Expanded -> maxOf(collapsedWidth, IslandExpandedWidth)
         else -> collapsedWidth
     }
     val contentTargetHeight = when (displayState) {
         is CompanionUiState.Working -> workingFullHeight
-        is CompanionUiState.Peeking, is CompanionUiState.Expanded -> expandedFullHeight
+        is CompanionUiState.Peeking -> peekFullHeight
+        is CompanionUiState.Expanded -> expandedFullHeight
         else -> IslandCollapsedHeight
     }
 
@@ -277,14 +282,11 @@ fun DynamicIslandPill(
                     },
                 contentAlignment = Alignment.TopCenter,
             ) {
-                ExpandedIslandCard(
+                PeekIslandCard(
                     card = displayState.card,
-                    working = null,
                     lookAt = lookAt,
-                    notchMode = notchMode,
+                    topPadding = ExpandedPadding + if (notchMode) clearance else 0.dp,
                     onOpenLink = onOpenLink,
-                    onOpenApp = onOpenApp,
-                    onQuickReply = onQuickReply,
                 )
             }
             is CompanionUiState.Expanded -> Box(
@@ -299,14 +301,26 @@ fun DynamicIslandPill(
                     },
                 contentAlignment = Alignment.TopCenter,
             ) {
-                ExpandedIslandCard(
+                CompanionPanel(
+                    overview = overview,
                     card = displayState.card,
                     working = displayState.working,
-                    lookAt = lookAt,
-                    notchMode = notchMode,
+                    palette = notchPalette(),
+                    onAsk = onAsk ?: { _, _ -> },
                     onOpenLink = onOpenLink,
                     onOpenApp = onOpenApp,
-                    onQuickReply = onQuickReply,
+                    onNewConversation = onNewConversation,
+                    onOpenConversation = onOpenConversation,
+                    lookAt = lookAt,
+                    fillHeight = true,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(
+                            start = ExpandedPadding,
+                            end = ExpandedPadding,
+                            top = ExpandedPadding + if (notchMode) clearance + BelowNotchGap else 0.dp,
+                            bottom = ExpandedPadding,
+                        ),
                 )
             }
             CompanionUiState.Snoozed -> Spacer(Modifier.height(IslandCollapsedHeight))
@@ -403,129 +417,41 @@ private fun CollapsedWorkingRow(
     }
 }
 
+/** A peek: who it's from, its first lines, and a way in. */
 @Composable
-private fun ExpandedIslandCard(
-    card: CompanionCard?,
-    working: ai.nomi.data.CompanionSignal.Working?,
+private fun PeekIslandCard(
+    card: CompanionCard,
     lookAt: Offset?,
-    notchMode: Boolean,
+    topPadding: Dp,
     onOpenLink: (String) -> Unit,
-    onOpenApp: () -> Unit,
-    onQuickReply: ((sessionId: String, text: String) -> Unit)?,
 ) {
-    val agentKey = working?.agentType ?: card?.agentType
-    val identity = agentKey?.let(::agentIdentity) ?: NomiIdentity
-    var replyDraft by remember(card?.sessionId) { mutableStateOf("") }
-    val topPad = if (notchMode) ExpandedPadding + NotchCameraClearance else ExpandedPadding
-
-    Column(
+    val identity = card.agentType?.let(::agentIdentity) ?: NomiIdentity
+    Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = IslandExpandedMinHeight)
-            .padding(start = ExpandedPadding, end = ExpandedPadding, top = topPad, bottom = ExpandedPadding),
-        verticalArrangement = Arrangement.spacedBy(ItemGap),
+            .padding(start = ExpandedPadding, end = ExpandedPadding, top = topPadding, bottom = ExpandedPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ItemGap),
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ItemGap),
-        ) {
-            AgentShape(
-                identity = identity,
-                size = ExpandedAvatarSize,
-                working = true,
-                face = true,
-                lookAt = lookAt,
+        AgentShape(identity = identity, size = ExpandedAvatarSize, working = true, face = true, lookAt = lookAt)
+        Column(Modifier.weight(FILL)) {
+            Text(
+                card.title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight(TITLE_WEIGHT)),
+                color = NotchForeground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(Modifier.weight(FILL)) {
-                Text(
-                    text = card?.title ?: if (working != null) formatAgentPhase(working.phase) else "Nomi is active",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight(TITLE_WEIGHT)),
-                    color = NotchForeground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = if (working != null && card != null) {
-                        formatAgentPhase(working.phase)
-                    } else if (card != null) {
-                        "Live in your notch"
-                    } else {
-                        "Ready to help"
-                    },
-                    style = NomiTheme.metaStyle,
-                    color = NotchForeground.copy(alpha = MUTED_TEXT_ALPHA),
-                    maxLines = 1,
-                )
-            }
-            NomiButton(
-                onClick = { if (card != null) onOpenLink(card.link) else onOpenApp() },
-                variant = NomiButtonVariant.Tonal,
-                size = NomiButtonSize.Small,
-            ) {
-                Text(if (card != null) "Open" else "Open Nomi")
-            }
+            Text(
+                card.body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = NotchForeground.copy(alpha = MUTED_TEXT_ALPHA),
+                maxLines = PEEK_BODY_MAX_LINES,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-
-        Text(
-            text = card?.body ?: "Ask Nomi anything right from the notch, or open the full workspace.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = NotchForeground.copy(alpha = MUTED_TEXT_ALPHA),
-            maxLines = BODY_MAX_LINES,
-            overflow = TextOverflow.Ellipsis,
-        )
-
-        if (onQuickReply != null) {
-            val targetSessionId = card?.sessionId.orEmpty()
-            val sendReply = {
-                val trimmed = replyDraft.trim()
-                if (trimmed.isNotEmpty()) {
-                    onQuickReply(targetSessionId, trimmed)
-                    replyDraft = ""
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(SmallGap),
-            ) {
-                BasicTextField(
-                    value = replyDraft,
-                    onValueChange = { replyDraft = it },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = NotchForeground),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { sendReply() }),
-                    modifier = Modifier.weight(FILL),
-                    decorationBox = { inner ->
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = QuickInputHeight)
-                                .clip(CircleShape)
-                                .background(NotchForeground.copy(alpha = INPUT_BG_ALPHA))
-                                .padding(horizontal = QuickInputPadding),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            if (replyDraft.isEmpty()) {
-                                Text(
-                                    if (card != null) "Quick reply…" else "Ask Nomi…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = NotchForeground.copy(alpha = MUTED_TEXT_ALPHA),
-                                )
-                            }
-                            inner()
-                        }
-                    },
-                )
-                IconButton(
-                    onClick = sendReply,
-                    enabled = replyDraft.isNotBlank(),
-                ) {
-                    NomiIcon(NomiIcons.ArrowForward, contentDescription = "Send quick reply", tint = NotchForeground)
-                }
-            }
+        NomiButton(onClick = { onOpenLink(card.link) }, variant = NomiButtonVariant.Tonal, size = NomiButtonSize.Small) {
+            Text("Open")
         }
     }
 }

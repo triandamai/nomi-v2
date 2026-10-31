@@ -246,3 +246,12 @@ interface ProjectsApi {
     suspend fun list(orgId: String? = null): List<ProjectDto>
 }
 
+
+/** Files people attached to their messages. */
+interface AttachmentsApi {
+    /** A small preview of an attached image, as the encoded image. */
+    suspend fun preview(id: String): ByteArray
+
+    /** An attached file's content as uploaded. */
+    suspend fun content(id: String): ByteArray
+}

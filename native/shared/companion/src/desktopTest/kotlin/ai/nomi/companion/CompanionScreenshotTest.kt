@@ -28,6 +28,32 @@ private val SheetPadding = 24.dp
 private val ItemSpacing = 16.dp
 private val SectionSpacing = 20.dp
 
+/** A companion with the crew at work, a few chats and projects. */
+private val busy = CompanionOverview(
+    crew = listOf(
+        CompanionCrewMember("money", "Finley", "calling_tool", "s-3", "October budget"),
+        CompanionCrewMember("research", "Rena", "thinking", "s-4", "Flights to Lisbon"),
+    ),
+    chats = listOf(
+        CompanionChat("s-4", "Flights to Lisbon", "Comparing three options…", unread = true, working = true),
+        CompanionChat("s-3", "October budget", "Groceries are 12% over", unread = false, working = true),
+        CompanionChat("s-5", "Gym plan", "Push day moved to Thursday", unread = false, working = false),
+    ),
+    projects = listOf(
+        CompanionProject("p-1", "s-6", "Bakery site", "ready"),
+        CompanionProject("p-2", "s-7", "Habit tracker", "building"),
+    ),
+)
+
+private val asked = CompanionConversation(
+    sessionId = "s-8",
+    question = "What's on my calendar this afternoon?",
+    answer = "Two things: the design sync at 3:15 and a call with Sam at 5. Nothing after 6.",
+    answering = false,
+    phase = null,
+    error = null,
+)
+
 @OptIn(ExperimentalTestApi::class)
 class CompanionScreenshotTest {
     @get:Rule val rule = createComposeRule()
@@ -83,7 +109,6 @@ class CompanionScreenshotTest {
                 ),
                 onOpenLink = {},
                 onOpenApp = {},
-                onQuickReply = { _, _ -> },
             )
             DynamicIslandPill(
                 state = CompanionUiState.Expanded(
@@ -97,9 +122,22 @@ class CompanionScreenshotTest {
                 ),
                 onOpenLink = {},
                 onOpenApp = {},
-                onQuickReply = { _, _ -> },
+                overview = busy,
+                onAsk = { _, _ -> },
             )
         }
+    }
+
+    @Test
+    fun dynamicIslandAnswersInPlace() = capture(false, "companion_dynamic_island_conversation.png") {
+        DynamicIslandPill(
+            state = CompanionUiState.Expanded(card = null),
+            onOpenLink = {},
+            onOpenApp = {},
+            notchMode = true,
+            overview = busy.copy(conversation = asked),
+            onAsk = { _, _ -> },
+        )
     }
 
     @Test
@@ -134,8 +172,8 @@ class CompanionScreenshotTest {
                 onTapHead = {},
                 onOpenLink = {},
                 onOpenApp = {},
-                onQuickReply = { _, _ -> },
                 onDismiss = {},
+                overview = busy,
             )
             Row(
                 Modifier.fillMaxWidth(),
