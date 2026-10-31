@@ -26,6 +26,12 @@ pub enum StreamEnvelope {
     /// An existing message's content_blocks changed in place (a todo list step flipped, an
     /// approval was decided) — the frontend fetches it and replaces its existing entry.
     MessageUpdated { message_id: Uuid },
+    /// Messages left the chat: deleted with what went with them, replaced when a turn ran again
+    /// (edited, or a reply asked for again), or a failed run's error cleared by a retry. Every
+    /// device drops them.
+    MessagesDeleted { message_ids: Vec<Uuid> },
+    /// The whole chat was deleted: a device showing it leaves it.
+    SessionDeleted,
     /// An agent's live status changed — thinking, calling a tool, writing a reply, or back to
     /// waiting. `detail` carries the tool name for `calling_tool`, `None` otherwise. Never sent
     /// for the default (chitchat) agent's turns, which have no real `agent_sessions` row.
@@ -85,4 +91,6 @@ pub enum UserEnvelope {
     /// message itself goes to the chat's own topic): their other devices move that chat to the
     /// top of their chat lists. `project_id` is set for a project's chat.
     ChatUpdated { session_id: Uuid, project_id: Option<Uuid>, title: Option<String> },
+    /// One of the person's chats was deleted, on any device: every device drops it from its list.
+    ChatDeleted { session_id: Uuid },
 }

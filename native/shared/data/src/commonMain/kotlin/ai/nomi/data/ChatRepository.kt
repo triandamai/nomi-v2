@@ -79,6 +79,9 @@ class ChatRepository(
                         updateFlags(sessionId) { it.copy(lastError = event.error) }
                     event is SdkEvent.TopicAccessLost && event.topic == topic ->
                         updateFlags(sessionId) { it.copy(accessLost = true) }
+                    // Deleted, here or on another device: the store dropped it; the screen says it's gone.
+                    event is SdkEvent.Realtime && event.topic == topic && event.event is RealtimeEvent.SessionDeleted ->
+                        updateFlags(sessionId) { it.copy(accessLost = true) }
                     event is SdkEvent.Realtime && event.topic == topic && event.event.movesTurnOn() ->
                         clearError(sessionId)
                 }

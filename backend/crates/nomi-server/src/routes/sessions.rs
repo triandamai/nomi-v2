@@ -240,6 +240,7 @@ pub async fn delete_session(
         tracing::error!(error = %e, "failed to commit chat deletion");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete chat")
     })?;
+    crate::chat_events::chat_deleted(claims.sub, session_id);
 
     Ok(StatusCode::NO_CONTENT)
 }

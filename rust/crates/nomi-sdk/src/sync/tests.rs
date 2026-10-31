@@ -1442,3 +1442,56 @@ async fn deleting_a_message_the_server_no_longer_has_removes_it_here() {
     let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
     assert_eq!(ids, ["m1"]);
 }
+
+#[tokio::test]
+async fn messages_deleted_on_another_device_leave_this_one() {
+    let h = Harness::new().await;
+    h.store
+        .upsert_messages(vec![
+            stored_message("m1", "user", "Plan my week", 10),
+            stored_message("m2", "assistant", "Here's a plan", 20),
+        ])
+        .await
+        .unwrap();
+
+    h.event(
+        CHAT_TOPIC,
+        json!({ "kind": "MessagesDeleted", "message_ids": ["M2"] }),
+    );
+
+    eventually("the delete", || async {
+        let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
+        (ids == ["m1"]).then_some(())
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_chat_deleted_on_another_device_leaves_this_one() {
+    let h = Harness::new().await;
+    let chat = |id: &str| Session {
+        id: id.into(),
+        title: "Trip".into(),
+        last_message_preview: "".into(),
+        updated_at: 1,
+        unread: false,
+    };
+    h.store
+        .upsert_sessions(vec![chat(CHAT), chat("s2")])
+        .await
+        .unwrap();
+    h.store
+        .upsert_messages(vec![stored_message("m1", "user", "Plan my week", 10)])
+        .await
+        .unwrap();
+
+    // The open chat hears it on its own topic; the list hears about another chat on the person's.
+    h.event(CHAT_TOPIC, json!({ "kind": "SessionDeleted" }));
+    h.event("user", json!({ "kind": "ChatDeleted", "session_id": "S2" }));
+
+    eventually("both deletes", || async {
+        h.sessions().await.is_empty().then_some(())
+    })
+    .await;
+    assert!(h.messages().await.is_empty());
+}

@@ -14,7 +14,7 @@ use crate::event::{EventSubscription, SdkEvent};
 use crate::network::events::{chat_of, RealtimeEvent};
 use crate::network::realtime::ConnectionState;
 use crate::storage::models::{AgentActivity, NotificationItem};
-use crate::storage::repositories::{activity, drafts, notifications, sessions};
+use crate::storage::repositories::{activity, drafts, messages, notifications, sessions};
 
 /// Finished turns remembered per chat, to drop their late deltas; turns finish one at a time.
 const FINISHED_TURNS_KEPT: usize = 8;
@@ -173,6 +173,21 @@ impl Shared {
                 RealtimeEvent::MessageUpdated { message_id, .. } => {
                     self.fetch_message(session_id, &message_id).await.map(drop)
                 }
+                RealtimeEvent::MessagesDeleted { message_ids, .. } => {
+                    self.store
+                        .write(move |tx| {
+                            for id in &message_ids {
+                                messages::delete(tx, id)?;
+                            }
+                            Ok(())
+                        })
+                        .await
+                }
+                RealtimeEvent::SessionDeleted { .. } => {
+                    self.store
+                        .write(move |tx| sessions::delete(tx, &session))
+                        .await
+                }
                 RealtimeEvent::SessionRenamed { title, .. } => {
                     self.store
                         .write(move |tx| sessions::rename(tx, &session, &title))
@@ -282,6 +297,11 @@ impl Shared {
                 RealtimeEvent::ChatActivity { session_id, .. } => {
                     self.store
                         .write(move |tx| activity::clear_for_session(tx, &session_id))
+                        .await
+                }
+                RealtimeEvent::ChatDeleted { session_id } => {
+                    self.store
+                        .write(move |tx| sessions::delete(tx, &session_id))
                         .await
                 }
                 RealtimeEvent::ChatUpdated {
