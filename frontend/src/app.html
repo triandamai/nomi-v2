@@ -30,8 +30,9 @@
 					var reason = event.reason;
 					if (STALE.test(String((reason && reason.message) || reason || ''))) reload();
 				});
-				addEventListener('vite:preloadError', function (event) {
-					event.preventDefault();
+				// The failure still reaches SvelteKit: it shows its error page, or loads the new build
+				// if there is one. Held back, SvelteKit gets no page module and crashes reading it.
+				addEventListener('vite:preloadError', function () {
 					reload();
 				});
 			})();
