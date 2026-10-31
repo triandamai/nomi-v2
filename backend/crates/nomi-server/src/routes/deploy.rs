@@ -817,18 +817,23 @@ pub async fn delete_project(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// What a project relay's broker connections are called, after the device id.
+const PROJECT_RELAY: &str = "ws-project";
+
 /// `GET /api/projects/:id/ws`: the project's live updates (see `project_events`), for anyone
 /// who can open the project.
 pub async fn project_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(project_id): Path<Uuid>,
+    headers: HeaderMap,
     ws: axum::extract::ws::WebSocketUpgrade,
 ) -> Result<axum::response::Response, ApiError> {
     project_role(&state.pool, project_id, claims.sub).await?;
     let topic = crate::project_events::topic(project_id);
     let (host, port) = (state.mqtt_broker_host.clone(), state.mqtt_broker_port);
-    Ok(ws.on_upgrade(move |socket| crate::routes::sessions::relay_topic(socket, topic, host, port)))
+    let identity = crate::presence::RelayIdentity::relay(&headers, PROJECT_RELAY);
+    Ok(ws.on_upgrade(move |socket| crate::routes::sessions::relay_topic(socket, topic, host, port, identity)))
 }
 
 /// `POST /api/hooks/shipyard`: Shipyard's events. Signature first, then stored once and applied.

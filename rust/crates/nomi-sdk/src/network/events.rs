@@ -127,6 +127,18 @@ pub enum RealtimeEvent {
     ChatDeleted {
         session_id: String,
     },
+    /// One of the person's devices came on, went to the background or went off. `presence` is
+    /// `online`, `away` or `offline`; `last_seen_at` is RFC 3339.
+    DevicePresence {
+        device_id: String,
+        presence: String,
+        last_seen_at: String,
+    },
+    /// One of the person's devices was signed out from another; if it is this one, the SDK signs
+    /// out.
+    DeviceSignedOut {
+        device_id: String,
+    },
 
     Unknown {
         kind: Option<String>,
@@ -222,6 +234,14 @@ enum UserWire {
     MessageUpdated {
         session_id: String,
         message_id: String,
+    },
+    DevicePresence {
+        device_id: String,
+        presence: String,
+        last_seen_at: String,
+    },
+    DeviceSignedOut {
+        device_id: String,
     },
 }
 
@@ -407,6 +427,18 @@ fn decode_known(topic: &str, payload: &Value) -> Option<RealtimeEvent> {
         } => RealtimeEvent::MessageUpdated {
             session_id: session_id.to_lowercase(),
             message_id,
+        },
+        UserWire::DevicePresence {
+            device_id,
+            presence,
+            last_seen_at,
+        } => RealtimeEvent::DevicePresence {
+            device_id: device_id.to_lowercase(),
+            presence,
+            last_seen_at,
+        },
+        UserWire::DeviceSignedOut { device_id } => RealtimeEvent::DeviceSignedOut {
+            device_id: device_id.to_lowercase(),
         },
     })
 }
@@ -612,6 +644,30 @@ mod tests {
             RealtimeEvent::MessageUpdated {
                 session_id: "s9".into(),
                 message_id: "m1".into()
+            }
+        );
+    }
+
+    #[test]
+    fn decodes_the_persons_devices_coming_and_going() {
+        assert_eq!(
+            decode(
+                USER_TOPIC,
+                &json!({ "kind": "DevicePresence", "device_id": "D1", "presence": "away", "last_seen_at": "2026-11-01T10:00:00+00:00" })
+            ),
+            RealtimeEvent::DevicePresence {
+                device_id: "d1".into(),
+                presence: "away".into(),
+                last_seen_at: "2026-11-01T10:00:00+00:00".into()
+            }
+        );
+        assert_eq!(
+            decode(
+                USER_TOPIC,
+                &json!({ "kind": "DeviceSignedOut", "device_id": "D1" })
+            ),
+            RealtimeEvent::DeviceSignedOut {
+                device_id: "d1".into()
             }
         );
     }

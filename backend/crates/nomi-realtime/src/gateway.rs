@@ -71,6 +71,8 @@ pub enum ClientFrame {
     Subscribe { topic: String },
     Unsubscribe { topic: String },
     Ping,
+    /// The app went to the background (`away`) or came back (`online`).
+    Presence { state: crate::PresenceState },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

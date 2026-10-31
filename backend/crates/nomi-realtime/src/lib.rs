@@ -1,8 +1,10 @@
 pub mod gateway;
 pub mod mqtt;
+pub mod presence;
 
 pub use gateway::{ClientFrame, ServerFrame, Topic};
 pub use mqtt::{user_topic, MqttError, MqttPublisher};
+pub use presence::{device_client_id, offline_will, parse_presence_topic, presence_topic, valid_tab_id, PresenceState, PresenceUpdate, PRESENCE_FILTER};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -98,4 +100,9 @@ pub enum UserEnvelope {
     MessagesDeleted { session_id: Uuid, message_ids: Vec<Uuid> },
     /// A message in one of the person's chats changed in place: every device fetches it again.
     MessageUpdated { session_id: Uuid, message_id: Uuid },
+    /// One of the person's devices came on, went to the background, or went off. `last_seen_at`
+    /// is RFC 3339.
+    DevicePresence { device_id: Uuid, presence: PresenceState, last_seen_at: String },
+    /// One of the person's devices was signed out from another: that device signs itself out.
+    DeviceSignedOut { device_id: Uuid },
 }

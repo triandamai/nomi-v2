@@ -123,7 +123,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ai.nomi.data.NomiEngine
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -176,6 +179,10 @@ fun NomiApp(reducedMotion: Boolean = rememberReducedMotion()) {
         else -> systemDark
     }
     LaunchedEffect(gate) { gate.restore() }
+    // In front or not: the person's other apps see this device online or away.
+    val engine = koinInject<NomiEngine>()
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { engine.appInForeground(true) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { engine.appInForeground(false) }
     LaunchedEffect(signedIn, appearance) {
         if (signedIn) appearance.refresh()
     }

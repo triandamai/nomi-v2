@@ -4,6 +4,8 @@ import { isApiRequest, refreshSession } from '$lib/server/api';
 import { APP_VERSION, CLIENT_VERSION_HEADER } from '$lib/version';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { APPEARANCE_COOKIE, appearanceAttributes, parseAppearance } from '$lib/appearanceCookie';
+import { DEVICE_COOKIE, DEVICE_ID_HEADER } from '$lib/device';
+import { ensureDeviceId } from '$lib/server/device';
 
 /** Renders each request in the person's language and sets `<html lang>` to match. */
 const i18n: Handle = ({ event, resolve }) =>
@@ -18,6 +20,12 @@ const i18n: Handle = ({ event, resolve }) =>
 					.replace('%nomi.appearance%', appearanceAttributes(parseAppearance(event.cookies.get(APPEARANCE_COOKIE)))),
 		});
 	});
+
+/** Every browser is a device with an id of its own, from its first visit (before it signs in). */
+const device: Handle = ({ event, resolve }) => {
+	ensureDeviceId(event.cookies);
+	return resolve(event);
+};
 
 const auth: Handle = async ({ event, resolve }) => {
 	event.locals.accessToken = event.cookies.get('access_token');
@@ -61,13 +69,15 @@ const noStalePages: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(i18n, auth, crossOriginIsolation, noStalePages);
+export const handle = sequence(i18n, device, auth, crossOriginIsolation, noStalePages);
 
-/** Every call to the backend says which version of the frontend made it. */
-export const handleFetch: HandleFetch = ({ request, fetch }) => {
+/** Every call to the backend says which version of the frontend made it, and from which browser. */
+export const handleFetch: HandleFetch = ({ event, request, fetch }) => {
 	if (isApiRequest(request.url)) {
 		const headers = new Headers(request.headers);
 		headers.set(CLIENT_VERSION_HEADER, APP_VERSION);
+		const deviceId = event.cookies.get(DEVICE_COOKIE);
+		if (deviceId) headers.set(DEVICE_ID_HEADER, deviceId);
 		request = new Request(request, { headers });
 	}
 	return fetch(request);

@@ -5,6 +5,7 @@ import ai.nomi.data.SdkSetup
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.IosTokenStore
 import ai.nomi.network.TokenStore
+import ai.nomi.sdk.DeviceInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.ComposeUIViewController
@@ -20,6 +21,13 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSLog
 import platform.Foundation.NSUserDomainMask
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
+import platform.UIKit.UIDevice
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.toKString
+import platform.posix.uname
+import platform.posix.utsname
 import platform.UIKit.UIViewController
 
 /** Info.plist key holding the backend URL (Debug: the local backend; Release: required at build time, project.yml). */
@@ -43,7 +51,34 @@ fun iosPlatformModule(): Module = module {
     }
     single { ApiConfig(apiUrl) }
     single<TokenStore> { IosTokenStore() }
-    single { SdkSetup(get<ApiConfig>().baseUrl, applicationSupportPath() + "/" + SDK_DIR) }
+    single { SdkSetup(get<ApiConfig>().baseUrl, applicationSupportPath() + "/" + SDK_DIR, iosDevice()) }
+}
+
+private const val PLATFORM_IOS = "ios"
+private const val BRAND_APPLE = "Apple"
+private const val VERSION_PLIST_KEY = "CFBundleShortVersionString"
+private const val UNKNOWN_VERSION = "unknown"
+
+/** This iPhone or iPad, as the person's device list shows it: "iPhone", the model id (iPhone16,1), iOS and its version. */
+private fun iosDevice(): DeviceInfo {
+    val device = UIDevice.currentDevice
+    return DeviceInfo(
+        platform = PLATFORM_IOS,
+        name = device.model,
+        brand = BRAND_APPLE,
+        model = machineId() ?: device.model,
+        osName = device.systemName,
+        osVersion = device.systemVersion,
+        appVersion = NSBundle.mainBundle.objectForInfoDictionaryKey(VERSION_PLIST_KEY) as? String ?: UNKNOWN_VERSION,
+    )
+}
+
+/** The hardware id (`iPhone16,1`); the simulator reports the Mac's architecture. */
+@OptIn(ExperimentalForeignApi::class)
+private fun machineId(): String? = memScoped {
+    val info = alloc<utsname>()
+    if (uname(info.ptr) != 0) return@memScoped null
+    info.machine.toKString().takeIf { it.isNotBlank() }
 }
 
 @OptIn(ExperimentalForeignApi::class)

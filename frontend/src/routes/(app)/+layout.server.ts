@@ -5,12 +5,14 @@ import { apiFetch } from '$lib/server/api';
 import { maintenanceState } from '$lib/server/maintenance';
 import { getLocale } from '$lib/paraglide/runtime';
 import { setLanguageCookie } from '$lib/server/locale';
+import { registerDevice } from '$lib/server/device';
+import { DEVICE_COOKIE } from '$lib/device';
 import type { CrewRosterMember } from '$lib/crew';
 import type { AttachmentLimits } from '$lib/attachments';
 import type { Preferences, Profile, UsageBrief } from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url, request }) => {
 	// Maintenance: everyone waits on its page (the admin area stays open to switch it off).
 	if ((await maintenanceState(fetch)).enabled) throw redirect(307, '/maintenance');
 
@@ -23,7 +25,8 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 
 	const userEmail = cookies.get('user_email') ?? '';
 
-	const [profileResponse, preferencesResponse, crewResponse, usageResponse, unreadResponse, limitsResponse] = await Promise.all([
+	const [, profileResponse, preferencesResponse, crewResponse, usageResponse, unreadResponse, limitsResponse] = await Promise.all([
+		registerDevice(fetch, cookies, request.headers.get('user-agent') ?? '').then(() => null),
 		apiFetch(fetch, cookies, '/api/profile'),
 		apiFetch(fetch, cookies, '/api/preferences'),
 		apiFetch(fetch, cookies, '/api/agents'),
@@ -50,5 +53,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url }) =>
 	const appearance = preferencesResponse.ok ? formatAppearance(preferences.theme, preferences.accent_color) : null;
 	if (appearance && cookies.get(APPEARANCE_COOKIE) !== appearance) cookies.set(APPEARANCE_COOKIE, appearance, APPEARANCE_COOKIE_OPTIONS);
 
-	return { userEmail, profile, preferences, crew, usage, unread, attachmentLimits };
+	// This browser's device id: its own entry in the device list, and what a sign-out from elsewhere names.
+	const deviceId = cookies.get(DEVICE_COOKIE) ?? null;
+	return { userEmail, profile, preferences, crew, usage, unread, attachmentLimits, deviceId };
 };

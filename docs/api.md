@@ -12,6 +12,9 @@ says so here first.
 - **JSON.** Requests and responses are JSON (`Content-Type: application/json`) unless a route
   says otherwise (uploads take the file as the body; previews serve the project's own files).
   Field names are `snake_case`. Ids are UUIDs. Times are RFC 3339 in UTC.
+- **Device id.** Every app makes a UUID the first time it runs and keeps it (the SDK in its data
+  directory, the web app in the `device_id` cookie), and sends it on every call as
+  `X-Device-Id`. It ties sign-ins to the device and names the device's realtime connection.
 - **Request ids.** Every response carries `x-request-id`. Send your own (any string) to follow a
   request through the logs; otherwise the server makes one. Quote it when reporting a problem.
 
@@ -28,6 +31,14 @@ says so here first.
 Every other call sends `Authorization: Bearer <access_token>`. The access token is short-lived:
 on a `401`, refresh once and retry; if the refresh fails too, sign the person out. Refresh tokens
 rotate: always keep the newest one.
+
+## Devices
+
+| Call | What it does |
+|---|---|
+| `POST /api/devices` | `{ device_id, platform, name, brand, model, os_name, os_version, app_version, push_token? }`: adds this device to the person's list or updates it (every app start). `platform` is `android`, `ios`, `macos`, `windows`, `linux` or `web` |
+| `GET /api/devices` | The person's devices, the ones that are on first: the fields above plus `presence` (`online`, `away`, `offline`), `last_seen_at`, and `current` (the device making the call) |
+| `DELETE /api/devices/:id` | Signs that device out: its sign-ins end, and it hears `DeviceSignedOut` and leaves |
 
 ## Errors
 
@@ -124,9 +135,14 @@ Nothing polls. A client opens one WebSocket and subscribes to what's on screen:
   `Delta` (the crew is writing), `TurnCompleted` / `TurnFailed` (the turn ended; a failure
   also posts its `run_failed` message), `AgentPhaseChanged` (thinking, calling a tool, waiting),
   `AgentDelegationUpdated` (a background job moved on), `SessionRenamed`, `PersonalityChanged`.
-- User events: `NotificationCreated`, `ChatReply` (a reply landed in another chat), and
+- Presence: the socket's broker (MQTT) client id is the device id (`<deviceId>-<tabId>` for a
+  browser tab, which sends `X-Tab-Id`). The app sends `{ "op": "presence", "state": "away" }`
+  when it goes to the background and `"online"` when it's back; closing the socket makes the
+  device offline (the connection's MQTT last will).
+- User events: `NotificationCreated`, `ChatReply` (a reply landed in another chat),
   `MessagesDeleted` / `MessageUpdated` with their `session_id` (the same change as on the chat's
-  topic, for devices not showing that chat). The
+  topic, for devices not showing that chat), `DevicePresence` (`device_id`, `presence`,
+  `last_seen_at`) and `DeviceSignedOut` (`device_id`: if it's yours, sign out). The
   person's activity feed (`GET /api/me/activity/ws`) sends `ChatActivity`: a chat elsewhere
   finished, failed or needs them.
 

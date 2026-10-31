@@ -31,12 +31,21 @@ impl Network {
         credentials: Box<dyn CredentialStore>,
         bus: Arc<EventBus>,
         settings: RealtimeSettings,
+        device_id: &str,
     ) -> Result<Self, NomiError> {
         let tls = tls::client_config()?;
-        let http = http::Http::new(base_url, tls.clone())?;
+        let http = http::Http::new(base_url, tls.clone(), device_id)?;
         let socket_url = http.websocket_url(REALTIME_PATH);
         let auth = Arc::new(Auth::new(http, credentials, bus.clone()));
-        let realtime = Realtime::spawn(runtime, socket_url, tls, auth.clone(), bus, settings);
+        let realtime = Realtime::spawn(
+            runtime,
+            socket_url,
+            tls,
+            auth.clone(),
+            bus,
+            settings,
+            device_id.to_owned(),
+        );
         Ok(Self { auth, realtime })
     }
 }

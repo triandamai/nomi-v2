@@ -4,9 +4,8 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{DateTime, Utc};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use uuid::Uuid;
 
 use crate::app::AppState;
@@ -1301,13 +1300,20 @@ pub async fn session_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
     let broker_host = state.mqtt_broker_host.clone();
     let broker_port = state.mqtt_broker_port;
-    Ok(ws.on_upgrade(move |socket| relay_session_stream(socket, session_id, broker_host, broker_port)))
+    let identity = crate::presence::RelayIdentity::relay(&headers, CHAT_RELAY);
+    Ok(ws.on_upgrade(move |socket| relay_topic(socket, format!("chat/{session_id}/stream"), broker_host, broker_port, identity)))
 }
+
+/// What the chat relay's broker connections are called, after the device id.
+const CHAT_RELAY: &str = "ws-bridge";
+/// What a browser's activity feed connection is called when it has no device id.
+const ACTIVITY_RELAY: &str = "ws-activity";
 
 #[derive(Serialize)]
 pub struct AgentActivityItem {
@@ -1392,25 +1398,33 @@ pub async fn get_agent_status(
 
 /// The person's own live feed: what concerns them whichever chat they have open (a chat they
 /// left finishing, or waiting on them). The app keeps it open while it's open.
-pub async fn user_activity_stream(State(state): State<AppState>, AuthClaims(claims): AuthClaims, ws: WebSocketUpgrade) -> impl IntoResponse {
+///
+/// It is also the browser tab's presence connection: its broker client id is `<deviceId>-<tabId>`,
+/// and the tab says when it is hidden (`{"op":"presence","state":"away"}`) or shown again.
+pub async fn user_activity_stream(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    headers: axum::http::HeaderMap,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
     let (broker_host, broker_port) = (state.mqtt_broker_host.clone(), state.mqtt_broker_port);
     // Both of the person's topics: `activity` (chats the crew is done with) and `stream` (new inbox
     // items, so a failed publish pops up straight away rather than on the next unread poll).
     let topic = format!("user/{}/+", claims.sub);
-    ws.on_upgrade(move |socket| relay_topic(socket, topic, broker_host, broker_port))
+    let identity = crate::presence::RelayIdentity::presence(&headers, claims.sub, ACTIVITY_RELAY);
+    ws.on_upgrade(move |socket| relay_topic(socket, topic, broker_host, broker_port, identity))
 }
 
-async fn relay_session_stream(socket: WebSocket, session_id: Uuid, broker_host: String, broker_port: u16) {
-    relay_topic(socket, format!("chat/{session_id}/stream"), broker_host, broker_port).await;
-}
-
-/// Forwards everything published on `topic` to the socket until either side goes away.
-pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_host: String, broker_port: u16) {
-    let mut options = MqttOptions::new(format!("ws-bridge-{}", Uuid::new_v4()), broker_host, broker_port);
-    options.set_keep_alive(Duration::from_secs(30));
-    let (client, mut eventloop) = AsyncClient::new(options, 16);
+/// Forwards everything published on `topic` to the socket until either side goes away. A presence
+/// connection says `online` once subscribed and passes on the app's `presence` frames; when the
+/// socket goes, dropping the broker connection sends its `offline` last will.
+pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
+    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host, broker_port), 16);
     if client.subscribe(&topic, QoS::AtMostOnce).await.is_err() {
         return; // socket closes on drop
+    }
+    if let Some(speaker) = &identity.presence {
+        speaker.say(&client, nomi_realtime::PresenceState::Online).await;
     }
 
     loop {
@@ -1427,7 +1441,12 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
                 }
             }
             incoming = socket.recv() => {
-                if incoming.is_none() { break; } // client closed the socket
+                let Some(Ok(message)) = incoming else { break }; // client closed the socket
+                if let (Some(speaker), Message::Text(text)) = (&identity.presence, message) {
+                    if let Ok(nomi_realtime::ClientFrame::Presence { state }) = serde_json::from_str(&text) {
+                        speaker.say(&client, state).await;
+                    }
+                }
             }
         }
     }

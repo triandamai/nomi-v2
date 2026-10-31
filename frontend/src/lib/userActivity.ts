@@ -1,6 +1,7 @@
 import { toastFor, type ChatOutcome, type Waiting } from '$lib/chatActivity';
 import { notificationArrived } from '$lib/notifications.svelte';
 import { showSnackbar } from '$lib/snackbars.svelte';
+import { tabId } from '$lib/device';
 
 // The person's own live feed (MQTT `user/{id}/activity`, relayed at /activity/ws). The app keeps
 // it open while it's open, beside the open chat's own connection, so whatever the crew finishes
@@ -35,6 +36,21 @@ export interface ChatDeleted {
 	session_id: string;
 }
 
+/** One of the person's devices came on, went to the background or went off (backend:
+ * nomi_realtime::UserEnvelope::DevicePresence). */
+export interface DevicePresence {
+	kind: 'DevicePresence';
+	device_id: string;
+	presence: 'online' | 'away' | 'offline';
+	last_seen_at: string;
+}
+
+/** One of the person's devices was signed out from another (backend: nomi_realtime::UserEnvelope::DeviceSignedOut). */
+export interface DeviceSignedOut {
+	kind: 'DeviceSignedOut';
+	device_id: string;
+}
+
 /** A new item in the person's inbox (backend: nomi_realtime::UserEvent::NotificationCreated). */
 export interface NotificationCreated {
 	kind: 'NotificationCreated';
@@ -45,7 +61,7 @@ export interface NotificationCreated {
 	link: string | null;
 }
 
-type UserEvent = ChatActivity | ChatUpdated | ChatDeleted | NotificationCreated;
+type UserEvent = ChatActivity | ChatUpdated | ChatDeleted | NotificationCreated | DevicePresence | DeviceSignedOut;
 
 const chatsChanged = new Set<(sessionId: string) => void>();
 
@@ -53,6 +69,25 @@ const chatsChanged = new Set<(sessionId: string) => void>();
 export function onChatsChanged(listener: (sessionId: string) => void): () => void {
 	chatsChanged.add(listener);
 	return () => chatsChanged.delete(listener);
+}
+
+const devicesChanged = new Set<(event: DevicePresence) => void>();
+
+/** Calls `listener` whenever one of the person's devices comes on, goes to the background or goes off. */
+export function onDevicePresence(listener: (event: DevicePresence) => void): () => void {
+	devicesChanged.add(listener);
+	return () => devicesChanged.delete(listener);
+}
+
+/** Signed out from another device: this browser's sign-in is already over, so leave. */
+async function signOutHere() {
+	await fetch('/logout', { method: 'POST' }).catch(() => undefined);
+	location.assign('/login');
+}
+
+/** What this tab says about itself: online while it's shown, away while it's hidden. */
+function presenceFrame(): string {
+	return JSON.stringify({ op: 'presence', state: document.hidden ? 'away' : 'online' });
 }
 
 /** Signed out or not allowed: reconnecting won't help. */
@@ -69,8 +104,16 @@ function outcomeOf(event: ChatActivity): ChatOutcome {
 	return event.outcome === 'failed' ? { kind: 'failed' } : { kind: 'done' };
 }
 
-/** What to do with one event from the feed. */
-export function handleActivity(event: UserEvent) {
+/** What to do with one event from the feed; `deviceId` is this browser's. */
+export function handleActivity(event: UserEvent, deviceId: string | null = null) {
+	if (event.kind === 'DevicePresence') {
+		for (const listener of devicesChanged) listener(event);
+		return;
+	}
+	if (event.kind === 'DeviceSignedOut') {
+		if (deviceId && event.device_id.toLowerCase() === deviceId.toLowerCase()) void signOutHere();
+		return;
+	}
 	if (event.kind === 'NotificationCreated') {
 		notificationArrived({ id: event.notification_id, title: event.title, body: event.body, link: event.link });
 		return;
@@ -85,20 +128,35 @@ export function handleActivity(event: UserEvent) {
 	showSnackbar(toastFor(outcomeOf(event), { title: event.title ?? '', href }, event.agent));
 }
 
-/** Opens the feed (reconnecting when it drops); returns the function that closes it. */
-export function connectUserActivity(): () => void {
+/**
+ * Opens the feed (reconnecting when it drops); returns the function that closes it. It is also
+ * this tab's presence: the backend names its broker connection `<deviceId>-<tabId>` and hears
+ * from it whether the tab is shown. `deviceId` is this browser's (the layout has it).
+ */
+export function connectUserActivity(deviceId: string | null = null): () => void {
 	if (typeof WebSocket === 'undefined') return () => {};
 	let socket: WebSocket | null = null;
 	let closed = false;
 	let retryDelay = 1000;
 	let retry: ReturnType<typeof setTimeout> | undefined;
+	const tab = tabId();
+
+	// A newly opened socket counts as shown; a hidden tab says so straight away.
+	function sayPresence() {
+		if (socket?.readyState === WebSocket.OPEN) socket.send(presenceFrame());
+	}
+	const watchesVisibility = typeof document.addEventListener === 'function';
+	if (watchesVisibility) document.addEventListener('visibilitychange', sayPresence);
 
 	function connect() {
-		socket = new WebSocket('/activity/ws');
-		socket.addEventListener('open', () => (retryDelay = 1000));
+		socket = new WebSocket(`/activity/ws?tab=${tab}`);
+		socket.addEventListener('open', () => {
+			retryDelay = 1000;
+			if (document.hidden) sayPresence();
+		});
 		socket.addEventListener('message', (message: MessageEvent<string>) => {
 			try {
-				handleActivity(JSON.parse(message.data) as UserEvent);
+				handleActivity(JSON.parse(message.data) as UserEvent, deviceId);
 			} catch {
 				// Not an event this build knows.
 			}
@@ -114,6 +172,7 @@ export function connectUserActivity(): () => void {
 	return () => {
 		closed = true;
 		clearTimeout(retry);
+		if (watchesVisibility) document.removeEventListener('visibilitychange', sayPresence);
 		socket?.close();
 	};
 }

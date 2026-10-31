@@ -9,6 +9,7 @@ pub mod github;
 pub mod routes;
 pub mod memory_worker;
 pub mod notifications;
+pub mod presence;
 pub mod project_events;
 pub mod problem;
 pub mod project_ops;

@@ -114,7 +114,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route("/api/realtime/ws", get(crate::routes::realtime::realtime_stream))
-        .route("/api/devices", post(crate::routes::devices::register))
+        .route("/api/devices", post(crate::routes::devices::register).get(crate::routes::devices::list))
         .route("/api/devices/:id", delete(crate::routes::devices::remove))
         .route("/api/me/activity/ws", get(sessions_routes::user_activity_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
