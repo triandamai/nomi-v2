@@ -38,6 +38,64 @@ pub(crate) fn upsert(tx: &mut Tx<'_>, sessions: &[Session]) -> Result<(), NomiEr
     Ok(())
 }
 
+/// Stores the server's view of `sessions`. The unread flag is the device's own (the server has
+/// none): an existing row keeps it, a new one starts read.
+pub(crate) fn merge_from_server(tx: &mut Tx<'_>, sessions: &[Session]) -> Result<(), NomiError> {
+    let connection = tx.writes(Table::Sessions);
+    let mut statement = connection.prepare_cached(&format!(
+        "INSERT INTO sessions ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, 0)
+         ON CONFLICT (id) DO UPDATE SET title = excluded.title,
+             last_message_preview = excluded.last_message_preview,
+             updated_at = excluded.updated_at"
+    ))?;
+    for session in sessions {
+        statement.execute(params![
+            session.id,
+            session.title,
+            session.last_message_preview,
+            session.updated_at
+        ])?;
+    }
+    Ok(())
+}
+
+/// Something new happened in the chat: moves it to the top with `preview`, creating the row if
+/// needed. `unread` (when given) replaces the flag.
+pub(crate) fn touch(
+    tx: &mut Tx<'_>,
+    id: &str,
+    preview: Option<&str>,
+    updated_at: i64,
+    unread: Option<bool>,
+) -> Result<(), NomiError> {
+    tx.writes(Table::Sessions).execute(
+        &format!(
+            "INSERT INTO sessions ({COLUMNS}) VALUES (?1, '', COALESCE(?2, ''), ?3, COALESCE(?4, 0))
+             ON CONFLICT (id) DO UPDATE SET
+                 last_message_preview = COALESCE(?2, last_message_preview),
+                 updated_at = MAX(updated_at, ?3),
+                 unread = COALESCE(?4, unread)"
+        ),
+        params![id, preview, updated_at, unread],
+    )?;
+    Ok(())
+}
+
+/// Renames the chat if it is stored; a chat not stored yet gets its name with the next refresh.
+pub(crate) fn rename(tx: &mut Tx<'_>, id: &str, title: &str) -> Result<(), NomiError> {
+    tx.writes(Table::Sessions).execute(
+        "UPDATE sessions SET title = ?2 WHERE id = ?1 AND title != ?2",
+        params![id, title],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn ids(connection: &Connection) -> Result<Vec<String>, NomiError> {
+    let mut statement = connection.prepare_cached("SELECT id FROM sessions")?;
+    let rows = statement.query_map([], |row| row.get(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub(crate) fn get(connection: &Connection, id: &str) -> Result<Option<Session>, NomiError> {
     Ok(connection
         .prepare_cached(&format!("SELECT {COLUMNS} FROM sessions WHERE id = ?1"))?

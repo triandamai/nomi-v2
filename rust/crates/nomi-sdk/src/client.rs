@@ -16,12 +16,29 @@ use crate::network::auth::{
 use crate::network::realtime::{normalize_topic, ConnectionState, RealtimeSettings, TopicWatch};
 use crate::network::Network;
 use crate::storage::{AccountStore, Accounts};
+use crate::sync::{ChatBinding, Shared, SyncEngine, SyncSettings};
 
 /// Worker threads for the SDK's runtime: background work is I/O-bound, and phones are small.
 const WORKER_THREADS: usize = 2;
 const THREAD_NAME: &str = "nomi-sdk";
 /// How long [`NomiSdk::shutdown`] waits for background tasks before abandoning them.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+/// The engine's tunables; tests shorten them.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EngineSettings {
+    pub realtime: RealtimeSettings,
+    pub sync: SyncSettings,
+}
+
+impl From<RealtimeSettings> for EngineSettings {
+    fn from(realtime: RealtimeSettings) -> Self {
+        Self {
+            realtime,
+            sync: SyncSettings::default(),
+        }
+    }
+}
 
 /// A snapshot of the SDK's health, for support screens and bug reports.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -47,6 +64,11 @@ pub struct NomiSdk {
     bus: Arc<EventBus>,
     accounts: Arc<Accounts>,
     network: Network,
+    sync_settings: SyncSettings,
+    /// The open account's sync engine; runs exactly while that account is open.
+    sync: Mutex<Option<SyncEngine>>,
+    /// The chat on screen, if any: replies there don't mark it unread.
+    foreground: Arc<Mutex<Option<String>>>,
     inner: Mutex<Inner>,
 }
 
@@ -75,7 +97,7 @@ impl NomiSdk {
         config: SdkConfig,
         credentials: Box<dyn CredentialStore>,
     ) -> Result<Arc<Self>, NomiError> {
-        Self::with_settings(config, credentials, RealtimeSettings::default())
+        Self::with_settings(config, credentials, EngineSettings::default())
     }
 
     /// Launches background work. A no-op while already running.
@@ -192,6 +214,138 @@ impl NomiSdk {
         Ok(Arc::new(self.network.realtime.watch(topic)))
     }
 
+    // Sync (the open account)
+
+    /// Replaces the chat list with the server's.
+    pub async fn refresh_sessions(&self) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.refresh_sessions().await })
+            .await
+    }
+
+    /// Creates an empty chat and returns its id. The server lists it once a message is sent.
+    pub async fn create_session(&self) -> Result<String, NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.create_session().await })
+            .await
+    }
+
+    /// Keeps a chat in sync while the binding is held (its screen is open): watches its topic,
+    /// applies its events, and loads its newest page.
+    pub fn bind_chat(&self, session_id: String) -> Result<Arc<ChatBinding>, NomiError> {
+        self.sync()?.bind(&session_id)
+    }
+
+    /// Loads a chat's newest page.
+    pub async fn refresh_messages(&self, session_id: String) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        let session_id = session_id.to_lowercase();
+        self.on_runtime(async move { sync.refresh_messages(&session_id).await })
+            .await
+    }
+
+    /// Loads the page before the oldest stored message; returns whether older ones still exist.
+    pub async fn load_older_messages(&self, session_id: String) -> Result<bool, NomiError> {
+        let sync = self.sync()?;
+        let session_id = session_id.to_lowercase();
+        self.on_runtime(async move { sync.load_older_messages(&session_id).await })
+            .await
+    }
+
+    /// Whether older messages may exist on the server; true until a load says otherwise.
+    pub async fn has_older_messages(&self, session_id: String) -> Result<bool, NomiError> {
+        let sync = self.sync()?;
+        let session_id = session_id.to_lowercase();
+        self.on_runtime(async move { sync.has_older_messages(&session_id).await })
+            .await
+    }
+
+    /// Queues the person's message, shown at once with status `sending`; returns its local id.
+    /// It is delivered in order with the chat's other queued messages, retried until the backend
+    /// has it, and replaced by the server's copy then.
+    pub async fn send_message(
+        &self,
+        session_id: String,
+        text: String,
+    ) -> Result<String, NomiError> {
+        let sync = self.sync()?;
+        let session_id = session_id.to_lowercase();
+        self.on_runtime(async move { sync.send_message(&session_id, text).await })
+            .await
+    }
+
+    /// Approves or denies a pending approval card. `Http { status: 409 }`: no longer pending.
+    pub async fn resolve_approval(
+        &self,
+        session_id: String,
+        message_id: String,
+        approve: bool,
+        remember: bool,
+    ) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move {
+            sync.resolve_approval(&session_id, &message_id, approve, remember)
+                .await
+        })
+        .await
+    }
+
+    /// Refetches the inbox's first page.
+    pub async fn refresh_notifications(&self) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.refresh_notifications().await })
+            .await
+    }
+
+    /// Loads the next inbox page; returns whether more pages exist.
+    pub async fn load_more_notifications(&self) -> Result<bool, NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.load_more_notifications().await })
+            .await
+    }
+
+    /// Marks a notification read now, and on the backend through the outbox.
+    pub async fn mark_notification_read(&self, notification_id: String) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.mark_notification_read(&notification_id).await })
+            .await
+    }
+
+    /// Marks every notification read now, and on the backend through the outbox.
+    pub async fn mark_all_notifications_read(&self) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.mark_all_notifications_read().await })
+            .await
+    }
+
+    /// Puts a failed outbox entry back in line; false when `key` names no failed entry.
+    pub async fn retry_outbox(&self, key: String) -> Result<bool, NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.retry_outbox(key).await })
+            .await
+    }
+
+    /// Drops a pending or failed outbox entry and the message it showed; false when `key` names
+    /// neither.
+    pub async fn discard_outbox(&self, key: String) -> Result<bool, NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.discard_outbox(key).await })
+            .await
+    }
+
+    /// Refetches the chat list and the inbox, and sends what the outbox holds now (e.g. when the
+    /// app comes to the foreground).
+    pub async fn sync_now(&self) -> Result<(), NomiError> {
+        let sync = self.sync()?;
+        self.on_runtime(async move { sync.sync_now().await }).await
+    }
+
+    /// The chat on screen (`None` when none is): a reply there doesn't mark it unread.
+    pub fn set_foreground_chat(&self, session_id: Option<String>) {
+        *self.foreground.lock().expect("foreground poisoned") =
+            session_id.map(|id| id.to_lowercase());
+    }
+
     /// The local store for `account_id`, opening and migrating its database if needed. Opening a
     /// different account closes the current one first; its store handles stop working.
     ///
@@ -212,6 +366,7 @@ impl NomiSdk {
             self.accounts.close_current();
             return Err(NomiError::ShutDown);
         }
+        self.ensure_sync(&store, runtime);
         if switched {
             tracing::info!(account_id, "opened account");
             self.bus.emit(SdkEvent::AccountChanged {
@@ -330,8 +485,9 @@ impl NomiSdk {
     pub(crate) fn with_settings(
         config: SdkConfig,
         credentials: Box<dyn CredentialStore>,
-        settings: RealtimeSettings,
+        settings: impl Into<EngineSettings>,
     ) -> Result<Arc<Self>, NomiError> {
+        let settings = settings.into();
         let config = config.validate()?;
         std::fs::create_dir_all(&config.data_dir).map_err(|error| NomiError::Storage {
             reason: format!(
@@ -355,13 +511,16 @@ impl NomiSdk {
             config.base_url.clone(),
             credentials,
             bus.clone(),
-            settings,
+            settings.realtime,
         )?;
         let sdk = Arc::new(Self {
             accounts: Arc::new(Accounts::new(&config.data_dir)),
             bus,
             network,
             config,
+            sync_settings: settings.sync,
+            sync: Mutex::new(None),
+            foreground: Arc::new(Mutex::new(None)),
             inner: Mutex::new(Inner {
                 state: SdkState::Initialized,
                 runtime: Some(runtime),
@@ -372,6 +531,12 @@ impl NomiSdk {
         });
         tracing::info!(base_url = %sdk.config.base_url, "initialized");
         Ok(sdk)
+    }
+
+    /// Puts `event` on the SDK's event stream, as the engine itself would.
+    #[cfg(test)]
+    pub(crate) fn emit(&self, event: SdkEvent) {
+        self.bus.emit(event);
     }
 
     /// The SDK's runtime, for blocking work such as SQLite; `ShutDown` once it is gone.
@@ -393,7 +558,45 @@ impl NomiSdk {
         task.join().await
     }
 
+    /// Starts sync for `store` unless it already runs for it; any other account's engine stops.
+    fn ensure_sync(&self, store: &Arc<AccountStore>, runtime: Handle) {
+        let mut sync = self.sync.lock().expect("sync poisoned");
+        if sync
+            .as_ref()
+            .is_some_and(|engine| engine.account_id() == store.account_id())
+        {
+            return;
+        }
+        sync.take();
+        *sync = Some(SyncEngine::start(
+            store.clone(),
+            self.network.auth.clone(),
+            self.network.realtime.clone(),
+            self.bus.clone(),
+            runtime,
+            self.sync_settings.clone(),
+            self.foreground.clone(),
+        ));
+    }
+
+    /// The open account's sync engine, or `AccountClosed`.
+    fn sync(&self) -> Result<Arc<Shared>, NomiError> {
+        self.sync
+            .lock()
+            .expect("sync poisoned")
+            .as_ref()
+            .map(SyncEngine::shared)
+            .ok_or(NomiError::AccountClosed)
+    }
+
     fn announce_closed(&self, closed: bool) {
+        // Sync runs exactly while its account is open.
+        let open = self.accounts.current().map(|store| store.account_id());
+        let mut sync = self.sync.lock().expect("sync poisoned");
+        if sync.as_ref().map(SyncEngine::account_id) != open {
+            sync.take();
+        }
+        drop(sync);
         if closed {
             tracing::info!("closed account");
             self.bus.emit(SdkEvent::AccountChanged { account_id: None });

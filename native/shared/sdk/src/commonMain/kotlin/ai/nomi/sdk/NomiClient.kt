@@ -82,6 +82,65 @@ interface NomiClient {
     /** Deletes every account's local data. */
     suspend fun resetStorage()
 
+    // Sync: the open account's data, kept in step with the backend. Every call throws
+    // [NomiException.AccountClosed] while no account is open.
+
+    /** Replaces the chat list with the server's. */
+    suspend fun refreshSessions()
+
+    /** Creates an empty chat and returns its id; the server lists it once a message is sent. */
+    suspend fun createSession(): String
+
+    /**
+     * Keeps a chat in sync while collected (its screen is open): watches its topic, applies its
+     * events, and loads its newest page. Completes when the account closes or switches.
+     */
+    fun syncChat(sessionId: String): Flow<Nothing>
+
+    /** Loads a chat's newest page. */
+    suspend fun refreshMessages(sessionId: String)
+
+    /** Loads the page before the oldest stored message; returns whether older ones still exist. */
+    suspend fun loadOlderMessages(sessionId: String): Boolean
+
+    /** Whether older messages may exist on the server; true until a load says otherwise. */
+    suspend fun hasOlderMessages(sessionId: String): Boolean
+
+    /**
+     * Queues the person's message and returns its local id. It shows at once with status
+     * `sending`, goes out in order with the chat's other queued messages, is retried until the
+     * backend has it (across restarts), and is then replaced by the server's copy. Throws
+     * [NomiException.InvalidArgument] for empty or over-long text.
+     */
+    suspend fun sendMessage(sessionId: String, text: String): String
+
+    /** Approves or denies a pending approval card; [NomiException.Http] 409 when no longer pending. */
+    suspend fun resolveApproval(sessionId: String, messageId: String, approve: Boolean, remember: Boolean)
+
+    /** Refetches the inbox's first page. */
+    suspend fun refreshNotifications()
+
+    /** Loads the next inbox page; returns whether more pages exist. */
+    suspend fun loadMoreNotifications(): Boolean
+
+    /** Marks a notification read now, and on the backend through the outbox. */
+    suspend fun markNotificationRead(notificationId: String)
+
+    /** Marks every notification read now, and on the backend through the outbox. */
+    suspend fun markAllNotificationsRead()
+
+    /** Puts a failed outbox entry back in line; false when [key] names no failed entry. */
+    suspend fun retryOutbox(key: String): Boolean
+
+    /** Drops a pending or failed outbox entry and the message it showed; false when [key] names neither. */
+    suspend fun discardOutbox(key: String): Boolean
+
+    /** Refetches the chat list and the inbox and sends what the outbox holds (e.g. back in the foreground). */
+    suspend fun syncNow()
+
+    /** The chat on screen, or null: a reply there doesn't mark it unread. */
+    fun setForegroundChat(sessionId: String?)
+
     /** Stops background work for good and completes every [events] stream. A no-op once closed. */
     suspend fun close()
 }

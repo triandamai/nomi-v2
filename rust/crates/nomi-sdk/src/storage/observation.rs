@@ -12,7 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 
 use super::database::{Database, Table, Versions};
-use super::models::{AgentActivity, Draft, Message, NotificationItem, Session};
+use super::models::{AgentActivity, Draft, Message, NotificationItem, OutboxEntry, Session};
 use crate::error::NomiError;
 
 type Query<T> = Arc<dyn Fn(&Connection) -> Result<T, NomiError> + Send + Sync>;
@@ -165,4 +165,8 @@ observation!(
 observation!(
     /// Agents doing something, most recently updated first.
     AgentActivityObservation => Vec<AgentActivity>
+);
+observation!(
+    /// Writes waiting for the backend, or that it refused, oldest first.
+    OutboxObservation => Vec<OutboxEntry>
 );

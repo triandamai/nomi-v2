@@ -7,7 +7,7 @@ mod database;
 mod migrations;
 pub(crate) mod models;
 pub(crate) mod observation;
-mod repositories;
+pub(crate) mod repositories;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::runtime::Handle;
 
+pub(crate) use database::Tx;
 pub use store::AccountStore;
 
 use crate::error::NomiError;

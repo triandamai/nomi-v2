@@ -4,6 +4,7 @@ use tokio::sync::{broadcast, watch};
 
 use crate::config::LogLevel;
 use crate::network::auth::SignOutReason;
+use crate::network::events::RealtimeEvent;
 use crate::network::realtime::ConnectionState;
 
 /// Where the SDK is in its lifecycle. `ShutDown` is terminal.
@@ -45,9 +46,10 @@ pub enum SdkEvent {
     ConnectionChanged {
         state: ConnectionState,
     },
-    /// An event on a watched realtime topic; `payload_json` is the gateway's payload as sent.
+    /// An event on a watched realtime topic: `event` decoded, `payload_json` as the gateway sent it.
     Realtime {
         topic: String,
+        event: RealtimeEvent,
         payload_json: String,
     },
     /// The socket (re)connected: whatever is shown for `topic` may have missed events, refetch it.
@@ -57,6 +59,13 @@ pub enum SdkEvent {
     /// The backend refused `topic` (deleted, or access revoked). Watching it again retries.
     TopicAccessLost {
         topic: String,
+    },
+    /// A turn in a watched chat failed; its streaming draft is gone. Sync sends this once it has
+    /// cleaned up after the turn.
+    ChatTurnFailed {
+        session_id: String,
+        turn_job_id: String,
+        error: String,
     },
     /// The open account changed: `Some` after one was opened, `None` after it was closed or removed.
     AccountChanged {

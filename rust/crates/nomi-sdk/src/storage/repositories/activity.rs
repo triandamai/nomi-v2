@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use crate::error::NomiError;
 use crate::storage::database::{Table, Tx};
@@ -67,4 +67,16 @@ pub(crate) fn active(
     ))?;
     let rows = statement.query_map([session_id], from_row)?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub(crate) fn get(
+    connection: &Connection,
+    agent_session_id: &str,
+) -> Result<Option<AgentActivity>, NomiError> {
+    Ok(connection
+        .prepare_cached(&format!(
+            "SELECT {COLUMNS} FROM agent_activity WHERE agent_session_id = ?1"
+        ))?
+        .query_row([agent_session_id], from_row)
+        .optional()?)
 }

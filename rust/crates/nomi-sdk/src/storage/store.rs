@@ -5,14 +5,15 @@ use tokio::runtime::Handle;
 
 use super::database::{Database, Table, Tx};
 use super::models::{
-    AgentActivity, DatabaseStatus, Message, MessageCursor, MessagePage, NotificationItem, Session,
-    SessionFilter,
+    AgentActivity, DatabaseStatus, Message, MessageCursor, MessagePage, NotificationItem,
+    OutboxEntry, Session, SessionFilter,
 };
 use super::observation::{
     AgentActivityObservation, DraftObservation, DraftState, MessagesObservation,
-    NotificationsObservation, Observer, SessionsObservation, UnreadCountObservation,
+    NotificationsObservation, Observer, OutboxObservation, SessionsObservation,
+    UnreadCountObservation,
 };
-use super::repositories::{activity, drafts, messages, notifications, sessions};
+use super::repositories::{activity, drafts, messages, notifications, outbox, sessions};
 use crate::error::NomiError;
 
 /// SQLite's write-ahead log, next to the database file.
@@ -52,14 +53,14 @@ impl AccountStore {
             .map_err(|_| NomiError::ShutDown)?
     }
 
-    async fn read<R: Send + 'static>(
+    pub(crate) async fn read<R: Send + 'static>(
         &self,
         body: impl FnOnce(&Connection) -> Result<R, NomiError> + Send + 'static,
     ) -> Result<R, NomiError> {
         self.run(move |database| database.read(body)).await
     }
 
-    async fn write<R: Send + 'static>(
+    pub(crate) async fn write<R: Send + 'static>(
         &self,
         body: impl FnOnce(&mut Tx<'_>) -> Result<R, NomiError> + Send + 'static,
     ) -> Result<R, NomiError> {
@@ -102,9 +103,12 @@ impl AccountStore {
         .await
     }
 
-    /// Empties every table in one transaction, keeping the account open.
+    /// Empties every table in one transaction, keeping the account open. Writes still in the
+    /// outbox are dropped with it.
     pub async fn clear_all(&self) -> Result<(), NomiError> {
         self.write(|tx| {
+            tx.writes(Table::Outbox).execute("DELETE FROM outbox", [])?;
+            tx.raw().execute("DELETE FROM sync_state", [])?;
             tx.writes(Table::Activity)
                 .execute("DELETE FROM agent_activity", [])?;
             tx.writes(Table::Drafts)
@@ -281,6 +285,19 @@ impl AccountStore {
             self.observer(&[Table::Activity], move |connection| {
                 activity::active(connection, session_id.as_deref())
             }),
+        ))
+    }
+
+    // Outbox
+
+    /// Writes waiting for the backend, or that it refused, oldest first.
+    pub async fn outbox_entries(&self) -> Result<Vec<OutboxEntry>, NomiError> {
+        self.read(outbox::list).await
+    }
+
+    pub fn observe_outbox(&self) -> Arc<OutboxObservation> {
+        Arc::new(OutboxObservation(
+            self.observer(&[Table::Outbox], outbox::list),
         ))
     }
 }

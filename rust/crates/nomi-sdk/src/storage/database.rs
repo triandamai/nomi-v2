@@ -22,15 +22,17 @@ pub(crate) enum Table {
     Drafts,
     Notifications,
     Activity,
+    Outbox,
 }
 
 impl Table {
-    pub const ALL: [Table; 5] = [
+    pub const ALL: [Table; 6] = [
         Table::Sessions,
         Table::Messages,
         Table::Drafts,
         Table::Notifications,
         Table::Activity,
+        Table::Outbox,
     ];
 
     fn index(self) -> usize {
@@ -58,6 +60,11 @@ impl Tx<'_> {
     /// The connection, for statements that write `table`.
     pub fn writes(&mut self, table: Table) -> &rusqlite::Transaction<'_> {
         self.touched[table.index()] = true;
+        &self.transaction
+    }
+
+    /// The connection, for statements on tables no observer watches.
+    pub fn raw(&self) -> &rusqlite::Transaction<'_> {
         &self.transaction
     }
 }

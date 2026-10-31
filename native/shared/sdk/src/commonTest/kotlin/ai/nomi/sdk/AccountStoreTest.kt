@@ -10,7 +10,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -51,9 +51,12 @@ class AccountStoreTest {
     @Test
     fun sessionsFlowStartsWithTheSnapshotThenFollowsWrites() = nativeTest { client ->
         val store = client.openAccount(ACCOUNT)
-        val lists = async(start = CoroutineStart.UNDISPATCHED) { store.sessions(everything).take(2).toList() }
+        val lists = store.sessions(everything).produceIn(this)
+        // The snapshot is read once the observation is running: write only after it arrives.
+        assertEquals(emptyList(), lists.receive())
         store.upsertSessions(listOf(session("a", 1), session("b", 2)))
-        assertEquals(listOf(emptyList(), listOf("b", "a")), lists.await().map { list -> list.map { it.id } })
+        assertEquals(listOf("b", "a"), lists.receive().map { it.id })
+        lists.cancel()
     }
 
     @Test
@@ -72,11 +75,11 @@ class AccountStoreTest {
     @Test
     fun draftFlowTellsNoDraftApartFromTheEnd() = nativeTest { client ->
         val store = client.openAccount(ACCOUNT)
-        val drafts = async(start = CoroutineStart.UNDISPATCHED) { store.draft("s").take(2).toList() }
+        val drafts = store.draft("s").produceIn(this)
+        assertNull(drafts.receive())
         store.appendDraft("s", "turn", "Hello", 1)
-        val (before, after) = drafts.await()
-        assertNull(before)
-        assertEquals("Hello", after?.text)
+        assertEquals("Hello", drafts.receive()?.text)
+        drafts.cancel()
     }
 
     @Test

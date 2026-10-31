@@ -29,6 +29,10 @@ fun AccountStore.unreadNotificationCount(): Flow<UInt> =
 fun AccountStore.activeAgents(sessionId: String? = null): Flow<List<AgentActivity>> =
     observe({ observeActiveAgents(sessionId) }, { next() }, { cancel() })
 
+/** Writes waiting for the backend, or that it refused, oldest first. */
+fun AccountStore.outbox(): Flow<List<OutboxEntry>> =
+    observe({ observeOutbox() }, { next() }, { cancel() })
+
 /** Pulls [next] until it returns null; cancels and frees the observation when collection stops. */
 private fun <O : Disposable, T : Any> observe(
     open: () -> O,
