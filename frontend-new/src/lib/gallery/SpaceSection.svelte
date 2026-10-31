@@ -81,7 +81,7 @@
 {/snippet}
 
 <!-- As the pen draws it (Section / Space Radius Icons): no section head, three bordered blocks in a row. -->
-<section class="flex flex-col gap-6 lg:flex-row lg:items-start" aria-label="Space, radius & icons">
+<section id="space-radius-icons" class="flex flex-col gap-6 lg:flex-row lg:items-start" aria-label="Space, radius & icons">
 	<div class="flex min-w-0 flex-1 flex-col gap-4 rounded-md p-6 outline -outline-offset-1 outline-border">
 		{@render head('Spacing', '4px base with 2 / 6 for dense UI. Gaps and padding only from this scale.')}
 		{#each spacing as [step, use] (step)}

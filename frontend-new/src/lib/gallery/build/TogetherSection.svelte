@@ -61,7 +61,7 @@
 			</GalleryBoard></div>
 		</div>
 		<GalleryBoard title="Live sessions" note="see who's here, what they're looking at, and follow them · like Figma" inline>
-			<div class="flex flex-wrap items-start gap-8">
+			<div class="flex flex-wrap items-start gap-10">
 				<PeerCursor name="Sari" peer={1} />
 				<PresenceMenu
 					people={[

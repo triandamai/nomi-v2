@@ -27,6 +27,12 @@ describe('GallerySection', () => {
 		const { container } = await render(GallerySection, { title: 'Story sheet', description: 'Values.', children });
 		expect(getComputedStyle(container.querySelector('section')!).paddingTop).toBe('0px');
 	});
+
+	it('can be linked to: its id is its title, as the docs link to it', async () => {
+		const children = createRawSnippet(() => ({ render: () => '<p>content</p>' }));
+		const { container } = await render(GallerySection, { title: 'Code, terminal & phone', description: 'Values.', children });
+		expect(container.querySelector('section')!.id).toBe('code-terminal-phone');
+	});
 });
 
 describe('GalleryBoard', () => {

@@ -28,7 +28,7 @@
 			</GalleryBoard>
 		</div>
 		<div class="lg:w-110 lg:shrink-0">
-			<GalleryBoard title="Publish" note="top bar · four states" nomi>
+			<GalleryBoard title="Publish" note="top bar · four states" tight>
 				<div class="flex flex-col gap-2.5">
 					<p class="flex flex-wrap items-center gap-3"><PublishButton state="idle" /><span class="min-w-0 flex-1 font-mono text-label text-text-3">Up to date · nothing waiting to go live</span></p>
 					<p class="flex flex-wrap items-center gap-3"><PublishButton state="ready" count={2} onpublish={noop} /><span class="min-w-0 flex-1 font-mono text-label text-text-3">Ready · the count is what will go live</span></p>

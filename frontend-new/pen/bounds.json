@@ -1,0 +1,190 @@
+{
+	"source": "Nomi.pen (pen.dev)",
+	"sheets_in_pen": {
+		"nomi": "YOYH1 Design System / Nomi",
+		"chat": "Ljvtr Design System / Chat responses",
+		"build": "DcG0H Design System / Build"
+	},
+	"exported": "2026-10-30",
+	"viewport": "1600 wide; sections relative to the sheet's DS Header, boards relative to their section",
+	"sheets": {
+		"nomi": {
+			"sections": [
+				["DS Header", 0, 335],
+				["Colour", 399, 896],
+				["Crew colour", 1359, 417],
+				["Type", 1840, 438],
+				["Space Radius Icons", 2342, 399],
+				["Actions", 2805, 507],
+				["Inputs & selection", 3376, 667],
+				["Navigation, identity & status", 4107, 675],
+				["Conversation & build", 4846, 681],
+				["Overlays", 5591, 424],
+				["Layout shells", 6079, 333],
+				["Rules", 6476, 342],
+				["Agents & app chrome", 6882, 922]
+			],
+			"boards": {
+				"Actions": [
+					["Button", 0, 60, 1472, 133],
+					["Button states", 0, 217, 1472, 133],
+					["Icon button, link, kbd", 0, 374, 1472, 133]
+				],
+				"Inputs & selection": [
+					["Text field", 0, 60, 1472, 182],
+					["Search & chips", 0, 266, 724, 201],
+					["Tabs & toggles", 748, 266, 724, 211],
+					["Composer", 0, 501, 1472, 166]
+				],
+				"Navigation, identity & status": [
+					["Nav", 0, 60, 520, 441],
+					["Identity", 544, 60, 928, 242],
+					["Status", 0, 525, 1472, 150]
+				],
+				"Conversation & build": [
+					["Messages", 0, 60, 720, 379],
+					["Agent activity", 744, 60, 728, 388],
+					["Lists & empty states", 0, 472, 1472, 209]
+				]
+			}
+		},
+		"chat": {
+			"sections": [
+				["DS Header", 0, 128],
+				["Thinking & planning", 192, 877],
+				["Rich content", 1133, 1542],
+				["Actions", 2739, 2465],
+				["Response feedback", 5268, 1102],
+				["States & errors", 6434, 2264],
+				["Message controls & composer", 8762, 1142],
+				["Chat management & long threads", 9968, 851],
+				["Crew behaviour", 10883, 1386],
+				["Mobile chat", 12333, 2049]
+			],
+			"boards": {
+				"Thinking & planning": [
+					["Reasoning", 0, 60, 720, 331],
+					["Thought", 752, 60, 720, 333],
+					["Plan", 0, 417, 720, 376],
+					["Draft plan", 752, 417, 720, 460]
+				],
+				"Rich content": [
+					["Table", 0, 60, 720, 362],
+					["Cart", 752, 60, 720, 494],
+					["Code", 0, 578, 720, 281],
+					["Diff", 752, 578, 720, 313],
+					["Links & sources", 0, 915, 720, 449],
+					["Mentions & reminders", 752, 915, 720, 627]
+				],
+				"Actions": [
+					["Approval", 0, 60, 720, 523],
+					["Decision", 752, 60, 720, 382],
+					["Selection", 0, 607, 720, 440],
+					["Form", 752, 607, 720, 398],
+					["Suggestions", 0, 1071, 720, 246],
+					["Usage notes", 752, 1071, 720, 265],
+					["Clarify before planning", 0, 1360, 720, 1105],
+					["Review & approve", 752, 1360, 720, 739]
+				],
+				"Response feedback": [
+					["Response actions", 0, 60, 720, 453],
+					["Dislike", 752, 60, 720, 380],
+					["Share", 0, 537, 720, 514],
+					["Delete & toasts", 752, 537, 720, 565]
+				],
+				"States & errors": [
+					["Message states", 0, 60, 720, 622],
+					["Banners", 752, 60, 720, 427],
+					["Provider · key & billing", 0, 706, 720, 767],
+					["Provider · capacity", 752, 706, 720, 767],
+					["Content & context", 0, 1497, 720, 767],
+					["Connection, tools & plan", 752, 1497, 720, 767]
+				],
+				"Message controls & composer": [
+					["Message actions", 0, 60, 720, 472],
+					["Regenerate & copy", 752, 60, 720, 512],
+					["Attachments", 0, 596, 720, 546],
+					["Voice & limits", 752, 596, 720, 307]
+				],
+				"Chat management & long threads": [
+					["Chat menu", 0, 60, 720, 791],
+					["Long threads", 752, 60, 720, 451]
+				],
+				"Crew behaviour": [
+					["Hand-off & limits", 0, 60, 720, 488],
+					["Memory & connections", 752, 60, 720, 469],
+					["Approval paths", 0, 572, 720, 321],
+					["Background work & session", 752, 572, 720, 814]
+				],
+				"Mobile chat": [
+					["Shell", 0, 60, 1472, 685],
+					["Messages", 0, 769, 720, 585],
+					["Buttons & cards", 752, 769, 720, 524],
+					["Sheets & banners", 0, 1378, 720, 422],
+					["Decide on mobile", 752, 1378, 720, 478],
+					["Chats list", 0, 1880, 1472, 169]
+				]
+			}
+		},
+		"build": {
+			"sections": [
+				["DS Header", 0, 112],
+				["Build estimate", 176, 758],
+				["Building", 998, 445],
+				["Share & export", 1507, 699],
+				["First run", 2270, 510],
+				["Workspace", 2844, 565],
+				["Code, terminal & phone", 3473, 3342],
+				["Build together", 6879, 1503],
+				["Build on mobile", 8446, 2183],
+				["Story sheet", 10693, 552],
+				["Build types", 11309, 357]
+			],
+			"boards": {
+				"Build estimate": [
+					["Build estimate", 0, 60, 720, 698],
+					["Running and done", 752, 60, 720, 433]
+				],
+				"Building": [
+					["File list", 0, 60, 720, 357],
+					["Preview before deploy", 752, 60, 720, 385]
+				],
+				"Share & export": [
+					["Share", 0, 60, 720, 639],
+					["Export", 752, 60, 720, 462]
+				],
+				"First run": [
+					["First run", 0, 60, 720, 450]
+				],
+				"Workspace": [
+					["Resize handle", 0, 60, 320, 316],
+					["Publish", 352, 60, 440, 301],
+					["Sheet over preview", 824, 60, 648, 505]
+				],
+				"Code, terminal & phone": [
+					["Code view", 0, 60, 1472, 1305],
+					["Terminal", 0, 1389, 1472, 1145],
+					["Phone preview", 0, 2558, 440, 784],
+					["Code quote", 472, 2558, 1000, 113]
+				],
+				"Build together": [
+					["People in the chat", 0, 60, 1472, 263],
+					["Asks in line", 0, 347, 1472, 404],
+					["Roles", 0, 775, 380, 265],
+					["Invite email", 412, 775, 1060, 461],
+					["Live sessions", 0, 1260, 1472, 243]
+				],
+				"Build on mobile": [
+					["Project bar", 0, 60, 430, 217],
+					["Ask bar", 462, 60, 430, 137],
+					["Live app", 924, 60, 430, 685],
+					["Plan on a phone", 0, 769, 430, 609],
+					["Building and live", 462, 769, 430, 546],
+					["Domain record", 0, 1402, 430, 183],
+					["Teammate in chat", 462, 1402, 430, 181],
+					["Together on a phone", 0, 1609, 430, 574]
+				]
+			}
+		}
+	}
+}

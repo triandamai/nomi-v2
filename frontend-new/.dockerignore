@@ -9,3 +9,8 @@ playwright-report
 .env
 .env.*
 !.env.example
+# The pen's HTML exports are only for pen:compare; bounds.json is small and the docs read it.
+pen/export
+scripts
+e2e
+build-gallery

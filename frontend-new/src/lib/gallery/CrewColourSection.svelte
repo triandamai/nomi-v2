@@ -24,7 +24,7 @@
 -->
 <!-- Its own head in the pen: a 22px title with the line under it, 720 wide, rather than the usual
      Section Head. -->
-<section class="flex flex-col gap-6" aria-label="Crew colour">
+<section id="crew-colour" class="flex flex-col gap-6" aria-label="Crew colour">
 	<header class="flex flex-col gap-1.5">
 		<h2 class="crew-title font-semibold text-text">Crew colour</h2>
 		<p class="w-180 max-w-full text-phone-sm leading-normal text-text-2">
