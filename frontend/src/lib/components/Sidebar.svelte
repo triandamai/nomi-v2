@@ -1,44 +1,37 @@
 <script lang="ts">
-	import { VERSION_LABEL } from '$lib/version';
-	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { PanelLeftOpen, Plus } from '@lucide/svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
-	import AgentShape from '$lib/components/m3/AgentShape.svelte';
-	import Avatar from '$lib/components/m3/Avatar.svelte';
-	import IconButton from '$lib/components/m3/IconButton.svelte';
-	import IconChevronLeft from '$lib/components/icons/IconChevronLeft.svelte';
-	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
-		import { inbox } from '$lib/notifications.svelte';
-	import IconApps from '$lib/components/icons/IconApps.svelte';
-	import { FEATURES, PERMANENT } from '$lib/features';
-	import { currentPins } from '$lib/drawerStore.svelte';
-	import IconPlus from '$lib/components/icons/IconPlus.svelte';
-	import Menu from '$lib/components/m3/Menu.svelte';
-	import MenuItem from '$lib/components/m3/MenuItem.svelte';
+	import Avatar from '$lib/components/ds/identity/Avatar.svelte';
+	import Mascot from '$lib/components/ds/agents/Mascot.svelte';
+	import Icon from '$lib/components/ds/foundations/Icon.svelte';
+	import IconButton from '$lib/components/ds/actions/IconButton.svelte';
+	import Tooltip from '$lib/components/ds/overlays/Tooltip.svelte';
+	import NavDrawer from '$lib/components/NavDrawer.svelte';
+	import SettingsDrawer from '$lib/components/SettingsDrawer.svelte';
 	import { persistCollapsed, readInitialCollapsed } from '$lib/components/m3/sidebarCollapse';
-	import NavList from '$lib/components/NavList.svelte';
-	import DrawerRecents from '$lib/components/DrawerRecents.svelte';
-	import { DEFAULT_RECENTS_LIMIT, type RecentsSettings } from '$lib/drawerRecents';
-	import ProSheet from '$lib/components/ProSheet.svelte';
-	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
-	import { formatShare, formatTokens, usageShare } from '$lib/usage';
+	import { FEATURES, PERMANENT, type FeatureId } from '$lib/features';
+	import { currentPins } from '$lib/drawerStore.svelte';
+	import { inbox, badgeLabel } from '$lib/notifications.svelte';
+	import { NAV_ICONS } from '$lib/navIcons';
+	import { isNavActive } from '$lib/navActive';
+	import { activeSetting } from '$lib/settingsNav';
+	import type { RecentsSettings } from '$lib/drawerRecents';
 	import type { Profile, UsageBrief } from '$lib/types';
 
+	// The desktop sidebar: the design system's drawer (NavDrawer), or on an account page its
+	// settings drawer. Collapsed, it's an icon rail of the same places; phones get MobileNavDrawer.
 	let {
 		userEmail,
 		profile,
 		usage = null,
 		savedPins = null,
-		recents = { enabled: true, limit: DEFAULT_RECENTS_LIMIT },
-	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; savedPins?: string[] | null; recents?: RecentsSettings } = $props();
-
-	let proOpen = $state(false);
-	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
+		recents,
+	}: { userEmail: string; profile: Profile; usage?: UsageBrief | null; savedPins?: string[] | null; recents: RecentsSettings } = $props();
 
 	const STORAGE_KEY = 'nomi:user-sidebar-collapsed';
 	let collapsed = $state(false);
-	let accountMenuOpen = $state(false);
 
 	onMount(() => {
 		collapsed = readInitialCollapsed(STORAGE_KEY);
@@ -49,293 +42,147 @@
 		persistCollapsed(STORAGE_KEY, collapsed);
 	}
 
-	const accountLabel = $derived(profile.display_name || userEmail);
-
-	// The desktop drawer only: phones get MobileNavDrawer, which scrolls as one.
-	const effectiveCollapsed = $derived(collapsed);
-
-	// Home, Chats and Projects, then the person's pins in their order, then More (everything).
-	const NAV = $derived([
-		...[...PERMANENT, ...currentPins(savedPins)].map((id) => {
-			const feature = FEATURES[id];
-			return { href: feature.href, label: feature.label(), icon: feature.icon, badge: id === 'notifications' ? inbox.unread : undefined };
-		}),
-		{ href: '/more', label: m.nav_more(), icon: IconApps },
+	const inSettings = $derived(activeSetting(page.url.pathname) !== undefined);
+	const ids = $derived<FeatureId[]>([...PERMANENT, ...currentPins(savedPins)]);
+	const rail = $derived([
+		...ids.map((id) => ({ href: FEATURES[id].href, label: FEATURES[id].label(), icon: NAV_ICONS[id], badge: id === 'notifications' ? inbox.unread : 0 })),
+		{ href: '/more', label: m.nav_more(), icon: NAV_ICONS.more, badge: 0 },
 	]);
-
-	function isActive(href: string): boolean {
-		const path = page.url.pathname;
-		if (href === '/') return path === '/';
-		if (href === '/chats') return path === '/chats' || path.startsWith('/chat/');
-		return path === href || path.startsWith(`${href}/`);
-	}
-
-	function goToAccountPage(path: string) {
-		accountMenuOpen = false;
-		goto(path);
-	}
+	const accountLabel = $derived(profile.display_name || userEmail);
 </script>
 
-<aside
-	class="hidden flex-col md:flex md:transition-[width] {collapsed ? 'md:w-24 md:items-center' : 'md:w-72'}"
-	style="background: var(--md-sys-color-surface-container-low)"
->
-	<div
-		class="flex w-full items-center gap-2 px-4 pt-5 pb-3"
-		class:justify-center={effectiveCollapsed}
-		class:justify-between={!effectiveCollapsed}
-	>
-		<a href="/" class="nomi-brand" aria-label={m.nav_nomi_home()}>
-			<AgentShape size={40} face />
-			{#if !effectiveCollapsed}<span class="nomi-brand__word">nomi</span>{/if}
-		</a>
-		<!-- Wrapped in a plain div rather than passing `hidden`/`md:*` directly to IconButton:
-		     IconButton's own scoped `.m3-icon-btn` style sets `display` with higher CSS
-		     specificity than a single Tailwind utility class (Svelte appends its own hash class
-		     to every scoped selector), so the utility class can't win no matter the breakpoint. -->
-		{#if !effectiveCollapsed}
-			<div class="hidden md:block">
-				<IconButton onclick={toggleCollapsed} aria-label={m.nav_collapse()}>
-					<IconChevronLeft />
-				</IconButton>
+<aside class="sidebar" class:sidebar--rail={collapsed && !inSettings}>
+	{#if inSettings}
+		<SettingsDrawer {userEmail} {profile} />
+	{:else if !collapsed}
+		<NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} />
+	{:else}
+		<nav class="rail" aria-label={m.nav_main()}>
+			<a href="/" class="rail__brand" aria-label={m.nav_nomi_home()}><Mascot agent="nomi" size={32} /></a>
+			<Tooltip label={m.nav_new_chat()}>
+				{#snippet children(props)}
+					<a href="/chat/new" class="rail__new" aria-label={m.nav_new_chat()} {...props}><Icon icon={Plus} size={20} /></a>
+				{/snippet}
+			</Tooltip>
+			<div class="rail__items">
+				{#each rail as item (item.href)}
+					{@const active = isNavActive(page.url.pathname, item.href)}
+					<Tooltip label={item.label}>
+						{#snippet children(props)}
+							<a href={item.href} class="rail__item" class:rail__item--active={active} aria-current={active ? 'page' : undefined} aria-label={item.label} {...props}>
+								<Icon icon={item.icon} size={20} />
+								{#if item.badge > 0}<span class="rail__badge" aria-hidden="true">{badgeLabel(item.badge)}</span>{/if}
+							</a>
+						{/snippet}
+					</Tooltip>
+				{/each}
 			</div>
-		{/if}
-	</div>
-
-	<div class={effectiveCollapsed ? 'pt-2' : 'px-4 pt-2'}>
-		<!-- Opens an empty chat; nothing is saved until its first message is sent. -->
-		<a href="/chat/new" class="nomi-fab" class:nomi-fab--compact={effectiveCollapsed} aria-label={m.nav_new_chat()}>
-			<IconPlus size={24} />
-			{#if !effectiveCollapsed}<span>{m.nav_new_chat()}</span>{/if}
-		</a>
-	</div>
-
-	<!-- Scrolls on its own when the screen is shorter than the drawer, keeping the brand,
-	     New chat and the account row in place. -->
-	<div class="drawer-scroll">
-		<NavList items={NAV} rail={effectiveCollapsed} {isActive} label={m.nav_main()} />
-		<!-- Chat titles need the labelled drawer; the icon rail has no room for them. -->
-		{#if recents.enabled && !effectiveCollapsed}
-			<DrawerRecents limit={recents.limit} />
-		{/if}
-	</div>
-
-	{#if effectiveCollapsed}
-		<div class="hidden pb-2 md:block">
-			<IconButton onclick={toggleCollapsed} aria-label={m.nav_expand()}>
-				<IconChevronRight />
-			</IconButton>
-		</div>
+			<IconButton icon={PanelLeftOpen} label={m.nav_expand()} variant="ghost" onclick={toggleCollapsed} />
+			<a href="/preferences" class="rail__person" aria-label={m.nav_settings()}><Avatar name={accountLabel} src={profile.avatar_url ?? undefined} /></a>
+		</nav>
 	{/if}
-
-	<div class="w-full px-3 pb-4">
-		{#if usage && !effectiveCollapsed}
-			<div class="usage" class:usage--over={share >= 1}>
-				<a href="/billing" class="usage__meter" aria-label={m.usage_meter_label({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}>
-					<span class="usage__top">
-						<span class="usage__plan">{usage.plan.name}</span>
-						<span class="usage__share">{formatShare(share)}</span>
-					</span>
-					<WavyProgress value={share} tone={share >= 0.9 ? 'ember' : 'action'} label={m.usage_progress_label({ share: formatShare(share) })} />
-					<span class="usage__detail">{m.usage_of_tokens({ used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) })}</span>
-				</a>
-				{#if usage.can_upgrade}
-					<button type="button" class="usage__upgrade" onclick={() => (proOpen = true)}>
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
-						{m.usage_upgrade()}
-					</button>
-				{/if}
-			</div>
-		{/if}
-		<Menu bind:open={accountMenuOpen} class="w-full">
-			{#snippet trigger({ toggle })}
-				<button
-					type="button"
-					onclick={toggle}
-					class="m3-account-trigger w-full"
-					class:justify-center={effectiveCollapsed}
-					aria-label={m.nav_account_menu()}
-				>
-					<Avatar name={accountLabel} avatarUrl={profile.avatar_url} size={36} />
-					{#if !effectiveCollapsed}
-						<span class="md-body-medium truncate" style="color: var(--md-sys-color-on-surface); font-weight: 600">
-							{accountLabel}
-						</span>
-					{/if}
-				</button>
-			{/snippet}
-			<div class="w-full">
-				<MenuItem onclick={() => goToAccountPage('/preferences')}>{m.nav_preferences()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/profile')}>{m.nav_profile()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/billing')}>{m.nav_billing()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/account')}>{m.nav_account()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/connections')}>{m.nav_connections()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/models')}>{m.nav_model()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/providers')}>{m.prov_nav()}</MenuItem>
-				<MenuItem onclick={() => goToAccountPage('/memory')}>{m.nav_memory()}</MenuItem>
-				<form method="POST" action="/logout">
-					<MenuItem type="submit">{m.nav_log_out()}</MenuItem>
-				</form>
-				<p class="app-version">Nomi {VERSION_LABEL}</p>
-			</div>
-		</Menu>
-	</div>
 </aside>
 
-<ProSheet bind:open={proOpen} />
-
 <style>
-	.drawer-scroll {
-		flex: 1;
-		min-height: 0;
-		width: 100%;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		scrollbar-width: thin;
+	/* Desktop only: below md the phone's drawer takes over. */
+	.sidebar {
+		display: none;
 	}
-	.app-version {
-		margin: 4px 0 0;
-		padding: 8px 14px 4px;
-		border-top: 1px solid var(--md-sys-color-outline-variant);
-		color: var(--md-sys-color-on-surface-variant);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.6875rem;
-		letter-spacing: 0.02em;
-		user-select: text;
+	@media (min-width: 768px) {
+		.sidebar {
+			display: flex;
+			height: 100%;
+			flex-shrink: 0;
+		}
 	}
-	.nomi-brand {
+	.rail {
 		display: flex;
-		align-items: center;
-		gap: 10px;
-		color: var(--md-sys-color-on-surface);
-		text-decoration: none;
-	}
-	.nomi-brand__word {
-		font-family: var(--md-ref-typeface-brand);
-		font-size: 1.75rem;
-		line-height: 1;
-		font-weight: 800;
-		letter-spacing: -0.045em;
-	}
-
-	/* The one gradient object in the chrome: starting a conversation is the hero action. */
-	.nomi-fab {
-		display: flex;
+		width: 80px;
+		height: 100%;
+		flex-direction: column;
 		align-items: center;
 		gap: 12px;
-		height: 56px;
-		width: 100%;
-		padding: 0 16px 0 14px;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-large-increased);
-		background: var(--nomi-gradient-action);
-		color: var(--nomi-on-action);
-		font-family: var(--md-sys-typescale-label-large-font);
-		font-size: 0.9375rem;
-		font-weight: 650;
-		cursor: pointer;
-		text-decoration: none;
-		box-sizing: border-box;
-		box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--md-sys-color-primary) 60%, transparent);
-		transition:
-			border-radius var(--nomi-motion-spatial-fast),
-			filter var(--nomi-motion-effects-fast);
+		padding: 16px 0 12px;
+		background: var(--md-sys-color-surface-container-low);
 	}
-	.nomi-fab:hover {
-		filter: saturate(1.15) brightness(1.03);
-	}
-	.nomi-fab:active {
-		border-radius: var(--md-sys-shape-corner-medium);
-	}
-	.nomi-fab--compact {
-		width: 56px;
-		padding: 0;
-		justify-content: center;
-		border-radius: var(--md-sys-shape-corner-large);
-	}
-
-	.usage {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		margin-bottom: 8px;
-		padding: 12px;
-		border-radius: 20px;
-		background: var(--md-sys-color-surface-container);
-	}
-	.usage__meter {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		color: inherit;
-		text-decoration: none;
-		border-radius: 12px;
-	}
-	.usage__meter:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 4px;
-	}
-	.usage__top {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.usage__plan {
-		font-family: var(--md-ref-typeface-title);
-		font-size: 0.875rem;
-		font-weight: 700;
-		color: var(--md-sys-color-on-surface);
-	}
-	.usage__share {
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.usage--over .usage__share {
-		color: var(--md-sys-color-error);
-		font-weight: 700;
-	}
-	.usage__detail {
-		font-size: 0.75rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.usage__upgrade {
+	.rail__brand,
+	.rail__new,
+	.rail__item,
+	.rail__person {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 6px;
-		min-height: 40px;
-		padding: 0 14px;
-		border: none;
-		border-radius: 999px;
+		color: var(--md-sys-color-on-surface-variant);
+		text-decoration: none;
+	}
+	.rail__brand {
+		width: 48px;
+		height: 48px;
+		border-radius: var(--md-sys-shape-corner-full);
+	}
+	.rail__new {
+		width: 56px;
+		height: 56px;
+		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-primary-container);
 		color: var(--md-sys-color-on-primary-container);
-		font-family: var(--md-ref-typeface-title);
-		font-size: 0.875rem;
+	}
+	.rail__items {
+		display: flex;
+		min-height: 0;
+		flex: 1;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		overflow-y: auto;
+		scrollbar-width: none;
+	}
+	.rail__item {
+		width: 56px;
+		height: 32px;
+		flex-shrink: 0;
+		margin: 4px 0;
+		border-radius: var(--md-sys-shape-corner-full);
+	}
+	.rail__item--active {
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+	.rail__badge {
+		position: absolute;
+		top: -4px;
+		right: 6px;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-error);
+		color: var(--md-sys-color-on-error);
+		font-size: 0.6875rem;
 		font-weight: 700;
-		cursor: pointer;
-		transition: filter 150ms;
+		line-height: 16px;
+		text-align: center;
 	}
-	.usage__upgrade:hover {
-		filter: brightness(0.96);
+	.rail__person {
+		border-radius: var(--md-sys-shape-corner-full);
 	}
-	.usage__upgrade:focus-visible {
+	.rail__brand:hover,
+	.rail__item:hover,
+	.rail__person:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+	}
+	.rail__item--active:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
+	}
+	.rail__new:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 8%, var(--md-sys-color-primary-container));
+	}
+	.rail__brand:focus-visible,
+	.rail__new:focus-visible,
+	.rail__item:focus-visible,
+	.rail__person:focus-visible {
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
-	}
-	.m3-account-trigger {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		border: none;
-		background: transparent;
-		border-radius: var(--md-sys-shape-corner-full);
-		padding: 6px 8px;
-		cursor: pointer;
-		text-align: left;
-	}
-	.m3-account-trigger:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 </style>

@@ -3,6 +3,7 @@ import {
 	addMonths,
 	clampDate,
 	dateFieldOrder,
+	dayLabel,
 	daysInMonth,
 	formatTime,
 	from12Hour,
@@ -61,5 +62,20 @@ describe('dates', () => {
 	it('knows which way round dates are written', () => {
 		expect(dateFieldOrder('en-US')).toEqual(['month', 'day', 'year']);
 		expect(dateFieldOrder('id')).toEqual(['day', 'month', 'year']);
+	});
+});
+
+describe('dayLabel', () => {
+	const now = new Date(2026, 10, 1, 9, 30);
+
+	it('says Today and Yesterday in the person’s language', () => {
+		expect(dayLabel(new Date(2026, 10, 1, 0, 5), 'en', now)).toBe('Today');
+		expect(dayLabel(new Date(2026, 9, 31, 23, 50), 'en', now)).toBe('Yesterday');
+		expect(dayLabel(new Date(2026, 9, 31, 8), 'id', now)).toBe('Kemarin');
+	});
+
+	it('names older days by weekday and date, with the year only when it differs', () => {
+		expect(dayLabel(new Date(2026, 9, 27), 'en-GB', now)).toBe('Tue 27 Oct');
+		expect(dayLabel(new Date(2025, 11, 30), 'en-GB', now)).toBe('Tue, 30 Dec 2025');
 	});
 });
