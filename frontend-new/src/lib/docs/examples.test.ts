@@ -6,7 +6,7 @@ describe('parseExample', () => {
 		const raw = `<!-- Variants: one primary per view: inverse inside a panel. -->\n<script lang="ts">\n\timport Button from '$lib/ds/actions/Button.svelte';\n</script>\n\n<Button label="Deploy" />\n`;
 		expect(parseExample('./examples/button/01-variants.svelte', raw)).toEqual({
 			title: 'Variants',
-			description: 'one primary per view: inverse inside a panel.',
+			description: 'One primary per view: inverse inside a panel.',
 			code: `<script lang="ts">\n\timport Button from '$lib/ds/actions/Button.svelte';\n</script>\n\n<Button label="Deploy" />`,
 		});
 	});

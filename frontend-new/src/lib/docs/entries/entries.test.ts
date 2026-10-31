@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { componentDocs } from './index';
@@ -7,6 +7,14 @@ const ds = fileURLToPath(new URL('../../ds/', import.meta.url));
 
 describe('component docs', () => {
 	const docs = Object.values(componentDocs);
+
+	it('cover every component of the design system', () => {
+		const components = readdirSync(ds, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.flatMap((folder) => readdirSync(ds + folder.name).filter((name) => name.endsWith('.svelte') && !name.endsWith('Fixture.svelte')).map((name) => `${folder.name}/${name}`));
+		expect(components.length).toBeGreaterThan(150);
+		expect(components.filter((file) => !componentDocs[file])).toEqual([]);
+	});
 
 	it('describe components that exist, and point only at components that exist', () => {
 		expect(docs.filter((doc) => !existsSync(ds + doc.file)).map((doc) => doc.file)).toEqual([]);

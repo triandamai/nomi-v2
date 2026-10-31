@@ -37,10 +37,11 @@ test('finds a component by name and shows its props as the code declares them', 
 });
 
 test('remembers the theme across pages', async ({ page }) => {
-	await page.goto(at('design-system/tokens.html'));
+	// Once it has hydrated: before then a click reaches only the prerendered markup.
+	await page.goto(at('design-system/tokens.html'), { waitUntil: 'networkidle' });
 	await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Light' }).click();
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-	await page.goto(at('design-system/components.html'));
+	await page.goto(at('design-system/components.html'), { waitUntil: 'networkidle' });
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 

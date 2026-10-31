@@ -12,10 +12,11 @@ const sources = import.meta.glob<string>('./examples/*/*.svelte', { query: '?raw
 export function parseExample(path: string, raw: string): Omit<Example, 'component'> {
 	const comment = raw.match(/^\s*<!--\s*([\s\S]*?)\s*-->\s*\n?/);
 	const named = path.split('/').pop()!.replace(/\.svelte$/, '').replace(/^\d+-/, '').replace(/-/g, ' ');
-	const [title, ...description] = (comment?.[1] ?? '').split(':');
+	const [title, ...rest] = (comment?.[1] ?? '').split(':');
+	const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 	return {
-		title: comment ? title.trim() : named.charAt(0).toUpperCase() + named.slice(1),
-		description: description.join(':').trim(),
+		title: comment ? title.trim() : capital(named),
+		description: capital(rest.join(':').trim()),
 		code: (comment ? raw.slice(comment[0].length) : raw).trim(),
 	};
 }
