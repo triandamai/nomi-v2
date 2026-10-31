@@ -1,0 +1,6 @@
+# Settings for gobley-uniffi-bindgen (Kotlin Multiplatform bindings), passed with --config.
+# gobley reads these at the top level, not under [bindings.kotlin] like UniFFI's own generators.
+package_name = "ai.nomi.sdk"
+cdylib_name = "nomi_sdk"
+kotlin_multiplatform = true
+kotlin_targets = ["jvm", "android", "native"]

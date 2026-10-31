@@ -1,0 +1,25 @@
+# The Nomi client SDK: a workspace of its own, apart from the backend's.
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+# Pinned to the version gobley-uniffi-bindgen 0.3.7 generates Kotlin Multiplatform bindings for.
+uniffi = "=0.29.4"
+thiserror = "2"
+tokio = { version = "1", default-features = false }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+url = "2"
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "debuginfo"

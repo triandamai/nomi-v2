@@ -1,13 +1,14 @@
 name: Native
 
 # The Kotlin Multiplatform apps under native/: tests with a report in the job summary, and a build for every
-# platform (Android, desktop on Linux, macOS and Windows, iOS). Runs only when something the apps are built from
-# changed: native/ itself, the web sources the design tokens and views are generated or checked from, or this
-# workflow.
+# platform (Android, desktop on Linux, macOS and Windows, iOS), plus the Rust SDK under rust/ they bind to
+# (native/shared/sdk builds it with cargo). Runs only when something the apps are built from changed: native/ or
+# rust/ itself, the web sources the design tokens and views are generated or checked from, or this workflow.
 on:
   pull_request:
     paths:
       - "native/**"
+      - "rust/**"
       - "frontend/src/lib/styles/material3.css"
       - "frontend/src/lib/components/m3/shapes.ts"
       - "frontend/src/lib/crewNames.ts"
@@ -18,6 +19,7 @@ on:
     branches: [main]
     paths:
       - "native/**"
+      - "rust/**"
       - "frontend/src/lib/styles/material3.css"
       - "frontend/src/lib/components/m3/shapes.ts"
       - "frontend/src/lib/crewNames.ts"
@@ -46,6 +48,34 @@ defaults:
     working-directory: native
 
 jobs:
+  rust-sdk:
+    name: Rust SDK (cargo test + clippy)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
   test:
     name: Tests (desktop JVM + Android host)
     runs-on: ubuntu-latest
@@ -58,6 +88,15 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - uses: gradle/actions/setup-gradle@v5
+
+      # :shared:sdk builds the Rust SDK for the desktop tests and installs gobley-uniffi-bindgen into rust/target.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
 
       - name: Android SDK platform
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "$ANDROID_PLATFORM" > /dev/null
@@ -94,6 +133,17 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - uses: gradle/actions/setup-gradle@v5
+
+      # :shared:sdk links the Rust SDK as a static library per iOS target.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
 
       - name: Run iOS simulator tests
         run: ./gradlew iosSimulatorArm64Test --continue

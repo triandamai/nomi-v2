@@ -33,6 +33,7 @@ dependencyResolutionManagement {
 
 include(
     ":shared:core",
+    ":shared:sdk",
     ":shared:designsystem",
     ":shared:network",
     ":shared:realtime",
