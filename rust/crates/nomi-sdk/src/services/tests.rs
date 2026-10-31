@@ -433,12 +433,169 @@ async fn fetches_an_attachments_preview_and_content_as_bytes() {
             .mount(&h.server)
             .await;
     }
-    assert_eq!(h.sdk.attachment_preview("f1".into()).await.unwrap(), PREVIEW_BYTES);
-    assert_eq!(h.sdk.attachment_content("f1".into()).await.unwrap(), CONTENT_BYTES);
+    assert_eq!(
+        h.sdk.attachment_preview("f1".into()).await.unwrap(),
+        PREVIEW_BYTES
+    );
+    assert_eq!(
+        h.sdk.attachment_content("f1".into()).await.unwrap(),
+        CONTENT_BYTES
+    );
 
-    h.answer("GET", "/api/attachments/gone/preview", 404, None).await;
+    h.answer("GET", "/api/attachments/gone/preview", 404, None)
+        .await;
     assert!(matches!(
         h.sdk.attachment_preview("gone".into()).await,
         Err(NomiError::Http { status: 404, .. })
     ));
+}
+
+#[tokio::test]
+async fn reads_a_projects_workspace() {
+    const PROJECT: &str = "7f3a2c10-proj";
+    let h = Harness::new().await;
+    h.answer(
+        "GET",
+        "/api/projects/by-session/c9",
+        200,
+        Some(json!({
+            "id": PROJECT, "name": "Bakery site", "description": null, "plan": "…", "status": "ready",
+            "stack": "sveltekit", "files_version": 12,
+            "files": [{ "path": "src/routes/+page.svelte", "content_type": "text/plain", "size_bytes": 812 }],
+            "session_id": "c9", "org_id": "o1", "org_name": "Trian's team", "open_issues": 2, "backend": "drizzle"
+        })),
+    )
+    .await;
+    h.answer(
+        "GET",
+        &format!("/api/projects/{PROJECT}/deploy"),
+        200,
+        Some(json!({
+            "available": true, "role": "admin", "app": "bakery", "database": "none",
+            "url": "https://bakery.example.app",
+            "publishes": [{
+                "id": "p1", "environment": "production", "status": "live", "url": "https://bakery.example.app",
+                "error": null, "files_version": 12, "rollback_of": null, "can_roll_back": true,
+                "created_by": "Trian", "created_at": AT, "finished_at": AT, "failure": null,
+                "rollback_of_version": null, "started_by_agent": null, "current": true
+            }],
+            "live": null, "backend_setup": null
+        })),
+    )
+    .await;
+    h.answer(
+        "GET",
+        &format!("/api/projects/{PROJECT}/members"),
+        200,
+        Some(json!({
+            "access": "org", "my_role": "admin", "me": "u1",
+            "people": [{ "user_id": "u1", "name": "Trian", "email": null, "avatar_url": null,
+                "org_role": "owner", "project_role": "admin", "is_owner": true, "added_at": AT }]
+        })),
+    )
+    .await;
+    let file = format!("/api/projects/{PROJECT}/files/src/routes/+page.svelte");
+    Mock::given(method("GET"))
+        .and(path(file.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"<h1>Hi</h1>".as_slice()))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    let project = h.sdk.project_for_chat("c9".into()).await.unwrap();
+    assert_eq!(project.name, "Bakery site");
+    assert_eq!(project.files[0].size_bytes, 812);
+    let deploy = h.sdk.project_deploy(PROJECT.into()).await.unwrap();
+    assert_eq!(deploy.url.as_deref(), Some("https://bakery.example.app"));
+    assert_eq!(deploy.publishes[0].status, "live");
+    let members = h.sdk.project_members(PROJECT.into()).await.unwrap();
+    assert!(members.people[0].is_owner);
+    let content = h
+        .sdk
+        .project_file(PROJECT.into(), "src/routes/+page.svelte".into())
+        .await
+        .unwrap();
+    assert_eq!(content, b"<h1>Hi</h1>");
+}
+
+#[tokio::test]
+async fn an_ordinary_chat_has_no_project() {
+    let h = Harness::new().await;
+    h.answer("GET", "/api/projects/by-session/c1", 404, None)
+        .await;
+    assert!(matches!(
+        h.sdk.project_for_chat("c1".into()).await,
+        Err(NomiError::Http { status: 404, .. })
+    ));
+}
+
+#[tokio::test]
+async fn publishes_and_works_through_issues() {
+    let h = Harness::new().await;
+    let issue = json!({
+        "number": 3, "title": "Menu overlaps", "body": "", "kind": "bug", "severity": "high",
+        "status": "open", "created_by": "Trian", "mine": true, "closed_at": null,
+        "created_at": AT, "updated_at": AT
+    });
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p/deploy/publish"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "id": "x" })))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p/issues"))
+        .and(query_param("status", "open"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({ "issues": [issue.clone()], "counts": { "open": 1, "closed": 4 } }),
+        ))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p/issues"))
+        .and(body_json(
+            json!({ "title": "Menu overlaps", "body": "", "kind": "bug", "severity": "high" }),
+        ))
+        .respond_with(ResponseTemplate::new(201).set_body_json(issue.clone()))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    let mut closed = issue.clone();
+    closed["status"] = json!("closed");
+    Mock::given(method("PATCH"))
+        .and(path("/api/projects/p/issues/3"))
+        .and(body_json(json!({ "status": "closed" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(closed))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    h.sdk.publish_project("p".into()).await.unwrap();
+    let list = h
+        .sdk
+        .project_issues("p".into(), "open".into())
+        .await
+        .unwrap();
+    assert_eq!((list.counts.open, list.counts.closed), (1, 4));
+    let filed = h
+        .sdk
+        .file_project_issue(
+            "p".into(),
+            crate::NewProjectIssue {
+                title: "Menu overlaps".into(),
+                body: String::new(),
+                kind: "bug".into(),
+                severity: "high".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(filed.number, 3);
+    let after = h
+        .sdk
+        .set_project_issue_status("p".into(), 3, "closed".into())
+        .await
+        .unwrap();
+    assert_eq!(after.status, "closed");
 }

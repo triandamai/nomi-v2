@@ -18,6 +18,9 @@ use crate::network::Network;
 use crate::services::account::{ConnectionsOverview, Memory, Project, UsageBrief};
 use crate::services::home::{CrewMember, HomeSummary, Preferences, PreferencesUpdate};
 use crate::services::money::{MoneySummary, NewTransaction};
+use crate::services::projects::{
+    DeployOverview, NewProjectIssue, ProjectDetail, ProjectIssue, ProjectIssues, ProjectMembers,
+};
 use crate::services::reminders::{NewReminder, Reminder, ReminderAction, RemindersOverview};
 use crate::services::Services;
 use crate::storage::{AccountStore, Accounts};
@@ -481,6 +484,83 @@ impl NomiSdk {
     pub async fn usage_brief(&self) -> Result<UsageBrief, NomiError> {
         let services = self.services.clone();
         self.on_runtime(async move { services.usage_brief().await })
+            .await
+    }
+
+    /// The project whose chat is `session_id`; `NomiError::Http` 404 for an ordinary chat.
+    pub async fn project_for_chat(&self, session_id: String) -> Result<ProjectDetail, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_for_chat(&session_id).await })
+            .await
+    }
+
+    /// A project file's content, as stored.
+    pub async fn project_file(
+        &self,
+        project_id: String,
+        path: String,
+    ) -> Result<Vec<u8>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_file(&project_id, &path).await })
+            .await
+    }
+
+    /// Where the project is published, and its publishes.
+    pub async fn project_deploy(&self, project_id: String) -> Result<DeployOverview, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_deploy(&project_id).await })
+            .await
+    }
+
+    /// Publishes the project to production.
+    pub async fn publish_project(&self, project_id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.publish_project(&project_id).await })
+            .await
+    }
+
+    /// The project's issues with `status` `open`, `closed` or `all`.
+    pub async fn project_issues(
+        &self,
+        project_id: String,
+        status: String,
+    ) -> Result<ProjectIssues, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_issues(&project_id, &status).await })
+            .await
+    }
+
+    /// Files an issue on the project.
+    pub async fn file_project_issue(
+        &self,
+        project_id: String,
+        issue: NewProjectIssue,
+    ) -> Result<ProjectIssue, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.file_project_issue(&project_id, &issue).await })
+            .await
+    }
+
+    /// Closes or reopens a project issue.
+    pub async fn set_project_issue_status(
+        &self,
+        project_id: String,
+        number: i32,
+        status: String,
+    ) -> Result<ProjectIssue, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move {
+            services
+                .set_project_issue_status(&project_id, number, &status)
+                .await
+        })
+        .await
+    }
+
+    /// Who works on the project.
+    pub async fn project_members(&self, project_id: String) -> Result<ProjectMembers, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.project_members(&project_id).await })
             .await
     }
 

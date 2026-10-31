@@ -31,6 +31,8 @@ sealed interface ProjectsUiState {
 
 class ProjectsViewModel(
     private val repo: ProjectsRepository,
+    /** Told the chats of the projects listed, so they open straight into the project workspace. */
+    private val onProjectChats: (List<String>) -> Unit = {},
 ) : ViewModel() {
     private val mutableState = MutableStateFlow<ProjectsUiState>(ProjectsUiState.Loading)
     val uiState: StateFlow<ProjectsUiState> = mutableState.asStateFlow()
@@ -44,6 +46,7 @@ class ProjectsViewModel(
             mutableState.value = ProjectsUiState.Loading
             repo.list()
                 .onSuccess { projects ->
+                    onProjectChats(projects.map { it.sessionId }.filter { it.isNotBlank() })
                     mutableState.value = ProjectsUiState.Ready(projects = projects)
                 }
                 .onFailure { e ->

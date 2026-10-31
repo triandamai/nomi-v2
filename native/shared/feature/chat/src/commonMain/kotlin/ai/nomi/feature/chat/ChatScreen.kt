@@ -130,7 +130,14 @@ private fun phaseLabel(phase: String): String = when (phase) {
 
 /** [onBack] adds a back action for shells without a system back gesture (desktop); null hides it. */
 @Composable
-fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
+fun ChatScreen(
+    viewModel: ChatViewModel,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    /** Inside a project's workspace, whose own bar names it: no app bar, and the composer asks for project work. */
+    embedded: Boolean = false,
+    placeholder: String = PLACEHOLDER,
+) {
     val chat by viewModel.chat.collectAsStateWithLifecycle()
     val composer by viewModel.composer.collectAsStateWithLifecycle()
     val title by viewModel.title.collectAsStateWithLifecycle()
@@ -153,6 +160,8 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier, onBack: 
         onSendAnswer = viewModel::sendAnswer,
         onRetrySend = viewModel::retrySend,
         onDiscardSend = viewModel::discardSend,
+        showAppBar = !embedded,
+        placeholder = placeholder,
     )
 }
 
@@ -176,11 +185,13 @@ fun ChatContent(
     onRetrySend: (String) -> Unit = {},
     /** Drops a message that wasn't sent, by its id. */
     onDiscardSend: (String) -> Unit = {},
+    showAppBar: Boolean = true,
+    placeholder: String = PLACEHOLDER,
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(NomiTheme.extendedColors.ground).testTag(CHAT_SCREEN_TAG)) {
         val phone = maxWidth < PhoneBreakpoint
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-            AppBar(title.ifBlank { UNTITLED }, chat?.messages?.size ?: NO_ITEMS, phone, onBack)
+            if (showAppBar) AppBar(title.ifBlank { UNTITLED }, chat?.messages?.size ?: NO_ITEMS, phone, onBack)
             Box(Modifier.weight(FILL).fillMaxWidth()) {
                 when {
                     chat == null -> NomiLoadingIndicator(Modifier.align(Alignment.Center), contentDescription = "Loading messages")
@@ -199,7 +210,7 @@ fun ChatContent(
                     value = composer.draft,
                     onValueChange = onDraftChange,
                     onSend = onSend,
-                    placeholder = PLACEHOLDER,
+                    placeholder = placeholder,
                     sendLabel = "Send",
                     sending = composer.sending,
                 )

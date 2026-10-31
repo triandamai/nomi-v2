@@ -192,6 +192,24 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
 
     override suspend fun projects(orgId: String?): List<Project> = sdk.projects(orgId)
 
+    override suspend fun projectForChat(sessionId: String): ProjectDetail = sdk.projectForChat(sessionId)
+
+    override suspend fun projectFile(projectId: String, path: String): ByteArray = sdk.projectFile(projectId, path)
+
+    override suspend fun projectDeploy(projectId: String): DeployOverview = sdk.projectDeploy(projectId)
+
+    override suspend fun publishProject(projectId: String) = sdk.publishProject(projectId)
+
+    override suspend fun projectIssues(projectId: String, status: String): ProjectIssues = sdk.projectIssues(projectId, status)
+
+    override suspend fun fileProjectIssue(projectId: String, issue: NewProjectIssue): ProjectIssue =
+        sdk.fileProjectIssue(projectId, issue)
+
+    override suspend fun setProjectIssueStatus(projectId: String, number: Int, status: String): ProjectIssue =
+        sdk.setProjectIssueStatus(projectId, number, status)
+
+    override suspend fun projectMembers(projectId: String): ProjectMembers = sdk.projectMembers(projectId)
+
     override suspend fun attachmentPreview(id: String): ByteArray = sdk.attachmentPreview(id)
 
     override suspend fun attachmentContent(id: String): ByteArray = sdk.attachmentContent(id)

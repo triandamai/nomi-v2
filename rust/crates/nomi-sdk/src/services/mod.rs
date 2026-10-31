@@ -9,6 +9,7 @@ pub(crate) mod account;
 pub(crate) mod attachments;
 pub(crate) mod home;
 pub(crate) mod money;
+pub(crate) mod projects;
 pub(crate) mod reminders;
 #[cfg(test)]
 mod tests;

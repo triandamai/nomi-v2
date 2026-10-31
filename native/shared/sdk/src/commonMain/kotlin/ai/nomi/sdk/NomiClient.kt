@@ -197,6 +197,30 @@ interface NomiClient {
     /** Projects in [orgId], or in the organization picked for projects. */
     suspend fun projects(orgId: String?): List<Project>
 
+    /** The project whose chat is [sessionId]; [NomiException.Http] 404 for an ordinary chat. */
+    suspend fun projectForChat(sessionId: String): ProjectDetail
+
+    /** A project file's content, as stored. */
+    suspend fun projectFile(projectId: String, path: String): ByteArray
+
+    /** Where the project is published, and its publishes. */
+    suspend fun projectDeploy(projectId: String): DeployOverview
+
+    /** Publishes the project to production. */
+    suspend fun publishProject(projectId: String)
+
+    /** The project's issues with [status] `open`, `closed` or `all`. */
+    suspend fun projectIssues(projectId: String, status: String): ProjectIssues
+
+    /** Files an issue on the project. */
+    suspend fun fileProjectIssue(projectId: String, issue: NewProjectIssue): ProjectIssue
+
+    /** Closes (`closed`) or reopens (`open`) a project issue. */
+    suspend fun setProjectIssueStatus(projectId: String, number: Int, status: String): ProjectIssue
+
+    /** Who works on the project. */
+    suspend fun projectMembers(projectId: String): ProjectMembers
+
     /** A small preview of an attached image, as the encoded image. */
     suspend fun attachmentPreview(id: String): ByteArray
 

@@ -39,6 +39,10 @@ pub use services::money::{
     Budget, CategoryTotal, DayTotal, MoneySummary, NewTransaction, NewTransactionItem, Transaction,
     TransactionItem,
 };
+pub use services::projects::{
+    BackendSetup, DeployOverview, IssueCounts, NewProjectIssue, ProjectDetail, ProjectFile,
+    ProjectIssue, ProjectIssues, ProjectMembers, ProjectPerson, ProjectPublish,
+};
 pub use services::reminders::{
     NewReminder, Reminder, ReminderAction, RemindersOverview, ScheduledTask,
 };

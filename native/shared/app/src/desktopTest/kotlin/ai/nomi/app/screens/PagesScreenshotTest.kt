@@ -1,6 +1,16 @@
 package ai.nomi.app.screens
 
+import ai.nomi.app.screens.projects.Loadable
+import ai.nomi.app.screens.projects.OpenFile
+import ai.nomi.app.screens.projects.PROJECT_TAB_CHAT
+import ai.nomi.app.screens.projects.PROJECT_TAB_CODE
+import ai.nomi.app.screens.projects.PROJECT_TAB_PREVIEW
+import ai.nomi.app.screens.projects.ProjectWorkspaceContent
 import ai.nomi.data.AgentActivity
+import ai.nomi.data.ProjectDeployInfo
+import ai.nomi.data.ProjectFileEntry
+import ai.nomi.data.ProjectInfo
+import ai.nomi.data.ProjectPublishInfo
 import ai.nomi.data.ChatState
 import ai.nomi.data.Draft
 import ai.nomi.data.MESSAGE_STATUS_FAILED
@@ -53,6 +63,46 @@ private val Outbox = ChatState(
     activeAgent = null,
 )
 
+/** A message with two photos and a document, as the composer sends them. */
+private val WithFiles = ChatState(
+    messages = listOf(
+        msg("m1", "user", "Here's the menu draft and two photos of the counter.\n\n" +
+            "<attachment id=\"f1\" name=\"counter-1.jpg\" kind=\"image\" mime=\"image/jpeg\" size=\"204800\"/>\n\n" +
+            "<attachment id=\"f2\" name=\"counter-2.jpg\" kind=\"image\" mime=\"image/jpeg\" size=\"198000\"/>\n\n" +
+            "<attachment id=\"f3\" name=\"menu-draft.pdf\" kind=\"pdf\" mime=\"application/pdf\" size=\"1258291\"/>", 6),
+        msg("m2", "assistant", "Got them. The menu reads well; I'd move the pastries above the drinks.", 5, "chitchat", "Nomi"),
+    ),
+    draft = null,
+    activeAgent = null,
+)
+
+private val Bakery = ProjectInfo(
+    id = "p1",
+    name = "Bakery site",
+    description = "A one-page site for the bakery",
+    status = "ready",
+    stack = "sveltekit",
+    files = listOf(
+        ProjectFileEntry("package.json", "application/json", 612),
+        ProjectFileEntry("src/routes/+page.svelte", "text/plain", 2840),
+        ProjectFileEntry("src/routes/menu/+page.svelte", "text/plain", 1932),
+        ProjectFileEntry("src/lib/styles.css", "text/css", 1210),
+    ),
+    sessionId = "s9",
+    orgName = "Trian's team",
+    openIssues = 2,
+)
+
+private val Published = Loadable.Ready(
+    ProjectDeployInfo(
+        canPublish = true,
+        url = "https://bakery.nomi.app",
+        publishes = listOf(ProjectPublishInfo("u1", "live", "https://bakery.nomi.app", null, "Trian", "2026-10-30T16:20:00Z")),
+        backendSetupStep = null,
+        backendSetupError = null,
+    ),
+)
+
 class PagesScreenshotTest {
     @get:Rule val rule = createComposeRule()
 
@@ -85,6 +135,28 @@ class PagesScreenshotTest {
     @Test fun chatOutboxPhoneDark() = rule.captureScreen("chat_outbox", Device.Phone, true) {
         ChatContent("Friday dinner", Outbox, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
     }
+
+    @Test fun chatAttachmentsPhoneLight() = rule.captureScreen("chat_attachments", Device.Phone, false) {
+        ChatContent("Bakery menu", WithFiles, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
+    }
+
+    private fun workspace(tab: String, openFile: OpenFile? = null): @androidx.compose.runtime.Composable () -> Unit = {
+        ProjectWorkspaceContent(
+            project = Bakery, deploy = Published, notice = null, openFile = openFile, tab = tab,
+            onTabChange = {}, onBack = {}, onPublish = {}, onRetryDeploy = {}, onOpenTool = {}, onDismissNotice = {},
+            onOpenFile = {}, onCloseFile = {},
+        ) {
+            ChatContent("", Conversation, ChatComposerState(), {}, {}, {}, onBack = null, timeZone = utc, showAppBar = false)
+        }
+    }
+
+    @Test fun projectChatPhoneLight() = rule.captureScreen("project_chat", Device.Phone, false, workspace(PROJECT_TAB_CHAT))
+
+    @Test fun projectChatPhoneDark() = rule.captureScreen("project_chat", Device.Phone, true, workspace(PROJECT_TAB_CHAT))
+
+    @Test fun projectPreviewPhoneLight() = rule.captureScreen("project_preview", Device.Phone, false, workspace(PROJECT_TAB_PREVIEW))
+
+    @Test fun projectCodePhoneLight() = rule.captureScreen("project_code", Device.Phone, false, workspace(PROJECT_TAB_CODE))
 
     @Test fun chatEmptyPhoneLight() = rule.captureScreen("chat_empty", Device.Phone, false) {
         ChatContent("", ChatState(emptyList(), null, null), ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
