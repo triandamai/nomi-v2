@@ -18,6 +18,9 @@ if (releaseTaskRequested && releaseApiUrl == null) {
     throw GradleException("Release builds need the backend URL: pass -Pnomi.apiUrl.release=https://…")
 }
 
+/** The Android libraries :shared:sdk builds; JNA loads `libnomi_sdk.so` from the APK. */
+val rustJniLibs = rootDir.resolve("shared/sdk/build/generated/uniffi/jniLibs")
+
 android {
     namespace = "ai.nomi.app.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -28,6 +31,8 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = providers.gradleProperty("nomi.versionCode").get().toInt()
         versionName = providers.gradleProperty("nomi.versionName").get()
+        // The ABIs :shared:sdk builds the Rust engine for; a device without one can't run the app.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     buildTypes {
@@ -45,11 +50,18 @@ android {
         buildConfig = true
     }
 
+    // The Rust engine (rust/crates/nomi-sdk), built for each ABI by :shared:sdk:cargoBuildAndroid.
+    sourceSets.getByName("main").jniLibs.directories.add(rustJniLibs.path)
+
     compileOptions {
         val javaVersion = JavaVersion.toVersion(libs.versions.jvm.toolchain.get())
         sourceCompatibility = javaVersion
         targetCompatibility = javaVersion
     }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn(":shared:sdk:cargoBuildAndroid")
 }
 
 kotlin {

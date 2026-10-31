@@ -1,55 +1,29 @@
 package ai.nomi.data
 
-import ai.nomi.database.NomiDatabase
-import ai.nomi.database.entity.NotificationEntity
-import ai.nomi.network.NotificationsApi
-import ai.nomi.realtime.RealtimeEvent
+import ai.nomi.sdk.notifications
+import ai.nomi.sdk.unreadNotificationCount
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-/** The inbox: REST and `NotificationCreated` events write Room, the UI observes Room. */
-class NotificationRepository(
-    private val api: NotificationsApi,
-    private val db: NomiDatabase,
-    private val clock: EpochClock,
-    private val session: SessionScope,
-) {
-    private val dao get() = db.notificationDao()
+/** The most notifications the inbox shows; the engine caps every query here. */
+private const val NOTIFICATION_LIMIT = 500u
+private const val NONE_UNREAD = 0
 
-    fun observeAll(): Flow<List<NotificationItem>> = dao.observeAll().map { rows -> rows.map { it.toDomain() } }
+/** The inbox, kept by the Rust engine: [refresh] and realtime events write it, the UI observes it. */
+class NotificationRepository(private val engine: NomiEngine) {
+    fun observeAll(): Flow<List<NotificationItem>> = engine.fromAccount(emptyList()) { store ->
+        store.notifications(NOTIFICATION_LIMIT).map { rows -> rows.map { it.toDomain() } }
+    }
 
-    fun observeUnreadCount(): Flow<Int> = dao.observeUnreadCount()
+    fun observeUnreadCount(): Flow<Int> = engine.fromAccount(NONE_UNREAD) { store ->
+        store.unreadNotificationCount().map { it.toInt() }
+    }
 
     /** Refetches the newest page of the inbox. */
-    suspend fun refresh() = session.run {
-        val now = clock()
-        api.list().items.forEach { dto -> dao.upsert(dto.toEntity(dao.get(dto.id), now)) }
-    }
+    suspend fun refresh() = translated { engine.get().refreshNotifications() }
 
-    /** The event carries no timestamp, so arrival time stands in for `created_at` until the next refresh. */
-    suspend fun onCreated(event: RealtimeEvent.NotificationCreated) = session.run {
-        val existing = dao.get(event.notificationId)
-        dao.upsert(
-            NotificationEntity(
-                id = event.notificationId,
-                kind = event.category,
-                title = event.title,
-                body = event.body,
-                link = event.link,
-                createdAt = existing?.createdAt ?: clock(),
-                readAt = existing?.readAt,
-            ),
-        )
-    }
+    /** Read here at once; the engine tells the backend, retrying until it has it. */
+    suspend fun markRead(id: String) = translated { engine.get().markNotificationRead(id) }
 
-    suspend fun markRead(id: String) = session.run {
-        api.markRead(id)
-        val existing = dao.get(id) ?: return@run
-        if (existing.readAt == null) dao.upsert(existing.copy(readAt = clock()))
-    }
-
-    suspend fun markAllRead() = session.run {
-        api.markAllRead()
-        dao.markAllRead(clock())
-    }
+    suspend fun markAllRead() = translated { engine.get().markAllNotificationsRead() }
 }

@@ -1,63 +1,53 @@
 package ai.nomi.data
 
-import ai.nomi.database.entity.AgentActivityEntity
-import ai.nomi.database.entity.MessageEntity
-import ai.nomi.database.entity.NotificationEntity
-import ai.nomi.database.entity.SessionEntity
-import ai.nomi.database.entity.StreamingDraftEntity
-import ai.nomi.network.MessageDto
-import ai.nomi.network.NotificationDto
-import ai.nomi.network.SessionDto
-import kotlinx.serialization.json.JsonNull
-import kotlin.time.Instant
+import ai.nomi.network.ApiException
+import ai.nomi.network.EmailCodeError
+import ai.nomi.network.EmailCodeException
+import ai.nomi.network.VerificationInfo
+import ai.nomi.sdk.NomiException
+import ai.nomi.sdk.EmailCodeError as SdkEmailCodeError
+import ai.nomi.sdk.VerificationInfo as SdkVerificationInfo
 
-/** Status of a message the server has stored (the only kind written today; no optimistic rows). */
-internal const val MESSAGE_STATUS_SENT = "sent"
 internal const val ROLE_ASSISTANT = "assistant"
+private const val HTTP_UNAUTHORIZED = 401
 
-/** Parses the backend's RFC 3339 timestamps (chrono `DateTime<Utc>`) to epoch millis. */
-internal fun parseServerTime(value: String): Long = Instant.parse(value).toEpochMilliseconds()
+// The engine's models as the app's: the app's types predate the engine and screens use them.
 
-internal fun MessageDto.toEntity(sessionId: String) = MessageEntity(
-    id = id,
-    sessionId = sessionId,
-    role = sender,
-    // The REST message carries only the display name; the agent type is known for live activity, not history.
-    agentType = null,
-    agentDisplayName = agentDisplayName,
-    content = content,
-    contentJson = contentBlocks?.takeUnless { it is JsonNull }?.toString(),
-    createdAt = parseServerTime(createdAt),
-    status = MESSAGE_STATUS_SENT,
-)
+internal fun ai.nomi.sdk.Session.toDomain() = Session(id, title, lastMessagePreview, updatedAt, unread)
 
-/** [existing] keeps the local unread flag: the server has no notion of it. */
-internal fun SessionDto.toEntity(existing: SessionEntity?) = SessionEntity(
-    id = id,
-    title = title.orEmpty(),
-    lastMessagePreview = lastMessage?.content.orEmpty(),
-    updatedAt = parseServerTime(updatedAt),
-    unread = existing?.unread ?: false,
-)
-
-/** The server only says whether a notification was read; a newly-seen read one is stamped [now]. */
-internal fun NotificationDto.toEntity(existing: NotificationEntity?, now: Long) = NotificationEntity(
-    id = id,
-    kind = kind,
-    title = title,
-    body = body,
-    link = link,
-    createdAt = parseServerTime(createdAt),
-    readAt = if (read) existing?.readAt ?: now else null,
-)
-
-internal fun SessionEntity.toDomain() = Session(id, title, lastMessagePreview, updatedAt, unread)
-
-internal fun MessageEntity.toDomain() =
+internal fun ai.nomi.sdk.Message.toDomain() =
     Message(id, sessionId, role, agentType, agentDisplayName, content, contentJson, createdAt, status)
 
-internal fun StreamingDraftEntity.toDomain() = Draft(turnJobId, text, phase, updatedAt)
+internal fun ai.nomi.sdk.Draft.toDomain() = Draft(turnJobId, text, phase, updatedAt)
 
-internal fun AgentActivityEntity.toDomain() = AgentActivity(agentSessionId, sessionId, agentType, phase, detail, updatedAt)
+internal fun ai.nomi.sdk.AgentActivity.toDomain() =
+    AgentActivity(agentSessionId, sessionId, agentType, phase, detail, updatedAt)
 
-internal fun NotificationEntity.toDomain() = NotificationItem(id, kind, title, body, link, createdAt, readAt)
+internal fun ai.nomi.sdk.NotificationItem.toDomain() = NotificationItem(id, kind, title, body, link, createdAt, readAt)
+
+internal fun SdkVerificationInfo.toDomain() =
+    VerificationInfo(challengeId, purpose, email, expiresIn, resendIn, sendsLeft)
+
+/**
+ * The engine's errors as the ones screens already handle: HTTP refusals as [ApiException], code problems as
+ * [EmailCodeException], a closed account as [SessionEndedException]. Anything else stays as it is.
+ */
+internal suspend fun <T> translated(block: suspend () -> T): T = try {
+    block()
+} catch (e: NomiException) {
+    throw when (e) {
+        is NomiException.Unauthorized -> ApiException(HTTP_UNAUTHORIZED, "unauthorized")
+        is NomiException.Http -> ApiException(e.status.toInt(), e.reason)
+        is NomiException.EmailCode -> EmailCodeException(e.error.toDomain())
+        is NomiException.AccountClosed, is NomiException.NotSignedIn -> SessionEndedException()
+        else -> e
+    }
+}
+
+private fun SdkEmailCodeError.toDomain(): EmailCodeError = when (this) {
+    is SdkEmailCodeError.WrongCode -> EmailCodeError.WrongCode(attemptsLeft.toInt())
+    SdkEmailCodeError.Expired -> EmailCodeError.Expired
+    SdkEmailCodeError.TooManyAttempts -> EmailCodeError.TooManyAttempts
+    is SdkEmailCodeError.Wait -> EmailCodeError.Wait(seconds.toInt())
+    SdkEmailCodeError.TooManyCodes -> EmailCodeError.TooManyCodes
+}

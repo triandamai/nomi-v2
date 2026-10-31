@@ -36,8 +36,6 @@ include(
     ":shared:sdk",
     ":shared:designsystem",
     ":shared:network",
-    ":shared:realtime",
-    ":shared:database",
     ":shared:data",
     ":shared:feature:auth",
     ":shared:feature:home",

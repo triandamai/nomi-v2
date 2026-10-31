@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
@@ -13,20 +14,23 @@ val rustCrate = "nomi-sdk"
 val rustLibrary = "nomi_sdk"
 val cinteropPackage = "$rustLibrary.cinterop"
 
+/** Executables carry `.exe` on Windows. */
+val exe = if (System.getProperty("os.name").startsWith("Windows")) ".exe" else ""
+
 val rustWorkspace: File = layout.settingsDirectory.dir("../rust").asFile.canonicalFile
 val rustRelease = providers.gradleProperty("nomi.rust.release").map(String::toBoolean).getOrElse(false)
 val rustProfile = if (rustRelease) "release" else "debug"
 val rustTarget = rustWorkspace.resolve("target")
-val bindgen = rustTarget.resolve("tools/bin/gobley-uniffi-bindgen")
+val bindgen = rustTarget.resolve("tools/bin/gobley-uniffi-bindgen$exe")
 val bindingsConfig = rustWorkspace.resolve("crates/$rustCrate/kotlin-bindings.toml")
 val uniffiDir = layout.buildDirectory.dir("generated/uniffi/bindings")
 val desktopResourcesDir = layout.buildDirectory.dir("generated/uniffi/desktopResources")
 
 /** Cargo from PATH, or rustup's default home when Gradle runs without the shell's PATH (IDEs). */
 val cargo: String = System.getenv("PATH").orEmpty().split(File.pathSeparator)
-    .map { File(it, "cargo") }
+    .map { File(it, "cargo$exe") }
     .firstOrNull { it.canExecute() }?.path
-    ?: File(System.getProperty("user.home"), ".cargo/bin/cargo").path
+    ?: File(System.getProperty("user.home"), ".cargo/bin/cargo$exe").path
 
 /** The library JNA loads on this machine, and the classpath folder it looks for it in. */
 val hostLibrary: File = rustTarget.resolve("$rustProfile/${System.mapLibraryName(rustLibrary)}")
@@ -49,6 +53,35 @@ val jnaResourcePrefix: String = run {
  * itself targets 17). C code in the static library (SQLite, ring) is compiled for it.
  */
 val iosDeploymentTarget = "15.0"
+
+/** cargo-ndk builds the Android libraries with the NDK's toolchains. */
+val cargoNdkVersion = "4.1.2"
+val cargoNdk = rustTarget.resolve("tools/bin/cargo-ndk$exe")
+/**
+ * The Android ABIs built: phones (arm64, and 32-bit arm for older ones) and the emulator (x86_64).
+ * The app packages only these (`abiFilters`), so no device installs it without the engine.
+ */
+val androidAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+val androidMinSdk = libs.versions.android.minSdk.get()
+/** Where the Android libraries land, as `<abi>/libnomi_sdk.so`; the app packages this folder. */
+val androidJniLibsDir = layout.buildDirectory.dir("generated/uniffi/jniLibs")
+
+/**
+ * The NDK: `ANDROID_NDK_HOME` when set, else `<sdk>/ndk/<nomi.android.ndkVersion>`, else the newest
+ * NDK installed in the SDK (`ANDROID_HOME`, or `sdk.dir` in local.properties).
+ */
+val androidNdk: File? = run {
+    System.getenv("ANDROID_NDK_HOME")?.takeIf { it.isNotBlank() }?.let { return@run File(it) }
+    val localProperties = Properties().apply {
+        layout.settingsDirectory.file("local.properties").asFile.takeIf { it.isFile }?.reader()?.use { load(it) }
+    }
+    val sdk = (System.getenv("ANDROID_HOME")?.takeIf { it.isNotBlank() } ?: localProperties.getProperty("sdk.dir"))
+        ?.let(::File) ?: return@run null
+    val pinned = providers.gradleProperty("nomi.android.ndkVersion").orNull
+    if (pinned != null) return@run sdk.resolve("ndk/$pinned")
+    sdk.resolve("ndk").listFiles()?.filter { it.isDirectory }
+        ?.maxByOrNull { dir -> dir.name.split('.').map { it.toIntOrNull() ?: 0 }.fold(0L) { acc, part -> acc * 100_000 + part } }
+}
 
 /** Kotlin/Native targets and the Rust triples their static libraries are built for. */
 val appleTriples = mapOf(
@@ -114,6 +147,43 @@ val stageDesktopLibrary = tasks.register<Copy>("stageDesktopLibrary") {
     dependsOn(cargoBuildHost)
     from(hostLibrary)
     into(desktopResourcesDir.map { it.dir(jnaResourcePrefix) })
+}
+
+val installCargoNdk = tasks.register<Exec>("installCargoNdk") {
+    group = "rust"
+    description = "Installs the pinned cargo-ndk into rust/target/tools."
+    commandLine(
+        cargo, "install", "cargo-ndk",
+        "--version", cargoNdkVersion, "--locked", "--root", rustTarget.resolve("tools").path,
+    )
+    inputs.property("version", cargoNdkVersion)
+    outputs.file(cargoNdk)
+}
+
+val cargoBuildAndroid = tasks.register<Exec>("cargoBuildAndroid") {
+    group = "rust"
+    description = "Builds $rustCrate for ${androidAbis.joinToString()} into build/generated/uniffi/jniLibs."
+    dependsOn(installCargoNdk)
+    val outDir = androidJniLibsDir.get().asFile
+    val ndk = requireNotNull(androidNdk?.takeIf { it.isDirectory }) {
+        "No Android NDK: set ANDROID_NDK_HOME, or install one with the SDK manager"
+    }.path
+    workingDir = rustWorkspace
+    // `cargo ndk` (cargo finds cargo-ndk on the PATH): the plugin refuses to run on its own.
+    commandLine(
+        buildList {
+            addAll(listOf(cargo, "ndk", "--platform", androidMinSdk, "--output-dir", outDir.path))
+            androidAbis.forEach { addAll(listOf("--target", it)) }
+            addAll(listOf("build", "--package", rustCrate))
+            if (rustRelease) add("--release")
+        },
+    )
+    val path = listOf(cargoNdk.parent, File(cargo).parent, System.getenv("PATH").orEmpty())
+    environment("PATH", path.joinToString(File.pathSeparator))
+    environment("ANDROID_NDK_HOME", ndk)
+    inputs.files(rustSources)
+    inputs.property("abis", androidAbis)
+    outputs.dir(outDir)
 }
 
 fun generated(sourceSet: String) = generateUniffiBindings.map { uniffiDir.get().dir("$sourceSet/kotlin") }

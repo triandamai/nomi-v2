@@ -5,19 +5,18 @@ import ai.nomi.data.ActivityRepository
 import ai.nomi.data.AuthRepository
 import ai.nomi.data.ChatRepository
 import ai.nomi.data.ForegroundChat
+import ai.nomi.data.NomiEngine
+import ai.nomi.data.SessionEngine
 import ai.nomi.data.NotificationRepository
 import ai.nomi.data.RealtimeSync
 import ai.nomi.data.SessionGate
 import ai.nomi.data.SessionRepository
-import ai.nomi.database.NomiDatabase
 import ai.nomi.feature.auth.SignInViewModel
 import ai.nomi.feature.chat.ChatViewModel
 import ai.nomi.feature.chats.ChatsViewModel
 import ai.nomi.feature.home.HomeViewModel
 import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
-import ai.nomi.realtime.RealtimeHub
-import ai.nomi.realtime.RealtimeTransport
 import io.ktor.client.HttpClient
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -40,9 +39,8 @@ class KoinGraphTest {
         val koin = startKoin { modules(appModules(testPlatformModule)) }.koin
 
         koin.get<HttpClient>()
-        koin.get<RealtimeTransport>()
-        koin.get<RealtimeHub>()
-        koin.get<NomiDatabase>()
+        koin.get<NomiEngine>()
+        koin.get<SessionEngine>()
         koin.get<AuthRepository>()
         koin.get<SessionRepository>()
         koin.get<NotificationRepository>()
@@ -66,8 +64,7 @@ class KoinGraphTest {
     fun app_wide_objects_are_single_instances() {
         val koin = startKoin { modules(appModules(testPlatformModule)) }.koin
 
-        assertSame(koin.get<RealtimeHub>(), koin.get<RealtimeHub>())
-        assertSame(koin.get<NomiDatabase>(), koin.get<NomiDatabase>())
+        assertSame(koin.get<NomiEngine>(), koin.get<NomiEngine>())
         assertSame(koin.get<SessionGate>(), koin.get<SessionGate>())
         assertSame(koin.get<ForegroundChat>(), koin.get<ForegroundChat>())
     }

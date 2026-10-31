@@ -2,7 +2,6 @@ package ai.nomi.data
 
 import ai.nomi.network.SignInResult
 import ai.nomi.network.VerificationInfo
-import ai.nomi.realtime.RealtimeHub
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,22 +13,22 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 
 /**
- * Whether the app is signed in, and everything that follows from it: signing in opens the one realtime socket and
- * starts [RealtimeSync]; signing out (by the person, or because the server rejected the refresh token) stops both,
- * forgets the tokens and wipes the local cache. The UI routes on [signedIn].
+ * Whether the app is signed in, and everything that follows from it: signing in starts the Rust engine (its realtime
+ * socket and sync) on the user's local data and starts [RealtimeSync]; signing out (by the person, or because the
+ * engine lost the session) stops both, forgets the session and wipes the local data. The UI routes on [signedIn].
  *
  * [restore] and [signIn] run on the main thread (they start [RealtimeSync]); [signOut] may be called from anywhere,
- * it hops onto [scope] (main in the apps).
+ * it hops onto [scope] (main in the apps). Note that the engine revokes the session before the wipe: offline, that
+ * attempt fails fast and the wipe still happens.
  *
  * Each session gets its own [SessionScope] and an epoch number. A sign-out is for the session that was current when
  * it was asked for: one still queued when a newer session has started (a late 401 from the old account) is dropped.
  */
 class SessionGate(
     private val auth: AuthRepository,
-    private val hub: RealtimeHub,
+    private val engine: SessionEngine,
     private val sync: RealtimeSync,
     private val session: SessionScope,
-    private val clearLocalData: suspend () -> Unit,
     private val scope: CoroutineScope,
     private val log: (String) -> Unit = {},
 ) {
@@ -43,6 +42,19 @@ class SessionGate(
     private var epoch = 0
 
     val signedIn: StateFlow<Boolean> = mutableSignedIn.asStateFlow()
+
+    init {
+        // A session the engine ended (refresh token refused) ends here too, wiping like any sign-out.
+        scope.launch {
+            try {
+                engine.ended.collect { signOut() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("session: can't follow the engine's session: $e")
+            }
+        }
+    }
 
     /** False until [restore] has looked for a stored session: the UI shows neither sign-in nor home before. */
     val restored: StateFlow<Boolean> = mutableRestored.asStateFlow()
@@ -86,31 +98,22 @@ class SessionGate(
         scope.launch { endSession(requestedFor) }
     }
 
-    /** The realtime hub's refresh: a rejected refresh token ends the session it was made for. */
-    suspend fun refreshSession(): Boolean {
-        val requestedFor = epoch
-        val ok = auth.refresh()
-        if (!ok) signOut(requestedFor)
-        return ok
-    }
-
-    private fun startSession() {
+    private suspend fun startSession() {
         if (live) return
         live = true
         epoch++
-        mutableSignedIn.value = true
         session.open()
+        attempt("start the engine") { engine.begin() }
+        mutableSignedIn.value = true
         sync.start()
-        hub.start()
     }
 
     /**
-     * Everything local happens under [lock] (session work cancelled and joined, tokens forgotten, cache wiped) before
-     * a new sign-in can start; only the server-side revoke of the captured refresh token runs after it, and it
-     * cannot touch newer tokens.
+     * Everything happens under [lock] (session work cancelled and joined, session forgotten and revoked, local data
+     * wiped) before a new sign-in can start.
      */
     private suspend fun endSession(requestedFor: Int) {
-        val toRevoke = lock.withLock {
+        lock.withLock {
             if (requestedFor != epoch) {
                 log("session: dropping a sign-out meant for an earlier session")
                 return
@@ -118,18 +121,12 @@ class SessionGate(
             val wasLive = live
             live = false
             mutableSignedIn.value = false
-            if (wasLive) {
-                sync.stop()
-                hub.stop()
-            }
+            if (wasLive) sync.stop()
             // Before the wipe: nothing queued or in flight for this account may write after it.
             session.close()
-            var refreshToken: String? = null
-            attempt("forget tokens") { refreshToken = auth.forgetSession() }
-            attempt("clear local data") { clearLocalData() }
-            refreshToken
+            attempt("sign out") { auth.signOut() }
+            attempt("clear local data") { engine.wipe() }
         }
-        if (toRevoke != null) attempt("revoke session") { auth.revoke(toRevoke) }
     }
 
     private suspend fun attempt(what: String, block: suspend () -> Unit) {

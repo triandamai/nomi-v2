@@ -1,13 +1,5 @@
 package ai.nomi.data
 
-import kotlin.time.Clock
-
-/** Epoch-millisecond time source, injected so timestamps written to Room are testable. */
-typealias EpochClock = () -> Long
-
-/** The real wall clock. */
-val SystemEpochClock: EpochClock = { Clock.System.now().toEpochMilliseconds() }
-
 /** A chat in the list. [title] is empty until the server names the chat. */
 data class Session(
     val id: String,
@@ -19,7 +11,8 @@ data class Session(
 
 /**
  * One stored chat message. [role] is `user` or `assistant`; [content] is the markdown text and [contentJson] the
- * server's content-blocks JSON array (null when the message has none).
+ * server's content-blocks JSON array (null when the message has none). [status] is `sent` for what the server stored,
+ * `sending` or `failed` for the person's message still in the engine's outbox.
  */
 data class Message(
     val id: String,
@@ -57,7 +50,7 @@ data class NotificationItem(
 )
 
 /**
- * Everything the chat screen renders, read from Room only.
+ * Everything the chat screen renders, read from the engine's store only.
  * [lastError] is the reason the latest turn failed (cleared by the next delta, completed turn or send);
  * [accessLost] means the server denied this chat's realtime topic (deleted, or access revoked).
  */

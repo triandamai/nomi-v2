@@ -1,7 +1,6 @@
 package ai.nomi.app.android
 
 import ai.nomi.data.SessionGate
-import ai.nomi.realtime.RealtimeHub
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -22,12 +21,11 @@ private const val PRESENCE_CHANNEL_NAME = "Nomi Companion"
 private const val PRESENCE_NOTIFICATION_ID = 1001
 
 /**
- * Keeps the shared [RealtimeHub] socket and the Messenger-style chat-head overlay alive while the person is away
- * from `MainActivity`. Shares the single Koin `RealtimeHub` instance with the Activity.
+ * Keeps the engine's realtime socket and the Messenger-style chat-head overlay alive while the person is away from
+ * `MainActivity`. Restoring the session starts the engine, which the Activity shares.
  */
 class NomiPresenceService : Service() {
     private val gate: SessionGate by inject()
-    private val hub: RealtimeHub by inject()
     private val appScope: CoroutineScope by inject(named("app"))
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -41,12 +39,7 @@ class NomiPresenceService : Service() {
         } else {
             startForeground(PRESENCE_NOTIFICATION_ID, notification)
         }
-        appScope.launch {
-            gate.restore()
-            if (gate.signedIn.value) {
-                hub.start()
-            }
-        }
+        appScope.launch { gate.restore() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY

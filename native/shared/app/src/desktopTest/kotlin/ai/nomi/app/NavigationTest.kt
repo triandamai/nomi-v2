@@ -14,7 +14,6 @@ import ai.nomi.designsystem.theme.NomiTheme
 import ai.nomi.feature.chat.CHAT_SCREEN_TAG
 import ai.nomi.feature.chats.CHATS_SCREEN_TAG
 import ai.nomi.feature.home.HOME_SCREEN_TAG
-import ai.nomi.realtime.Topic
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -28,6 +27,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
+/** How long the engine may take to start keeping an opened chat in sync, or to stop. */
+private const val SYNC_TIMEOUT_MS = 5_000L
+private const val TEST_ACCOUNT = "test-user"
+
 class NavigationTest {
     @get:Rule val rule = createComposeRule()
 
@@ -38,6 +41,8 @@ class NavigationTest {
         graph = TestGraph()
         val app = startKoin { modules(graph.modules) }
         app.koin.get<ai.nomi.data.SessionScope>().open()
+        // What the session gate's engine would do at sign-in.
+        kotlinx.coroutines.runBlocking { app.koin.get<ai.nomi.data.NomiEngine>().get().openAccount(TEST_ACCOUNT) }
     }
 
     @AfterTest
@@ -80,22 +85,22 @@ class NavigationTest {
     }
 
     @Test
-    fun pushing_chat_then_back_returns_home_and_clears_the_chat_listener() {
+    fun pushing_chat_then_back_returns_home_and_stops_syncing_the_chat() {
         val backStack = mutableStateListOf<NomiRoute>(Home)
-        val topic = Topic.Chat("abc")
+        val syncing = { graph.backend.syncing.value["abc"] ?: 0 }
         rule.setContent { NomiTheme(reducedMotion = true) { NomiNavDisplay(backStack, wide = false) } }
         rule.onNodeWithTag(HOME_SCREEN_TAG).assertExists()
 
         rule.runOnIdle { backStack.openChat("abc") }
         rule.onNodeWithTag(CHAT_SCREEN_TAG).assertExists()
-        rule.runOnIdle { assertEquals(1, graph.hub.listenerCount(topic)) }
+        rule.waitUntil(SYNC_TIMEOUT_MS) { syncing() == 1 }
 
         rule.runOnIdle { backStack.back() }
         rule.waitForIdle()
         rule.onNodeWithTag(HOME_SCREEN_TAG).assertExists()
         rule.onNodeWithTag(CHAT_SCREEN_TAG).assertDoesNotExist()
-        // The chat entry's ViewModel store was cleared with the entry, which removed its realtime listener.
-        rule.runOnIdle { assertEquals(0, graph.hub.listenerCount(topic)) }
+        // The chat entry's ViewModel store was cleared with the entry, which stopped keeping the chat in sync.
+        rule.waitUntil(SYNC_TIMEOUT_MS) { syncing() == 0 }
     }
 
     @Test
