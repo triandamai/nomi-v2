@@ -15,6 +15,11 @@ use crate::network::auth::{
 };
 use crate::network::realtime::{normalize_topic, ConnectionState, RealtimeSettings, TopicWatch};
 use crate::network::Network;
+use crate::services::account::{ConnectionsOverview, Memory, Project, UsageBrief};
+use crate::services::home::{CrewMember, HomeSummary, Preferences, PreferencesUpdate};
+use crate::services::money::{MoneySummary, NewTransaction};
+use crate::services::reminders::{NewReminder, Reminder, ReminderAction, RemindersOverview};
+use crate::services::Services;
 use crate::storage::{AccountStore, Accounts};
 use crate::sync::{ChatBinding, Shared, SyncEngine, SyncSettings};
 
@@ -64,6 +69,7 @@ pub struct NomiSdk {
     bus: Arc<EventBus>,
     accounts: Arc<Accounts>,
     network: Network,
+    services: Services,
     sync_settings: SyncSettings,
     /// The open account's sync engine; runs exactly while that account is open.
     sync: Mutex<Option<SyncEngine>>,
@@ -346,6 +352,145 @@ impl NomiSdk {
             session_id.map(|id| id.to_lowercase());
     }
 
+    // Account pages (online calls; see services/)
+
+    /// The person's crew and what each member is doing.
+    pub async fn crew(&self) -> Result<Vec<CrewMember>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.crew().await }).await
+    }
+
+    /// Appearance and layout preferences.
+    pub async fn preferences(&self) -> Result<Preferences, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.preferences().await })
+            .await
+    }
+
+    /// Changes the preferences set in `update`; returns them all.
+    pub async fn update_preferences(
+        &self,
+        update: PreferencesUpdate,
+    ) -> Result<Preferences, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.update_preferences(update).await })
+            .await
+    }
+
+    /// The home page's status: what happened while away, today, plans.
+    pub async fn home_summary(&self) -> Result<HomeSummary, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.home_summary().await })
+            .await
+    }
+
+    /// The money month starting in `month` (`YYYY-MM`), or the current one.
+    pub async fn money_summary(&self, month: Option<String>) -> Result<MoneySummary, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.money_summary(month).await })
+            .await
+    }
+
+    /// Adds a transaction from the Money page.
+    pub async fn add_transaction(&self, transaction: NewTransaction) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.add_transaction(transaction).await })
+            .await
+    }
+
+    /// Sets a category's monthly budget.
+    pub async fn set_budget(&self, category: String, limit_cents: i64) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.set_budget(category, limit_cents).await })
+            .await
+    }
+
+    /// Upcoming and past reminders, and agent work scheduled for later.
+    pub async fn reminders(&self) -> Result<RemindersOverview, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.reminders().await })
+            .await
+    }
+
+    /// Creates a reminder.
+    pub async fn create_reminder(&self, reminder: NewReminder) -> Result<Reminder, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.create_reminder(reminder).await })
+            .await
+    }
+
+    /// Marks a reminder done, cancels it, or snoozes it.
+    pub async fn act_on_reminder(
+        &self,
+        id: String,
+        action: ReminderAction,
+    ) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.act_on_reminder(id, action).await })
+            .await
+    }
+
+    /// Cancels agent work scheduled for later.
+    pub async fn cancel_scheduled_task(&self, id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.cancel_scheduled_task(id).await })
+            .await
+    }
+
+    /// What Nomi remembers about the person.
+    pub async fn memories(&self) -> Result<Vec<Memory>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.memories().await })
+            .await
+    }
+
+    /// Rewrites a memory.
+    pub async fn edit_memory(
+        &self,
+        id: String,
+        content: String,
+        kind: Option<String>,
+    ) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.edit_memory(id, content, kind).await })
+            .await
+    }
+
+    /// Confirms a memory is still true.
+    pub async fn confirm_memory(&self, id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.confirm_memory(id).await })
+            .await
+    }
+
+    /// Forgets a memory.
+    pub async fn delete_memory(&self, id: String) -> Result<(), NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.delete_memory(id).await })
+            .await
+    }
+
+    /// The person's connected services.
+    pub async fn connections(&self) -> Result<ConnectionsOverview, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.connections().await })
+            .await
+    }
+
+    /// This month's allowance and how much is used.
+    pub async fn usage_brief(&self) -> Result<UsageBrief, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.usage_brief().await })
+            .await
+    }
+
+    /// Projects in `org_id`, or in the organization picked for projects.
+    pub async fn projects(&self, org_id: Option<String>) -> Result<Vec<Project>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.projects(org_id).await })
+            .await
+    }
+
     /// The local store for `account_id`, opening and migrating its database if needed. Opening a
     /// different account closes the current one first; its store handles stop working.
     ///
@@ -516,6 +661,7 @@ impl NomiSdk {
         let sdk = Arc::new(Self {
             accounts: Arc::new(Accounts::new(&config.data_dir)),
             bus,
+            services: Services::new(network.auth.clone()),
             network,
             config,
             sync_settings: settings.sync,

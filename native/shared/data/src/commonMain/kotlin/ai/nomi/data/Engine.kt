@@ -60,8 +60,8 @@ class NomiEngine(
 }
 
 /**
- * The engine's [CredentialStore] over the app's [TokenStore] (Keystore, Keychain, the desktop store), so the Rust
- * engine and the Ktor client the remaining APIs use share one session. The engine calls it off the main thread.
+ * The engine's [CredentialStore] over the app's [TokenStore] (Keystore, Keychain, the desktop store), where the
+ * session has always been kept. The engine calls it off the main thread.
  *
  * A store that can't be read (locked keychain, corrupt entry) counts as signed out, as it always has; a failed write
  * is logged and leaves the session in memory only. Nothing is thrown back into the engine.

@@ -30,7 +30,7 @@ interface AuthRepository {
     suspend fun signOut()
 }
 
-/** Auth through the Rust engine, which keeps the session in [tokens] (shared with the Ktor client). */
+/** Auth through the Rust engine, which keeps the session in [tokens]. */
 class SdkAuthRepository(private val engine: NomiEngine, private val tokens: TokenStore) : AuthRepository {
     override suspend fun hasSession(): Boolean = engine.get().user.value != null
 

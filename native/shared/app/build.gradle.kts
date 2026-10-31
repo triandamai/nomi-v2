@@ -52,7 +52,6 @@ kotlin {
                 implementation(compose.desktop.uiTestJUnit4)
                 implementation(libs.junit4)
                 implementation(libs.koin.test)
-                implementation(libs.ktor.client.mock)
                 implementation(libs.roborazzi.compose.desktop)
                 implementation(libs.datetime)
                 // The desktop app's Main dispatcher (desktopApp ships the same).

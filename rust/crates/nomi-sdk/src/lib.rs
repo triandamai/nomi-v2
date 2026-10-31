@@ -13,6 +13,7 @@ mod error;
 mod event;
 mod logging;
 mod network;
+mod services;
 mod storage;
 mod sync;
 #[cfg(test)]
@@ -28,6 +29,19 @@ pub use network::auth::{
 };
 pub use network::events::RealtimeEvent;
 pub use network::realtime::{ConnectionState, TopicWatch};
+pub use services::account::{
+    ConnectionsOverview, GoogleConnection, HealthConnection, Memory, Project, UsageBrief, UsagePlan,
+};
+pub use services::home::{
+    CrewMember, HomeSummary, OutItem, PlanItem, Preferences, PreferencesUpdate, TodayItem,
+};
+pub use services::money::{
+    Budget, CategoryTotal, DayTotal, MoneySummary, NewTransaction, NewTransactionItem, Transaction,
+    TransactionItem,
+};
+pub use services::reminders::{
+    NewReminder, Reminder, ReminderAction, RemindersOverview, ScheduledTask,
+};
 pub use storage::models::{
     AgentActivity, DatabaseStatus, Draft, Message, MessageCursor, MessagePage, NotificationItem,
     OutboxEntry, OutboxOperation, OutboxState, Session, SessionFilter,

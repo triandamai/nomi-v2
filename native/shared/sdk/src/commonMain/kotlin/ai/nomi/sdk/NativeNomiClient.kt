@@ -156,6 +156,42 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
 
     override fun setForegroundChat(sessionId: String?) = sdk.setForegroundChat(sessionId)
 
+    override suspend fun crew(): List<CrewMember> = sdk.crew()
+
+    override suspend fun preferences(): Preferences = sdk.preferences()
+
+    override suspend fun updatePreferences(update: PreferencesUpdate): Preferences = sdk.updatePreferences(update)
+
+    override suspend fun homeSummary(): HomeSummary = sdk.homeSummary()
+
+    override suspend fun moneySummary(month: String?): MoneySummary = sdk.moneySummary(month)
+
+    override suspend fun addTransaction(transaction: NewTransaction) = sdk.addTransaction(transaction)
+
+    override suspend fun setBudget(category: String, limitCents: Long) = sdk.setBudget(category, limitCents)
+
+    override suspend fun reminders(): RemindersOverview = sdk.reminders()
+
+    override suspend fun createReminder(reminder: NewReminder): Reminder = sdk.createReminder(reminder)
+
+    override suspend fun actOnReminder(id: String, action: ReminderAction) = sdk.actOnReminder(id, action)
+
+    override suspend fun cancelScheduledTask(id: String) = sdk.cancelScheduledTask(id)
+
+    override suspend fun memories(): List<Memory> = sdk.memories()
+
+    override suspend fun editMemory(id: String, content: String, kind: String?) = sdk.editMemory(id, content, kind)
+
+    override suspend fun confirmMemory(id: String) = sdk.confirmMemory(id)
+
+    override suspend fun deleteMemory(id: String) = sdk.deleteMemory(id)
+
+    override suspend fun connections(): ConnectionsOverview = sdk.connections()
+
+    override suspend fun usageBrief(): UsageBrief = sdk.usageBrief()
+
+    override suspend fun projects(orgId: String?): List<Project> = sdk.projects(orgId)
+
     override suspend fun close() {
         try {
             sdk.shutdown()

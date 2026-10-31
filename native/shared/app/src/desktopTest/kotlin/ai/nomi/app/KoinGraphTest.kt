@@ -17,7 +17,6 @@ import ai.nomi.feature.chats.ChatsViewModel
 import ai.nomi.feature.home.HomeViewModel
 import ai.nomi.feature.notifications.NotificationsViewModel
 import ai.nomi.feature.settings.SettingsViewModel
-import io.ktor.client.HttpClient
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.core.parameter.parametersOf
@@ -38,7 +37,8 @@ class KoinGraphTest {
     fun every_definition_resolves() {
         val koin = startKoin { modules(appModules(testPlatformModule)) }.koin
 
-        koin.get<HttpClient>()
+        koin.get<ai.nomi.network.MoneyApi>()
+        koin.get<ai.nomi.network.HomeApi>()
         koin.get<NomiEngine>()
         koin.get<SessionEngine>()
         koin.get<AuthRepository>()

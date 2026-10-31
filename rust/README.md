@@ -19,6 +19,8 @@ rust/
         ├── error.rs              NomiError (NomiException in Kotlin)
         ├── event.rs              SdkEvent, SdkState, EventBus, EventSubscription
         ├── logging.rs            tracing → SdkEvent::Log
+        ├── services/             the account pages: crew, preferences, home, money, reminders,
+        │                         memory, connections, usage, projects (online, typed)
         ├── network/
         │   ├── mod.rs            Network: the HTTP client, the session, the realtime hub
         │   ├── tls.rs            rustls on ring + Mozilla roots, shared by HTTP and the socket
@@ -240,6 +242,20 @@ in the simulator.
   (`filesDir/nomi-sdk`, Application Support `nomi-sdk`, `<desktop data dir>/sdk`).
 - **CI:** the Android and desktop-installer jobs install Rust; Android also gets its targets and the
   runner's NDK.
+- **Account pages (second pass):** crew, preferences, the home summary, money, reminders, memory,
+  connections, usage and projects are typed engine calls (`services/`). The existing Kotlin `*Api`
+  interfaces are kept and implemented on the engine (`SdkHomeApi`, `SdkMoneyApi`, …), so their
+  repositories and screens are unchanged. Ktor, `NomiHttpClient` and its separate token refresh are
+  gone: all networking now goes through Rust. The calls follow the backend's routes as they are, which
+  fixed four the Kotlin client got wrong:
+  - setting a budget is `PUT /api/money/budgets` (was `POST`);
+  - a reminder action is `POST /api/reminders/:id` (was `…/:id/action`);
+  - cancelling scheduled work is `POST /api/scheduled-tasks/:id/cancel` (was `DELETE /api/reminders/tasks/:id`);
+  - money amounts are sent in currency units (`amount`, `monthly_limit`), as the backend parses them
+    (were cents), and the two money writes no longer expect a body back.
+
+  This is verified by 136 Rust tests, 432 desktop and Android host tests, 96 iOS simulator tests, the
+  debug APK, the macOS installer, and the iOS app launched in the simulator.
 
 ## What's left, by milestone
 
@@ -258,8 +274,6 @@ in the simulator.
 **3 — Connected engine**
 - Certificate authorities a user installs on the device aren't trusted (webpki roots, not the
   platform verifier).
-- While Ktor still serves the remaining APIs, it and the engine both refresh tokens from the shared
-  store. That is harmless (the refresh token isn't rotated) but redundant. It goes away with Ktor.
 - Sign-out revokes the session inside `SessionGate`'s lock. Offline, a new sign-in waits up to the
   request timeout.
 
@@ -272,13 +286,15 @@ in the simulator.
 - The inbox's filters and counts (`counts`, `filter=unread|read|promo`) aren't mirrored.
 
 **5 — The app runs on the engine**
-- Port the APIs still on Ktor to the engine: home/profile and appearance preferences, money,
-  reminders, memory, connections, usage, projects. Then delete `NomiHttpClient`, Ktor and the
-  `TokenStore`-based refresh.
+- The account pages are online only, as before: nothing is cached, and their writes aren't queued in
+  the outbox. Their timestamps stay RFC 3339 strings.
+- Endpoints the apps never called aren't ported (budget deletion, money period, connecting services,
+  project details and files, usage by month).
 - Show the outbox in the chat screen: a `failed` message with retry and discard
   (`retryOutbox` / `discardOutbox`). Today only the status string changes.
 - Move ViewModels from the repository wrappers to `NomiClient` and the `AccountStore` flows directly,
-  then drop the duplicate app models (`ai.nomi.data.Session`, …) in favour of the SDK's.
+  then drop the duplicate app models and DTOs (`ai.nomi.data.Session`, `MoneySummaryDto`, …) in
+  favour of the SDK's.
 - Not verified yet: a real sign-in and chat end to end. The debug build points at the hosted API and
   no local backend ran. Running the Android app on an emulator or device.
 
