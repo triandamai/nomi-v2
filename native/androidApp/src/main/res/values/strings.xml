@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Nomi</string>
+    <string name="permission_overlay_title">Keep Nomi close</string>
+    <string name="permission_overlay_message">Nomi\'s chat head floats over your other apps, so you can see replies and answer without switching back. Android asks you to turn on \"Display over other apps\" for that.</string>
+    <string name="permission_overlay_allow">Open settings</string>
+    <string name="permission_not_now">Not now</string>
 </resources>
