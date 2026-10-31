@@ -17,3 +17,7 @@ native/.kotlin/
 native/**/build/
 native/local.properties
 native/iosApp/**/xcuserdata/
+
+# Backend coverage (cargo llvm-cov report)
+backend/coverage/
+backend/coverage.json

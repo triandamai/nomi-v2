@@ -1,6 +1,7 @@
 name: Backend
 
-# The Rust backend under backend/: cargo test against Postgres and EMQX, with a report in the job summary.
+# The Rust backend under backend/: cargo test (with coverage) against Postgres and EMQX, with test and
+# coverage reports in the job summary.
 # Runs on pull requests and merges to main only when one of the paths below changed, so a change
 # elsewhere in the repo doesn't run it. Also called
 # by release.yml, which always runs it, so a tagged build never publishes without a green run.
@@ -10,12 +11,14 @@ on:
       - 'backend/**'
       - '.github/workflows/backend.yml'
       - '.github/scripts/cargo-test-summary.py'
+      - '.github/scripts/llvm-cov-summary.py'
   push:
     branches: [main]
     paths:
       - 'backend/**'
       - '.github/workflows/backend.yml'
       - '.github/scripts/cargo-test-summary.py'
+      - '.github/scripts/llvm-cov-summary.py'
   workflow_call:
   workflow_dispatch:
 
@@ -75,6 +78,11 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Cache cargo registry and build output
         uses: Swatinem/rust-cache@v2
@@ -89,12 +97,35 @@ jobs:
           done
           echo "EMQX did not become ready on localhost:1883" && exit 1
 
-      - name: cargo test --workspace
+      # The workspace's tests, built once with coverage on (a separate plain `cargo test` build
+      # wouldn't fit on the runner's disk next to it). The log feeds the test report below;
+      # pipefail keeps a failing test failing this step.
+      - name: cargo test --workspace (with coverage)
         working-directory: backend
-        # The log feeds the report below; pipefail keeps a failing test failing this step.
         run: |
           set -o pipefail
-          cargo test --workspace 2>&1 | tee cargo-test.log
+          cargo llvm-cov --workspace --no-report 2>&1 | tee cargo-test.log
+
+      - name: Coverage report
+        if: ${{ !cancelled() }}
+        working-directory: backend
+        run: |
+          cargo llvm-cov report --json --summary-only --output-path coverage.json
+          cargo llvm-cov report --html --output-dir coverage
+
+      - name: Coverage summary
+        if: ${{ !cancelled() && hashFiles('backend/coverage.json') != '' }}
+        run: python3 .github/scripts/llvm-cov-summary.py backend/coverage.json backend >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && hashFiles('backend/coverage.json') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.json
+            backend/coverage/html
+          retention-days: 14
 
       # The backend's counterpart to Vitest's report on the frontend job: totals, failures with
       # their output, tests that ran over 60s, and every test binary's time.
