@@ -19,6 +19,12 @@ interface NomiClient {
     /** Where the engine is in its lifecycle; updated as [start] and [close] return. */
     val state: StateFlow<SdkState>
 
+    /** Who is signed in; set from the stored session at construction, then by sign-in and sign-out. */
+    val user: StateFlow<SignedInUser?>
+
+    /** The realtime socket's state; it runs while the client is started and someone is signed in. */
+    val connection: StateFlow<ConnectionState>
+
     /** The open account's store; null until [openAccount], and after it is closed or removed. */
     val account: StateFlow<AccountStore?>
 
@@ -26,6 +32,39 @@ interface NomiClient {
 
     /** Starts background work. A no-op while running; throws [NomiException.ShutDown] once closed. */
     suspend fun start()
+
+    /**
+     * Signs in with email and password. The backend may ask for an emailed code instead
+     * ([SignInResult.EmailCodeRequired]); finish with [verifyEmailCode]. Throws
+     * [NomiException.Unauthorized] for wrong credentials, [NomiException.Network] when offline.
+     */
+    suspend fun signIn(email: String, password: String): SignInResult
+
+    /** Throws [NomiException.EmailCode] when the code is wrong, expired or used up. */
+    suspend fun verifyEmailCode(challengeId: String, code: String): SignedInUser
+
+    suspend fun resendEmailCode(challengeId: String): VerificationInfo
+
+    /** False when there is no session or the backend refused it (the session has then ended). */
+    suspend fun refreshSession(): Boolean
+
+    /**
+     * Forgets the session, closes the socket and the open account (its data stays until
+     * [removeAccount]), and revokes the session on the backend, best effort.
+     */
+    suspend fun signOut()
+
+    suspend fun fetchProfile(): Profile
+
+    /** Skips any backoff wait and reconnects the socket now (e.g. back online). */
+    fun reconnect()
+
+    /**
+     * Events for one realtime topic (`chat:<id>`, `project:<id>`, `user`): [SdkEvent.Realtime],
+     * [SdkEvent.TopicResynced] and [SdkEvent.TopicAccessLost]. The topic is watched while collected.
+     * Throws [NomiException.InvalidArgument] for a malformed topic.
+     */
+    fun topicEvents(topic: String): Flow<SdkEvent>
 
     /**
      * The local store for [accountId] (the signed-in user's id), opening and migrating its database

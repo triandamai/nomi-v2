@@ -44,6 +44,12 @@ val jnaResourcePrefix: String = run {
     }
 }
 
+/**
+ * The oldest iOS any binary linking the SDK targets: Kotlin/Native's own test binaries (the app
+ * itself targets 17). C code in the static library (SQLite, ring) is compiled for it.
+ */
+val iosDeploymentTarget = "15.0"
+
 /** Kotlin/Native targets and the Rust triples their static libraries are built for. */
 val appleTriples = mapOf(
     "iosArm64" to "aarch64-apple-ios",
@@ -67,6 +73,7 @@ fun Exec.cargoBuild(triple: String?) {
             if (triple != null) addAll(listOf("--target", triple))
         },
     )
+    if (triple != null && triple in appleTriples.values) environment("IPHONEOS_DEPLOYMENT_TARGET", iosDeploymentTarget)
     inputs.files(rustSources)
 }
 
@@ -121,6 +128,8 @@ kotlin {
             outputs.file(libraryDir.resolve("lib$rustLibrary.a"))
         }
         compilations.getByName("main").cinterops.create(rustLibrary) {
+            // The frameworks the static library needs (see the def file), linked into every consumer.
+            definitionFile.set(project.file("src/nativeInterop/cinterop/$rustLibrary.def"))
             packageName(cinteropPackage)
             headers(uniffiDir.map { it.file("nativeInterop/cinterop/headers/$rustLibrary/$rustLibrary.h") })
             // Embeds the static library in the cinterop klib, so every binary that links it gets Rust too.

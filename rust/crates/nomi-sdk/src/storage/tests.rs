@@ -8,6 +8,8 @@ use crate::{
     NotificationItem, SdkEvent, Session, SessionFilter,
 };
 
+use crate::test_support::MemoryCredentials;
+
 const BASE_URL: &str = "https://api-nomi.trian.space";
 const ACCOUNT: &str = "0b9c6f0e-account-a";
 const OTHER_ACCOUNT: &str = "5d1e2a7c-account-b";
@@ -24,10 +26,10 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let sdk = NomiSdk::new(default_sdk_config(
-            BASE_URL.to_owned(),
-            dir.path().display().to_string(),
-        ))
+        let sdk = NomiSdk::new(
+            default_sdk_config(BASE_URL.to_owned(), dir.path().display().to_string()),
+            MemoryCredentials::default().boxed(),
+        )
         .unwrap();
         Self { dir, sdk }
     }

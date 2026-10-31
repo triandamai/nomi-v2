@@ -26,7 +26,7 @@ private val EVENT_TIMEOUT = 5.seconds
  * Collectors start `UNDISPATCHED`: they subscribe before the test moves on, so no event is missed.
  */
 class NativeNomiClientTest {
-    private fun client(): NativeNomiClient = NativeNomiClient(defaultSdkConfig(BASE_URL, newDataDir()))
+    private fun client(): NativeNomiClient = NativeNomiClient(defaultSdkConfig(BASE_URL, newDataDir()), MemoryCredentialStore())
 
     /** Native calls resume from Rust threads; real time, not runTest's virtual clock, bounds them. */
     private fun nativeTest(body: suspend CoroutineScope.() -> Unit) = runTest {
@@ -97,7 +97,7 @@ class NativeNomiClientTest {
     @Test
     fun rejectsAnInvalidConfig() = nativeTest {
         val error = assertFailsWith<NomiException.InvalidConfig> {
-            NativeNomiClient(defaultSdkConfig("not a url", newDataDir()))
+            NativeNomiClient(defaultSdkConfig("not a url", newDataDir()), MemoryCredentialStore())
         }
         assertTrue(error.reason.contains("base_url"))
     }
