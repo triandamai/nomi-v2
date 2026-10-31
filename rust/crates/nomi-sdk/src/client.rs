@@ -484,6 +484,20 @@ impl NomiSdk {
             .await
     }
 
+    /// A small preview of an attached image, as the encoded image.
+    pub async fn attachment_preview(&self, id: String) -> Result<Vec<u8>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.attachment_preview(&id).await })
+            .await
+    }
+
+    /// An attached file's content as uploaded.
+    pub async fn attachment_content(&self, id: String) -> Result<Vec<u8>, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.attachment_content(&id).await })
+            .await
+    }
+
     /// Projects in `org_id`, or in the organization picked for projects.
     pub async fn projects(&self, org_id: Option<String>) -> Result<Vec<Project>, NomiError> {
         let services = self.services.clone();

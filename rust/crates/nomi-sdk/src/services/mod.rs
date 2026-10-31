@@ -6,6 +6,7 @@
 //! backend's RFC 3339 strings and days as `YYYY-MM-DD`, as the screens already read them.
 
 pub(crate) mod account;
+pub(crate) mod attachments;
 pub(crate) mod home;
 pub(crate) mod money;
 pub(crate) mod reminders;
@@ -45,6 +46,13 @@ impl Services {
         }
         let response = self.auth.send(|client| client.get(url.clone())).await?;
         http::json(response).await
+    }
+
+    /// `GET /api/<segments>`'s raw body (files, images).
+    async fn get_bytes(&self, segments: &[&str]) -> Result<Vec<u8>, NomiError> {
+        let url = self.auth.api_url(segments);
+        let response = self.auth.send(|client| client.get(url.clone())).await?;
+        http::bytes(response).await
     }
 
     /// A request with an optional JSON body whose answer is only its status.

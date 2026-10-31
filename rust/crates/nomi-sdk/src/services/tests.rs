@@ -416,3 +416,29 @@ async fn account_pages_need_a_session() {
     assert_eq!(sdk.memories().await, Err(NomiError::NotSignedIn));
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn fetches_an_attachments_preview_and_content_as_bytes() {
+    const PREVIEW_BYTES: &[u8] = &[0x89, b'P', b'N', b'G'];
+    const CONTENT_BYTES: &[u8] = b"report body";
+    let h = Harness::new().await;
+    for (url_path, bytes) in [
+        ("/api/attachments/f1/preview", PREVIEW_BYTES),
+        ("/api/attachments/f1/content", CONTENT_BYTES),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(url_path))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(bytes))
+            .expect(1)
+            .mount(&h.server)
+            .await;
+    }
+    assert_eq!(h.sdk.attachment_preview("f1".into()).await.unwrap(), PREVIEW_BYTES);
+    assert_eq!(h.sdk.attachment_content("f1".into()).await.unwrap(), CONTENT_BYTES);
+
+    h.answer("GET", "/api/attachments/gone/preview", 404, None).await;
+    assert!(matches!(
+        h.sdk.attachment_preview("gone".into()).await,
+        Err(NomiError::Http { status: 404, .. })
+    ));
+}

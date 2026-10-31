@@ -2,11 +2,16 @@ package ai.nomi.desktop
 
 import androidx.compose.ui.unit.IntRect
 
+// In step with the pill's own sizes (DynamicIsland.kt).
 const val ISLAND_COLLAPSED_WIDTH_DP = 188
 const val ISLAND_WORKING_WIDTH_DP = 256
-const val ISLAND_EXPANDED_WIDTH_DP = 340
+const val ISLAND_PEEK_WIDTH_DP = 420
+const val ISLAND_EXPANDED_WIDTH_DP = 460
 const val ISLAND_COLLAPSED_HEIGHT_DP = 32
-const val ISLAND_EXPANDED_HEIGHT_DP = 140
+const val ISLAND_PEEK_HEIGHT_DP = 96
+const val ISLAND_EXPANDED_HEIGHT_DP = 440
+/** A notched MacBook's menu bar is as tall as its camera housing (32–38pt); notchless screens use 24–25pt. */
+const val NOTCHED_MENU_BAR_MIN_DP = 30
 const val ISLAND_WINDOW_PADDING_DP = 16
 const val ISLAND_TOP_GAP_DP = 6
 const val MIN_NOTCH_PILL_WIDTH_DP = 160
@@ -62,19 +67,27 @@ fun computeIslandPlacement(
     display: DisplayBoundsDp,
     isExpanded: Boolean,
     isWorking: Boolean = false,
+    isPeeking: Boolean = false,
 ): IslandPlacementDp {
     val collapsedWidth = display.notchWidthDp
         ?.coerceAtLeast(MIN_NOTCH_PILL_WIDTH_DP)
         ?: ISLAND_COLLAPSED_WIDTH_DP
+    // Under a notch, a peek or the open panel starts below the camera housing.
+    val clearance = notchClearanceDp(display)
     val activePillWidth = when {
         isExpanded -> ISLAND_EXPANDED_WIDTH_DP
+        isPeeking -> ISLAND_PEEK_WIDTH_DP
         isWorking -> maxOf(collapsedWidth, ISLAND_WORKING_WIDTH_DP)
         else -> collapsedWidth
     }
-    val activePillHeight = if (isExpanded) ISLAND_EXPANDED_HEIGHT_DP else ISLAND_COLLAPSED_HEIGHT_DP
+    val activePillHeight = when {
+        isExpanded -> expandedHeightDp(display)
+        isPeeking -> ISLAND_PEEK_HEIGHT_DP + clearance
+        else -> ISLAND_COLLAPSED_HEIGHT_DP
+    }
 
     val windowWidth = maxOf(ISLAND_EXPANDED_WIDTH_DP, collapsedWidth) + ISLAND_WINDOW_PADDING_DP * HALF
-    val windowHeight = ISLAND_EXPANDED_HEIGHT_DP + ISLAND_WINDOW_PADDING_DP * HALF
+    val windowHeight = expandedHeightDp(display) + ISLAND_WINDOW_PADDING_DP * HALF
     val windowX = display.xDp + (display.widthDp - windowWidth) / HALF
     val pillTopInScreen = if (display.notchWidthDp != null) {
         display.yDp
@@ -83,12 +96,13 @@ fun computeIslandPlacement(
     }
     val windowY = pillTopInScreen
 
-    val hoverWidth = if (!isExpanded && display.notchWidthDp != null) {
+    val open = isExpanded || isPeeking
+    val hoverWidth = if (!open && display.notchWidthDp != null) {
         maxOf(activePillWidth, display.notchWidthDp)
     } else {
         activePillWidth
     }
-    val hoverHeight = if (!isExpanded && display.notchWidthDp != null) {
+    val hoverHeight = if (!open && display.notchWidthDp != null) {
         maxOf(activePillHeight, display.menuBarHeightDp)
     } else {
         activePillHeight
@@ -111,6 +125,15 @@ fun computeIslandPlacement(
     )
 }
 
+/** How far a notched display's content starts below the top: its menu bar, as tall as the camera housing. */
+fun notchClearanceDp(display: DisplayBoundsDp): Int = if (display.notchWidthDp != null) display.menuBarHeightDp else 0
+
+/** The open panel's height on [display], camera housing included. */
+fun expandedHeightDp(display: DisplayBoundsDp): Int = ISLAND_EXPANDED_HEIGHT_DP + notchClearanceDp(display)
+
+/** Whether a screen with a [menuBarHeightDp]-tall menu bar has a camera notch. */
+fun hasNotch(menuBarHeightDp: Int): Boolean = menuBarHeightDp >= NOTCHED_MENU_BAR_MIN_DP
+
 /**
  * Combines the target [placement] hit rect with the window's actual top-Y on screen (`actualWindowTopYDp`), so even if
  * the OS window manager clamped the window slightly below `y = 0`, hovering either the top notch (`y = 0`) or the
@@ -123,7 +146,7 @@ fun resolveLivePillBounds(
 ): IntRect {
     val base = placement.pillBoundsInScreenDp
     if (actualWindowTopYDp == null) return base
-    val activeHeight = if (isExpanded) ISLAND_EXPANDED_HEIGHT_DP else ISLAND_COLLAPSED_HEIGHT_DP
+    val activeHeight = if (isExpanded) base.height else ISLAND_COLLAPSED_HEIGHT_DP
     return IntRect(
         left = base.left,
         top = minOf(base.top, actualWindowTopYDp),

@@ -92,6 +92,16 @@ object NomiIcons {
         line(8f, 18f, 16f, 18f),
     )
     val Card = glyph(rect(3f, 5f, 18f, 14f, 2f), "M3 10h18", "M7 15h4")
+
+    // Attached files, one per kind (`AttachmentIcon.svelte`).
+    val File = glyph("M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5")
+    val Pdf = glyph("M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5", "M9 13h6M9 17h4")
+    val Image = glyph(rect(3f, 3f, 18f, 18f, 3f), circle(9f, 9f, 2f), "m21 15-4.5-4.5L6 21")
+    val Video = glyph(rect(2f, 5f, 14f, 14f, 3f), "m22 8-6 4 6 4z")
+    val Audio = glyph("M9 18V5l12-2v13", circle(6f, 18f, 3f), circle(18f, 16f, 3f))
+    val Voice = glyph(rect(9f, 3f, 6f, 11f, 3f), "M5 11a7 7 0 0 0 14 0M12 18v3")
+    val Spreadsheet = glyph(rect(3f, 3f, 18f, 18f, 2f), "M3 9h18M3 15h18M9 3v18")
+    val Presentation = glyph(rect(2f, 3f, 20f, 13f, 2f), "M12 16v5M8 21h8")
 }
 
 /**

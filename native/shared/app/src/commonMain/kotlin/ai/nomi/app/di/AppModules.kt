@@ -90,6 +90,7 @@ val coreModule: Module = module {
     single<ConnectionsApi> { SdkConnectionsApi(get()) }
     single<ai.nomi.network.UsageApi> { SdkUsageApi(get()) }
     single<ai.nomi.network.ProjectsApi> { SdkProjectsApi(get()) }
+    single<ai.nomi.network.AttachmentsApi> { ai.nomi.data.SdkAttachmentsApi(get()) }
 
     // The signed-in account's work (a child of AppScope); SessionGate opens it at sign-in and closes it before the wipe.
     single { SessionScope(get(AppScope)) }
@@ -105,8 +106,25 @@ val coreModule: Module = module {
     single { ConnectionsRepository(get(), get()) }
     single { ai.nomi.data.UsageRepository(get(), get()) }
     single { ai.nomi.data.ProjectsRepository(get(), get()) }
+    single { ai.nomi.data.AttachmentPreviews(get(), log = ::appLog) }
     single { RealtimeSync(get(), get(), get(), session = get(), log = ::appLog) }
-    single { CompanionController(get(AppScope), get(), get(), get(), sessionRepository = get(), log = ::appLog) }
+    single {
+        val home = get<HomeApi>()
+        val projects = get<ai.nomi.data.ProjectsRepository>()
+        CompanionController(
+            get(AppScope), get(), get(), get(),
+            sessionRepository = get(),
+            activityRepository = get(),
+            loadCrewNames = { home.crew().associate { it.agentType to it.name } },
+            loadProjects = {
+                projects.list().getOrThrow()
+                    .filter { it.sessionId.isNotBlank() }
+                    .sortedByDescending { it.updatedAt }
+                    .map { ai.nomi.companion.CompanionProject(it.id, it.sessionId, it.name, it.status) }
+            },
+            log = ::appLog,
+        )
+    }
     single { SessionGate(auth = get(), engine = get(), sync = get(), session = get(), scope = get(AppScope), log = ::appLog) }
 }
 

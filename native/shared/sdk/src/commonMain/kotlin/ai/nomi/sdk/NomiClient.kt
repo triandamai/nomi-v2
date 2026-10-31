@@ -197,6 +197,12 @@ interface NomiClient {
     /** Projects in [orgId], or in the organization picked for projects. */
     suspend fun projects(orgId: String?): List<Project>
 
+    /** A small preview of an attached image, as the encoded image. */
+    suspend fun attachmentPreview(id: String): ByteArray
+
+    /** An attached file's content as uploaded. */
+    suspend fun attachmentContent(id: String): ByteArray
+
     /** Stops background work for good and completes every [events] stream. A no-op once closed. */
     suspend fun close()
 }

@@ -351,6 +351,7 @@ private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDis
     val failed = message.status == MESSAGE_STATUS_FAILED
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
+    val split = remember(message.content) { splitAttachments(message.content) }
     LaunchedEffect(copied) {
         if (copied) {
             delay(COPIED_RESET_MS)
@@ -360,15 +361,24 @@ private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDis
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxBubble: Dp = maxWidth * UserBubbleShare
         Column(Modifier.align(Alignment.CenterEnd).widthIn(max = maxBubble), horizontalAlignment = Alignment.End) {
-            Text(
-                message.content,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp, lineHeight = (USER_SP * USER_LINE_HEIGHT).sp),
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier
-                    .alpha(if (sending) SENDING_ALPHA else OPAQUE)
-                    .background(MaterialTheme.colorScheme.primary, NomiTheme.bubbleShapes.end)
-                    .padding(horizontal = UserBubblePaddingH, vertical = UserBubblePaddingV),
-            )
+            Column(
+                Modifier.alpha(if (sending) SENDING_ALPHA else OPAQUE),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(ChainGap),
+            ) {
+                // Attached files show as previews and cards above what was typed, never as their tags.
+                if (split.files.isNotEmpty()) MessageAttachments(split.files)
+                if (split.text.isNotEmpty()) {
+                    Text(
+                        split.text,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp, lineHeight = (USER_SP * USER_LINE_HEIGHT).sp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.primary, NomiTheme.bubbleShapes.end)
+                            .padding(horizontal = UserBubblePaddingH, vertical = UserBubblePaddingV),
+                    )
+                }
+            }
             if (failed) {
                 NotSent(onRetry, onDiscard)
                 return@Column
@@ -381,7 +391,7 @@ private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDis
                 if (sending) Meta("Sending…") else time?.let { Meta(it) }
                 IconButton(
                     onClick = {
-                        clipboard.setText(AnnotatedString(message.content))
+                        clipboard.setText(AnnotatedString(split.text.ifEmpty { message.content }))
                         copied = true
                     },
                     modifier = Modifier.size(ActionIconSize),

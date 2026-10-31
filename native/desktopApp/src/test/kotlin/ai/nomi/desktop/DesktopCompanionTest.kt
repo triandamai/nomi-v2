@@ -45,6 +45,33 @@ class DesktopCompanionTest {
     }
 
     @Test
+    fun peekAndOpenPanelStartBelowTheNotch() {
+        val notched = DisplayBoundsDp(xDp = 0, yDp = 0, widthDp = 1512, heightDp = 982, menuBarHeightDp = 38, notchWidthDp = 180)
+        val plain = DisplayBoundsDp(xDp = 0, yDp = 0, widthDp = 2560, heightDp = 1440, menuBarHeightDp = 24, notchWidthDp = null)
+
+        val peek = computeIslandPlacement(notched, isExpanded = false, isPeeking = true)
+        assertEquals(ISLAND_PEEK_WIDTH_DP, peek.pillBoundsInScreenDp.width)
+        assertEquals(ISLAND_PEEK_HEIGHT_DP + 38, peek.pillBoundsInScreenDp.height)
+
+        val open = computeIslandPlacement(notched, isExpanded = true)
+        assertEquals(ISLAND_EXPANDED_WIDTH_DP, open.pillBoundsInScreenDp.width)
+        assertEquals(ISLAND_EXPANDED_HEIGHT_DP + 38, open.pillBoundsInScreenDp.height)
+        // The window never resizes: it already fits the open panel.
+        assertTrue(open.windowHeightDp >= open.pillBoundsInScreenDp.height)
+        assertEquals(peek.windowHeightDp, open.windowHeightDp)
+
+        assertEquals(ISLAND_EXPANDED_HEIGHT_DP, computeIslandPlacement(plain, isExpanded = true).pillBoundsInScreenDp.height)
+    }
+
+    @Test
+    fun onlyATallMenuBarMeansANotch() {
+        assertTrue(hasNotch(38))
+        assertTrue(hasNotch(32))
+        assertFalse(hasNotch(24))
+        assertFalse(hasNotch(25))
+    }
+
+    @Test
     fun cursorSampleComputesHoverAndEyeTrackingVector() {
         val pill = IntRect(left = 600, top = 10, right = 800, bottom = 46)
         val inside = evaluateCursorSample(cursorXDp = 700, cursorYDp = 28, pillBounds = pill)

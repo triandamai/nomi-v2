@@ -192,6 +192,10 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
 
     override suspend fun projects(orgId: String?): List<Project> = sdk.projects(orgId)
 
+    override suspend fun attachmentPreview(id: String): ByteArray = sdk.attachmentPreview(id)
+
+    override suspend fun attachmentContent(id: String): ByteArray = sdk.attachmentContent(id)
+
     override suspend fun close() {
         try {
             sdk.shutdown()
