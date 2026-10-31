@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { building } from '$app/environment';
-	import { base } from '$app/paths';
 	import { page } from '$app/state';
+	import { docHref } from '$lib/docs/href';
 
 	let { children } = $props();
 
@@ -15,7 +15,7 @@
 		{ key: 'nomi', label: 'Nomi' },
 		{ key: 'chat', label: 'Chat responses' },
 		{ key: 'build', label: 'Build' },
-	].map((sheet) => ({ ...sheet, href: __DS_STATIC__ ? `${base}/design-system/${sheet.key}.html` : `/design-system/${sheet.key}` }));
+	].map((sheet) => ({ ...sheet, href: docHref(`/design-system/${sheet.key}`) }));
 </script>
 
 <svelte:head><title>Design system · Nomi</title></svelte:head>
@@ -23,6 +23,7 @@
 <div data-theme={theme === 'dark' || theme === 'light' ? theme : undefined} class="min-h-screen bg-bg">
 	<div class="mx-auto flex max-w-400 flex-col gap-16 p-16 max-md:px-4">
 		<nav class="flex items-center gap-4 text-ui" aria-label="Design sheets">
+			<a href={docHref('/design-system')} data-sveltekit-reload={__DS_STATIC__ || undefined} class="rounded-sm px-2 py-1 text-text-3 hover:bg-surface-2 hover:text-text">Docs</a>
 			{#each sheets as sheet (sheet.href)}
 				<a
 					href={sheet.href}

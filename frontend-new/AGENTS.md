@@ -232,7 +232,25 @@ app's heading) go in that file's scoped `<style>` with a comment.
   through the WebSocket relay (`ws-proxy/ws-proxy.js`), which refuses other sites' pages and
   renews an expired token before giving up. `vite dev`/`preview` run the same relay.
 
-## 5. The gallery (`/design-system`)
+## 5. The docs and the gallery (`/design-system`)
+
+`/design-system` is the design system's documentation for every team (Get started per role,
+Foundations, Content, Components, Patterns, Tokens, Resources), built from the real components in
+`src/routes/design-system/(docs)` and `src/lib/docs`. The three pen sheets sit beside it in
+`(sheets)`.
+
+- **Every component has a docs entry.** Adding or changing a component in `src/lib/ds` means
+  adding or updating its `ComponentDoc` in `src/lib/docs/entries/<category>.ts` (summary, when to
+  use it, do/don't, writing, accessibility) in the same PR; a test fails on a component without
+  one. Props are never written by hand: the docs read them from the type given to `$props()` at
+  build time (`src/lib/docs/api`), and the comments above it become "Notes from the source".
+- Live examples are `src/lib/docs/examples/<component-slug>/<nn>-<name>.svelte`, first line
+  `<!-- Title: description -->`; what renders is what the page shows as code.
+- Patterns are the Chat responses and Build sheet sections (`src/lib/docs/patterns.ts`), with
+  their guidance in `src/lib/docs/pattern-docs/`. Guide pages are listed in `src/lib/docs/nav.ts`.
+- Internal links go through `docHref` so they work in the static copy as well.
+
+### The sheets
 
 - `/design-system/nomi`, `/chat`, `/build` rebuild the three sheets section by section with the
   real components, laid out like the pen: 64 around the sheet and between sections, the pen's DS
@@ -246,7 +264,8 @@ app's heading) go in that file's scoped `<style>` with a comment.
   production. `?theme=dark|light` forces a theme.
 - Adding a section: read the pen section's structure, build or reuse the components (tests first),
   add the section in the pen's order, add its bounds to `pen/bounds.json` (pen/README.md), and run
-  the guard.
+  the guard. A new Chat or Build section is also a pattern: add it to `src/lib/docs/patterns.ts`
+  with its guidance.
 
 ## 6. Proving 1:1
 
