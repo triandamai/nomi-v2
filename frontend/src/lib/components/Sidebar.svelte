@@ -55,7 +55,7 @@
 	{#if inSettings}
 		<div class="scroll"><SettingsDrawer {userEmail} {profile} /></div>
 	{:else if !collapsed}
-		<div class="scroll"><NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} /></div>
+		<NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} />
 	{:else}
 		<nav class="rail" aria-label={m.nav_main()}>
 			<a href="/" class="rail__brand" aria-label={m.nav_nomi_home()}><Mascot agent="nomi" size={32} /></a>
@@ -95,8 +95,7 @@
 			flex-shrink: 0;
 		}
 	}
-	/* The whole drawer scrolls, top to bottom, as the phone's does: the Sidebar twin's own layout
-	   scrolls only its recents inside a fixed column, which on a shorter window shows a sliver. */
+	/* The settings drawer scrolls as a whole on a short window (the main one scrolls its middle). */
 	.scroll {
 		height: 100%;
 		overflow-y: auto;
@@ -107,10 +106,6 @@
 	.scroll :global(.drawer) {
 		height: auto;
 		min-height: 100%;
-	}
-	.scroll :global(.recents) {
-		flex: 1 0 auto;
-		overflow: visible;
 	}
 	.rail {
 		display: flex;
