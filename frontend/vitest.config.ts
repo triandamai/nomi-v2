@@ -39,6 +39,7 @@ export default defineConfig({
 						'$app/state': fileURLToPath(new URL('./src/test-stubs/app-state.ts', import.meta.url)),
 						'$app/environment': fileURLToPath(new URL('./src/test-stubs/app-environment.ts', import.meta.url)),
 						'$app/forms': fileURLToPath(new URL('./src/test-stubs/app-forms.ts', import.meta.url)),
+						'$app/navigation': fileURLToPath(new URL('./src/test-stubs/app-navigation.ts', import.meta.url)),
 					},
 				},
 				test: {
