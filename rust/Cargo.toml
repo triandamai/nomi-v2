@@ -17,6 +17,8 @@ tokio = { version = "1", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
 url = "2"
+# bundled: one SQLite version, compiled for every target, instead of whatever the platform ships.
+rusqlite = { version = "0.41", features = ["bundled"] }
 tempfile = "3"
 
 [profile.release]

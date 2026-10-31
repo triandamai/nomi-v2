@@ -2,7 +2,8 @@
 //!
 //! Kotlin (Android, iOS, desktop) reaches this crate only through the types exported here with
 //! UniFFI: [`NomiSdk`] for the lifecycle, [`EventSubscription`] for the typed event stream,
-//! [`SdkConfig`] / [`SdkEvent`] / [`NomiError`] as the stable public models.
+//! [`AccountStore`] for an account's local data, [`SdkConfig`] / [`SdkEvent`] / [`NomiError`] and
+//! the storage models as the stable public types.
 
 uniffi::setup_scaffolding!();
 
@@ -11,11 +12,21 @@ mod config;
 mod error;
 mod event;
 mod logging;
+mod storage;
 
 pub use client::{Diagnostics, NomiSdk};
 pub use config::{LogLevel, SdkConfig, DEFAULT_EVENT_BUFFER_CAPACITY};
 pub use error::NomiError;
 pub use event::{EventSubscription, LogRecord, SdkEvent, SdkState};
+pub use storage::models::{
+    AgentActivity, DatabaseStatus, Draft, Message, MessageCursor, MessagePage, NotificationItem,
+    Session, SessionFilter,
+};
+pub use storage::observation::{
+    AgentActivityObservation, DraftObservation, DraftState, MessagesObservation,
+    NotificationsObservation, SessionsObservation, UnreadCountObservation,
+};
+pub use storage::AccountStore;
 
 /// The SDK's own version, as Cargo knows it.
 #[uniffi::export]

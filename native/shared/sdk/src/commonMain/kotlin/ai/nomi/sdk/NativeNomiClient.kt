@@ -16,7 +16,11 @@ class NativeNomiClient(config: SdkConfig) : NomiClient {
     private val sdk = NomiSdk(config)
     private val mutableState = MutableStateFlow(sdk.state())
 
+    private val mutableAccount = MutableStateFlow(sdk.currentAccount())
+
     override val state: StateFlow<SdkState> = mutableState.asStateFlow()
+
+    override val account: StateFlow<AccountStore?> = mutableAccount.asStateFlow()
 
     override val events: Flow<SdkEvent> = flow {
         val subscription = sdk.subscribe()
@@ -40,8 +44,26 @@ class NativeNomiClient(config: SdkConfig) : NomiClient {
         }
     }
 
+    override suspend fun openAccount(accountId: String): AccountStore = accountChange { sdk.openAccount(accountId) }
+
+    override suspend fun closeAccount() = accountChange { sdk.closeAccount() }
+
+    override suspend fun removeAccount(accountId: String) = accountChange { sdk.removeAccount(accountId) }
+
+    override suspend fun resetStorage() = accountChange { sdk.resetStorage() }
+
     override suspend fun close() {
-        sdk.shutdown()
-        mutableState.value = sdk.state()
+        try {
+            sdk.shutdown()
+        } finally {
+            mutableState.value = sdk.state()
+            mutableAccount.value = sdk.currentAccount()
+        }
+    }
+
+    private suspend fun <T> accountChange(change: suspend () -> T): T = try {
+        change()
+    } finally {
+        mutableAccount.value = sdk.currentAccount()
     }
 }

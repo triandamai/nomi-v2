@@ -31,6 +31,10 @@ pub enum SdkEvent {
     StateChanged {
         state: SdkState,
     },
+    /// The open account changed: `Some` after one was opened, `None` after it was closed or removed.
+    AccountChanged {
+        account_id: Option<String>,
+    },
     Log {
         record: LogRecord,
     },
