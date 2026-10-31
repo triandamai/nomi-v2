@@ -126,7 +126,8 @@ class ChatRepositoryTest {
 
         hub.emit(RealtimeEvent.TurnFailed(chat, "s1", "t1", "model overloaded"))
 
-        val state = repo.observe("s1").first { it.draft == null }
+        // The draft is cleared before the error is recorded: wait for both.
+        val state = repo.observe("s1").first { it.draft == null && it.lastError != null }
         assertEquals("model overloaded", state.lastError)
     }
 
