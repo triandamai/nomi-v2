@@ -2634,5 +2634,11 @@
 	"banner_offline": "Kamu sedang offline. Pesan yang kamu kirim menunggu di sini dan terkirim saat tersambung lagi.",
 	"banner_online": "Kembali online.",
 	"banner_online_sent": "Kembali online. Pesan yang menunggu sudah terkirim.",
-	"banner_retry": "Coba lagi"
+	"banner_retry": "Coba lagi",
+	"config_github": "GitHub",
+	"config_github_lede": "Aplikasi OAuth di balik \"Hubungkan GitHub\", untuk mendorong proyek ke repositori. Tanpanya, orang menghubungkan dengan token milik mereka sendiri.",
+	"config_github_client_id": "Client ID",
+	"config_github_client_secret": "Client secret",
+	"config_github_redirect_uri": "URL callback",
+	"config_github_redirect_uri_hint": "mis. https://nomi.example.com/connections/github/callback"
 }

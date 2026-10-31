@@ -73,15 +73,17 @@ The old `frontend/` will use the same endpoints.
   - Only the chat's owner shares it.
 - **Still open:** masking hides amounts ("Rp •••"), email addresses and phone numbers. SharePanel's help text also promises names as initials; the server has no reliable way to tell a name from other words, so names aren't masked yet.
 
-### Export a project to GitHub
+### Export a project to GitHub — done
 - **Needed by:** *Build / Export*: ExportPanel push.
-- **What exists today:**
-  - `POST /api/projects/:id/import/github` (the other direction).
-  - `GET /api/projects/:id/snapshot` (download, which already works).
-- **Proposed contract:**
-  - `POST /api/projects/:id/export/github` with `{ repo: "owner/name", create?: bool, private?: bool }` returns `{ url, commit }`.
-  - It needs a GitHub connection (a new `/api/connections/github`), since import today reads a public zip and holds no token.
-- **Until then:** download only.
+- **Built:** migration `0095_github_connections.sql`, `backend/crates/nomi-server/src/github.rs` and routes in `backend/crates/nomi-server/src/routes/github.rs`.
+  - **Connecting:** `GET /api/connections/github` returns `{ oauth, connection: { login, kind, created_at, last_used_at } | null }`. `oauth` says whether Nomi has an OAuth app (Admin › Configuration › GitHub, or `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`).
+    - With one: `POST /api/connections/github/start` returns `{ url }` to send the person to; the callback page posts `{ code, state }` to `POST /api/connections/github/callback`.
+    - Always: `PUT /api/connections/github` with `{ token }` connects with a token the person made (repository access). It's checked with GitHub first.
+    - `DELETE /api/connections/github` forgets it.
+  - **Pushing:** `POST /api/projects/:id/export/github` with `{ repo: "owner/name" (or a github.com link), create?: bool, private?: bool (default true), message? }` returns `{ url, commit, branch, created }`.
+    - One commit of the project's files on the default branch, as the whole tree, never forced. `.env` files, build output and local databases stay out, as when publishing.
+    - Without a connection it's `409`; a missing repository without `create` is `404`.
+- **Still open:** the connect and push screens (a GitHub row in Connections, the callback page at `/connections/github/callback`, ExportPanel's push), in both apps.
 
 ### Publish requests — done
 - **Needed by:** *Build / Together*: PublishRequest and RequestQueue.

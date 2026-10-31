@@ -70,7 +70,7 @@ also written into `frontend-new/BACKEND_TODO.md` in that file's format.
 6. **Share a chat by link.**
    - SharePanel needs a URL, an expiry and settings (`scope` reply or chat, `mask`, `anyone`).
    - No share routes exist.
-7. **Export a project to GitHub.**
+7. **Export a project to GitHub.** ✅ `/api/connections/github` (OAuth app or a token) and `POST /api/projects/:id/export/github`.
    - ExportPanel's push action needs this.
    - Only `POST /api/projects/:id/import/github` exists, and it reads a public zip without a token.
    - It needs a GitHub connection first.

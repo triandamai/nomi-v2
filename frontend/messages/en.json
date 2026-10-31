@@ -2634,5 +2634,11 @@
 	"banner_offline": "You're offline. A message you send waits here and goes out when you reconnect.",
 	"banner_online": "Back online.",
 	"banner_online_sent": "Back online. Your waiting message was sent.",
-	"banner_retry": "Retry now"
+	"banner_retry": "Retry now",
+	"config_github": "GitHub",
+	"config_github_lede": "The OAuth app behind \"Connect GitHub\", for pushing a project to a repository. Without it, people connect with a token of their own.",
+	"config_github_client_id": "Client ID",
+	"config_github_client_secret": "Client secret",
+	"config_github_redirect_uri": "Callback URL",
+	"config_github_redirect_uri_hint": "e.g. https://nomi.example.com/connections/github/callback"
 }
