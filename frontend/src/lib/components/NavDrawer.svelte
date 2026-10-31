@@ -24,6 +24,10 @@
 	// The main navigation drawer, drawn with the design system's Sidebar (frontend-new's): New chat,
 	// Home, Chats and Projects, the person's pins and More, their recent chats, then usage and the
 	// person at the foot. The desktop sidebar and the phone's drawer both show it.
+	//
+	// The brand and New chat stay at the top and the foot at the bottom; everything from Home to
+	// the last recent chat scrolls between them. The twin scrolls only its recents, which on a short
+	// window shows a sliver, so the recents go in with the places and that one column scrolls.
 	let {
 		userEmail,
 		profile,
@@ -63,6 +67,7 @@
 	});
 </script>
 
+<div class="nav-drawer">
 <DsSidebar newChatHref="/chat/new" newChatShortcut="" {oncollapse}>
 	{#each ids as id (id)}
 		{@const feature = FEATURES[id]}
@@ -76,8 +81,8 @@
 	{/each}
 	<NavItem href="/more" icon={NAV_ICONS.more} label={m.nav_more()} active={isNavActive(page.url.pathname, '/more')} />
 
-	{#snippet recents()}
-		{#if recentChats.status === 'ready' && recentChats.chats.length > 0}
+	{#if recentChats.status === 'ready' && recentChats.chats.length > 0}
+		<div class="recent-chats">
 			<RecentsList
 				allHref="/chats"
 				items={recentChats.chats.map((chat) => ({
@@ -88,8 +93,8 @@
 					active: isRecentChatActive(page.url.pathname, chat.id),
 				}))}
 			/>
-		{/if}
-	{/snippet}
+		</div>
+	{/if}
 
 	{#snippet footer()}
 		{#if usage}
@@ -106,8 +111,31 @@
 		</form>
 	{/snippet}
 </DsSidebar>
+</div>
 
 <style>
+	.nav-drawer {
+		display: flex;
+		height: 100%;
+	}
+	.nav-drawer :global(.sections) {
+		min-height: 0;
+		flex: 1;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-width: thin;
+	}
+	/* Rows keep their height and the column scrolls; as flex items they'd otherwise shrink to fit. */
+	.nav-drawer :global(.sections > *) {
+		flex-shrink: 0;
+	}
+	/* With no recents snippet the twin adds a spacer; the scrolling column fills that space instead. */
+	.nav-drawer :global(.spacer) {
+		display: none;
+	}
+	.recent-chats {
+		margin-top: 14px;
+	}
 	.log-out {
 		display: flex;
 		width: 100%;

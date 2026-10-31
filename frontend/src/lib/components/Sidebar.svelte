@@ -53,7 +53,7 @@
 
 <aside class="sidebar" class:sidebar--rail={collapsed && !inSettings}>
 	{#if inSettings}
-		<SettingsDrawer {userEmail} {profile} />
+		<div class="scroll"><SettingsDrawer {userEmail} {profile} /></div>
 	{:else if !collapsed}
 		<NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} />
 	{:else}
@@ -94,6 +94,18 @@
 			height: 100%;
 			flex-shrink: 0;
 		}
+	}
+	/* The settings drawer scrolls as a whole on a short window (the main one scrolls its middle). */
+	.scroll {
+		height: 100%;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-width: thin;
+		background: var(--md-sys-color-surface-container-low);
+	}
+	.scroll :global(.drawer) {
+		height: auto;
+		min-height: 100%;
 	}
 	.rail {
 		display: flex;

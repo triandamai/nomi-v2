@@ -59,8 +59,8 @@
 		background: color-mix(in srgb, black 40%, transparent);
 		cursor: default;
 	}
-	/* The whole drawer scrolls, top to bottom: the Sidebar twin's own layout keeps its recents
-	   scrolling inside a fixed column, which on a phone leaves most of the drawer out of reach. */
+	/* The drawer fills the screen: the main one scrolls from Home to its recents between the brand
+	   and the foot (NavDrawer); the settings one, if taller than the screen, scrolls whole. */
 	.panel {
 		position: fixed;
 		inset: 0 auto 0 0;
@@ -74,12 +74,7 @@
 	}
 	.panel :global(.drawer) {
 		width: 100%;
-		height: auto;
 		min-height: 100%;
 		padding-bottom: max(12px, env(safe-area-inset-bottom));
-	}
-	.panel :global(.recents) {
-		flex: 1 0 auto;
-		overflow: visible;
 	}
 </style>
