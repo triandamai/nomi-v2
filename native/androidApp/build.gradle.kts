@@ -3,8 +3,12 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
-/** The emulator reaches the host's backend (backend/crates/nomi-server listens on 8080) at 10.0.2.2. */
-val emulatorBackendUrl = "http://10.0.2.2:8080"
+/**
+ * Debug builds talk to the hosted API, as the desktop app does, so they sign in on any emulator or phone. For a local
+ * backend (backend/crates/nomi-server listens on 8080), pass `-Pnomi.apiUrl.debug=http://10.0.2.2:8080` (the emulator's
+ * address for the host).
+ */
+val hostedBackendUrl = "https://api-nomi.trian.space"
 
 /** Release builds must name an https backend; there is no safe default to ship. */
 val releaseApiUrl: String? = providers.gradleProperty("nomi.apiUrl.release").orNull?.takeIf { it.isNotBlank() }
@@ -37,7 +41,7 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "NOMI_API_URL", "\"${providers.gradleProperty("nomi.apiUrl.debug").getOrElse(emulatorBackendUrl)}\"")
+            buildConfigField("String", "NOMI_API_URL", "\"${providers.gradleProperty("nomi.apiUrl.debug").getOrElse(hostedBackendUrl)}\"")
         }
         // Checked above: a release task without -Pnomi.apiUrl.release fails at configuration time.
         release {
