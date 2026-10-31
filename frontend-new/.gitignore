@@ -26,3 +26,7 @@ __screenshots__
 # Paraglide (compiled from messages/ by the Vite plugin and `npm run i18n`)
 /src/lib/paraglide
 /project.inlang/cache
+
+# The static gallery (npm run build:gallery)
+/build-gallery
+/.svelte-kit-gallery

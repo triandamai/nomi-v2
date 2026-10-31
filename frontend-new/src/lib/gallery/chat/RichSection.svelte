@@ -1,4 +1,6 @@
 <script lang="ts">
+	// A sample photo (Unsplash), bundled so the gallery needs nothing from elsewhere.
+	import kosRoom from '../images/kos-room.jpg';
 	import { Carrot, Egg, FileSpreadsheet, Fish, Milk } from '@lucide/svelte';
 	import DataTable from '$lib/ds/chat/DataTable.svelte';
 	import Cart from '$lib/ds/chat/Cart.svelte';
@@ -139,7 +141,7 @@
 					host="kosku.id"
 					title="Kos Mawar Tebet — kamar AC, kamar mandi dalam"
 					description="Rp 2.200.000 / bulan · 5 menit ke Stasiun Tebet · listrik token sendiri"
-					image="https://images.unsplash.com/photo-1725871707476-752774e3da70?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=480"
+					image={kosRoom}
 				/>
 			</div>
 		</GalleryBoard>
