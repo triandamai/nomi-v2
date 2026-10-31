@@ -2,7 +2,15 @@ package ai.nomi.designsystem.navigation
 
 import ai.nomi.designsystem.icon.NomiIcons
 import ai.nomi.designsystem.theme.NomiTheme
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -133,5 +141,54 @@ class NomiNavigationTest {
         // Menu should be dismissed
         rule.onNodeWithText("Preferences").assertDoesNotExist()
     }
-}
 
+    @Test
+    fun onAShortWindowTheBrandNewChatAndFootStayWhileTheMiddleScrolls() {
+        var openedSettings = false
+        var loggedOut = false
+        val items = listOf(
+            NomiNavItem("home", "Home", NomiIcons.Home),
+            NomiNavItem("chats", "Chats", NomiIcons.Chat),
+            NomiNavItem("projects", "Projects", NomiIcons.Folder),
+            NomiNavItem("money", "Money", NomiIcons.Wallet),
+            NomiNavItem("more", "More", NomiIcons.Apps),
+        )
+        val recents = (1..20).map { NomiRecentChat("c$it", "Chat number $it") }
+
+        rule.setContent {
+            NomiTheme(reducedMotion = true) {
+                NomiNavDrawerContent(
+                    items = items,
+                    selected = "home",
+                    onSelect = {},
+                    onNewChat = {},
+                    collapsed = false,
+                    modifier = Modifier.width(300.dp).height(640.dp),
+                    recents = recents,
+                    onSeeAllChats = {},
+                    usage = NomiUsageBrief(planName = "Free", tokensUsed = 80_000, monthlyTokens = 1_000_000, canUpgrade = false),
+                    account = NomiAccount(displayName = "Ada Lovelace", email = "ada@nomi.test"),
+                    onOpenSettings = { openedSettings = true },
+                    onLogOut = { loggedOut = true },
+                )
+            }
+        }
+
+        // The rows keep their height: the list is longer than the window, and scrolls.
+        rule.onNodeWithText("Home").assertIsDisplayed().assertHeightIsAtLeast(20.dp)
+        rule.onNodeWithText("Chat number 20").assertIsNotDisplayed()
+
+        rule.onNodeWithText("See all chats").performScrollTo().assertIsDisplayed()
+
+        // Scrolled to the end, the top and the foot haven't moved off screen.
+        rule.onNodeWithText("Chat number 20").assertIsDisplayed()
+        rule.onNodeWithText("Home").assertIsNotDisplayed()
+        rule.onNodeWithText("New chat").assertIsDisplayed()
+        rule.onNodeWithText("Free").assertIsDisplayed()
+        rule.onNodeWithText("Ada Lovelace").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Settings").assertIsDisplayed().performClick()
+        rule.onNodeWithText("Log out").assertIsDisplayed().performClick()
+        assertTrue(openedSettings)
+        assertTrue(loggedOut)
+    }
+}

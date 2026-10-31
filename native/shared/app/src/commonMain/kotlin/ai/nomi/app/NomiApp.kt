@@ -292,6 +292,7 @@ private fun NomiShell(signedIn: Boolean) {
     val sessionRepo = koinInject<SessionRepository>()
     val allSessions by sessionRepo.observeAll().collectAsStateWithLifecycle(emptyList())
     val usageRepo = koinInject<UsageRepository>()
+    val gate = koinInject<SessionGate>()
     val usageBriefDto by usageRepo.brief.collectAsStateWithLifecycle()
     LaunchedEffect(inApp) {
         if (inApp) usageRepo.refresh()
@@ -348,6 +349,8 @@ private fun NomiShell(signedIn: Boolean) {
                     usage = usageBrief,
                     account = accountData,
                     onOpenAccount = { backStack.selectTopLevel(Settings) },
+                    onOpenSettings = { backStack.selectTopLevel(Settings) },
+                    onLogOut = gate::signOut,
                 )
             }
             Column(Modifier.weight(FILL).fillMaxHeight()) {
@@ -461,6 +464,14 @@ private fun NomiShell(signedIn: Boolean) {
                         onOpenAccount = {
                             coroutineScope.launch { drawerState.close() }
                             backStack.selectTopLevel(Settings)
+                        },
+                        onOpenSettings = {
+                            coroutineScope.launch { drawerState.close() }
+                            backStack.selectTopLevel(Settings)
+                        },
+                        onLogOut = {
+                            coroutineScope.launch { drawerState.close() }
+                            gate.signOut()
                         },
                     )
                 }
