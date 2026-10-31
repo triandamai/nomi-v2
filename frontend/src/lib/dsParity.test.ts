@@ -18,7 +18,7 @@ const SHARED_MODULES = ['agents/crew.ts', 'agents/mascots.ts', 'overlays/toasts.
  * which $lib/styles/ds-twins.css points at the M3 roles, and the actions, inputs and overlays they
  * use are this app's M3 twins. Every file in them stays the same as frontend-new's.
  */
-const COPIED_SECTIONS = ['chat', 'conversation'];
+const COPIED_SECTIONS = ['build', 'chat', 'conversation', 'mobile'];
 
 function files(dir: string, extension: string): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

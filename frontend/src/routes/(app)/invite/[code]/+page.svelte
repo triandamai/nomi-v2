@@ -24,7 +24,7 @@
 			<Button href="/projects" variant="tonal" size="m">{m.invite_open_projects()}</Button>
 		{:else}
 			{@const invite = data.invite}
-			<h1 class="invite__title">{m.invite_title({ org: invite.org_name })}</h1>
+			<h1 class="invite__title">{m.org_join_title({ org: invite.org_name })}</h1>
 			{#if invite.state === 'open'}
 				<p class="invite__lede">{m.invite_lede({ inviter: invite.inviter, org: invite.org_name, role: ROLE[invite.role]().toLowerCase() })}</p>
 				{#if form?.error}<p class="invite__error" role="alert">{form.error}</p>{/if}
