@@ -1346,6 +1346,14 @@ async fn deleting_a_message_removes_what_went_with_it() {
             }))),
     )
     .await;
+    h.mock(get(MESSAGES_PATH).respond_with(ok(page(
+        vec![
+            message_json("m1", "user", "Plan my week", 10),
+            message_json("m3", "user", "Thanks", 30),
+        ],
+        false,
+    ))))
+    .await;
 
     h.sdk
         .delete_message(CHAT.into(), "m2".into())
@@ -1375,6 +1383,59 @@ async fn regenerating_a_reply_asks_in_the_chosen_style_and_resyncs() {
 
     h.sdk
         .regenerate_message(CHAT.into(), "m2".into(), "shorter".into())
+        .await
+        .unwrap();
+
+    let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
+    assert_eq!(ids, ["m1"]);
+}
+
+#[tokio::test]
+async fn refreshing_drops_a_newer_reply_the_server_no_longer_has() {
+    let h = Harness::new().await;
+    h.store
+        .upsert_messages(vec![
+            stored_message("m1", "user", "Plan my week", 10),
+            stored_message("m2", "assistant", "replaced by a regenerate", 20),
+        ])
+        .await
+        .unwrap();
+    h.mock(get(MESSAGES_PATH).respond_with(ok(page(
+        vec![message_json("m1", "user", "Plan my week", 10)],
+        false,
+    ))))
+    .await;
+
+    h.sdk.refresh_messages(CHAT.into()).await.unwrap();
+
+    let ids: Vec<String> = h.messages().await.into_iter().map(|m| m.id).collect();
+    assert_eq!(ids, ["m1"]);
+}
+
+#[tokio::test]
+async fn deleting_a_message_the_server_no_longer_has_removes_it_here() {
+    let h = Harness::new().await;
+    h.store
+        .upsert_messages(vec![
+            stored_message("m1", "user", "Plan my week", 10),
+            stored_message("m2", "assistant", "already gone there", 20),
+        ])
+        .await
+        .unwrap();
+    h.mock(
+        Mock::given(method("DELETE"))
+            .and(path("/api/sessions/s1/messages/m2"))
+            .respond_with(ResponseTemplate::new(404)),
+    )
+    .await;
+    h.mock(get(MESSAGES_PATH).respond_with(ok(page(
+        vec![message_json("m1", "user", "Plan my week", 10)],
+        false,
+    ))))
+    .await;
+
+    h.sdk
+        .delete_message(CHAT.into(), "m2".into())
         .await
         .unwrap();
 
