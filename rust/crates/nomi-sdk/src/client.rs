@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -9,6 +9,7 @@ use crate::config::{SdkConfig, ValidatedConfig};
 use crate::error::NomiError;
 use crate::event::{EventBus, EventSubscription, SdkEvent, SdkState};
 use crate::logging;
+use crate::storage::{AccountStore, Accounts};
 
 /// Worker threads for the SDK's runtime: background work is I/O-bound, and phones are small.
 const WORKER_THREADS: usize = 2;
@@ -23,6 +24,8 @@ pub struct Diagnostics {
     pub state: SdkState,
     pub base_url: String,
     pub data_dir: String,
+    /// The open account, if any.
+    pub account_id: Option<String>,
     /// Wall-clock milliseconds since the epoch when the SDK last started; `None` until then.
     pub started_at_ms: Option<u64>,
 }
@@ -36,6 +39,7 @@ pub struct Diagnostics {
 pub struct NomiSdk {
     config: ValidatedConfig,
     bus: Arc<EventBus>,
+    accounts: Arc<Accounts>,
     inner: Mutex<Inner>,
 }
 
@@ -78,6 +82,7 @@ impl NomiSdk {
         logging::init();
 
         let sdk = Arc::new(Self {
+            accounts: Arc::new(Accounts::new(&config.data_dir)),
             bus: Arc::new(EventBus::new(config.event_buffer_capacity)),
             config,
             inner: Mutex::new(Inner {
@@ -121,6 +126,76 @@ impl NomiSdk {
         Ok(())
     }
 
+    /// The local store for `account_id`, opening and migrating its database if needed. Opening a
+    /// different account closes the current one first; its store handles stop working.
+    ///
+    /// `account_id` names a directory, so it is limited to `A-Z a-z 0-9 - _ .` (user ids are UUIDs).
+    pub async fn open_account(&self, account_id: String) -> Result<Arc<AccountStore>, NomiError> {
+        let runtime = self.runtime()?;
+        let (accounts, handle, id) = (self.accounts.clone(), runtime.clone(), account_id.clone());
+        let (store, switched) = runtime
+            .spawn_blocking(move || {
+                let switched = accounts
+                    .current()
+                    .is_none_or(|store| store.account_id() != id);
+                Ok::<_, NomiError>((accounts.open(&id, handle)?, switched))
+            })
+            .await
+            .map_err(|_| NomiError::ShutDown)??;
+        if self.state() == SdkState::ShutDown {
+            self.accounts.close_current();
+            return Err(NomiError::ShutDown);
+        }
+        if switched {
+            tracing::info!(account_id, "opened account");
+            self.bus.emit(SdkEvent::AccountChanged {
+                account_id: Some(account_id),
+            });
+        }
+        Ok(store)
+    }
+
+    /// The open account's store, if one is open.
+    pub fn current_account(&self) -> Option<Arc<AccountStore>> {
+        self.accounts.current()
+    }
+
+    /// Closes the open account, keeping its data on disk. A no-op when none is open.
+    pub async fn close_account(&self) -> Result<(), NomiError> {
+        let accounts = self.accounts.clone();
+        let closed = self
+            .runtime()?
+            .spawn_blocking(move || accounts.close_current())
+            .await
+            .map_err(|_| NomiError::ShutDown)?;
+        self.announce_closed(closed);
+        Ok(())
+    }
+
+    /// Deletes everything stored for `account_id` (sign-out), closing it first if it is open.
+    pub async fn remove_account(&self, account_id: String) -> Result<(), NomiError> {
+        let accounts = self.accounts.clone();
+        let closed = self
+            .runtime()?
+            .spawn_blocking(move || accounts.remove(&account_id))
+            .await
+            .map_err(|_| NomiError::ShutDown)??;
+        self.announce_closed(closed);
+        Ok(())
+    }
+
+    /// Deletes every account's local data.
+    pub async fn reset_storage(&self) -> Result<(), NomiError> {
+        let accounts = self.accounts.clone();
+        let closed = self
+            .runtime()?
+            .spawn_blocking(move || accounts.remove_all())
+            .await
+            .map_err(|_| NomiError::ShutDown)??;
+        self.announce_closed(closed);
+        Ok(())
+    }
+
     /// Stops background work and ends every event stream. A no-op once shut down.
     pub async fn shutdown(&self) {
         let (runtime, stop, tasks) = {
@@ -153,6 +228,7 @@ impl NomiSdk {
             let _ = drained.await;
             runtime.shutdown_background();
         }
+        self.announce_closed(self.accounts.close_current());
         self.bus.emit(SdkEvent::StateChanged {
             state: SdkState::ShutDown,
         });
@@ -175,12 +251,29 @@ impl NomiSdk {
             state: inner.state,
             base_url: self.config.base_url.to_string(),
             data_dir: self.config.data_dir.display().to_string(),
+            account_id: self.accounts.current().map(|store| store.account_id()),
             started_at_ms: inner.started_at_ms,
         }
     }
 }
 
 impl NomiSdk {
+    /// The SDK's runtime, for blocking work such as SQLite; `ShutDown` once it is gone.
+    fn runtime(&self) -> Result<Handle, NomiError> {
+        let inner = self.lock();
+        match (&inner.state, &inner.runtime) {
+            (SdkState::ShutDown, _) | (_, None) => Err(NomiError::ShutDown),
+            (_, Some(runtime)) => Ok(runtime.handle().clone()),
+        }
+    }
+
+    fn announce_closed(&self, closed: bool) {
+        if closed {
+            tracing::info!("closed account");
+            self.bus.emit(SdkEvent::AccountChanged { account_id: None });
+        }
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().expect("SDK state poisoned")
     }

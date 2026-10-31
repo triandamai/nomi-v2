@@ -18,8 +18,17 @@ rust/
         ├── config.rs             SdkConfig, LogLevel, validation
         ├── error.rs              NomiError (NomiException in Kotlin)
         ├── event.rs              SdkEvent, SdkState, EventBus, EventSubscription
-        └── logging.rs            tracing → SdkEvent::Log
-native/shared/sdk/                Kotlin module: generated bindings + NomiClient / NativeNomiClient
+        ├── logging.rs            tracing → SdkEvent::Log
+        └── storage/
+            ├── mod.rs            Accounts: one database per account, open/switch/remove
+            ├── database.rs       connection, transactions, per-table change counters
+            ├── migrations.rs     ordered schema migrations (PRAGMA user_version)
+            ├── models.rs         Session, Message, Draft, NotificationItem, AgentActivity, …
+            ├── repositories/     SQL per table
+            ├── observation.rs    snapshot-plus-change streams
+            └── store.rs          AccountStore: the API Kotlin reads and writes through
+native/shared/sdk/                Kotlin module: generated bindings, NomiClient / NativeNomiClient,
+                                  AccountStore flows
 ```
 
 ## Bindings
@@ -86,8 +95,26 @@ Still open from Milestone 1:
 - **App wiring.** `:shared:sdk` isn't wired into the app or Koin yet. That happens in Milestone 5,
   when screens move over.
 
-**2 — Local engine.** SQLite (rusqlite, bundled), migrations, per-account databases under
-`data_dir`, repositories, transactions, and snapshot-plus-change observation streams.
+**2 — Local engine (done).** Rust owns the local data the apps kept in Room: sessions, messages,
+streaming drafts, notifications and agent activity. This is verified by 56 Rust tests, plus 13
+Kotlin tests on the desktop JVM and the iOS simulator.
+
+- **Storage:** SQLite (rusqlite, bundled) in WAL mode, with ordered migrations. A database from a
+  newer SDK is refused, and a failed migration rolls back.
+- **Accounts:** each account gets its own database at `<data_dir>/accounts/<account_id>/nomi.db`.
+  Only one is open at a time. Opening another closes the previous `AccountStore`, so its calls fail
+  with `AccountClosed` and its observations end. `remove_account` (sign-out) and `reset_storage`
+  delete files.
+- **Writes:** every write is one immediate transaction. Observers hear about it only after it
+  commits, and only for the tables it touched.
+- **Observations:** a snapshot first, then a new snapshot after each relevant commit. Unchanged
+  answers are skipped and bursts coalesce. Nothing polls.
+- **Kotlin:** `AccountStore.sessions(...)`, `messages(...)`, `draft(...)` and the other observations
+  are `Flow`s, like Room's.
+- **Paging:** messages page with a `(created_at, id)` cursor. Every query is capped at 500 rows.
+
+The write methods (`upsert_*`, `append_draft`, …) stand in for sync until Milestones 3 and 4. They
+let the current Kotlin repositories store server data through Rust instead of Room.
 
 **3 — Connected engine.** reqwest and tokio-tungstenite against the existing REST and realtime
 contracts (`native/shared/network`, `native/shared/realtime`, `backend/crates/nomi-realtime`), with
