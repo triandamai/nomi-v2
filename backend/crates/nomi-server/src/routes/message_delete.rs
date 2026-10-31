@@ -180,7 +180,7 @@ pub async fn delete_message(
     let blobs = remove(&mut tx, &related, None).await?;
     tx.commit().await.map_err(internal("failed to delete message"))?;
     drop_blobs(blobs).await;
-    crate::chat_events::messages_deleted(session_id, related.message_ids.clone());
+    crate::chat_events::messages_deleted(claims.sub, session_id, related.message_ids.clone());
 
     Ok(Json(related))
 }

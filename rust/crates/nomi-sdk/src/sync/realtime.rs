@@ -304,6 +304,21 @@ impl Shared {
                         .write(move |tx| sessions::delete(tx, &session_id))
                         .await
                 }
+                // A chat this device may not have open changed on another one.
+                RealtimeEvent::MessagesDeleted { message_ids, .. } => {
+                    self.store
+                        .write(move |tx| {
+                            for id in &message_ids {
+                                messages::delete(tx, id)?;
+                            }
+                            Ok(())
+                        })
+                        .await
+                }
+                RealtimeEvent::MessageUpdated {
+                    session_id,
+                    message_id,
+                } => self.fetch_message(&session_id, &message_id).await.map(drop),
                 RealtimeEvent::ChatUpdated {
                     session_id, title, ..
                 } => {

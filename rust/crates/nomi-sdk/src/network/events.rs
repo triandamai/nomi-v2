@@ -227,6 +227,14 @@ enum UserWire {
     ChatDeleted {
         session_id: String,
     },
+    MessagesDeleted {
+        session_id: String,
+        message_ids: Vec<String>,
+    },
+    MessageUpdated {
+        session_id: String,
+        message_id: String,
+    },
     DevicePresence {
         device_id: String,
         presence: String,
@@ -404,6 +412,21 @@ fn decode_known(topic: &str, payload: &Value) -> Option<RealtimeEvent> {
         },
         UserWire::ChatDeleted { session_id } => RealtimeEvent::ChatDeleted {
             session_id: session_id.to_lowercase(),
+        },
+        // The same change as on the chat's topic, for devices not showing that chat.
+        UserWire::MessagesDeleted {
+            session_id,
+            message_ids,
+        } => RealtimeEvent::MessagesDeleted {
+            session_id: session_id.to_lowercase(),
+            message_ids: message_ids.iter().map(|id| id.to_lowercase()).collect(),
+        },
+        UserWire::MessageUpdated {
+            session_id,
+            message_id,
+        } => RealtimeEvent::MessageUpdated {
+            session_id: session_id.to_lowercase(),
+            message_id,
         },
         UserWire::DevicePresence {
             device_id,
@@ -601,6 +624,26 @@ mod tests {
             ),
             RealtimeEvent::ChatDeleted {
                 session_id: "s9".into()
+            }
+        );
+        assert_eq!(
+            decode(
+                USER_TOPIC,
+                &json!({ "kind": "MessagesDeleted", "session_id": "S9", "message_ids": ["M1"] })
+            ),
+            RealtimeEvent::MessagesDeleted {
+                session_id: "s9".into(),
+                message_ids: vec!["m1".into()]
+            }
+        );
+        assert_eq!(
+            decode(
+                USER_TOPIC,
+                &json!({ "kind": "MessageUpdated", "session_id": "S9", "message_id": "m1" })
+            ),
+            RealtimeEvent::MessageUpdated {
+                session_id: "s9".into(),
+                message_id: "m1".into()
             }
         );
     }

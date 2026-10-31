@@ -148,9 +148,9 @@ async fn rerun(state: &AppState, user_id: Uuid, session_id: Uuid, start: Uuid, n
     })?;
     tx.commit().await.map_err(internal("failed to run it again"))?;
     drop_blobs(blobs).await;
-    crate::chat_events::messages_deleted(session_id, related.message_ids.iter().copied().filter(|id| *id != start).collect());
+    crate::chat_events::messages_deleted(user_id, session_id, related.message_ids.iter().copied().filter(|id| *id != start).collect());
     if new_text.is_some() {
-        crate::chat_events::message_updated(session_id, start);
+        crate::chat_events::message_updated(user_id, session_id, start);
     }
 
     let total = saved + 1;

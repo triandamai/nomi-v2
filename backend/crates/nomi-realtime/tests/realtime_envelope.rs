@@ -53,4 +53,8 @@ fn deletes_go_out_in_the_shape_the_apps_read() {
     assert_eq!(serde_json::to_value(StreamEnvelope::SessionDeleted).unwrap(), serde_json::json!({ "kind": "SessionDeleted" }));
     let chat = serde_json::to_value(UserEnvelope::ChatDeleted { session_id: id }).unwrap();
     assert_eq!(chat, serde_json::json!({ "kind": "ChatDeleted", "session_id": id }));
+    let left = serde_json::to_value(UserEnvelope::MessagesDeleted { session_id: id, message_ids: vec![id] }).unwrap();
+    assert_eq!(left, serde_json::json!({ "kind": "MessagesDeleted", "session_id": id, "message_ids": [id] }));
+    let edited = serde_json::to_value(UserEnvelope::MessageUpdated { session_id: id, message_id: id }).unwrap();
+    assert_eq!(edited, serde_json::json!({ "kind": "MessageUpdated", "session_id": id, "message_id": id }));
 }

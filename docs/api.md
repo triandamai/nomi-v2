@@ -140,8 +140,9 @@ Nothing polls. A client opens one WebSocket and subscribes to what's on screen:
   when it goes to the background and `"online"` when it's back; closing the socket makes the
   device offline (the connection's MQTT last will).
 - User events: `NotificationCreated`, `ChatReply` (a reply landed in another chat),
-  `DevicePresence` (`device_id`, `presence`, `last_seen_at`) and `DeviceSignedOut` (`device_id`:
-  if it's yours, sign out). The
+  `MessagesDeleted` / `MessageUpdated` with their `session_id` (the same change as on the chat's
+  topic, for devices not showing that chat), `DevicePresence` (`device_id`, `presence`,
+  `last_seen_at`) and `DeviceSignedOut` (`device_id`: if it's yours, sign out). The
   person's activity feed (`GET /api/me/activity/ws`) sends `ChatActivity`: a chat elsewhere
   finished, failed or needs them.
 
