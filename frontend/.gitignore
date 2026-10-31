@@ -27,3 +27,6 @@ test-results
 # Paraglide (compiled from messages/ by the Vite plugin and `npm run i18n`)
 /src/lib/paraglide
 /project.inlang/cache
+
+# Test coverage (npm run test:coverage)
+/coverage

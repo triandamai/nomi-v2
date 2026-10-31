@@ -8,6 +8,15 @@ export default defineConfig({
 		alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) },
 	},
 	test: {
+		// `npm run test:coverage` runs both projects into one report: `text-summary` for the
+		// terminal, `json-summary` for CI's job summary, `html` to browse locally.
+		coverage: {
+			provider: 'v8',
+			include: ['src/**/*.{ts,svelte}', 'ws-proxy/**/*.js'],
+			exclude: ['src/lib/paraglide/**', 'src/test-stubs/**', '**/*.test.ts', '**/*.test.js', '**/*.d.ts'],
+			reporter: ['text-summary', 'json-summary', 'html'],
+			reportsDirectory: './coverage',
+		},
 		projects: [
 			{
 				extends: true,
