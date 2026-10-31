@@ -332,7 +332,10 @@ hard. Add to this list instead of deviating silently.
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps
   5173). `npm run preview`: 4175.
-- `npm run build:gallery`: the gallery alone as static files in `build-gallery/`, working from
-  any path on any static host (`e2e/gallery-static.e2e.ts` serves it under a nested path). This is
-  the live design-system link shared with the team: rebuild and republish it after the design
-  system changes.
+- `npm run build:gallery`: the docs and sheets alone as static files in `build-gallery/`, working
+  from any path on any static host (`e2e/gallery-static.e2e.ts` serves it under a nested path).
+- The docs site on Cloudflare Pages (project `nomi-design-system`, the team's subdomain attached to
+  it) publishes itself: the `docs` job in `.github/workflows/frontend-new.yml` deploys main as the
+  live site and each pull request's branch as a preview, once the checks pass. By hand:
+  `npm run docs:deploy` (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, or
+  `npx wrangler login`).

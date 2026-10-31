@@ -10,6 +10,7 @@
 		"dev": "vite dev --port 5175 --strictPort",
 		"build": "vite build",
 		"build:gallery": "DS_STATIC=1 vite build",
+		"docs:deploy": "npm run build:gallery && node scripts/docs/deploy.mjs",
 		"preview": "vite preview --port 4175 --strictPort",
 		"prepare": "npm run i18n && svelte-kit sync || echo ''",
 		"i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide",
