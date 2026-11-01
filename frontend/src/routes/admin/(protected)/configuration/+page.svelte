@@ -17,8 +17,9 @@
 
 	interface Field {
 		name: string;
-		env: string;
-		kind: 'text' | 'number' | 'secret' | 'choice';
+		/** The environment variable it falls back to; `null` when it's only ever set here. */
+		env: string | null;
+		kind: 'text' | 'number' | 'secret' | 'choice' | 'domain';
 		choices?: string[];
 		value: string | null;
 		set: boolean;
@@ -109,8 +110,16 @@
 			cli_version: { label: m.config_relay_cli_version, hint: m.config_relay_cli_version_hint },
 			},
 		},
+		domains: {
+			title: m.config_domains,
+			lede: m.config_domains_lede,
+			note: m.config_domains_note,
+			fields: {
+				apps_base_domain: { label: m.config_domains_apps_base_domain, hint: m.config_domains_apps_base_domain_hint },
+			},
+		},
 	};
-	const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay'];
+	const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains'];
 
 	let sections = $state<Section[] | null>(null);
 	let tab = $state('attachments');
@@ -183,8 +192,8 @@
 
 	function source(field: Field): string {
 		if (field.source === 'saved') return m.config_source_saved();
-		if (field.source === 'environment') return m.config_source_env({ env: field.env });
-		return m.config_source_none({ env: field.env });
+		if (field.source === 'environment' && field.env) return m.config_source_env({ env: field.env });
+		return field.env ? m.config_source_none({ env: field.env }) : m.config_source_unset();
 	}
 
 	function hint(section: string, field: Field): string {

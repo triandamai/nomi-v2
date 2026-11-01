@@ -232,7 +232,8 @@ async fn set_up(deps: &Deps<'_>, project_id: Uuid, env: &str, has_functions: boo
     }
 
     at(deps, project_id, env, STEP_DEPLOY).await?;
-    let manifest = manifest::relay_backend_for_app(&app, &project_id.to_string(), env, has_functions, &images.version);
+    let base_domain = crate::configuration::apps_base_domain().await;
+    let manifest = manifest::relay_backend_for_app(&app, &project_id.to_string(), env, has_functions, &images.version, base_domain.as_deref());
     let source = manifest::backend_source(&images, has_functions).map_err(fail(STEP_DEPLOY))?;
     let accepted = client.publish(&org, &app, env, &manifest, Some(source)).await.map_err(fail(STEP_DEPLOY))?;
 

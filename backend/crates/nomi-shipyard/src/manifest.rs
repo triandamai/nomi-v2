@@ -78,6 +78,10 @@ pub fn dockerfile(stack: &str, files: &[(String, Vec<u8>)]) -> String {
 
 /// The Shipyard app that holds a project's Relay backend: the project's own app slug and this.
 pub const BACKEND_SUFFIX: &str = "-backend";
+/// The environment the app's own name is kept for.
+pub const PRODUCTION: &str = "production";
+/// The service that serves the app itself and gets its address.
+pub const WEB_SERVICE: &str = "web";
 /// Where a backend's images are (Admin → Configuration → Relay): Relay's and its functions
 /// runtime's repositories in Shipyard's registry, PostgREST's image, and the tag the first two run
 /// at. The version is raised there when Nomi should move projects to a newer Relay.
@@ -206,20 +210,46 @@ pub fn relay_backend(project_id: &str, env: &str, has_functions: bool, version: 
     })
 }
 
-/// [`relay_backend`] inside `app` on Shipyard: Relay gets its own `-backend` subdomain
-/// (`<app>-backend` in production, `<app>-backend-<env>` in development) so it never collides
-/// with the `web` service's domain (`<app>` in production, `<app>-<env>` in dev).
-pub fn relay_backend_for_app(app: &str, project_id: &str, env: &str, has_functions: bool, version: &str) -> Value {
-    let mut manifest = relay_backend(project_id, env, has_functions, version);
-    let subdomain = if env == "production" {
+/// The first label of the `web` service's address: `<app>` in production, `<app>-<env>` elsewhere.
+pub fn web_label(app: &str, env: &str) -> String {
+    if env == PRODUCTION {
+        app.to_string()
+    } else {
+        format!("{app}-{env}")
+    }
+}
+
+/// The first label of Relay's address, so it never collides with the `web` service's:
+/// `<app>-backend` in production, `<app>-backend-<env>` elsewhere.
+pub fn backend_label(app: &str, env: &str) -> String {
+    if env == PRODUCTION {
         format!("{app}{BACKEND_SUFFIX}")
     } else {
         format!("{app}{BACKEND_SUFFIX}-{env}")
+    }
+}
+
+/// Points `manifest`'s domain at `label`: the full `<label>.<base_domain>` when Nomi has an apps
+/// base domain, else just the label, which Shipyard puts under its own apps domain.
+pub fn set_domain(manifest: &mut Value, label: &str, base_domain: Option<&str>) {
+    if !manifest["domain"].is_object() {
+        manifest["domain"] = json!({});
+    }
+    let domain = manifest["domain"].as_object_mut().expect("domain is an object");
+    domain.remove("hostname");
+    domain.remove("subdomain");
+    match base_domain {
+        Some(base) => domain.insert("hostname".into(), json!(format!("{label}.{base}"))),
+        None => domain.insert("subdomain".into(), json!(label)),
     };
-    manifest["domain"] = json!({
-        "subdomain": subdomain,
-        "service": "relay",
-    });
+}
+
+/// [`relay_backend`] inside `app` on Shipyard, at [`backend_label`] (under `base_domain` when
+/// Nomi has one).
+pub fn relay_backend_for_app(app: &str, project_id: &str, env: &str, has_functions: bool, version: &str, base_domain: Option<&str>) -> Value {
+    let mut manifest = relay_backend(project_id, env, has_functions, version);
+    manifest["domain"] = json!({ "service": "relay" });
+    set_domain(&mut manifest, &backend_label(app, env), base_domain);
     manifest
 }
 
@@ -397,6 +427,15 @@ mod tests {
     }
 
     #[test]
+    fn the_web_domain_is_a_full_hostname_under_the_base_domain_or_the_old_label_without_one() {
+        let mut manifest = build(Database::None, &[]);
+        set_domain(&mut manifest, &web_label("todo", "production"), Some("nomi.app"));
+        assert_eq!(manifest["domain"], json!({ "service": "web", "hostname": "todo.nomi.app" }));
+        set_domain(&mut manifest, &web_label("todo", "staging"), None);
+        assert_eq!(manifest["domain"], json!({ "service": "web", "subdomain": "todo-staging" }));
+    }
+
+    #[test]
     fn dev_and_production_backends_bind_their_own_secret_names() {
         let secrets = |env: &str| relay_backend("p", env, false, "1")["services"][0]["env"]["RELAY_ENCRYPTION_KEY"].clone();
         assert_eq!(secrets("production"), json!({ "secret": "RELAY_ENCRYPTION_KEY" }));
@@ -405,10 +444,12 @@ mod tests {
 
     #[test]
     fn backend_inside_app_claims_backend_subdomain_in_production_and_binds_public_nomi_vars() {
-        let dev = relay_backend_for_app("todo-1234", "p", "dev", false, "0.1.5");
+        let dev = relay_backend_for_app("todo-1234", "p", "dev", false, "0.1.5", None);
         assert_eq!(dev["domain"], json!({ "subdomain": "todo-1234-backend-dev", "service": "relay" }));
-        let prod = relay_backend_for_app("todo-1234", "p", "production", false, "0.1.5");
+        let prod = relay_backend_for_app("todo-1234", "p", "production", false, "0.1.5", None);
         assert_eq!(prod["domain"], json!({ "subdomain": "todo-1234-backend", "service": "relay" }));
+        let under_base = relay_backend_for_app("todo-1234", "p", "dev", false, "0.1.5", Some("nomi.app"));
+        assert_eq!(under_base["domain"], json!({ "hostname": "todo-1234-backend-dev.nomi.app", "service": "relay" }));
 
         let manifest = build(Database::None, &["NOMI_URL".into(), "NOMI_ANON_KEY".into(), "NOMI_SERVICE_KEY".into()]);
         assert_eq!(manifest["domain"], json!({ "service": "web" }));
