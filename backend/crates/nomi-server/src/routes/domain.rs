@@ -30,6 +30,17 @@ pub struct ProjectDomain {
     pub subdomain: Option<String>,
     pub url: Option<String>,
     pub can_edit: bool,
+    /// Nomi's apps base domain (Admin → Configuration → Domains); `None` leaves it to Shipyard.
+    pub base_domain: Option<String>,
+    /// Where the address moves on the next publish, when it isn't under the base domain yet.
+    pub pending_hostname: Option<String>,
+}
+
+/// `<label>.<base>` when `hostname` isn't already under `base`: where the next publish moves it.
+fn pending_hostname(hostname: Option<&str>, base: Option<&str>) -> Option<String> {
+    let (hostname, base) = (hostname?, base?);
+    let wanted = format!("{}.{base}", first_label(hostname));
+    (hostname != wanted).then_some(wanted)
 }
 
 fn text(value: &Value, key: &str) -> Option<String> {
@@ -41,8 +52,9 @@ pub async fn get(State(state): State<AppState>, AuthClaims(claims): AuthClaims, 
     let role = project_role(&state.pool, project_id, claims.sub).await?;
     let target = target(&state, project_id).await?;
     let can_edit = role == "admin";
+    let base_domain = crate::configuration::apps_base_domain().await;
     let Some(app) = target.shipyard_app.as_deref() else {
-        return Ok(Json(ProjectDomain { hostname: None, subdomain: None, url: None, can_edit }));
+        return Ok(Json(ProjectDomain { hostname: None, subdomain: None, url: None, can_edit, base_domain, pending_hostname: None }));
     };
     let domain = match client(&state)?.get_domain(&target.org_key(), app, ENV).await {
         Ok(domain) => domain,
@@ -59,7 +71,8 @@ pub async fn get(State(state): State<AppState>, AuthClaims(claims): AuthClaims, 
     }
     // The part admins pick: the first label, whichever domain it sits under.
     let subdomain = hostname.as_deref().map(|h| first_label(h).to_string());
-    Ok(Json(ProjectDomain { hostname, subdomain, url, can_edit }))
+    let pending_hostname = pending_hostname(hostname.as_deref(), base_domain.as_deref());
+    Ok(Json(ProjectDomain { hostname, subdomain, url, can_edit, base_domain, pending_hostname }))
 }
 
 #[derive(Deserialize)]
@@ -180,4 +193,17 @@ pub async fn change(
     }
     crate::project_events::changed(project_id, "domain.changed");
     Ok(Json(changed).into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_address_outside_the_base_domain_moves_under_it_keeping_its_name() {
+        assert_eq!(pending_hostname(Some("todo.apps.old.dev"), Some("nomi.app")), Some("todo.nomi.app".to_string()));
+        assert_eq!(pending_hostname(Some("todo.nomi.app"), Some("nomi.app")), None, "already there");
+        assert_eq!(pending_hostname(Some("todo.apps.old.dev"), None), None, "no base domain set");
+        assert_eq!(pending_hostname(None, Some("nomi.app")), None, "not published yet");
+    }
 }

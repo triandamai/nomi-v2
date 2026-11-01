@@ -2008,6 +2008,8 @@
 	"domain_address": "Web address",
 	"domain_unpublished": "Publish the app first: its first publish gives it an address.",
 	"domain_hint": "Where people open the app. Changing it frees the old name for anyone to take.",
+	"domain_pending": "Moves to {hostname} the next time it's published.",
+	"domain_move_now": "Move now",
 	"domain_change": "Change",
 	"domain_changed": "The app now opens at {hostname}.",
 	"domain_dns": "DNS and HTTPS",

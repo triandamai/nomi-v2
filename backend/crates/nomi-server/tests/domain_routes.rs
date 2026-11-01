@@ -94,7 +94,10 @@ async fn the_address_can_be_checked_and_changed_by_admins(pool: PgPool) {
     // Never published: no address, and none to change.
     let (status, body) = request(router.clone(), "GET", &uri, Some(&owner), None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "hostname": null, "subdomain": null, "url": null, "can_edit": true }));
+    assert_eq!(
+        body,
+        json!({ "hostname": null, "subdomain": null, "url": null, "can_edit": true, "base_domain": null, "pending_hostname": null })
+    );
     let (status, _) = request(router.clone(), "PUT", &uri, Some(&owner), Some(json!({ "subdomain": "my-todo" }))).await;
     assert_eq!(status, StatusCode::CONFLICT);
 

@@ -13,7 +13,16 @@
 
 	let { deploy }: { deploy: ProjectDeploy } = $props();
 
-	interface Domain { hostname: string | null; subdomain: string | null; url: string | null; can_edit: boolean }
+	interface Domain {
+		hostname: string | null;
+		subdomain: string | null;
+		url: string | null;
+		can_edit: boolean;
+		/** Nomi's apps base domain, when an admin set one. */
+		base_domain: string | null;
+		/** Where the next publish moves the address, when it isn't under the base domain yet. */
+		pending_hostname: string | null;
+	}
 	interface Suggestion { subdomain: string; hostname: string }
 	interface Check { subdomain: string; hostname: string | null; available: boolean; reason?: 'taken' | 'invalid'; message?: string; suggestions: Suggestion[] }
 
@@ -34,8 +43,11 @@
 		void load();
 	});
 
-	/** `.apps.example.dev`: what follows the name. */
-	const suffix = $derived(domain?.hostname && domain.subdomain ? domain.hostname.slice(domain.subdomain.length) : '');
+	/** `.apps.example.dev`: what follows the name. Nomi's base domain when set (the current address
+	 * may still be on an older one until it moves), else whatever the current address ends with. */
+	const suffix = $derived(
+		domain?.base_domain ? `.${domain.base_domain}` : domain?.hostname && domain.subdomain ? domain.hostname.slice(domain.subdomain.length) : '',
+	);
 
 	// ─── Change sheet ────────────────────────────────────────────
 	let open = $state(false);
@@ -53,10 +65,12 @@
 		check = null;
 		changeError = null;
 		open = true;
+		// Not on the base domain yet: the same name is a move, so it's checked like any other.
+		if (domain?.pending_hostname && name) void ask(name);
 	}
 
 	const typed = $derived(name.trim().toLowerCase());
-	const unchanged = $derived(typed === (domain?.subdomain ?? ''));
+	const unchanged = $derived(typed === (domain?.subdomain ?? '') && !domain?.pending_hostname);
 
 	async function ask(subdomain: string): Promise<Check | null> {
 		const id = ++asked;
@@ -79,7 +93,7 @@
 		changeError = null;
 		clearTimeout(timer);
 		const subdomain = value.trim().toLowerCase();
-		if (!subdomain || subdomain === domain?.subdomain) {
+		if (!subdomain || (subdomain === domain?.subdomain && !domain?.pending_hostname)) {
 			asked++;
 			check = null;
 			checking = false;
@@ -132,6 +146,12 @@
 				<Button variant="tonal" size="s" onclick={openSheet}>{m.domain_change()}</Button>
 			{/if}
 		</div>
+		{#if domain.pending_hostname}
+			<div class="pending">
+				<p class="block__hint">{m.domain_pending({ hostname: domain.pending_hostname })}</p>
+				{#if domain.can_edit}<Button variant="text" size="s" onclick={openSheet}>{m.domain_move_now()}</Button>{/if}
+			</div>
+		{/if}
 		<p class="block__hint">{m.domain_hint()}</p>
 		{#if !domain.can_edit}<p class="block__hint">{m.pj_admins_only()}</p>{/if}
 	{/if}
@@ -202,6 +222,12 @@
 </BottomSheet>
 
 <style>
+	.pending {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 12px;
+	}
 	.block {
 		display: flex;
 		flex-direction: column;
