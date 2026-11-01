@@ -161,7 +161,9 @@
 		const changed: Record<string, string> = {};
 		for (const field of current.fields) {
 			const k = key(current.name, field.name);
-			if (values[k] !== initial[k]) changed[field.name] = values[k];
+			// A number input's bind:value hands back a number; the backend takes every value as text.
+			const value = String(values[k] ?? '');
+			if (value !== initial[k]) changed[field.name] = value;
 		}
 		return changed;
 	});
