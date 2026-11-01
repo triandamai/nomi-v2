@@ -1,0 +1,257 @@
+name: Staging
+
+# Staging Deploy: only staging version tags trigger a build+push+deploy.
+# Push a tag like v1.2.3-staging to publish staging images and trigger rollouts on the staging environment.
+# All Shipyard secrets are prefixed with STAGING_*.
+on:
+  push:
+    tags:
+      - 'v*.*.*-staging'
+      - 'v*.*.*-staging.*'
+      - 'v*.*.*-staging*'
+
+jobs:
+  backend:
+    name: Backend
+    uses: ./.github/workflows/backend.yml
+
+  frontend:
+    name: Frontend
+    uses: ./.github/workflows/frontend.yml
+
+  frontend-new:
+    name: Frontend (new)
+    uses: ./.github/workflows/frontend-new.yml
+
+  build-and-push-backend:
+    name: Build and push backend image
+    needs: backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to Shipyard registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}
+          username: ci
+          password: ${{ secrets.STAGING_SHIPYARD_REGISTRY_KEY }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/backend:${{ github.ref_name }}
+            ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/backend:staging
+          cache-from: type=gha,scope=backend-staging
+          cache-to: type=gha,mode=max,scope=backend-staging
+
+  build-and-push-frontend:
+    name: Build and push frontend image
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to Shipyard registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}
+          username: ci
+          password: ${{ secrets.STAGING_SHIPYARD_REGISTRY_KEY }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: frontend
+          push: true
+          # The tag (e.g. v1.2.3-staging) becomes the version the app shows and sends to the backend.
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+          tags: |
+            ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/ui:${{ github.ref_name }}
+            ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/ui:staging
+          cache-from: type=gha,scope=frontend-staging
+          cache-to: type=gha,mode=max,scope=frontend-staging
+
+  build-and-push-frontend-new:
+    name: Build and push frontend-new image
+    needs: frontend-new
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to Shipyard registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}
+          username: ci
+          password: ${{ secrets.STAGING_SHIPYARD_REGISTRY_KEY }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push frontend-new image
+        uses: docker/build-push-action@v7
+        with:
+          context: frontend-new
+          push: true
+          # The tag (e.g. v1.2.3-staging) becomes the version the app shows and sends to the backend.
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+          tags: |
+            ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/ui-new:${{ github.ref_name }}
+            ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/ui-new:staging
+          cache-from: type=gha,scope=frontend-new-staging
+          cache-to: type=gha,mode=max,scope=frontend-new-staging
+
+  # The design-system docs (frontend-new's static gallery, `npm run build:gallery`) as a Shipyard
+  # static site: built once here, zipped and pushed to the registry as a static bundle.
+  build-and-push-docs:
+    name: Build and push design-system docs
+    needs: frontend-new
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend-new
+    env:
+      BUNDLE: ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}/${{ secrets.STAGING_SHIPYARD_IMAGE_PREFIX }}/docs:${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build the static docs
+        run: npm run build:gallery
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+
+      - name: Package bundle
+        run: |
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Nomi design system (staging)</title>' \
+            '<meta http-equiv="refresh" content="0; url=design-system.html">' \
+            '<a href="design-system.html">Nomi design system (staging)</a>' > build-gallery/index.html
+          (cd build-gallery && zip -qr ../site.zip .)
+
+      - uses: oras-project/setup-oras@v2
+
+      - name: Log in to Shipyard registry
+        env:
+          REGISTRY: ${{ secrets.STAGING_SHIPYARD_REGISTRY_HOST }}
+          REGISTRY_KEY: ${{ secrets.STAGING_SHIPYARD_REGISTRY_KEY }}
+        run: echo "$REGISTRY_KEY" | oras login "$REGISTRY" -u ci --password-stdin
+
+      - name: Push static bundle
+        run: |
+          oras push "$BUNDLE" \
+            --artifact-type application/vnd.shipyard.static-bundle \
+            --annotation "org.shipyard.artifact.kind=static_bundle" \
+            --annotation "org.shipyard.framework=sveltekit" \
+            --annotation "org.shipyard.build_command=npm run build:gallery" \
+            --annotation "org.shipyard.output_dir=build-gallery" \
+            site.zip:application/zip
+
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    needs: build-and-push-backend
+    concurrency:
+      group: deploy-backend-staging
+      cancel-in-progress: false
+    steps:
+      - name: Trigger deployment via webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_SHIPYARD_BACKEND_DEPLOY_HOOK || vars.STAGING_SHIPYARD_BACKEND_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::STAGING_SHIPYARD_BACKEND_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
+            exit 1
+          fi
+          url="$WEBHOOK_URL$([ "${WEBHOOK_URL#*\?}" != "$WEBHOOK_URL" ] && echo '&' || echo '?')tag=${{ github.ref_name }}"
+          status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
+            -X POST "$url" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}') || true
+          echo "backend webhook answered HTTP $status"
+          case "$status" in
+            2??) ;;
+            *) echo "::error::backend deploy webhook failed (HTTP $status)"; exit 1 ;;
+          esac
+
+  # The frontend goes out only after the backend deploy was triggered successfully: the backend
+  # runs the database migrations the new frontend relies on.
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: [build-and-push-frontend, deploy-backend]
+    concurrency:
+      group: deploy-frontend-staging
+      cancel-in-progress: false
+    steps:
+      - name: Trigger deployment via webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_SHIPYARD_FRONTEND_DEPLOY_HOOK || vars.STAGING_SHIPYARD_FRONTEND_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::STAGING_SHIPYARD_FRONTEND_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
+            exit 1
+          fi
+          url="$WEBHOOK_URL$([ "${WEBHOOK_URL#*\?}" != "$WEBHOOK_URL" ] && echo '&' || echo '?')tag=${{ github.ref_name }}"
+          status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
+            -X POST "$url" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}') || true
+          echo "frontend webhook answered HTTP $status"
+          case "$status" in
+            2??) ;;
+            *) echo "::error::frontend deploy webhook failed (HTTP $status)"; exit 1 ;;
+          esac
+
+  # Like the old frontend, it goes out only after the backend deploy was triggered successfully.
+  deploy-frontend-new:
+    name: Deploy Frontend (new)
+    runs-on: ubuntu-latest
+    needs: [build-and-push-frontend-new, deploy-backend]
+    concurrency:
+      group: deploy-frontend-new-staging
+      cancel-in-progress: false
+    steps:
+      - name: Trigger deployment via webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_SHIPYARD_FRONTEND_NEW_DEPLOY_HOOK || vars.STAGING_SHIPYARD_FRONTEND_NEW_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::STAGING_SHIPYARD_FRONTEND_NEW_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
+            exit 1
+          fi
+          url="$WEBHOOK_URL$([ "${WEBHOOK_URL#*\?}" != "$WEBHOOK_URL" ] && echo '&' || echo '?')tag=${{ github.ref_name }}"
+          status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
+            -X POST "$url" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}') || true
+          echo "frontend-new webhook answered HTTP $status"
+          case "$status" in
+            2??) ;;
+            *) echo "::error::frontend-new deploy webhook failed (HTTP $status)"; exit 1 ;;
+          esac

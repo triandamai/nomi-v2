@@ -26,9 +26,9 @@ jobs:
     name: Frontend (new)
     uses: ./.github/workflows/frontend-new.yml
 
-  build-and-push:
-    name: Build and push images
-    needs: [backend, frontend]
+  build-and-push-backend:
+    name: Build and push backend image
+    needs: backend
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,6 +55,24 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
+  build-and-push-frontend:
+    name: Build and push frontend image
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to Shipyard registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.SHIPYARD_REGISTRY_HOST }}
+          username: ci
+          password: ${{ secrets.SHIPYARD_REGISTRY_KEY }}
+
+      - uses: docker/setup-buildx-action@v4
+
       - name: Build and push frontend image
         uses: docker/build-push-action@v7
         with:
@@ -64,8 +82,8 @@ jobs:
           build-args: |
             APP_VERSION=${{ github.ref_name }}
           tags: |
-            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend:${{ github.ref_name }}
-            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend:latest
+            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/ui:${{ github.ref_name }}
+            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/ui:latest
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
@@ -96,8 +114,8 @@ jobs:
           build-args: |
             APP_VERSION=${{ github.ref_name }}
           tags: |
-            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend-new:${{ github.ref_name }}
-            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend-new:latest
+            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/ui-new:${{ github.ref_name }}
+            ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/ui-new:latest
           cache-from: type=gha,scope=frontend-new
           cache-to: type=gha,mode=max,scope=frontend-new
 
@@ -115,7 +133,7 @@ jobs:
       run:
         working-directory: frontend-new
     env:
-      BUNDLE: ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/design-system:${{ github.ref_name }}
+      BUNDLE: ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/docs:${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v6
 
@@ -194,7 +212,7 @@ jobs:
   deploy-backend:
     name: Deploy Backend
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: build-and-push-backend
     # One rollout at a time: a newer tag waits for the running deploy instead of racing it.
     concurrency:
       group: deploy-backend
@@ -209,10 +227,11 @@ jobs:
             echo "::error::SHIPYARD_BACKEND_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
             exit 1
           fi
+          url="$WEBHOOK_URL$([ "${WEBHOOK_URL#*\?}" != "$WEBHOOK_URL" ] && echo '&' || echo '?')tag=${{ github.ref_name }}"
           status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
-            -X POST "$WEBHOOK_URL" \
+            -X POST "$url" \
             -H "Content-Type: application/json" \
-            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}') || true
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}') || true
           echo "backend webhook answered HTTP $status"
           case "$status" in
             2??) ;;
@@ -224,7 +243,7 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
-    needs: deploy-backend
+    needs: [build-and-push-frontend, deploy-backend]
     concurrency:
       group: deploy-frontend
       cancel-in-progress: false
@@ -238,10 +257,11 @@ jobs:
             echo "::error::SHIPYARD_FRONTEND_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
             exit 1
           fi
+          url="$WEBHOOK_URL$([ "${WEBHOOK_URL#*\?}" != "$WEBHOOK_URL" ] && echo '&' || echo '?')tag=${{ github.ref_name }}"
           status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
-            -X POST "$WEBHOOK_URL" \
+            -X POST "$url" \
             -H "Content-Type: application/json" \
-            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}') || true
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}') || true
           echo "frontend webhook answered HTTP $status"
           case "$status" in
             2??) ;;
@@ -266,10 +286,11 @@ jobs:
             echo "::error::SHIPYARD_FRONTEND_NEW_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
             exit 1
           fi
+          url="$WEBHOOK_URL$([ "${WEBHOOK_URL#*\?}" != "$WEBHOOK_URL" ] && echo '&' || echo '?')tag=${{ github.ref_name }}"
           status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
-            -X POST "$WEBHOOK_URL" \
+            -X POST "$url" \
             -H "Content-Type: application/json" \
-            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}') || true
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}') || true
           echo "frontend-new webhook answered HTTP $status"
           case "$status" in
             2??) ;;

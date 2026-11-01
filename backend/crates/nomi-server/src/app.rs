@@ -238,6 +238,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
         .route("/api/admin/configuration", get(crate::routes::admin_configuration::get))
         .route("/api/admin/configuration/:section", axum::routing::put(crate::routes::admin_configuration::save))
+        .route(
+            "/api/admin/payment/xendit",
+            get(crate::routes::admin_payment::get_xendit).put(crate::routes::admin_payment::save_xendit),
+        )
+        .route("/api/admin/payment/xendit/test", post(crate::routes::admin_payment::test_xendit))
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))

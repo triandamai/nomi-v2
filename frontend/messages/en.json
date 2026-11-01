@@ -1792,6 +1792,7 @@
 	"perm_maintenance_desc": "Turning maintenance mode on and off",
 	"perm_integrations_desc": "Shipyard: webhooks, organizations, apps, environments, secrets",
 	"admin_configuration": "Configuration",
+	"admin_payment": "Payment",
 	"perm_configuration_desc": "Attachment limits, file storage, Google sign-in, email and the agent loop. Managing it includes their secrets.",
 	"config_lede": "Settings that used to live in the server's environment. A value saved here wins; anything left empty still comes from the environment.",
 	"config_source_saved": "Saved here.",

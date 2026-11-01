@@ -152,7 +152,17 @@ pub const DOMAINS: SectionDef = SectionDef {
     fields: &[saved_only("apps_base_domain", Kind::Domain)],
 };
 
-pub const SECTIONS: [&SectionDef; 8] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS];
+pub const XENDIT: SectionDef = SectionDef {
+    name: "xendit",
+    fields: &[
+        field("secret_key", "XENDIT_SECRET_KEY", Kind::Secret),
+        field("webhook_token", "XENDIT_WEBHOOK_TOKEN", Kind::Secret),
+        field("public_key", "XENDIT_PUBLIC_KEY", Kind::Text),
+        field("base_url", "XENDIT_BASE_URL", Kind::Text),
+    ],
+};
+
+pub const SECTIONS: [&SectionDef; 9] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)

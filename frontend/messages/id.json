@@ -1792,6 +1792,7 @@
 	"perm_maintenance_desc": "Menyalakan dan mematikan mode pemeliharaan",
 	"perm_integrations_desc": "Shipyard: webhook, organisasi, aplikasi, lingkungan, rahasia",
 	"admin_configuration": "Konfigurasi",
+	"admin_payment": "Pembayaran",
 	"perm_configuration_desc": "Batas lampiran, penyimpanan berkas, masuk dengan Google, email, dan loop agen. Mengelolanya termasuk secret-nya.",
 	"config_lede": "Pengaturan yang dulu ada di environment server. Nilai yang disimpan di sini yang dipakai; yang dikosongkan tetap diambil dari environment.",
 	"config_source_saved": "Disimpan di sini.",

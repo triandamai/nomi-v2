@@ -311,6 +311,7 @@ async fn send_publish(
             Some(host) => nomi_shipyard_side::first_label(&host).to_string(),
             None => manifest::web_label(app, environment),
         };
+        let label = crate::routes::domain::apply_domain_suffix(&label);
         manifest::set_domain(&mut manifest, &label, Some(&base));
     }
     let id = Uuid::new_v4();
