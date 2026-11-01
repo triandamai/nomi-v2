@@ -193,6 +193,23 @@ pub struct Shipyard<'a> {
     pub config: &'a ShipyardConfig,
 }
 
+/// An environment's address as Shipyard takes it: a full hostname Nomi picked, or (without
+/// Nomi's apps base domain) a label under Shipyard's own apps domain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainName<'a> {
+    Hostname(&'a str),
+    Subdomain(&'a str),
+}
+
+impl<'a> DomainName<'a> {
+    fn pair(self) -> (&'static str, &'a str) {
+        match self {
+            DomainName::Hostname(h) => ("hostname", h),
+            DomainName::Subdomain(s) => ("subdomain", s),
+        }
+    }
+}
+
 fn seg(value: &str) -> String {
     value
         .bytes()
@@ -301,11 +318,12 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::GET, &Self::env_path(org, app, env), None).await
     }
 
-    /// Whether `subdomain` is free on the platform (`available`), with `reason` (`taken` or
+    /// Whether `name` is free on the platform (`available`), with `reason` (`taken` or
     /// `invalid`) and nearby free `suggestions` when it isn't. Given the app and environment, the
     /// environment's own current name counts as free. Always `200`: read `available`.
-    pub async fn check_domain(&self, org: &str, subdomain: &str, app_env: Option<(&str, &str)>) -> Result<Value, ShipyardError> {
-        let mut path = format!("/orgs/{}/domains/check?subdomain={}", seg(org), seg(subdomain));
+    pub async fn check_domain(&self, org: &str, name: DomainName<'_>, app_env: Option<(&str, &str)>) -> Result<Value, ShipyardError> {
+        let (key, value) = name.pair();
+        let mut path = format!("/orgs/{}/domains/check?{key}={}", seg(org), seg(value));
         if let Some((app, env)) = app_env {
             path.push_str(&format!("&app={}&env={}", seg(app), seg(env)));
         }
@@ -318,11 +336,11 @@ impl<'a> Shipyard<'a> {
         self.call(reqwest::Method::GET, &format!("{}/domain", Self::env_path(org, app, env)), None).await
     }
 
-    /// Moves the environment to `<subdomain>.<apps-domain>` (the new name is attached before the
-    /// old one goes). `409` when it's taken or invalid, or the environment has no address yet;
-    /// nothing changes then.
-    pub async fn set_domain(&self, org: &str, app: &str, env: &str, subdomain: &str) -> Result<Value, ShipyardError> {
-        self.call(reqwest::Method::PUT, &format!("{}/domain", Self::env_path(org, app, env)), Some(json!({ "subdomain": subdomain }))).await
+    /// Moves the environment to `name` (the new name is attached before the old one goes). `409`
+    /// when it's taken or invalid, or the environment has no address yet; nothing changes then.
+    pub async fn set_domain(&self, org: &str, app: &str, env: &str, name: DomainName<'_>) -> Result<Value, ShipyardError> {
+        let (key, value) = name.pair();
+        self.call(reqwest::Method::PUT, &format!("{}/domain", Self::env_path(org, app, env)), Some(json!({ key: value }))).await
     }
 
     /// Moves the app, with every environment, its data, secrets and publish history, to `to_org`

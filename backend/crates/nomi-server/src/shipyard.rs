@@ -85,6 +85,27 @@ impl From<sqlx::Error> for EnsureError {
     }
 }
 
+/// The host `service` answers at in `env` (its first URL), `None` before it has an address or
+/// when Shipyard can't be asked.
+pub async fn service_host(client: &Shipyard<'_>, org: &str, app: &str, env: &str, service: &str) -> Option<String> {
+    let env_data = client.get_env(org, app, env).await.ok()?;
+    let url = env_data
+        .get("services")?
+        .as_array()?
+        .iter()
+        .find(|s| s.get("name").and_then(Value::as_str) == Some(service))?
+        .get("urls")?
+        .as_array()?
+        .first()?
+        .as_str()?;
+    reqwest::Url::parse(url).ok()?.host_str().map(str::to_string)
+}
+
+/// The first label of `host`: `todo` for `todo.nomi.app`.
+pub fn first_label(host: &str) -> &str {
+    host.split('.').next().unwrap_or(host)
+}
+
 /// The secrets a Shipyard webhook may be signed with: SHIPYARD_WEBHOOK_SECRET, and the one Nomi
 /// stored when it registered (or rotated) its own endpoint. Both count, so an endpoint Nomi
 /// registers itself works even when the environment also names a secret.

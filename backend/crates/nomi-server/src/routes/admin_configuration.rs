@@ -81,7 +81,7 @@ async fn check_whole(state: &AppState, def: &'static SectionDef, values: &BTreeM
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read the configuration: {e}")))?
         .with_env(|_| None);
-    let from_env = |field: &str| def.fields.iter().find(|f| f.name == field).and_then(|f| env(f.env)).filter(|v| !v.trim().is_empty());
+    let from_env = |field: &str| def.fields.iter().find(|f| f.name == field).and_then(|f| f.env.and_then(env)).filter(|v| !v.trim().is_empty());
     match storage_problem(|field| saved.get(field), from_env, values) {
         Some(why) => Err((StatusCode::UNPROCESSABLE_ENTITY, why.to_string())),
         None => Ok(()),

@@ -1,6 +1,8 @@
 //! A project's web address on Shipyard: every environment gets `<name>.<apps-domain>` on its
-//! first publish, and its admins can pick another free name. Names are shared across the whole
-//! platform, so Shipyard says whether one is free and suggests free ones nearby.
+//! first publish, and its admins can pick another free name. The apps domain is Nomi's own
+//! (Admin → Configuration → Domains), sent to Shipyard as full hostnames; unset, it's Shipyard's.
+//! Names are shared across the whole platform, so Shipyard says whether one is free and suggests
+//! free ones nearby.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -11,10 +13,11 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
-use nomi_shipyard::ShipyardError;
+use nomi_shipyard::{DomainName, ShipyardError};
 
 use crate::app::AppState;
 use crate::routes::deploy::{client, internal, project_role, require_admin, shipyard_error, target, ApiError};
+use crate::shipyard::{first_label, service_host};
 
 const ENV: &str = "production";
 /// Shipyard's own limit on a name.
@@ -48,33 +51,14 @@ pub async fn get(State(state): State<AppState>, AuthClaims(claims): AuthClaims, 
         Err(e) => return Err(shipyard_error(e)),
     };
     let mut hostname = text(&domain, "hostname");
-    let mut subdomain = text(&domain, "subdomain");
     let mut url = text(&domain, "url");
-    if subdomain.as_deref().is_some_and(|s| s.ends_with(nomi_shipyard::manifest::BACKEND_SUFFIX)) {
-        hostname = None;
-        subdomain = None;
-        url = None;
-        if let Ok(env_data) = client(&state)?.get_env(&target.org_key(), app, ENV).await {
-            if let Some(web_url) = env_data
-                .get("services")
-                .and_then(Value::as_array)
-                .and_then(|services| {
-                    services.iter().find(|s| s.get("name").and_then(Value::as_str) == Some("web")).and_then(|s| {
-                        s.get("urls").and_then(Value::as_array).and_then(|u| u.first()).and_then(Value::as_str)
-                    })
-                })
-            {
-                if let Ok(parsed) = reqwest::Url::parse(web_url) {
-                    if let Some(host) = parsed.host_str() {
-                        let sub = host.split('.').next().unwrap_or(host);
-                        hostname = Some(host.to_string());
-                        subdomain = Some(sub.to_string());
-                        url = Some(web_url.to_string());
-                    }
-                }
-            }
-        }
+    // The environment's managed address can be the backend's; the app's own is the web service's.
+    if hostname.as_deref().is_some_and(|h| first_label(h).ends_with(nomi_shipyard::manifest::BACKEND_SUFFIX)) {
+        hostname = service_host(&client(&state)?, &target.org_key(), app, ENV, nomi_shipyard::manifest::WEB_SERVICE).await;
+        url = hostname.as_ref().map(|h| format!("https://{h}"));
     }
+    // The part admins pick: the first label, whichever domain it sits under.
+    let subdomain = hostname.as_deref().map(|h| first_label(h).to_string());
     Ok(Json(ProjectDomain { hostname, subdomain, url, can_edit }))
 }
 
@@ -83,13 +67,40 @@ pub struct CheckQuery {
     pub subdomain: String,
 }
 
-/// The name as Shipyard reads it: trimmed and lowercased.
+/// The name as Shipyard reads it: trimmed and lowercased, one label (the domain is Nomi's).
 fn clean(subdomain: &str) -> Result<String, ApiError> {
     let name = subdomain.trim().to_lowercase();
     if name.is_empty() || name.len() > NAME_MAX {
         return Err((StatusCode::BAD_REQUEST, format!("a name is 3 to {NAME_MAX} characters")));
     }
+    if name.contains('.') {
+        return Err((StatusCode::BAD_REQUEST, "a name can't contain dots".to_string()));
+    }
     Ok(name)
+}
+
+/// What Shipyard is asked about for `name`: `<name>.<base>` under Nomi's apps base domain, else
+/// the name alone under Shipyard's.
+fn wanted<'a>(name: &'a str, hostname: &'a Option<String>) -> DomainName<'a> {
+    match hostname {
+        Some(full) => DomainName::Hostname(full.as_str()),
+        None => DomainName::Subdomain(name),
+    }
+}
+
+async fn full_hostname(name: &str) -> Option<String> {
+    crate::configuration::apps_base_domain().await.map(|base| format!("{name}.{base}"))
+}
+
+/// Shipyard's answer with `subdomain` filled in as the first label, which is what Nomi edits
+/// (Shipyard leaves it empty for a hostname outside its own apps domain).
+fn with_label(mut answer: Value) -> Value {
+    if let Some(label) = answer.get("hostname").and_then(Value::as_str).map(|h| first_label(h).to_string()) {
+        if let Value::Object(map) = &mut answer {
+            map.insert("subdomain".into(), Value::String(label));
+        }
+    }
+    answer
 }
 
 /// `GET /api/projects/:id/domain/check?subdomain=`: Shipyard's answer as it is, `available`
@@ -103,9 +114,11 @@ pub async fn check(
 ) -> Result<Json<Value>, ApiError> {
     project_role(&state.pool, project_id, claims.sub).await?;
     let name = clean(&q.subdomain)?;
+    let hostname = full_hostname(&name).await;
     let target = target(&state, project_id).await?;
     let app_env = target.shipyard_app.as_deref().map(|app| (app, ENV));
-    Ok(Json(client(&state)?.check_domain(&target.org_key(), &name, app_env).await.map_err(shipyard_error)?))
+    let answer = client(&state)?.check_domain(&target.org_key(), wanted(&name, &hostname), app_env).await.map_err(shipyard_error)?;
+    Ok(Json(with_label(answer)))
 }
 
 #[derive(Deserialize)]
@@ -124,16 +137,17 @@ pub async fn change(
 ) -> Result<Response, ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
     let name = clean(&req.subdomain)?;
+    let hostname = full_hostname(&name).await;
     let target = target(&state, project_id).await?;
     let Some(app) = target.shipyard_app.as_deref() else {
         return Err((StatusCode::CONFLICT, "publish the app first: it gets an address on its first publish".to_string()));
     };
     let shipyard = client(&state)?;
-    let changed = match shipyard.set_domain(&target.org_key(), app, ENV, &name).await {
+    let changed = match shipyard.set_domain(&target.org_key(), app, ENV, wanted(&name, &hostname)).await {
         Ok(changed) => changed,
         Err(ShipyardError::Rejected { status: 409, message, .. }) => {
             // Why, and what's free instead (the refusal itself doesn't list them for Nomi).
-            let mut answer = shipyard.check_domain(&target.org_key(), &name, Some((app, ENV))).await.unwrap_or_else(|_| json!({}));
+            let mut answer = shipyard.check_domain(&target.org_key(), wanted(&name, &hostname), Some((app, ENV))).await.map(with_label).unwrap_or_else(|_| json!({}));
             if let Value::Object(map) = &mut answer {
                 map.insert("available".into(), Value::Bool(false));
                 map.insert("message".into(), Value::String(message));

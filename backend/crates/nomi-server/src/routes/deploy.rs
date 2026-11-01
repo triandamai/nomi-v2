@@ -302,6 +302,17 @@ async fn send_publish(
     user_id: Uuid,
     agent: Option<&str>,
 ) -> Result<PublishRow, ApiError> {
+    let client = client(state)?;
+    let mut manifest = manifest;
+    // Under Nomi's apps base domain the web app gets a full hostname, keeping the name it already
+    // answers at (a renamed one included); without one, Shipyard picks it as before.
+    if let Some(base) = crate::configuration::apps_base_domain().await {
+        let label = match nomi_shipyard_side::service_host(&client, &target.org_key(), app, environment, manifest::WEB_SERVICE).await {
+            Some(host) => nomi_shipyard_side::first_label(&host).to_string(),
+            None => manifest::web_label(app, environment),
+        };
+        manifest::set_domain(&mut manifest, &label, Some(&base));
+    }
     let id = Uuid::new_v4();
     let source_key = format!("publishes/{}/{id}.zip", target.id);
     state
@@ -326,7 +337,6 @@ async fn send_publish(
     .await
     .map_err(internal("failed to record the publish"))?;
 
-    let client = client(state)?;
     match client.publish(&target.org_key(), app, environment, &manifest, Some(source)).await {
         Ok(accepted) => {
             sqlx::query("UPDATE project_publishes SET shipyard_publish_id = $2, url = $3 WHERE id = $1")

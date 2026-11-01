@@ -1,6 +1,7 @@
 //! Nomi's configuration as set in Admin → Configuration: attachments, file storage, Google,
-//! GitHub, email and the agent loop. Each field has the environment variable it replaces, which stays
-//! the fallback for anything not saved here. Secrets are encrypted with the settings key and never
+//! GitHub, email, the agent loop, Relay and app domains. Most fields have the environment variable
+//! they replace, which stays the fallback for anything not saved here; a field without one is only
+//! ever read from here. Secrets are encrypted with the settings key and never
 //! shown back. The server and the worker read the saved values (cached for a few seconds), so a
 //! save takes effect without a restart.
 
@@ -26,13 +27,15 @@ pub enum Kind {
     /// Encrypted, and never shown back.
     Secret,
     Choice(&'static [&'static str]),
+    /// A domain name such as `nomi.app`: saved lowercased, without a trailing dot.
+    Domain,
 }
 
 #[derive(Debug)]
 pub struct Field {
     pub name: &'static str,
-    /// The environment variable it replaces, and falls back to.
-    pub env: &'static str,
+    /// The environment variable it replaces, and falls back to. `None`: saved here or unset.
+    pub env: Option<&'static str>,
     pub kind: Kind,
 }
 
@@ -43,7 +46,19 @@ pub struct SectionDef {
 }
 
 const fn field(name: &'static str, env: &'static str, kind: Kind) -> Field {
-    Field { name, env, kind }
+    Field { name, env: Some(env), kind }
+}
+
+/// A field with no environment variable behind it: only what's saved in Admin → Configuration.
+const fn saved_only(name: &'static str, kind: Kind) -> Field {
+    Field { name, env: None, kind }
+}
+
+impl Field {
+    /// What `env` has for this field's variable, trimmed; `None` when it has no variable.
+    fn from_env(&self, env: &impl Fn(&str) -> Option<String>) -> Option<String> {
+        self.env.and_then(env).map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    }
 }
 
 pub const ATTACHMENTS: SectionDef = SectionDef {
@@ -130,7 +145,14 @@ pub const RELAY: SectionDef = SectionDef {
     ],
 };
 
-pub const SECTIONS: [&SectionDef; 7] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY];
+/// The domain every app Nomi publishes is addressed under: `<name>.<apps_base_domain>`. Only
+/// set here; unset, Shipyard picks the address under its own apps domain, as before.
+pub const DOMAINS: SectionDef = SectionDef {
+    name: "domains",
+    fields: &[saved_only("apps_base_domain", Kind::Domain)],
+};
+
+pub const SECTIONS: [&SectionDef; 8] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)
@@ -158,7 +180,7 @@ impl Saved {
     pub fn with_env(self, env: impl Fn(&str) -> Option<String>) -> Section {
         let mut values = BTreeMap::new();
         for field in self.def.fields {
-            let value = self.values.get(field.name).cloned().or_else(|| env(field.env).map(|v| v.trim().to_string()).filter(|v| !v.is_empty()));
+            let value = self.values.get(field.name).cloned().or_else(|| field.from_env(&env));
             if let Some(value) = value {
                 values.insert(field.name, value);
             }
@@ -217,7 +239,33 @@ fn check(field: &Field, value: &str) -> Result<(), ConfigError> {
     match field.kind {
         Kind::Number if !value.parse::<u64>().is_ok_and(|n| n > 0) => fail("use a whole number above 0"),
         Kind::Choice(choices) if !choices.contains(&value) => fail(&format!("use one of {}", choices.join(", "))),
+        Kind::Domain if !is_domain(value) => fail("use a domain name such as apps.example.com, without https:// or a path"),
         _ => Ok(()),
+    }
+}
+
+/// The longest domain name DNS allows, and the longest label in one.
+const DOMAIN_MAX: usize = 253;
+const LABEL_MAX: usize = 63;
+
+/// A domain name of two or more labels, each `a-z 0-9 -` not starting or ending with `-`, and not
+/// an IP address.
+fn is_domain(value: &str) -> bool {
+    let labels: Vec<&str> = value.split('.').collect();
+    let label_ok = |l: &&str| {
+        !l.is_empty() && l.len() <= LABEL_MAX && !l.starts_with('-') && !l.ends_with('-') && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    value.len() <= DOMAIN_MAX
+        && labels.len() >= 2
+        && labels.iter().all(label_ok)
+        && !labels.last().is_some_and(|tld| tld.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// `value` as it's saved: a domain lowercased, without a trailing dot; anything else as given.
+fn normalize(field: &Field, value: &str) -> String {
+    match field.kind {
+        Kind::Domain => value.trim_end_matches('.').to_lowercase(),
+        _ => value.to_string(),
     }
 }
 
@@ -227,14 +275,15 @@ pub async fn save(pool: &PgPool, key: &[u8; 32], def: &'static SectionDef, chang
     let mut checked = Vec::new();
     for (name, value) in changes {
         let field = def.fields.iter().find(|f| f.name == name).ok_or_else(|| ConfigError::Invalid(format!("{name} isn't part of {}", def.name)))?;
-        let value = value.trim();
+        let value = normalize(field, value.trim());
         if !value.is_empty() {
-            check(field, value)?;
+            check(field, &value)?;
         }
         checked.push((field, value));
     }
     let mut tx = pool.begin().await?;
     for (field, value) in checked {
+        let value = value.as_str();
         match (value.is_empty(), field.kind) {
             (true, Kind::Secret) => {}
             (true, _) => {
@@ -273,7 +322,7 @@ pub enum Source {
 #[derive(Debug, Serialize)]
 pub struct FieldView {
     pub name: &'static str,
-    pub env: &'static str,
+    pub env: Option<&'static str>,
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<&'static str>,
@@ -291,7 +340,7 @@ pub async fn view(pool: &PgPool, key: Option<&[u8; 32]>, def: &'static SectionDe
         .fields
         .iter()
         .map(|field| {
-            let from_env = env(field.env).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            let from_env = field.from_env(&env);
             let saved_value = saved.values.get(field.name);
             let source = if saved_value.is_some() || sealed.iter().any(|s| s == field.name) {
                 Source::Saved
@@ -309,6 +358,7 @@ pub async fn view(pool: &PgPool, key: Option<&[u8; 32]>, def: &'static SectionDe
                     Kind::Number => "number",
                     Kind::Secret => "secret",
                     Kind::Choice(_) => "choice",
+                    Kind::Domain => "domain",
                 },
                 choices: match field.kind {
                     Kind::Choice(choices) => choices.to_vec(),
@@ -366,13 +416,32 @@ mod tests {
 
     #[test]
     fn every_field_has_a_unique_name_and_variable() {
-        let mut envs: Vec<&str> = SECTIONS.iter().flat_map(|s| s.fields.iter().map(|f| f.env)).collect();
+        let mut envs: Vec<&str> = SECTIONS.iter().flat_map(|s| s.fields.iter().filter_map(|f| f.env)).collect();
         let count = envs.len();
         envs.sort();
         envs.dedup();
         assert_eq!(envs.len(), count);
         for section in SECTIONS {
             assert_eq!(section_named(section.name).map(|s| s.name), Some(section.name));
+        }
+    }
+
+    #[test]
+    fn the_apps_base_domain_comes_only_from_what_is_saved() {
+        let saved = Saved { def: &DOMAINS, values: BTreeMap::new() };
+        let section = saved.with_env(|_| Some("from-env.example.com".to_string()));
+        assert_eq!(section.get("apps_base_domain"), None);
+    }
+
+    #[test]
+    fn a_domain_is_saved_lowercased_and_must_be_a_bare_domain_name() {
+        let field = &DOMAINS.fields[0];
+        assert_eq!(normalize(field, "Nomi.App."), "nomi.app");
+        for good in ["nomi.app", "apps.nomi.dev", "a-b.example.co.uk"] {
+            assert!(check(field, good).is_ok(), "{good}");
+        }
+        for bad in ["nomi", "https://nomi.app", "nomi.app/x", "-nomi.app", "nomi..app", "*.nomi.app", "10.0.0.1", "no mi.app"] {
+            assert!(check(field, bad).is_err(), "{bad}");
         }
     }
 }
