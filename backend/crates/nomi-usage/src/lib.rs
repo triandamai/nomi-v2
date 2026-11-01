@@ -34,7 +34,9 @@ pub struct ModelTag {
     pub model_id: String,
 }
 
-/// A provider that records each finished call's tokens for `user_id`.
+/// A provider that records each finished call's tokens for `user_id`, and on Nomi's own model
+/// refuses a call once their allowance is used up: a turn's provider is picked once, at its start,
+/// so a long tool loop would otherwise keep going well past it.
 pub struct MeteredProvider {
     inner: Arc<dyn LlmProvider>,
     pool: PgPool,
@@ -51,6 +53,14 @@ impl MeteredProvider {
 #[async_trait]
 impl LlmProvider for MeteredProvider {
     async fn complete_stream(&self, request: LlmRequest) -> Result<LlmEventStream, LlmError> {
+        if !self.tag.own_key {
+            match allowance_used_up(&self.pool, self.user_id).await {
+                Ok(true) => return Err(LlmError::QuotaExceeded),
+                Ok(false) => {}
+                // A failed check never stops anyone.
+                Err(e) => tracing::warn!(error = %e, user_id = %self.user_id, "failed to check the token allowance"),
+            }
+        }
         let mut events = self.inner.complete_stream(request).await?;
         let (pool, user_id, tag) = (self.pool.clone(), self.user_id, self.tag.clone());
         Ok(Box::pin(async_stream::stream! {
@@ -235,16 +245,7 @@ pub(crate) fn valid_month(month: &str) -> bool {
 }
 
 pub async fn brief(pool: &PgPool, user_id: Uuid) -> Result<Brief, sqlx::Error> {
-    let (tz, month) = timezone_and_current_month(pool, user_id).await?;
-    let tokens_used: i64 = sqlx::query_scalar(&format!(
-        "SELECT COALESCE(ROUND(SUM({})), 0)::bigint FROM llm_usage WHERE {IN_MONTH} AND source = 'nomi'",
-        counted_tokens_sql("")
-    ))
-    .bind(user_id)
-    .bind(&tz)
-    .bind(&month)
-    .fetch_one(pool)
-    .await?;
+    let (month, tokens_used) = tokens_this_month(pool, user_id).await?;
     let plan = plan_for(pool, user_id).await?;
     let can_upgrade = !plan.custom_quota
         && sqlx::query_scalar::<_, bool>(
@@ -255,6 +256,28 @@ pub async fn brief(pool: &PgPool, user_id: Uuid) -> Result<Brief, sqlx::Error> {
         .fetch_one(pool)
         .await?;
     Ok(Brief { plan, month, tokens_used, can_upgrade })
+}
+
+/// This month (`YYYY-MM`, in their timezone) and the tokens of Nomi's own models used in it.
+async fn tokens_this_month(pool: &PgPool, user_id: Uuid) -> Result<(String, i64), sqlx::Error> {
+    let (tz, month) = timezone_and_current_month(pool, user_id).await?;
+    let tokens_used: i64 = sqlx::query_scalar(&format!(
+        "SELECT COALESCE(ROUND(SUM({})), 0)::bigint FROM llm_usage WHERE {IN_MONTH} AND source = 'nomi'",
+        counted_tokens_sql("")
+    ))
+    .bind(user_id)
+    .bind(&tz)
+    .bind(&month)
+    .fetch_one(pool)
+    .await?;
+    Ok((month, tokens_used))
+}
+
+/// Whether `user_id` has used up this month's allowance on Nomi's own models.
+pub async fn allowance_used_up(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let (_, used) = tokens_this_month(pool, user_id).await?;
+    let quota = plans::subscription_for(pool, user_id).await?.monthly_tokens;
+    Ok(used >= quota)
 }
 
 /// `month` is `YYYY-MM`; anything else (or nothing) means this month.

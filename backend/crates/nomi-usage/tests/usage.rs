@@ -48,6 +48,7 @@ fn tag(admin_model_id: Option<Uuid>, own_key: bool) -> ModelTag {
 async fn every_call_is_metered_and_priced_by_its_model(pool: PgPool) {
     let ana = person(&pool, "UTC").await;
     let model = priced_model(&pool, ana).await;
+    allowance(&pool, ana, 10_000_000).await;
     let inner = Arc::new(FakeLlmProvider::sequence(vec![reply(1_000_000, 100_000), reply(200_000, 0)]));
     let provider = MeteredProvider::new(inner, pool.clone(), ana, tag(Some(model), false));
     call(&provider).await;
@@ -208,4 +209,37 @@ async fn cached_input_is_priced_at_the_cached_price(pool: PgPool) {
     assert_eq!((month.tokens_used, month.input_tokens, month.cached_input_tokens), (280_000, 1_000_000, 800_000));
     assert_eq!(month.by_day[0].tokens, 280_000);
     assert_eq!(month.by_model[0].tokens, 280_000);
+}
+
+/// Gives `user_id` an allowance of `tokens` a month on the default plan.
+async fn allowance(pool: &PgPool, user_id: Uuid, tokens: i64) {
+    sqlx::query("INSERT INTO user_subscriptions (user_id, plan_id, quota_override) SELECT $1, id, $2 FROM plans ORDER BY sort_order LIMIT 1")
+        .bind(user_id)
+        .bind(tokens)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_call_past_the_allowance_is_refused_even_mid_turn(pool: PgPool) {
+    let ana = person(&pool, "UTC").await;
+    let model = priced_model(&pool, ana).await;
+    allowance(&pool, ana, 1_000).await;
+    // One provider for the whole turn, as the engine holds it: the first call uses it all up.
+    let inner = Arc::new(FakeLlmProvider::sequence(vec![reply(900, 200), reply(10, 10)]));
+    let provider = MeteredProvider::new(inner, pool.clone(), ana, tag(Some(model), false));
+    call(&provider).await;
+
+    let next = provider.complete_stream(request()).await;
+    assert!(matches!(next, Err(nomi_llm::LlmError::QuotaExceeded)), "the next round of the same turn stops");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn their_own_key_is_never_stopped_by_the_allowance(pool: PgPool) {
+    let ana = person(&pool, "UTC").await;
+    allowance(&pool, ana, 0).await;
+    let inner = Arc::new(FakeLlmProvider::sequence(vec![reply(10, 10)]));
+    let provider = MeteredProvider::new(inner, pool.clone(), ana, tag(None, true));
+    assert!(provider.complete_stream(request()).await.is_ok());
 }
