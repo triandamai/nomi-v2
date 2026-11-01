@@ -16,7 +16,7 @@
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import { badgeLabel, inbox, pollUnread } from '$lib/notifications.svelte';
 	import { nextSnackbar, showSnackbar, snackbars, type SnackbarItem } from '$lib/snackbars.svelte';
-	import { connectUserActivity } from '$lib/userActivity';
+	import { useUserActivity } from '$lib/userActivityFeed.svelte';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
 	import { setAttachmentLimits } from '$lib/attachments';
 	import type { LayoutData } from './$types';
@@ -70,7 +70,7 @@
 
 	// The person's own live feed, open as long as the app is: a chat the crew finishes (or that
 	// waits on them) anywhere but on screen comes in as a snackbar with a way back.
-	$effect(() => connectUserActivity(data.deviceId));
+	useUserActivity(() => data.deviceId);
 
 	// Snackbars show one at a time, the next once the last one goes.
 	let snackbarOpen = $state(false);
