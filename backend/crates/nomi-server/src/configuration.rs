@@ -16,3 +16,15 @@ pub async fn storage() -> Option<nomi_storage::S3Config> {
 pub async fn apps_base_domain() -> Option<String> {
     config::current(&config::DOMAINS).await.get("apps_base_domain")
 }
+
+/// Xendit payment gateway configuration as saved in Admin → Configuration or environment.
+pub async fn xendit_config() -> Option<nomi_payment::xendit::XenditConfig> {
+    let xendit = config::current(&config::XENDIT).await;
+    let secret_key = xendit.get("secret_key")?;
+    Some(nomi_payment::xendit::XenditConfig {
+        api_key: secret_key,
+        webhook_token: xendit.get("webhook_token"),
+        base_url: xendit.get("base_url"),
+    })
+}
+

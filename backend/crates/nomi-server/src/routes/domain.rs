@@ -80,14 +80,41 @@ pub struct CheckQuery {
     pub subdomain: String,
 }
 
+pub fn env_suffix() -> Option<&'static str> {
+    let raw = std::env::var("ENVI")
+        .or_else(|_| std::env::var("ENVIRONMENT"))
+        .or_else(|_| std::env::var("APP_ENV"))
+        .ok()?;
+    let val = raw.trim().to_lowercase();
+    if val == "production" || val == "prod" {
+        None
+    } else {
+        Some("-staging")
+    }
+}
+
+/// Applies the environment domain suffix (e.g. `-staging` for non-prod/staging) if not already present.
+pub fn apply_domain_suffix(name: &str) -> String {
+    if let Some(suffix) = env_suffix() {
+        if !name.ends_with(suffix) {
+            return format!("{name}{suffix}");
+        }
+    }
+    name.to_string()
+}
+
 /// The name as Shipyard reads it: trimmed and lowercased, one label (the domain is Nomi's).
 fn clean(subdomain: &str) -> Result<String, ApiError> {
-    let name = subdomain.trim().to_lowercase();
-    if name.is_empty() || name.len() > NAME_MAX {
+    let raw = subdomain.trim().to_lowercase();
+    if raw.is_empty() {
         return Err((StatusCode::BAD_REQUEST, format!("a name is 3 to {NAME_MAX} characters")));
     }
-    if name.contains('.') {
+    if raw.contains('.') {
         return Err((StatusCode::BAD_REQUEST, "a name can't contain dots".to_string()));
+    }
+    let name = apply_domain_suffix(&raw);
+    if name.len() < 3 || name.len() > NAME_MAX {
+        return Err((StatusCode::BAD_REQUEST, format!("a name is 3 to {NAME_MAX} characters")));
     }
     Ok(name)
 }
@@ -205,5 +232,25 @@ mod tests {
         assert_eq!(pending_hostname(Some("todo.nomi.app"), Some("nomi.app")), None, "already there");
         assert_eq!(pending_hostname(Some("todo.apps.old.dev"), None), None, "no base domain set");
         assert_eq!(pending_hostname(None, Some("nomi.app")), None, "not published yet");
+    }
+
+    #[test]
+    fn domain_suffix_in_staging_and_prod() {
+        std::env::set_var("ENVI", "production");
+        assert_eq!(apply_domain_suffix("my-app"), "my-app");
+
+        std::env::set_var("ENVI", "prod");
+        assert_eq!(apply_domain_suffix("my-app"), "my-app");
+
+        std::env::set_var("ENVI", "staging");
+        assert_eq!(apply_domain_suffix("my-app"), "my-app-staging");
+        // No duplicate suffix
+        assert_eq!(apply_domain_suffix("my-app-staging"), "my-app-staging");
+
+        std::env::set_var("ENVI", "dev");
+        assert_eq!(apply_domain_suffix("my-app"), "my-app-staging");
+
+        std::env::remove_var("ENVI");
+        assert_eq!(apply_domain_suffix("my-app"), "my-app");
     }
 }

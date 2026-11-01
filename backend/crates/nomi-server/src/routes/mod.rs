@@ -2,6 +2,7 @@ pub mod agent_permissions;
 pub mod agents;
 pub mod admin_access;
 pub mod admin_configuration;
+pub mod admin_payment;
 pub mod admin_dashboard;
 pub mod admin_shipyard;
 pub mod admin_usage;

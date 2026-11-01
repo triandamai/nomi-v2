@@ -35,6 +35,7 @@ const ALLOWED = new RegExp(
 			'maintenance',
 			'configuration',
 			'configuration/[a-z_]+',
+			'payment/[a-z_]+(/test)?',
 			`settings/llm/models/${UUID}/enabled`,
 		].join('|') +
 		')$',

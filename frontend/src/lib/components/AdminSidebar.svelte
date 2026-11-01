@@ -21,6 +21,7 @@
 	import IconMemory from '$lib/components/icons/IconMemory.svelte';
 	import IconPalette from '$lib/components/icons/IconPalette.svelte';
 	import IconWallet from '$lib/components/icons/IconWallet.svelte';
+	import IconCard from '$lib/components/icons/IconCard.svelte';
 	import IconBarChart from '$lib/components/icons/IconBarChart.svelte';
 	import IconInbox from '$lib/components/icons/IconInbox.svelte';
 	import IconLink from '$lib/components/icons/IconLink.svelte';
@@ -69,6 +70,7 @@
 			{ href: '/admin/support', label: m.admin_support(), icon: IconChatBubble, area: 'support' },
 			{ href: '/admin/users', label: m.admin_users(), icon: IconPerson, area: 'user' },
 			{ href: '/admin/plans', label: m.admin_plans(), icon: IconWallet, area: 'plans' },
+			{ href: '/admin/payment/xendit', label: m.admin_payment(), icon: IconCard, area: 'configuration' },
 			{ href: '/admin/notifications', label: m.admin_notifications(), icon: IconInbox, area: 'notifications' },
 			{ href: '/admin/maintenance', label: m.admin_maintenance(), icon: IconSettings, area: 'maintenance' },
 		].filter((item) => can(access, item.area)),
