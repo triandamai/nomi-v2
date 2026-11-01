@@ -2008,6 +2008,8 @@
 	"domain_address": "Alamat web",
 	"domain_unpublished": "Terbitkan aplikasinya dulu: penerbitan pertama memberinya alamat.",
 	"domain_hint": "Tempat orang membuka aplikasi. Mengubahnya membebaskan nama lama untuk dipakai siapa saja.",
+	"domain_pending": "Pindah ke {hostname} saat dipublikasikan berikutnya.",
+	"domain_move_now": "Pindahkan sekarang",
 	"domain_change": "Ubah",
 	"domain_changed": "Aplikasi sekarang dibuka di {hostname}.",
 	"domain_dns": "DNS dan HTTPS",
