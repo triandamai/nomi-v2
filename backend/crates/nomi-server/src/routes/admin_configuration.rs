@@ -7,7 +7,9 @@ use std::collections::BTreeMap;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 
 use nomi_auth::catalog::{MANAGE, VIEW};
 use nomi_auth::extractor::AuthClaims;
@@ -56,7 +58,26 @@ pub async fn get(State(state): State<AppState>, AuthClaims(claims): AuthClaims) 
 pub struct SaveRequest {
     /// Field → value. An empty value goes back to the environment; an empty secret keeps the
     /// saved one.
+    #[serde(deserialize_with = "text_values")]
     pub values: BTreeMap<String, String>,
+}
+
+/// Each value as text: a number or true/false sent as itself (a form's number input does) is
+/// taken as written, and null as empty.
+fn text_values<'de, D: Deserializer<'de>>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error> {
+    BTreeMap::<String, Value>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(field, value)| {
+            let text = match value {
+                Value::String(text) => text,
+                Value::Number(number) => number.to_string(),
+                Value::Bool(flag) => flag.to_string(),
+                Value::Null => String::new(),
+                other => return Err(D::Error::custom(format!("{field}: expected text, a number or true/false, got {other}"))),
+            };
+            Ok((field, text))
+        })
+        .collect()
 }
 
 /// Why storage can't be saved as `changes` asks, if it can't: a bucket needs both keys, whether
@@ -136,5 +157,12 @@ mod tests {
         let cleared = changes(&[("bucket", "files"), ("access_key_id", ""), ("secret_access_key", "")]);
         assert!(storage_problem(keys, nothing, &cleared).is_some(), "the saved ID is gone and the environment has none");
         assert!(storage_problem(keys, keys, &cleared).is_none(), "the environment's ID takes over");
+    }
+
+    #[test]
+    fn numbers_and_flags_are_saved_as_the_text_they_were_typed_as() {
+        let req: SaveRequest = serde_json::from_str(r#"{"values":{"host":"smtp.example.com","port":587,"tls":true,"from":null}}"#).unwrap();
+        assert_eq!(req.values, changes(&[("host", "smtp.example.com"), ("port", "587"), ("tls", "true"), ("from", "")]));
+        assert!(serde_json::from_str::<SaveRequest>(r#"{"values":{"port":[587]}}"#).is_err(), "a list isn't a value");
     }
 }
