@@ -7,6 +7,8 @@ name: Release
 # migrations) and the frontends after it, each through its deploy webhook
 # (SHIPYARD_BACKEND_DEPLOY_HOOK, SHIPYARD_FRONTEND_DEPLOY_HOOK, SHIPYARD_FRONTEND_NEW_DEPLOY_HOOK).
 # The new frontend builds and deploys on its own track, so a failure there never holds up the others.
+# So do its design-system docs: a static bundle in the Shipyard registry, redeployed through
+# SHIPYARD_DOCS_DEPLOY_HOOK.
 on:
   push:
     tags: ['v*.*.*']
@@ -98,6 +100,96 @@ jobs:
             ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/frontend-new:latest
           cache-from: type=gha,scope=frontend-new
           cache-to: type=gha,mode=max,scope=frontend-new
+
+  # The design-system docs (frontend-new's static gallery, `npm run build:gallery`) as a Shipyard
+  # static site: built once here, zipped and pushed to the registry as a static bundle (an OCI
+  # artifact, so ORAS rather than docker push), then redeployed by deploy-docs. Pushing a version
+  # tag also moves `latest` to it.
+  build-and-push-docs:
+    name: Build and push design-system docs
+    needs: frontend-new
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend-new
+    env:
+      BUNDLE: ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/design-system:${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build the static docs
+        run: npm run build:gallery
+        env:
+          # The tag (e.g. v1.2.3) becomes the version the docs show.
+          APP_VERSION: ${{ github.ref_name }}
+
+      # The gallery has no page at its root (its pages all end in .html), so the site's root opens
+      # the docs home. The zip holds the folder's contents: index.html at the zip root.
+      - name: Package bundle
+        run: |
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Nomi design system</title>' \
+            '<meta http-equiv="refresh" content="0; url=design-system.html">' \
+            '<a href="design-system.html">Nomi design system</a>' > build-gallery/index.html
+          (cd build-gallery && zip -qr ../site.zip .)
+
+      - uses: oras-project/setup-oras@v2
+
+      - name: Log in to Shipyard registry
+        env:
+          REGISTRY: ${{ secrets.SHIPYARD_REGISTRY_HOST }}
+          REGISTRY_KEY: ${{ secrets.SHIPYARD_REGISTRY_KEY }}
+        run: echo "$REGISTRY_KEY" | oras login "$REGISTRY" -u ci --password-stdin
+
+      - name: Push static bundle
+        run: |
+          oras push "$BUNDLE" \
+            --artifact-type application/vnd.shipyard.static-bundle \
+            --annotation "org.shipyard.artifact.kind=static_bundle" \
+            --annotation "org.shipyard.framework=sveltekit" \
+            --annotation "org.shipyard.build_command=npm run build:gallery" \
+            --annotation "org.shipyard.output_dir=build-gallery" \
+            site.zip:application/zip
+
+  # The docs site (Source: Shipyard Artifactory, bound to design-system:latest) rolls out the
+  # bundle just pushed. It needs nothing from the backend, so it doesn't wait for it.
+  deploy-docs:
+    name: Deploy design-system docs
+    runs-on: ubuntu-latest
+    needs: build-and-push-docs
+    concurrency:
+      group: deploy-docs
+      cancel-in-progress: false
+    steps:
+      - name: Trigger deployment via webhook
+        env:
+          # A repository secret, or a repository variable with the same name.
+          WEBHOOK_URL: ${{ secrets.SHIPYARD_DOCS_DEPLOY_HOOK || vars.SHIPYARD_DOCS_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::SHIPYARD_DOCS_DEPLOY_HOOK is empty. Add it under Settings > Secrets and variables > Actions as a repository secret (or variable)."
+            exit 1
+          fi
+          status=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-all-errors --max-time 60 \
+            -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"${{ github.ref_name }}","sha":"${{ github.sha }}"}') || true
+          echo "docs webhook answered HTTP $status"
+          case "$status" in
+            2??) ;;
+            *) echo "::error::docs deploy webhook failed (HTTP $status)"; exit 1 ;;
+          esac
 
   deploy-backend:
     name: Deploy Backend
