@@ -15,7 +15,8 @@ export const actions: Actions = {
 	accept: async ({ cookies, fetch, params }) => {
 		const response = await apiFetch(fetch, cookies, `/api/invites/${encodeURIComponent(params.code)}/accept`, { method: 'POST' });
 		if (!response.ok) return fail(response.status, { error: m.invite_err_accept() });
-		// Joining makes it the organization Projects shows.
-		throw redirect(303, '/projects');
+		// An invite to build a project opens its chat; otherwise joining makes it the organization Projects shows.
+		const accepted = (await response.json().catch(() => ({}))) as { project_session_id?: string };
+		throw redirect(303, accepted.project_session_id ? `/projects/session/${accepted.project_session_id}` : '/projects');
 	},
 };

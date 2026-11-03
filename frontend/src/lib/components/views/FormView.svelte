@@ -7,11 +7,12 @@
 	import DatePicker from '$lib/components/m3/DatePicker.svelte';
 	import TimePicker from '$lib/components/m3/TimePicker.svelte';
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
-	import ViewFrame from './ViewFrame.svelte';
+	import FormCard from '$lib/components/ds/chat/FormCard.svelte';
+	import { crewId } from '$lib/crewId';
 	import { composeForm } from '$lib/views/format';
 	import type { FormField, FormView, ViewProps } from '$lib/views/types';
 
-	let { view, answered = false }: ViewProps<FormView> = $props();
+	let { view, agent = null, answered = false }: ViewProps<FormView> = $props();
 
 	const send = useChatSend();
 	const initial = (field: FormField) => (field.default === undefined || typeof field.default === 'boolean' ? '' : String(field.default));
@@ -45,17 +46,24 @@
 		picks[field.key] = current.includes(option) ? current.filter((o) => o !== option) : field.type === 'multiselect' ? [...current, option] : [option];
 	}
 
-	function submit(event: SubmitEvent) {
-		event.preventDefault();
+	let tried = $state(false);
+	function submit() {
+		tried = true;
 		if (done || missing || !message || !send) return;
 		send(message);
 		sent = true;
 	}
 </script>
 
-<ViewFrame title={view.title}>
-	<form class="form" onsubmit={submit}>
-		{#if view.intro}<p class="form__intro">{view.intro}</p>{/if}
+<!-- The design system's form card (Chat responses → Form); answered, its fields stay as they were sent. -->
+<fieldset class="contents" disabled={done}>
+	<FormCard
+		agent={crewId(agent)}
+		title={view.title ?? m.view_form_title()}
+		note={done ? m.view_answered() : tried && missing ? m.view_form_missing() : view.intro}
+		submitLabel={view.submit_label ?? m.view_send()}
+		onsubmit={submit}
+	>
 		<fieldset class="form__fields" disabled={done}>
 			{#each view.fields as field (field.key)}
 				{@const label = field.required ? `${field.label} *` : field.label}
@@ -88,27 +96,10 @@
 				{/if}
 			{/each}
 		</fieldset>
-		{#if done}
-			<p class="form__done">{m.view_answered()}</p>
-		{:else}
-			<div class="form__actions">
-				<button type="submit" class="form__send" disabled={missing || !message || !send}>{view.submit_label ?? m.view_send()}</button>
-			</div>
-		{/if}
-	</form>
-</ViewFrame>
+	</FormCard>
+</fieldset>
 
 <style>
-	.form {
-		display: flex;
-		flex-direction: column;
-		gap: 14px;
-	}
-	.form__intro {
-		margin: 0;
-		color: var(--md-sys-color-on-surface-variant);
-		line-height: 1.45;
-	}
 	.form__fields {
 		display: flex;
 		flex-direction: column;
@@ -179,41 +170,8 @@
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: -1px;
 	}
-	.form__actions {
-		display: flex;
-		justify-content: flex-end;
-	}
-	.form__send {
-		min-height: 40px;
-		padding: 0 20px;
-		border: none;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-primary);
-		color: var(--md-sys-color-on-primary);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.form__send:hover:not(:disabled) {
-		background: color-mix(in srgb, var(--md-sys-color-on-primary) 8%, var(--md-sys-color-primary));
-	}
-	.form__send:disabled {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
-		color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
-		cursor: default;
-	}
-	.form__send:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.form__done {
-		margin: 0;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.875rem;
-	}
 	@media (max-width: 600px) {
-		.chip,
-		.form__send {
+		.chip {
 			min-height: 44px;
 		}
 	}

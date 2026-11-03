@@ -333,7 +333,7 @@ pub async fn start_background_task(
     user_id: Uuid,
     agent_type: &str,
     input: &Value,
-) -> Result<String, String> {
+) -> Result<(String, crate::content_block::ContentBlock), String> {
     let parsed = parse_background_task_input(input)?;
 
     let id: Uuid = sqlx::query_scalar(
@@ -363,7 +363,48 @@ pub async fn start_background_task(
             .await;
     }
 
-    Ok(format_task_started_receipt(id, &parsed.label))
+    // A card in the chat follows the task: running now, brought up to date when it ends
+    // (`settle_task_cards`).
+    let card = crate::views::View::Task(crate::views::TaskView {
+        id: Some(id.to_string()),
+        title: parsed.label.clone(),
+        status: crate::views::TaskStatus::Running,
+        detail: Some(parsed.command.clone()),
+        progress: None,
+        agent: Some(agent_type.to_string()),
+        eta: None,
+    });
+    Ok((format_task_started_receipt(id, &parsed.label), crate::content_block::ContentBlock::View(card)))
+}
+
+/// Brings the chat's card for a background task up to date with how the task ended
+/// (`completed`, `failed` or `cancelled`), and tells the chat's devices to fetch it again
+/// (without a publisher, the caller does: the changed messages are returned).
+pub async fn settle_task_cards(conn: &mut PgConnection, publisher: Option<&MqttPublisher>, session_id: Uuid, task_id: Uuid, status: &str) -> Vec<Uuid> {
+    let shown = match status {
+        "completed" => "done",
+        "cancelled" => "cancelled",
+        "pending" | "running" => return Vec::new(),
+        _ => "failed",
+    };
+    let updated: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE messages SET content_blocks = jsonb_set(content_blocks, '{0,status}', to_jsonb($3::text)) \
+         WHERE session_id = $1 AND content_blocks->0->>'kind' = 'view' AND content_blocks->0->>'view' = 'task' \
+           AND content_blocks->0->>'id' = $2 \
+         RETURNING id",
+    )
+    .bind(session_id)
+    .bind(task_id.to_string())
+    .bind(shown)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap_or_default();
+    if let Some(publisher) = publisher {
+        for message_id in &updated {
+            let _ = publisher.publish(session_id, &StreamEnvelope::MessageUpdated { message_id: *message_id }).await;
+        }
+    }
+    updated
 }
 
 pub async fn list_background_tasks(
@@ -404,6 +445,7 @@ pub async fn list_background_tasks(
 
 pub async fn cancel_background_task(
     conn: &mut PoolConnection<Postgres>,
+    publisher: Option<&MqttPublisher>,
     session_id: Uuid,
     user_id: Uuid,
     input: &Value,
@@ -431,6 +473,7 @@ pub async fn cancel_background_task(
     if affected == 0 {
         return Err("no pending or running background task with that task_id".to_string());
     }
+    settle_task_cards(&mut **conn, publisher, session_id, task_id, "cancelled").await;
 
     Ok(format!("Background task {task_id} cancelled."))
 }

@@ -60,10 +60,13 @@ pub(crate) fn ensure_error(e: EnsureError) -> ApiError {
 
 /// The person's role on the project, or 404 when they can't open it.
 pub(crate) async fn project_role(pool: &sqlx::PgPool, project_id: Uuid, user_id: Uuid) -> Result<&'static str, ApiError> {
-    let role: Option<bool> = sqlx::query_scalar(
-        "SELECT (p.user_id = $2 \
+    let role: Option<String> = sqlx::query_scalar(
+        "SELECT CASE WHEN p.user_id = $2 \
                  OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2 AND pm.role = 'admin') \
-                 OR EXISTS (SELECT 1 FROM memberships m WHERE m.org_id = p.org_id AND m.user_id = $2 AND m.status = 'active' AND m.role IN ('owner', 'admin'))) \
+                 OR EXISTS (SELECT 1 FROM memberships m WHERE m.org_id = p.org_id AND m.user_id = $2 AND m.status = 'active' AND m.role IN ('owner', 'admin')) \
+                 THEN 'admin' \
+                 WHEN EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2 AND pm.role = 'viewer') THEN 'viewer' \
+                 ELSE 'member' END \
          FROM projects p WHERE p.id = $1 AND can_open_project(p.id, $2)",
     )
     .bind(project_id)
@@ -71,10 +74,20 @@ pub(crate) async fn project_role(pool: &sqlx::PgPool, project_id: Uuid, user_id:
     .fetch_optional(pool)
     .await
     .map_err(internal("failed to look up project"))?;
-    match role {
-        Some(true) => Ok("admin"),
-        Some(false) => Ok("member"),
+    match role.as_deref() {
+        Some("admin") => Ok("admin"),
+        Some("viewer") => Ok("viewer"),
+        Some(_) => Ok("member"),
         None => Err((StatusCode::NOT_FOUND, "project not found".to_string())),
+    }
+}
+
+/// Someone who may change the project (its files, its chat with the crew): anyone who can open
+/// it except a viewer.
+pub(crate) async fn require_builder(pool: &sqlx::PgPool, project_id: Uuid, user_id: Uuid) -> Result<&'static str, ApiError> {
+    match project_role(pool, project_id, user_id).await? {
+        "viewer" => Err((StatusCode::FORBIDDEN, "you can view this project but not change it".to_string())),
+        role => Ok(role),
     }
 }
 
@@ -179,6 +192,22 @@ pub struct DeployOverview {
     /// The app's own production backend while it's being set up before its first publish (or
     /// when that failed); null otherwise. The publish follows by itself once it's ready.
     pub backend_setup: Option<BackendSetup>,
+    /// Files changed since the newest successful publish to production (what Publish would send
+    /// live); null before the first publish.
+    pub unpublished_changes: Option<i64>,
+}
+
+/// How many of the project's files changed after its newest successful production publish.
+pub async fn unpublished_changes(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM project_files f WHERE f.project_id = $1 AND f.updated_at > last.created_at) \
+         FROM (SELECT created_at FROM project_publishes WHERE project_id = $1 AND environment = $2 AND status = 'succeeded' \
+               ORDER BY created_at DESC LIMIT 1) last",
+    )
+    .bind(project_id)
+    .bind(DEFAULT_ENV)
+    .fetch_optional(pool)
+    .await
 }
 
 #[derive(Serialize)]
@@ -216,7 +245,7 @@ pub(crate) async fn project_files(state: &impl ShipyardAccess, project_id: Uuid)
     Ok(files)
 }
 
-async fn database_kind(state: &AppState, project_id: Uuid) -> Result<manifest::Database, ApiError> {
+pub(crate) async fn database_kind(state: &AppState, project_id: Uuid) -> Result<manifest::Database, ApiError> {
     // Only the files that tell: the Drizzle config and package.json.
     let mut files = Vec::new();
     for path in ["drizzle.config.ts", "drizzle.config.js", "package.json"] {
@@ -228,7 +257,7 @@ async fn database_kind(state: &AppState, project_id: Uuid) -> Result<manifest::D
     Ok(manifest::detect_database(&files))
 }
 
-fn database_name(db: manifest::Database) -> &'static str {
+pub(crate) fn database_name(db: manifest::Database) -> &'static str {
     match db {
         manifest::Database::Postgres => "postgres",
         manifest::Database::Sqlite => "sqlite",
@@ -271,6 +300,7 @@ pub async fn overview(
         publishes,
         live,
         backend_setup: backend_setup(&state.pool, project_id).await?,
+        unpublished_changes: unpublished_changes(&state.pool, project_id).await.map_err(internal("failed to count changes"))?,
     }))
 }
 

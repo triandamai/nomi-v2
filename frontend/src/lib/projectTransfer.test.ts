@@ -92,6 +92,11 @@ describe('projectTransfer helpers', () => {
 	describe('proxy route ALLOWED_PROJECT_API_PATHS pattern', () => {
 		it("allows the preview's Relay access, the data sheet and its console, and nothing under them", () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview')).toBe(true);
+			// Building together and exporting.
+			for (const path of ['cursor', 'invites', 'export', 'export/zip', 'export/github', 'deploy/requests', 'deploy/requests/123e4567-e89b-12d3-a456-426614174000']) {
+				expect(ALLOWED_PROJECT_API_PATHS.test(path)).toBe(true);
+			}
+			expect(ALLOWED_PROJECT_API_PATHS.test('export/../members')).toBe(false);
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay/preview/x')).toBe(false);
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('relay/query')).toBe(true);

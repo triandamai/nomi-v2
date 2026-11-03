@@ -408,15 +408,18 @@ pub fn failure_chat_text(locale: nomi_i18n::Locale, environment: &str, why: &str
     text
 }
 
-/// Posts into the project's chat, live, as Nomi; with next-step buttons when given.
-async fn post_to_project_chat(pool: &PgPool, project_id: Uuid, text: &str, suggestions: Vec<String>) {
+/// Posts into the project's chat, live, as Nomi; with next-step buttons when given, and the
+/// event it reports (a publish) as a logged line above the text.
+async fn post_to_project_chat(pool: &PgPool, project_id: Uuid, text: &str, suggestions: Vec<String>, event: Option<serde_json::Value>) {
     let Ok(Some(session_id)) = sqlx::query_scalar::<_, Uuid>("SELECT session_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(pool).await else {
         return;
     };
     let Ok(mut conn) = pool.acquire().await else { return };
-    let message_id: Option<Uuid> = sqlx::query_scalar("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, NULL, $2) RETURNING id")
+    let blocks = event.map(|event| serde_json::Value::Array(vec![event]));
+    let message_id: Option<Uuid> = sqlx::query_scalar("INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks) VALUES ($1, NULL, $2, $3) RETURNING id")
         .bind(session_id)
         .bind(text)
+        .bind(blocks)
         .fetch_one(&mut *conn)
         .await
         .ok();
@@ -425,6 +428,16 @@ async fn post_to_project_chat(pool: &PgPool, project_id: Uuid, text: &str, sugge
         let _ = mqtt.publish(session_id, &nomi_realtime::StreamEnvelope::MessageCreated { message_id }).await;
     }
     nomi_agent_core::suggestions::post_suggestions(&mut conn, mqtt, session_id, "Nomi", suggestions).await;
+}
+
+/// A publish as one logged line in the chat ("production · published · shop.example.app"): the
+/// frontend draws it as an event row, in mono, with the message's time.
+pub fn publish_event(environment: &str, ok: bool, detail: Option<&str>) -> serde_json::Value {
+    let mut parts = vec![environment.to_string(), if ok { "published" } else { "failed" }.to_string()];
+    if let Some(detail) = detail.filter(|d| !d.is_empty()) {
+        parts.push(detail.to_string());
+    }
+    serde_json::json!({ "kind": "project_event", "event": "deploy", "ok": ok, "text": parts.join(" · ") })
 }
 
 /// The project owner's language, for what Nomi says in the project's chat.
@@ -490,10 +503,12 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
                     crate::project_events::changed(project_id, "publish.failure");
                 }
                 let text = failure_chat_text(locale, environment, &why, failure.as_ref());
-                post_to_project_chat(pool, project_id, &text, vec![locale.t("deploy.suggest_fix")]).await;
+                let line = publish_event(environment, false, failure.as_ref().map(|f| f.step.as_str()));
+                post_to_project_chat(pool, project_id, &text, vec![locale.t("deploy.suggest_fix")], Some(line)).await;
                 notify_admins(pool, project_id, "publish_failed", &why).await;
             } else if let Some(url) = url {
-                post_to_project_chat(pool, project_id, &locale.tf("deploy.chat_published", &[("env", environment), ("url", url)]), Vec::new()).await;
+                let line = publish_event(environment, true, Some(url.trim_start_matches("https://").trim_start_matches("http://")));
+                post_to_project_chat(pool, project_id, &locale.tf("deploy.chat_published", &[("env", environment), ("url", url)]), Vec::new(), Some(line)).await;
                 notify_admins(pool, project_id, "published", url).await;
             }
         }
@@ -684,6 +699,16 @@ pub async fn sync_org_name(pool: &PgPool, client: &Shipyard<'_>, org_id: Uuid) -
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_publish_is_one_logged_line_in_the_chat() {
+        let ok = super::publish_event("production", true, Some("shop.example.app"));
+        assert_eq!(ok["kind"], "project_event");
+        assert_eq!(ok["text"], "production · published · shop.example.app");
+        let failed = super::publish_event("dev", false, None);
+        assert_eq!((failed["ok"].as_bool(), failed["text"].as_str()), (Some(false), Some("dev · failed")));
+    }
+
 
     #[test]
     fn a_failed_publish_reads_as_where_it_broke_and_the_log() {

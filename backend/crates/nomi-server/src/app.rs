@@ -399,11 +399,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/projects/:id/import/github", post(crate::routes::project_import::import_github))
         .route("/api/projects/:id/export/github", post(crate::routes::github::export))
+        .route("/api/projects/:id/export", get(crate::routes::project_export::summary))
+        .route("/api/projects/:id/export/zip", get(crate::routes::project_export::download))
         .route(
             "/api/projects/:id/import/files",
             post(crate::routes::project_import::import_batch).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
         .route("/api/projects/:id/members", get(crate::routes::project_members::list))
+        .route("/api/projects/:id/invites", post(crate::routes::project_members::invite))
         .route(
             "/api/projects/:id/presence",
             get(crate::routes::project_presence::list)
@@ -411,6 +414,9 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(crate::routes::project_presence::leave),
         )
         .route("/api/projects/:id/typing", post(crate::routes::project_presence::typing))
+        .route("/api/projects/:id/cursor", post(crate::routes::project_presence::cursor))
+        .route("/api/sessions/:id/queue", get(crate::routes::turn_queue::list))
+        .route("/api/sessions/:id/queue/:job_id/first", post(crate::routes::turn_queue::move_first))
         .route("/api/projects/:id/activity", get(crate::routes::project_activity::list))
         .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))
         .route(

@@ -391,6 +391,7 @@ pub async fn put_project_file(
     })?.is_none() {
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
+    crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await.map_err(|(code, why)| (code, why))?;
 
     let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, &path, &req.content)
@@ -418,6 +419,7 @@ pub async fn delete_project_file(
     })?.is_none() {
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
+    crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await.map_err(|(code, why)| (code, why))?;
 
     let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     nomi_agent_coding::files::remove_file(&mut conn, &state.project_storage, project_id, &path).await.map_err(|e| {

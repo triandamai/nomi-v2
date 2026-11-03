@@ -24,9 +24,7 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import { ProjectPresence } from '$lib/projectPresence.svelte';
-	import SheetFrame from '$lib/components/project/SheetFrame.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import ModelManager from '$lib/components/models/ModelManager.svelte';
 	import ModelSelector from '$lib/components/models/ModelSelector.svelte';
@@ -43,6 +41,32 @@
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import { isBackendEvent } from '$lib/presenceView';
+	import ResizeHandle from '$lib/components/ds/build/ResizeHandle.svelte';
+	import WorkspaceSheet from '$lib/components/ds/build/WorkspaceSheet.svelte';
+	import PublishButton from '$lib/components/ds/build/PublishButton.svelte';
+	import Terminal from '$lib/components/ds/build/Terminal.svelte';
+	import { chatWidth as splitWidth, SPLIT } from '$lib/components/ds/build/split';
+	import { terminalLines } from '$lib/terminalLines';
+	import Presence from '$lib/components/ds/build/Presence.svelte';
+	import PresenceMenu from '$lib/components/ds/build/PresenceMenu.svelte';
+	import FollowBar from '$lib/components/ds/build/FollowBar.svelte';
+	import PeerCursor from '$lib/components/ds/build/PeerCursor.svelte';
+	import PublishRequest from '$lib/components/ds/build/PublishRequest.svelte';
+	import RequestQueue from '$lib/components/ds/build/RequestQueue.svelte';
+	import { splitAttachments } from '$lib/attachments';
+	import { initials, peerFor, whereLabel } from '$lib/peers';
+	import ExportDialog from '$lib/components/ds/build/ExportDialog.svelte';
+	import CodeView from '$lib/components/ds/build/CodeView.svelte';
+	import CodeQuote from '$lib/components/ds/build/CodeQuote.svelte';
+	import { codeTree, quoteLines } from '$lib/codeTree';
+	import { highlight } from '$lib/codeTokens';
+	import DsTextField from '$lib/components/ds/inputs/TextField.svelte';
+	import DsButton from '$lib/components/ds/actions/Button.svelte';
+	import { Download } from '@lucide/svelte';
+	import { projectApi } from '$lib/projectApi';
+	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
+	import type { ChecklistItem } from '$lib/planChecklist';
+	import { Activity, Bug, Database, History, Link2, Settings, Users } from '@lucide/svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -98,6 +122,13 @@
 	onMount(() => {
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
+		// A card in the chat can open one of the project's tools (Share → Invite opens People).
+		const open = (event: Event) => {
+			const which = (event as CustomEvent<string>).detail as Sheet;
+			if (SHEETS.includes(which)) openSheet(which);
+		};
+		window.addEventListener('nomi:open-sheet', open);
+		return () => window.removeEventListener('nomi:open-sheet', open);
 	});
 	// The open sheet is kept in the address (`?sheet=`) so a link opens it. While the page is
 	// still starting (a link that opens a sheet), SvelteKit's router can't change the address yet,
@@ -201,6 +232,7 @@
 		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
 		{ id: 'settings', label: m.pj_tab_settings, icon: IconSettings },
 	];
+	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, database: Database, members: Users, issues: Bug, settings: Settings } as const;
 	const SHEET_TITLE: Record<Sheet, () => string> = {
 		deploy: m.pj_tab_deploy,
 		domain: m.pj_tab_domain,
@@ -489,19 +521,17 @@
 		}
 	}
 
-	// The chat and the workspace (preview, code, terminal) side by side: the chat's width is
-	// dragged on the handle between them, and the workspace can be hidden to give the chat the
-	// whole screen. On a phone the workspace opens over the chat instead. Both remembered here.
+	// The chat and the workspace (preview, code, terminal) side by side (Build → Workspace): the
+	// chat's width is dragged on the resize handle between them (360–720, the preview never under
+	// 480), and the workspace can be hidden to give the chat the whole screen. On a phone the
+	// workspace opens over the chat instead. Both remembered here.
 	const WIDTH_KEY = 'nomi-project-chat-width';
 	const PANE_KEY = 'nomi-project-pane';
-	const DEFAULT_WIDTH = 440;
-	const MIN_CHAT = 320;
-	const MIN_PANE = 360;
 	let layout = $state<HTMLDivElement | null>(null);
-	let chatWidth = $state(DEFAULT_WIDTH);
+	let chatWidth = $state<number>(SPLIT.reset);
 	let paneOpen = $state(true);
 	let narrow = $state(false);
-	let dragging = $state(false);
+	let layoutWidth = $state(1200);
 
 	function remember(key: string, value: string) {
 		try {
@@ -510,13 +540,13 @@
 			// Private windows and blocked storage: fine, it just isn't remembered.
 		}
 	}
-	function clampWidth(width: number): number {
-		const total = layout?.clientWidth ?? 1200;
-		return Math.round(Math.min(Math.max(width, MIN_CHAT), Math.max(MIN_CHAT, total - MIN_PANE)));
-	}
 	function setPane(open: boolean) {
 		paneOpen = open;
 		if (!narrow) remember(PANE_KEY, open ? 'open' : 'closed');
+	}
+	function resize(width: number) {
+		chatWidth = width;
+		remember(WIDTH_KEY, String(width));
 	}
 
 	onMount(() => {
@@ -534,44 +564,254 @@
 		};
 		apply();
 		query.addEventListener('change', apply);
+		const measure = () => (layoutWidth = layout?.clientWidth ?? window.innerWidth);
+		measure();
+		window.addEventListener('resize', measure);
 		try {
 			const width = Number(localStorage.getItem(WIDTH_KEY));
-			if (width > 0) chatWidth = clampWidth(width);
+			if (width > 0) chatWidth = splitWidth(width, layoutWidth);
 		} catch {
 			// Keep the default width.
 		}
-		return () => query.removeEventListener('change', apply);
+		return () => {
+			query.removeEventListener('change', apply);
+			window.removeEventListener('resize', measure);
+		};
 	});
 
-	function startDrag(event: PointerEvent) {
-		if (event.button !== 0) return;
-		const handle = event.currentTarget as HTMLElement;
-		handle.setPointerCapture(event.pointerId);
-		dragging = true;
-		const left = layout?.getBoundingClientRect().left ?? 0;
-		const move = (e: PointerEvent) => (chatWidth = clampWidth(e.clientX - left));
-		const stop = () => {
-			dragging = false;
-			handle.removeEventListener('pointermove', move);
-			handle.removeEventListener('pointerup', stop);
-			handle.removeEventListener('pointercancel', stop);
-			remember(WIDTH_KEY, String(chatWidth));
-		};
-		handle.addEventListener('pointermove', move);
-		handle.addEventListener('pointerup', stop);
-		handle.addEventListener('pointercancel', stop);
+	// The newest plan's steps, for the empty preview while the first build runs.
+	let planSteps = $state<{ label: string; state: 'done' | 'running' | 'waiting' }[]>([]);
+	$effect(() => {
+		const plan = [...data.messages].reverse().flatMap((message) => message.content_blocks ?? []).find((block) => block.kind === 'plan');
+		if (!plan || plan.kind !== 'plan' || filePaths.length > 0) {
+			planSteps = [];
+			return;
+		}
+		void fetch(buildAgentPlansFetchUrl(page.url.pathname, plan.agent_session_id))
+			.then((response) => (response.ok ? response.json() : null))
+			.then((found: { plans: { version: number; checklist: ChecklistItem[] }[] } | null) => {
+				const latest = found?.plans.reduce<{ version: number; checklist: ChecklistItem[] } | null>((best, p) => (!best || p.version > best.version ? p : best), null);
+				planSteps = (latest?.checklist ?? []).map((item) => ({
+					label: item.text,
+					state: item.status === 'done' ? 'done' : item.status === 'in_progress' ? 'running' : 'waiting',
+				}));
+			})
+			.catch(() => (planSteps = []));
+	});
+
+	// Building together (Build together → Presence, Follow, Peer cursor): who's here and where,
+	// following someone to see what they see, and their pointer over the same view.
+	const WHERE = $derived({ preview: m.project_preview(), code: m.project_code(), terminal: m.project_terminal() });
+	const peers = $derived((presence?.people ?? []).map((person) => ({ ...person, initials: initials(person.name), peer: peerFor(person.name) })));
+	const myName = $derived(page.data.profile?.display_name || page.data.profile?.username || (page.data.userEmail ?? '').split('@')[0] || m.msg_you());
+	let presenceMenuOpen = $state(false);
+	let following = $state<string | null>(null);
+	const followed = $derived(peers.find((person) => person.user_id === following) ?? null);
+
+	// Others see where the person is.
+	$effect(() => {
+		presence?.moveTo({ view, path: view === 'code' ? activePath : null });
+	});
+	// Following someone: go where they go. Moving on your own stops following.
+	$effect(() => {
+		const person = followed;
+		if (!person || !data.project) return;
+		const where = person.view ?? 'preview';
+		if (where !== view && (where !== 'terminal' || runtime)) view = where;
+		if (where === 'code' && person.path && person.path !== activePath && !editorDirty) void openFile(data.project.id, person.path);
+	});
+	$effect(() => {
+		if (following && !followed) following = null;
+	});
+
+	// Pointers: the person's goes out a few times a second; others' fade after a few seconds still.
+	let pointerClock = $state(Date.now());
+	$effect(() => {
+		if (!presence || Object.keys(presence.pointers).length === 0) return;
+		const timer = setInterval(() => (pointerClock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const pointers = $derived(presence ? presence.pointersIn(view, pointerClock).map((pointer) => ({ ...pointer, peer: peers.find((p) => p.user_id === pointer.user_id)?.peer ?? 1 })) : []);
+	function trackPointer(event: PointerEvent) {
+		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		if (box.width === 0 || box.height === 0) return;
+		presence?.point(view, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
 	}
-	function dragKeys(event: KeyboardEvent) {
-		const step = event.shiftKey ? 96 : 24;
-		const next = { ArrowLeft: chatWidth - step, ArrowRight: chatWidth + step, Home: MIN_CHAT, End: Number.MAX_SAFE_INTEGER }[event.key];
-		if (next === undefined) return;
-		event.preventDefault();
-		chatWidth = clampWidth(next);
-		remember(WIDTH_KEY, String(chatWidth));
+
+	// Publish requests (Build together → Publish request): an admin sees who asked to publish and
+	// publishes or reviews it right there. They change live over the project's stream.
+	type PendingRequest = { id: string; requested_by_name: string; note: string | null; environment: string; created_at: string; status: string };
+	let requests = $state<PendingRequest[]>([]);
+	async function loadRequests() {
+		if (!projectId || !deploy?.isAdmin) return;
+		try {
+			const list = await projectApi<{ requests: PendingRequest[] }>(projectId, 'deploy/requests');
+			requests = list.requests.filter((request) => request.status === 'pending');
+		} catch {
+			// The deploy sheet still lists them.
+		}
 	}
-	function resetWidth() {
-		chatWidth = clampWidth(DEFAULT_WIDTH);
-		remember(WIDTH_KEY, String(chatWidth));
+	$effect(() => {
+		if (!deploy?.isAdmin) return;
+		void loadRequests();
+		return deploy.onEvent((raw) => {
+			try {
+				if (JSON.parse(raw).event === 'publish_request.changed') void loadRequests();
+			} catch {
+				// Not ours.
+			}
+		});
+	});
+	async function answerRequest(id: string, action: 'approve' | 'decline') {
+		if (!projectId) return;
+		try {
+			await projectApi(projectId, `deploy/requests/${id}`, { method: 'POST', body: { action } });
+		} finally {
+			await loadRequests();
+			if (action === 'approve') await deploy?.refresh();
+		}
+	}
+
+	// The asks waiting for Koda (Build together → Asks in line): one change at a time, who asked
+	// what, and the next one moved up. Looked at again every few seconds while the chat is open.
+	type QueuedAsk = { id: string; text: string; who: string; mine: boolean; state: 'running' | 'next' | 'queued' };
+	let asks = $state<QueuedAsk[]>([]);
+	async function loadQueue() {
+		const response = await fetch(`${page.url.pathname}/queue`).catch(() => null);
+		if (response?.ok) asks = ((await response.json()) as { asks: QueuedAsk[] }).asks;
+	}
+	$effect(() => {
+		if (!data.project) return;
+		void loadQueue();
+		const timer = setInterval(() => {
+			if (document.visibilityState === 'visible') void loadQueue();
+		}, 4000);
+		return () => clearInterval(timer);
+	});
+	async function moveFirst(index: number) {
+		const ask = asks[index];
+		if (!ask) return;
+		const response = await fetch(`${page.url.pathname}/queue/${ask.id}/first`, { method: 'POST' }).catch(() => null);
+		if (response?.ok) asks = ((await response.json()) as { asks: QueuedAsk[] }).asks;
+	}
+	const viewer = $derived(deploy?.overview?.role === 'viewer');
+
+	// The code, read-only (Build → Code view): what Koda wrote; picking lines quotes them for the
+	// next message (Code quote). People who aren't admins see it this way; admins edit, and can
+	// switch to reading.
+	let reading = $state<boolean | null>(null);
+	const codeReadOnly = $derived(reading ?? (deploy ? !deploy.isAdmin : false));
+	let quoted = $state<{ file: string; range: string; snippet: string; text: string } | null>(null);
+	const tree = $derived(codeTree(filePaths, activePath));
+	const codeLines = $derived(activePath ? highlight(activeContent, activePath.split('.').pop() ?? '') : []);
+	function quoteFile() {
+		if (!activePath) return;
+		quoted = { file: activePath, range: m.code_whole_file(), snippet: '', text: m.code_ask_about_file({ path: activePath }) };
+	}
+
+	// Export (Build → Export): everything built is the person's. What's in it, the files as a zip,
+	// or pushed to their GitHub (connected here first, by GitHub's sign-in or a token).
+	type ExportSummary = { name: string; files: number; bytes: number; database: 'postgres' | 'sqlite' | 'none'; env: string[] };
+	type GithubStatus = { oauth: boolean; connection: { login: string } | null };
+	let exportOpen = $state(false);
+	let exportSummary = $state<ExportSummary | null>(null);
+	let github = $state<GithubStatus | null>(null);
+	let githubStep = $state(false);
+	let githubRepo = $state('');
+	let githubToken = $state('');
+	let githubBusy = $state(false);
+	let githubNote = $state<string | null>(null);
+	async function openExport() {
+		if (!projectId) return;
+		exportOpen = true;
+		exportSummary = await projectApi<ExportSummary>(projectId, 'export').catch(() => null);
+	}
+	const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+	async function startPush() {
+		exportOpen = false;
+		githubStep = true;
+		githubNote = null;
+		github = await fetch('/connections/github').then((r) => (r.ok ? (r.json() as Promise<GithubStatus>) : null)).catch(() => null);
+		if (github?.connection && data.project) githubRepo = `${github.connection.login}/${slug(data.project.name)}`;
+	}
+	async function connectGithub() {
+		githubBusy = true;
+		try {
+			if (github?.oauth) {
+				const response = await fetch('/connections/github', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ back: page.url.pathname }) });
+				const started = response.ok ? ((await response.json()) as { url: string }) : null;
+				if (started?.url) window.location.href = started.url;
+				else githubNote = m.export_github_failed();
+			} else {
+				const response = await fetch('/connections/github', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: githubToken }) });
+				if (!response.ok) githubNote = (await response.text()) || m.export_github_failed();
+				else {
+					github = (await response.json()) as GithubStatus;
+					if (github.connection && data.project) githubRepo = `${github.connection.login}/${slug(data.project.name)}`;
+				}
+			}
+		} finally {
+			githubBusy = false;
+		}
+	}
+	async function pushToGithub() {
+		if (!projectId || !githubRepo.trim()) return;
+		githubBusy = true;
+		githubNote = null;
+		try {
+			const pushed = await projectApi<{ url: string; branch: string; commit: string }>(projectId, 'export/github', { method: 'POST', body: { repo: githubRepo.trim(), create: true } });
+			githubNote = m.export_github_pushed({ url: pushed.url, branch: pushed.branch });
+		} catch (e) {
+			githubNote = (e as Error).message || m.export_github_failed();
+		} finally {
+			githubBusy = false;
+		}
+	}
+	const kb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+	// The publish button (Build → Workspace / Publish): what will go live, publishing with its
+	// time, or a failed publish to try again. Someone who isn't an admin asks the admins instead.
+	let clock = $state(Date.now());
+	$effect(() => {
+		if (!deploy?.running) return;
+		const timer = setInterval(() => (clock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const publishState = $derived.by((): 'idle' | 'ready' | 'publishing' | 'failed' => {
+		if (!deploy) return 'idle';
+		if (deploy.running || deploy.preparing || deploy.busy) return 'publishing';
+		if (deploy.latest?.status === 'failed') return 'failed';
+		const changes = deploy.overview?.unpublished_changes;
+		return changes === 0 ? 'idle' : 'ready';
+	});
+	const publishElapsed = $derived.by(() => {
+		const started = deploy?.latest?.status === 'running' ? Date.parse(deploy.latest.created_at) : NaN;
+		if (Number.isNaN(started)) return '';
+		const seconds = Math.max(0, Math.floor((clock - started) / 1000));
+		return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+	});
+	// Asking the admins to publish (the publish requests they approve or decline).
+	let askedNote = $state<string | null>(null);
+	let askedOpen = $state(false);
+	async function askToPublish() {
+		if (!projectId) return;
+		try {
+			await projectApi(projectId, 'deploy/requests', { method: 'POST', body: {} });
+			askedNote = m.ws_publish_asked();
+		} catch (e) {
+			askedNote = (e as Error).message || m.ws_publish_ask_failed();
+		}
+		askedOpen = true;
+	}
+
+	async function publishNow() {
+		if (!deploy) return;
+		if (deploy.isAdmin) {
+			await deploy.publish();
+			openSheet('deploy');
+		} else {
+			await askToPublish();
+		}
 	}
 </script>
 
@@ -626,20 +866,42 @@
 					<tool.icon size={18} /><span class="tool__label">{tool.label()}</span>
 				</button>
 			{/each}
-		</nav>
-		{#if presence && presence.people.length > 0}
-			{@const label = m.pj_here_now_people({ names: presence.people.map((p) => p.name).join(', ') })}
-			<button type="button" class="here" onclick={openActivity} aria-label={label} title={label}>
-				{#each presence.people.slice(0, TOOLBAR_FACES) as person (person.user_id)}
-					<span class="here__face"><Avatar name={person.name} avatarUrl={person.avatar_url} size={28} /></span>
-				{/each}
-				{#if presence.people.length > TOOLBAR_FACES}<span class="here__more">+{presence.people.length - TOOLBAR_FACES}</span>{/if}
+			<button type="button" class="tool" onclick={openExport} title={m.export_tool()}>
+				<Download size={18} strokeWidth={1.75} /><span class="tool__label">{m.export_tool()}</span>
 			</button>
+		</nav>
+		{#if presence && peers.length > 0}
+			<div class="here-wrap">
+				<button type="button" class="here" aria-haspopup="dialog" aria-expanded={presenceMenuOpen} aria-label={m.pj_here_now_people({ names: peers.map((p) => p.name).join(', ') })} onclick={() => (presenceMenuOpen = !presenceMenuOpen)}>
+					<Presence people={peers.slice(0, TOOLBAR_FACES).map((person, index) => ({ name: person.name, initials: person.initials, peer: person.peer, online: index === Math.min(peers.length, TOOLBAR_FACES) - 1 }))} />
+					{#if peers.length > TOOLBAR_FACES}<span class="here__more">+{peers.length - TOOLBAR_FACES}</span>{/if}
+				</button>
+				{#if presenceMenuOpen}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="here-menu" onkeydown={(event) => event.key === 'Escape' && (presenceMenuOpen = false)}>
+						<PresenceMenu
+							people={[
+								...peers.map((person) => ({ name: person.name, initials: person.initials, peer: person.peer, where: whereLabel(person.view, person.path, WHERE) })),
+								{ name: m.presence_you({ name: myName }), initials: initials(myName), where: whereLabel(view, activePath, WHERE), you: true },
+							]}
+							onfollow={(index) => {
+								following = peers[index]?.user_id ?? null;
+								presenceMenuOpen = false;
+							}}
+						/>
+						<button type="button" class="here-menu__activity" onclick={() => { presenceMenuOpen = false; openActivity(); }}>{m.pj_act_tab_activity()}</button>
+					</div>
+				{/if}
+			</div>
 		{/if}
-		{#if deploy?.overview?.available && deploy.isAdmin}
-			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running || deploy.preparing} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
-				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : deploy.preparing ? m.pj_preparing() : m.pj_publish()}</span>
-			</Button>
+		{#if deploy?.overview?.available}
+			<PublishButton
+				state={publishState}
+				count={deploy.overview.unpublished_changes ?? 0}
+				elapsed={publishElapsed}
+				onpublish={publishNow}
+				onretry={publishNow}
+			/>
 		{/if}
 	</header>
 {/if}
@@ -648,7 +910,6 @@
 	class="workspace"
 	class:workspace--narrow={narrow}
 	class:workspace--pane-hidden={!paneOpen}
-	class:workspace--dragging={dragging}
 	style="--chat-width: {chatWidth}px"
 >
 	<section class="workspace__chat" aria-label={m.project_chat_label()}>
@@ -667,27 +928,41 @@
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
 			{typingLabel}
+			readOnlyNote={viewer ? m.pj_viewer_note() : null}
+			quote={quoted?.text ?? null}
+			onquotesent={() => (quoted = null)}
+			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
-		/>
+		>
+			{#snippet aboveComposer()}
+				{#if quoted && !viewer}
+					<CodeQuote file={quoted.file} range={quoted.range} snippet={quoted.snippet} onremove={() => (quoted = null)} />
+				{/if}
+				{#each requests as request (request.id)}
+					<PublishRequest
+						who={{ name: request.requested_by_name, initials: initials(request.requested_by_name), peer: peerFor(request.requested_by_name) }}
+						meta={[request.environment, request.note].filter(Boolean).join(' · ')}
+						onpublish={() => answerRequest(request.id, 'approve')}
+						onreview={() => openSheet('deploy')}
+					/>
+				{/each}
+				{#if asks.length > 1}
+					<RequestQueue
+						asks={asks.map((ask) => ({
+							text: splitAttachments(ask.text).text || ask.text,
+							who: { name: ask.who, initials: initials(ask.who), peer: ask.mine ? undefined : peerFor(ask.who) },
+							state: ask.state,
+							meta: ask.mine ? m.queue_yours() : undefined,
+						}))}
+						onfirst={viewer ? undefined : moveFirst}
+					/>
+				{/if}
+			{/snippet}
+		</ChatThread>
 	</section>
 
 	{#if paneOpen && !narrow}
-		<!-- A focusable separator is a widget (WAI-ARIA window splitter), which the checker doesn't know. -->
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-		<div
-			class="workspace__handle"
-			role="separator"
-			aria-orientation="vertical"
-			aria-label={m.project_resize()}
-			aria-valuemin={MIN_CHAT}
-			aria-valuenow={chatWidth}
-			tabindex="0"
-			onpointerdown={startDrag}
-			onkeydown={dragKeys}
-			ondblclick={resetWidth}
-		>
-			<span class="workspace__grip"></span>
-		</div>
+		<ResizeHandle width={chatWidth} available={layoutWidth} onresize={resize} />
 	{/if}
 
 	<section class="workspace__pane" aria-label={m.project_workspace_label()} hidden={!paneOpen}>
@@ -702,10 +977,10 @@
 			<div class="pane-bar">
 				<h2 class="pane-bar__title">{project.name}</h2>
 				<div class="pane-bar__tabs" role="tablist" aria-label={m.project_workspace_label()}>
-					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'preview'} onclick={() => (view = 'preview')}>{m.project_preview()}</button>
-					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'code'} onclick={() => (view = 'code')}>{m.project_code()}</button>
+					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'preview'} onclick={() => { view = 'preview'; following = null; }}>{m.project_preview()}</button>
+					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'code'} onclick={() => { view = 'code'; following = null; }}>{m.project_code()}</button>
 					{#if runtime}
-						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => (view = 'terminal')}>{m.project_terminal()}</button>
+						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => { view = 'terminal'; following = null; }}>{m.project_terminal()}</button>
 					{/if}
 				</div>
 				<IconButton onclick={() => setPane(false)} aria-label={m.project_pane_hide()} title={m.project_pane_hide()}>
@@ -718,18 +993,52 @@
 				</p>
 			{/if}
 
-			<div class="min-h-0 flex-1">
+			{#if followed}
+				<FollowBar name={followed.name} peer={followed.peer} where={whereLabel(followed.view, followed.path, WHERE)} onstop={() => (following = null)} />
+			{/if}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="pane-body min-h-0 flex-1" onpointermove={trackPointer}>
+				{#each pointers as pointer (pointer.user_id)}
+					<span class="pane-pointer" style="left: {pointer.x * 100}%; top: {pointer.y * 100}%"><PeerCursor name={pointer.name} peer={pointer.peer} /></span>
+				{/each}
 				{#if view === 'preview'}
 					<ProjectPreview
 						projectId={project.id}
 						{runtime}
 						stack={project.stack}
 						files={filePaths}
+						steps={planSteps}
+						liveUrl={deploy?.overview?.url ?? null}
 						onShowCode={() => (view = 'code')}
 					/>
 				{:else if view === 'terminal' && runtime}
-					<pre class="terminal">{runtime.log || m.project_terminal_empty()}</pre>
+					<!-- What ran in the preview, in order (Build → Terminal); a failed check offers the fix. -->
+					<div class="terminal-pane">
+						<Terminal
+							run={m.term_run_preview({ name: project.name })}
+							lines={runtime.log ? terminalLines(runtime.log) : [{ kind: 'out', text: m.project_terminal_empty() }]}
+							failure={runtime.checkFailed && !runtime.handedToKoda ? { title: m.project_check_failed(), onfix: () => sendToChat(m.term_fix_message()) } : undefined}
+						/>
+					</div>
 				{:else}
+					{#if data.project && codeReadOnly}
+						<CodeView
+							tree={tree}
+							path={activePath ?? ''}
+							meta={m.code_readonly({ name: 'Koda' })}
+							lines={codeLines}
+							onopen={(index) => {
+								const entry = tree[index];
+								if (entry && entry.kind !== 'folder' && data.project) void openFile(data.project.id, entry.path);
+							}}
+							onask={quoteFile}
+							onasklines={(from, to) => {
+								if (activePath) quoted = { file: activePath, ...quoteLines(activePath, activeContent, from, to) };
+							}}
+						/>
+						{#if deploy?.isAdmin}<button type="button" class="code-mode" onclick={() => (reading = false)}>{m.code_edit_mode()}</button>{/if}
+					{:else}
+					{#if deploy?.isAdmin}<button type="button" class="code-mode" onclick={() => (reading = true)}>{m.code_read_mode()}</button>{/if}
 					<CodeWorkbench
 						projectName={project.name}
 						files={filePaths}
@@ -745,6 +1054,7 @@
 						onDeleteFile={(path) => deletePath(project.id, path)}
 						onMoveFile={(source, target) => movePath(project.id, source, target)}
 					/>
+					{/if}
 				{/if}
 			</div>
 		{/if}
@@ -755,11 +1065,49 @@
 <!-- Outside the thread: its composer is a form, and these hold forms of their own. -->
 <ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
 <Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
+<Snackbar bind:open={askedOpen} message={askedNote ?? ''} />
+{#if data.project}
+	<ExportDialog
+		bind:open={exportOpen}
+		project={data.project.name}
+		repo={exportSummary ? m.export_repo_detail({ files: String(exportSummary.files), size: kb(exportSummary.bytes) }) : m.common_loading()}
+		database={exportSummary && exportSummary.database !== 'none' ? m.export_db_detail({ kind: exportSummary.database }) : undefined}
+		env={exportSummary && exportSummary.env.length > 0 ? exportSummary.env.join(' · ') : undefined}
+		onpush={startPush}
+		ondownload={() => {
+			window.location.href = `/projects/${data.project?.id}/api/export/zip`;
+		}}
+	/>
+{/if}
+{#if githubStep && data.project}
+	<!-- Pushing to GitHub: connect first if needed, then the repository it goes to. -->
+	<div class="github-step" role="dialog" aria-label={m.export_github()}>
+		{#if !github}
+			<p>{m.common_loading()}</p>
+		{:else if github.connection}
+			<form class="github-step__form" onsubmit={(event) => { event.preventDefault(); void pushToGithub(); }}>
+				<DsTextField label={m.export_github_repo()} bind:value={githubRepo} />
+				<span class="github-step__actions">
+					<DsButton label={m.common_cancel()} variant="ghost" onclick={() => (githubStep = false)} />
+					<DsButton label={m.export_github()} type="submit" disabled={githubBusy || !githubRepo.trim()} />
+				</span>
+			</form>
+		{:else}
+			<p>{m.export_github_connect_note()}</p>
+			{#if !github.oauth}<DsTextField label={m.export_github_token()} bind:value={githubToken} />{/if}
+			<span class="github-step__actions">
+				<DsButton label={m.common_cancel()} variant="ghost" onclick={() => (githubStep = false)} />
+				<DsButton label={m.export_github_connect()} disabled={githubBusy || (!github.oauth && !githubToken.trim())} onclick={connectGithub} />
+			</span>
+		{/if}
+		{#if githubNote}<p class="github-step__note" role="status">{githubNote}</p>{/if}
+	</div>
+{/if}
 
 {#if data.project && sheet}
 	{@const project = data.project}
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
-		<SheetFrame title={SHEET_TITLE[sheet]()} subtitle={project.name} onclose={() => (sheetOpen = false)}>
+		<WorkspaceSheet icon={SHEET_ICON[sheet]} title={SHEET_TITLE[sheet]()} meta={project.name} onclose={() => (sheetOpen = false)}>
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
@@ -775,11 +1123,11 @@
 					<DatabasePanel projectId={project.id} {published} />
 				{/if}
 			{:else if sheet === 'members'}
-				<MembersPanel projectId={project.id} orgId={project.org_id} bind:tab={membersTab} {presence} {deploy} />
+				<MembersPanel projectId={project.id} orgId={project.org_id} projectName={project.name} bind:tab={membersTab} {presence} {deploy} />
 			{:else if sheet === 'settings' && deploy}
 				<SettingsPanel {deploy} projectName={project.name} />
 			{/if}
-		</SheetFrame>
+		</WorkspaceSheet>
 	</BottomSheet>
 {/if}
 
@@ -926,9 +1274,6 @@
 		.tool {
 			min-height: 44px;
 		}
-		.publish-label {
-			display: none;
-		}
 	}
 
 	.workspace {
@@ -942,9 +1287,6 @@
 		min-width: 0;
 		height: 100%;
 		transition: flex-basis var(--nomi-motion-spatial-default, 350ms cubic-bezier(0.27, 1.06, 0.18, 1));
-	}
-	.workspace--dragging .workspace__chat {
-		transition: none;
 	}
 	.workspace--pane-hidden .workspace__chat,
 	.workspace--narrow .workspace__chat {
@@ -963,14 +1305,6 @@
 		display: none;
 	}
 	/* While dragging, the preview's frame mustn't swallow the pointer. */
-	.workspace--dragging .workspace__pane {
-		pointer-events: none;
-		user-select: none;
-	}
-	.workspace--dragging {
-		cursor: col-resize;
-		user-select: none;
-	}
 	@keyframes pane-in {
 		from {
 			opacity: 0;
@@ -995,48 +1329,6 @@
 			opacity: 0.6;
 			transform: translateY(32px);
 		}
-	}
-
-	.workspace__handle {
-		position: relative;
-		flex: 0 0 12px;
-		margin: 0 -6px;
-		z-index: 2;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: col-resize;
-		touch-action: none;
-	}
-	.workspace__handle::before {
-		content: '';
-		position: absolute;
-		inset: 0 5px;
-		background: var(--md-sys-color-outline-variant);
-		transition: background-color var(--nomi-motion-effects-fast, 150ms);
-	}
-	.workspace__grip {
-		position: relative;
-		width: 4px;
-		height: 48px;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-outline);
-		transition:
-			height var(--nomi-motion-spatial-fast, 200ms),
-			background-color var(--nomi-motion-effects-fast, 150ms);
-	}
-	.workspace__handle:hover .workspace__grip,
-	.workspace__handle:focus-visible .workspace__grip,
-	.workspace--dragging .workspace__grip {
-		height: 72px;
-		background: var(--md-sys-color-primary);
-	}
-	.workspace__handle:hover::before,
-	.workspace--dragging .workspace__handle::before {
-		background: color-mix(in srgb, var(--md-sys-color-primary) 40%, var(--md-sys-color-outline-variant));
-	}
-	.workspace__handle:focus-visible {
-		outline: none;
 	}
 
 	.pane-bar {
@@ -1108,19 +1400,6 @@
 		}
 	}
 
-	.terminal {
-		height: 100%;
-		margin: 0;
-		padding: 12px 14px;
-		overflow: auto;
-		background: #0f1a14;
-		color: #d7e6dc;
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		line-height: 1.55;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
 	.here {
 		display: inline-flex;
 		align-items: center;
@@ -1138,19 +1417,97 @@
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
 	}
-	.here__face {
-		display: inline-flex;
-		margin-left: -8px;
-		border: 2px solid var(--nomi-color-ground);
-		border-radius: 999px;
-	}
-	.here__face:first-child {
-		margin-left: 0;
-	}
 	.here__more {
 		margin-left: 6px;
 		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.8125rem;
 		font-weight: 600;
+	}
+	.here-wrap {
+		position: relative;
+	}
+	.here-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		right: 0;
+		z-index: 30;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.here-menu__activity {
+		align-self: flex-end;
+		padding: 4px 8px;
+		border: none;
+		background: none;
+		color: var(--md-sys-color-on-surface-variant);
+		font: inherit;
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+	.pane-body {
+		position: relative;
+	}
+	.pane-pointer {
+		position: absolute;
+		z-index: 20;
+		pointer-events: none;
+		transition:
+			left 120ms linear,
+			top 120ms linear;
+	}
+	.github-step {
+		position: fixed;
+		top: 64px;
+		right: 16px;
+		z-index: 50;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		width: min(420px, calc(100vw - 32px));
+		padding: 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--md-sys-color-shadow) 24%, transparent);
+	}
+	.github-step p {
+		margin: 0;
+		font-size: 0.875rem;
+	}
+	.github-step__form {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.github-step__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+	.github-step__note {
+		overflow-wrap: anywhere;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.code-mode {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		z-index: 5;
+		padding: 6px 10px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface-container);
+		color: inherit;
+		font: inherit;
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+	.terminal-pane {
+		display: flex;
+		height: 100%;
+		padding: 12px;
+	}
+	.terminal-pane :global(section) {
+		height: 100%;
 	}
 </style>

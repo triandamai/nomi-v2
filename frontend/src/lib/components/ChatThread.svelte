@@ -14,7 +14,6 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import GlassBackdrop from '$lib/components/GlassBackdrop.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
-	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
 	import CompactChatInput from '$lib/components/composer/CompactChatInput.svelte';
 	import { deserialize } from '$app/forms';
@@ -45,6 +44,15 @@
 	import DateDivider from './ds/chat/DateDivider.svelte';
 	import JumpToLatest from './ds/chat/JumpToLatest.svelte';
 	import LoadingOlder from './ds/chat/LoadingOlder.svelte';
+	import RenameField from './ds/chat/RenameField.svelte';
+	import CrewWorking from './ds/chat/CrewWorking.svelte';
+	import StopHint from './ds/chat/StopHint.svelte';
+	import NewDivider from './ds/chat/NewDivider.svelte';
+	import LiveStep from './ds/conversation/LiveStep.svelte';
+	import ReplyText from './ds/chat/ReplyText.svelte';
+	import Typing from './ds/build/Typing.svelte';
+	import { applyStreamEvent, emptyStream, type LiveReply } from '$lib/liveReply';
+	import type { MessageMemory } from '$lib/types';
 	import { dayLabel, toISODate } from '$lib/dates';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupReasoning } from '$lib/reasoning';
@@ -79,6 +87,11 @@
 		glass = false,
 		placeholder,
 		typingLabel = null,
+		typingPeople = [],
+		aboveComposer,
+		readOnlyNote = null,
+		quote = null,
+		onquotesent,
 		ontyping,
 		chatMenu = null,
 	}: {
@@ -116,6 +129,16 @@
 		placeholder?: string;
 		/** "Ben is typing…": others writing in this chat right now (a shared project's chat). */
 		typingLabel?: string | null;
+		/** Who's writing right now, drawn as the design system's typing row (Build together → Typing). */
+		typingPeople?: { name: string; initials: string; peer?: 1 | 2 }[];
+		/** Cards that belong with what's being asked (a project's asks in line, publish requests). */
+		aboveComposer?: Snippet;
+		/** The person can read this chat but not write in it (a project's viewer): said instead of the composer. */
+		readOnlyNote?: string | null;
+		/** Something quoted for the next message (code lines picked in the project's code view): it goes ahead of what's typed. */
+		quote?: string | null;
+		/** The quote went out with a message. */
+		onquotesent?: () => void;
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
 		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
@@ -135,7 +158,6 @@
 	});
 	let editingTitle = $state(false);
 	let titleDraft = $state('');
-	let titleInput: HTMLInputElement | undefined = $state();
 	let renameError = $state<string | null>(null);
 
 	// The chat menu (chatMenu): pin, move, export, share and delete this chat.
@@ -184,12 +206,10 @@
 		deleteChatOpen = false;
 	}
 
-	async function startRename() {
+	function startRename() {
 		titleDraft = shownTitle;
 		renameError = null;
 		editingTitle = true;
-		await tick();
-		titleInput?.select();
 	}
 
 	async function saveRename() {
@@ -213,14 +233,6 @@
 		}
 	}
 
-	function onTitleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			saveRename();
-		} else if (event.key === 'Escape') {
-			editingTitle = false;
-		}
-	}
 
 	const SUGGESTIONS = $derived(
 		project
@@ -389,7 +401,9 @@
 		if (thinkingLevel) level = thinkingLevel;
 	});
 
-	const composedText = $derived(composeMessage(draft, attachments.flatMap((f) => (f.uploaded ? [f.uploaded.reference] : []))));
+	const composedText = $derived(
+		composeMessage(quote && draft.trim() ? `${quote}\n\n${draft}` : draft, attachments.flatMap((f) => (f.uploaded ? [f.uploaded.reference] : []))),
+	);
 
 	function removeAttachment(key: string) {
 		const file = attachments.find((f) => f.key === key);
@@ -459,10 +473,11 @@
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let messageInput: HTMLTextAreaElement | undefined = $state();
 	// Cards in the thread (answers to an agent's questions) reply through this composer.
-	provideChatSend((text) => {
+	function provideSend(text: string) {
 		draft = text;
 		void tick().then(() => composerForm?.requestSubmit());
-	});
+	}
+	provideChatSend(provideSend);
 
 	let localMessages = $state(untrack(() => messages));
 
@@ -556,6 +571,14 @@
 	let atLatest = $state(true);
 	/** Messages that came in while scrolled up. */
 	let unseen = $state(0);
+	// Where the person left off: the first message that came in while they were scrolled up
+	// (Chat responses → New Divider). It stays until they write again.
+	let newFromId = $state<string | null>(null);
+	let newCount = $derived.by(() => {
+		if (newFromId === null) return 0;
+		const from = localMessages.findIndex((message) => message.id === newFromId);
+		return from < 0 ? 0 : localMessages.length - from;
+	});
 
 	function onThreadScroll() {
 		if (!messagesContainer) return;
@@ -576,8 +599,14 @@
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 	const STOP_COMMAND = /^\W*(stop|cancel|abort|halt|berhenti|hentikan|batalkan)\b/i;
 
+	// The reply as it's being written (Chat responses → Streaming), then as it was left when the
+	// person stopped it or the provider cut it off. Gone once the real message lands.
+	let live = $state<LiveReply>(emptyStream());
+	let liveEnd = $state<{ status: 'stopped' | 'interrupted'; elapsed: string; reason: string } | null>(null);
+
 	/** The supervisor answered a stop command: no turn is coming, and any running one is ending. */
 	function settleAfterStop() {
+		if (live.text.trim()) liveEnd = { status: 'stopped', elapsed: untrack(() => elapsed), reason: '' };
 		stopRequested = true;
 		submitting = false;
 		openTurns = [];
@@ -672,10 +701,79 @@
 	// right after sending where neither the button nor the "Typing…" bubble showed any feedback.
 	const isWorking = $derived(submitting || pendingReply);
 
+	// How long the current turn has run, for the live step ("00:14").
+	let workingSince = $state<number | null>(null);
+	let clock = $state(Date.now());
+	$effect(() => {
+		if (!isWorking) {
+			workingSince = null;
+			return;
+		}
+		workingSince = untrack(() => workingSince) ?? Date.now();
+		clock = Date.now();
+		const timer = setInterval(() => (clock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const elapsed = $derived.by(() => {
+		if (workingSince === null) return '';
+		const seconds = Math.max(0, Math.floor((clock - workingSince) / 1000));
+		return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+	});
+
+	// Stops the crew working on this chat: the same "stop" a person could type (the stop form).
+	let stopForm: HTMLFormElement | undefined = $state();
+	function stopCrew() {
+		if (stopping) return;
+		stopForm?.requestSubmit();
+	}
+	// Escape stops a reply while it streams (Chat responses → Stop Hint), unless something on top
+	// (a dialog, a menu, the composer's own popups) takes the key first.
+	function onWindowKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || event.defaultPrevented || !isWorking || stopping) return;
+		if (document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"]')) return;
+		event.preventDefault();
+		stopCrew();
+	}
+
 	// Thinking steps fold into the reply they led to (see $lib/reasoning).
 	const threadItems = $derived(groupReasoning(localMessages));
 	const threadMessages = $derived(threadItems.map((item) => item.message));
 	const lastUserIndex = $derived(threadMessages.findLastIndex((message) => message.sender === 'user'));
+
+	// A reply deleted here leaves a placeholder in its place (DeletedReply); anything else that
+	// went (the person's message and its replies) leaves the thread.
+	function removeMessages(ids: string[]) {
+		const single = ids.length === 1 ? localMessages.find((message) => message.id === ids[0]) : undefined;
+		if (single?.sender === 'assistant') {
+			localMessages = localMessages.map((message) => (message.id === single.id ? { ...message, deleted: true } : message));
+		} else {
+			localMessages = localMessages.filter((message) => !ids.includes(message.id));
+		}
+	}
+
+	/** Asks for a deleted reply's turn again: the person's message that started it runs again. */
+	async function regenerateFrom(index: number) {
+		const start = threadMessages.slice(0, index).findLast((message) => message.sender === 'user');
+		if (!start) return;
+		const response = await fetch(`${page.url.pathname}/message/${start.id}/regenerate`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ style: 'again' }),
+		}).catch(() => null);
+		if (response?.ok) {
+			const done = (await response.json()) as { message_id: string; total: number };
+			localMessages = afterRerun(localMessages, done.message_id, { versions: done.total - 1 });
+		}
+	}
+
+	// What the crew remembered from the person's message shows on the last reply of its turn.
+	function savedFor(list: RenderedMessage[], index: number): MessageMemory[] {
+		if (list[index].sender !== 'assistant' || list[index + 1]?.sender === 'assistant') return [];
+		for (let at = index - 1; at >= 0; at--) {
+			if (list[at].sender === 'user') return list[at].saved_memories ?? [];
+		}
+		return [];
+	}
 
 	const crew = $derived(
 		buildCrew({
@@ -733,6 +831,7 @@
 				unseen = 0;
 			}
 		} else if (added > 0) {
+			if (untrack(() => newFromId) === null) newFromId = localMessages[currentCount - added]?.id ?? null;
 			unseen = untrack(() => unseen) + added;
 		}
 	});
@@ -758,7 +857,7 @@
 			}
 		},
 		message(data) {
-			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string; message_ids?: string[] };
+			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string; message_ids?: string[]; event?: unknown };
 			try {
 				envelope = JSON.parse(String(data));
 			} catch {
@@ -767,7 +866,13 @@
 			const turnId = envelope.turn_job_id ?? NIL_UUID;
 			if (envelope.kind === 'Delta') {
 				if (!stopRequested && !openTurns.includes(turnId)) openTurns = [...openTurns, turnId];
+				if (!stopRequested && envelope.event) {
+					live = applyStreamEvent(live, envelope.event);
+					liveEnd = null;
+				}
 			} else if (envelope.kind === 'TurnCompleted') {
+				live = emptyStream();
+				liveEnd = null;
 				stopRequested = false;
 				closeTurn(turnId);
 				turnError = false;
@@ -775,6 +880,9 @@
 					fetchAndUpsertMessage(envelope.message_id);
 				}
 			} else if (envelope.kind === 'TurnFailed') {
+				// Cut off part-way: what was written stays, with the provider's own reason.
+				if (live.text.trim() && envelope.error && !stopRequested) liveEnd = { status: 'interrupted', elapsed: untrack(() => elapsed), reason: envelope.error };
+				else live = emptyStream();
 				stopRequested = false;
 				closeTurn(turnId);
 				// The server posts why (out of credits, a rejected key, ...) as a message in the
@@ -789,6 +897,8 @@
 				invalidateAll();
 				refreshPlans(); // a build starting or ending moves its plan on
 			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
+				// A posted message is what was streaming (or comes after it): the real one takes over.
+				if (envelope.kind === 'MessageCreated' && !liveEnd) live = emptyStream();
 				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 			} else if (envelope.kind === 'MessagesDeleted') {
 				// Deleted here or on another device, or replaced when a turn ran again.
@@ -834,6 +944,8 @@
 	});
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div class="chat" class:chat--project={!!project} class:chat--glass={glass && !project}>
 	{#if glass && !project}<GlassBackdrop busy={isWorking} />{/if}
 	<header class="appbar" class:appbar--compact={compactHeader}>
@@ -848,14 +960,14 @@
 				</span>
 			{/if}
 			{#if editingTitle}
-				<input
-					bind:this={titleInput}
-					bind:value={titleDraft}
-					class="appbar__title appbar__title-input"
-					aria-label={m.chat_rename_label()}
-					maxlength="80"
-					onkeydown={onTitleKeydown}
-					onblur={saveRename}
+				<!-- The chat's name edited in place (Chat responses → Rename Field): Enter saves, Escape cancels. -->
+				<RenameField
+					value={shownTitle}
+					onsave={(name) => {
+						titleDraft = name;
+						saveRename();
+					}}
+					oncancel={() => (editingTitle = false)}
 				/>
 			{:else if unsaved}
 				<h1 class="appbar__title">{shownTitle}</h1>
@@ -928,6 +1040,11 @@
 				<div class="chat__banner">
 					<Banner kind="online" text={backOnline === 'sent' ? m.banner_online_sent() : m.banner_online()} />
 				</div>
+			{:else if !isWorking && workingCrew.length > 0}
+				<!-- Crew still working on this chat in the background (Chat responses → Crew Working). -->
+				<div class="chat__banner">
+					<CrewWorking crew={[...new Set(workingCrew.map((member) => crewId(member.key)))]} onstop={unsaved ? undefined : stopCrew} />
+				</div>
 			{/if}
 			<div bind:this={messagesContainer} class="thread" onscroll={onThreadScroll}>
 				<div class="thread__column">
@@ -967,6 +1084,9 @@
 						{#if i === 0 || dayOf(item.message) !== dayOf(threadMessages[i - 1])}
 							<div class="thread__day"><DateDivider label={dayLabel(new Date(item.message.created_at), getLocale())} /></div>
 						{/if}
+						{#if item.message.id === newFromId && newCount > 0}
+							<div class="thread__day"><NewDivider count={newCount} /></div>
+						{/if}
 						<MessageBubble
 							message={item.message}
 							reasoning={item.reasoning}
@@ -977,17 +1097,36 @@
 							thread={threadPosition(threadMessages, i)}
 							handoffFrom={handoffFrom(threadMessages, i)}
 							answered={i < lastUserIndex}
-							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
+							savedMemories={savedFor(threadMessages, i)}
+							ondelete={(ids) => removeMessages(ids)}
+							onregenerate={item.message.deleted && i > lastUserIndex ? () => regenerateFrom(i) : undefined}
 							onrerun={(startId, update) => (localMessages = afterRerun(localMessages, startId, update))}
 						/>
 					{/each}
-					{#if isWorking}
-						<div class="thread__status" role="status">
-							<LoadingIndicator size={28} label={m.chat_nomi_working()} />
-							<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })}</span>
+					{#if live.text.trim()}
+						<div class="thread__live">
+							<ReplyText
+								text={live.text}
+								status={liveEnd?.status ?? (isWorking ? 'streaming' : 'done')}
+								elapsed={liveEnd?.elapsed}
+								reason={liveEnd?.reason}
+								oncontinue={liveEnd ? () => provideSend(m.reply_continue_message()) : undefined}
+							/>
 						</div>
 					{/if}
-					{#if typingLabel}
+					{#if isWorking}
+						<!-- The step the crew is on right now, with the time so far (LiveStep), and a way to
+						     stop it here or with Escape (StopHint). -->
+						<div class="thread__status">
+							<LiveStep step={currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })} {elapsed} />
+							{#if !stopping}<StopHint onstop={stopCrew} />{/if}
+						</div>
+					{/if}
+					{#if typingPeople.length > 0}
+						<div class="thread__typing">
+							{#each typingPeople.slice(0, 2) as who (who.name)}<Typing {who} />{/each}
+						</div>
+					{:else if typingLabel}
 						<p class="thread__typing" role="status">{typingLabel}</p>
 					{/if}
 					{#if turnError}
@@ -1008,6 +1147,10 @@
 			</div>
 
 			<div class="dock">
+				{#if aboveComposer}<div class="dock__above">{@render aboveComposer()}</div>{/if}
+				{#if readOnlyNote}
+					<p class="dock__readonly" role="note">{readOnlyNote}</p>
+				{:else}
 				<form
 					bind:this={composerForm}
 					method="POST"
@@ -1037,6 +1180,9 @@
 						submitting = true;
 						sendingMessage = true;
 						stopRequested = false;
+						newFromId = null;
+						live = emptyStream();
+						liveEnd = null;
 						// On a phone, sending puts the keyboard away.
 						if (touchScreen()) messageInput?.blur();
 						return async ({ result, update }) => {
@@ -1053,6 +1199,7 @@
 							if (result.type === 'redirect') clearAttachments();
 							await update({ reset: true });
 							if (result.type === 'success') {
+								if (quote) onquotesent?.();
 								draft = '';
 								clearAttachments();
 								if (result.data?.stopped) settleAfterStop();
@@ -1091,6 +1238,7 @@
 				</form>
 				<!-- The in-flight send button submits this: the same "stop" a user could type. -->
 				<form
+					bind:this={stopForm}
 					id="stop-crew"
 					method="POST"
 					action="?/sendMessage"
@@ -1106,6 +1254,7 @@
 				>
 					<input type="hidden" name="text" value="stop" />
 				</form>
+				{/if}
 			</div>
 		</div>
 
@@ -1224,17 +1373,6 @@
 		.appbar__title-edit {
 			opacity: 0.7;
 		}
-	}
-	.appbar__title-input {
-		width: 100%;
-		box-sizing: border-box;
-		margin: 0;
-		padding: 0 4px;
-		border: none;
-		border-radius: 6px;
-		outline: 2px solid var(--md-sys-color-primary);
-		background: var(--md-sys-color-surface-container-lowest);
-		color: var(--md-sys-color-on-surface);
 	}
 	.appbar__rename-error {
 		font-size: 0.75rem;
@@ -1496,15 +1634,15 @@
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
 	}
+	.thread__live {
+		margin: 14px 0 0 48px;
+	}
 	.thread__status {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 12px;
+		gap: 8px;
 		margin-top: 18px;
-		padding-left: 4px;
-		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: 0.9375rem;
-		color: var(--md-sys-color-on-surface-variant);
 	}
 	/* Errors with no message of their own (a send that didn't go, a dropped connection), lined up
 	   with the crew's replies. */
@@ -1512,6 +1650,22 @@
 		margin: 14px 0 0 48px;
 	}
 
+	.dock__above {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-width: 760px;
+		margin: 0 auto 8px;
+	}
+	.dock__readonly {
+		max-width: 760px;
+		margin: 0 auto;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
 	.dock {
 		padding: 8px clamp(12px, 3vw, 32px) 14px;
 	}

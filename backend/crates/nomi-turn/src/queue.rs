@@ -37,7 +37,7 @@ pub async fn enqueue(
     Ok(id)
 }
 
-/// The oldest pending job, marked 'processing'. A chat with a turn still running is skipped, so
+/// The next pending job (moved up first, then the oldest), marked 'processing'. A chat with a turn still running is skipped, so
 /// workers can run different chats at once while each chat's messages are answered in order.
 pub async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedJob>, TurnError> {
     let row: Option<(Uuid, Uuid, Uuid, String, Option<Uuid>)> = sqlx::query_as(
@@ -45,7 +45,7 @@ pub async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedJob>, TurnError> 
              SELECT id FROM turn_jobs j \
              WHERE status = 'pending' \
                AND NOT EXISTS (SELECT 1 FROM turn_jobs r WHERE r.session_id = j.session_id AND r.status = 'processing') \
-             ORDER BY created_at \
+             ORDER BY priority DESC, created_at \
              FOR UPDATE SKIP LOCKED \
              LIMIT 1 \
          ) \

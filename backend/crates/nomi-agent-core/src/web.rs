@@ -291,7 +291,9 @@ pub fn web_search_tool_definition() -> nomi_llm::ToolDefinition {
         name: WEB_SEARCH_TOOL_NAME.to_string(),
         description: "Search the internet for current or factual information you don't already know \
                       (news, prices, schedules, facts to check). Returns titles, links and snippets; \
-                      use read_web_page on a link for the full text. Cite the links you use."
+                      use read_web_page on a link for the full text. Cite the links you use right after the claim \
+                      they back, as numbered markdown links ([1](https://…), [2](https://…)), numbered in the \
+                      order you first cite them; they show as citations with the sources listed under the reply."
             .to_string(),
         input_schema: json!({
             "type": "object",

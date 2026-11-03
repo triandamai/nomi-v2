@@ -52,6 +52,8 @@ stop:
   dropped_many: "%{count} pesan yang sedang mengantre aku lewati tanpa dijawab."
   pick_up: "Kabari aku kalau ingin dilanjutkan, ya."
   and: "dan"
+  task_reply: "Balasan yang sedang ditulis"
+  task_queued: "Pesan yang menunggu giliran"
 reminders:
   chat_title: "Pengingat"
 home:
@@ -148,6 +150,8 @@ subscription:
   until: ", sampai %{date}"
   note: "Catatan dari tim Nomi: %{note}"
 team:
+  project_invite_title: "%{inviter} mengundangmu membangun %{project} di Nomi"
+  project_invite_body: "Bergabunglah dengan %{project} di %{org} dan bangun bersama Koda. Undangan berlaku 7 hari."
   invite_title: "%{inviter} mengundang Anda ke %{org} di Nomi"
   invite_body: "Bergabunglah dengan %{org} untuk mengerjakan proyeknya bersama kru. Undangan berlaku 7 hari."
   invite_button: "Terima undangan"
@@ -222,3 +226,7 @@ build:
   check_stale: "%{command} dijalankan pada file lama"
   check_not_run: "%{command} belum dijalankan"
   unverified_hint: "Pengecekan berjalan saat proyek dibuka di browser kamu, dan yang gagal akan dikembalikan ke Koda."
+together:
+  joined_build: "%{name} bergabung: bisa membangun dan menerbitkan."
+  joined_prompt: "%{name} bergabung: bisa meminta perubahan ke Koda."
+  joined_view: "%{name} bergabung: bisa melihat."

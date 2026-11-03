@@ -64,7 +64,7 @@ async fn resolve_agent_type(conn: &mut PoolConnection<Postgres>, agent: &str) ->
     dynamic.map(|id| id.to_string()).unwrap_or_else(|| wanted.trim_end_matches(" agent").to_string())
 }
 
-async fn stop_agents_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, input: &Value) -> Result<String, String> {
+async fn stop_agents_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, input: &Value) -> Result<nomi_agent_core::ToolOutcome, String> {
     use sqlx::Connection;
 
     let (target, target_name) = match input["scope"].as_str() {
@@ -84,7 +84,10 @@ async fn stop_agents_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid,
         .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     let locale = nomi_agent_core::user_locale(conn, user_id).await;
-    Ok(stop::describe(&report, &target, target_name.as_deref(), locale))
+    let text = stop::describe(&report, &target, target_name.as_deref(), locale);
+    // What was stopped shows as a card, task by task, when anything was.
+    let block = (!report.tasks.is_empty()).then(|| nomi_agent_core::content_block::ContentBlock::Stopped { tasks: report.tasks.clone() });
+    Ok(nomi_agent_core::ToolOutcome { display_text: text, block })
 }
 
 pub struct SupervisorAgent;
@@ -114,7 +117,7 @@ impl SubAgent for SupervisorAgent {
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
             "list_recent_agent_activity" => list_recent_agent_activity(conn, session_id).await.map(nomi_agent_core::ToolOutcome::text),
-            "stop_agents" => stop_agents_tool(conn, session_id, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
+            "stop_agents" => stop_agents_tool(conn, session_id, user_id, &input).await,
             other => Err(format!("supervisor has no tool named {other}")),
         }
     }

@@ -77,7 +77,13 @@ export type ContentBlock =
 			/** Where the reminder stands now (added when the chat loads). */
 			state?: 'open' | 'done' | 'snoozed' | 'cancelled' | 'gone';
 			snoozed_until?: string;
-	  };
+	  }
+	/** Someone joined a shared project: what they can do, and who publishes for them. */
+	| { kind: 'member_joined'; name: string; role: 'build' | 'prompt' | 'view'; publisher?: string | null }
+	/** What a stop ended, task by task (the Supervisor's reply to "stop"). */
+	/** Something that happened to a project (a publish), as one logged line above the message's text. */
+	| { kind: 'project_event'; event: 'deploy' | 'rollback' | 'domain' | 'database'; ok?: boolean; text: string }
+	| { kind: 'stopped'; tasks: { agent: string; title: string; detail?: string | null; state: 'stopped' | 'waiting' | 'done' }[] };
 
 export interface MessageItem {
 	id: string;
@@ -99,6 +105,17 @@ export interface MessageItem {
 	edited_at?: string | null;
 	/** Earlier takes of the person's message and its replies, kept when it ran again. */
 	versions?: number;
+	/** What the crew learned from this message of the person's and still remembers. */
+	saved_memories?: MessageMemory[];
+	/** What this reply drew on from memory, most relevant first (the viewer's own). */
+	used_memories?: MessageMemory[];
+}
+
+/** A memory as a message names it: learned from it, or used by it. */
+export interface MessageMemory {
+	id: string;
+	content: string;
+	kind: MemoryKind;
 }
 
 /** An earlier take of a turn (GET …/messages/:id/versions): what the person wrote, the replies it got. */
@@ -161,6 +178,9 @@ export interface PlanBuild {
 	report: BuildReport | null;
 	error: string | null;
 	updated_at: string;
+	/** When Koda started on it, and when it ended (missing from older servers). */
+	started_at?: string;
+	finished_at?: string | null;
 }
 
 export interface AgentPlansResponse {
@@ -170,6 +190,8 @@ export interface AgentPlansResponse {
 }
 
 export interface RenderedMessage extends MessageItem {
+	/** Deleted here: a placeholder stays where it was (never from the server). */
+	deleted?: boolean;
 	content_html: string;
 }
 
@@ -496,6 +518,9 @@ export interface InviteInfo {
 	state: 'open' | 'expired' | 'used' | 'member' | 'other_address';
 	/** The invited address, partly hidden. */
 	email: string | null;
+	/** An invite to build one project together, and as what. */
+	project?: { id: string; name: string; description: string | null; role: 'build' | 'prompt' | 'view' };
+	expires_at?: string;
 }
 
 /** Something deleting a message also deletes (see the backend's message_delete). */
@@ -860,7 +885,7 @@ export interface ShipyardService {
 export interface DeployOverview {
 	/** Whether this Nomi can publish at all. */
 	available: boolean;
-	role: 'admin' | 'member';
+	role: 'admin' | 'member' | 'viewer';
 	app: string | null;
 	database: 'postgres' | 'sqlite' | 'none';
 	url: string | null;
@@ -869,6 +894,8 @@ export interface DeployOverview {
 	live: { environment: string; services: ShipyardService[]; last_publish: unknown } | null;
 	/** The app's own production backend while it's set up before the first publish, or when that failed. */
 	backend_setup: RelaySetup | null;
+	/** Files changed since the newest successful production publish; null before the first. */
+	unpublished_changes?: number | null;
 }
 
 export interface PublishDetail extends ProjectPublish {
@@ -970,14 +997,14 @@ export interface ProjectPerson {
 	email: string | null;
 	avatar_url: string | null;
 	org_role: OrgRole;
-	project_role: 'admin' | 'member' | null;
+	project_role: 'admin' | 'member' | 'viewer' | null;
 	is_owner: boolean;
 	added_at: string | null;
 }
 
 export interface ProjectMembers {
 	access: 'org' | 'members';
-	my_role: 'admin' | 'member';
+	my_role: 'admin' | 'member' | 'viewer';
 	me: string;
 	people: ProjectPerson[];
 }

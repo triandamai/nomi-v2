@@ -6,7 +6,7 @@
 	import AgentShape from './m3/AgentShape.svelte';
 	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
-	import ActivityDisclosure from './blocks/ActivityDisclosure.svelte';
+	import ReplyActivity from './blocks/ReplyActivity.svelte';
 	import { splitAttachments } from '$lib/attachments';
 	import MessageAttachments from './MessageAttachments.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
@@ -14,6 +14,11 @@
 	import IconShare from './icons/IconShare.svelte';
 	import IconDelete from './icons/IconDelete.svelte';
 	import MessageDeleteSheet from './MessageDeleteSheet.svelte';
+	import ReplyDeleteTwin from './blocks/twins/ReplyDeleteTwin.svelte';
+	import DeletedReply from './ds/chat/DeletedReply.svelte';
+	import MessageUser from './ds/conversation/MessageUser.svelte';
+	import TeammateMessage from './ds/build/TeammateMessage.svelte';
+	import { initials, peerFor } from '$lib/peers';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
 	import type { RenderedMessage } from '$lib/types';
 	import ResponseActions from './ds/chat/ResponseActions.svelte';
@@ -24,6 +29,14 @@
 	import MessageEditor from './ds/chat/MessageEditor.svelte';
 	import VersionSwitcher from './ds/chat/VersionSwitcher.svelte';
 	import { Pencil } from '@lucide/svelte';
+	import Sources from './ds/chat/Sources.svelte';
+	import Handoff from './ds/chat/Handoff.svelte';
+	import MemoryUsed from './ds/chat/MemoryUsed.svelte';
+	import SavedMemoriesTwin from './blocks/twins/SavedMemoriesTwin.svelte';
+	import { crewId } from '$lib/crewId';
+	import { useChatSend } from '$lib/chatSend';
+	import type { MessageMemory } from '$lib/types';
+	import { citedSources, enrichReply } from '$lib/richReply';
 	import { page } from '$app/state';
 	import type { MessageVersion } from '$lib/types';
 
@@ -37,6 +50,8 @@
 		thread = 'solo',
 		handoffFrom = null,
 		answered = false,
+		savedMemories = [],
+		onregenerate,
 		ondelete,
 		onrerun,
 	}: {
@@ -57,18 +72,26 @@
 		handoffFrom?: string | null;
 		/** The person has replied since this message (a questions card shows as answered). */
 		answered?: boolean;
+		/** What the crew remembered from the person's message this reply answers (shown on the turn's last reply). */
+		savedMemories?: MessageMemory[];
+		/** A deleted reply's placeholder asks for the turn again. */
+		onregenerate?: () => void;
 		/** Offers Delete; called with the ids of the messages that went. */
 		ondelete?: (ids: string[]) => void;
 		/** The latest turn ran again (edited, or a reply asked for again): the person's message as it now stands. */
 		onrerun?: (startId: string, update: Partial<RenderedMessage>) => void;
 	} = $props();
+	const send = useChatSend();
 	const steps = $derived(message.steps ?? []);
 	// Buttons or an error bubble the crew posted on their own: no copy, share or rating for them,
 	// and next-step buttons go once the person has moved on.
 	const blockKinds = $derived((message.content_blocks ?? []).map((block) => block.kind));
 	const onlyBlocks = (kinds: string[]) => blockKinds.length > 0 && blockKinds.every((kind) => kinds.includes(kind));
-	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed']));
+	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed', 'stopped', 'member_joined']));
 	const spentSuggestions = $derived(answered && onlyBlocks(['suggestions']));
+	// Blocks that sit above the message's own text rather than standing in for it.
+	const withText = $derived(onlyBlocks(['project_event']));
+	const clock = $derived(new Date(message.created_at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }));
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
 	const fresh = untrack(() => Date.now() - Date.parse(message.created_at) < 30_000);
 	const sources = $derived(message.sources ?? []);
@@ -78,6 +101,8 @@
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	// The files a user attached are referenced in the message text (see $lib/attachments).
 	const attached = $derived(message.sender === 'user' ? splitAttachments(message.content) : null);
+	// The person's own words (no files, not a teammate's) are the design system's user message.
+	const dsUser = $derived(message.sender === 'user' && !message.author_name && !(attached && attached.files.length > 0) && !message.content_blocks?.length);
 	let feedback = $state(untrack(() => message.my_feedback));
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
@@ -96,108 +121,18 @@
 		}),
 	);
 
-	// Hardcoded (not the $lib/components/icons/* components) because these get assigned via
-	// innerHTML to plain DOM buttons built in enhanceCodeBlocks below — that code runs against
-	// {@html}-injected markup, outside Svelte's own rendering, so it can't render a Svelte
-	// component into it.
-	const COPY_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
-	const CHECK_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17.5 19 6.5"/></svg>';
-	const CHEVRON_UP_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>';
-	const CHEVRON_DOWN_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
-
-	// Wraps every syntax-highlighted (or fallback) code block in a header (language + copy +
-	// collapse) via real DOM APIs — never innerHTML of anything derived from message content, only
-	// of the fixed icon constants above — so nothing about a chat message's own text can forge a
-	// working button. Locates blocks via the `data-lang` attribute markdown.ts stamps on every
-	// <pre>, both the shiki-highlighted and the unknown-language fallback path.
-	function enhanceCodeBlocks(root: HTMLElement) {
-		const blocks = root.querySelectorAll<HTMLElement>('pre[data-lang]');
-		blocks.forEach((pre) => {
-			if (pre.closest('.code-block')) return;
-
-			const lang = pre.dataset.lang || 'text';
-
-			const wrapper = document.createElement('div');
-			wrapper.className = 'code-block';
-
-			const header = document.createElement('div');
-			header.className = 'code-block__header';
-
-			const langLabel = document.createElement('span');
-			langLabel.className = 'code-block__lang';
-			langLabel.textContent = lang;
-
-			const actions = document.createElement('div');
-			actions.className = 'code-block__actions';
-
-			const copyBtn = document.createElement('button');
-			copyBtn.type = 'button';
-			copyBtn.className = 'code-block__btn';
-			copyBtn.setAttribute('aria-label', m.msg_copy_code());
-			copyBtn.innerHTML = COPY_SVG;
-			copyBtn.addEventListener('click', () => {
-				navigator.clipboard.writeText(pre.textContent ?? '');
-				copyBtn.innerHTML = CHECK_SVG;
-				copyBtn.setAttribute('aria-label', m.msg_copied());
-				setTimeout(() => {
-					copyBtn.innerHTML = COPY_SVG;
-					copyBtn.setAttribute('aria-label', m.msg_copy_code());
-				}, 1500);
-			});
-
-			const collapseBtn = document.createElement('button');
-			collapseBtn.type = 'button';
-			collapseBtn.className = 'code-block__btn';
-			collapseBtn.setAttribute('aria-label', m.msg_collapse_code());
-			collapseBtn.setAttribute('aria-expanded', 'true');
-			collapseBtn.innerHTML = CHEVRON_UP_SVG;
-			collapseBtn.addEventListener('click', () => {
-				const collapsed = wrapper.classList.toggle('code-block--collapsed');
-				collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-				collapseBtn.setAttribute('aria-label', collapsed ? m.msg_expand_code() : m.msg_collapse_code());
-				collapseBtn.innerHTML = collapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG;
-			});
-
-			actions.append(copyBtn, collapseBtn);
-			header.append(langLabel, actions);
-
-			const body = document.createElement('div');
-			body.className = 'code-block__body';
-
-			pre.replaceWith(wrapper);
-			body.appendChild(pre);
-			wrapper.append(header, body);
-		});
-	}
-
-	// A reference-style citation ("[1] Attention is all you need — [1]: https://arxiv.org/...")
-	// renders through `marked` as a plain `<a href="...">1</a>` — no different from any other
-	// link. The heuristic: a citation's visible text is exactly its numeric label; a normal
-	// inline link's text is a real phrase. Not airtight (a link whose text happens to be a bare
-	// number also matches), but cheap and correct for the actual citation format this is for.
-	function enhanceCitations(root: HTMLElement) {
-		const links = root.querySelectorAll<HTMLAnchorElement>('a[href]');
-		links.forEach((link) => {
-			const text = link.textContent?.trim() ?? '';
-			if (/^\d+$/.test(text)) {
-				link.classList.add('citation-chip');
-			}
-		});
-	}
+	// The reply's text with the design system's pieces swapped in (code blocks, citations, links,
+	// @mentions; see $lib/richReply), and the sources its citations point to, listed under it.
+	const sourcesId = $derived(`sources-${message.id}`);
+	const cited = $derived(message.sender === 'assistant' ? citedSources(message.content, sources) : []);
 
 	$effect(() => {
-		// Re-run whenever this message's rendered HTML changes — a brand-new message, or (since
-		// the chat page never patches a message in place, only invalidateAll()s the whole list)
-		// a full reload replacing every message's DOM at once.
+		// Re-run whenever this message's rendered HTML changes: {@html} replaces the DOM, and the
+		// components mounted into the old one are unmounted.
 		void message.content_html;
-		if (bubbleEl) {
-			enhanceCodeBlocks(bubbleEl);
-			enhanceCitations(bubbleEl);
-		}
+		const root = bubbleEl?.querySelector<HTMLElement>('.message-markdown');
+		if (!root) return;
+		return enrichReply(root, untrack(() => cited), sourcesId);
 	});
 
 	function copyMessage() {
@@ -317,12 +252,39 @@
 		dislikeSent = null;
 	}
 
+	// The memory it leaned on most, and how many more ("Vegetarian +2 more"); a teammate's reply
+	// in a shared chat only has the count.
+	const usedFact = $derived.by(() => {
+		const used = message.used_memories ?? [];
+		if (used.length === 0) return message.memory_count === 1 ? m.used_chip_one() : m.used_chip_many({ count: message.memory_count });
+		return used.length > 1 ? m.memory_used_more({ fact: used[0].content, count: used.length - 1 }) : used[0].content;
+	});
+
 	function showMemories() {
 		memoriesOpen = true;
 	}
 </script>
 
-{#if !spentSuggestions}
+{#snippet earlierReplies()}
+	{#if shown}
+		<div class="message__earlier" role="group" aria-label={m.msg_earlier_version({ version: viewing ?? total, total })}>
+			<p class="message__earlier-label">{m.msg_earlier_version({ version: viewing ?? total, total })}</p>
+			{#each shown.replies as reply, index (index)}
+				<div class="message__earlier-reply">
+					{#if reply.agent_display_name}<span class="message__earlier-name">{reply.agent_display_name}</span>{/if}
+					<div class="message-markdown">{@html reply.content_html}</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
+{#if message.deleted}
+	<!-- What's left where a reply was, so the thread still reads (Chat responses → Deleted Reply). -->
+	<div class="message message--deleted">
+		<DeletedReply name={senderLabel} {onregenerate} />
+	</div>
+{:else if !spentSuggestions}
 <div
 	class="message"
 	class:message--user={message.sender === 'user'}
@@ -348,32 +310,60 @@
 				{:else}
 					<span class="message__sender">{senderLabel}</span>
 				{/if}
-				{#if handoffFrom}
-					<span class="message__handoff">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v7a4 4 0 0 0 4 4h12" /><path d="m15 10 5 5-5 5" /></svg>
-						{m.thread_handoff({ name: handoffFrom })}
-					</span>
-				{/if}
 			</span>
 		{/if}
 
-		{#if message.sender === 'user' && message.author_name}
+		{#if message.sender === 'user' && message.author_name && attached && attached.files.length > 0}
 			<span class="message__who message__who--teammate">{message.author_name}</span>
 		{/if}
 
-		{#if reasoning.length > 0 || steps.length > 0 || sources.length > 0}
-			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
+		{#if handoffFrom && message.sender === 'assistant'}
+			<!-- Who passed the question to whom (Chat responses → Handoff); it can be sent back with an @mention. -->
+			<div class="message__handoff-row">
+				<Handoff
+					from={{ agent: crewId(handoffFrom), name: handoffFrom }}
+					to={{ agent: crewId(message.agent_display_name), name: senderLabel }}
+					onback={send && !answered ? () => send(`@${handoffFrom} ${m.handoff_back_message()}`) : undefined}
+				/>
+			</div>
+		{/if}
+
+		{#if reasoning.length > 0 || steps.length > 0 || (sources.length > 0 && cited.length === 0)}
+			<ReplyActivity thinking={reasoning} {steps} sources={cited.length === 0 ? sources : []} live={thinkingOnly} />
 		{/if}
 
 		{#if !thinkingOnly && editing}
 			<MessageEditor value={message.content} version={total > 1 ? `${total} / ${total}` : undefined} onsave={saveEdit} oncancel={() => (editing = false)} />
+		{:else if !thinkingOnly && message.sender === 'user' && message.author_name && !(attached && attached.files.length > 0)}
+			<!-- Someone else in the project's chat, in their own colour (Build together → Teammate message). -->
+			<TeammateMessage who={{ name: message.author_name, initials: initials(message.author_name), peer: peerFor(message.author_name) }} time={clock} to="Koda" text={message.content} />
+		{:else if !thinkingOnly && dsUser}
+			<!-- What the person said (Design System / Nomi → Conversation → Message / User): copy, edit,
+			     time, and stepping through earlier versions; delete sits beside it. -->
+			<div class="message__user">
+				<MessageUser
+					text={shown?.text ?? message.content}
+					time={clock}
+					edited={!!message.edited_at && viewing === null}
+					version={total > 1 ? { current: viewing ?? total, total, onprev: () => step(-1), onnext: () => step(1) } : undefined}
+					onedit={latest ? () => (editing = true) : undefined}
+				/>
+				{#if ondelete}
+					<button type="button" class="message-action-btn message__user-delete" aria-label={m.msg_delete()} title={m.msg_delete()} onclick={() => (deleteOpen = true)}>
+						<IconDelete size={16} />
+					</button>
+				{/if}
+			</div>
+			{#if rerunError}<p class="message__error" role="alert">{m.msg_rerun_failed()}</p>{/if}
+			{@render earlierReplies()}
 		{:else if !thinkingOnly}
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'} class:message-bubble--teammate={!!message.author_name}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} text={message.content} onremove={() => ondelete?.([message.id])} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} text={message.content} time={clock} onremove={() => ondelete?.([message.id])} />
 					{/each}
+					{#if withText}<div class="message-markdown">{@html message.content_html}</div>{/if}
 				</div>
 			{:else if attached && attached.files.length > 0}
 				<MessageAttachments files={attached.files} />
@@ -384,23 +374,18 @@
 				<div class="message-markdown">{@html message.content_html}</div>
 			{/if}
 		</div>
+		{#if cited.length > 0 && !shown && !(message.content_blocks && message.content_blocks.length > 0)}
+			<div class="message__sources">
+				<Sources id={sourcesId} sources={cited.map((source) => ({ title: source.title, detail: source.host, kind: 'web' as const, href: source.url }))} />
+			</div>
+		{/if}
 		{#if total > 1}
 			<div class="message__versions">
 				<VersionSwitcher current={viewing ?? total} {total} onprev={() => step(-1)} onnext={() => step(1)} />
 				{#if message.edited_at && viewing === null}<span class="message__edited">{m.msg_edited({ time: new Date(message.edited_at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }) })}</span>{/if}
 			</div>
 		{/if}
-		{#if shown}
-			<div class="message__earlier" role="group" aria-label={m.msg_earlier_version({ version: viewing ?? total, total })}>
-				<p class="message__earlier-label">{m.msg_earlier_version({ version: viewing ?? total, total })}</p>
-				{#each shown.replies as reply, index (index)}
-					<div class="message__earlier-reply">
-						{#if reply.agent_display_name}<span class="message__earlier-name">{reply.agent_display_name}</span>{/if}
-						<div class="message-markdown">{@html reply.content_html}</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
+		{@render earlierReplies()}
 
 		{#if !statusOnly && message.sender === 'assistant'}
 		<div class="message__reply-actions">
@@ -465,10 +450,13 @@
 		</div>
 		{/if}
 		{#if message.sender === 'assistant' && message.memory_count > 0}
-			<button type="button" class="message-memories" onclick={showMemories} aria-label={m.used_chip_label({ count: message.memory_count })}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="8" r="3" /><circle cx="10" cy="18" r="3" /><path d="M8.5 7.5 15 8M7.5 8.5l1.7 7M16.4 10.4l-4.6 5.4" /></svg>
-				{message.memory_count === 1 ? m.used_chip_one() : m.used_chip_many({ count: message.memory_count })}
-			</button>
+			<!-- What the reply leaned on from memory (Chat responses → Memory / Used): memory is never silent. -->
+			<div class="message__memory">
+				<MemoryUsed fact={usedFact} onmanage={showMemories} />
+			</div>
+		{/if}
+		{#if message.sender === 'assistant' && savedMemories.length > 0}
+			<SavedMemoriesTwin memories={savedMemories} />
 		{/if}
 		{/if}
 	</div>
@@ -476,7 +464,11 @@
 {/if}
 
 {#if ondelete}
-	<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />
+	{#if message.sender === 'assistant'}
+		<ReplyDeleteTwin bind:open={deleteOpen} messageId={message.id} name={senderLabel} ondeleted={ondelete} />
+	{:else}
+		<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />
+	{/if}
 {/if}
 
 {#if message.sender === 'assistant'}
@@ -488,31 +480,37 @@
 {/if}
 
 <style>
-	/* Always visible (unlike the hover actions): which memories shaped a reply is worth seeing. */
-	.message-memories {
-		align-self: flex-start;
-		margin-top: 2px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		min-height: 32px;
-		padding: 0 10px;
-		border: none;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--md-sys-color-on-surface-variant);
-		font: inherit;
-		font-size: 0.75rem;
-		font-weight: 600;
-		cursor: pointer;
+	.message__sources {
+		margin-top: 8px;
+		max-width: 100%;
 	}
-	.message-memories:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-		color: var(--md-sys-color-on-surface);
+	.message__user {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		width: 100%;
 	}
-	.message-memories:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
+	.message__user-delete {
+		opacity: 0;
+		transition: opacity var(--nomi-motion-effects-fast);
+	}
+	.message:hover .message__user-delete,
+	.message:focus-within .message__user-delete {
+		opacity: 1;
+	}
+	@media (hover: none) {
+		.message__user-delete {
+			opacity: 1;
+		}
+	}
+	.message--deleted {
+		margin: 10px 0 0 48px;
+	}
+	.message__memory {
+		margin-top: 4px;
+	}
+	.message__handoff-row {
+		margin-bottom: 8px;
 	}
 	/* Assistant turns are editorial — no bubble, the agent's shape as the avatar — so long
 	   answers read like a page. The user's own turns are compact bubbles whose tight corner
@@ -578,25 +576,6 @@
 	.message-bubble--user.message-bubble--teammate {
 		background: var(--md-sys-color-surface-container-highest);
 		color: var(--md-sys-color-on-surface);
-	}
-	.message__handoff {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.75rem;
-		animation: handoff-in var(--nomi-motion-spatial-default, 350ms) both;
-	}
-	@keyframes handoff-in {
-		from {
-			opacity: 0;
-			transform: translateX(-6px);
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.message__handoff {
-			animation: none;
-		}
 	}
 	.message__plain {
 		margin: 0;

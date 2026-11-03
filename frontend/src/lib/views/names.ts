@@ -17,6 +17,13 @@ export const VIEW_NAMES = [
 	'link',
 	'task',
 	'shell',
+	'code',
+	'diff',
+	'sources',
+	'selection',
+	'cart',
+	'boundary',
+	'quick_replies',
 ] as const satisfies readonly ViewName[];
 
 // Fails to compile if a view in `View` is missing from the list above.

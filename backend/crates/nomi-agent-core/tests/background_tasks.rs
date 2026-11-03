@@ -162,4 +162,31 @@ async fn crew_agent_can_start_background_task_and_work_on_another_task_while_wai
         requests[0].system.as_deref().unwrap_or_default().contains("run_background_task"),
         "every crew agent system prompt must include BACKGROUND_EXECUTION_GUIDE"
     );
+
+    // The chat got a card that follows the task, running for now…
+    let task_id: Uuid = sqlx::query_scalar("SELECT id FROM background_tasks WHERE session_id = $1").bind(session_id).fetch_one(&pool).await.unwrap();
+    let card_status = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, String>(
+            "SELECT content_blocks->0->>'status' FROM messages WHERE session_id = $1 AND content_blocks->0->>'view' = 'task'",
+        )
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    assert_eq!(card_status(pool.clone()).await, "running");
+    let card_id: String = sqlx::query_scalar("SELECT content_blocks->0->>'id' FROM messages WHERE session_id = $1 AND content_blocks->0->>'view' = 'task'")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(card_id, task_id.to_string());
+
+    // …and brought up to date when it ends.
+    let mut conn = pool.acquire().await.unwrap();
+    let updated = nomi_agent_core::background::settle_task_cards(&mut conn, None, session_id, task_id, "completed").await;
+    assert_eq!(updated.len(), 1);
+    assert_eq!(card_status(pool.clone()).await, "done");
+    nomi_agent_core::background::settle_task_cards(&mut conn, None, session_id, task_id, "failed").await;
+    assert_eq!(card_status(pool).await, "failed");
 }

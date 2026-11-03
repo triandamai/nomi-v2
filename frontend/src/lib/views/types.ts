@@ -120,11 +120,15 @@ export interface LinkView {
 
 export interface TaskView {
 	view: 'task';
+	/** The background task it follows (cards the server posts). */
+	id?: string;
 	title: string;
-	status?: 'queued' | 'running' | 'done' | 'failed';
+	status?: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 	detail?: string;
 	progress?: number;
 	agent?: string;
+	/** The crew's rough estimate, e.g. "10 min". */
+	eta?: string;
 }
 
 export interface ShellView {
@@ -133,6 +137,56 @@ export interface ShellView {
 	output?: string;
 	exit_code?: number;
 	cwd?: string;
+}
+
+export interface CodeView {
+	view: 'code';
+	code: string;
+	language?: string;
+	file?: string;
+}
+
+export interface DiffView {
+	view: 'diff';
+	path: string;
+	/** Worked out on the server from the text before and after. */
+	hunks: { header: string; lines: { kind: 'context' | 'add' | 'del'; old?: number; new?: number; text: string }[] }[];
+}
+
+export interface SourcesView {
+	view: 'sources';
+	items: { title: string; url?: string; detail?: string; kind?: 'web' | 'file' }[];
+}
+
+export interface SelectionView {
+	view: 'selection';
+	question: string;
+	items: { name: string; detail?: string; amount?: number; selected?: boolean }[];
+	confirm_label?: string;
+	/** What the total is per ("month"). */
+	per?: string;
+}
+
+export interface CartView {
+	view: 'cart';
+	title: string;
+	store: string;
+	items: { name: string; detail?: string; quantity?: number; price?: number; available?: boolean; swap?: string }[];
+	delivery?: number;
+	checkout_url: string;
+	note?: string;
+}
+
+export interface BoundaryView {
+	view: 'boundary';
+	title: string;
+	reason: string;
+	alternatives?: { title: string; detail?: string; agent?: string; message?: string; url?: string }[];
+}
+
+export interface QuickRepliesView {
+	view: 'quick_replies';
+	replies: string[];
 }
 
 export type View =
@@ -149,7 +203,14 @@ export type View =
 	| FormView
 	| LinkView
 	| TaskView
-	| ShellView;
+	| ShellView
+	| CodeView
+	| DiffView
+	| SourcesView
+	| SelectionView
+	| CartView
+	| BoundaryView
+	| QuickRepliesView;
 export type ViewName = View['view'];
 
 /** What every view component gets: its data, and the chat it sits in. */

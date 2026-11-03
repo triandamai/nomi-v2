@@ -19,10 +19,34 @@ export interface PresentPerson {
 	user_id: string;
 	name: string;
 	avatar_url: string | null;
+	/** What they're looking at: preview, code or terminal. */
+	view?: 'preview' | 'code' | 'terminal' | null;
+	/** The file open in their code view. */
+	path?: string | null;
 }
+
+/** Where someone's pointer is over a view, as fractions of it, and when it last moved. */
+export interface PeerPointer {
+	name: string;
+	x: number;
+	y: number;
+	view: string;
+	at: number;
+}
+
+export type Whereabouts = { view: 'preview' | 'code' | 'terminal'; path?: string | null };
+
+/** A pointer that hasn't moved for this long is no longer shown. */
+const POINTER_TTL_MS = 5_000;
+/** The person's own pointer goes out at most this often. */
+const POINTER_MS = 120;
 
 export class ProjectPresence {
 	people = $state<PresentPerson[]>([]);
+	/** Others' pointers, by user id. */
+	pointers = $state<Record<string, PeerPointer>>({});
+	#where: Whereabouts | null = null;
+	#lastPointer = 0;
 	me = $state<string | null>(null);
 	#typing = $state<TypingMap>({});
 	readonly projectId: string;
@@ -63,6 +87,29 @@ export class ProjectPresence {
 		}
 	}
 
+	/** Where the person is now: told to the others straight away, then with every heartbeat. */
+	moveTo(where: Whereabouts) {
+		if (this.#where && this.#where.view === where.view && (this.#where.path ?? null) === (where.path ?? null)) return;
+		this.#where = where;
+		void this.#beat();
+	}
+
+	/** The person's pointer over a view, as fractions of it (sent a few times a second at most). */
+	point(view: string, x: number, y: number) {
+		const now = Date.now();
+		if (now - this.#lastPointer < POINTER_MS) return;
+		this.#lastPointer = now;
+		const at = { view, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+		void projectApi(this.projectId, 'cursor', { method: 'POST', body: at }).catch(() => null);
+	}
+
+	/** Pointers still moving, in one view. */
+	pointersIn(view: string, now = Date.now()): (PeerPointer & { user_id: string })[] {
+		return Object.entries(this.pointers)
+			.filter(([, pointer]) => pointer.view === view && now - pointer.at < POINTER_TTL_MS)
+			.map(([user_id, pointer]) => ({ user_id, ...pointer }));
+	}
+
 	/** The person is typing in the project's chat: tell the others, at most every few seconds. */
 	ping() {
 		const now = Date.now();
@@ -81,7 +128,7 @@ export class ProjectPresence {
 	}
 
 	async #beat() {
-		await projectApi(this.projectId, 'presence', { method: 'POST' }).catch(() => null);
+		await projectApi(this.projectId, 'presence', { method: 'POST', body: this.#where ?? undefined }).catch(() => null);
 	}
 
 	/** Says goodbye even while the page is unloading (keepalive); the expiry covers it when it can't. */
@@ -90,13 +137,16 @@ export class ProjectPresence {
 	}
 
 	#handle(data: string) {
-		let event: { kind?: string; user_id?: string; name?: string };
+		let event: { kind?: string; user_id?: string; name?: string; x?: number; y?: number; view?: string };
 		try {
 			event = JSON.parse(data);
 		} catch {
 			return;
 		}
 		if (event.kind === 'PresenceChanged') void this.refresh();
+		if (event.kind === 'Cursor' && event.user_id && event.user_id !== this.me && typeof event.x === 'number' && typeof event.y === 'number') {
+			this.pointers = { ...this.pointers, [event.user_id]: { name: event.name ?? '', x: event.x, y: event.y, view: event.view ?? 'preview', at: Date.now() } };
+		}
 		if (event.kind === 'Typing' && event.user_id && event.user_id !== this.me) {
 			this.#typing = withPing(this.#typing, event.user_id, event.name ?? '', Date.now());
 		}

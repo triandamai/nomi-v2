@@ -185,3 +185,63 @@ async fn memories_stay_with_the_person_they_are_about(pool: PgPool) {
     let (status, _) = request(router, "DELETE", &format!("/api/memory/{memory}"), Some(&budi_token), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn what_was_remembered_shows_on_the_message_it_came_from_for_its_owner_only(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let (ana_token, ana, _, budi) = two_colleagues(router.clone(), &pool).await;
+
+    let (_, created) = request(router.clone(), "POST", "/api/sessions", Some(&ana_token), None).await;
+    let chat: Uuid = created["session_id"].as_str().unwrap().parse().unwrap();
+    let identity: Uuid = sqlx::query_scalar("INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'web', 'ana-web') RETURNING id")
+        .bind(ana)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let said: Uuid = sqlx::query_scalar("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, $2, 'I am vegetarian') RETURNING id")
+        .bind(chat)
+        .bind(identity)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let embedding = format!("[{}]", vec!["0.01"; 1536].join(","));
+    for (owner, content, archived) in [(ana, "Vegetarian", false), (ana, "Eats meat", true), (budi, "Budi's own memory", false)] {
+        sqlx::query(
+            "INSERT INTO memory_items (user_id, content, embedding, source_message_id, archived_at) \
+             VALUES ($1, $2, $3::vector, $4, CASE WHEN $5 THEN now() END)",
+        )
+        .bind(owner)
+        .bind(content)
+        .bind(&embedding)
+        .bind(said)
+        .bind(archived)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let (status, body) = request(router.clone(), "GET", &format!("/api/sessions/{chat}/messages"), Some(&ana_token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let message = body["messages"].as_array().unwrap().iter().find(|m| m["id"] == said.to_string()).unwrap();
+    let saved: Vec<&str> = message["saved_memories"].as_array().unwrap().iter().map(|m| m["content"].as_str().unwrap()).collect();
+    // Only what is still remembered, and only the viewer's own.
+    assert_eq!(saved, vec!["Vegetarian"]);
+
+    let (_, one) = request(router.clone(), "GET", &format!("/api/sessions/{chat}/messages/{said}"), Some(&ana_token), None).await;
+    assert_eq!(one["saved_memories"][0]["content"], "Vegetarian");
+
+    // A reply that drew on memories names them, the viewer's own only.
+    let reply: Uuid = sqlx::query_scalar("INSERT INTO messages (session_id, content, agent_display_name) VALUES ($1, 'Here are veggie places', 'Nomi') RETURNING id")
+        .bind(chat)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO message_memory_usage (message_id, memory_id) SELECT $1, id FROM memory_items WHERE content IN ('Vegetarian', 'Budi''s own memory')")
+        .bind(reply)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, replied) = request(router, "GET", &format!("/api/sessions/{chat}/messages/{reply}"), Some(&ana_token), None).await;
+    let used: Vec<&str> = replied["used_memories"].as_array().unwrap().iter().map(|m| m["content"].as_str().unwrap()).collect();
+    assert_eq!(used, vec!["Vegetarian"]);
+}

@@ -1,13 +1,20 @@
 import type { Component } from 'svelte';
 import AnswerView from '$lib/components/views/AnswerView.svelte';
+import BoundaryView from '$lib/components/views/BoundaryView.svelte';
 import CardView from '$lib/components/views/CardView.svelte';
+import CartView from '$lib/components/views/CartView.svelte';
+import CodeView from '$lib/components/views/CodeView.svelte';
 import ChartView from '$lib/components/views/ChartView.svelte';
 import ComparisonView from '$lib/components/views/ComparisonView.svelte';
 import DecisionView from '$lib/components/views/DecisionView.svelte';
+import DiffView from '$lib/components/views/DiffView.svelte';
 import FormView from '$lib/components/views/FormView.svelte';
 import LinkView from '$lib/components/views/LinkView.svelte';
 import ListView from '$lib/components/views/ListView.svelte';
+import QuickRepliesView from '$lib/components/views/QuickRepliesView.svelte';
+import SelectionView from '$lib/components/views/SelectionView.svelte';
 import ShellView from '$lib/components/views/ShellView.svelte';
+import SourcesView from '$lib/components/views/SourcesView.svelte';
 import StepperView from '$lib/components/views/StepperView.svelte';
 import SuggestionsView from '$lib/components/views/SuggestionsView.svelte';
 import TableView from '$lib/components/views/TableView.svelte';
@@ -32,6 +39,13 @@ export const VIEW_COMPONENTS: { [K in ViewName]: Component<ViewProps<Extract<Vie
 	link: LinkView,
 	task: TaskView,
 	shell: ShellView,
+	code: CodeView,
+	diff: DiffView,
+	sources: SourcesView,
+	selection: SelectionView,
+	cart: CartView,
+	boundary: BoundaryView,
+	quick_replies: QuickRepliesView,
 };
 
 /** The component for a view, or none for a view this build doesn't know (from a newer backend). */

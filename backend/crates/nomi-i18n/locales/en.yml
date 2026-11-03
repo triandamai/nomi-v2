@@ -52,6 +52,8 @@ stop:
   dropped_many: "I dropped %{count} queued messages without answering."
   pick_up: "Tell me when you want to pick it back up."
   and: "and"
+  task_reply: "Reply in progress"
+  task_queued: "Message waiting its turn"
 reminders:
   chat_title: "Reminders"
 home:
@@ -148,6 +150,8 @@ subscription:
   until: ", until %{date}"
   note: "Note from the Nomi team: %{note}"
 team:
+  project_invite_title: "%{inviter} invited you to build %{project} on Nomi"
+  project_invite_body: "Join %{project} in %{org} and build it together with Koda. The invite works for 7 days."
   invite_title: "%{inviter} invited you to %{org} on Nomi"
   invite_body: "Join %{org} to work on its projects together with the crew. The invite works for 7 days."
   invite_button: "Accept the invite"
@@ -222,3 +226,7 @@ build:
   check_stale: "%{command} ran on older files"
   check_not_run: "%{command} didn't run"
   unverified_hint: "They run when the project is open in your browser, and anything that fails goes back to Koda."
+together:
+  joined_build: "%{name} joined: can build and publish."
+  joined_prompt: "%{name} joined: can ask Koda for changes."
+  joined_view: "%{name} joined: can view."

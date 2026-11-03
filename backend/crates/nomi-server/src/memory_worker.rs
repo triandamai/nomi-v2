@@ -52,8 +52,9 @@ pub async fn learn(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
     for job in &jobs {
         let provider = build_llm_provider_for_user(pool, job.user_id, settings_key, http_client.clone()).await;
         let embedding_provider = build_embedding_provider_from_settings_or_env(pool, settings_key, http_client.clone(), Some(job.user_id)).await;
+        let started = chrono::Utc::now();
         match tokio::time::timeout(LEARNING_TIME_LIMIT, memory::run_learning_job(pool, provider.as_ref(), embedding_provider.as_ref(), job)).await {
-            Ok(Ok(())) => {}
+            Ok(Ok(())) => announce_saved(pool, job, started).await,
             Ok(Err(e)) => tracing::warn!(error = %e, job_id = %job.id, "memory worker: learning from an exchange failed"),
             Err(_) => tracing::warn!(job_id = %job.id, "memory worker: learning from an exchange timed out"),
         }
@@ -62,6 +63,25 @@ pub async fn learn(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
         Ok(0) => {}
         Ok(n) => tracing::warn!(count = n, "memory worker: gave up on exchanges that kept failing"),
         Err(e) => tracing::error!(error = %e, "memory worker: failed to clear exchanges that kept failing"),
+    }
+}
+
+/// Something new was remembered from the person's message: the chat shows it where it happened
+/// (the message's `saved_memories`), so its devices fetch the message again.
+async fn announce_saved(pool: &PgPool, job: &memory::LearningJob, since: chrono::DateTime<chrono::Utc>) {
+    let Some(message_id) = job.source_message_id else { return };
+    let session: Option<uuid::Uuid> = sqlx::query_scalar(
+        "SELECT m.session_id FROM messages m \
+         WHERE m.id = $1 AND EXISTS (SELECT 1 FROM memory_items mi WHERE mi.source_message_id = m.id AND mi.created_at >= $2)",
+    )
+    .bind(message_id)
+    .bind(since)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    if let Some(session_id) = session {
+        crate::chat_events::message_updated(job.user_id, session_id, message_id);
     }
 }
 

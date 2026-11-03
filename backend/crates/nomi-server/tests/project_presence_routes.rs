@@ -140,3 +140,34 @@ async fn typing_is_for_people_who_can_open_the_project(pool: PgPool) {
     assert_eq!(request(t.router.clone(), "POST", &presence, Some(&t.cy), None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(request(t.router.clone(), "GET", &presence, Some(&t.cy), None).await.0, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn teammates_see_where_someone_is_so_they_can_follow_them(pool: PgPool) {
+    let t = team(&pool).await;
+    let path = format!("/api/projects/{}/presence", t.project_id);
+    request(t.router.clone(), "POST", &path, Some(&t.ana), Some(json!({ "view": "code", "path": "src/routes/+page.svelte" }))).await;
+    let (_, seen) = request(t.router.clone(), "GET", &path, Some(&t.ben), None).await;
+    assert_eq!(seen["people"][0]["view"], "code");
+    assert_eq!(seen["people"][0]["path"], "src/routes/+page.svelte");
+
+    // A plain heartbeat keeps where they were; a view that isn't one is ignored.
+    request(t.router.clone(), "POST", &path, Some(&t.ana), None).await;
+    request(t.router.clone(), "POST", &path, Some(&t.ana), Some(json!({ "view": "admin" }))).await;
+    let (_, still) = request(t.router.clone(), "GET", &path, Some(&t.ben), None).await;
+    assert_eq!(still["people"][0]["view"], "code");
+
+    // Moving to the preview drops the file.
+    request(t.router.clone(), "POST", &path, Some(&t.ana), Some(json!({ "view": "preview" }))).await;
+    let (_, moved) = request(t.router.clone(), "GET", &path, Some(&t.ben), None).await;
+    assert_eq!((moved["people"][0]["view"].as_str(), moved["people"][0]["path"].as_str()), (Some("preview"), None));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_pointer_is_passed_on_only_inside_the_view_and_the_project(pool: PgPool) {
+    let t = team(&pool).await;
+    let cursor = format!("/api/projects/{}/cursor", t.project_id);
+    let at = |x: f64| json!({ "x": x, "y": 0.5, "view": "preview" });
+    assert_eq!(request(t.router.clone(), "POST", &cursor, Some(&t.ben), Some(at(0.25))).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(request(t.router.clone(), "POST", &cursor, Some(&t.ben), Some(at(1.5))).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(request(t.router.clone(), "POST", &cursor, Some(&t.cy), Some(at(0.25))).await.0, StatusCode::NOT_FOUND);
+}

@@ -1,15 +1,19 @@
-<!-- Work going on in the background: what it is, who has it, where it stands, how far along. -->
+<!-- Work going on in the background: what it is, who has it, where it stands, how far along, and
+     that the result comes back here and to Inbox. -->
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import WavyProgress from '$lib/components/m3/WavyProgress.svelte';
 	import ViewFrame from './ViewFrame.svelte';
+	import BackgroundNote from '$lib/components/ds/chat/BackgroundNote.svelte';
+	import KVRow from '$lib/components/ds/conversation/KVRow.svelte';
+	import { Terminal } from '@lucide/svelte';
 	import type { TaskView, ViewProps } from '$lib/views/types';
 
 	let { view, agent = null }: ViewProps<TaskView> = $props();
 
 	const status = $derived(view.status ?? 'queued');
-	const STATUS = { queued: m.view_task_queued, running: m.view_task_running, done: m.view_task_done, failed: m.view_task_failed };
+	const STATUS = { queued: m.view_task_queued, running: m.view_task_running, done: m.view_task_done, failed: m.view_task_failed, cancelled: m.view_task_cancelled };
 	const who = $derived(view.agent ?? agent);
 </script>
 
@@ -19,15 +23,19 @@
 			<AgentShape agent={who} size={32} face working={status === 'running'} />
 			<span class="task__text">
 				<span class="task__title">{view.title}</span>
-				{#if view.detail}<span class="task__detail">{view.detail}</span>{/if}
+				{#if view.detail && !view.id}<span class="task__detail">{view.detail}</span>{/if}
 			</span>
 			<span class="task__status">{STATUS[status]()}</span>
 		</div>
-		{#if view.progress !== undefined && view.progress !== null && status !== 'failed'}
+		<!-- A background task the server started: its command, as a machine value (KVRow). -->
+		{#if view.detail && view.id}<KVRow icon={Terminal} label={m.view_task_command()} value={view.detail} />{/if}
+		{#if view.progress !== undefined && view.progress !== null && status !== 'failed' && status !== 'cancelled'}
 			<WavyProgress value={status === 'done' ? 1 : view.progress} label={view.title} />
 		{/if}
 	</div>
 </ViewFrame>
+<!-- Work still going on runs without the person watching (Chat responses → Background Note). -->
+{#if status === 'queued' || status === 'running'}<BackgroundNote eta={view.eta ? (view.eta.startsWith("~") ? view.eta : `~${view.eta}`) : undefined} />{/if}
 
 <style>
 	.task {

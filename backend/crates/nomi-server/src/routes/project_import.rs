@@ -14,7 +14,7 @@ use uuid::Uuid;
 use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
-use crate::routes::deploy::{internal, project_role, ApiError};
+use crate::routes::deploy::{internal, ApiError};
 
 /// The biggest archive accepted.
 pub const MAX_ARCHIVE_BYTES: usize = 50 * 1024 * 1024;
@@ -137,7 +137,7 @@ pub async fn import_archive(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<ImportResult>, ApiError> {
-    project_role(&state.pool, project_id, claims.sub).await?;
+    crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await?;
     let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default();
     if !content_type.is_empty() && !content_type.contains("zip") && !content_type.contains("octet-stream") {
         return Err((StatusCode::UNSUPPORTED_MEDIA_TYPE, "send a .zip archive".to_string()));
@@ -168,7 +168,7 @@ pub async fn import_batch(
     Path(project_id): Path<Uuid>,
     Json(batch): Json<FilesBatch>,
 ) -> Result<Json<ImportResult>, ApiError> {
-    project_role(&state.pool, project_id, claims.sub).await?;
+    crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await?;
     if batch.files.len() > 500 {
         return Err((StatusCode::BAD_REQUEST, "send at most 500 files at a time".to_string()));
     }
@@ -246,7 +246,7 @@ pub async fn import_github(
     Path(project_id): Path<Uuid>,
     Json(req): Json<RepoRequest>,
 ) -> Result<Json<ImportResult>, ApiError> {
-    project_role(&state.pool, project_id, claims.sub).await?;
+    crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await?;
     let (owner, repo) = parse_repo(&req.repo).ok_or((StatusCode::BAD_REQUEST, "use owner/repo or a github.com link".to_string()))?;
     let git_ref = req.git_ref.as_deref().map(str::trim).filter(|r| !r.is_empty());
     if git_ref.is_some_and(|r| !r.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))) {

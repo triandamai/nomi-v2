@@ -273,6 +273,62 @@ pub struct MessageItem {
     pub edited_at: Option<DateTime<Utc>>,
     /// Earlier takes of the person's message and its replies, kept when it ran again.
     pub versions: i64,
+    /// What the crew learned from this message of the person's and still remembers (the viewer's
+    /// own memories only): shown where it happened, with edit and undo.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub saved_memories: Vec<SavedMemory>,
+    /// What this reply drew on from memory (the viewer's own memories only), most relevant first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub used_memories: Vec<SavedMemory>,
+}
+
+#[derive(Serialize, Clone, Debug, sqlx::FromRow)]
+pub struct SavedMemory {
+    pub id: Uuid,
+    pub content: String,
+    pub kind: String,
+}
+
+/// Fills in each message's `saved_memories`: memories learned from it that are still active,
+/// and only `me`'s (a teammate's memories never show in a shared chat).
+pub(crate) async fn attach_saved_memories(pool: &sqlx::PgPool, me: Uuid, messages: &mut [MessageItem]) -> Result<(), sqlx::Error> {
+    let ids: Vec<Uuid> = messages.iter().filter(|m| m.sender == "user").map(|m| m.id).collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as(
+        "SELECT source_message_id, id, content, COALESCE(kind, 'fact') FROM memory_items \
+         WHERE source_message_id = ANY($1) AND user_id = $2 AND archived_at IS NULL ORDER BY created_at",
+    )
+    .bind(&ids)
+    .bind(me)
+    .fetch_all(pool)
+    .await?;
+    for message in messages.iter_mut() {
+        message.saved_memories = rows.iter().filter(|(source, ..)| *source == message.id).map(|(_, id, content, kind)| SavedMemory { id: *id, content: content.clone(), kind: kind.clone() }).collect();
+    }
+    Ok(())
+}
+
+/// Fills in each reply's `used_memories`: the memories it drew on that are `me`'s.
+pub(crate) async fn attach_used_memories(pool: &sqlx::PgPool, me: Uuid, messages: &mut [MessageItem]) -> Result<(), sqlx::Error> {
+    let ids: Vec<Uuid> = messages.iter().filter(|m| m.memory_count > 0).map(|m| m.id).collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as(
+        "SELECT u.message_id, mi.id, mi.content, COALESCE(mi.kind, 'fact') FROM message_memory_usage u \
+         JOIN memory_items mi ON mi.id = u.memory_id \
+         WHERE u.message_id = ANY($1) AND mi.user_id = $2 ORDER BY u.message_id, mi.weight DESC NULLS LAST, mi.created_at DESC",
+    )
+    .bind(&ids)
+    .bind(me)
+    .fetch_all(pool)
+    .await?;
+    for message in messages.iter_mut() {
+        message.used_memories = rows.iter().filter(|(used_by, ..)| *used_by == message.id).map(|(_, id, content, kind)| SavedMemory { id: *id, content: content.clone(), kind: kind.clone() }).collect();
+    }
+    Ok(())
 }
 
 /// Names the people other than `me` who wrote messages in a shared project chat.
@@ -336,6 +392,8 @@ fn to_message_item(
         sender_identity: sender,
         edited_at,
         versions,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     }
 }
 
@@ -418,6 +476,12 @@ pub async fn list_messages(
     if let Err(e) = attach_reminder_states(&state.pool, &mut messages).await {
         tracing::warn!(error = %e, "failed to load reminder states");
     }
+    if let Err(e) = attach_saved_memories(&state.pool, claims.sub, &mut messages).await {
+        tracing::warn!(error = %e, "failed to load saved memories");
+    }
+    if let Err(e) = attach_used_memories(&state.pool, claims.sub, &mut messages).await {
+        tracing::warn!(error = %e, "failed to load used memories");
+    }
 
     Ok(Json(ListMessagesResponse { messages, has_more }))
 }
@@ -448,6 +512,12 @@ pub async fn get_message(
     }
     if let Err(e) = attach_reminder_states(&state.pool, &mut items).await {
         tracing::warn!(error = %e, "failed to load reminder states");
+    }
+    if let Err(e) = attach_saved_memories(&state.pool, claims.sub, &mut items).await {
+        tracing::warn!(error = %e, "failed to load saved memories");
+    }
+    if let Err(e) = attach_used_memories(&state.pool, claims.sub, &mut items).await {
+        tracing::warn!(error = %e, "failed to load used memories");
     }
     let [item] = items;
     Ok(Json(item))
@@ -521,6 +591,9 @@ pub struct PlanBuild {
     pub report: Option<serde_json::Value>,
     pub error: Option<String>,
     pub updated_at: DateTime<Utc>,
+    /// When Koda started on it, and when it ended (null while it runs): the build's real time.
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -570,8 +643,8 @@ pub async fn list_agent_plans(
     // written under the chat's own id, as delegated runs do) came between them.
     let newest_at = rows.last().map(|row| row.5);
     let build = match newest_at {
-        Some(newest_at) => sqlx::query_as::<_, (Uuid, String, Option<serde_json::Value>, Option<String>, DateTime<Utc>)>(
-            "SELECT d.id, d.status, d.report, d.error, COALESCE(d.completed_at, d.claimed_at, d.created_at) FROM agent_delegations d \
+        Some(newest_at) => sqlx::query_as::<_, (Uuid, String, Option<serde_json::Value>, Option<String>, DateTime<Utc>, DateTime<Utc>, Option<DateTime<Utc>>)>(
+            "SELECT d.id, d.status, d.report, d.error, COALESCE(d.completed_at, d.claimed_at, d.created_at), COALESCE(d.claimed_at, d.created_at), d.completed_at FROM agent_delegations d \
              WHERE d.session_id = $1 AND d.target_agent_type = $2 AND d.created_at >= $3 \
                AND NOT EXISTS (SELECT 1 FROM agent_plans o WHERE o.session_id = $1 AND o.agent_session_id NOT IN ($1, $4) \
                                AND o.created_at > $3 AND o.created_at <= d.created_at) \
@@ -584,7 +657,7 @@ pub async fn list_agent_plans(
         .fetch_optional(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch plans"))?
-        .map(|(delegation_id, status, report, error, updated_at)| PlanBuild { delegation_id, status, report, error, updated_at }),
+        .map(|(delegation_id, status, report, error, updated_at, started_at, finished_at)| PlanBuild { delegation_id, status, report, error, updated_at, started_at, finished_at }),
         None => None,
     };
 
@@ -830,6 +903,7 @@ pub async fn send_message(
     Json(req): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<IngestMessageResponse>), (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    refuse_project_viewer(&state.pool, claims.sub, session_id).await?;
 
     if req.text.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "text must not be empty"));
@@ -923,6 +997,8 @@ pub async fn send_message(
         sender_identity: None,
         edited_at: None,
         versions: 0,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -949,6 +1025,20 @@ async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, tit
     let chat_updated = nomi_realtime::UserEnvelope::ChatUpdated { session_id, project_id, title };
     if let Err(e) = publisher.try_publish_to(&nomi_realtime::user_topic(user_id), &chat_updated) {
         tracing::debug!(error = %e, %session_id, "couldn't tell the person's other devices about a chat");
+    }
+}
+
+/// A project's chat takes messages only from people who may change the project, not its viewers.
+pub(crate) async fn refuse_project_viewer(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid) -> Result<(), (StatusCode, &'static str)> {
+    let project: Option<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1 LIMIT 1")
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up the project"))?;
+    let Some(project_id) = project else { return Ok(()) };
+    match crate::routes::deploy::project_role(pool, project_id, user_id).await {
+        Ok("viewer") => Err((StatusCode::FORBIDDEN, "you can view this project but not change it")),
+        _ => Ok(()),
     }
 }
 
@@ -1019,12 +1109,18 @@ async fn try_stop_command(
         sender_identity: None,
         edited_at: None,
         versions: 0,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     };
+    // Background task cards the stop ended: every device fetches them again.
+    for (session_id, message_id) in &outcome.report.updated_message_ids {
+        crate::chat_events::message_updated(bootstrap.user_id, *session_id, *message_id);
+    }
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
         sender: "assistant".to_string(),
         content: outcome.reply,
-        content_blocks: None,
+        content_blocks: nomi_agent_supervisor::stop::stopped_blocks(&outcome.report),
         created_at: fetch_message_created_at(&state.pool, outcome.reply_message_id).await?,
         my_feedback: None,
         agent_display_name: Some("Supervisor".to_string()),
@@ -1035,6 +1131,8 @@ async fn try_stop_command(
         sender_identity: None,
         edited_at: None,
         versions: 0,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }
