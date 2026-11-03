@@ -273,6 +273,62 @@ pub struct MessageItem {
     pub edited_at: Option<DateTime<Utc>>,
     /// Earlier takes of the person's message and its replies, kept when it ran again.
     pub versions: i64,
+    /// What the crew learned from this message of the person's and still remembers (the viewer's
+    /// own memories only): shown where it happened, with edit and undo.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub saved_memories: Vec<SavedMemory>,
+    /// What this reply drew on from memory (the viewer's own memories only), most relevant first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub used_memories: Vec<SavedMemory>,
+}
+
+#[derive(Serialize, Clone, Debug, sqlx::FromRow)]
+pub struct SavedMemory {
+    pub id: Uuid,
+    pub content: String,
+    pub kind: String,
+}
+
+/// Fills in each message's `saved_memories`: memories learned from it that are still active,
+/// and only `me`'s (a teammate's memories never show in a shared chat).
+pub(crate) async fn attach_saved_memories(pool: &sqlx::PgPool, me: Uuid, messages: &mut [MessageItem]) -> Result<(), sqlx::Error> {
+    let ids: Vec<Uuid> = messages.iter().filter(|m| m.sender == "user").map(|m| m.id).collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as(
+        "SELECT source_message_id, id, content, COALESCE(kind, 'fact') FROM memory_items \
+         WHERE source_message_id = ANY($1) AND user_id = $2 AND archived_at IS NULL ORDER BY created_at",
+    )
+    .bind(&ids)
+    .bind(me)
+    .fetch_all(pool)
+    .await?;
+    for message in messages.iter_mut() {
+        message.saved_memories = rows.iter().filter(|(source, ..)| *source == message.id).map(|(_, id, content, kind)| SavedMemory { id: *id, content: content.clone(), kind: kind.clone() }).collect();
+    }
+    Ok(())
+}
+
+/// Fills in each reply's `used_memories`: the memories it drew on that are `me`'s.
+pub(crate) async fn attach_used_memories(pool: &sqlx::PgPool, me: Uuid, messages: &mut [MessageItem]) -> Result<(), sqlx::Error> {
+    let ids: Vec<Uuid> = messages.iter().filter(|m| m.memory_count > 0).map(|m| m.id).collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as(
+        "SELECT u.message_id, mi.id, mi.content, COALESCE(mi.kind, 'fact') FROM message_memory_usage u \
+         JOIN memory_items mi ON mi.id = u.memory_id \
+         WHERE u.message_id = ANY($1) AND mi.user_id = $2 ORDER BY u.message_id, mi.weight DESC NULLS LAST, mi.created_at DESC",
+    )
+    .bind(&ids)
+    .bind(me)
+    .fetch_all(pool)
+    .await?;
+    for message in messages.iter_mut() {
+        message.used_memories = rows.iter().filter(|(used_by, ..)| *used_by == message.id).map(|(_, id, content, kind)| SavedMemory { id: *id, content: content.clone(), kind: kind.clone() }).collect();
+    }
+    Ok(())
 }
 
 /// Names the people other than `me` who wrote messages in a shared project chat.
@@ -336,6 +392,8 @@ fn to_message_item(
         sender_identity: sender,
         edited_at,
         versions,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     }
 }
 
@@ -418,6 +476,12 @@ pub async fn list_messages(
     if let Err(e) = attach_reminder_states(&state.pool, &mut messages).await {
         tracing::warn!(error = %e, "failed to load reminder states");
     }
+    if let Err(e) = attach_saved_memories(&state.pool, claims.sub, &mut messages).await {
+        tracing::warn!(error = %e, "failed to load saved memories");
+    }
+    if let Err(e) = attach_used_memories(&state.pool, claims.sub, &mut messages).await {
+        tracing::warn!(error = %e, "failed to load used memories");
+    }
 
     Ok(Json(ListMessagesResponse { messages, has_more }))
 }
@@ -448,6 +512,12 @@ pub async fn get_message(
     }
     if let Err(e) = attach_reminder_states(&state.pool, &mut items).await {
         tracing::warn!(error = %e, "failed to load reminder states");
+    }
+    if let Err(e) = attach_saved_memories(&state.pool, claims.sub, &mut items).await {
+        tracing::warn!(error = %e, "failed to load saved memories");
+    }
+    if let Err(e) = attach_used_memories(&state.pool, claims.sub, &mut items).await {
+        tracing::warn!(error = %e, "failed to load used memories");
     }
     let [item] = items;
     Ok(Json(item))
@@ -923,6 +993,8 @@ pub async fn send_message(
         sender_identity: None,
         edited_at: None,
         versions: 0,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -1019,12 +1091,18 @@ async fn try_stop_command(
         sender_identity: None,
         edited_at: None,
         versions: 0,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     };
+    // Background task cards the stop ended: every device fetches them again.
+    for (session_id, message_id) in &outcome.report.updated_message_ids {
+        crate::chat_events::message_updated(bootstrap.user_id, *session_id, *message_id);
+    }
     let supervisor_reply = MessageItem {
         id: outcome.reply_message_id,
         sender: "assistant".to_string(),
         content: outcome.reply,
-        content_blocks: None,
+        content_blocks: nomi_agent_supervisor::stop::stopped_blocks(&outcome.report),
         created_at: fetch_message_created_at(&state.pool, outcome.reply_message_id).await?,
         my_feedback: None,
         agent_display_name: Some("Supervisor".to_string()),
@@ -1035,6 +1113,8 @@ async fn try_stop_command(
         sender_identity: None,
         edited_at: None,
         versions: 0,
+        saved_memories: Vec::new(),
+        used_memories: Vec::new(),
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }

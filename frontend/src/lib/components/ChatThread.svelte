@@ -14,7 +14,6 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import GlassBackdrop from '$lib/components/GlassBackdrop.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
-	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import VoiceNoteRecorder from '$lib/components/VoiceNoteRecorder.svelte';
 	import CompactChatInput from '$lib/components/composer/CompactChatInput.svelte';
 	import { deserialize } from '$app/forms';
@@ -45,6 +44,12 @@
 	import DateDivider from './ds/chat/DateDivider.svelte';
 	import JumpToLatest from './ds/chat/JumpToLatest.svelte';
 	import LoadingOlder from './ds/chat/LoadingOlder.svelte';
+	import RenameField from './ds/chat/RenameField.svelte';
+	import CrewWorking from './ds/chat/CrewWorking.svelte';
+	import StopHint from './ds/chat/StopHint.svelte';
+	import NewDivider from './ds/chat/NewDivider.svelte';
+	import LiveStep from './ds/conversation/LiveStep.svelte';
+	import type { MessageMemory } from '$lib/types';
 	import { dayLabel, toISODate } from '$lib/dates';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupReasoning } from '$lib/reasoning';
@@ -135,7 +140,6 @@
 	});
 	let editingTitle = $state(false);
 	let titleDraft = $state('');
-	let titleInput: HTMLInputElement | undefined = $state();
 	let renameError = $state<string | null>(null);
 
 	// The chat menu (chatMenu): pin, move, export, share and delete this chat.
@@ -184,12 +188,10 @@
 		deleteChatOpen = false;
 	}
 
-	async function startRename() {
+	function startRename() {
 		titleDraft = shownTitle;
 		renameError = null;
 		editingTitle = true;
-		await tick();
-		titleInput?.select();
 	}
 
 	async function saveRename() {
@@ -213,14 +215,6 @@
 		}
 	}
 
-	function onTitleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			saveRename();
-		} else if (event.key === 'Escape') {
-			editingTitle = false;
-		}
-	}
 
 	const SUGGESTIONS = $derived(
 		project
@@ -556,6 +550,14 @@
 	let atLatest = $state(true);
 	/** Messages that came in while scrolled up. */
 	let unseen = $state(0);
+	// Where the person left off: the first message that came in while they were scrolled up
+	// (Chat responses → New Divider). It stays until they write again.
+	let newFromId = $state<string | null>(null);
+	let newCount = $derived.by(() => {
+		if (newFromId === null) return 0;
+		const from = localMessages.findIndex((message) => message.id === newFromId);
+		return from < 0 ? 0 : localMessages.length - from;
+	});
 
 	function onThreadScroll() {
 		if (!messagesContainer) return;
@@ -672,10 +674,53 @@
 	// right after sending where neither the button nor the "Typing…" bubble showed any feedback.
 	const isWorking = $derived(submitting || pendingReply);
 
+	// How long the current turn has run, for the live step ("00:14").
+	let workingSince = $state<number | null>(null);
+	let clock = $state(Date.now());
+	$effect(() => {
+		if (!isWorking) {
+			workingSince = null;
+			return;
+		}
+		workingSince = untrack(() => workingSince) ?? Date.now();
+		clock = Date.now();
+		const timer = setInterval(() => (clock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const elapsed = $derived.by(() => {
+		if (workingSince === null) return '';
+		const seconds = Math.max(0, Math.floor((clock - workingSince) / 1000));
+		return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+	});
+
+	// Stops the crew working on this chat: the same "stop" a person could type (the stop form).
+	let stopForm: HTMLFormElement | undefined = $state();
+	function stopCrew() {
+		if (stopping) return;
+		stopForm?.requestSubmit();
+	}
+	// Escape stops a reply while it streams (Chat responses → Stop Hint), unless something on top
+	// (a dialog, a menu, the composer's own popups) takes the key first.
+	function onWindowKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || event.defaultPrevented || !isWorking || stopping) return;
+		if (document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"]')) return;
+		event.preventDefault();
+		stopCrew();
+	}
+
 	// Thinking steps fold into the reply they led to (see $lib/reasoning).
 	const threadItems = $derived(groupReasoning(localMessages));
 	const threadMessages = $derived(threadItems.map((item) => item.message));
 	const lastUserIndex = $derived(threadMessages.findLastIndex((message) => message.sender === 'user'));
+
+	// What the crew remembered from the person's message shows on the last reply of its turn.
+	function savedFor(list: RenderedMessage[], index: number): MessageMemory[] {
+		if (list[index].sender !== 'assistant' || list[index + 1]?.sender === 'assistant') return [];
+		for (let at = index - 1; at >= 0; at--) {
+			if (list[at].sender === 'user') return list[at].saved_memories ?? [];
+		}
+		return [];
+	}
 
 	const crew = $derived(
 		buildCrew({
@@ -733,6 +778,7 @@
 				unseen = 0;
 			}
 		} else if (added > 0) {
+			if (untrack(() => newFromId) === null) newFromId = localMessages[currentCount - added]?.id ?? null;
 			unseen = untrack(() => unseen) + added;
 		}
 	});
@@ -834,6 +880,8 @@
 	});
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div class="chat" class:chat--project={!!project} class:chat--glass={glass && !project}>
 	{#if glass && !project}<GlassBackdrop busy={isWorking} />{/if}
 	<header class="appbar" class:appbar--compact={compactHeader}>
@@ -848,14 +896,14 @@
 				</span>
 			{/if}
 			{#if editingTitle}
-				<input
-					bind:this={titleInput}
-					bind:value={titleDraft}
-					class="appbar__title appbar__title-input"
-					aria-label={m.chat_rename_label()}
-					maxlength="80"
-					onkeydown={onTitleKeydown}
-					onblur={saveRename}
+				<!-- The chat's name edited in place (Chat responses → Rename Field): Enter saves, Escape cancels. -->
+				<RenameField
+					value={shownTitle}
+					onsave={(name) => {
+						titleDraft = name;
+						saveRename();
+					}}
+					oncancel={() => (editingTitle = false)}
 				/>
 			{:else if unsaved}
 				<h1 class="appbar__title">{shownTitle}</h1>
@@ -928,6 +976,11 @@
 				<div class="chat__banner">
 					<Banner kind="online" text={backOnline === 'sent' ? m.banner_online_sent() : m.banner_online()} />
 				</div>
+			{:else if !isWorking && workingCrew.length > 0}
+				<!-- Crew still working on this chat in the background (Chat responses → Crew Working). -->
+				<div class="chat__banner">
+					<CrewWorking crew={[...new Set(workingCrew.map((member) => crewId(member.key)))]} onstop={unsaved ? undefined : stopCrew} />
+				</div>
 			{/if}
 			<div bind:this={messagesContainer} class="thread" onscroll={onThreadScroll}>
 				<div class="thread__column">
@@ -967,6 +1020,9 @@
 						{#if i === 0 || dayOf(item.message) !== dayOf(threadMessages[i - 1])}
 							<div class="thread__day"><DateDivider label={dayLabel(new Date(item.message.created_at), getLocale())} /></div>
 						{/if}
+						{#if item.message.id === newFromId && newCount > 0}
+							<div class="thread__day"><NewDivider count={newCount} /></div>
+						{/if}
 						<MessageBubble
 							message={item.message}
 							reasoning={item.reasoning}
@@ -977,14 +1033,17 @@
 							thread={threadPosition(threadMessages, i)}
 							handoffFrom={handoffFrom(threadMessages, i)}
 							answered={i < lastUserIndex}
+							savedMemories={savedFor(threadMessages, i)}
 							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
 							onrerun={(startId, update) => (localMessages = afterRerun(localMessages, startId, update))}
 						/>
 					{/each}
 					{#if isWorking}
-						<div class="thread__status" role="status">
-							<LoadingIndicator size={28} label={m.chat_nomi_working()} />
-							<span>{currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })}</span>
+						<!-- The step the crew is on right now, with the time so far (LiveStep), and a way to
+						     stop it here or with Escape (StopHint). -->
+						<div class="thread__status">
+							<LiveStep step={currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })} {elapsed} />
+							{#if !stopping}<StopHint onstop={stopCrew} />{/if}
 						</div>
 					{/if}
 					{#if typingLabel}
@@ -1037,6 +1096,7 @@
 						submitting = true;
 						sendingMessage = true;
 						stopRequested = false;
+						newFromId = null;
 						// On a phone, sending puts the keyboard away.
 						if (touchScreen()) messageInput?.blur();
 						return async ({ result, update }) => {
@@ -1091,6 +1151,7 @@
 				</form>
 				<!-- The in-flight send button submits this: the same "stop" a user could type. -->
 				<form
+					bind:this={stopForm}
 					id="stop-crew"
 					method="POST"
 					action="?/sendMessage"
@@ -1224,17 +1285,6 @@
 		.appbar__title-edit {
 			opacity: 0.7;
 		}
-	}
-	.appbar__title-input {
-		width: 100%;
-		box-sizing: border-box;
-		margin: 0;
-		padding: 0 4px;
-		border: none;
-		border-radius: 6px;
-		outline: 2px solid var(--md-sys-color-primary);
-		background: var(--md-sys-color-surface-container-lowest);
-		color: var(--md-sys-color-on-surface);
 	}
 	.appbar__rename-error {
 		font-size: 0.75rem;
@@ -1498,13 +1548,10 @@
 	}
 	.thread__status {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 12px;
+		gap: 8px;
 		margin-top: 18px;
-		padding-left: 4px;
-		font-family: var(--md-sys-typescale-body-large-font);
-		font-size: 0.9375rem;
-		color: var(--md-sys-color-on-surface-variant);
 	}
 	/* Errors with no message of their own (a send that didn't go, a dropped connection), lined up
 	   with the crew's replies. */

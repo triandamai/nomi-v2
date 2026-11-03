@@ -446,10 +446,15 @@ pub enum TaskStatus {
     Running,
     Done,
     Failed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskView {
+    /// The background task this card follows (set by the server, so the card's status can be
+    /// brought up to date when the task ends).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub title: String,
     #[serde(default)]
     pub status: TaskStatus,
@@ -461,6 +466,9 @@ pub struct TaskView {
     /// Which crew member it's with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    /// The crew's own rough estimate of how long it takes ("10 min"), when it runs in the background.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -472,6 +480,37 @@ pub struct ShellView {
     pub exit_code: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Alternative {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The crew member who'd do it (an agent type like "money", or a crew name like "Dana").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Sent as the person's next message when they pick it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Or a page to open instead (a web address or an app page like /money).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// Something the crew won't or can't do, the reason, and what it can do instead.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundaryView {
+    pub title: String,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<Alternative>,
+}
+
+/// Short answers to the question just asked, one tap each.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuickRepliesView {
+    pub replies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -639,6 +678,8 @@ pub enum View {
     Sources(SourcesView),
     Selection(SelectionView),
     Cart(CartView),
+    Boundary(BoundaryView),
+    QuickReplies(QuickRepliesView),
 }
 
 /// One line of the `show` tool's description per view: when to use it, and its fields.
@@ -661,12 +702,14 @@ pub const CATALOG: &[ViewSpec] = &[
     ViewSpec { name: "decision", use_for: "a choice for the person between 2-5 options", fields: "question, options: [{label, detail?, pros?, cons?, recommended?}]" },
     ViewSpec { name: "form", use_for: "several details to collect at once", fields: "title?, intro?, fields: [{key, label, type?: text|textarea|number|date|time|select|multiselect|checkbox, required?, options?, placeholder?, default?}], submit_label?" },
     ViewSpec { name: "link", use_for: "a page worth opening, as a preview", fields: "url, title?, description?, image?, site? (left-out details are read from the page)" },
-    ViewSpec { name: "task", use_for: "work going on in the background", fields: "title, status?: queued|running|done|failed, detail?, progress?: 0-1, agent?" },
+    ViewSpec { name: "task", use_for: "work going on in the background", fields: "title, status?: queued|running|done|failed, detail?, progress?: 0-1, agent?, eta? (your rough estimate, e.g. \"10 min\")" },
     ViewSpec { name: "shell", use_for: "a command and what it printed", fields: "command, output?, exit_code?, cwd?" },
     ViewSpec { name: "code", use_for: "code to read or copy (a snippet, a query, a config)", fields: "code, language?, file?" },
     ViewSpec { name: "diff", use_for: "a change to one file, line by line", fields: "path, before, after (the whole text before and after the change)" },
     ViewSpec { name: "sources", use_for: "what an answer leaned on, numbered like the [1] [2] citations in your text", fields: "items: [{title, url?, detail?, kind?: web|file}]" },
     ViewSpec { name: "selection", use_for: "several of many for the person to tick (subscriptions to track, items to keep)", fields: "question, items: [{name, detail?, amount?, selected?}], confirm_label?, per? (what the total is per, e.g. month)" },
+    ViewSpec { name: "boundary", use_for: "something you won't or can't do: say why plainly and offer what you can do instead", fields: "title, reason, alternatives?: [{title, detail?, agent?, message? (sent when picked), url?}] (0-4)" },
+    ViewSpec { name: "quick_replies", use_for: "short answers to the question you just asked, one tap each", fields: "replies: [answer in their voice] (2-6, a few words each)" },
     ViewSpec { name: "cart", use_for: "a basket at a store, only with prices you actually read from the store; the person checks out there", fields: "title, store, items: [{name, detail?, quantity?, price?, available?, swap?}], delivery?, checkout_url, note? (where and when the prices were read)" },
 ];
 
@@ -791,6 +834,8 @@ impl View {
             View::Sources(_) => "sources",
             View::Selection(_) => "selection",
             View::Cart(_) => "cart",
+            View::Boundary(_) => "boundary",
+            View::QuickReplies(_) => "quick_replies",
         }
     }
 
@@ -936,6 +981,26 @@ impl View {
                     not_blank("a selection item's name", &item.name)?;
                     if item.amount.is_some_and(|a| !a.is_finite()) {
                         return Err("an amount must be a number".to_string());
+                    }
+                }
+            }
+            View::Boundary(v) => {
+                not_blank("a boundary's title", &v.title)?;
+                not_blank("a boundary's reason", &v.reason)?;
+                count("alternatives", v.alternatives.len(), 0, 4)?;
+                for alternative in &v.alternatives {
+                    not_blank("an alternative's title", &alternative.title)?;
+                    if let Some(url) = &alternative.url {
+                        card_url("an alternative's url", url)?;
+                    }
+                }
+            }
+            View::QuickReplies(v) => {
+                count("quick replies", v.replies.len(), 2, 6)?;
+                for reply in &v.replies {
+                    not_blank("a quick reply", reply)?;
+                    if reply.chars().count() > 60 {
+                        return Err("quick replies are a few words each; use suggestions for longer ones".to_string());
                     }
                 }
             }
@@ -1125,6 +1190,7 @@ impl View {
                     TaskStatus::Running => "running",
                     TaskStatus::Done => "done",
                     TaskStatus::Failed => "failed",
+                    TaskStatus::Cancelled => "cancelled",
                 };
                 let detail = v.detail.as_deref().map(|d| format!(" — {d}")).unwrap_or_default();
                 out.push(format!("{} ({status}){detail}", v.title));
@@ -1181,6 +1247,15 @@ impl View {
                     out.push(format!("{mark} {}{amount}", item.name));
                 }
             }
+            View::Boundary(v) => {
+                out.push(v.title.clone());
+                out.push(v.reason.clone());
+                for alternative in &v.alternatives {
+                    let detail = alternative.detail.as_deref().map(|d| format!(" — {d}")).unwrap_or_default();
+                    out.push(format!("- {}{detail}", alternative.title));
+                }
+            }
+            View::QuickReplies(v) => out.extend(v.replies.iter().map(|r| format!("- {r}"))),
             View::Cart(v) => {
                 out.push(format!("{} — {}", v.title, v.store));
                 for item in &v.items {

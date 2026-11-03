@@ -52,6 +52,8 @@ stop:
   dropped_many: "%{count} pesan yang sedang mengantre aku lewati tanpa dijawab."
   pick_up: "Kabari aku kalau ingin dilanjutkan, ya."
   and: "dan"
+  task_reply: "Balasan yang sedang ditulis"
+  task_queued: "Pesan yang menunggu giliran"
 reminders:
   chat_title: "Pengingat"
 home:

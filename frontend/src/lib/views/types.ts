@@ -121,10 +121,12 @@ export interface LinkView {
 export interface TaskView {
 	view: 'task';
 	title: string;
-	status?: 'queued' | 'running' | 'done' | 'failed';
+	status?: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 	detail?: string;
 	progress?: number;
 	agent?: string;
+	/** The crew's rough estimate, e.g. "10 min". */
+	eta?: string;
 }
 
 export interface ShellView {
@@ -173,6 +175,18 @@ export interface CartView {
 	note?: string;
 }
 
+export interface BoundaryView {
+	view: 'boundary';
+	title: string;
+	reason: string;
+	alternatives?: { title: string; detail?: string; agent?: string; message?: string; url?: string }[];
+}
+
+export interface QuickRepliesView {
+	view: 'quick_replies';
+	replies: string[];
+}
+
 export type View =
 	| ListView
 	| TableView
@@ -192,7 +206,9 @@ export type View =
 	| DiffView
 	| SourcesView
 	| SelectionView
-	| CartView;
+	| CartView
+	| BoundaryView
+	| QuickRepliesView;
 export type ViewName = View['view'];
 
 /** What every view component gets: its data, and the chat it sits in. */

@@ -1345,7 +1345,10 @@ pub async fn resolve_tool_batch(
                 }
             } else if name.as_str() == crate::background::RUN_BACKGROUND_TASK_TOOL_NAME {
                 match crate::background::start_background_task(conn, mqtt, session_id, user_id, agent.agent_type().as_ref(), input).await {
-                    Ok(text) => (text, false, None),
+                    Ok((text, card)) => {
+                        posted_text = Some(card_text(&card));
+                        (text, false, Some(card))
+                    }
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == crate::background::LIST_BACKGROUND_TASKS_TOOL_NAME {
@@ -1354,7 +1357,7 @@ pub async fn resolve_tool_batch(
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == crate::background::CANCEL_BACKGROUND_TASK_TOOL_NAME {
-                match crate::background::cancel_background_task(conn, session_id, user_id, input).await {
+                match crate::background::cancel_background_task(conn, mqtt.map(|(p, _)| p), session_id, user_id, input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
@@ -1433,6 +1436,14 @@ pub async fn resolve_tool_batch(
     }
 
     Ok(ToolBatchOutcome::Resolved(tool_results))
+}
+
+/// The plain text a posted card stands for (a view's own text).
+fn card_text(block: &crate::content_block::ContentBlock) -> String {
+    match block {
+        crate::content_block::ContentBlock::View(view) => view.plain_text(),
+        _ => String::new(),
+    }
 }
 
 async fn log_tool_call(

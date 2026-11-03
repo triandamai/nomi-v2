@@ -2795,5 +2795,9 @@
 	"view_cart_swap": "Ganti {item}: {swap}",
 	"view_cart_save": "Simpan {title} sebagai daftar belanja: {items}",
 	"view_form_title": "Beberapa detail",
-	"view_form_missing": "Isi kolom yang bertanda *"
+	"view_form_missing": "Isi kolom yang bertanda *",
+	"supervisor_resume_message": "Lanjutkan yang tadi",
+	"view_task_cancelled": "Dibatalkan",
+	"memory_used_more": "{fact} +{count} lainnya",
+	"handoff_back_message": "tolong kamu yang jawab ini"
 }

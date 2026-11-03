@@ -180,6 +180,11 @@ pub async fn process_claimed_task(
             .publish(claimed.session_id, &StreamEnvelope::AgentDelegationUpdated { delegation_id: claimed.id })
             .await;
     }
+    if updated > 0 {
+        if let Ok(mut conn) = pool.acquire().await {
+            nomi_agent_core::background::settle_task_cards(&mut conn, mqtt, claimed.session_id, claimed.id, outcome.status).await;
+        }
+    }
 
     // If the task was cancelled while running, do not spawn Nomi.
     if updated == 0 {

@@ -132,14 +132,30 @@ async fn stop_in_a_chat_stops_only_that_chats_work(pool: PgPool) {
     assert!(!still_pending);
 
     // Both the command and the supervisor's reply are in the chat, in that order.
-    let messages: Vec<(Option<String>, String)> =
-        sqlx::query_as("SELECT agent_display_name, content FROM messages WHERE session_id = $1 AND content_blocks IS NULL ORDER BY created_at")
+    let messages: Vec<(Option<String>, String, Option<serde_json::Value>)> =
+        sqlx::query_as("SELECT agent_display_name, content, content_blocks FROM messages WHERE session_id = $1 AND id <> $2 ORDER BY created_at")
             .bind(seed.chat_a)
+            .bind(card)
             .fetch_all(&pool)
             .await
             .unwrap();
-    assert_eq!(messages[0], (None, "Stop!".to_string()));
+    assert_eq!((messages[0].0.clone(), messages[0].1.clone()), (None, "Stop!".to_string()));
     assert_eq!(messages[1].0.as_deref(), Some("Supervisor"));
+
+    // The reply's card lists what was stopped, task by task: running work stopped part-way, the
+    // queued message never started.
+    let blocks = messages[1].2.clone().expect("the reply has a card");
+    assert_eq!(blocks[0]["kind"], "stopped");
+    let tasks: Vec<(String, String)> = blocks[0]["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| (t["agent"].as_str().unwrap().to_string(), t["state"].as_str().unwrap().to_string()))
+        .collect();
+    assert_eq!(
+        tasks,
+        vec![("money".into(), "stopped".into()), ("coding".into(), "stopped".into()), ("chitchat".into(), "waiting".into())]
+    );
 
     // Turns already running see the stop.
     let requests: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_stop_requests WHERE user_id = $1 AND session_id = $2")

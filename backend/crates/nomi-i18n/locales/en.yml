@@ -52,6 +52,8 @@ stop:
   dropped_many: "I dropped %{count} queued messages without answering."
   pick_up: "Tell me when you want to pick it back up."
   and: "and"
+  task_reply: "Reply in progress"
+  task_queued: "Message waiting its turn"
 reminders:
   chat_title: "Reminders"
 home:

@@ -25,6 +25,12 @@
 	import VersionSwitcher from './ds/chat/VersionSwitcher.svelte';
 	import { Pencil } from '@lucide/svelte';
 	import Sources from './ds/chat/Sources.svelte';
+	import Handoff from './ds/chat/Handoff.svelte';
+	import MemoryUsed from './ds/chat/MemoryUsed.svelte';
+	import SavedMemoriesTwin from './blocks/twins/SavedMemoriesTwin.svelte';
+	import { crewId } from '$lib/crewId';
+	import { useChatSend } from '$lib/chatSend';
+	import type { MessageMemory } from '$lib/types';
 	import { citedSources, enrichReply } from '$lib/richReply';
 	import { page } from '$app/state';
 	import type { MessageVersion } from '$lib/types';
@@ -39,6 +45,7 @@
 		thread = 'solo',
 		handoffFrom = null,
 		answered = false,
+		savedMemories = [],
 		ondelete,
 		onrerun,
 	}: {
@@ -59,17 +66,20 @@
 		handoffFrom?: string | null;
 		/** The person has replied since this message (a questions card shows as answered). */
 		answered?: boolean;
+		/** What the crew remembered from the person's message this reply answers (shown on the turn's last reply). */
+		savedMemories?: MessageMemory[];
 		/** Offers Delete; called with the ids of the messages that went. */
 		ondelete?: (ids: string[]) => void;
 		/** The latest turn ran again (edited, or a reply asked for again): the person's message as it now stands. */
 		onrerun?: (startId: string, update: Partial<RenderedMessage>) => void;
 	} = $props();
+	const send = useChatSend();
 	const steps = $derived(message.steps ?? []);
 	// Buttons or an error bubble the crew posted on their own: no copy, share or rating for them,
 	// and next-step buttons go once the person has moved on.
 	const blockKinds = $derived((message.content_blocks ?? []).map((block) => block.kind));
 	const onlyBlocks = (kinds: string[]) => blockKinds.length > 0 && blockKinds.every((kind) => kinds.includes(kind));
-	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed']));
+	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed', 'stopped']));
 	const spentSuggestions = $derived(answered && onlyBlocks(['suggestions']));
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
 	const fresh = untrack(() => Date.now() - Date.parse(message.created_at) < 30_000);
@@ -229,6 +239,14 @@
 		dislikeSent = null;
 	}
 
+	// The memory it leaned on most, and how many more ("Vegetarian +2 more"); a teammate's reply
+	// in a shared chat only has the count.
+	const usedFact = $derived.by(() => {
+		const used = message.used_memories ?? [];
+		if (used.length === 0) return message.memory_count === 1 ? m.used_chip_one() : m.used_chip_many({ count: message.memory_count });
+		return used.length > 1 ? m.memory_used_more({ fact: used[0].content, count: used.length - 1 }) : used[0].content;
+	});
+
 	function showMemories() {
 		memoriesOpen = true;
 	}
@@ -260,17 +278,22 @@
 				{:else}
 					<span class="message__sender">{senderLabel}</span>
 				{/if}
-				{#if handoffFrom}
-					<span class="message__handoff">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v7a4 4 0 0 0 4 4h12" /><path d="m15 10 5 5-5 5" /></svg>
-						{m.thread_handoff({ name: handoffFrom })}
-					</span>
-				{/if}
 			</span>
 		{/if}
 
 		{#if message.sender === 'user' && message.author_name}
 			<span class="message__who message__who--teammate">{message.author_name}</span>
+		{/if}
+
+		{#if handoffFrom && message.sender === 'assistant'}
+			<!-- Who passed the question to whom (Chat responses → Handoff); it can be sent back with an @mention. -->
+			<div class="message__handoff-row">
+				<Handoff
+					from={{ agent: crewId(handoffFrom), name: handoffFrom }}
+					to={{ agent: crewId(message.agent_display_name), name: senderLabel }}
+					onback={send && !answered ? () => send(`@${handoffFrom} ${m.handoff_back_message()}`) : undefined}
+				/>
+			</div>
 		{/if}
 
 		{#if reasoning.length > 0 || steps.length > 0 || sources.length > 0}
@@ -382,10 +405,13 @@
 		</div>
 		{/if}
 		{#if message.sender === 'assistant' && message.memory_count > 0}
-			<button type="button" class="message-memories" onclick={showMemories} aria-label={m.used_chip_label({ count: message.memory_count })}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="8" r="3" /><circle cx="10" cy="18" r="3" /><path d="M8.5 7.5 15 8M7.5 8.5l1.7 7M16.4 10.4l-4.6 5.4" /></svg>
-				{message.memory_count === 1 ? m.used_chip_one() : m.used_chip_many({ count: message.memory_count })}
-			</button>
+			<!-- What the reply leaned on from memory (Chat responses → Memory / Used): memory is never silent. -->
+			<div class="message__memory">
+				<MemoryUsed fact={usedFact} onmanage={showMemories} />
+			</div>
+		{/if}
+		{#if message.sender === 'assistant' && savedMemories.length > 0}
+			<SavedMemoriesTwin memories={savedMemories} />
 		{/if}
 		{/if}
 	</div>
@@ -409,31 +435,11 @@
 		margin-top: 8px;
 		max-width: 100%;
 	}
-	/* Always visible (unlike the hover actions): which memories shaped a reply is worth seeing. */
-	.message-memories {
-		align-self: flex-start;
-		margin-top: 2px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		min-height: 32px;
-		padding: 0 10px;
-		border: none;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--md-sys-color-on-surface-variant);
-		font: inherit;
-		font-size: 0.75rem;
-		font-weight: 600;
-		cursor: pointer;
+	.message__memory {
+		margin-top: 4px;
 	}
-	.message-memories:hover {
-		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-		color: var(--md-sys-color-on-surface);
-	}
-	.message-memories:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
+	.message__handoff-row {
+		margin-bottom: 8px;
 	}
 	/* Assistant turns are editorial — no bubble, the agent's shape as the avatar — so long
 	   answers read like a page. The user's own turns are compact bubbles whose tight corner
@@ -499,25 +505,6 @@
 	.message-bubble--user.message-bubble--teammate {
 		background: var(--md-sys-color-surface-container-highest);
 		color: var(--md-sys-color-on-surface);
-	}
-	.message__handoff {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.75rem;
-		animation: handoff-in var(--nomi-motion-spatial-default, 350ms) both;
-	}
-	@keyframes handoff-in {
-		from {
-			opacity: 0;
-			transform: translateX(-6px);
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.message__handoff {
-			animation: none;
-		}
 	}
 	.message__plain {
 		margin: 0;

@@ -203,9 +203,24 @@ pub enum ContentBlock {
         session_id: Uuid,
         name: String,
     },
+    /// What a stop stopped, task by task (the supervisor's reply to "stop").
+    Stopped {
+        tasks: Vec<StoppedTask>,
+    },
     /// A view (a list, a timeline, a chart, a form…; see `crate::views`), from the `show` tool or
     /// an agent's own tool. Stored flat: `{"kind": "view", "view": "timeline", "events": [...]}`.
     View(crate::views::View),
+}
+
+/// One thing a stop ended: `stopped` part-way, or `waiting` (it never started).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoppedTask {
+    /// The agent type that had it (`money`, `coding`, `chitchat`…).
+    pub agent: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub state: String,
 }
 
 impl ToolOutcome {

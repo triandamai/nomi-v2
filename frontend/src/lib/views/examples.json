@@ -187,5 +187,18 @@
 		"delivery": 10000,
 		"checkout_url": "https://www.sayurbox.com",
 		"note": "Prices from Sayurbox at 14:05. Dana records it when you pay."
+	},
+	{
+		"view": "boundary",
+		"title": "I can’t move money between your accounts",
+		"reason": "Nomi only records and advises; transfers happen in your bank’s own app.",
+		"alternatives": [
+			{ "title": "Log the transfer once it’s done", "detail": "Dana keeps both balances right", "agent": "money", "message": "Log the transfer to my savings once I’ve sent it" },
+			{ "title": "Remind me on payday", "detail": "25th, 09:00", "agent": "reminders", "message": "Remind me to move money to savings every payday" }
+		]
+	},
+	{
+		"view": "quick_replies",
+		"replies": ["This week", "This month", "Since payday"]
 	}
 ]

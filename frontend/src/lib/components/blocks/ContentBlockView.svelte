@@ -15,6 +15,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import QuestionsTwin from './twins/QuestionsTwin.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
+	import StoppedBlock from './StoppedBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 
@@ -57,6 +58,7 @@
 		run_failed: RunFailedTwin,
 		suggestions: SuggestionsTwin,
 		voice: VoiceBlock,
+		stopped: StoppedBlock,
 		view: ViewBlock
 	};
 	const Block = $derived(BLOCKS[block.kind]);

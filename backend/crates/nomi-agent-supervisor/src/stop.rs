@@ -142,6 +142,10 @@ pub struct StopReport {
     pub cancelled_approval_message_ids: Vec<Uuid>,
     /// `(delegation_id, session_id)` of every hand-off that was cancelled.
     pub cancelled_delegations: Vec<(Uuid, Uuid)>,
+    /// Each thing that was stopped, for the reply's card.
+    pub tasks: Vec<nomi_agent_core::content_block::StoppedTask>,
+    /// Messages whose cards changed (background task cards now cancelled): devices fetch them again.
+    pub updated_message_ids: Vec<(Uuid, Uuid)>,
 }
 
 impl StopReport {
@@ -228,6 +232,15 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
     .fetch_all(&mut *conn)
     .await?;
 
+    let locale = nomi_agent_core::user_locale(&mut *conn, request.user_id).await;
+    let mut tasks: Vec<nomi_agent_core::content_block::StoppedTask> = Vec::new();
+    let task = |agent: &str, title: String, started: bool| nomi_agent_core::content_block::StoppedTask {
+        agent: agent.to_string(),
+        title: title.chars().take(140).collect(),
+        detail: None,
+        state: if started { "stopped" } else { "waiting" }.to_string(),
+    };
+
     let mut approval_message_ids: Vec<Uuid> = Vec::new();
     for (session_id, agent_type, pending_message_id) in sessions {
         touched_sessions.insert(session_id);
@@ -235,41 +248,50 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
         if let Some(id) = pending_message_id.and_then(|id| id.parse().ok()) {
             approval_message_ids.push(id);
         }
+        tasks.push(task(&agent_type, locale.t("stop.task_reply"), true));
         stopped_types.push(agent_type);
     }
 
-    let delegations: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-        "UPDATE agent_delegations SET status = 'cancelled', completed_at = now(), error = 'Stopped by the user' \
-         WHERE user_id = $1 AND status IN ('pending', 'processing') \
-           AND ($2::uuid IS NULL OR session_id = $2) \
-           AND ($3::text IS NULL OR target_agent_type = $3) \
-         RETURNING id, session_id, target_agent_type",
+    let delegations: Vec<(Uuid, Uuid, String, String, bool)> = sqlx::query_as(
+        "UPDATE agent_delegations d SET status = 'cancelled', completed_at = now(), error = 'Stopped by the user' \
+         FROM agent_delegations before \
+         WHERE before.id = d.id AND d.user_id = $1 AND d.status IN ('pending', 'processing') \
+           AND ($2::uuid IS NULL OR d.session_id = $2) \
+           AND ($3::text IS NULL OR d.target_agent_type = $3) \
+         RETURNING d.id, d.session_id, d.target_agent_type, d.task, before.status = 'processing'",
     )
     .bind(request.user_id)
     .bind(session_filter)
     .bind(&agent_filter)
     .fetch_all(&mut *conn)
     .await?;
-    for (_, session_id, target) in &delegations {
+    for (_, session_id, target, what, started) in &delegations {
         touched_sessions.insert(*session_id);
+        tasks.push(task(target, what.clone(), *started));
         stopped_types.push(target.clone());
     }
 
-    let bg_tasks: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-        "UPDATE background_tasks SET status = 'cancelled', completed_at = now(), error = 'Stopped by the user' \
-         WHERE user_id = $1 AND status IN ('pending', 'running') \
-           AND ($2::uuid IS NULL OR session_id = $2) \
-           AND ($3::text IS NULL OR agent_type = $3) \
-         RETURNING id, session_id, agent_type",
+    let bg_tasks: Vec<(Uuid, Uuid, String, String, bool)> = sqlx::query_as(
+        "UPDATE background_tasks t SET status = 'cancelled', completed_at = now(), error = 'Stopped by the user' \
+         FROM background_tasks before \
+         WHERE before.id = t.id AND t.user_id = $1 AND t.status IN ('pending', 'running') \
+           AND ($2::uuid IS NULL OR t.session_id = $2) \
+           AND ($3::text IS NULL OR t.agent_type = $3) \
+         RETURNING t.id, t.session_id, t.agent_type, t.label, before.status = 'running'",
     )
     .bind(request.user_id)
     .bind(session_filter)
     .bind(&agent_filter)
     .fetch_all(&mut *conn)
     .await?;
-    for (_, session_id, agent_type) in &bg_tasks {
+    let mut updated_message_ids = Vec::new();
+    for (id, session_id, agent_type, label, started) in &bg_tasks {
         touched_sessions.insert(*session_id);
+        tasks.push(task(agent_type, label.clone(), *started));
         stopped_types.push(agent_type.clone());
+        for message_id in nomi_agent_core::background::settle_task_cards(&mut *conn, None, *session_id, *id, "cancelled").await {
+            updated_message_ids.push((*session_id, message_id));
+        }
     }
 
     let mut dropped_messages = 0;
@@ -288,6 +310,7 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
             let is_the_supervisor_turn = request.from_supervisor_turn && session_id == request.session_id;
             if !is_the_supervisor_turn && !sessions_with_agent.contains(&session_id) {
                 touched_sessions.insert(session_id);
+                tasks.push(task("chitchat", locale.t("stop.task_reply"), true));
                 stopped_types.push("chitchat".to_string());
             }
         }
@@ -304,6 +327,9 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
         .fetch_all(&mut *conn)
         .await?;
         dropped_messages = dropped.len();
+        for _ in &dropped {
+            tasks.push(task("chitchat", locale.t("stop.task_queued"), false));
+        }
         touched_sessions.extend(dropped);
     }
 
@@ -334,7 +360,9 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
         chats: touched_sessions.len(),
         dropped_messages,
         cancelled_approval_message_ids: approval_message_ids,
-        cancelled_delegations: delegations.into_iter().map(|(id, session_id, _)| (id, session_id)).collect(),
+        cancelled_delegations: delegations.into_iter().map(|(id, session_id, ..)| (id, session_id)).collect(),
+        tasks,
+        updated_message_ids,
     })
 }
 
@@ -375,6 +403,14 @@ pub fn describe(report: &StopReport, target: &StopTarget, target_name: Option<&s
     }
     parts.push(locale.t("stop.pick_up"));
     parts.join(" ")
+}
+
+/// The reply's card: what was stopped, task by task. None when nothing was.
+pub fn stopped_blocks(report: &StopReport) -> Option<serde_json::Value> {
+    if report.tasks.is_empty() {
+        return None;
+    }
+    serde_json::to_value([nomi_agent_core::content_block::ContentBlock::Stopped { tasks: report.tasks.clone() }]).ok()
 }
 
 pub struct StopMessageOutcome {
@@ -421,12 +457,14 @@ pub async fn handle_stop_message(
     let reply = describe(&report, &target, target_name.as_deref(), locale);
 
     // clock_timestamp() so the reply sorts after the user's message inside this transaction.
+    let blocks = stopped_blocks(&report);
     let reply_message_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name, created_at) \
-         VALUES ($1, NULL, $2, 'Supervisor', clock_timestamp()) RETURNING id",
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name, created_at) \
+         VALUES ($1, NULL, $2, $3, 'Supervisor', clock_timestamp()) RETURNING id",
     )
     .bind(session_id)
     .bind(&reply)
+    .bind(&blocks)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;

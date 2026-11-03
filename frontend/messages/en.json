@@ -2795,5 +2795,9 @@
 	"view_cart_swap": "Swap {item}: {swap}",
 	"view_cart_save": "Save {title} as a shopping list: {items}",
 	"view_form_title": "A few details",
-	"view_form_missing": "Fill in the fields marked *"
+	"view_form_missing": "Fill in the fields marked *",
+	"supervisor_resume_message": "Pick up where you left off",
+	"view_task_cancelled": "Cancelled",
+	"memory_used_more": "{fact} +{count} more",
+	"handoff_back_message": "please take this one instead"
 }

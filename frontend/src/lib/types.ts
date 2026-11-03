@@ -77,7 +77,9 @@ export type ContentBlock =
 			/** Where the reminder stands now (added when the chat loads). */
 			state?: 'open' | 'done' | 'snoozed' | 'cancelled' | 'gone';
 			snoozed_until?: string;
-	  };
+	  }
+	/** What a stop ended, task by task (the Supervisor's reply to "stop"). */
+	| { kind: 'stopped'; tasks: { agent: string; title: string; detail?: string | null; state: 'stopped' | 'waiting' | 'done' }[] };
 
 export interface MessageItem {
 	id: string;
@@ -99,6 +101,17 @@ export interface MessageItem {
 	edited_at?: string | null;
 	/** Earlier takes of the person's message and its replies, kept when it ran again. */
 	versions?: number;
+	/** What the crew learned from this message of the person's and still remembers. */
+	saved_memories?: MessageMemory[];
+	/** What this reply drew on from memory, most relevant first (the viewer's own). */
+	used_memories?: MessageMemory[];
+}
+
+/** A memory as a message names it: learned from it, or used by it. */
+export interface MessageMemory {
+	id: string;
+	content: string;
+	kind: MemoryKind;
 }
 
 /** An earlier take of a turn (GET …/messages/:id/versions): what the person wrote, the replies it got. */
