@@ -129,8 +129,7 @@ pub async fn request_avatar_upload_url(
     AuthClaims(claims): AuthClaims,
     Json(req): Json<AvatarUploadUrlRequest>,
 ) -> Result<Json<AvatarUploadUrlResponse>, (StatusCode, String)> {
-    let s3 = state.current_s3().await;
-    let Some(s3) = &s3 else {
+    let Some(s3) = &state.s3 else {
         return Err((StatusCode::SERVICE_UNAVAILABLE, "avatar upload is not configured".to_string()));
     };
 

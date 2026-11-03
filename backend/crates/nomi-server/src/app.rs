@@ -56,15 +56,6 @@ impl nomi_auth::extractor::HasJwtSecret for AppState {
     }
 }
 
-impl AppState {
-    /// Returns the active S3 configuration: state's initial S3 or dynamically loads the latest from settings.
-    pub async fn current_s3(&self) -> Option<S3Config> {
-        if let Some(s3) = &self.s3 {
-            return Some(s3.clone());
-        }
-        crate::configuration::storage().await
-    }
-}
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
