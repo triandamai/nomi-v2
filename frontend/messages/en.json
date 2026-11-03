@@ -2799,5 +2799,21 @@
 	"supervisor_resume_message": "Pick up where you left off",
 	"view_task_cancelled": "Cancelled",
 	"memory_used_more": "{fact} +{count} more",
-	"handoff_back_message": "please take this one instead"
+	"handoff_back_message": "please take this one instead",
+	"activity_wrote_files": "Wrote {count} files",
+	"view_task_command": "Command",
+	"reply_continue_message": "Continue where you stopped",
+	"questions_skipped": "Skipped",
+	"plan_draft_meta": "{count} steps · v{version}",
+	"plan_ask_move": "Move step {from} ({step}) to position {to} in the plan.",
+	"plan_ask_remove": "Remove step {index} ({step}) from the plan.",
+	"plan_ask_assign": "Give step {index} ({step}) to {name}.",
+	"plan_ask_add": "Add a step to the plan: {step}",
+	"plan_ask_discard": "Discard this plan.",
+	"plan_ask_run_all": "Looks good, build it.",
+	"plan_assign_label": "Who should do step {index}?",
+	"plan_add_label": "A step to add",
+	"plan_changes_label": "What should change?",
+	"plan_run_all": "Build it",
+	"plan_run_all_detail": "Koda builds every step and runs the checks"
 }

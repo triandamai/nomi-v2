@@ -2799,5 +2799,21 @@
 	"supervisor_resume_message": "Lanjutkan yang tadi",
 	"view_task_cancelled": "Dibatalkan",
 	"memory_used_more": "{fact} +{count} lainnya",
-	"handoff_back_message": "tolong kamu yang jawab ini"
+	"handoff_back_message": "tolong kamu yang jawab ini",
+	"activity_wrote_files": "Menulis {count} file",
+	"view_task_command": "Perintah",
+	"reply_continue_message": "Lanjutkan dari yang tadi",
+	"questions_skipped": "Dilewati",
+	"plan_draft_meta": "{count} langkah · v{version}",
+	"plan_ask_move": "Pindahkan langkah {from} ({step}) ke urutan {to} di rencana.",
+	"plan_ask_remove": "Hapus langkah {index} ({step}) dari rencana.",
+	"plan_ask_assign": "Serahkan langkah {index} ({step}) ke {name}.",
+	"plan_ask_add": "Tambahkan langkah ke rencana: {step}",
+	"plan_ask_discard": "Buang rencana ini.",
+	"plan_ask_run_all": "Sudah oke, bangun sekarang.",
+	"plan_assign_label": "Siapa yang mengerjakan langkah {index}?",
+	"plan_add_label": "Langkah yang mau ditambahkan",
+	"plan_changes_label": "Apa yang perlu diubah?",
+	"plan_run_all": "Bangun sekarang",
+	"plan_run_all_detail": "Koda mengerjakan semua langkah dan menjalankan pengecekan"
 }

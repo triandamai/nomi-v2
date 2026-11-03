@@ -79,6 +79,8 @@ export type ContentBlock =
 			snoozed_until?: string;
 	  }
 	/** What a stop ended, task by task (the Supervisor's reply to "stop"). */
+	/** Something that happened to a project (a publish), as one logged line above the message's text. */
+	| { kind: 'project_event'; event: 'deploy' | 'rollback' | 'domain' | 'database'; ok?: boolean; text: string }
 	| { kind: 'stopped'; tasks: { agent: string; title: string; detail?: string | null; state: 'stopped' | 'waiting' | 'done' }[] };
 
 export interface MessageItem {
@@ -183,6 +185,8 @@ export interface AgentPlansResponse {
 }
 
 export interface RenderedMessage extends MessageItem {
+	/** Deleted here: a placeholder stays where it was (never from the server). */
+	deleted?: boolean;
 	content_html: string;
 }
 

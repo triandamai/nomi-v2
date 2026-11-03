@@ -50,4 +50,14 @@ describe('enrichReply', () => {
 		expect(root.querySelector('code')?.textContent).toBe('@Kala');
 		undo();
 	});
+
+	it('shows a file named in inline code as a file mention, and leaves other code alone', () => {
+		const root = reply('<p>Logged in <code>rent-2026.xlsx</code>, see <code>Math.round</code>.</p>');
+		const undo = enrichReply(root, [], 's');
+		flushSync();
+		expect(root.querySelectorAll('.rich-inline').length).toBe(1);
+		expect(root.textContent).toContain('rent-2026.xlsx');
+		expect(root.querySelector('code')?.textContent).toBe('Math.round');
+		undo();
+	});
 });

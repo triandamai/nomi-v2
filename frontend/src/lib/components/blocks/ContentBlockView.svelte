@@ -16,8 +16,11 @@
 	import QuestionsTwin from './twins/QuestionsTwin.svelte';
 	import VoiceBlock from './VoiceBlock.svelte';
 	import StoppedBlock from './StoppedBlock.svelte';
+	import ProjectEventBlock from './ProjectEventBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
+	import ActivityBlock from '$lib/components/ds/conversation/ActivityBlock.svelte';
+	import { changeLabel, lineChange } from '$lib/fileChanges';
 
 	let {
 		block,
@@ -26,6 +29,7 @@
 		fresh = false,
 		answered = false,
 		text = '',
+		time = '',
 		onremove
 	}: {
 		block: ContentBlock;
@@ -37,6 +41,8 @@
 		answered?: boolean;
 		/** The message's own text, for blocks that show it (an error bubble). */
 		text?: string;
+		/** When the message came, "15:38", for blocks that log it (an event row). */
+		time?: string;
 		/** The block took its message away (a failed run, tried again). */
 		onremove?: () => void;
 	} = $props();
@@ -59,6 +65,7 @@
 		suggestions: SuggestionsTwin,
 		voice: VoiceBlock,
 		stopped: StoppedBlock,
+		project_event: ProjectEventBlock,
 		view: ViewBlock
 	};
 	const Block = $derived(BLOCKS[block.kind]);
@@ -73,8 +80,15 @@
 		<FileChangeBlock {block} {fresh} />
 	{/await}
 {:else if block.kind === 'file_writes'}
-	<!-- Every file of a batch, each its own tab; only a short batch opens by itself. -->
+	<!-- What was written, summed up with each file's change (ActivityBlock); then every file of the
+	     batch, each its own tab; only a short batch opens by itself. -->
+	{@const changes = block.files.map((file) => lineChange(file.content, file.previous_content))}
 	<div class="file-batch">
+		<ActivityBlock
+			title={m.activity_wrote_files({ count: block.files.length })}
+			total={changeLabel({ added: changes.reduce((sum, c) => sum + c.added, 0), removed: changes.reduce((sum, c) => sum + c.removed, 0) })}
+			files={block.files.map((file, index) => ({ path: file.path, change: changeLabel(changes[index]) }))}
+		/>
 		{#await fileChangeBlock() then { default: FileChangeBlock }}
 			{#each block.files as file (file.path)}
 				<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
@@ -84,7 +98,7 @@
 {:else if block.kind === 'reasoning'}
 	<Reasoning label={m.reasoning_process()} text={block.text} />
 {:else if Block}
-	<Block {block} {messageId} {agent} {fresh} {answered} {text} {onremove} />
+	<Block {block} {messageId} {agent} {fresh} {answered} {text} {time} {onremove} />
 {/if}
 
 <style>

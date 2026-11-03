@@ -5,6 +5,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import ClarifyCard from '$lib/components/ds/chat/ClarifyCard.svelte';
 	import ClarifyAnswered from '$lib/components/ds/chat/ClarifyAnswered.svelte';
+	import ClarifyReview from '$lib/components/ds/chat/ClarifyReview.svelte';
 	import type { ClarifyAnswer, ClarifyQuestion } from '$lib/components/ds/chat/clarify';
 	import { composeAnswers, useChatSend } from '$lib/chatSend';
 	import { crewId } from '$lib/crewId';
@@ -45,6 +46,22 @@
 		return [answer.other.trim()];
 	}
 
+	// Two questions or more end on a review of the answers before they go (Chat responses →
+	// Clarify / Review); each can be changed from there.
+	let reviewing = $state<ClarifyAnswer[] | null>(null);
+	// What was answered, so going back from the review keeps it.
+	let lastAnswers = $state<ClarifyAnswer[] | null>(null);
+	let step = $state(0);
+
+	function finish(answers: ClarifyAnswer[]) {
+		if (block.questions.length < 2) reply(composeAnswers(block.questions, answers.map(picked), ''));
+		else reviewing = answers;
+	}
+
+	const reviewed = $derived(
+		(reviewing ?? []).map((answer, index) => ({ topic: questions[index].topic, value: picked(answer, index).join(', ') || m.questions_skipped() })),
+	);
+
 	function reply(text: string) {
 		if (!send || !text) return;
 		send(text);
@@ -59,12 +76,30 @@
 			{#each block.questions as question, index (index)}<li>{question.question}</li>{/each}
 		</ol>
 	{/if}
+{:else if reviewing}
+	<ClarifyReview
+		answers={reviewed}
+		onedit={(index) => {
+			step = index;
+			reviewing = null;
+		}}
+		onback={() => {
+			step = block.questions.length - 1;
+			reviewing = null;
+		}}
+		onconfirm={() => reviewing && reply(composeAnswers(block.questions, reviewing.map(picked), ''))}
+	/>
 {:else}
 	<ClarifyCard
 		agent={crewId(agent)}
 		title={block.intro ?? m.questions_title()}
 		{questions}
-		onfinish={(answers) => reply(composeAnswers(block.questions, answers.map(picked), ''))}
+		bind:step
+		answers={lastAnswers ?? undefined}
+		onfinish={(answers) => {
+			lastAnswers = answers;
+			finish(answers);
+		}}
 		onskipall={() => reply(m.questions_skip_reply())}
 	/>
 {/if}

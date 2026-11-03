@@ -6,7 +6,7 @@
 	import AgentShape from './m3/AgentShape.svelte';
 	import { agentLook, GRADIENT_STOPS } from './m3/shapes';
 	import ContentBlockView from './blocks/ContentBlockView.svelte';
-	import ActivityDisclosure from './blocks/ActivityDisclosure.svelte';
+	import ReplyActivity from './blocks/ReplyActivity.svelte';
 	import { splitAttachments } from '$lib/attachments';
 	import MessageAttachments from './MessageAttachments.svelte';
 	import IconCheck from './icons/IconCheck.svelte';
@@ -14,6 +14,9 @@
 	import IconShare from './icons/IconShare.svelte';
 	import IconDelete from './icons/IconDelete.svelte';
 	import MessageDeleteSheet from './MessageDeleteSheet.svelte';
+	import ReplyDeleteTwin from './blocks/twins/ReplyDeleteTwin.svelte';
+	import DeletedReply from './ds/chat/DeletedReply.svelte';
+	import MessageUser from './ds/conversation/MessageUser.svelte';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
 	import type { RenderedMessage } from '$lib/types';
 	import ResponseActions from './ds/chat/ResponseActions.svelte';
@@ -46,6 +49,7 @@
 		handoffFrom = null,
 		answered = false,
 		savedMemories = [],
+		onregenerate,
 		ondelete,
 		onrerun,
 	}: {
@@ -68,6 +72,8 @@
 		answered?: boolean;
 		/** What the crew remembered from the person's message this reply answers (shown on the turn's last reply). */
 		savedMemories?: MessageMemory[];
+		/** A deleted reply's placeholder asks for the turn again. */
+		onregenerate?: () => void;
 		/** Offers Delete; called with the ids of the messages that went. */
 		ondelete?: (ids: string[]) => void;
 		/** The latest turn ran again (edited, or a reply asked for again): the person's message as it now stands. */
@@ -81,6 +87,9 @@
 	const onlyBlocks = (kinds: string[]) => blockKinds.length > 0 && blockKinds.every((kind) => kinds.includes(kind));
 	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed', 'stopped']));
 	const spentSuggestions = $derived(answered && onlyBlocks(['suggestions']));
+	// Blocks that sit above the message's own text rather than standing in for it.
+	const withText = $derived(onlyBlocks(['project_event']));
+	const clock = $derived(new Date(message.created_at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }));
 	// Arrived in the last half minute (live, not from history): file cards open so the change is seen.
 	const fresh = untrack(() => Date.now() - Date.parse(message.created_at) < 30_000);
 	const sources = $derived(message.sources ?? []);
@@ -90,6 +99,8 @@
 	let bubbleEl: HTMLDivElement | undefined = $state();
 	// The files a user attached are referenced in the message text (see $lib/attachments).
 	const attached = $derived(message.sender === 'user' ? splitAttachments(message.content) : null);
+	// The person's own words (no files, not a teammate's) are the design system's user message.
+	const dsUser = $derived(message.sender === 'user' && !message.author_name && !(attached && attached.files.length > 0) && !message.content_blocks?.length);
 	let feedback = $state(untrack(() => message.my_feedback));
 	let messageCopied = $state(false);
 	let shareCopied = $state(false);
@@ -252,7 +263,26 @@
 	}
 </script>
 
-{#if !spentSuggestions}
+{#snippet earlierReplies()}
+	{#if shown}
+		<div class="message__earlier" role="group" aria-label={m.msg_earlier_version({ version: viewing ?? total, total })}>
+			<p class="message__earlier-label">{m.msg_earlier_version({ version: viewing ?? total, total })}</p>
+			{#each shown.replies as reply, index (index)}
+				<div class="message__earlier-reply">
+					{#if reply.agent_display_name}<span class="message__earlier-name">{reply.agent_display_name}</span>{/if}
+					<div class="message-markdown">{@html reply.content_html}</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
+{#if message.deleted}
+	<!-- What's left where a reply was, so the thread still reads (Chat responses → Deleted Reply). -->
+	<div class="message message--deleted">
+		<DeletedReply name={senderLabel} {onregenerate} />
+	</div>
+{:else if !spentSuggestions}
 <div
 	class="message"
 	class:message--user={message.sender === 'user'}
@@ -296,19 +326,39 @@
 			</div>
 		{/if}
 
-		{#if reasoning.length > 0 || steps.length > 0 || sources.length > 0}
-			<ActivityDisclosure thinking={reasoning} {steps} {sources} live={thinkingOnly} />
+		{#if reasoning.length > 0 || steps.length > 0 || (sources.length > 0 && cited.length === 0)}
+			<ReplyActivity thinking={reasoning} {steps} sources={cited.length === 0 ? sources : []} live={thinkingOnly} />
 		{/if}
 
 		{#if !thinkingOnly && editing}
 			<MessageEditor value={message.content} version={total > 1 ? `${total} / ${total}` : undefined} onsave={saveEdit} oncancel={() => (editing = false)} />
+		{:else if !thinkingOnly && dsUser}
+			<!-- What the person said (Design System / Nomi → Conversation → Message / User): copy, edit,
+			     time, and stepping through earlier versions; delete sits beside it. -->
+			<div class="message__user">
+				<MessageUser
+					text={shown?.text ?? message.content}
+					time={clock}
+					edited={!!message.edited_at && viewing === null}
+					version={total > 1 ? { current: viewing ?? total, total, onprev: () => step(-1), onnext: () => step(1) } : undefined}
+					onedit={latest ? () => (editing = true) : undefined}
+				/>
+				{#if ondelete}
+					<button type="button" class="message-action-btn message__user-delete" aria-label={m.msg_delete()} title={m.msg_delete()} onclick={() => (deleteOpen = true)}>
+						<IconDelete size={16} />
+					</button>
+				{/if}
+			</div>
+			{#if rerunError}<p class="message__error" role="alert">{m.msg_rerun_failed()}</p>{/if}
+			{@render earlierReplies()}
 		{:else if !thinkingOnly}
 		<div bind:this={bubbleEl} class="message-bubble md-body-large" class:message-bubble--user={message.sender === 'user'} class:message-bubble--teammate={!!message.author_name}>
 			{#if message.content_blocks && message.content_blocks.length > 0}
 				<div class="flex flex-col gap-3">
 					{#each message.content_blocks as block, i (i)}
-						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} text={message.content} onremove={() => ondelete?.([message.id])} />
+						<ContentBlockView {block} messageId={message.id} agent={message.agent_display_name} {fresh} {answered} text={message.content} time={clock} onremove={() => ondelete?.([message.id])} />
 					{/each}
+					{#if withText}<div class="message-markdown">{@html message.content_html}</div>{/if}
 				</div>
 			{:else if attached && attached.files.length > 0}
 				<MessageAttachments files={attached.files} />
@@ -330,17 +380,7 @@
 				{#if message.edited_at && viewing === null}<span class="message__edited">{m.msg_edited({ time: new Date(message.edited_at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }) })}</span>{/if}
 			</div>
 		{/if}
-		{#if shown}
-			<div class="message__earlier" role="group" aria-label={m.msg_earlier_version({ version: viewing ?? total, total })}>
-				<p class="message__earlier-label">{m.msg_earlier_version({ version: viewing ?? total, total })}</p>
-				{#each shown.replies as reply, index (index)}
-					<div class="message__earlier-reply">
-						{#if reply.agent_display_name}<span class="message__earlier-name">{reply.agent_display_name}</span>{/if}
-						<div class="message-markdown">{@html reply.content_html}</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
+		{@render earlierReplies()}
 
 		{#if !statusOnly && message.sender === 'assistant'}
 		<div class="message__reply-actions">
@@ -419,7 +459,11 @@
 {/if}
 
 {#if ondelete}
-	<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />
+	{#if message.sender === 'assistant'}
+		<ReplyDeleteTwin bind:open={deleteOpen} messageId={message.id} name={senderLabel} ondeleted={ondelete} />
+	{:else}
+		<MessageDeleteSheet bind:open={deleteOpen} messageId={message.id} ondeleted={ondelete} />
+	{/if}
 {/if}
 
 {#if message.sender === 'assistant'}
@@ -434,6 +478,28 @@
 	.message__sources {
 		margin-top: 8px;
 		max-width: 100%;
+	}
+	.message__user {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		width: 100%;
+	}
+	.message__user-delete {
+		opacity: 0;
+		transition: opacity var(--nomi-motion-effects-fast);
+	}
+	.message:hover .message__user-delete,
+	.message:focus-within .message__user-delete {
+		opacity: 1;
+	}
+	@media (hover: none) {
+		.message__user-delete {
+			opacity: 1;
+		}
+	}
+	.message--deleted {
+		margin: 10px 0 0 48px;
 	}
 	.message__memory {
 		margin-top: 4px;

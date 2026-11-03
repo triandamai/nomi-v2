@@ -49,6 +49,8 @@
 	import StopHint from './ds/chat/StopHint.svelte';
 	import NewDivider from './ds/chat/NewDivider.svelte';
 	import LiveStep from './ds/conversation/LiveStep.svelte';
+	import ReplyText from './ds/chat/ReplyText.svelte';
+	import { applyStreamEvent, emptyStream, type LiveReply } from '$lib/liveReply';
 	import type { MessageMemory } from '$lib/types';
 	import { dayLabel, toISODate } from '$lib/dates';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -453,10 +455,11 @@
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let messageInput: HTMLTextAreaElement | undefined = $state();
 	// Cards in the thread (answers to an agent's questions) reply through this composer.
-	provideChatSend((text) => {
+	function provideSend(text: string) {
 		draft = text;
 		void tick().then(() => composerForm?.requestSubmit());
-	});
+	}
+	provideChatSend(provideSend);
 
 	let localMessages = $state(untrack(() => messages));
 
@@ -578,8 +581,14 @@
 	const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 	const STOP_COMMAND = /^\W*(stop|cancel|abort|halt|berhenti|hentikan|batalkan)\b/i;
 
+	// The reply as it's being written (Chat responses → Streaming), then as it was left when the
+	// person stopped it or the provider cut it off. Gone once the real message lands.
+	let live = $state<LiveReply>(emptyStream());
+	let liveEnd = $state<{ status: 'stopped' | 'interrupted'; elapsed: string; reason: string } | null>(null);
+
 	/** The supervisor answered a stop command: no turn is coming, and any running one is ending. */
 	function settleAfterStop() {
+		if (live.text.trim()) liveEnd = { status: 'stopped', elapsed: untrack(() => elapsed), reason: '' };
 		stopRequested = true;
 		submitting = false;
 		openTurns = [];
@@ -713,6 +722,32 @@
 	const threadMessages = $derived(threadItems.map((item) => item.message));
 	const lastUserIndex = $derived(threadMessages.findLastIndex((message) => message.sender === 'user'));
 
+	// A reply deleted here leaves a placeholder in its place (DeletedReply); anything else that
+	// went (the person's message and its replies) leaves the thread.
+	function removeMessages(ids: string[]) {
+		const single = ids.length === 1 ? localMessages.find((message) => message.id === ids[0]) : undefined;
+		if (single?.sender === 'assistant') {
+			localMessages = localMessages.map((message) => (message.id === single.id ? { ...message, deleted: true } : message));
+		} else {
+			localMessages = localMessages.filter((message) => !ids.includes(message.id));
+		}
+	}
+
+	/** Asks for a deleted reply's turn again: the person's message that started it runs again. */
+	async function regenerateFrom(index: number) {
+		const start = threadMessages.slice(0, index).findLast((message) => message.sender === 'user');
+		if (!start) return;
+		const response = await fetch(`${page.url.pathname}/message/${start.id}/regenerate`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ style: 'again' }),
+		}).catch(() => null);
+		if (response?.ok) {
+			const done = (await response.json()) as { message_id: string; total: number };
+			localMessages = afterRerun(localMessages, done.message_id, { versions: done.total - 1 });
+		}
+	}
+
 	// What the crew remembered from the person's message shows on the last reply of its turn.
 	function savedFor(list: RenderedMessage[], index: number): MessageMemory[] {
 		if (list[index].sender !== 'assistant' || list[index + 1]?.sender === 'assistant') return [];
@@ -804,7 +839,7 @@
 			}
 		},
 		message(data) {
-			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string; message_ids?: string[] };
+			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string; message_ids?: string[]; event?: unknown };
 			try {
 				envelope = JSON.parse(String(data));
 			} catch {
@@ -813,7 +848,13 @@
 			const turnId = envelope.turn_job_id ?? NIL_UUID;
 			if (envelope.kind === 'Delta') {
 				if (!stopRequested && !openTurns.includes(turnId)) openTurns = [...openTurns, turnId];
+				if (!stopRequested && envelope.event) {
+					live = applyStreamEvent(live, envelope.event);
+					liveEnd = null;
+				}
 			} else if (envelope.kind === 'TurnCompleted') {
+				live = emptyStream();
+				liveEnd = null;
 				stopRequested = false;
 				closeTurn(turnId);
 				turnError = false;
@@ -821,6 +862,9 @@
 					fetchAndUpsertMessage(envelope.message_id);
 				}
 			} else if (envelope.kind === 'TurnFailed') {
+				// Cut off part-way: what was written stays, with the provider's own reason.
+				if (live.text.trim() && envelope.error && !stopRequested) liveEnd = { status: 'interrupted', elapsed: untrack(() => elapsed), reason: envelope.error };
+				else live = emptyStream();
 				stopRequested = false;
 				closeTurn(turnId);
 				// The server posts why (out of credits, a rejected key, ...) as a message in the
@@ -835,6 +879,8 @@
 				invalidateAll();
 				refreshPlans(); // a build starting or ending moves its plan on
 			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
+				// A posted message is what was streaming (or comes after it): the real one takes over.
+				if (envelope.kind === 'MessageCreated' && !liveEnd) live = emptyStream();
 				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
 			} else if (envelope.kind === 'MessagesDeleted') {
 				// Deleted here or on another device, or replaced when a turn ran again.
@@ -1034,10 +1080,22 @@
 							handoffFrom={handoffFrom(threadMessages, i)}
 							answered={i < lastUserIndex}
 							savedMemories={savedFor(threadMessages, i)}
-							ondelete={(ids) => (localMessages = localMessages.filter((message) => !ids.includes(message.id)))}
+							ondelete={(ids) => removeMessages(ids)}
+							onregenerate={item.message.deleted && i > lastUserIndex ? () => regenerateFrom(i) : undefined}
 							onrerun={(startId, update) => (localMessages = afterRerun(localMessages, startId, update))}
 						/>
 					{/each}
+					{#if live.text.trim()}
+						<div class="thread__live">
+							<ReplyText
+								text={live.text}
+								status={liveEnd?.status ?? (isWorking ? 'streaming' : 'done')}
+								elapsed={liveEnd?.elapsed}
+								reason={liveEnd?.reason}
+								oncontinue={liveEnd ? () => provideSend(m.reply_continue_message()) : undefined}
+							/>
+						</div>
+					{/if}
 					{#if isWorking}
 						<!-- The step the crew is on right now, with the time so far (LiveStep), and a way to
 						     stop it here or with Escape (StopHint). -->
@@ -1097,6 +1155,8 @@
 						sendingMessage = true;
 						stopRequested = false;
 						newFromId = null;
+						live = emptyStream();
+						liveEnd = null;
 						// On a phone, sending puts the keyboard away.
 						if (touchScreen()) messageInput?.blur();
 						return async ({ result, update }) => {
@@ -1545,6 +1605,9 @@
 	.thread__older-btn:focus-visible {
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
+	}
+	.thread__live {
+		margin: 14px 0 0 48px;
 	}
 	.thread__status {
 		display: flex;

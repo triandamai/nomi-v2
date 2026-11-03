@@ -11,6 +11,8 @@ import CodeBlock from '$lib/components/ds/chat/CodeBlock.svelte';
 import Citation from '$lib/components/ds/chat/Citation.svelte';
 import Hyperlink from '$lib/components/ds/chat/Hyperlink.svelte';
 import MentionCrew from '$lib/components/ds/chat/MentionCrew.svelte';
+import MentionFile from '$lib/components/ds/chat/MentionFile.svelte';
+import { File, FileCode, FileImage, FileSpreadsheet, FileText } from '@lucide/svelte';
 import { CREW, type CrewId } from '$lib/components/ds/agents/crew';
 import { highlight } from '$lib/codeTokens';
 import { hostOf, type Cited } from '$lib/citations';
@@ -23,6 +25,50 @@ const CREW_BY_NAME = new Map<string, CrewId>(
 const MENTION_SOURCE = `@(${[...CREW_BY_NAME.keys()].join('|')})\\b`;
 const MENTION = new RegExp(MENTION_SOURCE, 'gi');
 const HAS_MENTION = new RegExp(MENTION_SOURCE, 'i');
+
+/** A file's name written as inline code (`rent-2026.xlsx`), not a path or a sentence. */
+const FILE_NAME = /^[\p{L}\p{N}_. -]{1,80}\.([A-Za-z0-9]{1,5})$/u;
+const FILE_ICONS: Record<string, typeof File> = {
+	xlsx: FileSpreadsheet,
+	xls: FileSpreadsheet,
+	csv: FileSpreadsheet,
+	ods: FileSpreadsheet,
+	numbers: FileSpreadsheet,
+	pdf: FileText,
+	doc: FileText,
+	docx: FileText,
+	txt: FileText,
+	md: FileText,
+	rtf: FileText,
+	odt: FileText,
+	png: FileImage,
+	jpg: FileImage,
+	jpeg: FileImage,
+	gif: FileImage,
+	webp: FileImage,
+	svg: FileImage,
+	heic: FileImage,
+	ts: FileCode,
+	js: FileCode,
+	svelte: FileCode,
+	py: FileCode,
+	rs: FileCode,
+	json: FileCode,
+	html: FileCode,
+	css: FileCode,
+	sql: FileCode,
+	go: FileCode,
+};
+/** Extensions that aren't files when they follow a dot in code (`user.name`, `Math.round`). */
+const KNOWN = new Set(Object.keys(FILE_ICONS));
+
+export function fileMention(text: string): { name: string; icon: typeof File } | null {
+	const match = FILE_NAME.exec(text.trim());
+	if (!match) return null;
+	const ext = match[1].toLowerCase();
+	if (!KNOWN.has(ext)) return null;
+	return { name: text.trim(), icon: FILE_ICONS[ext] ?? File };
+}
 
 type Mounted = ReturnType<typeof mount>;
 
@@ -84,6 +130,13 @@ export function enrichReply(root: HTMLElement, cited: Cited[], sourcesId: string
 				}),
 			);
 		}
+	}
+
+	// A file named in inline code, as a file mention (Chat responses → Mention / File).
+	for (const code of root.querySelectorAll<HTMLElement>('code')) {
+		if (code.closest('pre, a, .rich-inline, .rich-block') || code.children.length > 0) continue;
+		const file = fileMention(code.textContent ?? '');
+		if (file) mounted.push(mount(MentionFile, { target: slot(code), props: file }));
 	}
 
 	// @mentions of the crew, in prose only (not in code or links).

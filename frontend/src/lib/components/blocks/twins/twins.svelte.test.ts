@@ -180,6 +180,19 @@ describe('QuestionsTwin', () => {
 		flushSync();
 		buttonNamed(root, 'Review answers').click();
 		flushSync();
+		// The answers are reviewed before they go, and each can be changed from there.
+		expect(send).not.toHaveBeenCalled();
+		expect(root.textContent).toContain('Your answers');
+		expect(root.textContent).toContain('Lombok');
+		root.querySelector<HTMLButtonElement>('button[aria-label="Change Question 1"]')!.click();
+		flushSync();
+		expect(root.textContent).toContain('Where to?');
+		buttonNamed(root, 'Next').click();
+		flushSync();
+		buttonNamed(root, 'Review answers').click();
+		flushSync();
+		buttonNamed(root, 'Make the plan').click();
+		flushSync();
 		expect(send).toHaveBeenCalledWith('Where to? Lombok\nWhat for? Food');
 		expect(root.textContent).toContain('Answered 2 questions');
 	});

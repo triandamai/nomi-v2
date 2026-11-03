@@ -120,6 +120,8 @@ export interface LinkView {
 
 export interface TaskView {
 	view: 'task';
+	/** The background task it follows (cards the server posts). */
+	id?: string;
 	title: string;
 	status?: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 	detail?: string;

@@ -10,8 +10,17 @@
 	import { planStatusLine } from '$lib/planStatus';
 	import type { BuildCheck, ContentBlock, PlanBuild, PlanState } from '$lib/types';
 	import ChecklistBubble from './ChecklistBubble.svelte';
+	import PlanCard from '$lib/components/ds/chat/PlanCard.svelte';
+	import DraftPlanCard from '$lib/components/ds/chat/DraftPlanCard.svelte';
+	import PlanApproval from '$lib/components/ds/chat/PlanApproval.svelte';
+	import QuickReplies from '$lib/components/ds/chat/QuickReplies.svelte';
+	import TextField from '$lib/components/ds/inputs/TextField.svelte';
+	import { useChatSend } from '$lib/chatSend';
+	import { crewId } from '$lib/crewId';
+	import type { CrewRosterMember } from '$lib/crew';
+	import type { StepState } from '$lib/components/ds/chat/stepState';
 
-	let { block, agent = null }: { block: Extract<ContentBlock, { kind: 'plan' }>; agent?: string | null } = $props();
+	let { block, agent = null, answered = false }: { block: Extract<ContentBlock, { kind: 'plan' }>; agent?: string | null; answered?: boolean } = $props();
 
 	type PlanVersion = {
 		id: string;
@@ -142,6 +151,35 @@
 		}
 	}
 
+	// The design system's plan cards (Chat responses → Plan, Draft plan, Plan approval). A plan
+	// still being proposed is a draft the person shapes: every change goes to the crew as a
+	// message, and the planning agent writes the next version. Once it runs, it's the running plan
+	// with each step's real state.
+	const send = useChatSend();
+	const owner = $derived({ agent: crewId(agent), name: agent ?? 'Nomi' });
+	const items = $derived(shownVersion?.checklist ?? []);
+	const STATE: Record<ChecklistItem['status'], StepState> = { done: 'done', in_progress: 'running', pending: 'waiting' };
+	// Only a project's plan is built by the crew; anywhere else a plan is the person's own
+	// checklist, ticked off as they go (the checklist bubble below).
+	const inProject = $derived(page.url.pathname.startsWith('/projects/'));
+	const draft = $derived(inProject && shownVersion?.state === 'proposed' && shownVersion.version === latestVersion && !answered && !!send);
+	const building = $derived(inProject && !!shownVersion && shownVersion.state !== 'proposed' && shownVersion.version === latestVersion && !!build);
+	const running = $derived(building && shownVersion?.state === 'active');
+	const roster = $derived(((page.data.crew ?? []) as CrewRosterMember[]).filter((member) => member.agent_type !== 'personality'));
+
+	// What the person is doing to the draft right now: picking who does a step, adding a step,
+	// asking for changes, or choosing how it runs.
+	let editing = $state<{ kind: 'assign'; index: number } | { kind: 'add' } | { kind: 'changes' } | { kind: 'run' } | null>(null);
+	let note = $state('');
+
+	function ask(text: string) {
+		if (!send) return;
+		send(text);
+		editing = null;
+		note = '';
+	}
+	const label = (index: number) => items[index]?.text ?? '';
+
 	/** The checklist with one item ticked or unticked; the first open step stays the current one. */
 	function withItem(items: ChecklistItem[], index: number, done: boolean): ChecklistItem[] {
 		let currentFound = false;
@@ -155,31 +193,67 @@
 	}
 </script>
 
-<ChecklistBubble
-	{agent}
-	heading={m.plan_draft({ agent: agent ?? 'Nomi' })}
-	items={shownVersion?.checklist ?? []}
-	maxItems={6}
-	ontoggle={toggleItem}
-	working={status ? status.tone === 'working' : undefined}
->
-	<p class="m3-plan-title">{block.title}</p>
+{#if shownVersion && items.length > 0 && draft}
+	<DraftPlanCard
+		intro={block.title}
+		steps={items.map((item) => ({ label: item.text, owner }))}
+		estimate={m.plan_draft_meta({ count: String(items.length), version: String(block.version) })}
+		onmove={(from, to) => ask(m.plan_ask_move({ from: String(from + 1), step: label(from), to: String(to + 1) }))}
+		onremove={(index) => ask(m.plan_ask_remove({ index: String(index + 1), step: label(index) }))}
+		onassign={(index) => (editing = { kind: 'assign', index })}
+		onadd={() => (editing = { kind: 'add' })}
+		onchanges={() => (editing = { kind: 'changes' })}
+		onrun={() => (editing = { kind: 'run' })}
+		ondiscard={() => ask(m.plan_ask_discard())}
+	/>
+	{#if editing?.kind === 'assign'}
+		{@const index = editing.index}
+		<div class="plan-edit">
+			<p class="plan-edit__label">{m.plan_assign_label({ index: String(index + 1) })}</p>
+			<QuickReplies replies={roster.map((member) => member.name)} onpick={(name) => ask(m.plan_ask_assign({ index: String(index + 1), step: label(index), name }))} />
+		</div>
+	{:else if editing?.kind === 'add' || editing?.kind === 'changes'}
+		{@const adding = editing.kind === 'add'}
+		<form
+			class="plan-edit"
+			onsubmit={(event) => {
+				event.preventDefault();
+				if (note.trim()) ask(adding ? m.plan_ask_add({ step: note.trim() }) : note.trim());
+			}}
+		>
+			<TextField label={adding ? m.plan_add_label() : m.plan_changes_label()} bind:value={note} />
+		</form>
+	{:else if editing?.kind === 'run'}
+		<PlanApproval
+			who={owner.name}
+			options={[{ title: m.plan_run_all(), detail: m.plan_run_all_detail(), recommended: true }]}
+			onrun={(choice) => ask('keepPlanning' in choice ? choice.keepPlanning : m.plan_ask_run_all())}
+		/>
+	{/if}
+{:else if shownVersion && items.length > 0 && building}
+	<PlanCard
+		subject={block.title}
+		steps={items.map((item) => ({ label: item.text, state: STATE[item.status], owner }))}
+		onstop={running && send ? () => send('stop') : undefined}
+	/>
+{:else}
+	<ChecklistBubble {agent} heading={m.plan_draft({ agent: agent ?? 'Nomi' })} {items} maxItems={6} ontoggle={toggleItem} working={status ? status.tone === 'working' : undefined}>
+		<p class="m3-plan-title">{block.title}</p>
+		{#if shownVersion && items.length === 0 && shownVersion.excerpt}<p class="m3-plan-excerpt">{shownVersion.excerpt}</p>{/if}
+	</ChecklistBubble>
+{/if}
+<div class="plan-foot">
 	{#if status}
 		<p class="m3-plan-status" data-tone={status.tone} role="status">
 			<span class="m3-plan-status__label">{status.label}</span>{status.detail ? ` · ${status.detail}` : ''}
 		</p>
 	{/if}
-	{#if shownVersion && shownVersion.checklist.length === 0 && shownVersion.excerpt}
-		<p class="m3-plan-excerpt">{shownVersion.excerpt}</p>
-	{/if}
-	{#snippet footer()}
-		{#if saveError}<p class="m3-plan-error" role="alert">{saveError}</p>{/if}
-		<button type="button" class="m3-plan-open" onclick={openSheet}>
-			{m.plan_open()}
-			<span class="nomi-meta">v{block.version}</span>
-		</button>
-	{/snippet}
-</ChecklistBubble>
+	{#if saveError}<p class="m3-plan-error" role="alert">{saveError}</p>{/if}
+	<button type="button" class="m3-plan-open" onclick={openSheet}>
+		{m.plan_open()}
+		<span class="nomi-meta">v{block.version}</span>
+	</button>
+</div>
 
 <SideSheet bind:open={sheetOpen} wide title={m.plan_draft({ agent: agent ?? 'Nomi' })}>
 	{#if loading}
@@ -250,6 +324,24 @@
 </SideSheet>
 
 <style>
+	.plan-edit {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.plan-edit__label {
+		margin: 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+	}
+	.plan-foot {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 12px;
+		margin-top: 8px;
+	}
 	.m3-plan-title {
 		margin: 0;
 		font-weight: 650;
