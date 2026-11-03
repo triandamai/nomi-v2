@@ -8,7 +8,7 @@
 
 import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import { m } from '$lib/paraglide/messages';
-import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree, type ManifestEntry, type RelayPreviewAccess } from '$lib/projectRuntime';
+import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree, watchExit, type ManifestEntry, type RelayPreviewAccess } from '$lib/projectRuntime';
 
 export type RuntimePhase =
 	| 'unsupported'
@@ -36,6 +36,10 @@ const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 const RETRY_MS = 3000;
 /** WebContainer loads from StackBlitz's servers; give up waiting after this long. */
 const BOOT_TIMEOUT_MS = 60_000;
+/** An install that has gone this quiet with node_modules in place is done, even if it hasn't exited. */
+const INSTALL_QUIET_MS = 45_000;
+/** A check that prints nothing for this long has stopped responding. */
+const CHECK_QUIET_MS = 120_000;
 
 // One WebContainer per page: booting a second one needs the first torn down.
 let booted: Promise<WebContainer> | null = null;
@@ -207,27 +211,54 @@ export class ProjectRuntime {
 		return [...changed, ...removed];
 	}
 
-	async #run(command: string, args: string[]): Promise<{ code: number | null; output: string }> {
+	/**
+	 * Runs a command to the end. With `settled`, a command that goes quiet for `quietMs` once
+	 * `settled` says its work is done is stopped and reported as `hung` (see watchExit).
+	 */
+	async #run(
+		command: string,
+		args: string[],
+		watch?: { quietMs: number; settled: () => Promise<boolean> },
+	): Promise<{ code: number | null; output: string; hung?: boolean }> {
 		const line = [command, ...args].join(' ');
 		this.#append(`\n$ ${line}\n`);
 		const proc = await this.#wc!.spawn(command, args, { env: this.#env });
 		let output = '';
+		let lastOutputAt = Date.now();
 		void proc.output.pipeTo(
 			new WritableStream({
 				write: (chunk) => {
 					output += chunk;
+					lastOutputAt = Date.now();
 					this.#append(chunk);
 				},
 			}),
 		);
-		const timeout = sleep(COMMAND_TIMEOUT_MS).then(() => 'timeout' as const);
-		const result = await Promise.race([proc.exit, timeout]);
+		const result = await watchExit(proc.exit, {
+			lastOutputAt: () => lastOutputAt,
+			settled: watch?.settled ?? (async () => false),
+			quietMs: watch?.quietMs ?? COMMAND_TIMEOUT_MS,
+			timeoutMs: COMMAND_TIMEOUT_MS,
+		});
 		if (result === 'timeout') {
 			proc.kill();
 			this.#append(`\n(stopped after ${COMMAND_TIMEOUT_MS / 60000} minutes)\n`);
 			return { code: null, output: cleanOutput(output) + '\n(stopped: took too long)' };
 		}
+		if (result === 'hung') {
+			proc.kill();
+			this.#append(`\n(${line} finished but didn't exit; carrying on)\n`);
+			return { code: null, output: cleanOutput(output), hung: true };
+		}
 		return { code: result, output: cleanOutput(output) };
+	}
+
+	async #installed(): Promise<boolean> {
+		try {
+			return (await this.#wc!.fs.readdir('node_modules')).length > 0;
+		} catch {
+			return false;
+		}
 	}
 
 	/** A Relay project's dev backend for the preview's environment; nothing for other projects. */
@@ -266,16 +297,20 @@ export class ProjectRuntime {
 			this.#relayLoaded = await this.#loadRelayAccess();
 		}
 		this.phase = 'installing';
-		const install = await this.#run('npm', ['install']);
-		let ok = install.code === 0;
+		const install = await this.#run('npm', ['install'], { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() });
+		const installed = install.code === 0 || install.hung === true;
+		let ok = installed;
 		let output = install.output;
+		// A check that stopped responding says nothing about the code, so it isn't reported.
+		let report = true;
 		if (ok && scriptsOf(packageJson).check) {
 			this.phase = 'checking';
-			const check = await this.#run('npm', ['run', 'check']);
+			const check = await this.#run('npm', ['run', 'check'], { quietMs: CHECK_QUIET_MS, settled: async () => true });
 			ok = check.code === 0;
+			report = !check.hung;
 			output += `\n$ npm run check\n${check.output}`;
 		}
-		if (!this.#checked) {
+		if (!this.#checked && report) {
 			this.#checked = true;
 			this.checkFailed = !ok;
 			const response = await this.#api('runtime/check', {
@@ -284,7 +319,7 @@ export class ProjectRuntime {
 			}).catch(() => null);
 			if (response?.ok) this.handedToKoda = ((await response.json()) as { handed_to_koda: boolean }).handed_to_koda;
 		}
-		if (install.code !== 0) {
+		if (!installed) {
 			this.#fail('npm install failed. See the terminal.');
 			return;
 		}
@@ -309,11 +344,15 @@ export class ProjectRuntime {
 
 	async #runForKoda(run: ClaimedRun) {
 		this.running = [run.command, ...run.args].join(' ');
-		const result = await this.#run(run.command, run.args).catch((e) => ({ code: null, output: String(e) }));
+		const install = run.command === 'npm' && (run.args[0] === 'install' || run.args[0] === 'i');
+		const watch = install ? { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() } : undefined;
+		const result = await this.#run(run.command, run.args, watch)
+			.then((r) => (r.hung ? { code: 0, output: `${r.output}\n(finished; the process didn't exit, so Nomi stopped it)` } : r))
+			.catch((e) => ({ code: null, output: String(e) }));
 		this.running = null;
 		await this.#api(`runtime/runs/${run.id}`, { method: 'POST', body: JSON.stringify({ exit_code: result.code, output: result.output }) }).catch(() => null);
 		// New packages need the dev server restarted to be picked up.
-		if (run.command === 'npm' && (run.args[0] === 'install' || run.args[0] === 'i') && this.#dev) await this.#startDev();
+		if (install && this.#dev) await this.#startDev();
 	}
 
 	/** Checks in (keeping the project marked open), queueing syncs and Koda's commands. */

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree } from './projectRuntime';
+import { describe, expect, it, vi } from 'vitest';
+import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree, watchExit } from './projectRuntime';
 
 describe('project runtime helpers', () => {
 	it('nests files into folders for mounting', () => {
@@ -77,5 +77,42 @@ describe('appendOutput', () => {
 		});
 		expect(previewEnv(base, { url: 'u', anon_key: 'a', service_key: 's' }).NOMI_SERVICE_KEY).toBe('s');
 		expect(previewEnv(base, null)).toEqual(base);
+	});
+});
+
+describe('watchExit', () => {
+	const never = () => new Promise<number>(() => {});
+
+	it('gives the exit code when the process exits', async () => {
+		await expect(watchExit(Promise.resolve(0), { lastOutputAt: () => 0, settled: async () => true, quietMs: 10, timeoutMs: 1000, pollMs: 1 })).resolves.toBe(0);
+	});
+
+	it('lets a quiet process go once its work is done', async () => {
+		vi.useFakeTimers();
+		try {
+			let settled = false;
+			const result = watchExit(never(), { lastOutputAt: () => 0, settled: async () => settled, quietMs: 100, timeoutMs: 10_000, pollMs: 50, now: () => Date.now() });
+			await vi.advanceTimersByTimeAsync(500);
+			// Quiet, but node_modules isn't there yet: keep waiting.
+			settled = true;
+			await vi.advanceTimersByTimeAsync(60);
+			await expect(result).resolves.toBe('hung');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('keeps waiting while the process is still printing', async () => {
+		vi.useFakeTimers();
+		try {
+			let state: number | 'hung' | 'timeout' | undefined;
+			void watchExit(never(), { lastOutputAt: () => Date.now(), settled: async () => true, quietMs: 100, timeoutMs: 1000, pollMs: 50 }).then((r) => (state = r));
+			await vi.advanceTimersByTimeAsync(900);
+			expect(state).toBeUndefined();
+			await vi.advanceTimersByTimeAsync(200);
+			expect(state).toBe('timeout');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
