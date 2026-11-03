@@ -764,13 +764,21 @@ pub async fn run_agent_turn(
     // How often each tool call has failed which way, for repeated_failure_limit.
     let mut failures: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
-    for _ in 0..agent.max_tool_turns() {
+    for turn_idx in 0..agent.max_tool_turns() {
         if crate::stop::is_stop_requested(conn, user_id, session_id, &agent_type, started_at).await {
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
             return Ok(LoopOutcome::Cancelled);
         }
 
         update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_THINKING, None).await;
+        tracing::info!(
+            %session_id,
+            %agent_session_id,
+            agent = %agent_type,
+            step = turn_idx + 1,
+            max_steps = agent.max_tool_turns(),
+            "agent requesting LLM completion"
+        );
 
         // A long tool loop resends every earlier result: past the budget, older ones are trimmed.
         let trimmed = crate::context::compact_tool_results(&mut messages, crate::context::TURN_BUDGET_CHARS, crate::context::KEEP_RECENT_ROUNDS);
@@ -825,7 +833,18 @@ pub async fn run_agent_turn(
                 },
             };
             match result {
-                Ok(response) => break response,
+                Ok(response) => {
+                    tracing::info!(
+                        %session_id,
+                        %agent_session_id,
+                        agent = %agent_type,
+                        stop_reason = ?response.stop_reason,
+                        input_tokens = response.input_tokens,
+                        output_tokens = response.output_tokens,
+                        "agent received LLM completion"
+                    );
+                    break response;
+                }
                 Err(e) if e.is_retryable() && attempt < LLM_MAX_ATTEMPTS && !streamed.load(std::sync::atomic::Ordering::Relaxed) => {
                     let delay = retry_delay(attempt);
                     tracing::warn!(%session_id, attempt, error = %e, "model call failed; retrying in {delay:?}");
@@ -934,6 +953,14 @@ pub async fn run_agent_turn(
 
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
 
+            tracing::info!(
+                %session_id,
+                %agent_session_id,
+                agent = %agent_type,
+                reply_len = reply_text.len(),
+                "agent turn completed with text reply"
+            );
+
             return Ok(LoopOutcome::Reply {
                 text: reply_text,
                 memory_ids_used: memories.iter().map(|m| m.id).collect(),
@@ -1001,7 +1028,10 @@ pub async fn run_agent_turn(
         }
 
         match resolve_tool_batch(conn, mqtt, s3, Some(provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
-            ToolBatchOutcome::AwaitingApproval { message_id } => return Ok(LoopOutcome::AwaitingApproval { message_id }),
+            ToolBatchOutcome::AwaitingApproval { message_id } => {
+                tracing::info!(%session_id, %agent_session_id, %message_id, "agent turn paused awaiting approval");
+                return Ok(LoopOutcome::AwaitingApproval { message_id });
+            }
             ToolBatchOutcome::Completed { status, summary } => {
                 let summary = if written.is_empty() { summary } else { written };
                 let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, summary).await;
@@ -1009,10 +1039,12 @@ pub async fn run_agent_turn(
                 if agent.uses_memory() {
                     learn_from_turn(conn, user_id, session_id, &messages, &summary).await;
                 }
+                tracing::info!(%session_id, %agent_session_id, %status, summary_len = summary.len(), "agent completed task");
                 return Ok(LoopOutcome::Completed { status, summary });
             }
             ToolBatchOutcome::HandOff { target_agent, task } => {
                 update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
+                tracing::info!(%session_id, %agent_session_id, to_agent = %target_agent, %task, "agent handed off task");
                 return Ok(LoopOutcome::HandOff { target_agent, task });
             }
             ToolBatchOutcome::Resolved(tool_results) => {
@@ -1239,6 +1271,7 @@ pub async fn resolve_tool_batch(
                 }
                 None => update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await,
             }
+            tracing::info!(%session_id, %agent_session_id, agent = %agent.agent_type(), tool = %name, "agent executing tool");
 
             // What the posted message says, when it isn't the tool result itself (`show`).
             let mut posted_text: Option<String> = None;
@@ -1456,6 +1489,24 @@ async fn log_tool_call(
     result: &str,
     is_error: bool,
 ) {
+    if is_error {
+        tracing::warn!(
+            %session_id,
+            %agent_session_id,
+            agent = %agent_type,
+            tool = %tool_name,
+            result = %result,
+            "agent tool execution failed"
+        );
+    } else {
+        tracing::info!(
+            %session_id,
+            %agent_session_id,
+            agent = %agent_type,
+            tool = %tool_name,
+            "agent tool execution succeeded"
+        );
+    }
     let _ = sqlx::query(
         "INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, (SELECT id FROM agent_sessions WHERE id = $2), $3, 'ToolCalled', $4)",
     )

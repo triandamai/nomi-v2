@@ -461,7 +461,17 @@ pub fn build_router(state: AppState) -> Router {
         // Outermost last: every request gets an id (kept when the caller sent one), every
         // response carries it back, and errors become problem details for clients that ask
         // (see crate::problem).
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::DEBUG))
+                .on_request(tower_http::trace::DefaultOnRequest::new().level(tracing::Level::TRACE))
+                .on_response(
+                    tower_http::trace::DefaultOnResponse::new()
+                        .level(tracing::Level::DEBUG)
+                        .latency_unit(tower_http::LatencyUnit::Millis),
+                )
+                .on_failure(tower_http::trace::DefaultOnFailure::new().level(tracing::Level::ERROR)),
+        )
         .layer(PropagateRequestIdLayer::new(HeaderName::from_static(crate::problem::REQUEST_ID_HEADER)))
         .layer(SetRequestIdLayer::new(HeaderName::from_static(crate::problem::REQUEST_ID_HEADER), MakeRequestUuid))
         .layer(axum::middleware::from_fn(crate::problem::problem_details))

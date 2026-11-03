@@ -8,7 +8,7 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "worker=debug,nomi_server=debug,info".into()),
+                .unwrap_or_else(|_| "info,worker=info,nomi_server=info,nomi_turn=info,nomi_agent_core=info,tower_http=info".into()),
         )
         .init();
 

@@ -203,10 +203,16 @@ fn admin_frame_for(topic_session_id: Uuid, payload: &[u8]) -> Option<AdminStream
 const ADMIN_RELAY: &str = "admin-agents-ws-bridge";
 
 async fn relay_admin_agents_stream(mut socket: WebSocket, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
-    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host, broker_port), 16);
+    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host.clone(), broker_port), 16);
     // Single-level MQTT wildcard: matches chat/{any session_id}/stream in one subscription —
     // this is what makes the relay admin-wide instead of per-session.
-    if client.subscribe("chat/+/stream", QoS::AtMostOnce).await.is_err() {
+    if let Err(e) = client.subscribe("chat/+/stream", QoS::AtMostOnce).await {
+        tracing::warn!(
+            broker = %broker_host,
+            port = broker_port,
+            error = %e,
+            "relay_admin_agents_stream: failed to subscribe to chat/+/stream; closing WebSocket"
+        );
         return; // socket closes on drop
     }
 
@@ -223,7 +229,15 @@ async fn relay_admin_agents_stream(mut socket: WebSocket, broker_host: String, b
                         }
                     }
                     Ok(_) => continue,
-                    Err(_) => break, // broker connection lost; let the client reconnect
+                    Err(e) => {
+                        tracing::warn!(
+                            broker = %broker_host,
+                            port = broker_port,
+                            error = %e,
+                            "relay_admin_agents_stream: MQTT broker connection error; closing WebSocket"
+                        );
+                        break; // broker connection lost; let the client reconnect
+                    }
                 }
             }
             incoming = socket.recv() => {

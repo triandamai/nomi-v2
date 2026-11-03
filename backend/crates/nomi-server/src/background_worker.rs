@@ -158,7 +158,22 @@ pub async fn process_claimed_task(
     mqtt: Option<&MqttPublisher>,
     claimed: ClaimedBackgroundTask,
 ) -> Result<Option<Uuid>, String> {
+    tracing::info!(
+        task_id = %claimed.id,
+        session_id = %claimed.session_id,
+        agent = %claimed.agent_type,
+        label = %claimed.label,
+        command = %claimed.command,
+        "background worker: executing background task"
+    );
     let outcome = run_task_command(pool, &claimed).await;
+    tracing::info!(
+        task_id = %claimed.id,
+        session_id = %claimed.session_id,
+        status = %outcome.status,
+        exit_code = ?outcome.exit_code,
+        "background worker: task finished"
+    );
 
     let updated = sqlx::query(
         "UPDATE background_tasks \

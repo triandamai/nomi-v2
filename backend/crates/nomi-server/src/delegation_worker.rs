@@ -127,6 +127,14 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
             };
 
+            tracing::info!(
+                delegation_id = %claimed.id,
+                session_id = %claimed.session_id,
+                target_agent = %claimed.target_agent_type,
+                task = %claimed.task,
+                "delegation worker: claimed and running delegation"
+            );
+
             let Some(agent) = registry.find(&claimed.target_agent_type) else {
                 tracing::warn!(delegation_id = %claimed.id, target = %claimed.target_agent_type, "delegation worker: unknown target agent");
                 fail_and_notify(&pool, &mqtt, claimed.id, claimed.session_id, "unknown target agent").await;
