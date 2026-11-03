@@ -24,9 +24,7 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
-	import Avatar from '$lib/components/m3/Avatar.svelte';
 	import { ProjectPresence } from '$lib/projectPresence.svelte';
-	import SheetFrame from '$lib/components/project/SheetFrame.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import ModelManager from '$lib/components/models/ModelManager.svelte';
 	import ModelSelector from '$lib/components/models/ModelSelector.svelte';
@@ -43,6 +41,21 @@
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import { isBackendEvent } from '$lib/presenceView';
+	import ResizeHandle from '$lib/components/ds/build/ResizeHandle.svelte';
+	import WorkspaceSheet from '$lib/components/ds/build/WorkspaceSheet.svelte';
+	import PublishButton from '$lib/components/ds/build/PublishButton.svelte';
+	import Terminal from '$lib/components/ds/build/Terminal.svelte';
+	import { chatWidth as splitWidth, SPLIT } from '$lib/components/ds/build/split';
+	import { terminalLines } from '$lib/terminalLines';
+	import Presence from '$lib/components/ds/build/Presence.svelte';
+	import PresenceMenu from '$lib/components/ds/build/PresenceMenu.svelte';
+	import FollowBar from '$lib/components/ds/build/FollowBar.svelte';
+	import PeerCursor from '$lib/components/ds/build/PeerCursor.svelte';
+	import { initials, peerFor, whereLabel } from '$lib/peers';
+	import { projectApi } from '$lib/projectApi';
+	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
+	import type { ChecklistItem } from '$lib/planChecklist';
+	import { Activity, Bug, Database, History, Link2, Settings, Users } from '@lucide/svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -201,6 +214,7 @@
 		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
 		{ id: 'settings', label: m.pj_tab_settings, icon: IconSettings },
 	];
+	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, database: Database, members: Users, issues: Bug, settings: Settings } as const;
 	const SHEET_TITLE: Record<Sheet, () => string> = {
 		deploy: m.pj_tab_deploy,
 		domain: m.pj_tab_domain,
@@ -489,19 +503,17 @@
 		}
 	}
 
-	// The chat and the workspace (preview, code, terminal) side by side: the chat's width is
-	// dragged on the handle between them, and the workspace can be hidden to give the chat the
-	// whole screen. On a phone the workspace opens over the chat instead. Both remembered here.
+	// The chat and the workspace (preview, code, terminal) side by side (Build → Workspace): the
+	// chat's width is dragged on the resize handle between them (360–720, the preview never under
+	// 480), and the workspace can be hidden to give the chat the whole screen. On a phone the
+	// workspace opens over the chat instead. Both remembered here.
 	const WIDTH_KEY = 'nomi-project-chat-width';
 	const PANE_KEY = 'nomi-project-pane';
-	const DEFAULT_WIDTH = 440;
-	const MIN_CHAT = 320;
-	const MIN_PANE = 360;
 	let layout = $state<HTMLDivElement | null>(null);
-	let chatWidth = $state(DEFAULT_WIDTH);
+	let chatWidth = $state<number>(SPLIT.reset);
 	let paneOpen = $state(true);
 	let narrow = $state(false);
-	let dragging = $state(false);
+	let layoutWidth = $state(1200);
 
 	function remember(key: string, value: string) {
 		try {
@@ -510,13 +522,13 @@
 			// Private windows and blocked storage: fine, it just isn't remembered.
 		}
 	}
-	function clampWidth(width: number): number {
-		const total = layout?.clientWidth ?? 1200;
-		return Math.round(Math.min(Math.max(width, MIN_CHAT), Math.max(MIN_CHAT, total - MIN_PANE)));
-	}
 	function setPane(open: boolean) {
 		paneOpen = open;
 		if (!narrow) remember(PANE_KEY, open ? 'open' : 'closed');
+	}
+	function resize(width: number) {
+		chatWidth = width;
+		remember(WIDTH_KEY, String(width));
 	}
 
 	onMount(() => {
@@ -534,44 +546,123 @@
 		};
 		apply();
 		query.addEventListener('change', apply);
+		const measure = () => (layoutWidth = layout?.clientWidth ?? window.innerWidth);
+		measure();
+		window.addEventListener('resize', measure);
 		try {
 			const width = Number(localStorage.getItem(WIDTH_KEY));
-			if (width > 0) chatWidth = clampWidth(width);
+			if (width > 0) chatWidth = splitWidth(width, layoutWidth);
 		} catch {
 			// Keep the default width.
 		}
-		return () => query.removeEventListener('change', apply);
+		return () => {
+			query.removeEventListener('change', apply);
+			window.removeEventListener('resize', measure);
+		};
 	});
 
-	function startDrag(event: PointerEvent) {
-		if (event.button !== 0) return;
-		const handle = event.currentTarget as HTMLElement;
-		handle.setPointerCapture(event.pointerId);
-		dragging = true;
-		const left = layout?.getBoundingClientRect().left ?? 0;
-		const move = (e: PointerEvent) => (chatWidth = clampWidth(e.clientX - left));
-		const stop = () => {
-			dragging = false;
-			handle.removeEventListener('pointermove', move);
-			handle.removeEventListener('pointerup', stop);
-			handle.removeEventListener('pointercancel', stop);
-			remember(WIDTH_KEY, String(chatWidth));
-		};
-		handle.addEventListener('pointermove', move);
-		handle.addEventListener('pointerup', stop);
-		handle.addEventListener('pointercancel', stop);
+	// The newest plan's steps, for the empty preview while the first build runs.
+	let planSteps = $state<{ label: string; state: 'done' | 'running' | 'waiting' }[]>([]);
+	$effect(() => {
+		const plan = [...data.messages].reverse().flatMap((message) => message.content_blocks ?? []).find((block) => block.kind === 'plan');
+		if (!plan || plan.kind !== 'plan' || filePaths.length > 0) {
+			planSteps = [];
+			return;
+		}
+		void fetch(buildAgentPlansFetchUrl(page.url.pathname, plan.agent_session_id))
+			.then((response) => (response.ok ? response.json() : null))
+			.then((found: { plans: { version: number; checklist: ChecklistItem[] }[] } | null) => {
+				const latest = found?.plans.reduce<{ version: number; checklist: ChecklistItem[] } | null>((best, p) => (!best || p.version > best.version ? p : best), null);
+				planSteps = (latest?.checklist ?? []).map((item) => ({
+					label: item.text,
+					state: item.status === 'done' ? 'done' : item.status === 'in_progress' ? 'running' : 'waiting',
+				}));
+			})
+			.catch(() => (planSteps = []));
+	});
+
+	// Building together (Build together → Presence, Follow, Peer cursor): who's here and where,
+	// following someone to see what they see, and their pointer over the same view.
+	const WHERE = $derived({ preview: m.project_preview(), code: m.project_code(), terminal: m.project_terminal() });
+	const peers = $derived((presence?.people ?? []).map((person) => ({ ...person, initials: initials(person.name), peer: peerFor(person.name) })));
+	const myName = $derived(page.data.profile?.display_name || page.data.profile?.username || (page.data.userEmail ?? '').split('@')[0] || m.msg_you());
+	let presenceMenuOpen = $state(false);
+	let following = $state<string | null>(null);
+	const followed = $derived(peers.find((person) => person.user_id === following) ?? null);
+
+	// Others see where the person is.
+	$effect(() => {
+		presence?.moveTo({ view, path: view === 'code' ? activePath : null });
+	});
+	// Following someone: go where they go. Moving on your own stops following.
+	$effect(() => {
+		const person = followed;
+		if (!person || !data.project) return;
+		const where = person.view ?? 'preview';
+		if (where !== view && (where !== 'terminal' || runtime)) view = where;
+		if (where === 'code' && person.path && person.path !== activePath && !editorDirty) void openFile(data.project.id, person.path);
+	});
+	$effect(() => {
+		if (following && !followed) following = null;
+	});
+
+	// Pointers: the person's goes out a few times a second; others' fade after a few seconds still.
+	let pointerClock = $state(Date.now());
+	$effect(() => {
+		if (!presence || Object.keys(presence.pointers).length === 0) return;
+		const timer = setInterval(() => (pointerClock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const pointers = $derived(presence ? presence.pointersIn(view, pointerClock).map((pointer) => ({ ...pointer, peer: peers.find((p) => p.user_id === pointer.user_id)?.peer ?? 1 })) : []);
+	function trackPointer(event: PointerEvent) {
+		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		if (box.width === 0 || box.height === 0) return;
+		presence?.point(view, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
 	}
-	function dragKeys(event: KeyboardEvent) {
-		const step = event.shiftKey ? 96 : 24;
-		const next = { ArrowLeft: chatWidth - step, ArrowRight: chatWidth + step, Home: MIN_CHAT, End: Number.MAX_SAFE_INTEGER }[event.key];
-		if (next === undefined) return;
-		event.preventDefault();
-		chatWidth = clampWidth(next);
-		remember(WIDTH_KEY, String(chatWidth));
+
+	// The publish button (Build → Workspace / Publish): what will go live, publishing with its
+	// time, or a failed publish to try again. Someone who isn't an admin asks the admins instead.
+	let clock = $state(Date.now());
+	$effect(() => {
+		if (!deploy?.running) return;
+		const timer = setInterval(() => (clock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const publishState = $derived.by((): 'idle' | 'ready' | 'publishing' | 'failed' => {
+		if (!deploy) return 'idle';
+		if (deploy.running || deploy.preparing || deploy.busy) return 'publishing';
+		if (deploy.latest?.status === 'failed') return 'failed';
+		const changes = deploy.overview?.unpublished_changes;
+		return changes === 0 ? 'idle' : 'ready';
+	});
+	const publishElapsed = $derived.by(() => {
+		const started = deploy?.latest?.status === 'running' ? Date.parse(deploy.latest.created_at) : NaN;
+		if (Number.isNaN(started)) return '';
+		const seconds = Math.max(0, Math.floor((clock - started) / 1000));
+		return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+	});
+	// Asking the admins to publish (the publish requests they approve or decline).
+	let askedNote = $state<string | null>(null);
+	let askedOpen = $state(false);
+	async function askToPublish() {
+		if (!projectId) return;
+		try {
+			await projectApi(projectId, 'deploy/requests', { method: 'POST', body: {} });
+			askedNote = m.ws_publish_asked();
+		} catch (e) {
+			askedNote = (e as Error).message || m.ws_publish_ask_failed();
+		}
+		askedOpen = true;
 	}
-	function resetWidth() {
-		chatWidth = clampWidth(DEFAULT_WIDTH);
-		remember(WIDTH_KEY, String(chatWidth));
+
+	async function publishNow() {
+		if (!deploy) return;
+		if (deploy.isAdmin) {
+			await deploy.publish();
+			openSheet('deploy');
+		} else {
+			await askToPublish();
+		}
 	}
 </script>
 
@@ -627,19 +718,38 @@
 				</button>
 			{/each}
 		</nav>
-		{#if presence && presence.people.length > 0}
-			{@const label = m.pj_here_now_people({ names: presence.people.map((p) => p.name).join(', ') })}
-			<button type="button" class="here" onclick={openActivity} aria-label={label} title={label}>
-				{#each presence.people.slice(0, TOOLBAR_FACES) as person (person.user_id)}
-					<span class="here__face"><Avatar name={person.name} avatarUrl={person.avatar_url} size={28} /></span>
-				{/each}
-				{#if presence.people.length > TOOLBAR_FACES}<span class="here__more">+{presence.people.length - TOOLBAR_FACES}</span>{/if}
-			</button>
+		{#if presence && peers.length > 0}
+			<div class="here-wrap">
+				<button type="button" class="here" aria-haspopup="dialog" aria-expanded={presenceMenuOpen} aria-label={m.pj_here_now_people({ names: peers.map((p) => p.name).join(', ') })} onclick={() => (presenceMenuOpen = !presenceMenuOpen)}>
+					<Presence people={peers.slice(0, TOOLBAR_FACES).map((person, index) => ({ name: person.name, initials: person.initials, peer: person.peer, online: index === Math.min(peers.length, TOOLBAR_FACES) - 1 }))} />
+					{#if peers.length > TOOLBAR_FACES}<span class="here__more">+{peers.length - TOOLBAR_FACES}</span>{/if}
+				</button>
+				{#if presenceMenuOpen}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="here-menu" onkeydown={(event) => event.key === 'Escape' && (presenceMenuOpen = false)}>
+						<PresenceMenu
+							people={[
+								...peers.map((person) => ({ name: person.name, initials: person.initials, peer: person.peer, where: whereLabel(person.view, person.path, WHERE) })),
+								{ name: m.presence_you({ name: myName }), initials: initials(myName), where: whereLabel(view, activePath, WHERE), you: true },
+							]}
+							onfollow={(index) => {
+								following = peers[index]?.user_id ?? null;
+								presenceMenuOpen = false;
+							}}
+						/>
+						<button type="button" class="here-menu__activity" onclick={() => { presenceMenuOpen = false; openActivity(); }}>{m.pj_act_tab_activity()}</button>
+					</div>
+				{/if}
+			</div>
 		{/if}
-		{#if deploy?.overview?.available && deploy.isAdmin}
-			<Button variant="filled" size="s" disabled={deploy.busy || deploy.running || deploy.preparing} onclick={async () => { await deploy?.publish(); openSheet('deploy'); }}>
-				<IconRocket size={16} /><span class="publish-label">{deploy.running ? m.pj_publishing() : deploy.preparing ? m.pj_preparing() : m.pj_publish()}</span>
-			</Button>
+		{#if deploy?.overview?.available}
+			<PublishButton
+				state={publishState}
+				count={deploy.overview.unpublished_changes ?? 0}
+				elapsed={publishElapsed}
+				onpublish={publishNow}
+				onretry={publishNow}
+			/>
 		{/if}
 	</header>
 {/if}
@@ -648,7 +758,6 @@
 	class="workspace"
 	class:workspace--narrow={narrow}
 	class:workspace--pane-hidden={!paneOpen}
-	class:workspace--dragging={dragging}
 	style="--chat-width: {chatWidth}px"
 >
 	<section class="workspace__chat" aria-label={m.project_chat_label()}>
@@ -667,27 +776,13 @@
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
 			{typingLabel}
+			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
 		/>
 	</section>
 
 	{#if paneOpen && !narrow}
-		<!-- A focusable separator is a widget (WAI-ARIA window splitter), which the checker doesn't know. -->
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-		<div
-			class="workspace__handle"
-			role="separator"
-			aria-orientation="vertical"
-			aria-label={m.project_resize()}
-			aria-valuemin={MIN_CHAT}
-			aria-valuenow={chatWidth}
-			tabindex="0"
-			onpointerdown={startDrag}
-			onkeydown={dragKeys}
-			ondblclick={resetWidth}
-		>
-			<span class="workspace__grip"></span>
-		</div>
+		<ResizeHandle width={chatWidth} available={layoutWidth} onresize={resize} />
 	{/if}
 
 	<section class="workspace__pane" aria-label={m.project_workspace_label()} hidden={!paneOpen}>
@@ -702,10 +797,10 @@
 			<div class="pane-bar">
 				<h2 class="pane-bar__title">{project.name}</h2>
 				<div class="pane-bar__tabs" role="tablist" aria-label={m.project_workspace_label()}>
-					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'preview'} onclick={() => (view = 'preview')}>{m.project_preview()}</button>
-					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'code'} onclick={() => (view = 'code')}>{m.project_code()}</button>
+					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'preview'} onclick={() => { view = 'preview'; following = null; }}>{m.project_preview()}</button>
+					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'code'} onclick={() => { view = 'code'; following = null; }}>{m.project_code()}</button>
 					{#if runtime}
-						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => (view = 'terminal')}>{m.project_terminal()}</button>
+						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => { view = 'terminal'; following = null; }}>{m.project_terminal()}</button>
 					{/if}
 				</div>
 				<IconButton onclick={() => setPane(false)} aria-label={m.project_pane_hide()} title={m.project_pane_hide()}>
@@ -718,17 +813,33 @@
 				</p>
 			{/if}
 
-			<div class="min-h-0 flex-1">
+			{#if followed}
+				<FollowBar name={followed.name} peer={followed.peer} where={whereLabel(followed.view, followed.path, WHERE)} onstop={() => (following = null)} />
+			{/if}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="pane-body min-h-0 flex-1" onpointermove={trackPointer}>
+				{#each pointers as pointer (pointer.user_id)}
+					<span class="pane-pointer" style="left: {pointer.x * 100}%; top: {pointer.y * 100}%"><PeerCursor name={pointer.name} peer={pointer.peer} /></span>
+				{/each}
 				{#if view === 'preview'}
 					<ProjectPreview
 						projectId={project.id}
 						{runtime}
 						stack={project.stack}
 						files={filePaths}
+						steps={planSteps}
+						liveUrl={deploy?.overview?.url ?? null}
 						onShowCode={() => (view = 'code')}
 					/>
 				{:else if view === 'terminal' && runtime}
-					<pre class="terminal">{runtime.log || m.project_terminal_empty()}</pre>
+					<!-- What ran in the preview, in order (Build → Terminal); a failed check offers the fix. -->
+					<div class="terminal-pane">
+						<Terminal
+							run={m.term_run_preview({ name: project.name })}
+							lines={runtime.log ? terminalLines(runtime.log) : [{ kind: 'out', text: m.project_terminal_empty() }]}
+							failure={runtime.checkFailed && !runtime.handedToKoda ? { title: m.project_check_failed(), onfix: () => sendToChat(m.term_fix_message()) } : undefined}
+						/>
+					</div>
 				{:else}
 					<CodeWorkbench
 						projectName={project.name}
@@ -755,11 +866,12 @@
 <!-- Outside the thread: its composer is a form, and these hold forms of their own. -->
 <ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
 <Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
+<Snackbar bind:open={askedOpen} message={askedNote ?? ''} />
 
 {#if data.project && sheet}
 	{@const project = data.project}
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
-		<SheetFrame title={SHEET_TITLE[sheet]()} subtitle={project.name} onclose={() => (sheetOpen = false)}>
+		<WorkspaceSheet icon={SHEET_ICON[sheet]} title={SHEET_TITLE[sheet]()} meta={project.name} onclose={() => (sheetOpen = false)}>
 			{#if sheet === 'issues'}
 				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
 			{:else if sheet === 'deploy' && deploy}
@@ -779,7 +891,7 @@
 			{:else if sheet === 'settings' && deploy}
 				<SettingsPanel {deploy} projectName={project.name} />
 			{/if}
-		</SheetFrame>
+		</WorkspaceSheet>
 	</BottomSheet>
 {/if}
 
@@ -926,9 +1038,6 @@
 		.tool {
 			min-height: 44px;
 		}
-		.publish-label {
-			display: none;
-		}
 	}
 
 	.workspace {
@@ -942,9 +1051,6 @@
 		min-width: 0;
 		height: 100%;
 		transition: flex-basis var(--nomi-motion-spatial-default, 350ms cubic-bezier(0.27, 1.06, 0.18, 1));
-	}
-	.workspace--dragging .workspace__chat {
-		transition: none;
 	}
 	.workspace--pane-hidden .workspace__chat,
 	.workspace--narrow .workspace__chat {
@@ -963,14 +1069,6 @@
 		display: none;
 	}
 	/* While dragging, the preview's frame mustn't swallow the pointer. */
-	.workspace--dragging .workspace__pane {
-		pointer-events: none;
-		user-select: none;
-	}
-	.workspace--dragging {
-		cursor: col-resize;
-		user-select: none;
-	}
 	@keyframes pane-in {
 		from {
 			opacity: 0;
@@ -995,48 +1093,6 @@
 			opacity: 0.6;
 			transform: translateY(32px);
 		}
-	}
-
-	.workspace__handle {
-		position: relative;
-		flex: 0 0 12px;
-		margin: 0 -6px;
-		z-index: 2;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: col-resize;
-		touch-action: none;
-	}
-	.workspace__handle::before {
-		content: '';
-		position: absolute;
-		inset: 0 5px;
-		background: var(--md-sys-color-outline-variant);
-		transition: background-color var(--nomi-motion-effects-fast, 150ms);
-	}
-	.workspace__grip {
-		position: relative;
-		width: 4px;
-		height: 48px;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-outline);
-		transition:
-			height var(--nomi-motion-spatial-fast, 200ms),
-			background-color var(--nomi-motion-effects-fast, 150ms);
-	}
-	.workspace__handle:hover .workspace__grip,
-	.workspace__handle:focus-visible .workspace__grip,
-	.workspace--dragging .workspace__grip {
-		height: 72px;
-		background: var(--md-sys-color-primary);
-	}
-	.workspace__handle:hover::before,
-	.workspace--dragging .workspace__handle::before {
-		background: color-mix(in srgb, var(--md-sys-color-primary) 40%, var(--md-sys-color-outline-variant));
-	}
-	.workspace__handle:focus-visible {
-		outline: none;
 	}
 
 	.pane-bar {
@@ -1108,19 +1164,6 @@
 		}
 	}
 
-	.terminal {
-		height: 100%;
-		margin: 0;
-		padding: 12px 14px;
-		overflow: auto;
-		background: #0f1a14;
-		color: #d7e6dc;
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.75rem;
-		line-height: 1.55;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
 	.here {
 		display: inline-flex;
 		align-items: center;
@@ -1138,19 +1181,51 @@
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: 2px;
 	}
-	.here__face {
-		display: inline-flex;
-		margin-left: -8px;
-		border: 2px solid var(--nomi-color-ground);
-		border-radius: 999px;
-	}
-	.here__face:first-child {
-		margin-left: 0;
-	}
 	.here__more {
 		margin-left: 6px;
 		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.8125rem;
 		font-weight: 600;
+	}
+	.here-wrap {
+		position: relative;
+	}
+	.here-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		right: 0;
+		z-index: 30;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.here-menu__activity {
+		align-self: flex-end;
+		padding: 4px 8px;
+		border: none;
+		background: none;
+		color: var(--md-sys-color-on-surface-variant);
+		font: inherit;
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+	.pane-body {
+		position: relative;
+	}
+	.pane-pointer {
+		position: absolute;
+		z-index: 20;
+		pointer-events: none;
+		transition:
+			left 120ms linear,
+			top 120ms linear;
+	}
+	.terminal-pane {
+		display: flex;
+		height: 100%;
+		padding: 12px;
+	}
+	.terminal-pane :global(section) {
+		height: 100%;
 	}
 </style>

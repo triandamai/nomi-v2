@@ -5,6 +5,10 @@
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import ProjectWaitScreen from '$lib/components/project/ProjectWaitScreen.svelte';
 	import type { ProjectRuntime, RuntimePhase } from '$lib/projectRuntime.svelte';
+	import PhoneFrame from '$lib/components/ds/build/PhoneFrame.svelte';
+	import DeviceBar from '$lib/components/ds/build/DeviceBar.svelte';
+	import PreviewBuilding from '$lib/components/ds/build/PreviewBuilding.svelte';
+	import type { StepState } from '$lib/components/ds/chat/stepState';
 
 	// The project's live preview, from its dev server running in the browser (WebContainer),
 	// with what it's doing while it gets there. Static projects, and browsers WebContainer can't
@@ -14,6 +18,8 @@
 		runtime,
 		stack = 'static',
 		files = [],
+		steps = [],
+		liveUrl = null,
 		onShowCode,
 	}: {
 		projectId: string;
@@ -22,8 +28,32 @@
 		stack?: string;
 		/** The project's file paths. */
 		files?: string[];
+		/** The plan's steps, shown while there's nothing to preview yet (Build → Preview before deploy). */
+		steps?: { label: string; state: Exclude<StepState, 'failed'> }[];
+		/** The published app's address: what "Open on your phone" sends. */
+		liveUrl?: string | null;
 		onShowCode?: () => void;
 	} = $props();
+
+	// The device the preview is shown at (Build → Phone preview): the pane's width, or a phone at
+	// real size. Remembered for the session.
+	let device = $state<'desktop' | 'phone'>('desktop');
+	const deviceLabel = $derived(device === 'phone' ? m.device_phone() : m.device_desktop());
+	let linkCopied = $state(false);
+	async function openOnPhone() {
+		if (!liveUrl) return;
+		if (navigator.share) {
+			try {
+				await navigator.share({ url: liveUrl });
+				return;
+			} catch {
+				// Dismissed: fall back to the clipboard.
+			}
+		}
+		await navigator.clipboard.writeText(liveUrl);
+		linkCopied = true;
+		setTimeout(() => (linkCopied = false), 1500);
+	}
 
 	// Showing the files as they are only works for a plain page with an index.html at the top;
 	// anything else (or nothing yet) would just be a 404 in the frame.
@@ -54,7 +84,9 @@
 </script>
 
 {#if !runtime || runtime.phase === 'unsupported'}
-	{#if files.length === 0}
+	{#if files.length === 0 && steps.length > 0}
+		<div class="preview preview--status"><PreviewBuilding {steps} /></div>
+	{:else if files.length === 0}
 		<div class="preview preview--status">
 			<AgentShape agent="coding" size={72} working />
 			<h3 class="preview__title">{m.project_nothing_yet()}</h3>
@@ -63,7 +95,15 @@
 	{:else if hasIndex && (staticStack || runtime)}
 		<div class="preview">
 			{#if runtime}<p class="preview__note">{m.project_unsupported_body()}</p>{/if}
-			<iframe title={m.project_preview_title()} src={`/projects/${projectId}/preview/`} sandbox="allow-scripts" class="preview__frame"></iframe>
+			<div class="preview__bar">
+				<DeviceBar device={deviceLabel} ondevice={() => (device = device === 'phone' ? 'desktop' : 'phone')} onphone={liveUrl ? openOnPhone : undefined} />
+				{#if linkCopied}<span class="preview__running">{m.copy_done()}</span>{/if}
+			</div>
+			{#if device === 'phone'}
+				<div class="preview__phone"><PhoneFrame src={`/projects/${projectId}/preview/`} title={m.project_preview_title()} /></div>
+			{:else}
+				<iframe title={m.project_preview_title()} src={`/projects/${projectId}/preview/`} sandbox="allow-scripts" class="preview__frame"></iframe>
+			{/if}
 		</div>
 	{:else}
 		<div class="preview preview--status">
@@ -82,10 +122,16 @@
 			<span class="preview__status" data-phase={runtime.phase}>{PHASE_LABEL[runtime.phase]()}</span>
 			{#if runtime.running}<span class="preview__running">{m.project_koda_running({ command: runtime.running })}</span>{/if}
 			<span class="preview__spacer"></span>
+			<DeviceBar device={deviceLabel} ondevice={() => (device = device === 'phone' ? 'desktop' : 'phone')} onphone={liveUrl ? openOnPhone : undefined} />
+			{#if linkCopied}<span class="preview__running">{m.copy_done()}</span>{/if}
 			<Button variant="text" size="s" onclick={reload}>{m.project_reload_preview()}</Button>
 			<Button variant="text" size="s" href={runtime.previewUrl} target="_blank" rel="noopener">{m.project_open_new_tab()}</Button>
 		</div>
-		<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write"></iframe>
+		{#if device === 'phone'}
+			<div class="preview__phone"><PhoneFrame src={runtime.previewUrl} title={m.project_preview_title()} /></div>
+		{:else}
+			<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write"></iframe>
+		{/if}
 	</div>
 {:else}
 	<ProjectWaitScreen
@@ -100,6 +146,15 @@
 {/if}
 
 <style>
+	.preview__phone {
+		display: flex;
+		flex: 1;
+		min-height: 0;
+		align-items: flex-start;
+		justify-content: center;
+		overflow: auto;
+		padding: 24px 16px;
+	}
 	.preview {
 		display: flex;
 		flex-direction: column;

@@ -50,6 +50,7 @@
 	import NewDivider from './ds/chat/NewDivider.svelte';
 	import LiveStep from './ds/conversation/LiveStep.svelte';
 	import ReplyText from './ds/chat/ReplyText.svelte';
+	import Typing from './ds/build/Typing.svelte';
 	import { applyStreamEvent, emptyStream, type LiveReply } from '$lib/liveReply';
 	import type { MessageMemory } from '$lib/types';
 	import { dayLabel, toISODate } from '$lib/dates';
@@ -86,6 +87,7 @@
 		glass = false,
 		placeholder,
 		typingLabel = null,
+		typingPeople = [],
 		ontyping,
 		chatMenu = null,
 	}: {
@@ -123,6 +125,8 @@
 		placeholder?: string;
 		/** "Ben is typing…": others writing in this chat right now (a shared project's chat). */
 		typingLabel?: string | null;
+		/** Who's writing right now, drawn as the design system's typing row (Build together → Typing). */
+		typingPeople?: { name: string; initials: string; peer?: 1 | 2 }[];
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
 		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
@@ -1104,7 +1108,11 @@
 							{#if !stopping}<StopHint onstop={stopCrew} />{/if}
 						</div>
 					{/if}
-					{#if typingLabel}
+					{#if typingPeople.length > 0}
+						<div class="thread__typing">
+							{#each typingPeople.slice(0, 2) as who (who.name)}<Typing {who} />{/each}
+						</div>
+					{:else if typingLabel}
 						<p class="thread__typing" role="status">{typingLabel}</p>
 					{/if}
 					{#if turnError}

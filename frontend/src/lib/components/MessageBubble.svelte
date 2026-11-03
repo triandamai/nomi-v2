@@ -17,6 +17,8 @@
 	import ReplyDeleteTwin from './blocks/twins/ReplyDeleteTwin.svelte';
 	import DeletedReply from './ds/chat/DeletedReply.svelte';
 	import MessageUser from './ds/conversation/MessageUser.svelte';
+	import TeammateMessage from './ds/build/TeammateMessage.svelte';
+	import { initials, peerFor } from '$lib/peers';
 	import MessageMemoriesSheet from './MessageMemoriesSheet.svelte';
 	import type { RenderedMessage } from '$lib/types';
 	import ResponseActions from './ds/chat/ResponseActions.svelte';
@@ -311,7 +313,7 @@
 			</span>
 		{/if}
 
-		{#if message.sender === 'user' && message.author_name}
+		{#if message.sender === 'user' && message.author_name && attached && attached.files.length > 0}
 			<span class="message__who message__who--teammate">{message.author_name}</span>
 		{/if}
 
@@ -332,6 +334,9 @@
 
 		{#if !thinkingOnly && editing}
 			<MessageEditor value={message.content} version={total > 1 ? `${total} / ${total}` : undefined} onsave={saveEdit} oncancel={() => (editing = false)} />
+		{:else if !thinkingOnly && message.sender === 'user' && message.author_name && !(attached && attached.files.length > 0)}
+			<!-- Someone else in the project's chat, in their own colour (Build together → Teammate message). -->
+			<TeammateMessage who={{ name: message.author_name, initials: initials(message.author_name), peer: peerFor(message.author_name) }} time={clock} to="Koda" text={message.content} />
 		{:else if !thinkingOnly && dsUser}
 			<!-- What the person said (Design System / Nomi → Conversation → Message / User): copy, edit,
 			     time, and stepping through earlier versions; delete sits beside it. -->

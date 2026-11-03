@@ -886,6 +886,8 @@ export interface DeployOverview {
 	live: { environment: string; services: ShipyardService[]; last_publish: unknown } | null;
 	/** The app's own production backend while it's set up before the first publish, or when that failed. */
 	backend_setup: RelaySetup | null;
+	/** Files changed since the newest successful production publish; null before the first. */
+	unpublished_changes?: number | null;
 }
 
 export interface PublishDetail extends ProjectPublish {

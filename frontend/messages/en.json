@@ -2815,5 +2815,12 @@
 	"plan_add_label": "A step to add",
 	"plan_changes_label": "What should change?",
 	"plan_run_all": "Build it",
-	"plan_run_all_detail": "Koda builds every step and runs the checks"
+	"plan_run_all_detail": "Koda builds every step and runs the checks",
+	"term_run_preview": "{name} · preview",
+	"term_fix_message": "The preview's checks failed. Please look at the terminal and fix it.",
+	"ws_publish_asked": "Asked the project's admins to publish",
+	"ws_publish_ask_failed": "Couldn't ask to publish. Try again.",
+	"device_phone": "Phone · 330",
+	"device_desktop": "Desktop",
+	"presence_you": "{name} (you)"
 }

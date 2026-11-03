@@ -179,6 +179,22 @@ pub struct DeployOverview {
     /// The app's own production backend while it's being set up before its first publish (or
     /// when that failed); null otherwise. The publish follows by itself once it's ready.
     pub backend_setup: Option<BackendSetup>,
+    /// Files changed since the newest successful publish to production (what Publish would send
+    /// live); null before the first publish.
+    pub unpublished_changes: Option<i64>,
+}
+
+/// How many of the project's files changed after its newest successful production publish.
+pub async fn unpublished_changes(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM project_files f WHERE f.project_id = $1 AND f.updated_at > last.created_at) \
+         FROM (SELECT created_at FROM project_publishes WHERE project_id = $1 AND environment = $2 AND status = 'succeeded' \
+               ORDER BY created_at DESC LIMIT 1) last",
+    )
+    .bind(project_id)
+    .bind(DEFAULT_ENV)
+    .fetch_optional(pool)
+    .await
 }
 
 #[derive(Serialize)]
@@ -271,6 +287,7 @@ pub async fn overview(
         publishes,
         live,
         backend_setup: backend_setup(&state.pool, project_id).await?,
+        unpublished_changes: unpublished_changes(&state.pool, project_id).await.map_err(internal("failed to count changes"))?,
     }))
 }
 
