@@ -91,21 +91,45 @@ fn wants_problem_json(request: &Request) -> bool {
         .is_some_and(|accept| accept.contains(PROBLEM_JSON))
 }
 
-/// Rewrites error responses as problem details for clients that ask for them.
+/// Rewrites error responses as problem details for clients that ask for them, and logs all 4xx/5xx errors.
 pub async fn problem_details(request: Request, next: Next) -> Response {
     let wanted = wants_problem_json(&request);
+    let method = request.method().clone();
+    let uri = request.uri().clone();
     let response = next.run(request).await;
     let status = response.status();
-    if !wanted || !(status.is_client_error() || status.is_server_error()) {
+    if !(status.is_client_error() || status.is_server_error()) {
         return response;
     }
     let (mut parts, body) = response.into_parts();
-    if parts.headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) == Some(PROBLEM_JSON) {
-        return Response::from_parts(parts, body);
-    }
     let bytes = to_bytes(body, MAX_ERROR_BODY_BYTES).await.unwrap_or_default();
     let request_id = parts.headers.get(REQUEST_ID_HEADER).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let body = problem(status, detail_from(&bytes), request_id.as_deref()).to_string();
+    let detail = detail_from(&bytes);
+
+    if status.is_server_error() {
+        tracing::error!(
+            method = %method,
+            uri = %uri,
+            status = status.as_u16(),
+            request_id = request_id.as_deref().unwrap_or("-"),
+            detail = detail.as_deref().unwrap_or("-"),
+            "HTTP server error"
+        );
+    } else {
+        tracing::warn!(
+            method = %method,
+            uri = %uri,
+            status = status.as_u16(),
+            request_id = request_id.as_deref().unwrap_or("-"),
+            detail = detail.as_deref().unwrap_or("-"),
+            "HTTP client error"
+        );
+    }
+
+    if !wanted || parts.headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) == Some(PROBLEM_JSON) {
+        return Response::from_parts(parts, Body::from(bytes));
+    }
+    let body = problem(status, detail, request_id.as_deref()).to_string();
     parts.headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));
     parts.headers.remove(header::CONTENT_LENGTH);
     Response::from_parts(parts, Body::from(body))
