@@ -24,6 +24,8 @@
 	import MessageEditor from './ds/chat/MessageEditor.svelte';
 	import VersionSwitcher from './ds/chat/VersionSwitcher.svelte';
 	import { Pencil } from '@lucide/svelte';
+	import Sources from './ds/chat/Sources.svelte';
+	import { citedSources, enrichReply } from '$lib/richReply';
 	import { page } from '$app/state';
 	import type { MessageVersion } from '$lib/types';
 
@@ -96,108 +98,18 @@
 		}),
 	);
 
-	// Hardcoded (not the $lib/components/icons/* components) because these get assigned via
-	// innerHTML to plain DOM buttons built in enhanceCodeBlocks below — that code runs against
-	// {@html}-injected markup, outside Svelte's own rendering, so it can't render a Svelte
-	// component into it.
-	const COPY_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
-	const CHECK_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17.5 19 6.5"/></svg>';
-	const CHEVRON_UP_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>';
-	const CHEVRON_DOWN_SVG =
-		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
-
-	// Wraps every syntax-highlighted (or fallback) code block in a header (language + copy +
-	// collapse) via real DOM APIs — never innerHTML of anything derived from message content, only
-	// of the fixed icon constants above — so nothing about a chat message's own text can forge a
-	// working button. Locates blocks via the `data-lang` attribute markdown.ts stamps on every
-	// <pre>, both the shiki-highlighted and the unknown-language fallback path.
-	function enhanceCodeBlocks(root: HTMLElement) {
-		const blocks = root.querySelectorAll<HTMLElement>('pre[data-lang]');
-		blocks.forEach((pre) => {
-			if (pre.closest('.code-block')) return;
-
-			const lang = pre.dataset.lang || 'text';
-
-			const wrapper = document.createElement('div');
-			wrapper.className = 'code-block';
-
-			const header = document.createElement('div');
-			header.className = 'code-block__header';
-
-			const langLabel = document.createElement('span');
-			langLabel.className = 'code-block__lang';
-			langLabel.textContent = lang;
-
-			const actions = document.createElement('div');
-			actions.className = 'code-block__actions';
-
-			const copyBtn = document.createElement('button');
-			copyBtn.type = 'button';
-			copyBtn.className = 'code-block__btn';
-			copyBtn.setAttribute('aria-label', m.msg_copy_code());
-			copyBtn.innerHTML = COPY_SVG;
-			copyBtn.addEventListener('click', () => {
-				navigator.clipboard.writeText(pre.textContent ?? '');
-				copyBtn.innerHTML = CHECK_SVG;
-				copyBtn.setAttribute('aria-label', m.msg_copied());
-				setTimeout(() => {
-					copyBtn.innerHTML = COPY_SVG;
-					copyBtn.setAttribute('aria-label', m.msg_copy_code());
-				}, 1500);
-			});
-
-			const collapseBtn = document.createElement('button');
-			collapseBtn.type = 'button';
-			collapseBtn.className = 'code-block__btn';
-			collapseBtn.setAttribute('aria-label', m.msg_collapse_code());
-			collapseBtn.setAttribute('aria-expanded', 'true');
-			collapseBtn.innerHTML = CHEVRON_UP_SVG;
-			collapseBtn.addEventListener('click', () => {
-				const collapsed = wrapper.classList.toggle('code-block--collapsed');
-				collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-				collapseBtn.setAttribute('aria-label', collapsed ? m.msg_expand_code() : m.msg_collapse_code());
-				collapseBtn.innerHTML = collapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG;
-			});
-
-			actions.append(copyBtn, collapseBtn);
-			header.append(langLabel, actions);
-
-			const body = document.createElement('div');
-			body.className = 'code-block__body';
-
-			pre.replaceWith(wrapper);
-			body.appendChild(pre);
-			wrapper.append(header, body);
-		});
-	}
-
-	// A reference-style citation ("[1] Attention is all you need — [1]: https://arxiv.org/...")
-	// renders through `marked` as a plain `<a href="...">1</a>` — no different from any other
-	// link. The heuristic: a citation's visible text is exactly its numeric label; a normal
-	// inline link's text is a real phrase. Not airtight (a link whose text happens to be a bare
-	// number also matches), but cheap and correct for the actual citation format this is for.
-	function enhanceCitations(root: HTMLElement) {
-		const links = root.querySelectorAll<HTMLAnchorElement>('a[href]');
-		links.forEach((link) => {
-			const text = link.textContent?.trim() ?? '';
-			if (/^\d+$/.test(text)) {
-				link.classList.add('citation-chip');
-			}
-		});
-	}
+	// The reply's text with the design system's pieces swapped in (code blocks, citations, links,
+	// @mentions; see $lib/richReply), and the sources its citations point to, listed under it.
+	const sourcesId = $derived(`sources-${message.id}`);
+	const cited = $derived(message.sender === 'assistant' ? citedSources(message.content, sources) : []);
 
 	$effect(() => {
-		// Re-run whenever this message's rendered HTML changes — a brand-new message, or (since
-		// the chat page never patches a message in place, only invalidateAll()s the whole list)
-		// a full reload replacing every message's DOM at once.
+		// Re-run whenever this message's rendered HTML changes: {@html} replaces the DOM, and the
+		// components mounted into the old one are unmounted.
 		void message.content_html;
-		if (bubbleEl) {
-			enhanceCodeBlocks(bubbleEl);
-			enhanceCitations(bubbleEl);
-		}
+		const root = bubbleEl?.querySelector<HTMLElement>('.message-markdown');
+		if (!root) return;
+		return enrichReply(root, untrack(() => cited), sourcesId);
 	});
 
 	function copyMessage() {
@@ -384,6 +296,11 @@
 				<div class="message-markdown">{@html message.content_html}</div>
 			{/if}
 		</div>
+		{#if cited.length > 0 && !shown && !(message.content_blocks && message.content_blocks.length > 0)}
+			<div class="message__sources">
+				<Sources id={sourcesId} sources={cited.map((source) => ({ title: source.title, detail: source.host, kind: 'web' as const, href: source.url }))} />
+			</div>
+		{/if}
 		{#if total > 1}
 			<div class="message__versions">
 				<VersionSwitcher current={viewing ?? total} {total} onprev={() => step(-1)} onnext={() => step(1)} />
@@ -488,6 +405,10 @@
 {/if}
 
 <style>
+	.message__sources {
+		margin-top: 8px;
+		max-width: 100%;
+	}
 	/* Always visible (unlike the hover actions): which memories shaped a reply is worth seeing. */
 	.message-memories {
 		align-self: flex-start;

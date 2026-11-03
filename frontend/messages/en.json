@@ -2788,5 +2788,12 @@
 	"ws_resize": "Resize chat",
 	"ws_sheet_hint": "esc closes · preview keeps running",
 	"ws_switch": "Chat or preview",
-	"ws_up_to_date": "Up to date"
+	"ws_up_to_date": "Up to date",
+	"view_selection_confirm": "Confirm",
+	"view_selection_reply": "I picked: {items}",
+	"view_selection_per": "{amount} / {per}",
+	"view_cart_swap": "Swap {item}: {swap}",
+	"view_cart_save": "Save {title} as a shopping list: {items}",
+	"view_form_title": "A few details",
+	"view_form_missing": "Fill in the fields marked *"
 }

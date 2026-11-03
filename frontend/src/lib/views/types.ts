@@ -135,6 +135,44 @@ export interface ShellView {
 	cwd?: string;
 }
 
+export interface CodeView {
+	view: 'code';
+	code: string;
+	language?: string;
+	file?: string;
+}
+
+export interface DiffView {
+	view: 'diff';
+	path: string;
+	/** Worked out on the server from the text before and after. */
+	hunks: { header: string; lines: { kind: 'context' | 'add' | 'del'; old?: number; new?: number; text: string }[] }[];
+}
+
+export interface SourcesView {
+	view: 'sources';
+	items: { title: string; url?: string; detail?: string; kind?: 'web' | 'file' }[];
+}
+
+export interface SelectionView {
+	view: 'selection';
+	question: string;
+	items: { name: string; detail?: string; amount?: number; selected?: boolean }[];
+	confirm_label?: string;
+	/** What the total is per ("month"). */
+	per?: string;
+}
+
+export interface CartView {
+	view: 'cart';
+	title: string;
+	store: string;
+	items: { name: string; detail?: string; quantity?: number; price?: number; available?: boolean; swap?: string }[];
+	delivery?: number;
+	checkout_url: string;
+	note?: string;
+}
+
 export type View =
 	| ListView
 	| TableView
@@ -149,7 +187,12 @@ export type View =
 	| FormView
 	| LinkView
 	| TaskView
-	| ShellView;
+	| ShellView
+	| CodeView
+	| DiffView
+	| SourcesView
+	| SelectionView
+	| CartView;
 export type ViewName = View['view'];
 
 /** What every view component gets: its data, and the chat it sits in. */

@@ -7,7 +7,7 @@
 .message-markdown p + p {
 	margin-top: 0.5em;
 }
-.message-markdown pre {
+.message-markdown pre:not(.rich-block *) {
 	overflow-x: auto;
 	padding: 12px;
 	border-radius: var(--md-sys-shape-corner-small);
@@ -16,7 +16,7 @@
 .message-markdown pre.shiki-fallback {
 	background: var(--md-sys-color-surface-container-highest);
 }
-.message-markdown code {
+.message-markdown code:not(.rich-block *) {
 	font-family: var(--md-ref-typeface-mono);
 	font-size: 0.85em;
 }
@@ -41,22 +41,6 @@
 .message-markdown a:not([class]) {
 	color: inherit;
 	text-decoration: underline;
-}
-.message-markdown a.citation-chip {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-width: 1.2em;
-	height: 1.2em;
-	padding: 0 0.3em;
-	margin: 0 0.1em;
-	border-radius: var(--md-sys-shape-corner-full);
-	background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
-	color: var(--md-sys-color-primary);
-	font-size: 0.7em;
-	font-weight: 600;
-	text-decoration: none;
-	vertical-align: super;
 }
 .message-markdown table {
 	border-collapse: collapse;
@@ -112,56 +96,18 @@
 	}
 }
 
-/* Code block header/collapse chrome — built client-side by enhanceCodeBlocks() above around
-   the server-rendered <pre>, which ends up nested inside .code-block__body. */
-.message-markdown .code-block {
+/* The design system's pieces swapped into a reply's text ($lib/richReply): a code block sits on
+   its own line, citations, links and mentions inline with the sentence. */
+.message-markdown .rich-block {
+	display: block;
 	margin: 0.75em 0;
-	border-radius: var(--md-sys-shape-corner-large-increased);
-	overflow: hidden;
-	border: 1px solid var(--md-sys-color-outline-variant);
 }
-.message-markdown .code-block pre {
-	margin: 0;
-	border-radius: 0;
+.message-markdown .rich-block:first-child {
+	margin-top: 0;
 }
-.message-markdown .code-block__header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 6px 10px;
-	background: var(--md-sys-color-surface-container-highest);
-	font-family: var(--md-sys-typescale-label-small-font);
-	font-size: var(--md-sys-typescale-label-small-size);
-	color: var(--md-sys-color-on-surface-variant);
+.message-markdown .rich-block:last-child {
+	margin-bottom: 0;
 }
-.message-markdown .code-block__lang {
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-}
-.message-markdown .code-block__actions {
-	display: flex;
-	gap: 4px;
-}
-.message-markdown .code-block__btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 24px;
-	height: 24px;
-	padding: 0;
-	border: none;
-	border-radius: var(--md-sys-shape-corner-extra-small);
-	background: transparent;
-	color: inherit;
-	cursor: pointer;
-}
-.message-markdown .code-block__btn:hover {
-	background: color-mix(in srgb, currentColor 12%, transparent);
-}
-.message-markdown .code-block__body {
-	max-height: 480px;
-	overflow: auto;
-}
-.message-markdown .code-block--collapsed .code-block__body {
-	display: none;
+.message-markdown .rich-inline {
+	display: inline;
 }

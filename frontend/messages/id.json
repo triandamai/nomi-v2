@@ -2788,5 +2788,12 @@
 	"ws_resize": "Ubah lebar chat",
 	"ws_sheet_hint": "esc menutup · pratinjau tetap berjalan",
 	"ws_switch": "Chat atau pratinjau",
-	"ws_up_to_date": "Sudah terbaru"
+	"ws_up_to_date": "Sudah terbaru",
+	"view_selection_confirm": "Konfirmasi",
+	"view_selection_reply": "Saya pilih: {items}",
+	"view_selection_per": "{amount} / {per}",
+	"view_cart_swap": "Ganti {item}: {swap}",
+	"view_cart_save": "Simpan {title} sebagai daftar belanja: {items}",
+	"view_form_title": "Beberapa detail",
+	"view_form_missing": "Isi kolom yang bertanda *"
 }

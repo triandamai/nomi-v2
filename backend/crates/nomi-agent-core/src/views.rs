@@ -23,6 +23,66 @@ pub const SHOW_TOOL_NAME: &str = "show";
 const MAX_ITEMS: usize = 60;
 /// Most characters of a shell view's output (the end is kept: that is where results and errors are).
 const MAX_SHELL_OUTPUT: usize = 8_000;
+/// Most characters of a code view.
+const MAX_CODE: usize = 20_000;
+/// Most lines on each side of a diff (the line-by-line comparison is quadratic).
+const MAX_DIFF_LINES: usize = 800;
+/// Unchanged lines kept around each change in a diff.
+const DIFF_CONTEXT: usize = 3;
+
+/// The hunks that turn `before` into `after`, line by line (a longest-common-subsequence diff),
+/// each with `context` unchanged lines around its changes, as `diff -u` writes them.
+pub fn diff_hunks(before: &str, after: &str, context: usize) -> Vec<DiffHunk> {
+    let a: Vec<&str> = before.lines().collect();
+    let b: Vec<&str> = after.lines().collect();
+    let (n, m) = (a.len(), b.len());
+    // lcs[i][j]: the longest common run of a[i..] and b[j..].
+    let mut lcs = vec![vec![0u32; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            lcs[i][j] = if a[i] == b[j] { lcs[i + 1][j + 1] + 1 } else { lcs[i + 1][j].max(lcs[i][j + 1]) };
+        }
+    }
+    // Every line in order, with its numbers on each side.
+    let mut all: Vec<DiffLine> = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        if i < n && j < m && a[i] == b[j] {
+            all.push(DiffLine { kind: DiffLineKind::Context, old: Some(i + 1), new: Some(j + 1), text: a[i].to_string() });
+            i += 1;
+            j += 1;
+        } else if i < n && (j == m || lcs[i + 1][j] >= lcs[i][j + 1]) {
+            // Removed lines come before the lines that replace them, as `diff -u` writes them.
+            all.push(DiffLine { kind: DiffLineKind::Del, old: Some(i + 1), new: None, text: a[i].to_string() });
+            i += 1;
+        } else {
+            all.push(DiffLine { kind: DiffLineKind::Add, old: None, new: Some(j + 1), text: b[j].to_string() });
+            j += 1;
+        }
+    }
+    // Group the changes, with their context, into hunks.
+    let changed: Vec<usize> = all.iter().enumerate().filter(|(_, l)| l.kind != DiffLineKind::Context).map(|(k, _)| k).collect();
+    let mut hunks = Vec::new();
+    let mut k = 0;
+    while k < changed.len() {
+        let start = changed[k].saturating_sub(context);
+        let mut end = changed[k];
+        while k + 1 < changed.len() && changed[k + 1] <= end + 2 * context + 1 {
+            k += 1;
+            end = changed[k];
+        }
+        let end = (end + context + 1).min(all.len());
+        let lines: Vec<DiffLine> = all[start..end].to_vec();
+        let old_count = lines.iter().filter(|l| l.kind != DiffLineKind::Add).count();
+        let new_count = lines.iter().filter(|l| l.kind != DiffLineKind::Del).count();
+        // Where the hunk starts on each side: its first numbered line, or the line before it.
+        let old_start = lines.iter().find_map(|l| l.old).unwrap_or_else(|| all[..start].iter().rev().find_map(|l| l.old).unwrap_or(0));
+        let new_start = lines.iter().find_map(|l| l.new).unwrap_or_else(|| all[..start].iter().rev().find_map(|l| l.new).unwrap_or(0));
+        hunks.push(DiffHunk { header: format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@"), lines });
+        k += 1;
+    }
+    hunks
+}
 
 /// A value as the person sees it: as written, or formatted for their language (an amount with
 /// cents raised, a date in their style).
@@ -414,6 +474,148 @@ pub struct ShellView {
     pub cwd: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CodeView {
+    pub code: String,
+    /// The language, for the label and highlighting (typescript, rust, sql, bash…).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// The file it belongs in, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffLineKind {
+    Context,
+    Add,
+    Del,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    /// The line's number in the old text (context and removed lines).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old: Option<usize>,
+    /// The line's number in the new text (context and added lines).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new: Option<usize>,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiffHunk {
+    /// `@@ -a,b +c,d @@`
+    pub header: String,
+    pub lines: Vec<DiffLine>,
+}
+
+/// A change to one file. The agent gives the text `before` and `after`; the hunks are worked out
+/// here (`trimmed`) and only they are stored.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiffView {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hunks: Vec<DiffHunk>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    #[default]
+    Web,
+    File,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceItem {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Where it came from: a site's domain, or "attachment · read by Maya".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub kind: SourceKind,
+}
+
+/// What an answer leaned on, numbered like the `[1]` citations in the reply's text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourcesView {
+    pub items: Vec<SourceItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SelectionItem {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// What it costs, counted into the running total of what's picked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<f64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub selected: bool,
+}
+
+/// Several of many: the person ticks the ones they want.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SelectionView {
+    pub question: String,
+    pub items: Vec<SelectionItem>,
+    /// What confirming does, e.g. "Track these".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm_label: Option<String>,
+    /// What the total is per, e.g. "month".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CartItem {
+    pub name: String,
+    /// Size or pack, e.g. "1 tray · 10 eggs".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default = "one")]
+    pub quantity: u32,
+    /// The unit price in whole units, as read from the store. Left out when it couldn't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    /// False when the store is out of it.
+    #[serde(default = "yes", skip_serializing_if = "Clone::clone")]
+    pub available: bool,
+    /// What to get instead, when it's out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swap: Option<String>,
+}
+
+fn one() -> u32 {
+    1
+}
+fn yes() -> bool {
+    true
+}
+
+/// A basket at a store: the person checks out there; Nomi doesn't buy anything.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CartView {
+    pub title: String,
+    pub store: String,
+    pub items: Vec<CartItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<f64>,
+    pub checkout_url: String,
+    /// Where and when the prices were read, e.g. "Prices from Sayurbox at 14:05".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 /// Every view, tagged by `view` (`{"view": "timeline", "events": [...]}`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "view", rename_all = "snake_case")]
@@ -432,6 +634,11 @@ pub enum View {
     Link(LinkView),
     Task(TaskView),
     Shell(ShellView),
+    Code(CodeView),
+    Diff(DiffView),
+    Sources(SourcesView),
+    Selection(SelectionView),
+    Cart(CartView),
 }
 
 /// One line of the `show` tool's description per view: when to use it, and its fields.
@@ -456,6 +663,11 @@ pub const CATALOG: &[ViewSpec] = &[
     ViewSpec { name: "link", use_for: "a page worth opening, as a preview", fields: "url, title?, description?, image?, site? (left-out details are read from the page)" },
     ViewSpec { name: "task", use_for: "work going on in the background", fields: "title, status?: queued|running|done|failed, detail?, progress?: 0-1, agent?" },
     ViewSpec { name: "shell", use_for: "a command and what it printed", fields: "command, output?, exit_code?, cwd?" },
+    ViewSpec { name: "code", use_for: "code to read or copy (a snippet, a query, a config)", fields: "code, language?, file?" },
+    ViewSpec { name: "diff", use_for: "a change to one file, line by line", fields: "path, before, after (the whole text before and after the change)" },
+    ViewSpec { name: "sources", use_for: "what an answer leaned on, numbered like the [1] [2] citations in your text", fields: "items: [{title, url?, detail?, kind?: web|file}]" },
+    ViewSpec { name: "selection", use_for: "several of many for the person to tick (subscriptions to track, items to keep)", fields: "question, items: [{name, detail?, amount?, selected?}], confirm_label?, per? (what the total is per, e.g. month)" },
+    ViewSpec { name: "cart", use_for: "a basket at a store, only with prices you actually read from the store; the person checks out there", fields: "title, store, items: [{name, detail?, quantity?, price?, available?, swap?}], delivery?, checkout_url, note? (where and when the prices were read)" },
 ];
 
 pub fn show_tool_definition() -> nomi_llm::ToolDefinition {
@@ -574,6 +786,11 @@ impl View {
             View::Link(_) => "link",
             View::Task(_) => "task",
             View::Shell(_) => "shell",
+            View::Code(_) => "code",
+            View::Diff(_) => "diff",
+            View::Sources(_) => "sources",
+            View::Selection(_) => "selection",
+            View::Cart(_) => "cart",
         }
     }
 
@@ -683,16 +900,80 @@ impl View {
                 }
             }
             View::Shell(v) => not_blank("a shell view's command", &v.command)?,
+            View::Code(v) => {
+                not_blank("a code view's code", &v.code)?;
+                if v.code.chars().count() > MAX_CODE {
+                    return Err(format!("code: at most {MAX_CODE} characters; show the part that matters"));
+                }
+            }
+            View::Diff(v) => {
+                not_blank("a diff's path", &v.path)?;
+                if v.hunks.is_empty() {
+                    let (Some(before), Some(after)) = (&v.before, &v.after) else {
+                        return Err("a diff needs the file's text before and after".to_string());
+                    };
+                    if before == after {
+                        return Err("before and after are the same: nothing changed".to_string());
+                    }
+                    if before.lines().count() > MAX_DIFF_LINES || after.lines().count() > MAX_DIFF_LINES {
+                        return Err(format!("a diff: at most {MAX_DIFF_LINES} lines on each side; show the part that changed"));
+                    }
+                }
+            }
+            View::Sources(v) => {
+                count("sources", v.items.len(), 1, 12)?;
+                for item in &v.items {
+                    not_blank("a source's title", &item.title)?;
+                    if let Some(url) = &item.url {
+                        web_url("a source's url", url)?;
+                    }
+                }
+            }
+            View::Selection(v) => {
+                not_blank("a selection's question", &v.question)?;
+                count("selection items", v.items.len(), 2, 20)?;
+                for item in &v.items {
+                    not_blank("a selection item's name", &item.name)?;
+                    if item.amount.is_some_and(|a| !a.is_finite()) {
+                        return Err("an amount must be a number".to_string());
+                    }
+                }
+            }
+            View::Cart(v) => {
+                not_blank("a cart's title", &v.title)?;
+                not_blank("a cart's store", &v.store)?;
+                count("cart items", v.items.len(), 1, 30)?;
+                web_url("a cart's checkout_url", &v.checkout_url)?;
+                for item in &v.items {
+                    not_blank("a cart item's name", &item.name)?;
+                    if item.price.is_some_and(|p| !p.is_finite() || p < 0.0) || v.delivery.is_some_and(|p| !p.is_finite() || p < 0.0) {
+                        return Err("prices are amounts of 0 or more".to_string());
+                    }
+                }
+            }
         }
         Ok(())
     }
 
     /// Trims what a view may hold too much of (a command's whole log), before it's stored.
     pub fn trimmed(mut self) -> Self {
-        if let View::Shell(shell) = &mut self {
-            if let Some(output) = &shell.output {
-                shell.output = Some(keep_end(output, MAX_SHELL_OUTPUT));
+        match &mut self {
+            View::Shell(shell) => {
+                if let Some(output) = &shell.output {
+                    shell.output = Some(keep_end(output, MAX_SHELL_OUTPUT));
+                }
             }
+            // The hunks are what's drawn; the whole texts would only weigh down the message.
+            View::Diff(diff) => {
+                if diff.hunks.is_empty() {
+                    if let (Some(before), Some(after)) = (&diff.before, &diff.after) {
+                        diff.hunks = diff_hunks(before, after, DIFF_CONTEXT);
+                    }
+                }
+                diff.before = None;
+                diff.after = None;
+            }
+            _ => {}
         }
         self
     }
@@ -857,6 +1138,64 @@ impl View {
                     out.push(format!("(exit {code})"));
                 }
             }
+            View::Code(v) => {
+                if let Some(file) = &v.file {
+                    out.push(file.clone());
+                }
+                out.push(format!("```{}\n{}\n```", v.language.as_deref().unwrap_or(""), v.code.trim_end()));
+            }
+            View::Diff(v) => {
+                out.push(format!("Changes to {}", v.path));
+                let hunks = if v.hunks.is_empty() {
+                    match (&v.before, &v.after) {
+                        (Some(before), Some(after)) => diff_hunks(before, after, DIFF_CONTEXT),
+                        _ => Vec::new(),
+                    }
+                } else {
+                    v.hunks.clone()
+                };
+                for hunk in &hunks {
+                    out.push(hunk.header.clone());
+                    for line in &hunk.lines {
+                        let sign = match line.kind {
+                            DiffLineKind::Context => ' ',
+                            DiffLineKind::Add => '+',
+                            DiffLineKind::Del => '-',
+                        };
+                        out.push(format!("{sign}{}", line.text));
+                    }
+                }
+            }
+            View::Sources(v) => {
+                out.push("Sources".to_string());
+                for (i, item) in v.items.iter().enumerate() {
+                    let url = item.url.as_deref().map(|u| format!(" — {u}")).unwrap_or_default();
+                    out.push(format!("[{}] {}{url}", i + 1, item.title));
+                }
+            }
+            View::Selection(v) => {
+                out.push(v.question.clone());
+                for item in &v.items {
+                    let mark = if item.selected { "[x]" } else { "[ ]" };
+                    let amount = item.amount.map(|a| format!(" ({})", Scalar::Number(a))).unwrap_or_default();
+                    out.push(format!("{mark} {}{amount}", item.name));
+                }
+            }
+            View::Cart(v) => {
+                out.push(format!("{} — {}", v.title, v.store));
+                for item in &v.items {
+                    let price = match (item.available, item.price) {
+                        (false, _) => " (out of stock)".to_string(),
+                        (true, Some(p)) => format!(" @ {}", Scalar::Number(p)),
+                        (true, None) => String::new(),
+                    };
+                    out.push(format!("- {} × {}{price}", item.quantity, item.name));
+                }
+                if let Some(delivery) = v.delivery {
+                    out.push(format!("Delivery: {}", Scalar::Number(delivery)));
+                }
+                out.push(format!("Check out: {}", v.checkout_url));
+            }
         }
         out.join("\n")
     }
@@ -941,5 +1280,38 @@ mod tests {
         for spec in CATALOG {
             assert!(tool.description.contains(&format!("- {}:", spec.name)), "{} missing from the description", spec.name);
         }
+    }
+
+    #[test]
+    fn a_diff_is_worked_out_from_before_and_after_and_only_its_hunks_are_kept() {
+        let before = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
+        let after = "a\nb\nC\nd\ne\nf\ng\nh\ni\nj\nk\n";
+        let view = parse_show_input(&serde_json::json!({"view": "diff", "spec": {"path": "x.txt", "before": before, "after": after}})).unwrap().trimmed();
+        let View::Diff(diff) = &view else { unreachable!() };
+        assert!(diff.before.is_none() && diff.after.is_none());
+        assert_eq!(diff.hunks.len(), 2, "{:#?}", diff.hunks);
+        assert_eq!(diff.hunks[0].header, "@@ -1,6 +1,6 @@");
+        let changed: Vec<_> = diff.hunks[0].lines.iter().filter(|l| l.kind != DiffLineKind::Context).map(|l| (l.kind, l.old, l.new, l.text.as_str())).collect();
+        assert_eq!(changed, vec![(DiffLineKind::Del, Some(3), None, "c"), (DiffLineKind::Add, None, Some(3), "C")]);
+        assert_eq!(diff.hunks[1].lines.last().unwrap().text, "k");
+        assert!(view.plain_text().contains("-c\n+C"));
+        // Stored, it reads back the same.
+        let again: View = serde_json::from_value(serde_json::to_value(&view).unwrap()).unwrap();
+        assert_eq!(again, view);
+    }
+
+    #[test]
+    fn a_diff_without_a_change_or_its_texts_is_refused() {
+        assert!(parse_show_input(&serde_json::json!({"view": "diff", "spec": {"path": "x", "before": "a", "after": "a"}})).unwrap_err().contains("nothing changed"));
+        assert!(parse_show_input(&serde_json::json!({"view": "diff", "spec": {"path": "x"}})).unwrap_err().contains("before and after"));
+    }
+
+    #[test]
+    fn a_cart_checks_out_on_the_web_and_items_default_to_one_in_stock() {
+        let cart = parse_show_input(&serde_json::json!({"view": "cart", "spec": {"title": "Groceries", "store": "Sayurbox", "checkout_url": "https://www.sayurbox.com", "items": [{"name": "Eggs", "price": 29000}]}})).unwrap();
+        let View::Cart(cart) = cart else { unreachable!() };
+        assert_eq!((cart.items[0].quantity, cart.items[0].available), (1, true));
+        let bad = serde_json::json!({"view": "cart", "spec": {"title": "G", "store": "S", "checkout_url": "javascript:x", "items": [{"name": "Eggs"}]}});
+        assert!(parse_show_input(&bad).unwrap_err().contains("http(s)"));
     }
 }
