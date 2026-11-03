@@ -22,7 +22,7 @@ export function environmentsOf(publishes: ProjectPublish[]): string[] {
 }
 
 /** Whether an admin may go back to this publish: an earlier one that worked and was kept. */
-export function canRollBack(publish: ProjectPublish, role: 'admin' | 'member'): boolean {
+export function canRollBack(publish: ProjectPublish, role: 'admin' | 'member' | 'viewer'): boolean {
 	return role === 'admin' && publish.status === 'succeeded' && publish.can_roll_back && !publish.is_live;
 }
 

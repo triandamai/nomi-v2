@@ -87,7 +87,7 @@
 	// and next-step buttons go once the person has moved on.
 	const blockKinds = $derived((message.content_blocks ?? []).map((block) => block.kind));
 	const onlyBlocks = (kinds: string[]) => blockKinds.length > 0 && blockKinds.every((kind) => kinds.includes(kind));
-	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed', 'stopped']));
+	const statusOnly = $derived(onlyBlocks(['suggestions', 'run_failed', 'stopped', 'member_joined']));
 	const spentSuggestions = $derived(answered && onlyBlocks(['suggestions']));
 	// Blocks that sit above the message's own text rather than standing in for it.
 	const withText = $derived(onlyBlocks(['project_event']));

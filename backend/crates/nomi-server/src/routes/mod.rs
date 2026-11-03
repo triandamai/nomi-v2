@@ -39,6 +39,7 @@ pub mod project_import;
 pub mod project_issues;
 pub mod project_activity;
 pub mod project_members;
+pub mod turn_queue;
 pub mod project_presence;
 pub mod project_runtime;
 pub mod project_relay;

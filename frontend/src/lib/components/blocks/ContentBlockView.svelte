@@ -17,6 +17,7 @@
 	import VoiceBlock from './VoiceBlock.svelte';
 	import StoppedBlock from './StoppedBlock.svelte';
 	import ProjectEventBlock from './ProjectEventBlock.svelte';
+	import JoinedBlock from './JoinedBlock.svelte';
 	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 	import ActivityBlock from '$lib/components/ds/conversation/ActivityBlock.svelte';
@@ -66,6 +67,7 @@
 		voice: VoiceBlock,
 		stopped: StoppedBlock,
 		project_event: ProjectEventBlock,
+		member_joined: JoinedBlock,
 		view: ViewBlock
 	};
 	const Block = $derived(BLOCKS[block.kind]);

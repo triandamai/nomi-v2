@@ -900,6 +900,7 @@ pub async fn send_message(
     Json(req): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<IngestMessageResponse>), (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    refuse_project_viewer(&state.pool, claims.sub, session_id).await?;
 
     if req.text.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "text must not be empty"));
@@ -1021,6 +1022,20 @@ async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, tit
     let chat_updated = nomi_realtime::UserEnvelope::ChatUpdated { session_id, project_id, title };
     if let Err(e) = publisher.try_publish_to(&nomi_realtime::user_topic(user_id), &chat_updated) {
         tracing::debug!(error = %e, %session_id, "couldn't tell the person's other devices about a chat");
+    }
+}
+
+/// A project's chat takes messages only from people who may change the project, not its viewers.
+pub(crate) async fn refuse_project_viewer(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid) -> Result<(), (StatusCode, &'static str)> {
+    let project: Option<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1 LIMIT 1")
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up the project"))?;
+    let Some(project_id) = project else { return Ok(()) };
+    match crate::routes::deploy::project_role(pool, project_id, user_id).await {
+        Ok("viewer") => Err((StatusCode::FORBIDDEN, "you can view this project but not change it")),
+        _ => Ok(()),
     }
 }
 

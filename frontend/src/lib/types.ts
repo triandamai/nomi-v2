@@ -78,6 +78,8 @@ export type ContentBlock =
 			state?: 'open' | 'done' | 'snoozed' | 'cancelled' | 'gone';
 			snoozed_until?: string;
 	  }
+	/** Someone joined a shared project: what they can do, and who publishes for them. */
+	| { kind: 'member_joined'; name: string; role: 'build' | 'prompt' | 'view'; publisher?: string | null }
 	/** What a stop ended, task by task (the Supervisor's reply to "stop"). */
 	/** Something that happened to a project (a publish), as one logged line above the message's text. */
 	| { kind: 'project_event'; event: 'deploy' | 'rollback' | 'domain' | 'database'; ok?: boolean; text: string }
@@ -513,6 +515,9 @@ export interface InviteInfo {
 	state: 'open' | 'expired' | 'used' | 'member' | 'other_address';
 	/** The invited address, partly hidden. */
 	email: string | null;
+	/** An invite to build one project together, and as what. */
+	project?: { id: string; name: string; description: string | null; role: 'build' | 'prompt' | 'view' };
+	expires_at?: string;
 }
 
 /** Something deleting a message also deletes (see the backend's message_delete). */
@@ -877,7 +882,7 @@ export interface ShipyardService {
 export interface DeployOverview {
 	/** Whether this Nomi can publish at all. */
 	available: boolean;
-	role: 'admin' | 'member';
+	role: 'admin' | 'member' | 'viewer';
 	app: string | null;
 	database: 'postgres' | 'sqlite' | 'none';
 	url: string | null;
@@ -989,14 +994,14 @@ export interface ProjectPerson {
 	email: string | null;
 	avatar_url: string | null;
 	org_role: OrgRole;
-	project_role: 'admin' | 'member' | null;
+	project_role: 'admin' | 'member' | 'viewer' | null;
 	is_owner: boolean;
 	added_at: string | null;
 }
 
 export interface ProjectMembers {
 	access: 'org' | 'members';
-	my_role: 'admin' | 'member';
+	my_role: 'admin' | 'member' | 'viewer';
 	me: string;
 	people: ProjectPerson[];
 }

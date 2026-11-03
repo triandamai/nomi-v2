@@ -330,6 +330,22 @@ pub async fn create_invite(
         return Err((StatusCode::FORBIDDEN, "only owners and admins can invite admins"));
     }
 
+    let invite = send_invite(&state, claims.sub, org_id, &email, role, None).await?;
+    Ok((StatusCode::CREATED, Json(invite)))
+}
+
+/// Sends an invite to `email` to join `org_id` with `role` (and, with `project`, to build that
+/// project with the given project role): in their inbox when they already use Nomi, by email
+/// either way. A fresh invite replaces any still open for the same address.
+pub(crate) async fn send_invite(
+    state: &AppState,
+    inviter_id: Uuid,
+    org_id: Uuid,
+    email: &str,
+    role: &str,
+    project: Option<(Uuid, &str)>,
+) -> Result<PendingInvite, ApiError> {
+    let claims_sub = inviter_id;
     // Whose address it is, if anyone's.
     let invitee: Option<Uuid> = sqlx::query_scalar(
         "SELECT user_id FROM web_credentials WHERE lower(email) = $1 \
@@ -356,15 +372,17 @@ pub async fn create_invite(
         .await
         .map_err(internal("failed to invite"))?;
     let invite: PendingInvite = sqlx::query_as(
-        "INSERT INTO org_invites (code, org_id, role, invited_by, expires_at, email) VALUES ($1, $2, $3, $4, $5, $6) \
-         RETURNING code, email, role, created_at, expires_at",
+        "INSERT INTO org_invites (code, org_id, role, invited_by, expires_at, email, project_id, project_role) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING code, email, role, created_at, expires_at",
     )
     .bind(&code)
     .bind(org_id)
     .bind(role)
-    .bind(claims.sub)
+    .bind(claims_sub)
     .bind(expires_at)
-    .bind(&email)
+    .bind(email)
+    .bind(project.map(|(id, _)| id))
+    .bind(project.map(|(_, role)| role))
     .fetch_one(&mut *tx)
     .await
     .map_err(internal("failed to invite"))?;
@@ -375,7 +393,7 @@ pub async fn create_invite(
         .fetch_one(&state.pool)
         .await
         .map_err(internal("failed to invite"))?;
-    let inviter = person_name(&state.pool, claims.sub).await;
+    let inviter = person_name(&state.pool, claims_sub).await;
     let path = format!("/invite/{code}");
     // Someone without an account signs up first (with this address), then lands on the invite.
     let open_path = match invitee {
@@ -384,10 +402,19 @@ pub async fn create_invite(
     };
     let locale = match invitee {
         Some(user_id) => person_locale(&state.pool, user_id).await,
-        None => person_locale(&state.pool, claims.sub).await,
+        None => person_locale(&state.pool, claims_sub).await,
     };
-    let title = locale.tf("team.invite_title", &[("inviter", &inviter), ("org", &org_name)]);
-    let body = locale.tf("team.invite_body", &[("org", &org_name)]);
+    let project_name: Option<String> = match project {
+        Some((id, _)) => sqlx::query_scalar("SELECT name FROM projects WHERE id = $1").bind(id).fetch_optional(&state.pool).await.ok().flatten(),
+        None => None,
+    };
+    let (title, body) = match &project_name {
+        Some(name) => (
+            locale.tf("team.project_invite_title", &[("inviter", &inviter), ("project", name)]),
+            locale.tf("team.project_invite_body", &[("project", name), ("org", &org_name)]),
+        ),
+        None => (locale.tf("team.invite_title", &[("inviter", &inviter), ("org", &org_name)]), locale.tf("team.invite_body", &[("org", &org_name)])),
+    };
 
     // In their inbox when they already use Nomi; by email either way.
     if let Some(user_id) = invitee {
@@ -403,7 +430,7 @@ pub async fn create_invite(
         (false, None) => (None, locale.tf("team.invite_signup_in_app", &[("where", &path)])),
     };
     notifications::email_address(
-        email.clone(),
+        email.to_string(),
         title,
         vec![body],
         action,
@@ -412,7 +439,7 @@ pub async fn create_invite(
         locale,
     );
 
-    Ok((StatusCode::CREATED, Json(invite)))
+    Ok(invite)
 }
 
 /// `DELETE /api/orgs/:id/invites/:code`: takes an open invite back.
@@ -511,6 +538,31 @@ pub struct InviteInfo {
     /// "open", "expired", "used", "member" (already in it) or "other_address".
     pub state: &'static str,
     pub email: Option<String>,
+    /// An invite to build one project together: which, and as what (build, prompt or view).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<InviteProject>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct InviteProject {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub role: &'static str,
+}
+
+/// The project an invite is for, if it's for one.
+async fn invite_project(pool: &sqlx::PgPool, code: &str) -> Option<(Uuid, String, Option<String>, String)> {
+    sqlx::query_as(
+        "SELECT p.id, p.name, p.description, i.project_role FROM org_invites i JOIN projects p ON p.id = i.project_id \
+         WHERE i.code = $1 AND i.project_role IS NOT NULL",
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
 }
 
 async fn my_emails(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Vec<String>, ApiError> {
@@ -564,7 +616,13 @@ pub async fn get_invite(
 ) -> Result<Json<InviteInfo>, ApiError> {
     let row = load_invite(&state.pool, &code).await?;
     let invite_state = invite_state(&state.pool, claims.sub, &row).await?;
-    let (org_id, org_name, invited_by, role, email, _, _) = row;
+    let (org_id, org_name, invited_by, role, email, expires_at, _) = row;
+    let project = invite_project(&state.pool, &code).await.map(|(id, name, description, role)| InviteProject {
+        id,
+        name,
+        description,
+        role: super::project_members::design_role(&role),
+    });
     Ok(Json(InviteInfo {
         org_id,
         org_name,
@@ -572,12 +630,17 @@ pub async fn get_invite(
         role,
         state: invite_state,
         email: email.map(|e| nomi_auth::email_code::mask_email(&e)),
+        project,
+        expires_at,
     }))
 }
 
 #[derive(Serialize)]
 pub struct AcceptedInvite {
     pub org_id: Uuid,
+    /// The project's chat, when the invite was to build a project: where to go next.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_session_id: Option<Uuid>,
 }
 
 /// `POST /api/invites/:code/accept`: joins the organization, and makes it the one Projects shows.
@@ -589,7 +652,7 @@ pub async fn accept_invite(
     let row = load_invite(&state.pool, &code).await?;
     match invite_state(&state.pool, claims.sub, &row).await? {
         "open" => {}
-        "member" => return Ok(Json(AcceptedInvite { org_id: row.0 })),
+        "member" => return Ok(Json(AcceptedInvite { org_id: row.0, project_session_id: None })),
         "used" => return Err((StatusCode::GONE, "this invite has already been used")),
         "expired" => return Err((StatusCode::GONE, "this invite has expired")),
         _ => return Err((StatusCode::FORBIDDEN, "this invite was sent to another address")),
@@ -618,9 +681,35 @@ pub async fn accept_invite(
     .execute(&mut *tx)
     .await
     .map_err(internal("failed to accept invite"))?;
+    // An invite to build a project also puts them on it, as what they were invited as.
+    let project = invite_project(&state.pool, &code).await;
+    if let Some((project_id, _, _, project_role)) = &project {
+        sqlx::query(
+            "INSERT INTO project_members (project_id, user_id, role, added_by) VALUES ($1, $2, $3, $4) \
+             ON CONFLICT (project_id, user_id) DO UPDATE SET role = $3",
+        )
+        .bind(project_id)
+        .bind(claims.sub)
+        .bind(project_role)
+        .bind(invited_by)
+        .execute(&mut *tx)
+        .await
+        .map_err(internal("failed to accept invite"))?;
+    }
     tx.commit().await.map_err(internal("failed to accept invite"))?;
 
     remember_project_org(&state.pool, claims.sub, org_id).await.map_err(internal("failed to accept invite"))?;
+    let mut project_session_id = None;
+    if let Some((project_id, _, _, project_role)) = &project {
+        let publisher = (project_role != "admin").then(|| invited_by);
+        let publisher_name = match publisher {
+            Some(id) => Some(person_name(&state.pool, id).await),
+            None => None,
+        };
+        let name = person_name(&state.pool, claims.sub).await;
+        super::project_members::announce_joined(&state.pool, *project_id, &name, project_role, publisher_name.as_deref()).await;
+        project_session_id = sqlx::query_scalar("SELECT session_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(&state.pool).await.ok().flatten();
+    }
 
     let name = person_name(&state.pool, claims.sub).await;
     let locale = person_locale(&state.pool, invited_by).await;
@@ -634,7 +723,7 @@ pub async fn accept_invite(
         tracing::warn!(error = %e, "failed to tell the inviter someone joined");
     }
 
-    Ok(Json(AcceptedInvite { org_id }))
+    Ok(Json(AcceptedInvite { org_id, project_session_id }))
 }
 
 #[cfg(test)]

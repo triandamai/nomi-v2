@@ -4,6 +4,8 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import type { OrgRole } from '$lib/types';
+	import BuildInvite from '$lib/components/ds/build/BuildInvite.svelte';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -25,12 +27,25 @@
 		{:else}
 			{@const invite = data.invite}
 			<h1 class="invite__title">{m.org_join_title({ org: invite.org_name })}</h1>
+			{#if invite.state === 'open' && invite.project}
+				<!-- An invite to build a project together (Build together → Invite): what you get, then join. -->
+				<BuildInvite
+					from={invite.inviter}
+					project={invite.project.name}
+					detail={invite.project.description ?? invite.org_name}
+					role={invite.project.role}
+					href="#join"
+					sentTo={invite.email ?? ''}
+					expires={invite.expires_at ? new Date(invite.expires_at).toLocaleDateString(getLocale(), { dateStyle: 'medium' }) : ''}
+				/>
+			{/if}
 			{#if invite.state === 'open'}
 				<p class="invite__lede">{m.invite_lede({ inviter: invite.inviter, org: invite.org_name, role: ROLE[invite.role]().toLowerCase() })}</p>
 				{#if form?.error}<p class="invite__error" role="alert">{form.error}</p>{/if}
 				<form
 					method="POST"
 					action="?/accept"
+					id="join"
 					class="invite__actions"
 					use:enhance={() => {
 						busy = true;

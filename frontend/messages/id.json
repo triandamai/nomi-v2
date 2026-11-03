@@ -2822,5 +2822,12 @@
 	"ws_publish_ask_failed": "Tidak bisa meminta penerbitan. Coba lagi.",
 	"device_phone": "Ponsel · 330",
 	"device_desktop": "Desktop",
-	"presence_you": "{name} (kamu)"
+	"presence_you": "{name} (kamu)",
+	"pj_viewer_note": "Kamu bisa melihat proyek ini. Minta admin menjadikanmu pembangun atau pemberi perintah untuk mengubahnya.",
+	"queue_yours": "punyamu",
+	"pj_invite_title": "Undang untuk membangun bersama",
+	"pj_invite_email": "Email mereka",
+	"pj_invite_send": "Kirim undangan",
+	"pj_invite_added": "{email} sudah ada di organisasi, jadi sekarang sudah masuk proyek.",
+	"pj_invite_sent_preview": "Terkirim. Ini yang mereka terima:"
 }

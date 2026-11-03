@@ -89,7 +89,7 @@ pub async fn ask(
     Path(project_id): Path<Uuid>,
     body: Option<Json<AskRequest>>,
 ) -> Result<(StatusCode, Json<PublishRequestRow>), ApiError> {
-    if project_role(&state.pool, project_id, claims.sub).await? == "admin" {
+    if super::deploy::require_builder(&state.pool, project_id, claims.sub).await? == "admin" {
         return Err((StatusCode::CONFLICT, "admins publish the project themselves".to_string()));
     }
     let req = body.map(|Json(b)| b).unwrap_or_default();

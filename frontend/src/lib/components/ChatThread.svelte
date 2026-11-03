@@ -88,6 +88,8 @@
 		placeholder,
 		typingLabel = null,
 		typingPeople = [],
+		aboveComposer,
+		readOnlyNote = null,
 		ontyping,
 		chatMenu = null,
 	}: {
@@ -127,6 +129,10 @@
 		typingLabel?: string | null;
 		/** Who's writing right now, drawn as the design system's typing row (Build together → Typing). */
 		typingPeople?: { name: string; initials: string; peer?: 1 | 2 }[];
+		/** Cards that belong with what's being asked (a project's asks in line, publish requests). */
+		aboveComposer?: Snippet;
+		/** The person can read this chat but not write in it (a project's viewer): said instead of the composer. */
+		readOnlyNote?: string | null;
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
 		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
@@ -1133,6 +1139,10 @@
 			</div>
 
 			<div class="dock">
+				{#if aboveComposer}<div class="dock__above">{@render aboveComposer()}</div>{/if}
+				{#if readOnlyNote}
+					<p class="dock__readonly" role="note">{readOnlyNote}</p>
+				{:else}
 				<form
 					bind:this={composerForm}
 					method="POST"
@@ -1235,6 +1245,7 @@
 				>
 					<input type="hidden" name="text" value="stop" />
 				</form>
+				{/if}
 			</div>
 		</div>
 
@@ -1630,6 +1641,22 @@
 		margin: 14px 0 0 48px;
 	}
 
+	.dock__above {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-width: 760px;
+		margin: 0 auto 8px;
+	}
+	.dock__readonly {
+		max-width: 760px;
+		margin: 0 auto;
+		padding: 12px 14px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.875rem;
+	}
 	.dock {
 		padding: 8px clamp(12px, 3vw, 32px) 14px;
 	}

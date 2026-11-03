@@ -51,6 +51,9 @@
 	import PresenceMenu from '$lib/components/ds/build/PresenceMenu.svelte';
 	import FollowBar from '$lib/components/ds/build/FollowBar.svelte';
 	import PeerCursor from '$lib/components/ds/build/PeerCursor.svelte';
+	import PublishRequest from '$lib/components/ds/build/PublishRequest.svelte';
+	import RequestQueue from '$lib/components/ds/build/RequestQueue.svelte';
+	import { splitAttachments } from '$lib/attachments';
 	import { initials, peerFor, whereLabel } from '$lib/peers';
 	import { projectApi } from '$lib/projectApi';
 	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
@@ -620,6 +623,64 @@
 		presence?.point(view, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
 	}
 
+	// Publish requests (Build together → Publish request): an admin sees who asked to publish and
+	// publishes or reviews it right there. They change live over the project's stream.
+	type PendingRequest = { id: string; requested_by_name: string; note: string | null; environment: string; created_at: string; status: string };
+	let requests = $state<PendingRequest[]>([]);
+	async function loadRequests() {
+		if (!projectId || !deploy?.isAdmin) return;
+		try {
+			const list = await projectApi<{ requests: PendingRequest[] }>(projectId, 'deploy/requests');
+			requests = list.requests.filter((request) => request.status === 'pending');
+		} catch {
+			// The deploy sheet still lists them.
+		}
+	}
+	$effect(() => {
+		if (!deploy?.isAdmin) return;
+		void loadRequests();
+		return deploy.onEvent((raw) => {
+			try {
+				if (JSON.parse(raw).event === 'publish_request.changed') void loadRequests();
+			} catch {
+				// Not ours.
+			}
+		});
+	});
+	async function answerRequest(id: string, action: 'approve' | 'decline') {
+		if (!projectId) return;
+		try {
+			await projectApi(projectId, `deploy/requests/${id}`, { method: 'POST', body: { action } });
+		} finally {
+			await loadRequests();
+			if (action === 'approve') await deploy?.refresh();
+		}
+	}
+
+	// The asks waiting for Koda (Build together → Asks in line): one change at a time, who asked
+	// what, and the next one moved up. Looked at again every few seconds while the chat is open.
+	type QueuedAsk = { id: string; text: string; who: string; mine: boolean; state: 'running' | 'next' | 'queued' };
+	let asks = $state<QueuedAsk[]>([]);
+	async function loadQueue() {
+		const response = await fetch(`${page.url.pathname}/queue`).catch(() => null);
+		if (response?.ok) asks = ((await response.json()) as { asks: QueuedAsk[] }).asks;
+	}
+	$effect(() => {
+		if (!data.project) return;
+		void loadQueue();
+		const timer = setInterval(() => {
+			if (document.visibilityState === 'visible') void loadQueue();
+		}, 4000);
+		return () => clearInterval(timer);
+	});
+	async function moveFirst(index: number) {
+		const ask = asks[index];
+		if (!ask) return;
+		const response = await fetch(`${page.url.pathname}/queue/${ask.id}/first`, { method: 'POST' }).catch(() => null);
+		if (response?.ok) asks = ((await response.json()) as { asks: QueuedAsk[] }).asks;
+	}
+	const viewer = $derived(deploy?.overview?.role === 'viewer');
+
 	// The publish button (Build → Workspace / Publish): what will go live, publishing with its
 	// time, or a failed publish to try again. Someone who isn't an admin asks the admins instead.
 	let clock = $state(Date.now());
@@ -776,9 +837,32 @@
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
 			{typingLabel}
+			readOnlyNote={viewer ? m.pj_viewer_note() : null}
 			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
-		/>
+		>
+			{#snippet aboveComposer()}
+				{#each requests as request (request.id)}
+					<PublishRequest
+						who={{ name: request.requested_by_name, initials: initials(request.requested_by_name), peer: peerFor(request.requested_by_name) }}
+						meta={[request.environment, request.note].filter(Boolean).join(' · ')}
+						onpublish={() => answerRequest(request.id, 'approve')}
+						onreview={() => openSheet('deploy')}
+					/>
+				{/each}
+				{#if asks.length > 1}
+					<RequestQueue
+						asks={asks.map((ask) => ({
+							text: splitAttachments(ask.text).text || ask.text,
+							who: { name: ask.who, initials: initials(ask.who), peer: ask.mine ? undefined : peerFor(ask.who) },
+							state: ask.state,
+							meta: ask.mine ? m.queue_yours() : undefined,
+						}))}
+						onfirst={viewer ? undefined : moveFirst}
+					/>
+				{/if}
+			{/snippet}
+		</ChatThread>
 	</section>
 
 	{#if paneOpen && !narrow}
@@ -887,7 +971,7 @@
 					<DatabasePanel projectId={project.id} {published} />
 				{/if}
 			{:else if sheet === 'members'}
-				<MembersPanel projectId={project.id} orgId={project.org_id} bind:tab={membersTab} {presence} {deploy} />
+				<MembersPanel projectId={project.id} orgId={project.org_id} projectName={project.name} bind:tab={membersTab} {presence} {deploy} />
 			{:else if sheet === 'settings' && deploy}
 				<SettingsPanel {deploy} projectName={project.name} />
 			{/if}

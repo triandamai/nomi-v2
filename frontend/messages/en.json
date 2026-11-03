@@ -2822,5 +2822,12 @@
 	"ws_publish_ask_failed": "Couldn't ask to publish. Try again.",
 	"device_phone": "Phone · 330",
 	"device_desktop": "Desktop",
-	"presence_you": "{name} (you)"
+	"presence_you": "{name} (you)",
+	"pj_viewer_note": "You can view this project. Ask an admin to make you a builder or prompter to change it.",
+	"queue_yours": "yours",
+	"pj_invite_title": "Invite to build together",
+	"pj_invite_email": "Their email",
+	"pj_invite_send": "Send invite",
+	"pj_invite_added": "{email} is in the organization, so they're on the project now.",
+	"pj_invite_sent_preview": "Sent. This is what they got:"
 }
