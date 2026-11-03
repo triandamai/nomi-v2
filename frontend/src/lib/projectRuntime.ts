@@ -120,3 +120,47 @@ export function scriptsOf(packageJson: string | undefined): Record<string, strin
 		return {};
 	}
 }
+
+export interface ExitWatch {
+	/** When the process last printed something (ms, like Date.now()). */
+	lastOutputAt: () => number;
+	/** Whether the work looks finished (say, node_modules is there), so a quiet process can be let go. */
+	settled: () => Promise<boolean>;
+	/** How long the process may sit quiet once its work looks finished. */
+	quietMs: number;
+	/** The longest it may run at all. */
+	timeoutMs: number;
+	pollMs?: number;
+	now?: () => number;
+}
+
+/**
+ * Waits for a process to exit, or gives up on it. Some installs never exit in a WebContainer even
+ * though their work is done: Rolldown fetches its WebAssembly binding during `prepare`
+ * (`svelte-kit sync`), and that binding's worker threads keep the script alive. So a process that
+ * has gone quiet for `quietMs` after its work looks finished counts as 'hung' (the caller kills
+ * it and carries on), and one that runs past `timeoutMs` as 'timeout'.
+ */
+export function watchExit(exit: Promise<number>, watch: ExitWatch): Promise<number | 'hung' | 'timeout'> {
+	const now = watch.now ?? Date.now;
+	const started = now();
+	return new Promise((resolve) => {
+		let done = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const finish = (result: number | 'hung' | 'timeout') => {
+			if (done) return;
+			done = true;
+			clearTimeout(timer);
+			resolve(result);
+		};
+		void exit.then(finish, () => finish(1));
+		const poll = async () => {
+			if (done) return;
+			const at = now();
+			if (at - started >= watch.timeoutMs) return finish('timeout');
+			if (at - watch.lastOutputAt() >= watch.quietMs && (await watch.settled().catch(() => false))) return finish('hung');
+			if (!done) timer = setTimeout(poll, watch.pollMs ?? 5000);
+		};
+		timer = setTimeout(poll, watch.pollMs ?? 5000);
+	});
+}

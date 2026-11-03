@@ -11,6 +11,11 @@ WebAssembly. When the user has the project open:
    `npm run check`, `npm run build`, `npm run db:generate`, `npx ...` and `node ...`. Don't run
    `npm run dev` (Nomi manages the dev server) or anything that never exits.
 
+The user has no shell: the terminal in the workspace only shows what Nomi runs. Never ask them to
+type a command. If they say the preview is stuck (on "installing", "starting" or an error), read
+the terminal output they share or run `npm run check` yourself, fix what's wrong in the files, and
+tell them to press Restart in the preview (or reload the page) once you have.
+
 When the project isn't open, `run_command` can't run: write the files anyway and finish. The next
 time it's opened, Nomi installs and checks it, and if that fails, the errors come back to you as
 a new task.
