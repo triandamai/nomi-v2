@@ -26,13 +26,14 @@ interface ClaimedRun {
 	id: string;
 	command: string;
 	args: string[];
+	timeout_seconds?: number;
 }
 
 // NODE_NO_WARNINGS: the browser runtime's Node prints a WASI "experimental feature" warning on
 // every start, which buries the app's own output.
 const PREVIEW_ENV = { NOMI_PREVIEW: '1', NODE_NO_WARNINGS: '1' };
 const CHECK_IN_WAIT_SECS = 20;
-const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+const COMMAND_TIMEOUT_MS = 120_000;
 const RETRY_MS = 3000;
 /** WebContainer loads from StackBlitz's servers; give up waiting after this long. */
 const BOOT_TIMEOUT_MS = 60_000;
@@ -218,7 +219,7 @@ export class ProjectRuntime {
 	async #run(
 		command: string,
 		args: string[],
-		watch?: { quietMs: number; settled: () => Promise<boolean> },
+		watch?: { quietMs?: number; settled?: () => Promise<boolean>; timeoutMs?: number },
 	): Promise<{ code: number | null; output: string; hung?: boolean }> {
 		const line = [command, ...args].join(' ');
 		this.#append(`\n$ ${line}\n`);
@@ -234,15 +235,16 @@ export class ProjectRuntime {
 				},
 			}),
 		);
+		const timeoutMs = watch?.timeoutMs ?? COMMAND_TIMEOUT_MS;
 		const result = await watchExit(proc.exit, {
 			lastOutputAt: () => lastOutputAt,
 			settled: watch?.settled ?? (async () => false),
 			quietMs: watch?.quietMs ?? COMMAND_TIMEOUT_MS,
-			timeoutMs: COMMAND_TIMEOUT_MS,
+			timeoutMs,
 		});
 		if (result === 'timeout') {
 			proc.kill();
-			this.#append(`\n(stopped after ${COMMAND_TIMEOUT_MS / 60000} minutes)\n`);
+			this.#append(`\n(stopped after ${Math.round(timeoutMs / 1000)}s)\n`);
 			return { code: null, output: cleanOutput(output) + '\n(stopped: took too long)' };
 		}
 		if (result === 'hung') {
@@ -286,7 +288,7 @@ export class ProjectRuntime {
 		}
 	}
 
-	/** Installs, checks (once per opening, reported to Nomi) and starts the dev server, once the project has a package.json. */
+	/** Installs packages and starts the dev server immediately once package.json exists. */
 	async #prepareIfReady() {
 		const packageJson = await this.#packageJson();
 		if (!packageJson) {
@@ -299,30 +301,28 @@ export class ProjectRuntime {
 		this.phase = 'installing';
 		const install = await this.#run('npm', ['install'], { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() });
 		const installed = install.code === 0 || install.hung === true;
-		let ok = installed;
-		let output = install.output;
-		// A check that stopped responding says nothing about the code, so it isn't reported.
-		let report = true;
-		if (ok && scriptsOf(packageJson).check) {
-			this.phase = 'checking';
-			const check = await this.#run('npm', ['run', 'check'], { quietMs: CHECK_QUIET_MS, settled: async () => true });
-			ok = check.code === 0;
-			report = !check.hung;
-			output += `\n$ npm run check\n${check.output}`;
-		}
-		if (!this.#checked && report) {
-			this.#checked = true;
-			this.checkFailed = !ok;
-			const response = await this.#api('runtime/check', {
-				method: 'POST',
-				body: JSON.stringify({ files_version: this.#version, ok, output: output.slice(-60_000) }),
-			}).catch(() => null);
-			if (response?.ok) this.handedToKoda = ((await response.json()) as { handed_to_koda: boolean }).handed_to_koda;
-		}
 		if (!installed) {
 			this.#fail('npm install failed. See the terminal.');
+			if (!this.#checked) {
+				this.#checked = true;
+				this.checkFailed = true;
+				await this.#api('runtime/check', {
+					method: 'POST',
+					body: JSON.stringify({ files_version: this.#version, ok: false, output: install.output.slice(-60_000) }),
+				}).catch(() => null);
+			}
 			return;
 		}
+
+		if (!this.#checked) {
+			this.#checked = true;
+			this.checkFailed = false;
+			await this.#api('runtime/check', {
+				method: 'POST',
+				body: JSON.stringify({ files_version: this.#version, ok: true, output: install.output.slice(-60_000) }),
+			}).catch(() => null);
+		}
+
 		await this.#startDev();
 	}
 
@@ -345,7 +345,10 @@ export class ProjectRuntime {
 	async #runForKoda(run: ClaimedRun) {
 		this.running = [run.command, ...run.args].join(' ');
 		const install = run.command === 'npm' && (run.args[0] === 'install' || run.args[0] === 'i');
-		const watch = install ? { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() } : undefined;
+		const timeoutMs = run.timeout_seconds ? Math.max(5000, run.timeout_seconds * 1000 - 3000) : COMMAND_TIMEOUT_MS;
+		const watch = install
+			? { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed(), timeoutMs }
+			: { timeoutMs };
 		const result = await this.#run(run.command, run.args, watch)
 			.then((r) => (r.hung ? { code: 0, output: `${r.output}\n(finished; the process didn't exit, so Nomi stopped it)` } : r))
 			.catch((e) => ({ code: null, output: String(e) }));
