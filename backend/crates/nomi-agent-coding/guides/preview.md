@@ -3,9 +3,8 @@
 The project runs in the user's browser in a WebContainer: a Node.js environment compiled to
 WebAssembly. When the user has the project open:
 
-1. Nomi copies the project's files in, runs `npm install`, then `npm run check` (when the script
-   exists), and starts `npm run dev` with `NOMI_PREVIEW=1` set. The dev server's URL is shown in
-   the preview pane.
+1. Nomi copies the project's files in, runs `npm install`, and starts `npm run dev` with
+   `NOMI_PREVIEW=1` set. The dev server's URL is shown in the preview pane.
 2. Every file you write is copied into the running container straight away, so Vite reloads it.
 3. `run_command` runs a command there and gives you its output. You can run `npm install`,
    `npm run check`, `npm run build`, `npm run db:generate`, `npx ...` and `node ...`. Don't run

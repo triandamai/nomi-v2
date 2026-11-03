@@ -26,13 +26,14 @@ interface ClaimedRun {
 	id: string;
 	command: string;
 	args: string[];
+	timeout_seconds?: number;
 }
 
 // NODE_NO_WARNINGS: the browser runtime's Node prints a WASI "experimental feature" warning on
 // every start, which buries the app's own output.
 const PREVIEW_ENV = { NOMI_PREVIEW: '1', NODE_NO_WARNINGS: '1' };
 const CHECK_IN_WAIT_SECS = 20;
-const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+const COMMAND_TIMEOUT_MS = 120_000;
 const RETRY_MS = 3000;
 /** WebContainer loads from StackBlitz's servers; give up waiting after this long. */
 const BOOT_TIMEOUT_MS = 60_000;
@@ -207,7 +208,7 @@ export class ProjectRuntime {
 		return [...changed, ...removed];
 	}
 
-	async #run(command: string, args: string[]): Promise<{ code: number | null; output: string }> {
+	async #run(command: string, args: string[], timeoutMs = COMMAND_TIMEOUT_MS): Promise<{ code: number | null; output: string }> {
 		const line = [command, ...args].join(' ');
 		this.#append(`\n$ ${line}\n`);
 		const proc = await this.#wc!.spawn(command, args, { env: this.#env });
@@ -220,11 +221,11 @@ export class ProjectRuntime {
 				},
 			}),
 		);
-		const timeout = sleep(COMMAND_TIMEOUT_MS).then(() => 'timeout' as const);
+		const timeout = sleep(timeoutMs).then(() => 'timeout' as const);
 		const result = await Promise.race([proc.exit, timeout]);
 		if (result === 'timeout') {
 			proc.kill();
-			this.#append(`\n(stopped after ${COMMAND_TIMEOUT_MS / 60000} minutes)\n`);
+			this.#append(`\n(stopped after ${Math.round(timeoutMs / 1000)}s)\n`);
 			return { code: null, output: cleanOutput(output) + '\n(stopped: took too long)' };
 		}
 		return { code: result, output: cleanOutput(output) };
@@ -255,7 +256,7 @@ export class ProjectRuntime {
 		}
 	}
 
-	/** Installs, checks (once per opening, reported to Nomi) and starts the dev server, once the project has a package.json. */
+	/** Installs packages and starts the dev server immediately once package.json exists. */
 	async #prepareIfReady() {
 		const packageJson = await this.#packageJson();
 		if (!packageJson) {
@@ -266,28 +267,29 @@ export class ProjectRuntime {
 			this.#relayLoaded = await this.#loadRelayAccess();
 		}
 		this.phase = 'installing';
-		const install = await this.#run('npm', ['install']);
-		let ok = install.code === 0;
-		let output = install.output;
-		if (ok && scriptsOf(packageJson).check) {
-			this.phase = 'checking';
-			const check = await this.#run('npm', ['run', 'check']);
-			ok = check.code === 0;
-			output += `\n$ npm run check\n${check.output}`;
-		}
-		if (!this.#checked) {
-			this.#checked = true;
-			this.checkFailed = !ok;
-			const response = await this.#api('runtime/check', {
-				method: 'POST',
-				body: JSON.stringify({ files_version: this.#version, ok, output: output.slice(-60_000) }),
-			}).catch(() => null);
-			if (response?.ok) this.handedToKoda = ((await response.json()) as { handed_to_koda: boolean }).handed_to_koda;
-		}
+		const install = await this.#run('npm', ['install'], 180_000);
 		if (install.code !== 0) {
 			this.#fail('npm install failed. See the terminal.');
+			if (!this.#checked) {
+				this.#checked = true;
+				this.checkFailed = true;
+				await this.#api('runtime/check', {
+					method: 'POST',
+					body: JSON.stringify({ files_version: this.#version, ok: false, output: install.output.slice(-60_000) }),
+				}).catch(() => null);
+			}
 			return;
 		}
+
+		if (!this.#checked) {
+			this.#checked = true;
+			this.checkFailed = false;
+			await this.#api('runtime/check', {
+				method: 'POST',
+				body: JSON.stringify({ files_version: this.#version, ok: true, output: install.output.slice(-60_000) }),
+			}).catch(() => null);
+		}
+
 		await this.#startDev();
 	}
 
@@ -309,7 +311,8 @@ export class ProjectRuntime {
 
 	async #runForKoda(run: ClaimedRun) {
 		this.running = [run.command, ...run.args].join(' ');
-		const result = await this.#run(run.command, run.args).catch((e) => ({ code: null, output: String(e) }));
+		const timeoutMs = run.timeout_seconds ? Math.max(5000, run.timeout_seconds * 1000 - 3000) : COMMAND_TIMEOUT_MS;
+		const result = await this.#run(run.command, run.args, timeoutMs).catch((e) => ({ code: null, output: String(e) }));
 		this.running = null;
 		await this.#api(`runtime/runs/${run.id}`, { method: 'POST', body: JSON.stringify({ exit_code: result.code, output: result.output }) }).catch(() => null);
 		// New packages need the dev server restarted to be picked up.
