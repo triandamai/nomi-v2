@@ -64,8 +64,6 @@
 	import DsButton from '$lib/components/ds/actions/Button.svelte';
 	import { Download } from '@lucide/svelte';
 	import { projectApi } from '$lib/projectApi';
-	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
-	import type { ChecklistItem } from '$lib/planChecklist';
 	import { Activity, Bug, Database, History, Link2, Settings, Users } from '@lucide/svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -579,26 +577,6 @@
 		};
 	});
 
-	// The newest plan's steps, for the empty preview while the first build runs.
-	let planSteps = $state<{ label: string; state: 'done' | 'running' | 'waiting' }[]>([]);
-	$effect(() => {
-		const plan = [...data.messages].reverse().flatMap((message) => message.content_blocks ?? []).find((block) => block.kind === 'plan');
-		if (!plan || plan.kind !== 'plan' || filePaths.length > 0) {
-			planSteps = [];
-			return;
-		}
-		void fetch(buildAgentPlansFetchUrl(page.url.pathname, plan.agent_session_id))
-			.then((response) => (response.ok ? response.json() : null))
-			.then((found: { plans: { version: number; checklist: ChecklistItem[] }[] } | null) => {
-				const latest = found?.plans.reduce<{ version: number; checklist: ChecklistItem[] } | null>((best, p) => (!best || p.version > best.version ? p : best), null);
-				planSteps = (latest?.checklist ?? []).map((item) => ({
-					label: item.text,
-					state: item.status === 'done' ? 'done' : item.status === 'in_progress' ? 'running' : 'waiting',
-				}));
-			})
-			.catch(() => (planSteps = []));
-	});
-
 	// Building together (Build together → Presence, Follow, Peer cursor): who's here and where,
 	// following someone to see what they see, and their pointer over the same view.
 	const WHERE = $derived({ preview: m.project_preview(), code: m.project_code(), terminal: m.project_terminal() });
@@ -1007,7 +985,6 @@
 						{runtime}
 						stack={project.stack}
 						files={filePaths}
-						steps={planSteps}
 						liveUrl={deploy?.overview?.url ?? null}
 						onShowCode={() => (view = 'code')}
 					/>
