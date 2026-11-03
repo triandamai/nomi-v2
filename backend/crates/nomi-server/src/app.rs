@@ -56,6 +56,7 @@ impl nomi_auth::extractor::HasJwtSecret for AppState {
     }
 }
 
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/auth/register", post(auth_routes::register))
@@ -237,6 +238,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/support/keys/:id", delete(crate::routes::support::revoke_key))
         .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
         .route("/api/admin/configuration", get(crate::routes::admin_configuration::get))
+        .route("/api/admin/configuration/storage/test", post(crate::routes::admin_configuration::test_storage))
         .route("/api/admin/configuration/:section", axum::routing::put(crate::routes::admin_configuration::save))
         .route(
             "/api/admin/payment/xendit",

@@ -125,7 +125,75 @@ pub async fn save(
         ConfigError::Db(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't save the configuration: {e}")),
     })?;
     tracing::info!(user = %claims.sub, section = def.name, fields = ?req.values.keys().collect::<Vec<_>>(), "configuration saved");
+
+    if def.name == config::STORAGE.name {
+        let s3 = crate::configuration::storage().await;
+        if let Some(s3) = &s3 {
+            tracing::info!(bucket = %s3.bucket(), "reloaded S3 storage configuration from database");
+        } else {
+            tracing::info!("storage reset to disk");
+        }
+        state.project_storage.reload(s3.clone());
+        nomi_storage::blob::update_attachment_store(s3);
+    }
+
     Ok(Json(section_view(&state, def).await?))
+}
+
+#[derive(Deserialize, Default)]
+pub struct TestStorageRequest {
+    #[serde(default, deserialize_with = "text_values")]
+    pub values: BTreeMap<String, String>,
+}
+
+#[derive(Serialize)]
+pub struct TestStorageResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// `POST /api/admin/configuration/storage/test`: tests the S3 connection with provided or saved credentials.
+pub async fn test_storage(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<TestStorageRequest>,
+) -> Result<Json<TestStorageResponse>, ApiError> {
+    require_admin_owned(&claims, AREA, VIEW)?;
+
+    let def = &config::STORAGE;
+    let saved = config::load(&state.pool, Some(&state.settings_key), def)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("couldn't read storage configuration: {e}")))?
+        .with_env(env);
+
+    let get_val = |field: &str| {
+        if let Some(val) = req.values.get(field) {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        saved.get(field)
+    };
+
+    let s3 = nomi_storage::build_from(get_val).await;
+    let Some(s3) = s3 else {
+        return Ok(Json(TestStorageResponse {
+            success: false,
+            message: "Storage configuration is incomplete. Bucket, Access Key ID, and Secret Access Key are required.".to_string(),
+        }));
+    };
+
+    match s3.test_connection().await {
+        Ok(()) => Ok(Json(TestStorageResponse {
+            success: true,
+            message: format!("Successfully verified read, write, and delete permissions on bucket '{}'.", s3.bucket()),
+        })),
+        Err(err) => Ok(Json(TestStorageResponse {
+            success: false,
+            message: err,
+        })),
+    }
 }
 
 #[cfg(test)]

@@ -45,14 +45,27 @@ pub async fn build_from_env() -> Option<S3Config> {
 /// a bucket; a bucket without both keys is logged and also `None`, so a half-finished save never
 /// stops Nomi from starting.
 pub async fn build_from(get: impl Fn(&str) -> Option<String>) -> Option<S3Config> {
-    let bucket = get("bucket").filter(|b| !b.is_empty())?;
-    let region = get("region").filter(|r| !r.is_empty()).unwrap_or_else(|| "us-east-1".to_string());
-    let (Some(access_key), Some(secret_key)) = (get("access_key_id"), get("secret_access_key")) else {
+    let bucket = get("bucket").map(|s| s.trim().to_string()).filter(|b| !b.is_empty())?;
+    let region = get("region").map(|s| s.trim().to_string()).filter(|r| !r.is_empty()).unwrap_or_else(|| "us-east-1".to_string());
+    let access_key = get("access_key_id").map(|s| s.trim().to_string()).filter(|k| !k.is_empty());
+    let secret_key = get("secret_access_key").map(|s| s.trim().to_string()).filter(|k| !k.is_empty());
+    let (Some(access_key), Some(secret_key)) = (access_key, secret_key) else {
         tracing::error!(%bucket, "S3 has a bucket but no access key and secret: files stay on disk until both are set");
         return None;
     };
-    let endpoint_url = get("endpoint_url").filter(|e| !e.is_empty());
-    let public_url_base = get("public_url_base").filter(|p| !p.is_empty()).unwrap_or_else(|| format!("https://{bucket}.s3.{region}.amazonaws.com"));
+    let endpoint_url = get("endpoint_url").map(|s| s.trim().to_string()).filter(|e| !e.is_empty()).map(|mut endpoint| {
+        if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+            endpoint = format!("https://{endpoint}");
+        }
+        endpoint.trim_end_matches('/').to_string()
+    });
+    let public_url_base = get("public_url_base").map(|s| s.trim().to_string()).filter(|p| !p.is_empty()).unwrap_or_else(|| {
+        if let Some(endpoint) = &endpoint_url {
+            format!("{endpoint}/{bucket}")
+        } else {
+            format!("https://{bucket}.s3.{region}.amazonaws.com")
+        }
+    });
 
     let credentials = Credentials::new(access_key, secret_key, None, None, "nomi-config");
     let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
@@ -100,6 +113,71 @@ pub struct PresignedUpload {
 }
 
 impl S3Config {
+    pub fn bucket(&self) -> &str {
+        &self.bucket
+    }
+
+    pub fn public_url_base(&self) -> &str {
+        &self.public_url_base
+    }
+
+    /// Tests the connection to the bucket by attempting a Put, Get, and Delete of a temporary probe key.
+    pub async fn test_connection(&self) -> Result<(), String> {
+        use aws_sdk_s3::error::ProvideErrorMetadata;
+
+        let test_key = ".nomi-storage-probe";
+        let probe_content = "nomi storage probe";
+
+        // 1. Put
+        let put_res = self
+            .client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(test_key)
+            .content_type("text/plain")
+            .body(ByteStream::from(probe_content.as_bytes().to_vec()))
+            .send()
+            .await;
+
+        if let Err(e) = put_res {
+            let meta = e.meta();
+            let code = meta.code().unwrap_or("Unknown");
+            let message = meta.message().unwrap_or("no message provided");
+            tracing::warn!(bucket = %self.bucket, code, message, error = ?e, "S3 test PutObject failed");
+            let reason = match code {
+                "AccessDenied" => format!("Access denied: credentials lack s3:PutObject permission on bucket '{}'. Message: {message}", self.bucket),
+                "NoSuchBucket" => format!("Bucket '{}' was not found. Please verify the bucket name and region.", self.bucket),
+                "InvalidAccessKeyId" => "The AWS Access Key ID you provided does not exist in our records.".to_string(),
+                "SignatureDoesNotMatch" => "Signature mismatch: please check your secret access key, region, and endpoint URL.".to_string(),
+                _ => format!("PutObject failed ({code}): {message}"),
+            };
+            return Err(reason);
+        }
+
+        // 2. Get
+        let get_res = self.client.get_object().bucket(&self.bucket).key(test_key).send().await;
+        if let Err(e) = get_res {
+            let meta = e.meta();
+            let code = meta.code().unwrap_or("Unknown");
+            let message = meta.message().unwrap_or("no message provided");
+            tracing::warn!(bucket = %self.bucket, code, message, error = ?e, "S3 test GetObject failed");
+            let _ = self.client.delete_object().bucket(&self.bucket).key(test_key).send().await;
+            return Err(format!("GetObject failed ({code}): {message}"));
+        }
+
+        // 3. Delete
+        let del_res = self.client.delete_object().bucket(&self.bucket).key(test_key).send().await;
+        if let Err(e) = del_res {
+            let meta = e.meta();
+            let code = meta.code().unwrap_or("Unknown");
+            let message = meta.message().unwrap_or("no message provided");
+            tracing::warn!(bucket = %self.bucket, code, message, error = ?e, "S3 test DeleteObject failed");
+            return Err(format!("DeleteObject failed ({code}): {message}"));
+        }
+
+        Ok(())
+    }
+
     /// `key` is the full object key (path within the bucket) to presign a PUT for — callers
     /// build it (e.g. `avatars/{user_id}/{uuid}.{ext}`), this just talks to S3.
     pub async fn presign_put(&self, key: &str, content_type: &str) -> Result<PresignedUpload, PresignError> {
@@ -122,20 +200,27 @@ impl S3Config {
     /// in-process (an agent tool call, a browser-submitted body proxied through our own API),
     /// as opposed to `presign_put`'s browser-uploads-directly-to-S3 shape.
     pub async fn put_object(&self, key: &str, content: &str, content_type: &str) -> Result<(), S3Error> {
-        self.client
+        if let Err(e) = self.client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
             .content_type(content_type)
             .body(ByteStream::from(content.as_bytes().to_vec()))
             .send()
-            .await?;
+            .await
+        {
+            tracing::error!(bucket = %self.bucket, %key, error = ?e, "S3Config put_object failed");
+            return Err(S3Error::Put(e));
+        }
         Ok(())
     }
 
     /// Writes raw bytes from the server (an avatar the browser sent through Nomi).
     pub async fn put_object_bytes(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<(), S3Error> {
-        self.client.put_object().bucket(&self.bucket).key(key).content_type(content_type).body(ByteStream::from(bytes)).send().await?;
+        if let Err(e) = self.client.put_object().bucket(&self.bucket).key(key).content_type(content_type).body(ByteStream::from(bytes)).send().await {
+            tracing::error!(bucket = %self.bucket, %key, error = ?e, "S3Config put_object_bytes failed");
+            return Err(S3Error::Put(e));
+        }
         Ok(())
     }
 
@@ -156,6 +241,7 @@ impl S3Config {
                         return Ok(None);
                     }
                 }
+                tracing::error!(bucket = %self.bucket, %key, error = ?err, "S3Config get_object failed");
                 return Err(S3Error::Get(err));
             }
         };
@@ -164,7 +250,10 @@ impl S3Config {
     }
 
     pub async fn delete_object(&self, key: &str) -> Result<(), S3Error> {
-        self.client.delete_object().bucket(&self.bucket).key(key).send().await?;
+        if let Err(e) = self.client.delete_object().bucket(&self.bucket).key(key).send().await {
+            tracing::error!(bucket = %self.bucket, %key, error = ?e, "S3Config delete_object failed");
+            return Err(S3Error::Delete(e));
+        }
         Ok(())
     }
 }
