@@ -54,6 +54,7 @@ pub async fn classify_intent(
         .unwrap_or_default();
 
     if let Some(agent) = registry.find_by_intent_label(&label_text) {
+        tracing::info!(agent = %agent.agent_type(), display_name = %agent.display_name(), label = %label_text.trim(), "classified intent to built-in agent");
         return agent;
     }
 
@@ -63,10 +64,12 @@ pub async fn classify_intent(
         .find(|r| r.intent_label == normalized)
         .or_else(|| dynamic_rows.iter().find(|r| normalized.split(|c: char| !c.is_alphanumeric()).any(|w| w == r.intent_label)));
 
-    match matched {
+    let agent = match matched {
         Some(row) => Arc::new(DynamicAgent::from_row(row.clone(), catalog.clone())) as Arc<dyn SubAgent>,
         None => registry.default_agent(),
-    }
+    };
+    tracing::info!(agent = %agent.agent_type(), display_name = %agent.display_name(), label = %label_text.trim(), "classified intent to agent");
+    agent
 }
 
 pub async fn find_active_agent_session(
@@ -115,6 +118,7 @@ pub async fn mark_expired(
     session_id: Uuid,
     agent_type: &str,
 ) -> Result<(), TurnError> {
+    tracing::info!(%session_id, %agent_session_id, %agent_type, "agent session marked expired due to inactivity");
     sqlx::query("UPDATE agent_sessions SET status = 'expired', ended_at = now() WHERE id = $1")
         .bind(agent_session_id)
         .execute(&mut **conn)
@@ -167,6 +171,14 @@ pub async fn spawn_agent_session(
         .execute(&mut **conn)
         .await?;
 
+    tracing::info!(
+        %session_id,
+        %agent_session_id,
+        %agent_type,
+        %agent_display_name,
+        "spawned active agent session"
+    );
+
     if let Some((publisher, _)) = mqtt {
         // Best-effort, and only resolved when there's actually a publisher to send it to —
         // mirrors this codebase's existing "MQTT is optional infrastructure" convention.
@@ -208,6 +220,14 @@ pub async fn complete_agent_session(
     status: &str,
     summary: &str,
 ) -> Result<(), TurnError> {
+    tracing::info!(
+        %session_id,
+        %agent_session_id,
+        %agent_type,
+        %status,
+        %summary,
+        "completed agent session"
+    );
     sqlx::query("UPDATE agent_sessions SET status = $1, ended_at = now() WHERE id = $2")
         .bind(status)
         .bind(agent_session_id)
@@ -249,9 +269,11 @@ pub async fn mentioned_agent(
     let dynamic = nomi_agent_core::dynamic_agent::fetch_active_dynamic_agents(conn).await.unwrap_or_default();
     for name in names {
         if let Some(agent) = registry.agents().iter().find(|a| a.display_name().eq_ignore_ascii_case(name)) {
+            tracing::info!(%name, agent = %agent.agent_type(), "addressed agent by mention");
             return Some(agent.clone());
         }
         if let Some(row) = dynamic.iter().find(|row| row.name.eq_ignore_ascii_case(name)) {
+            tracing::info!(%name, agent = %row.id, "addressed dynamic agent by mention");
             return Some(Arc::new(DynamicAgent::from_row(row.clone(), catalog.clone())) as Arc<dyn SubAgent>);
         }
     }

@@ -61,6 +61,8 @@ pub async fn handle_inbound_message(
         bootstrap::bootstrap_identity_and_session(pool, channel, chat_type, chat_id, sender_channel_user_id, org_id_hint)
             .await?;
 
+    tracing::info!(%session_id, %user_id, channel, chat_type, "handling inbound message");
+
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
     if nomi_agent_core::background::parse_wakeup_marker(text).is_none() {
@@ -71,10 +73,12 @@ pub async fn handle_inbound_message(
 
     match result {
         Ok((reply, message_id)) => {
+            tracing::info!(%session_id, ?message_id, reply_len = reply.len(), "inbound turn finished successfully");
             release_lock_ignoring_errors(&mut conn, session_id).await;
             Ok(TurnOutcome { session_id, reply, message_id })
         }
         Err(err) => {
+            tracing::error!(%session_id, error = %err, "inbound turn failed");
             let _ = sqlx::query(
                 "INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)",
             )
@@ -159,6 +163,7 @@ pub async fn process_turn(
     user_id: Uuid,
     text: &str,
 ) -> Result<TurnOutcome, TurnError> {
+    tracing::info!(%session_id, %turn_job_id, %user_id, "processing turn job");
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
     // A stalled model or tool must never hold the chat (or the worker, which runs turns one at a
@@ -189,10 +194,12 @@ pub async fn process_turn(
 
     match result {
         Ok((reply, message_id)) => {
+            tracing::info!(%session_id, %turn_job_id, ?message_id, reply_len = reply.len(), "turn job completed successfully");
             release_lock_ignoring_errors(&mut conn, session_id).await;
             Ok(TurnOutcome { session_id, reply, message_id })
         }
         Err(err) => {
+            tracing::error!(%session_id, %turn_job_id, error = %err, "turn job execution failed");
             let _ = sqlx::query(
                 "INSERT INTO agent_events (session_id, event_type, payload) VALUES ($1, 'TurnFailed', $2)",
             )
@@ -405,6 +412,13 @@ async fn run_subagent_turn(
     sender_channel_identity_id: Uuid,
     user_id: Uuid,
 ) -> Result<(String, Option<Uuid>), TurnError> {
+    tracing::info!(
+        %session_id,
+        %agent_session_id,
+        agent = %agent.agent_type(),
+        display_name = %agent.display_name(),
+        "running subagent turn"
+    );
     let mut messages = fetch_recent_messages(conn, session_id).await?;
     nomi_agent_core::attachments::expand_messages(conn, user_id, &mut messages).await;
 
@@ -497,6 +511,7 @@ async fn follow_hand_offs(
 ) -> Result<(String, Option<Uuid>), TurnError> {
     let mut hand_offs = 0;
     while let nomi_agent_core::LoopOutcome::HandOff { target_agent, task } = outcome.clone() {
+        tracing::info!(%session_id, from_agent = %agent.agent_type(), to_agent = %target_agent, %task, "following agent handoff");
         let target = if hand_offs < MAX_HAND_OFFS { resolve_agent(conn, ctx.registry, ctx.catalog, &target_agent).await } else { None };
         let Some(target) = target else {
             let locale = nomi_agent_core::user_locale(conn, ctx.user_id).await;
