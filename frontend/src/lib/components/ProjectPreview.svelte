@@ -7,8 +7,6 @@
 	import type { ProjectRuntime, RuntimePhase } from '$lib/projectRuntime.svelte';
 	import PhoneFrame from '$lib/components/ds/build/PhoneFrame.svelte';
 	import DeviceBar from '$lib/components/ds/build/DeviceBar.svelte';
-	import PreviewBuilding from '$lib/components/ds/build/PreviewBuilding.svelte';
-	import type { StepState } from '$lib/components/ds/chat/stepState';
 
 	// The project's live preview, from its dev server running in the browser (WebContainer),
 	// with what it's doing while it gets there. Static projects, and browsers WebContainer can't
@@ -18,7 +16,6 @@
 		runtime,
 		stack = 'static',
 		files = [],
-		steps = [],
 		liveUrl = null,
 		onShowCode,
 	}: {
@@ -28,8 +25,6 @@
 		stack?: string;
 		/** The project's file paths. */
 		files?: string[];
-		/** The plan's steps, shown while there's nothing to preview yet (Build → Preview before deploy). */
-		steps?: { label: string; state: Exclude<StepState, 'failed'> }[];
 		/** The published app's address: what "Open on your phone" sends. */
 		liveUrl?: string | null;
 		onShowCode?: () => void;
@@ -84,9 +79,7 @@
 </script>
 
 {#if !runtime || runtime.phase === 'unsupported'}
-	{#if files.length === 0 && steps.length > 0}
-		<div class="preview preview--status"><PreviewBuilding {steps} /></div>
-	{:else if files.length === 0}
+	{#if files.length === 0}
 		<div class="preview preview--status">
 			<AgentShape agent="coding" size={72} working />
 			<h3 class="preview__title">{m.project_nothing_yet()}</h3>
