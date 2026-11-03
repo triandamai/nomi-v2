@@ -129,9 +129,19 @@ pub async fn save_file(
         }
     }
     let key = project_file_key(project_id, path);
-    let previous = if exists { storage.get_object(&key).await.map_err(|e| e.to_string())? } else { None };
+    let previous = if exists {
+        storage.get_object(&key).await.map_err(|e| {
+            tracing::error!(%project_id, %path, %key, error = %e, "failed to read existing file from project storage");
+            e.to_string()
+        })?
+    } else {
+        None
+    };
     let content_type = guess_content_type(path);
-    storage.put_object(&key, content, content_type).await.map_err(|e| e.to_string())?;
+    if let Err(e) = storage.put_object(&key, content, content_type).await {
+        tracing::error!(%project_id, %path, %key, error = %e, "failed to save file to project storage");
+        return Err(format!("failed to save {path} to storage: {e}"));
+    }
     sqlx::query(
         "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (project_id, path) DO UPDATE SET content_type = EXCLUDED.content_type, size_bytes = EXCLUDED.size_bytes, updated_at = now()",
@@ -281,7 +291,13 @@ pub async fn write_file(
     let project_id = owned_project_id(conn, user_id, &input).await?;
     let path = str_field(&input, "path")?;
     let content = str_field(&input, "content")?;
-    let previous_content = save_file(conn, storage, project_id, path, content).await?;
+    let previous_content = match save_file(conn, storage, project_id, path, content).await {
+        Ok(prev) => prev,
+        Err(e) => {
+            tracing::error!(%project_id, %path, error = %e, "write_file failed");
+            return Err(e);
+        }
+    };
     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
     Ok(ToolOutcome {
         display_text: format!("📝 Wrote `{path}`"),
@@ -316,6 +332,7 @@ pub async fn write_files(
         match save_file(conn, storage, project_id, path, content).await {
             Ok(previous_content) => written.push(FileWriteEntry { path: path.to_string(), content: content.to_string(), previous_content }),
             Err(e) => {
+                tracing::error!(%project_id, %path, error = %e, "write_files: file save failed");
                 if !written.is_empty() {
                     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
                 }

@@ -5,6 +5,7 @@
 //! working; it moves to the bucket the next time it's written.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use crate::blob::{BlobError, BlobStore};
 use crate::S3Config;
@@ -13,6 +14,11 @@ const S3_PREFIX: &str = "projects/";
 
 #[derive(Clone)]
 pub struct ProjectStore {
+    inner: Arc<RwLock<ProjectStoreInner>>,
+}
+
+#[derive(Clone)]
+struct ProjectStoreInner {
     blob: BlobStore,
     /// The disk folder older files may still be in, when `blob` is the bucket.
     legacy_disk: Option<PathBuf>,
@@ -34,28 +40,43 @@ fn disk_dir() -> PathBuf {
 
 /// The bucket when one is configured, else disk.
 pub fn build_project_store(s3: Option<S3Config>) -> ProjectStore {
-    match s3 {
-        Some(s3) => ProjectStore { blob: BlobStore::S3(s3), legacy_disk: Some(disk_dir()) },
-        None => ProjectStore::at(disk_dir()),
-    }
+    let inner = match s3 {
+        Some(s3) => ProjectStoreInner { blob: BlobStore::S3(s3), legacy_disk: Some(disk_dir()) },
+        None => ProjectStoreInner { blob: BlobStore::Disk(disk_dir()), legacy_disk: None },
+    };
+    ProjectStore { inner: Arc::new(RwLock::new(inner)) }
 }
 
 impl ProjectStore {
     /// On disk under `root` (tests use a temp directory).
     pub fn at(root: impl Into<PathBuf>) -> Self {
-        ProjectStore { blob: BlobStore::Disk(root.into()), legacy_disk: None }
+        ProjectStore {
+            inner: Arc::new(RwLock::new(ProjectStoreInner {
+                blob: BlobStore::Disk(root.into()),
+                legacy_disk: None,
+            })),
+        }
+    }
+
+    /// Dynamically switches or updates the storage target across all clones of this store.
+    pub fn reload(&self, s3: Option<S3Config>) {
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        match s3 {
+            Some(s3) => {
+                inner.blob = BlobStore::S3(s3);
+                inner.legacy_disk = Some(disk_dir());
+            }
+            None => {
+                inner.blob = BlobStore::Disk(disk_dir());
+                inner.legacy_disk = None;
+            }
+        }
     }
 
     /// Whether files go to the bucket.
     pub fn is_s3(&self) -> bool {
-        matches!(self.blob, BlobStore::S3(_))
-    }
-
-    fn key(&self, key: &str) -> String {
-        match self.blob {
-            BlobStore::S3(_) => format!("{S3_PREFIX}{key}"),
-            BlobStore::Disk(_) => key.to_string(),
-        }
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        matches!(inner.blob, BlobStore::S3(_))
     }
 
     /// `key` is `{project_id}/{path}`; the caller validates the path.
@@ -64,7 +85,15 @@ impl ProjectStore {
     }
 
     pub async fn put_bytes(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<(), ProjectStoreError> {
-        self.blob.put_bytes(&self.key(key), bytes, content_type).await?;
+        let (blob, full_key) = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            let full_key = match &inner.blob {
+                BlobStore::S3(_) => format!("{S3_PREFIX}{key}"),
+                BlobStore::Disk(_) => key.to_string(),
+            };
+            (inner.blob.clone(), full_key)
+        };
+        blob.put_bytes(&full_key, bytes, content_type).await?;
         Ok(())
     }
 
@@ -77,18 +106,34 @@ impl ProjectStore {
     }
 
     pub async fn get_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, ProjectStoreError> {
-        if let Some(bytes) = self.blob.get_bytes(&self.key(key)).await? {
+        let (blob, legacy_disk, full_key) = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            let full_key = match &inner.blob {
+                BlobStore::S3(_) => format!("{S3_PREFIX}{key}"),
+                BlobStore::Disk(_) => key.to_string(),
+            };
+            (inner.blob.clone(), inner.legacy_disk.clone(), full_key)
+        };
+        if let Some(bytes) = blob.get_bytes(&full_key).await? {
             return Ok(Some(bytes));
         }
-        match &self.legacy_disk {
+        match &legacy_disk {
             Some(root) => read_if_exists(&root.join(key)).await,
             None => Ok(None),
         }
     }
 
     pub async fn delete_object(&self, key: &str) -> Result<(), ProjectStoreError> {
-        self.blob.delete(&self.key(key)).await?;
-        if let Some(root) = &self.legacy_disk {
+        let (blob, legacy_disk, full_key) = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            let full_key = match &inner.blob {
+                BlobStore::S3(_) => format!("{S3_PREFIX}{key}"),
+                BlobStore::Disk(_) => key.to_string(),
+            };
+            (inner.blob.clone(), inner.legacy_disk.clone(), full_key)
+        };
+        blob.delete(&full_key).await?;
+        if let Some(root) = &legacy_disk {
             remove_if_exists(&root.join(key)).await?;
         }
         Ok(())
@@ -96,11 +141,19 @@ impl ProjectStore {
 
     /// Deletes everything under `prefix` (a whole project, keyed by its id).
     pub async fn delete_prefix(&self, prefix: &str) -> Result<(), ProjectStoreError> {
-        match &self.blob {
-            BlobStore::S3(s3) => delete_s3_prefix(s3, &self.key(prefix)).await?,
+        let (blob, legacy_disk, full_key) = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            let full_key = match &inner.blob {
+                BlobStore::S3(_) => format!("{S3_PREFIX}{prefix}"),
+                BlobStore::Disk(_) => prefix.to_string(),
+            };
+            (inner.blob.clone(), inner.legacy_disk.clone(), full_key)
+        };
+        match &blob {
+            BlobStore::S3(s3) => delete_s3_prefix(s3, &full_key).await?,
             BlobStore::Disk(root) => remove_dir_if_exists(&root.join(prefix)).await?,
         }
-        if let Some(root) = &self.legacy_disk {
+        if let Some(root) = &legacy_disk {
             remove_dir_if_exists(&root.join(prefix)).await?;
         }
         Ok(())
@@ -183,9 +236,26 @@ mod tests {
         let legacy = temp_root();
         tokio::fs::create_dir_all(legacy.join("p1")).await.unwrap();
         tokio::fs::write(legacy.join("p1/old.html"), "<h1>old</h1>").await.unwrap();
-        let store = ProjectStore { blob: BlobStore::Disk(temp_root()), legacy_disk: Some(legacy) };
+        let store = ProjectStore {
+            inner: Arc::new(RwLock::new(ProjectStoreInner {
+                blob: BlobStore::Disk(temp_root()),
+                legacy_disk: Some(legacy),
+            })),
+        };
         assert_eq!(store.get_object("p1/old.html").await.unwrap().as_deref(), Some("<h1>old</h1>"));
         store.delete_object("p1/old.html").await.unwrap();
         assert_eq!(store.get_object("p1/old.html").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn reload_updates_shared_clones() {
+        let store1 = ProjectStore::at(temp_root());
+        let store2 = store1.clone();
+        assert!(!store1.is_s3());
+        assert!(!store2.is_s3());
+
+        store1.reload(None);
+        assert!(!store1.is_s3());
+        assert!(!store2.is_s3());
     }
 }

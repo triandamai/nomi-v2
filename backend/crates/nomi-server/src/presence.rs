@@ -143,13 +143,20 @@ impl RelayIdentity {
     }
 
     /// The connection that says whether the device is on: the device id itself (a native app's
-    /// one socket), or `<deviceId>-<tabId>` for a browser tab (`X-Tab-Id`). Without a device id
+    /// one socket), or `<deviceId>-<tabId>` for a browser tab (`X-Tab-Id` header or `?tab=` query parameter). Without a device id
     /// it only forwards, like [`RelayIdentity::relay`].
     pub fn presence(headers: &axum::http::HeaderMap, user_id: Uuid, purpose: &str) -> Self {
+        Self::presence_with_tab(headers, None, user_id, purpose)
+    }
+
+    /// Like `presence`, but also accepts an optional tab id from query parameters for WebSocket
+    /// upgrade requests where browsers cannot supply custom HTTP headers.
+    pub fn presence_with_tab(headers: &axum::http::HeaderMap, query_tab: Option<&str>, user_id: Uuid, purpose: &str) -> Self {
         let Some(device_id) = crate::routes::devices::device_id(headers) else { return Self::relay(headers, purpose) };
         let tab = headers
             .get(crate::routes::devices::TAB_ID_HEADER)
             .and_then(|value| value.to_str().ok())
+            .or(query_tab)
             .filter(|tab| nomi_realtime::valid_tab_id(tab));
         let client_id = nomi_realtime::device_client_id(device_id, tab);
         let speaker = Speaker { user_id, client_id: client_id.clone(), device_id, connection: Uuid::new_v4() };

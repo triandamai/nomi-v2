@@ -56,6 +56,16 @@ impl nomi_auth::extractor::HasJwtSecret for AppState {
     }
 }
 
+impl AppState {
+    /// Returns the active S3 configuration: state's initial S3 or dynamically loads the latest from settings.
+    pub async fn current_s3(&self) -> Option<S3Config> {
+        if let Some(s3) = &self.s3 {
+            return Some(s3.clone());
+        }
+        crate::configuration::storage().await
+    }
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/auth/register", post(auth_routes::register))
@@ -237,6 +247,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/support/keys/:id", delete(crate::routes::support::revoke_key))
         .route("/api/admin/support/questions", get(crate::routes::support::list_questions))
         .route("/api/admin/configuration", get(crate::routes::admin_configuration::get))
+        .route("/api/admin/configuration/storage/test", post(crate::routes::admin_configuration::test_storage))
         .route("/api/admin/configuration/:section", axum::routing::put(crate::routes::admin_configuration::save))
         .route(
             "/api/admin/payment/xendit",

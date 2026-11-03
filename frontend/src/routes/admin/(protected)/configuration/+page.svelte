@@ -46,7 +46,6 @@
 		storage: {
 			title: m.config_storage,
 			lede: m.config_storage_lede,
-			note: m.config_storage_restart,
 			fields: {
 				bucket: { label: m.config_storage_bucket },
 				region: { label: m.config_storage_region, hint: m.config_storage_region_hint },
@@ -169,10 +168,31 @@
 	});
 	const dirty = $derived(Object.keys(changes).length > 0);
 
+	let testingStorage = $state(false);
+	let storageTestResult = $state<{ success: boolean; message: string } | null>(null);
+
 	function select(name: string) {
 		tab = name;
 		saveError = null;
 		saved = false;
+		storageTestResult = null;
+	}
+
+	async function testStorageConnection() {
+		if (!current || current.name !== 'storage') return;
+		testingStorage = true;
+		storageTestResult = null;
+		try {
+			const res = await adminApi<{ success: boolean; message: string }>('configuration/storage/test', {
+				method: 'POST',
+				body: { values: changes }
+			});
+			storageTestResult = res;
+		} catch (e) {
+			storageTestResult = { success: false, message: (e as Error).message };
+		} finally {
+			testingStorage = false;
+		}
 	}
 
 	async function save() {
@@ -261,8 +281,18 @@
 					{#if !canManage}
 						<p class="muted small">{m.config_view_only()}</p>
 					{:else}
+						{#if storageTestResult}
+							<p class={storageTestResult.success ? 'success small' : 'error small'} role="alert">
+								{storageTestResult.message}
+							</p>
+						{/if}
 						{#if saveError}<p class="error" role="alert">{saveError}</p>{/if}
 						{#if saved && !dirty}<p class="muted small" role="status">{m.config_saved()}</p>{/if}
+						{#if current.name === 'storage'}
+							<Button variant="outlined" type="button" disabled={testingStorage} onclick={testStorageConnection}>
+								{testingStorage ? 'Testing connection...' : 'Test connection'}
+							</Button>
+						{/if}
 						<Button variant="filled" type="submit" disabled={saving || !dirty}>{saving ? m.config_saving() : m.config_save()}</Button>
 					{/if}
 				</div>
@@ -354,6 +384,11 @@
 	.error {
 		margin: 0;
 		color: var(--md-sys-color-error);
+		overflow-wrap: anywhere;
+	}
+	.success {
+		margin: 0;
+		color: var(--md-sys-color-primary);
 		overflow-wrap: anywhere;
 	}
 </style>

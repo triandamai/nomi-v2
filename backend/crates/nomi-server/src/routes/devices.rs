@@ -24,9 +24,24 @@ pub const TAB_ID_HEADER: &str = "x-tab-id";
 /// The longest name, brand, model or OS a device may give itself.
 const MAX_DETAIL_CHARS: usize = 100;
 
-/// The device a request came from, when it said (`X-Device-Id`, a UUID).
+/// The device a request came from, when it said (`X-Device-Id` header or `device_id` cookie).
 pub fn device_id(headers: &HeaderMap) -> Option<Uuid> {
-    headers.get(DEVICE_ID_HEADER)?.to_str().ok().and_then(|value| Uuid::parse_str(value.trim()).ok())
+    if let Some(val) = headers.get(DEVICE_ID_HEADER).and_then(|v| v.to_str().ok()) {
+        if let Ok(id) = Uuid::parse_str(val.trim()) {
+            return Some(id);
+        }
+    }
+    if let Some(cookie) = headers.get(axum::http::header::COOKIE).and_then(|v| v.to_str().ok()) {
+        for part in cookie.split(';') {
+            let part = part.trim();
+            if let Some(val) = part.strip_prefix("device_id=") {
+                if let Ok(id) = Uuid::parse_str(val.trim()) {
+                    return Some(id);
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(Deserialize)]

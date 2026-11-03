@@ -1497,11 +1497,17 @@ pub async fn get_agent_status(
 /// The person's own live feed: what concerns them whichever chat they have open (a chat they
 /// left finishing, or waiting on them). The app keeps it open while it's open.
 ///
+#[derive(Deserialize, Default)]
+pub struct ActivityWsQuery {
+    pub tab: Option<String>,
+}
+
 /// It is also the browser tab's presence connection: its broker client id is `<deviceId>-<tabId>`,
 /// and the tab says when it is hidden (`{"op":"presence","state":"away"}`) or shown again.
 pub async fn user_activity_stream(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
+    axum::extract::Query(query): axum::extract::Query<ActivityWsQuery>,
     headers: axum::http::HeaderMap,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
@@ -1509,7 +1515,7 @@ pub async fn user_activity_stream(
     // Both of the person's topics: `activity` (chats the crew is done with) and `stream` (new inbox
     // items, so a failed publish pops up straight away rather than on the next unread poll).
     let topic = format!("user/{}/+", claims.sub);
-    let identity = crate::presence::RelayIdentity::presence(&headers, claims.sub, ACTIVITY_RELAY);
+    let identity = crate::presence::RelayIdentity::presence_with_tab(&headers, query.tab.as_deref(), claims.sub, ACTIVITY_RELAY);
     ws.on_upgrade(move |socket| relay_topic(socket, topic, broker_host, broker_port, identity))
 }
 
@@ -1521,6 +1527,7 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
     if let Err(e) = client.subscribe(&topic, QoS::AtMostOnce).await {
         tracing::warn!(
             %topic,
+            client_id = %identity.client_id,
             broker = %broker_host,
             port = broker_port,
             error = %e,
@@ -1543,19 +1550,34 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
                     }
                     Ok(_) => continue,
                     Err(e) => {
-                        tracing::warn!(
-                            %topic,
-                            broker = %broker_host,
-                            port = broker_port,
-                            error = %e,
-                            "relay_topic: MQTT broker connection error; closing WebSocket"
-                        );
+                        let err_str = e.to_string();
+                        if err_str.contains("closed by peer abruptly") {
+                            tracing::debug!(
+                                %topic,
+                                client_id = %identity.client_id,
+                                broker = %broker_host,
+                                port = broker_port,
+                                error = %e,
+                                "relay_topic: MQTT broker connection closed by peer (reconnected or superseded)"
+                            );
+                        } else {
+                            tracing::warn!(
+                                %topic,
+                                client_id = %identity.client_id,
+                                broker = %broker_host,
+                                port = broker_port,
+                                error = %e,
+                                "relay_topic: MQTT broker connection error; closing WebSocket"
+                            );
+                        }
                         break; // broker connection lost; let the client reconnect
                     }
                 }
             }
             incoming = socket.recv() => {
-                let Some(Ok(message)) = incoming else { break }; // client closed the socket
+                let Some(Ok(message)) = incoming else {
+                    break;
+                }; // client closed the socket
                 if let (Some(speaker), Message::Text(text)) = (&identity.presence, message) {
                     if let Ok(nomi_realtime::ClientFrame::Presence { state }) = serde_json::from_str(&text) {
                         speaker.say(&client, state).await;
@@ -1564,6 +1586,7 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
             }
         }
     }
+    let _ = client.disconnect().await;
 }
 
 /// Default (medium), Low, High and Max, as the composer offers them.
