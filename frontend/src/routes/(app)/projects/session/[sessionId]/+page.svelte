@@ -55,6 +55,14 @@
 	import RequestQueue from '$lib/components/ds/build/RequestQueue.svelte';
 	import { splitAttachments } from '$lib/attachments';
 	import { initials, peerFor, whereLabel } from '$lib/peers';
+	import ExportDialog from '$lib/components/ds/build/ExportDialog.svelte';
+	import CodeView from '$lib/components/ds/build/CodeView.svelte';
+	import CodeQuote from '$lib/components/ds/build/CodeQuote.svelte';
+	import { codeTree, quoteLines } from '$lib/codeTree';
+	import { highlight } from '$lib/codeTokens';
+	import DsTextField from '$lib/components/ds/inputs/TextField.svelte';
+	import DsButton from '$lib/components/ds/actions/Button.svelte';
+	import { Download } from '@lucide/svelte';
 	import { projectApi } from '$lib/projectApi';
 	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
 	import type { ChecklistItem } from '$lib/planChecklist';
@@ -114,6 +122,13 @@
 	onMount(() => {
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
+		// A card in the chat can open one of the project's tools (Share → Invite opens People).
+		const open = (event: Event) => {
+			const which = (event as CustomEvent<string>).detail as Sheet;
+			if (SHEETS.includes(which)) openSheet(which);
+		};
+		window.addEventListener('nomi:open-sheet', open);
+		return () => window.removeEventListener('nomi:open-sheet', open);
 	});
 	// The open sheet is kept in the address (`?sheet=`) so a link opens it. While the page is
 	// still starting (a link that opens a sheet), SvelteKit's router can't change the address yet,
@@ -681,6 +696,79 @@
 	}
 	const viewer = $derived(deploy?.overview?.role === 'viewer');
 
+	// The code, read-only (Build → Code view): what Koda wrote; picking lines quotes them for the
+	// next message (Code quote). People who aren't admins see it this way; admins edit, and can
+	// switch to reading.
+	let reading = $state<boolean | null>(null);
+	const codeReadOnly = $derived(reading ?? (deploy ? !deploy.isAdmin : false));
+	let quoted = $state<{ file: string; range: string; snippet: string; text: string } | null>(null);
+	const tree = $derived(codeTree(filePaths, activePath));
+	const codeLines = $derived(activePath ? highlight(activeContent, activePath.split('.').pop() ?? '') : []);
+	function quoteFile() {
+		if (!activePath) return;
+		quoted = { file: activePath, range: m.code_whole_file(), snippet: '', text: m.code_ask_about_file({ path: activePath }) };
+	}
+
+	// Export (Build → Export): everything built is the person's. What's in it, the files as a zip,
+	// or pushed to their GitHub (connected here first, by GitHub's sign-in or a token).
+	type ExportSummary = { name: string; files: number; bytes: number; database: 'postgres' | 'sqlite' | 'none'; env: string[] };
+	type GithubStatus = { oauth: boolean; connection: { login: string } | null };
+	let exportOpen = $state(false);
+	let exportSummary = $state<ExportSummary | null>(null);
+	let github = $state<GithubStatus | null>(null);
+	let githubStep = $state(false);
+	let githubRepo = $state('');
+	let githubToken = $state('');
+	let githubBusy = $state(false);
+	let githubNote = $state<string | null>(null);
+	async function openExport() {
+		if (!projectId) return;
+		exportOpen = true;
+		exportSummary = await projectApi<ExportSummary>(projectId, 'export').catch(() => null);
+	}
+	const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+	async function startPush() {
+		exportOpen = false;
+		githubStep = true;
+		githubNote = null;
+		github = await fetch('/connections/github').then((r) => (r.ok ? (r.json() as Promise<GithubStatus>) : null)).catch(() => null);
+		if (github?.connection && data.project) githubRepo = `${github.connection.login}/${slug(data.project.name)}`;
+	}
+	async function connectGithub() {
+		githubBusy = true;
+		try {
+			if (github?.oauth) {
+				const response = await fetch('/connections/github', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ back: page.url.pathname }) });
+				const started = response.ok ? ((await response.json()) as { url: string }) : null;
+				if (started?.url) window.location.href = started.url;
+				else githubNote = m.export_github_failed();
+			} else {
+				const response = await fetch('/connections/github', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: githubToken }) });
+				if (!response.ok) githubNote = (await response.text()) || m.export_github_failed();
+				else {
+					github = (await response.json()) as GithubStatus;
+					if (github.connection && data.project) githubRepo = `${github.connection.login}/${slug(data.project.name)}`;
+				}
+			}
+		} finally {
+			githubBusy = false;
+		}
+	}
+	async function pushToGithub() {
+		if (!projectId || !githubRepo.trim()) return;
+		githubBusy = true;
+		githubNote = null;
+		try {
+			const pushed = await projectApi<{ url: string; branch: string; commit: string }>(projectId, 'export/github', { method: 'POST', body: { repo: githubRepo.trim(), create: true } });
+			githubNote = m.export_github_pushed({ url: pushed.url, branch: pushed.branch });
+		} catch (e) {
+			githubNote = (e as Error).message || m.export_github_failed();
+		} finally {
+			githubBusy = false;
+		}
+	}
+	const kb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
 	// The publish button (Build → Workspace / Publish): what will go live, publishing with its
 	// time, or a failed publish to try again. Someone who isn't an admin asks the admins instead.
 	let clock = $state(Date.now());
@@ -778,6 +866,9 @@
 					<tool.icon size={18} /><span class="tool__label">{tool.label()}</span>
 				</button>
 			{/each}
+			<button type="button" class="tool" onclick={openExport} title={m.export_tool()}>
+				<Download size={18} strokeWidth={1.75} /><span class="tool__label">{m.export_tool()}</span>
+			</button>
 		</nav>
 		{#if presence && peers.length > 0}
 			<div class="here-wrap">
@@ -838,10 +929,15 @@
 			compactHeader={Boolean(data.project)}
 			{typingLabel}
 			readOnlyNote={viewer ? m.pj_viewer_note() : null}
+			quote={quoted?.text ?? null}
+			onquotesent={() => (quoted = null)}
 			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
 		>
 			{#snippet aboveComposer()}
+				{#if quoted && !viewer}
+					<CodeQuote file={quoted.file} range={quoted.range} snippet={quoted.snippet} onremove={() => (quoted = null)} />
+				{/if}
 				{#each requests as request (request.id)}
 					<PublishRequest
 						who={{ name: request.requested_by_name, initials: initials(request.requested_by_name), peer: peerFor(request.requested_by_name) }}
@@ -925,6 +1021,24 @@
 						/>
 					</div>
 				{:else}
+					{#if data.project && codeReadOnly}
+						<CodeView
+							tree={tree}
+							path={activePath ?? ''}
+							meta={m.code_readonly({ name: 'Koda' })}
+							lines={codeLines}
+							onopen={(index) => {
+								const entry = tree[index];
+								if (entry && entry.kind !== 'folder' && data.project) void openFile(data.project.id, entry.path);
+							}}
+							onask={quoteFile}
+							onasklines={(from, to) => {
+								if (activePath) quoted = { file: activePath, ...quoteLines(activePath, activeContent, from, to) };
+							}}
+						/>
+						{#if deploy?.isAdmin}<button type="button" class="code-mode" onclick={() => (reading = false)}>{m.code_edit_mode()}</button>{/if}
+					{:else}
+					{#if deploy?.isAdmin}<button type="button" class="code-mode" onclick={() => (reading = true)}>{m.code_read_mode()}</button>{/if}
 					<CodeWorkbench
 						projectName={project.name}
 						files={filePaths}
@@ -940,6 +1054,7 @@
 						onDeleteFile={(path) => deletePath(project.id, path)}
 						onMoveFile={(source, target) => movePath(project.id, source, target)}
 					/>
+					{/if}
 				{/if}
 			</div>
 		{/if}
@@ -951,6 +1066,43 @@
 <ModelManager bind:open={manageOpen} groups={modelGroups} onsaved={modelsSaved} />
 <Snackbar bind:open={modelErrorOpen} message={m.msel_pick_failed()} />
 <Snackbar bind:open={askedOpen} message={askedNote ?? ''} />
+{#if data.project}
+	<ExportDialog
+		bind:open={exportOpen}
+		project={data.project.name}
+		repo={exportSummary ? m.export_repo_detail({ files: String(exportSummary.files), size: kb(exportSummary.bytes) }) : m.common_loading()}
+		database={exportSummary && exportSummary.database !== 'none' ? m.export_db_detail({ kind: exportSummary.database }) : undefined}
+		env={exportSummary && exportSummary.env.length > 0 ? exportSummary.env.join(' · ') : undefined}
+		onpush={startPush}
+		ondownload={() => {
+			window.location.href = `/projects/${data.project?.id}/api/export/zip`;
+		}}
+	/>
+{/if}
+{#if githubStep && data.project}
+	<!-- Pushing to GitHub: connect first if needed, then the repository it goes to. -->
+	<div class="github-step" role="dialog" aria-label={m.export_github()}>
+		{#if !github}
+			<p>{m.common_loading()}</p>
+		{:else if github.connection}
+			<form class="github-step__form" onsubmit={(event) => { event.preventDefault(); void pushToGithub(); }}>
+				<DsTextField label={m.export_github_repo()} bind:value={githubRepo} />
+				<span class="github-step__actions">
+					<DsButton label={m.common_cancel()} variant="ghost" onclick={() => (githubStep = false)} />
+					<DsButton label={m.export_github()} type="submit" disabled={githubBusy || !githubRepo.trim()} />
+				</span>
+			</form>
+		{:else}
+			<p>{m.export_github_connect_note()}</p>
+			{#if !github.oauth}<DsTextField label={m.export_github_token()} bind:value={githubToken} />{/if}
+			<span class="github-step__actions">
+				<DsButton label={m.common_cancel()} variant="ghost" onclick={() => (githubStep = false)} />
+				<DsButton label={m.export_github_connect()} disabled={githubBusy || (!github.oauth && !githubToken.trim())} onclick={connectGithub} />
+			</span>
+		{/if}
+		{#if githubNote}<p class="github-step__note" role="status">{githubNote}</p>{/if}
+	</div>
+{/if}
 
 {#if data.project && sheet}
 	{@const project = data.project}
@@ -1303,6 +1455,52 @@
 		transition:
 			left 120ms linear,
 			top 120ms linear;
+	}
+	.github-step {
+		position: fixed;
+		top: 64px;
+		right: 16px;
+		z-index: 50;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		width: min(420px, calc(100vw - 32px));
+		padding: 16px;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: var(--md-sys-color-surface-container);
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--md-sys-color-shadow) 24%, transparent);
+	}
+	.github-step p {
+		margin: 0;
+		font-size: 0.875rem;
+	}
+	.github-step__form {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.github-step__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+	.github-step__note {
+		overflow-wrap: anywhere;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.code-mode {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		z-index: 5;
+		padding: 6px 10px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface-container);
+		color: inherit;
+		font: inherit;
+		font-size: 0.8125rem;
+		cursor: pointer;
 	}
 	.terminal-pane {
 		display: flex;

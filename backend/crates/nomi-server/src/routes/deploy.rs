@@ -245,7 +245,7 @@ pub(crate) async fn project_files(state: &impl ShipyardAccess, project_id: Uuid)
     Ok(files)
 }
 
-async fn database_kind(state: &AppState, project_id: Uuid) -> Result<manifest::Database, ApiError> {
+pub(crate) async fn database_kind(state: &AppState, project_id: Uuid) -> Result<manifest::Database, ApiError> {
     // Only the files that tell: the Drizzle config and package.json.
     let mut files = Vec::new();
     for path in ["drizzle.config.ts", "drizzle.config.js", "package.json"] {
@@ -257,7 +257,7 @@ async fn database_kind(state: &AppState, project_id: Uuid) -> Result<manifest::D
     Ok(manifest::detect_database(&files))
 }
 
-fn database_name(db: manifest::Database) -> &'static str {
+pub(crate) fn database_name(db: manifest::Database) -> &'static str {
     match db {
         manifest::Database::Postgres => "postgres",
         manifest::Database::Sqlite => "sqlite",

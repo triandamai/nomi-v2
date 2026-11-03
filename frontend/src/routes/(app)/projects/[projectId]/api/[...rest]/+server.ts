@@ -16,10 +16,11 @@ const proxy: RequestHandler = async ({ params, request, url, cookies, fetch }) =
 	if (request.method !== 'GET' && request.method !== 'HEAD') init.body = await request.text();
 	const target = `/api/projects/${encodeURIComponent(params.projectId)}${path ? `/${path}` : ''}${url.search}`;
 	const response = await apiFetch(fetch, cookies, target, init);
-	return new Response(response.body, {
-		status: response.status,
-		headers: { 'content-type': response.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' },
-	});
+	const headers: Record<string, string> = { 'content-type': response.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' };
+	// A download (the project's zip) keeps its file name.
+	const disposition = response.headers.get('content-disposition');
+	if (disposition) headers['content-disposition'] = disposition;
+	return new Response(response.body, { status: response.status, headers });
 };
 
 export const GET = proxy;

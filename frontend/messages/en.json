@@ -2829,5 +2829,21 @@
 	"pj_invite_email": "Their email",
 	"pj_invite_send": "Send invite",
 	"pj_invite_added": "{email} is in the organization, so they're on the project now.",
-	"pj_invite_sent_preview": "Sent. This is what they got:"
+	"pj_invite_sent_preview": "Sent. This is what they got:",
+	"build_cost_note": "{count} steps · time and usage show as it runs",
+	"plan_edit_steps": "Edit the steps",
+	"files_changed_count": "{count} files changed",
+	"export_tool": "Export",
+	"export_repo_detail": "{files} files · {size}",
+	"export_db_detail": "{kind} · schema and data",
+	"export_github_repo": "Repository (owner/name)",
+	"export_github_pushed": "Pushed to {url} on {branch}.",
+	"export_github_failed": "Couldn't push to GitHub. Try again.",
+	"export_github_connect_note": "Connect your GitHub account first. Nomi pushes only when you ask.",
+	"export_github_token": "GitHub token (repo access)",
+	"export_github_connect": "Connect GitHub",
+	"code_whole_file": "whole file",
+	"code_ask_about_file": "About `{path}`:",
+	"code_edit_mode": "Edit the code",
+	"code_read_mode": "Read and ask Koda"
 }

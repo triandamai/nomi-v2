@@ -591,6 +591,9 @@ pub struct PlanBuild {
     pub report: Option<serde_json::Value>,
     pub error: Option<String>,
     pub updated_at: DateTime<Utc>,
+    /// When Koda started on it, and when it ended (null while it runs): the build's real time.
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -640,8 +643,8 @@ pub async fn list_agent_plans(
     // written under the chat's own id, as delegated runs do) came between them.
     let newest_at = rows.last().map(|row| row.5);
     let build = match newest_at {
-        Some(newest_at) => sqlx::query_as::<_, (Uuid, String, Option<serde_json::Value>, Option<String>, DateTime<Utc>)>(
-            "SELECT d.id, d.status, d.report, d.error, COALESCE(d.completed_at, d.claimed_at, d.created_at) FROM agent_delegations d \
+        Some(newest_at) => sqlx::query_as::<_, (Uuid, String, Option<serde_json::Value>, Option<String>, DateTime<Utc>, DateTime<Utc>, Option<DateTime<Utc>>)>(
+            "SELECT d.id, d.status, d.report, d.error, COALESCE(d.completed_at, d.claimed_at, d.created_at), COALESCE(d.claimed_at, d.created_at), d.completed_at FROM agent_delegations d \
              WHERE d.session_id = $1 AND d.target_agent_type = $2 AND d.created_at >= $3 \
                AND NOT EXISTS (SELECT 1 FROM agent_plans o WHERE o.session_id = $1 AND o.agent_session_id NOT IN ($1, $4) \
                                AND o.created_at > $3 AND o.created_at <= d.created_at) \
@@ -654,7 +657,7 @@ pub async fn list_agent_plans(
         .fetch_optional(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch plans"))?
-        .map(|(delegation_id, status, report, error, updated_at)| PlanBuild { delegation_id, status, report, error, updated_at }),
+        .map(|(delegation_id, status, report, error, updated_at, started_at, finished_at)| PlanBuild { delegation_id, status, report, error, updated_at, started_at, finished_at }),
         None => None,
     };
 

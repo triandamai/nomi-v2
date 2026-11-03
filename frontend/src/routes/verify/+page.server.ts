@@ -38,6 +38,8 @@ export const actions: Actions = {
 		if (result.ok) {
 			clearPendingSignIn(cookies);
 			await completeSignIn(fetch, cookies, result.json as TokenPair, pending.email, pending.isNew);
+			// A new account names itself first (Build → First run), then goes where it was going.
+			if (pending.isNew) throw redirect(303, `/first-run?next=${encodeURIComponent(pending.redirectTo || '/')}`);
 			throw redirect(303, pending.redirectTo || '/');
 		}
 		const error = result.json as ApiError;

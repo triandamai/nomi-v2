@@ -2829,5 +2829,21 @@
 	"pj_invite_email": "Email mereka",
 	"pj_invite_send": "Kirim undangan",
 	"pj_invite_added": "{email} sudah ada di organisasi, jadi sekarang sudah masuk proyek.",
-	"pj_invite_sent_preview": "Terkirim. Ini yang mereka terima:"
+	"pj_invite_sent_preview": "Terkirim. Ini yang mereka terima:",
+	"build_cost_note": "{count} langkah · waktu dan pemakaian terlihat saat berjalan",
+	"plan_edit_steps": "Ubah langkah",
+	"files_changed_count": "{count} file berubah",
+	"export_tool": "Ekspor",
+	"export_repo_detail": "{files} file · {size}",
+	"export_db_detail": "{kind} · skema dan data",
+	"export_github_repo": "Repositori (pemilik/nama)",
+	"export_github_pushed": "Terkirim ke {url} di {branch}.",
+	"export_github_failed": "Tidak bisa mengirim ke GitHub. Coba lagi.",
+	"export_github_connect_note": "Hubungkan akun GitHub-mu dulu. Nomi hanya mengirim saat kamu minta.",
+	"export_github_token": "Token GitHub (akses repo)",
+	"export_github_connect": "Hubungkan GitHub",
+	"code_whole_file": "seluruh file",
+	"code_ask_about_file": "Tentang `{path}`:",
+	"code_edit_mode": "Ubah kodenya",
+	"code_read_mode": "Baca dan tanya Koda"
 }

@@ -90,6 +90,8 @@
 		typingPeople = [],
 		aboveComposer,
 		readOnlyNote = null,
+		quote = null,
+		onquotesent,
 		ontyping,
 		chatMenu = null,
 	}: {
@@ -133,6 +135,10 @@
 		aboveComposer?: Snippet;
 		/** The person can read this chat but not write in it (a project's viewer): said instead of the composer. */
 		readOnlyNote?: string | null;
+		/** Something quoted for the next message (code lines picked in the project's code view): it goes ahead of what's typed. */
+		quote?: string | null;
+		/** The quote went out with a message. */
+		onquotesent?: () => void;
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
 		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
@@ -395,7 +401,9 @@
 		if (thinkingLevel) level = thinkingLevel;
 	});
 
-	const composedText = $derived(composeMessage(draft, attachments.flatMap((f) => (f.uploaded ? [f.uploaded.reference] : []))));
+	const composedText = $derived(
+		composeMessage(quote && draft.trim() ? `${quote}\n\n${draft}` : draft, attachments.flatMap((f) => (f.uploaded ? [f.uploaded.reference] : []))),
+	);
 
 	function removeAttachment(key: string) {
 		const file = attachments.find((f) => f.key === key);
@@ -1191,6 +1199,7 @@
 							if (result.type === 'redirect') clearAttachments();
 							await update({ reset: true });
 							if (result.type === 'success') {
+								if (quote) onquotesent?.();
 								draft = '';
 								clearAttachments();
 								if (result.data?.stopped) settleAfterStop();

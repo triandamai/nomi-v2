@@ -399,6 +399,8 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/projects/:id/import/github", post(crate::routes::project_import::import_github))
         .route("/api/projects/:id/export/github", post(crate::routes::github::export))
+        .route("/api/projects/:id/export", get(crate::routes::project_export::summary))
+        .route("/api/projects/:id/export/zip", get(crate::routes::project_export::download))
         .route(
             "/api/projects/:id/import/files",
             post(crate::routes::project_import::import_batch).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),

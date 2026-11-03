@@ -178,6 +178,9 @@ export interface PlanBuild {
 	report: BuildReport | null;
 	error: string | null;
 	updated_at: string;
+	/** When Koda started on it, and when it ended (missing from older servers). */
+	started_at?: string;
+	finished_at?: string | null;
 }
 
 export interface AgentPlansResponse {

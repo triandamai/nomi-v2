@@ -21,6 +21,8 @@
 	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 	import ActivityBlock from '$lib/components/ds/conversation/ActivityBlock.svelte';
+	import FileList from '$lib/components/ds/build/FileList.svelte';
+	import { page } from '$app/state';
 	import { changeLabel, lineChange } from '$lib/fileChanges';
 
 	let {
@@ -86,11 +88,16 @@
 	     batch, each its own tab; only a short batch opens by itself. -->
 	{@const changes = block.files.map((file) => lineChange(file.content, file.previous_content))}
 	<div class="file-batch">
+		{#if page.url.pathname.startsWith('/projects/')}
+			<!-- In a project, Koda's files as the Build sheet lists them (Build → File list). -->
+			<FileList files={block.files.map((file, index) => ({ path: file.path, change: changeLabel(changes[index]), state: 'done' as const }))} total={block.files.length} />
+		{:else}
 		<ActivityBlock
 			title={m.activity_wrote_files({ count: block.files.length })}
 			total={changeLabel({ added: changes.reduce((sum, c) => sum + c.added, 0), removed: changes.reduce((sum, c) => sum + c.removed, 0) })}
 			files={block.files.map((file, index) => ({ path: file.path, change: changeLabel(changes[index]) }))}
 		/>
+		{/if}
 		{#await fileChangeBlock() then { default: FileChangeBlock }}
 			{#each block.files as file (file.path)}
 				<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
