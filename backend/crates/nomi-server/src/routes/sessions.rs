@@ -1419,8 +1419,15 @@ pub async fn user_activity_stream(
 /// connection says `online` once subscribed and passes on the app's `presence` frames; when the
 /// socket goes, dropping the broker connection sends its `offline` last will.
 pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
-    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host, broker_port), 16);
-    if client.subscribe(&topic, QoS::AtMostOnce).await.is_err() {
+    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host.clone(), broker_port), 16);
+    if let Err(e) = client.subscribe(&topic, QoS::AtMostOnce).await {
+        tracing::warn!(
+            %topic,
+            broker = %broker_host,
+            port = broker_port,
+            error = %e,
+            "relay_topic: failed to subscribe to MQTT broker; closing WebSocket"
+        );
         return; // socket closes on drop
     }
     if let Some(speaker) = &identity.presence {
@@ -1437,7 +1444,16 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
                         }
                     }
                     Ok(_) => continue,
-                    Err(_) => break, // broker connection lost; let the client reconnect
+                    Err(e) => {
+                        tracing::warn!(
+                            %topic,
+                            broker = %broker_host,
+                            port = broker_port,
+                            error = %e,
+                            "relay_topic: MQTT broker connection error; closing WebSocket"
+                        );
+                        break; // broker connection lost; let the client reconnect
+                    }
                 }
             }
             incoming = socket.recv() => {

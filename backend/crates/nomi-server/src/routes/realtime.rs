@@ -136,7 +136,8 @@ async fn run(mut socket: WebSocket, state: AppState, identity: crate::presence::
 
     let user_topic = Topic::User(user_id);
     for mqtt_topic in user_topic.mqtt_topics() {
-        if client.subscribe(mqtt_topic, QoS::AtMostOnce).await.is_err() {
+        if let Err(e) = client.subscribe(&mqtt_topic, QoS::AtMostOnce).await {
+            tracing::warn!(%user_id, %mqtt_topic, error = %e, "realtime: failed to subscribe to user topic; closing WebSocket");
             return;
         }
     }
