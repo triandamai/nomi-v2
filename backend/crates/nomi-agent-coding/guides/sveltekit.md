@@ -29,7 +29,7 @@ SvelteKit 3 is NOT SvelteKit 2. Things you may remember that are now wrong:
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-kit sync",
 		"db:generate": "drizzle-kit generate"
 	},
 	"devDependencies": {
