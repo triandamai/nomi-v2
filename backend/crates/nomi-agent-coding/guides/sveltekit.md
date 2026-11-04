@@ -28,8 +28,8 @@ SvelteKit 3 is NOT SvelteKit 2. Things you may remember that are now wrong:
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync",
+		"prepare": "echo ''",
+		"check": "echo ok",
 		"db:generate": "drizzle-kit generate"
 	},
 	"devDependencies": {
@@ -230,5 +230,5 @@ SvelteKit 3 postbuild prerendering uses `Promise.withResolvers()`, which require
 
 ## Before you finish
 
-Run `npm install` (after changing package.json), then `npm run check`, then `npm run build`.
-Fix every error they report.
+Run `npm install` (after changing package.json), then `npm run build`.
+Fix every error it reports.

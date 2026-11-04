@@ -65,16 +65,37 @@ export function parentDir(path: string): string {
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007|\u001b[()][A-Z0-9]/g;
 
+/**
+ * Appends a terminal text segment to the existing log, correctly resolving:
+ * - ANSI escapes (stripped)
+ * - CRLF \r\n (converted to \n)
+ * - Lone \r (returns cursor to column 0 so subsequent output replaces the current line)
+ */
+function appendSegment(log: string, segment: string): string {
+	const normalized = segment.replace(ANSI, '').replace(/\r\n/g, '\n');
+	let combined = log;
+	for (let i = 0; i < normalized.length; i++) {
+		const ch = normalized[i];
+		if (ch === '\r') {
+			if (!combined.endsWith('\r')) combined += '\r';
+		} else if (ch === '\n') {
+			if (combined.endsWith('\r')) combined = combined.slice(0, -1);
+			combined += '\n';
+		} else {
+			if (combined.endsWith('\r')) {
+				combined = combined.slice(0, -1);
+				const lastNl = combined.lastIndexOf('\n');
+				combined = lastNl >= 0 ? combined.slice(0, lastNl + 1) : '';
+			}
+			combined += ch;
+		}
+	}
+	return combined;
+}
+
 /** Terminal output as plain text: no colour codes, carriage-return redraws collapsed. */
 export function cleanOutput(chunk: string): string {
-	return chunk
-		.replace(ANSI, '')
-		.split('\n')
-		.map((line) => {
-			const parts = line.split('\r').filter((p) => p.length > 0);
-			return parts.length ? parts[parts.length - 1] : '';
-		})
-		.join('\n');
+	return appendSegment('', chunk).replace(/\r+$/, '');
 }
 
 // Clearing the screen: a cursor jump to the top (ESC[H, ESC[row;colH), erase-display (ESC[J,
@@ -95,9 +116,10 @@ function dropTrailingBlankLines(log: string): string {
  */
 export function appendOutput(log: string, chunk: string): string {
 	const segments = chunk.split(CLEAR);
-	let next = log + cleanOutput(segments[0]);
+	let next = appendSegment(log, segments[0]);
 	for (const segment of segments.slice(1)) {
-		next = dropTrailingBlankLines(next) + cleanOutput(segment);
+		next = dropTrailingBlankLines(next);
+		next = appendSegment(next, segment);
 	}
 	return next.replace(/\n(?:[ \t]*\n){2,}/g, '\n\n');
 }
