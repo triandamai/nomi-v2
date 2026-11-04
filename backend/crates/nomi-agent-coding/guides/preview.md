@@ -1,14 +1,30 @@
 # How Nomi runs your project (the preview)
 
 The project runs in the user's browser in a WebContainer: a Node.js environment compiled to
-WebAssembly. When the user has the project open:
+WebAssembly.
 
-1. Nomi copies the project's files in, runs `npm install`, and starts `npm run dev` with
-   `NOMI_PREVIEW=1` set. The dev server's URL is shown in the preview pane.
-2. Every file you write is copied into the running container straight away, so Vite reloads it.
-3. `run_command` runs a command there and gives you its output. You can run `npm install`,
-   `npm run check`, `npm run build`, `npm run db:generate`, `npx ...` and `node ...`. Don't run
-   `npm run dev` (Nomi manages the dev server) or anything that never exits.
+## How development works in Nomi (dev vs build)
+
+1. **The preview runs the live dev server (`npm run dev`)**:
+   - Nomi boots the project by running `npm install` and then starting `npm run dev` with
+     `NOMI_PREVIEW=1` set. The dev server's URL is shown in the preview pane.
+   - Do NOT run `npm run dev` yourself with `run_command`: Nomi manages the dev server lifecycle.
+
+2. **Hot Module Replacement (HMR)**:
+   - Every file you write (`write_files`, `edit_file`, `write_file`) is mirrored into the running
+     WebContainer filesystem immediately.
+   - Vite hot-reloads the changes live on screen without restarting the container.
+   - The user sees the changes in real-time on the preview screen.
+
+3. **When to run commands**:
+   - `npm install`: Run this **only** after adding or changing dependencies in `package.json`.
+     Nomi restarts the dev server automatically to pick up newly installed packages.
+   - `npm run db:generate`: Run this when you create or change database tables (Drizzle schema migrations).
+   - `npm run check`: Run this to quickly verify syntax and types.
+   - `npm run build`: `build` is for packaging a production bundle (e.g. before publishing). Do
+     **not** confuse `build` with running the app: the user interacts with the live dev server
+     (`npm run dev`), not the build output. Do not spam `npm run build` between simple file
+     edits—Vite's dev server is already live and hot-reloading your edits.
 
 The user has no shell: the terminal in the workspace only shows what Nomi runs. Never ask them to
 type a command. If they say the preview is stuck (on "installing", "starting" or an error), read

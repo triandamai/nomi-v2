@@ -228,7 +228,15 @@ SvelteKit 3 postbuild prerendering uses `Promise.withResolvers()`, which require
 - If running in an older environment (< Node 22) where upgrading Node is not possible, polyfill `Promise.withResolvers` before building (`node --require polyfill.js` or in `vite.config.ts`).
 - Never use Node 20 or earlier, as building modern Vite/SvelteKit projects will fail with: `TypeError: Promise.withResolvers is not a function`.
 
+## How we work in Nomi
+
+- The preview environment runs Vite's live dev server (`npm run dev`). Every file edit you make is hot-reloaded immediately into the user's preview.
+- Nomi starts and manages `npm run dev` automatically; do not start it yourself.
+- Run `npm install` only when you add or update packages in `package.json`.
+- Run `npm run db:generate` when you create or update schemas in `src/lib/server/db/schema.ts`.
+- `npm run build` verifies that production packaging succeeds before publish. It is not the development server.
+
 ## Before you finish
 
-Run `npm install` (after changing package.json), then `npm run build`.
+Make sure all routes, components, and schema files are in place. Run `npm install` if you changed `package.json`, and run `npm run build` to verify the build compiles cleanly.
 Fix every error it reports.
