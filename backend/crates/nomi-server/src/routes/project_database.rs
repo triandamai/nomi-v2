@@ -14,6 +14,7 @@ use sqlx::{Connection, Executor, Row};
 use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
+use nomi_shipyard::manifest;
 
 use crate::app::AppState;
 use crate::project_ops::ShipyardAccess;
@@ -47,6 +48,17 @@ pub struct DatabaseInfo {
 
 /// The owner login of the chosen database. The development one is created when missing.
 pub(crate) async fn owner_url(state: &impl ShipyardAccess, project_id: Uuid, source: Source) -> Result<String, ApiError> {
+    let mut files = Vec::new();
+    for path in ["drizzle.config.ts", "drizzle.config.js", "package.json"] {
+        let key = nomi_agent_coding::project_file_key(project_id, path);
+        if let Ok(Some(bytes)) = state.project_storage().get_bytes(&key).await {
+            files.push((path.to_string(), bytes));
+        }
+    }
+    if manifest::detect_database(&files) == manifest::Database::None {
+        return Err((StatusCode::NOT_FOUND, "This project does not use a database.".to_string()));
+    }
+
     let client = client(state)?;
     let target = crate::shipyard::load_target(state.pool(), project_id)
         .await

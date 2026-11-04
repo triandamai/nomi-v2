@@ -230,13 +230,13 @@ SvelteKit 3 postbuild prerendering uses `Promise.withResolvers()`, which require
 
 ## How we work in Nomi
 
-- The preview environment runs Vite's live dev server (`npm run dev`). Every file edit you make is hot-reloaded immediately into the user's preview.
-- Nomi starts and manages `npm run dev` automatically; do not start it yourself.
-- Run `npm install` only when you add or update packages in `package.json`.
+- The preview environment runs Vite's live dev server (`npm run dev`). Every file edit you make is hot-reloaded immediately into the user's preview via Vite HMR.
+- Nomi starts and manages `npm run dev` automatically; do not start it yourself with `run_command`.
+- Do NOT run `npm run build` during development. The user interacts with the live dev server (`npm run dev`), not the build output. Running `build` in WebContainer wastes browser resources and can stall the container.
+- Do NOT run `svelte-check` or heavy typecheckers in WebContainer: keep `"check": "echo ok"` in `package.json`.
+- Run `npm install` with `run_command` ONLY when you add or update packages in `package.json`.
 - Run `npm run db:generate` when you create or update schemas in `src/lib/server/db/schema.ts`.
-- `npm run build` verifies that production packaging succeeds before publish. It is not the development server.
 
 ## Before you finish
 
-Make sure all routes, components, and schema files are in place. Run `npm install` if you changed `package.json`, and run `npm run build` to verify the build compiles cleanly.
-Fix every error it reports.
+Make sure all routes, components, and schema files are in place and correctly written. You do not need to run `npm run build` in WebContainer during development—the live dev server (`npm run dev`) has already hot-reloaded your changes. Complete your task cleanly.

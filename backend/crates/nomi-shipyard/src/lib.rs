@@ -148,7 +148,14 @@ fn unwrap_envelope(status: u16, body: &str) -> Result<Value, ShipyardError> {
         .and_then(|e| e.get("message"))
         .and_then(Value::as_str)
         .map(str::to_string)
-        .unwrap_or_else(|| body.chars().take(300).collect());
+        .unwrap_or_else(|| {
+            let trimmed = body.trim_start();
+            if trimmed.starts_with('<') {
+                format!("Shipyard returned HTTP {status}")
+            } else {
+                body.chars().take(300).collect()
+            }
+        });
     let code = error.and_then(|e| e.get("code")).and_then(Value::as_str).unwrap_or_default().to_string();
     match status {
         200..=299 => Ok(parsed.get("data").cloned().unwrap_or(parsed)),

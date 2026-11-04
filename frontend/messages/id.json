@@ -1580,6 +1580,7 @@
 	"pj_db_login": "String koneksi",
 	"pj_db_login_hint": "Untuk klien database Anda sendiri. Hanya Anda yang melihatnya.",
 	"pj_db_no_tables": "Belum ada tabel.",
+	"pj_db_not_used": "Proyek ini tidak menggunakan database.",
 	"pj_db_production": "Aplikasi terpublikasi",
 	"pj_db_production_hint": "Database milik aplikasi yang aktif. Perubahan di sini memengaruhi data asli.",
 	"pj_db_query": "Kueri SQL",

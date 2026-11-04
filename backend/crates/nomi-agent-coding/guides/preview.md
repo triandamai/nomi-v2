@@ -20,16 +20,13 @@ WebAssembly.
    - `npm install`: Run this **only** after adding or changing dependencies in `package.json`.
      Nomi restarts the dev server automatically to pick up newly installed packages.
    - `npm run db:generate`: Run this when you create or change database tables (Drizzle schema migrations).
-   - `npm run check`: Run this to quickly verify syntax and types.
-   - `npm run build`: `build` is for packaging a production bundle (e.g. before publishing). Do
-     **not** confuse `build` with running the app: the user interacts with the live dev server
-     (`npm run dev`), not the build output. Do not spam `npm run build` between simple file
-     edits—Vite's dev server is already live and hot-reloading your edits.
+   - **NEVER run `npm run build` during development**: `build` is solely for packaging a production bundle before publishing. Running `build` inside the browser WebContainer is heavy, wastes memory and CPU, slows down the environment, and can stall or freeze the container. The user interacts with the live dev server (`npm run dev`), never the build output.
+   - **Do NOT run heavy typecheckers in WebContainer**: Tools like `svelte-check` or `vue-tsc` require massive WASM memory and language-server threads that can freeze WebContainer in the browser. Keep `"check": "echo ok"` in `package.json`. Rely on Vite's fast dev server diagnostics.
 
 The user has no shell: the terminal in the workspace only shows what Nomi runs. Never ask them to
 type a command. If they say the preview is stuck (on "installing", "starting" or an error), read
-the terminal output they share or run `npm run check` yourself, fix what's wrong in the files, and
-tell them to press Restart in the preview (or reload the page) once you have.
+the terminal output they share, fix what's wrong in the files, and tell them to press Restart in
+the preview (or reload the page) once you have.
 
 When the project isn't open, `run_command` can't run: write the files anyway and finish. The next
 time it's opened, Nomi installs and checks it, and if that fails, the errors come back to you as

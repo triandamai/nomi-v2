@@ -1580,6 +1580,7 @@
 	"pj_db_login": "Connection string",
 	"pj_db_login_hint": "For your own database client. Only you see it.",
 	"pj_db_no_tables": "No tables yet.",
+	"pj_db_not_used": "This project does not use a database.",
 	"pj_db_production": "Published app",
 	"pj_db_production_hint": "The live app's own database. Changes here affect real data.",
 	"pj_db_query": "SQL query",
