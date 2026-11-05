@@ -408,11 +408,77 @@ export interface OrgOption {
 	name: string;
 }
 
+export interface ShowcaseProject {
+	id: string;
+	name: string;
+	description: string | null;
+	status: string;
+	deploy_url: string | null;
+	build_duration_secs: number | null;
+}
+
+export interface ProfileStats {
+	lifetime_tokens: number;
+	peak_day_tokens: number;
+	peak_day_date: string | null;
+	longest_task_secs: number | null;
+	longest_task_name: string | null;
+	longest_streak_days: number;
+	longest_streak_range: string | null;
+	current_streak_days: number;
+	best_streak_target: number;
+}
+
+export interface ProfileDayActivity {
+	date: string;
+	tokens: number;
+}
+
+export interface ProfileModelUsage {
+	label: string;
+	tokens: number;
+	percentage: number;
+}
+
+export interface ProfileCrewUsage {
+	agent_id: string;
+	name: string;
+	count: number;
+	kind: string;
+}
+
 export interface Profile {
 	display_name: string | null;
 	username: string | null;
 	email: string;
 	avatar_url: string | null;
+	location?: string | null;
+	joined_at?: string;
+	plan_name?: string;
+	show_stats_publicly?: boolean;
+	show_crew_publicly?: boolean;
+	showcase_project_ids?: string[];
+	showcase_projects?: ShowcaseProject[];
+	stats?: ProfileStats;
+	activity?: ProfileDayActivity[];
+	top_models?: ProfileModelUsage[];
+	crew_usage?: ProfileCrewUsage[];
+}
+
+export interface PublicProfile {
+	display_name: string | null;
+	username: string;
+	avatar_url: string | null;
+	location: string | null;
+	joined_at: string;
+	plan_name: string;
+	show_stats_publicly: boolean;
+	show_crew_publicly: boolean;
+	stats?: ProfileStats | null;
+	activity?: ProfileDayActivity[] | null;
+	top_models?: ProfileModelUsage[] | null;
+	crew_usage?: ProfileCrewUsage[] | null;
+	showcase_projects: ShowcaseProject[];
 }
 
 export type Theme = 'light' | 'dark' | 'system';

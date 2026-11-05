@@ -333,6 +333,8 @@ pub fn build_router(state: AppState) -> Router {
             "/api/profile",
             get(profile_routes::get_profile).put(profile_routes::put_profile),
         )
+        .route("/api/profile/check-username", get(profile_routes::check_username))
+        .route("/api/public/profile/:username", get(profile_routes::get_public_profile))
         .route(
             "/api/attachments",
             // Uploads are streamed and limited by the handler itself (nomi_attachments::Limits).

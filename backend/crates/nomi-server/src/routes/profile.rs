@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -8,12 +8,67 @@ use crate::app::AppState;
 use nomi_auth::extractor::AuthClaims;
 use nomi_i18n::Locale;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShowcaseProject {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub deploy_url: Option<String>,
+    pub build_duration_secs: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileStats {
+    pub lifetime_tokens: i64,
+    pub peak_day_tokens: i64,
+    pub peak_day_date: Option<String>,
+    pub longest_task_secs: Option<i64>,
+    pub longest_task_name: Option<String>,
+    pub longest_streak_days: i32,
+    pub longest_streak_range: Option<String>,
+    pub current_streak_days: i32,
+    pub best_streak_target: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileDayActivity {
+    pub date: String,
+    pub tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileModelUsage {
+    pub label: String,
+    pub tokens: i64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileCrewUsage {
+    pub agent_id: String,
+    pub name: String,
+    pub count: i64,
+    pub kind: String,
+}
+
 #[derive(Serialize)]
 pub struct ProfileResponse {
     pub display_name: Option<String>,
     pub username: Option<String>,
     pub email: String,
     pub avatar_url: Option<String>,
+    pub location: Option<String>,
+    pub joined_at: chrono::DateTime<chrono::Utc>,
+    pub plan_name: String,
+    pub show_stats_publicly: bool,
+    pub show_crew_publicly: bool,
+    pub showcase_project_ids: Vec<Uuid>,
+    pub showcase_projects: Vec<ShowcaseProject>,
+    pub stats: ProfileStats,
+    pub activity: Vec<ProfileDayActivity>,
+    pub top_models: Vec<ProfileModelUsage>,
+    pub crew_usage: Vec<ProfileCrewUsage>,
 }
 
 async fn load_email(pool: &sqlx::PgPool, user_id: Uuid) -> Result<String, (StatusCode, &'static str)> {
@@ -27,27 +82,299 @@ async fn load_email(pool: &sqlx::PgPool, user_id: Uuid) -> Result<String, (Statu
         })
 }
 
+pub async fn load_profile_data(pool: &sqlx::PgPool, user_id: Uuid) -> Result<ProfileResponse, (StatusCode, &'static str)> {
+    let email = load_email(pool, user_id).await.unwrap_or_default();
+
+    let joined_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT created_at FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to load user join date");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to load profile")
+        })?
+        .unwrap_or_else(chrono::Utc::now);
+
+    #[allow(clippy::type_complexity)]
+    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<bool>, Option<bool>, Option<Vec<Uuid>>)> = sqlx::query_as(
+        "SELECT display_name, username, avatar_url, location, show_stats_publicly, show_crew_publicly, showcase_project_ids FROM user_profiles WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to load user profile");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load profile")
+    })?;
+
+    let (display_name, username, avatar_url, location, show_stats_publicly, show_crew_publicly, showcase_project_ids) =
+        row.unwrap_or((None, None, None, None, None, None, None));
+
+    let show_stats_publicly = show_stats_publicly.unwrap_or(true);
+    let show_crew_publicly = show_crew_publicly.unwrap_or(false);
+    let showcase_project_ids = showcase_project_ids.unwrap_or_default();
+
+    let plan_name = match nomi_usage::plans::subscription_for(pool, user_id).await {
+        Ok(sub) => format!("{} plan", sub.plan.name),
+        Err(_) => "Free plan".to_string(),
+    };
+
+    let lifetime_tokens: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(ROUND(SUM(input_tokens - cached_input_tokens + output_tokens + cached_input_tokens * 0.1)), 0)::bigint FROM llm_usage WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    let activity_rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT to_char(created_at AT TIME ZONE COALESCE((SELECT timezone FROM user_preferences WHERE user_id = $1), 'UTC'), 'YYYY-MM-DD') AS day, \
+                COALESCE(ROUND(SUM(input_tokens - cached_input_tokens + output_tokens + cached_input_tokens * 0.1)), 0)::bigint AS tokens \
+         FROM llm_usage \
+         WHERE user_id = $1 AND created_at >= (now() - interval '365 days') \
+         GROUP BY day \
+         ORDER BY day ASC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let activity: Vec<ProfileDayActivity> = activity_rows.into_iter().map(|(date, tokens)| ProfileDayActivity { date, tokens }).collect();
+
+    let (peak_day_tokens, peak_day_date) = activity
+        .iter()
+        .max_by_key(|a| a.tokens)
+        .map(|a| (a.tokens, Some(a.date.clone())))
+        .unwrap_or((0, None));
+
+    // Compute streak metrics
+    let mut longest_streak_days = 0;
+    let mut longest_streak_range = None;
+    let mut current_streak_days = 0;
+
+    let active_dates: Vec<chrono::NaiveDate> = activity
+        .iter()
+        .filter(|a| a.tokens > 0)
+        .filter_map(|a| chrono::NaiveDate::parse_from_str(&a.date, "%Y-%m-%d").ok())
+        .collect();
+
+    if !active_dates.is_empty() {
+        let mut cur_run = 0;
+        let mut cur_start = active_dates[0];
+        let mut prev = active_dates[0];
+
+        for &date in &active_dates {
+            if date == prev {
+                cur_run = 1;
+                cur_start = date;
+            } else if date == prev + chrono::Duration::days(1) {
+                cur_run += 1;
+            } else {
+                if cur_run > longest_streak_days {
+                    longest_streak_days = cur_run;
+                    longest_streak_range = Some(format!(
+                        "{}-{} {}",
+                        cur_start.format("%e").to_string().trim(),
+                        prev.format("%e").to_string().trim(),
+                        prev.format("%b")
+                    ));
+                }
+                cur_run = 1;
+                cur_start = date;
+            }
+            prev = date;
+        }
+        if cur_run > longest_streak_days {
+            longest_streak_days = cur_run;
+            longest_streak_range = Some(format!(
+                "{}-{} {}",
+                cur_start.format("%e").to_string().trim(),
+                prev.format("%e").to_string().trim(),
+                prev.format("%b")
+            ));
+        }
+
+        let today = chrono::Utc::now().date_naive();
+        let yesterday = today - chrono::Duration::days(1);
+        let mut test_date = if active_dates.contains(&today) {
+            today
+        } else if active_dates.contains(&yesterday) {
+            yesterday
+        } else {
+            today - chrono::Duration::days(2)
+        };
+
+        while active_dates.contains(&test_date) {
+            current_streak_days += 1;
+            test_date -= chrono::Duration::days(1);
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    let longest_task: Option<(i64, String)> = sqlx::query_as(
+        "SELECT EXTRACT(EPOCH FROM (pp.finished_at - pp.created_at))::bigint AS duration, \
+                p.name AS project_name \
+         FROM project_publishes pp \
+         JOIN projects p ON p.id = pp.project_id \
+         WHERE (pp.created_by = $1 OR p.user_id = $1) \
+           AND pp.finished_at IS NOT NULL \
+           AND pp.finished_at >= pp.created_at \
+         ORDER BY duration DESC \
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let (longest_task_secs, longest_task_name) = match longest_task {
+        Some((secs, name)) => (Some(secs), Some(name)),
+        None => (None, None),
+    };
+
+    let model_rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(label, ''), model_id) AS model_name, \
+                COALESCE(ROUND(SUM(input_tokens - cached_input_tokens + output_tokens + cached_input_tokens * 0.1)), 0)::bigint AS tokens \
+         FROM llm_usage \
+         WHERE user_id = $1 AND created_at >= (now() - interval '30 days') \
+         GROUP BY model_name \
+         ORDER BY tokens DESC \
+         LIMIT 5",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let total_30d: i64 = model_rows.iter().map(|(_, t)| *t).sum();
+    let top_models: Vec<ProfileModelUsage> = model_rows
+        .into_iter()
+        .map(|(label, tokens)| {
+            let percentage = if total_30d > 0 {
+                ((tokens as f64 / total_30d as f64) * 100.0).round()
+            } else {
+                0.0
+            };
+            ProfileModelUsage { label, tokens, percentage }
+        })
+        .collect();
+
+    let crew_interactions: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT COALESCE(ad.target_agent_type, 'chitchat') AS agent_type, \
+                COUNT(DISTINCT ad.session_id)::bigint AS cnt \
+         FROM agent_delegations ad \
+         JOIN session_participants sp ON sp.session_id = ad.session_id \
+         WHERE sp.user_id = $1 \
+         GROUP BY agent_type",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let projects_count: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM projects WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    let chat_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT session_id)::bigint FROM session_participants WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    let get_crew_count = |target: &str| -> i64 {
+        crew_interactions.iter().find(|(t, _)| t == target).map(|(_, c)| *c).unwrap_or(0)
+    };
+
+    let crew_usage = vec![
+        ProfileCrewUsage { agent_id: "nomi".into(), name: "Nomi".into(), count: chat_count, kind: "chats".into() },
+        ProfileCrewUsage { agent_id: "dana".into(), name: "Dana".into(), count: get_crew_count("money"), kind: "chats".into() },
+        ProfileCrewUsage { agent_id: "kala".into(), name: "Kala".into(), count: get_crew_count("reminders"), kind: "chats".into() },
+        ProfileCrewUsage { agent_id: "koda".into(), name: "Koda".into(), count: projects_count, kind: "projects".into() },
+    ];
+
+    #[allow(clippy::type_complexity)]
+    let showcase_rows: Vec<(Uuid, String, Option<String>, String, Option<String>, Option<i64>)> = if !showcase_project_ids.is_empty() {
+        sqlx::query_as(
+            "SELECT p.id, p.name, p.description, p.status, \
+                    (SELECT url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' ORDER BY pp.created_at DESC LIMIT 1) as deploy_url, \
+                    (SELECT EXTRACT(EPOCH FROM (finished_at - created_at))::bigint FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' AND finished_at IS NOT NULL ORDER BY pp.created_at DESC LIMIT 1) as build_duration_secs \
+             FROM projects p \
+             WHERE p.id = ANY($1) AND p.user_id = $2 \
+             LIMIT 3",
+        )
+        .bind(&showcase_project_ids)
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        sqlx::query_as(
+            "SELECT p.id, p.name, p.description, p.status, \
+                    (SELECT url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' ORDER BY pp.created_at DESC LIMIT 1) as deploy_url, \
+                    (SELECT EXTRACT(EPOCH FROM (finished_at - created_at))::bigint FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' AND finished_at IS NOT NULL ORDER BY pp.created_at DESC LIMIT 1) as build_duration_secs \
+             FROM projects p \
+             WHERE p.user_id = $1 \
+             ORDER BY p.updated_at DESC \
+             LIMIT 3",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    };
+
+    let showcase_projects: Vec<ShowcaseProject> = showcase_rows
+        .into_iter()
+        .map(|(id, name, description, status, deploy_url, build_duration_secs)| ShowcaseProject {
+            id,
+            name,
+            description,
+            status,
+            deploy_url,
+            build_duration_secs,
+        })
+        .collect();
+
+    Ok(ProfileResponse {
+        display_name,
+        username,
+        email,
+        avatar_url,
+        location,
+        joined_at,
+        plan_name,
+        show_stats_publicly,
+        show_crew_publicly,
+        showcase_project_ids,
+        showcase_projects,
+        stats: ProfileStats {
+            lifetime_tokens,
+            peak_day_tokens,
+            peak_day_date,
+            longest_task_secs,
+            longest_task_name,
+            longest_streak_days,
+            longest_streak_range,
+            current_streak_days,
+            best_streak_target: longest_streak_days.max(1),
+        },
+        activity,
+        top_models,
+        crew_usage,
+    })
+}
+
 #[tracing::instrument(skip(state, claims))]
 pub async fn get_profile(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<ProfileResponse>, (StatusCode, &'static str)> {
-    let email = load_email(&state.pool, claims.sub).await?;
-
-    let row: Option<(Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT display_name, username, avatar_url FROM user_profiles WHERE user_id = $1",
-    )
-    .bind(claims.sub)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "failed to load profile");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load profile")
-    })?;
-
-    let (display_name, username, avatar_url) = row.unwrap_or((None, None, None));
-
-    Ok(Json(ProfileResponse { display_name, username, email, avatar_url }))
+    let profile = load_profile_data(&state.pool, claims.sub).await?;
+    Ok(Json(profile))
 }
 
 #[derive(Deserialize)]
@@ -55,6 +382,10 @@ pub struct UpdateProfileRequest {
     pub display_name: Option<String>,
     pub username: Option<String>,
     pub avatar_url: Option<String>,
+    pub location: Option<String>,
+    pub show_stats_publicly: Option<bool>,
+    pub show_crew_publicly: Option<bool>,
+    pub showcase_project_ids: Option<Vec<Uuid>>,
 }
 
 #[tracing::instrument(skip(state, claims, req))]
@@ -73,17 +404,26 @@ pub async fn put_profile(
     }
 
     sqlx::query(
-        "INSERT INTO user_profiles (user_id, display_name, username, avatar_url) VALUES ($1, $2, $3, $4) \
+        "INSERT INTO user_profiles (user_id, display_name, username, avatar_url, location, show_stats_publicly, show_crew_publicly, showcase_project_ids) \
+         VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), COALESCE($7, false), COALESCE($8, '{}'::uuid[])) \
          ON CONFLICT (user_id) DO UPDATE SET \
              display_name = COALESCE($2, user_profiles.display_name), \
              username = COALESCE($3, user_profiles.username), \
-             avatar_url = COALESCE($4, user_profiles.avatar_url), \
+             avatar_url = CASE WHEN $4 = '' THEN NULL WHEN $4 IS NOT NULL THEN $4 ELSE user_profiles.avatar_url END, \
+             location = COALESCE($5, user_profiles.location), \
+             show_stats_publicly = COALESCE($6, user_profiles.show_stats_publicly), \
+             show_crew_publicly = COALESCE($7, user_profiles.show_crew_publicly), \
+             showcase_project_ids = COALESCE($8, user_profiles.showcase_project_ids), \
              updated_at = now()",
     )
     .bind(claims.sub)
     .bind(req.display_name.as_deref().filter(|s| !s.is_empty()))
     .bind(req.username.as_deref().filter(|s| !s.is_empty()))
     .bind(req.avatar_url.as_deref())
+    .bind(req.location.as_deref())
+    .bind(req.show_stats_publicly)
+    .bind(req.show_crew_publicly)
+    .bind(&req.showcase_project_ids)
     .execute(&state.pool)
     .await
     .map_err(|e| {
@@ -96,18 +436,117 @@ pub async fn put_profile(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save profile".to_string())
     })?;
 
-    let email = load_email(&state.pool, claims.sub).await.map_err(|(status, msg)| (status, msg.to_string()))?;
-    let row: (Option<String>, Option<String>, Option<String>) =
-        sqlx::query_as("SELECT display_name, username, avatar_url FROM user_profiles WHERE user_id = $1")
-            .bind(claims.sub)
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "failed to reload profile");
-                (StatusCode::INTERNAL_SERVER_ERROR, "failed to reload profile".to_string())
-            })?;
+    let profile = load_profile_data(&state.pool, claims.sub).await.map_err(|(status, msg)| (status, msg.to_string()))?;
+    Ok(Json(profile))
+}
 
-    Ok(Json(ProfileResponse { display_name: row.0, username: row.1, email, avatar_url: row.2 }))
+#[derive(Deserialize)]
+pub struct CheckUsernameQuery {
+    pub username: String,
+}
+
+#[derive(Serialize)]
+pub struct CheckUsernameResponse {
+    pub available: bool,
+    pub reason: Option<String>,
+}
+
+pub async fn check_username(
+    State(state): State<AppState>,
+    claims: Option<AuthClaims>,
+    Query(query): Query<CheckUsernameQuery>,
+) -> Result<Json<CheckUsernameResponse>, StatusCode> {
+    let username = query.username.trim().trim_start_matches('@');
+    if username.is_empty() || username.len() > 32 {
+        return Ok(Json(CheckUsernameResponse {
+            available: false,
+            reason: Some("Username must be between 1 and 32 characters".to_string()),
+        }));
+    }
+    if !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+        return Ok(Json(CheckUsernameResponse {
+            available: false,
+            reason: Some("Username may only contain letters, numbers, underscores, and periods".to_string()),
+        }));
+    }
+
+    let current_user_id = claims.map(|c| c.0.sub).unwrap_or(Uuid::nil());
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM user_profiles WHERE LOWER(username) = LOWER($1) AND user_id <> $2)",
+    )
+    .bind(username)
+    .bind(current_user_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(false);
+
+    if taken {
+        Ok(Json(CheckUsernameResponse {
+            available: false,
+            reason: Some("Username is already taken".to_string()),
+        }))
+    } else {
+        Ok(Json(CheckUsernameResponse {
+            available: true,
+            reason: None,
+        }))
+    }
+}
+
+#[derive(Serialize)]
+pub struct PublicProfileResponse {
+    pub display_name: Option<String>,
+    pub username: String,
+    pub avatar_url: Option<String>,
+    pub location: Option<String>,
+    pub joined_at: chrono::DateTime<chrono::Utc>,
+    pub plan_name: String,
+    pub show_stats_publicly: bool,
+    pub show_crew_publicly: bool,
+    pub stats: Option<ProfileStats>,
+    pub activity: Option<Vec<ProfileDayActivity>>,
+    pub top_models: Option<Vec<ProfileModelUsage>>,
+    pub crew_usage: Option<Vec<ProfileCrewUsage>>,
+    pub showcase_projects: Vec<ShowcaseProject>,
+}
+
+pub async fn get_public_profile(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> Result<Json<PublicProfileResponse>, (StatusCode, &'static str)> {
+    let clean_username = username.trim().trim_start_matches('@');
+    let user_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM user_profiles WHERE LOWER(username) = LOWER($1)",
+    )
+    .bind(clean_username)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to query public profile by username");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load profile")
+    })?;
+
+    let Some(user_id) = user_id else {
+        return Err((StatusCode::NOT_FOUND, "profile not found"));
+    };
+
+    let profile = load_profile_data(&state.pool, user_id).await?;
+
+    Ok(Json(PublicProfileResponse {
+        display_name: profile.display_name,
+        username: profile.username.unwrap_or_else(|| clean_username.to_string()),
+        avatar_url: profile.avatar_url,
+        location: profile.location,
+        joined_at: profile.joined_at,
+        plan_name: profile.plan_name,
+        show_stats_publicly: profile.show_stats_publicly,
+        show_crew_publicly: profile.show_crew_publicly,
+        stats: if profile.show_stats_publicly { Some(profile.stats) } else { None },
+        activity: if profile.show_stats_publicly { Some(profile.activity) } else { None },
+        top_models: if profile.show_stats_publicly { Some(profile.top_models) } else { None },
+        crew_usage: if profile.show_crew_publicly { Some(profile.crew_usage) } else { None },
+        showcase_projects: profile.showcase_projects,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -238,10 +677,8 @@ fn avatar_content_type(file: &str) -> Option<&'static str> {
     }
 }
 
-/// `GET /api/avatars/:user_id/:file`: a profile picture, for anyone signed in (teammates see
-/// each other's).
+/// `GET /api/avatars/:user_id/:file`: a profile picture.
 pub async fn get_avatar(
-    AuthClaims(_claims): AuthClaims,
     Path((user_id, file)): Path<(Uuid, String)>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
     use axum::response::IntoResponse;
@@ -258,7 +695,7 @@ pub async fn get_avatar(
         [
             (axum::http::header::CONTENT_TYPE, content_type),
             // A new picture gets a new file name, so a stored one never changes.
-            (axum::http::header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
             (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],
         bytes,
@@ -418,12 +855,6 @@ pub async fn put_preferences(
         }
     }
 
-    // An UPDATE's SET clause can COALESCE against the row's own current columns directly, unlike
-    // an INSERT .. ON CONFLICT's EXCLUDED, which holds the VALUES clause's already-defaulted
-    // result (never NULL) — COALESCE(EXCLUDED.theme, ...) would silently overwrite an existing
-    // theme with 'system' every time only accent_color was being updated. Try the update first;
-    // only fall back to inserting a fresh row (with defaults for whichever field wasn't given)
-    // when the user has no preferences row yet.
     let mut tx = state.pool.begin().await.map_err(|e| {
         tracing::error!(error = %e, "failed to save preferences");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
@@ -492,9 +923,6 @@ pub async fn put_preferences(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
-    // A PUT always leaves a row behind (via the insert-if-missing fallback above), so a
-    // timezone is always "stored" by the time this response is built — unlike GET, which can
-    // observe a user with no row at all yet.
     Ok(Json(PreferencesResponse {
         theme,
         accent_color,
