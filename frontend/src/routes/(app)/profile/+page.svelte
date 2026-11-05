@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
@@ -10,23 +11,23 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
+	// Initial values for dirty tracking derived from data.profile
+	const initialDisplayName = $derived(data.profile?.display_name ?? '');
+	const initialUsername = $derived(data.profile?.username ?? '');
+	const initialAvatarUrl = $derived(data.profile?.avatar_url ?? '');
+	const initialLocation = $derived(data.profile?.location ?? 'Jakarta');
+	const initialShowStats = $derived(data.profile?.show_stats_publicly ?? true);
+	const initialShowCrew = $derived(data.profile?.show_crew_publicly ?? false);
+	const initialShowcaseIds = $derived((data.profile?.showcase_projects ?? []).map((p) => p.id));
+
 	// Form states
 	let displayName = $state('');
 	let username = $state('');
 	let avatarUrl = $state('');
-	let location = $state('');
+	let location = $state('Jakarta');
 	let showStatsPublicly = $state(true);
 	let showCrewPublicly = $state(false);
 	let showcaseProjects = $state<ShowcaseProject[]>([]);
-
-	// Initial values for dirty tracking
-	let initialDisplayName = $state('');
-	let initialUsername = $state('');
-	let initialAvatarUrl = $state('');
-	let initialLocation = $state('');
-	let initialShowStats = $state(true);
-	let initialShowCrew = $state(false);
-	let initialShowcaseIds = $state<string[]>([]);
 
 	let showAddProjectModal = $state(false);
 	let copiedLink = $state(false);
@@ -35,22 +36,18 @@
 	let usernameDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let showAllCrew = $state(false);
 
+	// Synchronize form states whenever data.profile updates, without reactive dependency loops
 	$effect(() => {
-		displayName = data.profile?.display_name ?? '';
-		username = data.profile?.username ?? '';
-		avatarUrl = data.profile?.avatar_url ?? '';
-		location = data.profile?.location ?? 'Jakarta';
-		showStatsPublicly = data.profile?.show_stats_publicly ?? true;
-		showCrewPublicly = data.profile?.show_crew_publicly ?? false;
-		showcaseProjects = data.profile?.showcase_projects ?? [];
-
-		initialDisplayName = displayName;
-		initialUsername = username;
-		initialAvatarUrl = avatarUrl;
-		initialLocation = location;
-		initialShowStats = showStatsPublicly;
-		initialShowCrew = showCrewPublicly;
-		initialShowcaseIds = showcaseProjects.map((p) => p.id);
+		const profile = data.profile;
+		untrack(() => {
+			displayName = profile?.display_name ?? '';
+			username = profile?.username ?? '';
+			avatarUrl = profile?.avatar_url ?? '';
+			location = profile?.location ?? 'Jakarta';
+			showStatsPublicly = profile?.show_stats_publicly ?? true;
+			showCrewPublicly = profile?.show_crew_publicly ?? false;
+			showcaseProjects = profile?.showcase_projects ?? [];
+		});
 	});
 
 	// Dirty tracking
