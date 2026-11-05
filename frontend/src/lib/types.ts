@@ -463,6 +463,10 @@ export interface ProjectSummary {
 	stack?: string;
 	backend?: string;
 	shipyard_app?: string | null;
+	chats_count?: number;
+	deploys_count?: number;
+	files_count?: number;
+	deploy_url?: string | null;
 }
 
 export interface ProjectList {

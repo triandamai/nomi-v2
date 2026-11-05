@@ -17,6 +17,7 @@
 		Rocket,
 		Search as SearchIcon,
 		Square,
+		Trash2,
 		UserPlus,
 		Users,
 		Wrench,
@@ -80,6 +81,11 @@
 	// Code Export
 	let exportOpen = $state(false);
 	let exportProject = $state<ProjectSummary | null>(null);
+
+	// Delete Project Dialog
+	let deleteDialogOpen = $state(false);
+	let projectToDelete = $state<ProjectSummary | null>(null);
+	let deleteConfirmName = $state('');
 
 	// Prompt builder input
 	let promptText = $state('');
@@ -150,7 +156,15 @@
 		});
 	});
 
-	// Select first project by default on wide screens if none selected
+	// Chats related to selected project
+	const selectedProjectChats = $derived.by(() => {
+		if (!selectedProject) return [];
+		return (data.sessions ?? []).filter(
+			(s) => s.project_id === selectedProject?.id || s.in_project_id === selectedProject?.id
+		);
+	});
+
+	// Select first project by default on wide desktop screens if none selected
 	onMount(() => {
 		if (!selectedProject && data.projects.length > 0 && window.innerWidth >= 1280) {
 			selectedProject = data.projects[0];
@@ -252,7 +266,7 @@
 	<ExportDialog
 		bind:open={exportOpen}
 		project={exportProject.name}
-		repo={`23 files · git history · main@${exportProject.id.slice(0, 7)}`}
+		repo={`${exportProject.files_count ?? 0} files · git history · main@${exportProject.id.slice(0, 7)}`}
 		database="database.sql"
 		env="DATABASE_URL · PUBLIC_SITE_URL"
 		onpush={() => {}}
@@ -266,23 +280,71 @@
 	/>
 {/if}
 
-<div class="h-full w-full overflow-y-auto bg-bg text-text">
+<!-- Delete Project Confirmation Dialog -->
+<Dialog bind:open={deleteDialogOpen} headline={m.pj_delete()}>
+	{#if projectToDelete}
+		<form
+			method="POST"
+			action="?/deleteProject"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') {
+						deleteDialogOpen = false;
+						if (selectedProject?.id === projectToDelete?.id) {
+							selectedProject = null;
+						}
+						projectToDelete = null;
+						deleteConfirmName = '';
+					}
+				};
+			}}
+		>
+			<input type="hidden" name="project_id" value={projectToDelete.id} />
+			<p class="mb-4 text-ui text-text-2">
+				{m.pj_delete_confirm({ name: projectToDelete.name })}
+			</p>
+			<p class="mb-2 text-caption text-text-3">
+				{m.pj_delete_type()}: <strong class="font-mono text-text">{projectToDelete.name}</strong>
+			</p>
+			<TextField
+				name="confirm_name"
+				label={projectToDelete.name}
+				bind:value={deleteConfirmName}
+				required
+			/>
+			<div class="mt-6 flex justify-end gap-2">
+				<Button label={m.org_cancel()} variant="ghost" onclick={() => (deleteDialogOpen = false)} />
+				<button
+					type="submit"
+					disabled={deleteConfirmName !== projectToDelete.name}
+					class="inline-flex items-center gap-1.5 rounded-md bg-danger px-3.5 py-1.5 text-ui font-medium text-white transition-opacity disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+				>
+					<Icon icon={Trash2} size={14} />
+					<span>{m.common_delete()}</span>
+				</button>
+			</div>
+		</form>
+	{/if}
+</Dialog>
+
+<div class="min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-bg text-text pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]">
 	<!-- Top Bar -->
-	<header class="flex h-14 w-full shrink-0 items-center justify-between border-b border-border px-6">
-		<div class="flex items-center gap-3">
+	<header class="flex min-h-14 w-full shrink-0 items-center justify-between border-b border-border px-3 sm:px-6 py-2 gap-2">
+		<div class="flex items-center gap-2 sm:gap-3 min-w-0">
 			{#if currentOrg}
-				<div class="relative">
+				<div class="relative min-w-0">
 					<button
 						type="button"
-						class="flex items-center gap-2 rounded-md px-2 py-1.5 text-ui font-medium text-text transition-colors hover:bg-surface-2"
+						class="flex items-center gap-2 rounded-md px-2 py-1.5 text-ui font-medium text-text transition-colors hover:bg-surface-2 max-w-[180px] sm:max-w-none"
 						onclick={() => (switcherOpen = !switcherOpen)}
 						aria-haspopup="menu"
 						aria-expanded={switcherOpen}
 					>
-						<span class="flex h-5 w-5 items-center justify-center rounded-sm bg-accent/20 font-mono text-caption font-semibold text-accent">
+						<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-accent/20 font-mono text-caption font-semibold text-accent">
 							{currentOrg.name.trim().charAt(0).toUpperCase()}
 						</span>
-						<span>{currentOrg.name}</span>
+						<span class="truncate">{currentOrg.name}</span>
 						<Icon icon={ChevronDown} size={14} />
 					</button>
 
@@ -315,26 +377,43 @@
 						</div>
 					{/if}
 				</div>
-				<span class="text-text-3 font-mono text-label">/</span>
-				<span class="text-ui font-medium text-text-2">{m.projects_title()}</span>
+				<span class="hidden sm:inline text-text-3 font-mono text-label">/</span>
+				<span class="hidden sm:inline text-ui font-medium text-text-2">{m.projects_title()}</span>
 			{/if}
 		</div>
 
 		{#if currentOrg}
-			<div class="flex items-center gap-3">
-				<div class="flex items-center gap-2">
+			<div class="flex items-center gap-2 sm:gap-3 shrink-0">
+				<div class="hidden sm:flex items-center gap-2">
 					<div class="flex -space-x-1.5 overflow-hidden">
-						<span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-700 font-mono text-[10px] font-bold text-white ring-1 ring-bg">T</span>
-						<span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-700 font-mono text-[10px] font-bold text-white ring-1 ring-bg">MF</span>
-						<span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-700 font-mono text-[10px] font-bold text-white ring-1 ring-bg">SR</span>
+						{#if (data.members ?? []).length > 0}
+							{#each (data.members.slice(0, 3)) as member (member.user_id)}
+								<span
+									class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 border border-border font-mono text-[10px] font-bold text-text ring-1 ring-bg"
+									title={member.name}
+								>
+									{#if member.avatar_url}
+										<img src={member.avatar_url} alt={member.name} class="h-full w-full rounded-full object-cover" />
+									{:else}
+										{member.name.slice(0, 2).toUpperCase()}
+									{/if}
+								</span>
+							{/each}
+						{:else}
+							<span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-700 font-mono text-[10px] font-bold text-white ring-1 ring-bg">
+								{currentOrg.name.slice(0, 1).toUpperCase()}
+							</span>
+						{/if}
 					</div>
-					<span class="text-label text-text-3 font-mono">{m.projects_members_count({ count: currentOrg.members || 3 })}</span>
+					<span class="text-label text-text-3 font-mono">
+						{m.projects_members_count({ count: data.members?.length || currentOrg.members || 1 })}
+					</span>
 				</div>
 				<a
 					href="/organizations/{currentOrg.id}"
-					class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-ui text-text transition-colors hover:bg-surface-2 hover:border-border-strong"
+					class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-caption sm:text-ui text-text transition-colors hover:bg-surface-2 hover:border-border-strong"
 				>
-					<span>{m.projects_invite_member()}</span>
+					<span class="hidden sm:inline">{m.projects_invite_member()}</span>
 					<Icon icon={UserPlus} size={13} />
 				</a>
 			</div>
@@ -345,8 +424,8 @@
 	</header>
 
 	{#if !currentOrg || (form && 'needsOrg' in form)}
-		<div class="mx-auto max-w-xl p-8">
-			<section class="rounded-xl border border-border bg-surface p-6 shadow-sm">
+		<div class="mx-auto max-w-xl p-4 sm:p-8">
+			<section class="rounded-xl border border-border bg-surface p-5 sm:p-6 shadow-sm">
 				<h2 class="text-h3 font-medium text-text">{m.org_pick_title()}</h2>
 				<p class="mt-2 text-ui text-text-2">{m.org_pick_lede()}</p>
 				<div class="mt-6">
@@ -355,14 +434,14 @@
 			</section>
 		</div>
 	{:else}
-		<!-- Main Content Container with optional right drawer -->
-		<div class="flex min-h-[calc(100%-3.5rem)] w-full">
+		<!-- Main Content Container with responsive side-by-side or slide-over drawer -->
+		<div class="relative flex min-h-[calc(100%-3.5rem)] w-full">
 			<!-- Main Left/Center column -->
-			<div class="min-w-0 flex-1 p-6 lg:p-8">
+			<div class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
 				<!-- Header Title & Lede -->
-				<div class="mb-6">
+				<div class="mb-5 sm:mb-6">
 					<h1 class="text-h2 font-semibold tracking-tight text-text">{m.projects_title()}</h1>
-					<p class="mt-2 max-w-3xl text-ui leading-relaxed text-text-2">{m.projects_hero_lede()}</p>
+					<p class="mt-1.5 sm:mt-2 max-w-3xl text-caption sm:text-ui leading-relaxed text-text-2">{m.projects_hero_lede()}</p>
 				</div>
 
 				<!-- Describe an app to build (Hero Card) -->
@@ -371,7 +450,7 @@
 					method="POST"
 					action="?/createProject"
 					use:enhance
-					class="mb-6 rounded-xl border border-border bg-surface p-4 shadow-sm transition-colors focus-within:border-border-strong"
+					class="mb-6 rounded-xl border border-border bg-surface p-3.5 sm:p-5 shadow-sm transition-colors focus-within:border-border-strong"
 				>
 					<input type="hidden" name="org_id" value={currentOrg.id} />
 					<div class="flex items-center gap-3">
@@ -382,7 +461,7 @@
 							name="prompt"
 							bind:value={promptText}
 							placeholder={m.projects_prompt_placeholder()}
-							class="min-w-0 flex-1 border-0 bg-transparent text-body text-text placeholder:text-text-3 focus:outline-none"
+							class="min-w-0 flex-1 border-0 bg-transparent text-[16px] sm:text-body text-text placeholder:text-text-3 focus:outline-none"
 							onkeydown={(e) => {
 								if (e.key === 'Enter') {
 									e.preventDefault();
@@ -391,17 +470,17 @@
 							}}
 						/>
 					</div>
-					<div class="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-						<div class="flex flex-wrap items-center gap-2 text-caption text-text-3">
+					<div class="mt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-border pt-3">
+						<div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-caption text-text-3">
 							<span class="mr-1 text-ui text-text-3">{m.projects_koda_sets_up()}</span>
 							<Chip kind="provision" icon={GitBranch} label={m.projects_tag_git()} />
 							<Chip kind="provision" icon={Globe} label={`*.${currentOrg.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'trian'}.space`} />
 							<Chip kind="provision" icon={Database} label={m.projects_tag_database()} />
 						</div>
-						<div class="flex items-center gap-2">
+						<div class="flex items-center gap-2 w-full sm:w-auto">
 							<button
 								type="button"
-								class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-ui font-medium text-text transition-colors hover:bg-surface-2"
+								class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md border border-border px-3 py-1.5 text-ui font-medium text-text transition-colors hover:bg-surface-2 cursor-pointer"
 								onclick={() => (importOpen = true)}
 							>
 								<Icon icon={GithubMark} size={15} />
@@ -409,7 +488,7 @@
 							</button>
 							<button
 								type="submit"
-								class="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3.5 py-1.5 text-ui font-medium text-white transition-colors hover:bg-emerald-500 cursor-pointer"
+								class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-3.5 py-1.5 text-ui font-medium text-white transition-colors hover:bg-emerald-500 cursor-pointer"
 							>
 								<span>{m.projects_start_building()}</span>
 								<Icon icon={ArrowRight} size={15} />
@@ -419,33 +498,33 @@
 				</form>
 
 				<!-- Filter & Search Toolbar -->
-				<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-					<!-- Filter tabs -->
-					<div class="inline-flex rounded-lg border border-border bg-surface p-0.5">
+				<div class="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+					<!-- Horizontally scrollable filter tabs (iOS / mobile friendly) -->
+					<div class="flex items-center overflow-x-auto no-scrollbar max-w-full rounded-lg border border-border bg-surface p-0.5 -mx-1 px-1 sm:mx-0 sm:px-0.5">
 						<button
 							type="button"
-							class="rounded-md px-3 py-1.5 text-ui font-medium transition-colors cursor-pointer {filter === 'all' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
+							class="shrink-0 whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 text-caption sm:text-ui font-medium transition-colors cursor-pointer {filter === 'all' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
 							onclick={() => (filter = 'all')}
 						>
 							{m.projects_filter_all()} {data.projects.length}
 						</button>
 						<button
 							type="button"
-							class="rounded-md px-3 py-1.5 text-ui font-medium transition-colors cursor-pointer {filter === 'live' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
+							class="shrink-0 whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 text-caption sm:text-ui font-medium transition-colors cursor-pointer {filter === 'live' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
 							onclick={() => (filter = 'live')}
 						>
 							{m.projects_filter_live()} {liveCount}
 						</button>
 						<button
 							type="button"
-							class="rounded-md px-3 py-1.5 text-ui font-medium transition-colors cursor-pointer {filter === 'building' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
+							class="shrink-0 whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 text-caption sm:text-ui font-medium transition-colors cursor-pointer {filter === 'building' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
 							onclick={() => (filter = 'building')}
 						>
 							{m.projects_filter_building()} {buildingCount}
 						</button>
 						<button
 							type="button"
-							class="rounded-md px-3 py-1.5 text-ui font-medium transition-colors cursor-pointer {filter === 'attention' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
+							class="shrink-0 whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 text-caption sm:text-ui font-medium transition-colors cursor-pointer {filter === 'attention' ? 'bg-surface-2 text-text font-semibold shadow-xs' : 'text-text-2 hover:text-text'}"
 							onclick={() => (filter = 'attention')}
 						>
 							{m.projects_filter_attention()} {attentionCount}
@@ -453,8 +532,8 @@
 					</div>
 
 					<!-- Search & Sort -->
-					<div class="flex items-center gap-3">
-						<div class="relative flex items-center">
+					<div class="flex w-full sm:w-auto items-center gap-2 sm:gap-3">
+						<div class="relative flex min-w-0 flex-1 sm:flex-none items-center">
 							<span class="pointer-events-none absolute left-3 text-text-3">
 								<Icon icon={SearchIcon} size={15} />
 							</span>
@@ -462,12 +541,12 @@
 								type="search"
 								bind:value={query}
 								placeholder={m.projects_search()}
-								class="h-9 w-60 rounded-md border border-border bg-surface pl-9 pr-3 text-ui text-text placeholder:text-text-3 transition-colors focus:border-border-strong focus:outline-none"
+								class="h-9 w-full sm:w-56 lg:w-64 rounded-md border border-border bg-surface pl-9 pr-3 text-[16px] sm:text-ui text-text placeholder:text-text-3 transition-colors focus:border-border-strong focus:outline-none"
 							/>
 						</div>
 						<button
 							type="button"
-							class="flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-ui text-text-2 transition-colors hover:bg-surface-2 hover:text-text cursor-pointer"
+							class="flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-caption sm:text-ui text-text-2 transition-colors hover:bg-surface-2 hover:text-text cursor-pointer"
 							onclick={() => (sortBy = sortBy === 'updated' ? 'name' : 'updated')}
 						>
 							<span>{sortBy === 'updated' ? m.projects_sort_updated() : m.projects_sort_name()}</span>
@@ -478,11 +557,11 @@
 
 				<!-- Projects Grid -->
 				{#if filteredProjects.length === 0}
-					<div class="rounded-xl border border-dashed border-border p-12 text-center">
+					<div class="rounded-xl border border-dashed border-border p-8 sm:p-12 text-center">
 						<p class="text-body text-text-2">{query ? m.list_no_match({ query }) : m.projects_empty()}</p>
 					</div>
 				{:else}
-					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<div class="grid grid-cols-1 gap-3.5 sm:gap-4 lg:grid-cols-2">
 						{#each filteredProjects as project (project.id)}
 							{@const tone = toneFor(project.name)}
 							{@const statusKind = projectStatusKind(project)}
@@ -490,7 +569,7 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="group flex flex-col justify-between rounded-xl border bg-surface p-4 transition-all duration-150 cursor-pointer {isSelected ? 'border-text ring-1 ring-text shadow-sm' : 'border-border hover:border-border-strong hover:bg-surface-2/40'}"
+								class="group flex flex-col justify-between rounded-xl border bg-surface p-3.5 sm:p-4 transition-all duration-150 cursor-pointer {isSelected ? 'border-text ring-1 ring-text shadow-sm' : 'border-border hover:border-border-strong hover:bg-surface-2/40'}"
 								onclick={() => (selectedProject = project)}
 							>
 								<!-- Card Top -->
@@ -530,12 +609,21 @@
 															exportOpen = true;
 														}
 													},
-													'divider',
 													{
 														label: m.projects_visit(),
 														icon: ExternalLink,
 														onselect: () => {
-															window.open(`https://${projectSubdomain(project)}`, '_blank');
+															window.open(project.deploy_url || `https://${projectSubdomain(project)}`, '_blank');
+														}
+													},
+													'divider',
+													{
+														label: m.pj_delete(),
+														icon: Trash2,
+														onselect: () => {
+															projectToDelete = project;
+															deleteConfirmName = '';
+															deleteDialogOpen = true;
 														}
 													}
 												]}
@@ -557,10 +645,14 @@
 									<div class="mt-3.5 flex items-center gap-2">
 										{#if statusKind === 'working'}
 											<Status kind="working" label={m.projects_koda_is_building()} agent="koda" small />
-											<span class="truncate font-mono text-caption text-text-3">writing src/routes/+page.svelte · 01:12</span>
+											<span class="truncate font-mono text-caption text-text-3">
+												{project.stack ? `${project.stack} app` : 'writing code'}
+											</span>
 										{:else if statusKind === 'live'}
 											<Status kind="live" label={m.projects_live_dot()} small />
-											<span class="truncate font-mono text-caption text-text-3">{projectSubdomain(project)}</span>
+											<span class="truncate font-mono text-caption text-text-3">
+												{project.deploy_url || projectSubdomain(project)}
+											</span>
 										{:else if statusKind === 'failed'}
 											<Status kind="failed" label={m.projects_deploy_failed()} small />
 											<span class="truncate font-mono text-caption text-text-3">{project.open_issues} issue(s)</span>
@@ -573,11 +665,11 @@
 
 								<!-- Card Footer -->
 								<div class="mt-4 flex items-center justify-between border-t border-border pt-3">
-									<span class="font-mono text-caption text-text-3">
-										1 chat · deploy #1 · {timeAgo(project.updated_at)}
+									<span class="font-mono text-caption text-text-3 truncate mr-2">
+										{project.chats_count ?? 1} {project.chats_count === 1 ? 'chat' : 'chats'} · {project.deploys_count ? `deploy #${project.deploys_count}` : 'draft'} · {timeAgo(project.updated_at)}
 									</span>
 
-									<div onclick={(e) => e.stopPropagation()}>
+									<div onclick={(e) => e.stopPropagation()} class="shrink-0">
 										{#if statusKind === 'working'}
 											<button
 												type="button"
@@ -589,7 +681,7 @@
 											</button>
 										{:else if statusKind === 'failed'}
 											<a
-												href="/projects/session/{project.session_id}"
+												href="/projects/session/{project.session_id}?prompt=Fix the build errors"
 												class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1 text-label text-text transition-colors hover:bg-surface-2 hover:border-border-strong"
 											>
 												<span>{m.projects_action_fix()}</span>
@@ -612,8 +704,8 @@
 				{/if}
 
 				<!-- Remix from the community Section -->
-				<section class="mt-12 border-t border-border pt-8">
-					<div class="mb-4 flex items-center justify-between">
+				<section class="mt-10 sm:mt-12 border-t border-border pt-6 sm:pt-8">
+					<div class="mb-4 flex items-center justify-between gap-3">
 						<div>
 							<div class="flex items-center gap-2">
 								<Icon icon={GitFork} size={16} />
@@ -623,16 +715,16 @@
 						</div>
 						<a
 							href="/showcase"
-							class="inline-flex items-center gap-1 text-ui text-text-2 transition-colors hover:text-text"
+							class="inline-flex shrink-0 items-center gap-1 text-ui text-text-2 transition-colors hover:text-text"
 						>
 							<span>{m.projects_browse_showcase()}</span>
 							<Icon icon={ArrowUpRight} size={14} />
 						</a>
 					</div>
 
-					<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+					<div class="grid grid-cols-1 gap-3.5 sm:gap-4 md:grid-cols-3">
 						{#each COMMUNITY_TEMPLATES as tmpl (tmpl.title)}
-							<div class="flex flex-col justify-between rounded-xl border border-border bg-surface p-4 shadow-sm transition-colors hover:border-border-strong">
+							<div class="flex flex-col justify-between rounded-xl border border-border bg-surface p-3.5 sm:p-4 shadow-sm transition-colors hover:border-border-strong">
 								<!-- Mock App UI Box -->
 								<div class="mb-3 flex h-28 flex-col justify-center rounded-lg bg-black/40 p-3 font-mono text-caption text-text-2">
 									{#if tmpl.previewType === 'rental'}
@@ -700,11 +792,23 @@
 				</section>
 			</div>
 
-			<!-- Right Details Panel (when a project is selected) -->
+			<!-- Right Details Panel: Slide-over drawer on mobile (< xl), persistent side-panel on desktop (>= xl) -->
 			{#if selectedProject}
 				{@const project = selectedProject}
 				{@const tone = toneFor(project.name)}
-				<aside class="w-full border-l border-border bg-surface p-5 xl:w-[380px] shrink-0">
+				{@const statusKind = projectStatusKind(project)}
+
+				<!-- Mobile backdrop overlay -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity xl:hidden"
+					onclick={() => (selectedProject = null)}
+				></div>
+
+				<aside
+					class="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-border bg-surface p-4 sm:p-5 shadow-2xl transition-transform duration-200 ease-out xl:static xl:z-auto xl:h-auto xl:max-w-none xl:w-[380px] xl:shadow-none xl:shrink-0"
+				>
 					<!-- Panel Header -->
 					<div class="flex items-start justify-between gap-3">
 						<div class="flex items-center gap-3 min-w-0">
@@ -717,44 +821,45 @@
 							<div class="min-w-0">
 								<h3 class="truncate text-body font-semibold text-text">{project.name}</h3>
 								<div class="flex items-center gap-1.5 text-caption text-text-3">
-									<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-									<span>live · deploy #14 · {timeAgo(project.updated_at)}</span>
+									<span class="h-1.5 w-1.5 rounded-full {statusKind === 'live' ? 'bg-emerald-500' : 'bg-text-3'}"></span>
+									<span>
+										{statusKind} · {project.deploys_count ? `deploy #${project.deploys_count}` : 'draft'} · {timeAgo(project.updated_at)}
+									</span>
 								</div>
 							</div>
 						</div>
 						<IconButton icon={X} label={m.action_close()} variant="ghost" onclick={() => (selectedProject = null)} />
 					</div>
 
-					<!-- Visual Mini Preview Widget -->
-					<div class="mt-5 overflow-hidden rounded-xl border border-border bg-white p-5 text-neutral-900 shadow-sm dark:bg-neutral-900 dark:text-neutral-100">
-						{#if project.name.includes('salah') || project.name.includes('prayer')}
-							<span class="font-mono text-[10px] tracking-wider text-neutral-500 uppercase dark:text-neutral-400">NEXT PRAYER</span>
-							<div class="mt-1 flex items-baseline justify-between">
-								<span class="font-serif text-3xl font-bold">Dhuhr</span>
-								<span class="font-mono text-lg font-semibold text-emerald-600 dark:text-emerald-400">00:27:39</span>
+					<!-- Visual Dynamic App Preview Widget -->
+					<div class="mt-4 sm:mt-5 overflow-hidden rounded-xl border border-border bg-surface-2 p-4 text-text shadow-sm">
+						<div class="flex items-center justify-between border-b border-border pb-2.5 mb-3 font-mono text-[10px] tracking-wider text-text-3 uppercase">
+							<div class="flex items-center gap-1.5">
+								<span class="h-2 w-2 rounded-full {statusKind === 'live' ? 'bg-emerald-500 animate-pulse' : 'bg-text-3'}"></span>
+								<span>{project.stack ? `${project.stack.toUpperCase()} APP` : 'APPLICATION PREVIEW'}</span>
 							</div>
-							<p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">1 of 5 completed</p>
-						{:else if project.name.includes('menu') || project.name.includes('warung')}
-							<span class="font-mono text-[10px] tracking-wider text-neutral-500 uppercase dark:text-neutral-400">WARUNG KOPI BU SITI</span>
-							<div class="mt-2 space-y-1 font-mono text-xs">
-								<div class="flex justify-between">
-									<span>Kopi Tubruk</span>
-									<span class="font-semibold text-emerald-600 dark:text-emerald-400">5.000</span>
-								</div>
-								<div class="flex justify-between">
-									<span>Pisang Goreng</span>
-									<span class="font-semibold text-emerald-600 dark:text-emerald-400">8.000</span>
-								</div>
-							</div>
-							<p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">Open · Closes at 22:00</p>
-						{:else}
-							<span class="font-mono text-[10px] tracking-wider text-neutral-500 uppercase dark:text-neutral-400">APP PREVIEW</span>
-							<h4 class="mt-1 text-xl font-bold">{project.name}</h4>
-							<p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{project.description || 'Full-stack application'}</p>
-							<div class="mt-3 inline-flex items-center gap-1.5 rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
-								<span>Vite dev server running</span>
-							</div>
-						{/if}
+							{#if project.deploy_url}
+								<span class="text-emerald-500 font-semibold">LIVE</span>
+							{/if}
+						</div>
+						<h4 class="text-title font-semibold text-text">{project.name}</h4>
+						<p class="mt-1 text-caption text-text-2 line-clamp-2">{project.description || m.projects_hero_lede()}</p>
+						<div class="mt-3 flex flex-wrap items-center gap-2">
+							<span class="inline-flex items-center gap-1 rounded bg-surface px-2 py-0.5 font-mono text-caption text-text-2 border border-border">
+								<Icon icon={FileCode} size={12} />
+								<span>{project.files_count ?? 0} files</span>
+							</span>
+							<span class="inline-flex items-center gap-1 rounded bg-surface px-2 py-0.5 font-mono text-caption text-text-2 border border-border">
+								<Icon icon={Database} size={12} />
+								<span>{project.backend === 'relay' ? 'Relay' : (project.backend === 'drizzle' ? 'PostgreSQL' : 'None')}</span>
+							</span>
+							{#if project.deploys_count}
+								<span class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-caption text-emerald-500 border border-emerald-500/20">
+									<Icon icon={Rocket} size={12} />
+									<span>deploy #{project.deploys_count}</span>
+								</span>
+							{/if}
+						</div>
 					</div>
 
 					<!-- Panel Action Buttons -->
@@ -767,7 +872,7 @@
 							<Icon icon={ArrowRight} size={15} />
 						</a>
 						<a
-							href="https://{projectSubdomain(project)}"
+							href={project.deploy_url || `https://${projectSubdomain(project)}`}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-ui text-text transition-colors hover:bg-surface-2"
@@ -778,11 +883,11 @@
 					</div>
 
 					<!-- WHAT'S IN THIS PROJECT -->
-					<div class="mt-6 border-t border-border pt-5">
+					<div class="mt-5 sm:mt-6 border-t border-border pt-4 sm:pt-5">
 						<SectionLabel label={m.projects_whats_in()} />
 						<div class="mt-3 space-y-1">
 							<div class="flex items-center justify-between text-caption">
-								<KVRow icon={FileCode} label={m.projects_code_kv()} value={`23 files · main@${project.id.slice(0, 7)}`} />
+								<KVRow icon={FileCode} label={m.projects_code_kv()} value={`${project.files_count ?? 0} files · main@${project.id.slice(0, 7)}`} />
 								<button
 									type="button"
 									class="inline-flex shrink-0 items-center gap-1 text-label text-text-2 hover:text-text cursor-pointer"
@@ -795,41 +900,45 @@
 									<span>Export</span>
 								</button>
 							</div>
-							<KVRow icon={Globe} label={m.projects_url_kv()} value={`...${projectSubdomain(project).slice(-18)}`} />
-							<KVRow icon={Database} label={m.projects_data_kv()} value={project.backend === 'relay' ? 'Nomi Relay' : 'localStorage only · no server'} />
-							<KVRow icon={Rocket} label={m.projects_deploys_kv()} value="14 · last built in 41s" />
+							<KVRow icon={Globe} label={m.projects_url_kv()} value={project.deploy_url ? `...${project.deploy_url.slice(-24)}` : `...${projectSubdomain(project).slice(-20)}`} />
+							<KVRow icon={Database} label={m.projects_data_kv()} value={project.backend === 'relay' ? 'Nomi Relay' : (project.backend === 'drizzle' ? 'PostgreSQL' : 'localStorage only · no server')} />
+							<KVRow icon={Rocket} label={m.projects_deploys_kv()} value={project.deploys_count ? `${project.deploys_count} deploys` : 'Draft'} />
 							<KVRow icon={Users} label={m.projects_members_kv()} value={`${currentOrg.name} (owner), you`} />
 						</div>
 					</div>
 
 					<!-- CHATS IN THIS PROJECT -->
-					<div class="mt-6 border-t border-border pt-5">
+					<div class="mt-5 sm:mt-6 border-t border-border pt-4 sm:pt-5">
 						<div class="flex items-center justify-between">
-							<SectionLabel label={m.projects_chats_in()} count={2} />
+							<SectionLabel label={m.projects_chats_in()} count={selectedProjectChats.length || 1} />
 						</div>
 
 						<div class="mt-3 space-y-2">
-							<a
-								href="/projects/session/{project.session_id}"
-								class="flex items-center justify-between rounded-lg border border-border p-2.5 text-caption transition-colors hover:bg-surface-2"
-							>
-								<div class="flex items-center gap-2 min-w-0">
-									<Mascot agent="koda" size={16} />
-									<span class="truncate text-ui text-text font-medium">Build a daily {project.name}</span>
-								</div>
-								<span class="shrink-0 text-text-3 font-mono text-[11px]">2d</span>
-							</a>
-
-							<a
-								href="/projects/session/{project.session_id}"
-								class="flex items-center justify-between rounded-lg border border-border p-2.5 text-caption transition-colors hover:bg-surface-2"
-							>
-								<div class="flex items-center gap-2 min-w-0">
-									<Mascot agent="koda" size={16} />
-									<span class="truncate text-ui text-text font-medium">Add Hijri offset setting</span>
-								</div>
-								<span class="shrink-0 text-text-3 font-mono text-[11px]">2d</span>
-							</a>
+							{#if selectedProjectChats.length > 0}
+								{#each selectedProjectChats as chat (chat.id)}
+									<a
+										href="/projects/session/{chat.id}"
+										class="flex items-center justify-between rounded-lg border border-border p-2.5 text-caption transition-colors hover:bg-surface-2"
+									>
+										<div class="flex items-center gap-2 min-w-0">
+											<Mascot agent="koda" size={16} />
+											<span class="truncate text-ui text-text font-medium">{chat.title || project.name}</span>
+										</div>
+										<span class="shrink-0 text-text-3 font-mono text-[11px]">{timeAgo(chat.updated_at)}</span>
+									</a>
+								{/each}
+							{:else}
+								<a
+									href="/projects/session/{project.session_id}"
+									class="flex items-center justify-between rounded-lg border border-border p-2.5 text-caption transition-colors hover:bg-surface-2"
+								>
+									<div class="flex items-center gap-2 min-w-0">
+										<Mascot agent="koda" size={16} />
+										<span class="truncate text-ui text-text font-medium">{project.name}</span>
+									</div>
+									<span class="shrink-0 text-text-3 font-mono text-[11px]">{timeAgo(project.updated_at)}</span>
+								</a>
+							{/if}
 
 							<a
 								href="/projects/session/{project.session_id}"
