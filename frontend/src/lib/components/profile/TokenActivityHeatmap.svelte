@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Segmented from '$lib/components/ds/inputs/Segmented.svelte';
+
 	type DayActivity = { date: string; tokens: number };
 
 	let {
@@ -11,7 +13,7 @@
 		totalTokens?: number;
 	} = $props();
 
-	let mode: 'daily' | 'weekly' | 'cumulative' = $state('daily');
+	let mode = $state('daily');
 	let hoveredDay = $state<{ date: string; tokens: number; x: number; y: number } | null>(null);
 	let selectedDate = $state<string | null>(null);
 
@@ -101,68 +103,47 @@
 		if (mode === 'daily') {
 			switch (day.level) {
 				case 4:
-					return 'bg-[#4ade80]'; // bright emerald
+					return 'bg-heat-4';
 				case 3:
-					return 'bg-[#22c55e]';
+					return 'bg-heat-3';
 				case 2:
-					return 'bg-[#15803d]';
+					return 'bg-heat-2';
 				case 1:
-					return 'bg-[#14532d]';
+					return 'bg-heat-1';
 				default:
-					return 'bg-[#191c21]';
+					return 'bg-surface-2';
 			}
 		} else if (mode === 'cumulative') {
 			const maxCum = Math.max(1, totalTokens);
 			const ratio = day.cumulative / maxCum;
-			if (ratio > 0.75) return 'bg-[#4ade80]';
-			if (ratio > 0.5) return 'bg-[#22c55e]';
-			if (ratio > 0.25) return 'bg-[#15803d]';
-			if (ratio > 0.05) return 'bg-[#14532d]';
-			return 'bg-[#191c21]';
+			if (ratio > 0.75) return 'bg-heat-4';
+			if (ratio > 0.5) return 'bg-heat-3';
+			if (ratio > 0.25) return 'bg-heat-2';
+			if (ratio > 0.05) return 'bg-heat-1';
+			return 'bg-surface-2';
 		} else {
-			// weekly
-			return day.level > 0 ? 'bg-[#22c55e]' : 'bg-[#191c21]';
+			return day.level > 0 ? 'bg-heat-3' : 'bg-surface-2';
 		}
 	}
 </script>
 
-<div class="rounded-xl border border-[#22252a] bg-[#131518] p-4 sm:p-5 flex flex-col gap-4">
+<div class="rounded-xl border border-border bg-surface p-4 sm:p-5 flex flex-col gap-4">
 	<!-- Top Bar -->
 	<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
 		<div class="flex items-baseline gap-2">
-			<h2 class="text-sm font-semibold text-white tracking-tight">Token activity</h2>
-			<span class="text-xs text-[#9aa0a6]">{formatNumber(totalTokens)} tokens in the last year</span>
+			<h2 class="text-ui font-semibold text-text tracking-tight">Token activity</h2>
+			<span class="text-caption text-text-2">{formatNumber(totalTokens)} tokens in the last year</span>
 		</div>
 		<!-- Segment Tabs -->
-		<div class="inline-flex rounded-lg border border-[#26292f] bg-[#1a1d22] p-0.5 self-start sm:self-auto text-xs">
-			<button
-				type="button"
-				class="rounded-md px-2.5 py-1 font-medium transition-colors {mode === 'daily'
-					? 'bg-[#2a2e36] text-white shadow-sm'
-					: 'text-[#9aa0a6] hover:text-white'}"
-				onclick={() => (mode = 'daily')}
-			>
-				Daily
-			</button>
-			<button
-				type="button"
-				class="rounded-md px-2.5 py-1 font-medium transition-colors {mode === 'weekly'
-					? 'bg-[#2a2e36] text-white shadow-sm'
-					: 'text-[#9aa0a6] hover:text-white'}"
-				onclick={() => (mode = 'weekly')}
-			>
-				Weekly
-			</button>
-			<button
-				type="button"
-				class="rounded-md px-2.5 py-1 font-medium transition-colors {mode === 'cumulative'
-					? 'bg-[#2a2e36] text-white shadow-sm'
-					: 'text-[#9aa0a6] hover:text-white'}"
-				onclick={() => (mode = 'cumulative')}
-			>
-				Cumulative
-			</button>
-		</div>
+		<Segmented
+			label="Token activity mode"
+			options={[
+				{ value: 'daily', label: 'Daily' },
+				{ value: 'weekly', label: 'Weekly' },
+				{ value: 'cumulative', label: 'Cumulative' },
+			]}
+			bind:value={mode}
+		/>
 	</div>
 
 	<!-- Heatmap Scroll Container -->
@@ -170,7 +151,7 @@
 		<div class="inline-flex flex-col gap-1.5 min-w-[680px]">
 			<div class="flex gap-1.5 items-start">
 				<!-- Day of Week Labels -->
-				<div class="flex flex-col justify-between text-[10px] text-[#70757a] pr-1.5 select-none pt-0.5" style="height: 98px;">
+				<div class="flex flex-col justify-between text-nano text-text-3 pr-1.5 select-none pt-0.5 font-mono" style="height: 98px;">
 					<span>Mon</span>
 					<span>Wed</span>
 					<span>Fri</span>
@@ -186,8 +167,8 @@
 									type="button"
 									aria-label="{day.tokens} tokens on {day.dateStr}"
 									class="w-[11px] h-[11px] rounded-[2px] transition-all {getColorClass(day)} {isSelected
-										? 'ring-2 ring-white ring-offset-1 ring-offset-[#131518] z-10'
-										: 'hover:ring-1 hover:ring-white/80'}"
+										? 'ring-2 ring-text ring-offset-1 ring-offset-surface z-10'
+										: 'hover:ring-1 hover:ring-text-2'}"
 									onmouseenter={(e) => {
 										const rect = e.currentTarget.getBoundingClientRect();
 										hoveredDay = {
@@ -211,7 +192,7 @@
 			</div>
 
 			<!-- Month Labels Row -->
-			<div class="flex pl-8 text-[10px] text-[#70757a] select-none gap-[3px]">
+			<div class="flex pl-8 text-nano text-text-3 select-none gap-[3px] font-mono">
 				{#each gridData as week}
 					<div class="w-[11px] text-left truncate">
 						{#if week.monthLabel}
@@ -226,29 +207,29 @@
 	<!-- Tooltip Portal (Floating) -->
 	{#if hoveredDay}
 		<div
-			class="fixed pointer-events-none z-50 -translate-x-1/2 -translate-y-full mb-2 px-2.5 py-1.5 rounded-lg bg-[#22252a] text-white text-xs shadow-xl border border-[#30343c] whitespace-nowrap"
+			class="fixed pointer-events-none z-50 -translate-x-1/2 -translate-y-full mb-2 px-2.5 py-1.5 rounded-lg bg-surface border border-border-strong text-text text-caption shadow-float whitespace-nowrap"
 			style="left: {hoveredDay.x}px; top: {hoveredDay.y - 6}px;"
 		>
-			<span class="font-semibold text-emerald-400">{hoveredDay.tokens.toLocaleString()} tokens</span>
-			<span class="text-[#9aa0a6] ml-1">on {formatDate(hoveredDay.date)}</span>
+			<span class="font-semibold text-accent">{hoveredDay.tokens.toLocaleString()} tokens</span>
+			<span class="text-text-2 ml-1">on {formatDate(hoveredDay.date)}</span>
 		</div>
 	{/if}
 
 	<!-- Footer Bar -->
-	<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-[#1e2126] text-[11px] text-[#9aa0a6]">
+	<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-border text-caption text-text-2">
 		<div>
 			Most active Tue · 21:00-23:00 WIB
 			{#if joinedDate}
 				· joined {joinedDate}
 			{/if}
 		</div>
-		<div class="flex items-center gap-1.5 select-none self-end sm:self-auto">
+		<div class="flex items-center gap-1.5 select-none self-end sm:self-auto text-text-3 font-mono text-micro">
 			<span>Less</span>
-			<span class="w-2.5 h-2.5 rounded-[2px] bg-[#191c21]"></span>
-			<span class="w-2.5 h-2.5 rounded-[2px] bg-[#14532d]"></span>
-			<span class="w-2.5 h-2.5 rounded-[2px] bg-[#15803d]"></span>
-			<span class="w-2.5 h-2.5 rounded-[2px] bg-[#22c55e]"></span>
-			<span class="w-2.5 h-2.5 rounded-[2px] bg-[#4ade80]"></span>
+			<span class="w-2.5 h-2.5 rounded-[2px] bg-surface-2 border border-border/30"></span>
+			<span class="w-2.5 h-2.5 rounded-[2px] bg-heat-1 border border-border/30"></span>
+			<span class="w-2.5 h-2.5 rounded-[2px] bg-heat-2 border border-border/30"></span>
+			<span class="w-2.5 h-2.5 rounded-[2px] bg-heat-3 border border-border/30"></span>
+			<span class="w-2.5 h-2.5 rounded-[2px] bg-heat-4"></span>
 			<span>More</span>
 		</div>
 	</div>
