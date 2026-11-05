@@ -1,21 +1,39 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { OrgList, ProjectList } from '$lib/types';
+import type { OrgList, ProjectList, SessionSummary } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const [orgsResponse, projectsResponse] = await Promise.all([
+	const [orgsResponse, projectsResponse, sessionsResponse] = await Promise.all([
 		apiFetch(fetch, cookies, '/api/orgs'),
 		apiFetch(fetch, cookies, '/api/projects'),
+		apiFetch(fetch, cookies, '/api/sessions').catch(() => null),
 	]);
 	if (!orgsResponse.ok || !projectsResponse.ok) {
 		throw error(500, m.err_load_projects());
 	}
 	const orgs = (await orgsResponse.json()) as OrgList;
 	const list = (await projectsResponse.json()) as ProjectList;
+	const sessions = sessionsResponse?.ok ? ((await sessionsResponse.json()) as { sessions: SessionSummary[] }).sessions : [];
+
+	let orgMembers: { user_id: string; name: string; email?: string; avatar_url?: string; role: string }[] = [];
+	if (list.org_id) {
+		const orgDetailResponse = await apiFetch(fetch, cookies, `/api/orgs/${list.org_id}`).catch(() => null);
+		if (orgDetailResponse?.ok) {
+			const detail = (await orgDetailResponse.json()) as { members?: typeof orgMembers };
+			if (detail.members) orgMembers = detail.members;
+		}
+	}
+
 	// No organization picked yet: the page asks where projects should live before anything else.
-	return { orgs: orgs.orgs, orgId: list.org_id, projects: list.projects };
+	return {
+		orgs: orgs.orgs,
+		orgId: list.org_id,
+		projects: list.projects,
+		sessions,
+		members: orgMembers,
+	};
 };
 
 async function pickOrg(fetch: typeof globalThis.fetch, cookies: Parameters<typeof apiFetch>[1], orgId: string) {
@@ -96,5 +114,20 @@ export const actions: Actions = {
 		if (!response.ok) return fail(500, { importError: m.err_new_project() });
 		const { session_id, project_id } = (await response.json()) as { session_id: string; project_id: string };
 		return { imported: { session_id, project_id } };
+	},
+
+	deleteProject: async ({ request, cookies, fetch }) => {
+		const formData = await request.formData();
+		const projectId = formData.get('project_id');
+		if (typeof projectId !== 'string' || !projectId) {
+			return fail(400, { error: 'project_id is required' });
+		}
+		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}`, {
+			method: 'DELETE',
+		});
+		if (!response.ok) {
+			return fail(response.status, { error: 'failed to delete project' });
+		}
+		return { deleted: projectId };
 	},
 };

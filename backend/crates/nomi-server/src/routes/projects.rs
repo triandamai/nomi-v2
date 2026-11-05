@@ -29,6 +29,14 @@ pub struct ProjectSummary {
     pub backend: Option<String>,
     #[serde(default)]
     pub shipyard_app: Option<String>,
+    #[serde(default)]
+    pub chats_count: i64,
+    #[serde(default)]
+    pub deploys_count: i64,
+    #[serde(default)]
+    pub files_count: i64,
+    #[serde(default)]
+    pub deploy_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,7 +103,11 @@ pub async fn list_projects(
         "SELECT p.id, p.session_id, p.name, p.description, p.status, p.created_at, p.updated_at, \
                 COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
                 (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open') AS open_issues, \
-                p.stack, p.backend, p.shipyard_app \
+                p.stack, p.backend, p.shipyard_app, \
+                (SELECT count(*) FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id) AS chats_count, \
+                (SELECT count(*) FROM project_publishes pp WHERE pp.project_id = p.id) AS deploys_count, \
+                (SELECT count(*) FROM project_files pf WHERE pf.project_id = p.id) AS files_count, \
+                (SELECT pp.url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'success' ORDER BY pp.created_at DESC LIMIT 1) AS deploy_url \
          FROM projects p \
          LEFT JOIN user_profiles up ON up.user_id = p.user_id \
          LEFT JOIN web_credentials w ON w.user_id = p.user_id \
