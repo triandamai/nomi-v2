@@ -28,8 +28,8 @@ SvelteKit 3 is NOT SvelteKit 2. Things you may remember that are now wrong:
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync",
+		"prepare": "echo ''",
+		"check": "echo ok",
 		"db:generate": "drizzle-kit generate"
 	},
 	"devDependencies": {
@@ -228,7 +228,15 @@ SvelteKit 3 postbuild prerendering uses `Promise.withResolvers()`, which require
 - If running in an older environment (< Node 22) where upgrading Node is not possible, polyfill `Promise.withResolvers` before building (`node --require polyfill.js` or in `vite.config.ts`).
 - Never use Node 20 or earlier, as building modern Vite/SvelteKit projects will fail with: `TypeError: Promise.withResolvers is not a function`.
 
+## How we work in Nomi
+
+- The preview environment runs Vite's live dev server (`npm run dev`). Every file edit you make is hot-reloaded immediately into the user's preview via Vite HMR.
+- Nomi starts and manages `npm run dev` automatically; do not start it yourself with `run_command`.
+- Do NOT run `npm run build` during development. The user interacts with the live dev server (`npm run dev`), not the build output. Running `build` in WebContainer wastes browser resources and can stall the container.
+- Do NOT run `svelte-check` or heavy typecheckers in WebContainer: keep `"check": "echo ok"` in `package.json`.
+- Run `npm install` with `run_command` ONLY when you add or update packages in `package.json`.
+- Run `npm run db:generate` when you create or update schemas in `src/lib/server/db/schema.ts`.
+
 ## Before you finish
 
-Run `npm install` (after changing package.json), then `npm run check`, then `npm run build`.
-Fix every error they report.
+Make sure all routes, components, and schema files are in place and correctly written. You do not need to run `npm run build` in WebContainer during development—the live dev server (`npm run dev`) has already hot-reloaded your changes. Complete your task cleanly.

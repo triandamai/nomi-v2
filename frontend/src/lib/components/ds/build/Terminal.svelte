@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { ArrowRight, Check, CircleAlert, Copy, Info, SquareTerminal } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
@@ -18,6 +19,24 @@
 
 	const copier = createCopier();
 	const log = $derived(lines.map((line) => line.text ?? '').join('\n'));
+
+	let logEl = $state<HTMLDivElement | null>(null);
+	let following = $state(true);
+
+	function onScroll() {
+		if (logEl) {
+			following = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+		}
+	}
+
+	$effect(() => {
+		void lines.length;
+		void tick().then(() => {
+			if (logEl && following) {
+				logEl.scrollTop = logEl.scrollHeight;
+			}
+		});
+	});
 </script>
 
 <section class="flex h-130 w-full flex-col overflow-hidden rounded-sm bg-bg outline -outline-offset-1 outline-border-strong">
@@ -29,7 +48,7 @@
 			<Icon icon={copier.copied ? Check : Copy} size={14} />{copier.copied ? m.copy_done() : m.term_copy()}
 		</button>
 	</header>
-	<div role="log" aria-label={run} class="flex min-h-0 flex-1 flex-col gap-1 overflow-auto px-4 py-3.5 font-mono text-caption">
+	<div bind:this={logEl} onscroll={onScroll} role="log" aria-label={run} class="flex min-h-0 flex-1 flex-col gap-1 overflow-auto px-4 py-3.5 font-mono text-caption">
 		{#each lines as line, index (index)}
 			<p class={['flex min-h-5 items-center gap-3', (line.kind === 'fail') && 'bg-danger-bg']}>
 				<span

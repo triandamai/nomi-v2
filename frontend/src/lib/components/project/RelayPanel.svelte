@@ -35,11 +35,13 @@
 	let result = $state<QueryResult | null>(null);
 	let queryError = $state<string | null>(null);
 	let copied = $state<string | null>(null);
+	let notOnRelay = $state(false);
 
 	async function load() {
 		loadError = null;
 		try {
 			const answer = await projectApi<RelayOverview>(projectId, `relay?source=${source}`);
+			notOnRelay = answer.backend !== 'relay';
 			setup = answer.backend === 'relay' && 'setup' in answer ? answer.setup : null;
 			relay = answer.backend === 'relay' && 'url' in answer ? answer : null;
 			if (selected) selected = relay?.tables.find((t) => t.name === selected?.name) ?? null;
@@ -123,6 +125,10 @@
 
 	{#if loadError}
 		<p class="error" role="alert">{loadError}</p>
+	{:else if notOnRelay}
+		<div class="setup" role="status">
+			<p class="muted">{m.pj_db_not_used()}</p>
+		</div>
 	{:else if setup?.state === 'failed'}
 		<div class="setup" role="alert">
 			<p class="setup__title">{m.relay_setup_failed()}</p>

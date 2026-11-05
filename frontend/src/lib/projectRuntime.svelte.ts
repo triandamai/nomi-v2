@@ -345,17 +345,20 @@ export class ProjectRuntime {
 	async #runForKoda(run: ClaimedRun) {
 		this.running = [run.command, ...run.args].join(' ');
 		const install = run.command === 'npm' && (run.args[0] === 'install' || run.args[0] === 'i');
+		const check = run.command === 'npm' && run.args[0] === 'run' && (run.args[1] === 'check' || run.args[1] === 'prepare');
 		const timeoutMs = run.timeout_seconds ? Math.max(5000, run.timeout_seconds * 1000 - 3000) : COMMAND_TIMEOUT_MS;
 		const watch = install
 			? { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed(), timeoutMs }
-			: { timeoutMs };
+			: check
+				? { quietMs: 8000, settled: async () => true, timeoutMs }
+				: { timeoutMs };
 		const result = await this.#run(run.command, run.args, watch)
 			.then((r) => (r.hung ? { code: 0, output: `${r.output}\n(finished; the process didn't exit, so Nomi stopped it)` } : r))
 			.catch((e) => ({ code: null, output: String(e) }));
 		this.running = null;
 		await this.#api(`runtime/runs/${run.id}`, { method: 'POST', body: JSON.stringify({ exit_code: result.code, output: result.output }) }).catch(() => null);
 		// New packages need the dev server restarted to be picked up.
-		if (install && this.#dev) await this.#startDev();
+		if (install) await this.#startDev();
 	}
 
 	/** Checks in (keeping the project marked open), queueing syncs and Koda's commands. */

@@ -214,7 +214,7 @@ The person stored these for the published app, read on the server from the envir
                 if open.is_empty() {
                     brief.push_str("- Everything the plan describes is built.\n");
                 }
-                brief.push_str("- npm run check and npm run build pass (run them; don't assume).\n\n");
+                brief.push_str("- The app is fully implemented and running cleanly on the live dev server (npm run dev).\n\n");
             }
             None => brief.push_str(&format!(
                 "## Plan\n\"{}\" (version {}) couldn't be loaded here: call read_plan.\n\n",

@@ -23,6 +23,12 @@ pub struct ProjectSummary {
     /// Who started it (their display name, or the start of their email).
     pub created_by: String,
     pub open_issues: i64,
+    #[serde(default)]
+    pub stack: Option<String>,
+    #[serde(default)]
+    pub backend: Option<String>,
+    #[serde(default)]
+    pub shipyard_app: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,7 +94,8 @@ pub async fn list_projects(
     let projects: Vec<ProjectSummary> = sqlx::query_as(
         "SELECT p.id, p.session_id, p.name, p.description, p.status, p.created_at, p.updated_at, \
                 COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
-                (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open') AS open_issues \
+                (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open') AS open_issues, \
+                p.stack, p.backend, p.shipyard_app \
          FROM projects p \
          LEFT JOIN user_profiles up ON up.user_id = p.user_id \
          LEFT JOIN web_credentials w ON w.user_id = p.user_id \

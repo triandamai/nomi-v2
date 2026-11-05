@@ -64,7 +64,9 @@ export const actions: Actions = {
 	// depending on the planning agent reliably calling its own create_project tool once the
 	// conversation gets going (that dependency turned out to be unreliable in practice).
 	createProject: async ({ request, cookies, fetch }) => {
-		const orgId = (await request.formData()).get('org_id');
+		const formData = await request.formData();
+		const orgId = formData.get('org_id');
+		const prompt = String(formData.get('prompt') ?? '').trim();
 		const response = await apiFetch(fetch, cookies, '/api/projects', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -78,7 +80,8 @@ export const actions: Actions = {
 			throw error(500, m.err_new_project());
 		}
 		const { session_id } = (await response.json()) as { session_id: string; project_id: string };
-		throw redirect(303, `/projects/session/${session_id}`);
+		const targetUrl = prompt ? `/projects/session/${session_id}?prompt=${encodeURIComponent(prompt)}` : `/projects/session/${session_id}`;
+		throw redirect(303, targetUrl);
 	},
 
 	// A new project to import existing code into: the page fills it, then opens it.

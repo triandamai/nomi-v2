@@ -65,6 +65,18 @@ describe('appendOutput', () => {
 		expect(appendOutput('a\n', '\nb\n')).toBe('a\n\nb\n');
 	});
 
+	it('collapses carriage-return progress rewrites across chunks and within chunks', () => {
+		let log = '156: <label ...>\n';
+		log = appendOutput(log, 'transforming (67) utils.js\r');
+		log = appendOutput(log, 'transforming (145) client.js\r');
+		log = appendOutput(log, '✓ built in 473ms\n');
+		expect(log).toBe('156: <label ...>\n✓ built in 473ms\n');
+
+		expect(
+			appendOutput('', 'rendering chunks (1)...\rrendering chunks (2)...\rcomputing gzip size...\n'),
+		).toBe('computing gzip size...\n');
+	});
+
 	it('gives the preview its dev backend, and the service key only when Nomi sent one', () => {
 		const base = { NOMI_PREVIEW: '1' };
 		const member = previewEnv(base, { url: 'https://todo-dev.api.relay.test', anon_key: 'anon' });

@@ -21,6 +21,16 @@
 	let loginError = $state<string | null>(null);
 	let copied = $state(false);
 
+	const noDatabase = $derived(
+		Boolean(
+			tablesError &&
+			(tablesError.toLowerCase().includes('does not use a database') ||
+				tablesError.toLowerCase().includes('no database') ||
+				tablesError.includes('<!DOCTYPE') ||
+				tablesError.includes('<html'))
+		)
+	);
+
 	async function loadTables() {
 		tables = null;
 		tablesError = null;
@@ -83,59 +93,73 @@
 </script>
 
 <div class="db">
-	<div class="sources" role="tablist" aria-label={m.pj_db_source()}>
-		<button type="button" role="tab" class="source" aria-selected={source === 'development'} onclick={() => (source = 'development')}>{m.pj_db_development()}</button>
-		<button type="button" role="tab" class="source" aria-selected={source === 'production'} disabled={!published} onclick={() => (source = 'production')}>{m.pj_db_production()}</button>
-	</div>
-	<p class="hint">{source === 'development' ? m.pj_db_development_hint() : m.pj_db_production_hint()}</p>
+	{#if noDatabase}
+		<div class="no-db">
+			<p class="muted">{m.pj_db_not_used()}</p>
+		</div>
+	{:else}
+		<div class="sources" role="tablist" aria-label={m.pj_db_source()}>
+			<button type="button" role="tab" class="source" aria-selected={source === 'development'} onclick={() => (source = 'development')}>{m.pj_db_development()}</button>
+			<button type="button" role="tab" class="source" aria-selected={source === 'production'} disabled={!published} onclick={() => (source = 'production')}>{m.pj_db_production()}</button>
+		</div>
+		<p class="hint">{source === 'development' ? m.pj_db_development_hint() : m.pj_db_production_hint()}</p>
 
-	<div class="layout">
-		<aside class="tables">
-			<h3 class="section-title">{m.pj_db_tables()}</h3>
-			{#if tablesError}
-				<p class="error">{tablesError}</p>
-			{:else if !tables}
-				<p class="muted">{m.pj_loading()}</p>
-			{:else if tables.length === 0}
-				<p class="muted">{m.pj_db_no_tables()}</p>
-			{:else}
-				<ul class="table-list">
-					{#each tables as table (table.schema + '.' + table.name)}
-						<li>
-							<button type="button" class="table" onclick={() => browse(table)}>
-								<span class="table__name">{table.schema === 'public' ? table.name : `${table.schema}.${table.name}`}</span>
-								{#if table.rows_estimate >= 0}<span class="table__rows">{table.rows_estimate}</span>{/if}
-							</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+		<div class="layout">
+			<aside class="tables">
+				<h3 class="section-title">{m.pj_db_tables()}</h3>
+				{#if tablesError}
+					<p class="error">{tablesError}</p>
+				{:else if !tables}
+					<p class="muted">{m.pj_loading()}</p>
+				{:else if tables.length === 0}
+					<p class="muted">{m.pj_db_no_tables()}</p>
+				{:else}
+					<ul class="table-list">
+						{#each tables as table (table.schema + '.' + table.name)}
+							<li>
+								<button type="button" class="table" onclick={() => browse(table)}>
+									<span class="table__name">{table.schema === 'public' ? table.name : `${table.schema}.${table.name}`}</span>
+									{#if table.rows_estimate >= 0}<span class="table__rows">{table.rows_estimate}</span>{/if}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 
-			<h3 class="section-title">{m.pj_db_login()}</h3>
-			{#if login}
-				<code class="login">{login}</code>
-				<Button variant="tonal" size="s" onclick={copyLogin}><IconCopy size={16} />{copied ? m.pj_copied() : m.pj_copy()}</Button>
-			{:else}
-				<p class="muted">{m.pj_db_login_hint()}</p>
-				<Button variant="outlined" size="s" onclick={showLogin}>{m.pj_db_show_login()}</Button>
-			{/if}
-			{#if loginError}<p class="error">{loginError}</p>{/if}
-		</aside>
+				<h3 class="section-title">{m.pj_db_login()}</h3>
+				{#if login}
+					<code class="login">{login}</code>
+					<Button variant="tonal" size="s" onclick={copyLogin}><IconCopy size={16} />{copied ? m.pj_copied() : m.pj_copy()}</Button>
+				{:else}
+					<p class="muted">{m.pj_db_login_hint()}</p>
+					<Button variant="outlined" size="s" onclick={showLogin}>{m.pj_db_show_login()}</Button>
+				{/if}
+				{#if loginError}<p class="error">{loginError}</p>{/if}
+			</aside>
 
-		<section class="console">
-			<label class="sr-only" for="sql">{m.pj_db_query()}</label>
-			<textarea id="sql" class="sql" bind:value={sql} onkeydown={keydown} spellcheck="false" placeholder="SELECT * FROM …" rows="6"></textarea>
-			<div class="console__bar">
-				<span class="muted small">{m.pj_db_run_hint()}</span>
-				<Button variant="filled" size="s" disabled={running || !sql.trim()} onclick={run}>{running ? m.pj_db_running() : m.pj_db_run()}</Button>
-			</div>
-			{#if queryError}<p class="error" role="alert">{queryError}</p>{/if}
-			{#if result}<QueryResultView {result} />{/if}
-		</section>
-	</div>
+			<section class="console">
+				<label class="sr-only" for="sql">{m.pj_db_query()}</label>
+				<textarea id="sql" class="sql" bind:value={sql} onkeydown={keydown} spellcheck="false" placeholder="SELECT * FROM …" rows="6"></textarea>
+				<div class="console__bar">
+					<span class="muted small">{m.pj_db_run_hint()}</span>
+					<Button variant="filled" size="s" disabled={running || !sql.trim()} onclick={run}>{running ? m.pj_db_running() : m.pj_db_run()}</Button>
+				</div>
+				{#if queryError}<p class="error" role="alert">{queryError}</p>{/if}
+				{#if result}<QueryResultView {result} />{/if}
+			</section>
+		</div>
+	{/if}
 </div>
 
 <style>
+	.no-db {
+		display: flex;
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		padding: 64px 24px;
+		text-align: center;
+	}
 	.db {
 		display: flex;
 		flex-direction: column;

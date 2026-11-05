@@ -36,8 +36,8 @@ pub fn run_command_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "run_command".to_string(),
         description: "Run one command in the project's preview (Node in the user's browser) and get its output: \
-            'npm install', 'npm install zod', 'npm run check', 'npm run build', 'npm run db:generate', 'npx ...', 'node ...'. \
-            One command at a time, no shell operators. Don't start the dev server; Nomi runs it."
+            'npm install', 'npm install zod', 'npm run db:generate', 'npx ...', 'node ...'. \
+            One command at a time, no shell operators. Don't start the dev server; Nomi runs it. Do not run 'npm run build' during development."
             .to_string(),
         input_schema: json!({
             "type": "object",
@@ -98,7 +98,7 @@ pub fn parse_command(line: &str) -> Result<Vec<String>, String> {
         _ => args.contains(&"--watch"),
     };
     if starts_server {
-        return Err("Nomi runs the dev server itself; don't start one. Use 'npm run check' or 'npm run build' to test.".to_string());
+        return Err("Nomi runs the dev server ('npm run dev') itself; don't start one. Edit files directly to hot-reload in the preview.".to_string());
     }
     if program == "npx" && args.windows(2).any(|w| w[0] == "drizzle-kit" && matches!(w[1], "push" | "migrate")) {
         return Err("drizzle-kit push/migrate need a database server. Run 'npm run db:generate'; the app applies migrations on start.".to_string());

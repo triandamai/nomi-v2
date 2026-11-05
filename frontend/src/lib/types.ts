@@ -460,6 +460,9 @@ export interface ProjectSummary {
 	/** Who started it. */
 	created_by: string;
 	open_issues: number;
+	stack?: string;
+	backend?: string;
+	shipyard_app?: string | null;
 }
 
 export interface ProjectList {
