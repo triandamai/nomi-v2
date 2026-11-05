@@ -677,10 +677,23 @@ fn avatar_content_type(file: &str) -> Option<&'static str> {
     }
 }
 
-/// `GET /api/avatars/:user_id/:file`: a profile picture.
+/// `GET /api/avatars/:user_id/:file`: a profile picture, for anyone signed in (teammates see
+/// each other's).
 pub async fn get_avatar(
+    AuthClaims(_claims): AuthClaims,
     Path((user_id, file)): Path<(Uuid, String)>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
+    serve_avatar(user_id, file).await
+}
+
+/// `GET /api/public/avatars/:user_id/:file`: public avatar viewing for public profile links.
+pub async fn public_get_avatar(
+    Path((user_id, file)): Path<(Uuid, String)>,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    serve_avatar(user_id, file).await
+}
+
+async fn serve_avatar(user_id: Uuid, file: String) -> Result<axum::response::Response, (StatusCode, String)> {
     use axum::response::IntoResponse;
     let content_type = avatar_content_type(&file).ok_or((StatusCode::NOT_FOUND, "not found".to_string()))?;
     let bytes = nomi_storage::blob::attachment_store()
@@ -695,7 +708,7 @@ pub async fn get_avatar(
         [
             (axum::http::header::CONTENT_TYPE, content_type),
             // A new picture gets a new file name, so a stored one never changes.
-            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            (axum::http::header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
             (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],
         bytes,

@@ -358,6 +358,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))
         .route("/api/profile/avatar/upload-url", post(profile_routes::request_avatar_upload_url))
         .route("/api/avatars/:user_id/:file", get(profile_routes::get_avatar))
+        .route("/api/public/avatars/:user_id/:file", get(profile_routes::public_get_avatar))
         .route(
             "/api/profile/avatar",
             post(profile_routes::upload_avatar)
