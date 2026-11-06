@@ -80,3 +80,10 @@ if (typeof window !== 'undefined') {
 	}
 	(globalThis as Record<string, unknown>).WebSocket = QuietSocket;
 }
+
+// Downloads and previews make object URLs; jsdom's Blob doesn't survive Node's own
+// URL.createObjectURL, so they get a placeholder address.
+if (typeof window !== 'undefined') {
+	URL.createObjectURL = () => 'blob:test';
+	URL.revokeObjectURL = () => {};
+}
