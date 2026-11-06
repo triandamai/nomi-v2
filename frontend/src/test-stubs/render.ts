@@ -104,3 +104,27 @@ export async function settle(times = 5) {
 		flushSync();
 	}
 }
+
+/**
+ * Clicks every button under `root` once (not submit buttons or links), the way someone trying
+ * the screen would, keeping going past any that fail. Returns how many were clicked.
+ */
+export function clickEverything(root: ParentNode = document.body, skip: RegExp = /delete|remove|sign out|log out|forget/i): number {
+	let clicked = 0;
+	const seen = new Set<Element>();
+	for (let round = 0; round < 2; round++) {
+		for (const el of [...root.querySelectorAll<HTMLElement>('button:not([type="submit"]), [role="button"], [role="tab"], [role="switch"], summary')]) {
+			if (seen.has(el) || !el.isConnected || (el as HTMLButtonElement).disabled) continue;
+			if (skip.test(el.textContent ?? '') || skip.test(el.getAttribute('aria-label') ?? '')) continue;
+			seen.add(el);
+			try {
+				el.click();
+				flushSync();
+				clicked++;
+			} catch {
+				// a control that needs more than a click; carry on
+			}
+		}
+	}
+	return clicked;
+}

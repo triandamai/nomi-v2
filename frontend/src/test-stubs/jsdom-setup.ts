@@ -43,3 +43,13 @@ if (typeof window !== 'undefined') {
 	(HTMLElement.prototype as unknown as Record<string, unknown>).showPopover ??= function () {};
 	(HTMLElement.prototype as unknown as Record<string, unknown>).hidePopover ??= function () {};
 }
+
+// No network in component tests: a relative `fetch` (a form action, `/api/...`) answers like a
+// SvelteKit action that succeeded with nothing to say. Tests that care install their own fake.
+if (typeof window !== 'undefined') {
+	globalThis.fetch = (async () =>
+		new Response(JSON.stringify({ type: 'success', status: 200, data: '[]' }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})) as typeof fetch;
+}
