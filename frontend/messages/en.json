@@ -2883,5 +2883,14 @@
 	"code_whole_file": "whole file",
 	"code_ask_about_file": "About `{path}`:",
 	"code_edit_mode": "Edit the code",
-	"code_read_mode": "Read and ask Koda"
+	"code_read_mode": "Read and ask Koda",
+	"pinned_who_is": "{who} is {activity}",
+	"pinned_done": "{who} is done",
+	"pinned_failed": "{who} couldn't finish",
+	"pinned_question": "{who} needs your answer",
+	"pinned_approval": "{who} needs your approval",
+	"pinned_connect": "{who} needs a connection",
+	"pinned_jump": "Go to it",
+	"pinned_show_error": "See what happened",
+	"pinned_dismiss": "Dismiss"
 }

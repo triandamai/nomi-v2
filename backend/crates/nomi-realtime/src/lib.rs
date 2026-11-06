@@ -37,7 +37,18 @@ pub enum StreamEnvelope {
     /// An agent's live status changed — thinking, calling a tool, writing a reply, or back to
     /// waiting. `detail` carries the tool name for `calling_tool`, `None` otherwise. Never sent
     /// for the default (chitchat) agent's turns, which have no real `agent_sessions` row.
-    AgentPhaseChanged { agent_session_id: Uuid, phase: String, detail: Option<String> },
+    /// `agent_display_name` is who it is, named as their messages are (absent from older senders).
+    AgentPhaseChanged {
+        agent_session_id: Uuid,
+        phase: String,
+        detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_display_name: Option<String>,
+    },
+    /// The crew is done with this chat for now: the chat's own copy of `UserEnvelope::ChatActivity`
+    /// (same rules, same values), so a device showing the chat knows it finished, failed, or is
+    /// waiting on the person (`waiting`: "question", "approval" or "connect").
+    ChatSettled { outcome: String, waiting: Option<String>, agent: Option<String> },
     /// An `agent_sessions` row was created — an agent started working. Every field the admin
     /// command center needs to render a new table row is resolved once here (at spawn time,
     /// mirroring how `messages.agent_display_name` is resolved at insert time) so the dashboard

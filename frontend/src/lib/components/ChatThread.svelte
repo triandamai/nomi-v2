@@ -22,7 +22,7 @@
 	import { provideChatSend } from '$lib/chatSend';
 	import { buildMessageFetchUrl } from '$lib/buildMessageFetchUrl';
 	import { createChatLink } from '$lib/chatLink';
-	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, toolActivityLabel } from '$lib/agentLabels';
+	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, stepLabel, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew, type CrewRosterMember } from '$lib/crew';
 	import { crewId } from '$lib/crewId';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
@@ -46,11 +46,12 @@
 	import LoadingOlder from './ds/chat/LoadingOlder.svelte';
 	import RenameField from './ds/chat/RenameField.svelte';
 	import CrewWorking from './ds/chat/CrewWorking.svelte';
-	import StopHint from './ds/chat/StopHint.svelte';
 	import NewDivider from './ds/chat/NewDivider.svelte';
-	import LiveStep from './ds/conversation/LiveStep.svelte';
 	import ReplyText from './ds/chat/ReplyText.svelte';
 	import Typing from './ds/build/Typing.svelte';
+	import PinnedActivity from './blocks/PinnedActivity.svelte';
+	import { DONE_LINGER_MS, failureMessageId, lingeredOut, settled, startPinned, waitingOn, withPhase, withSettled, type PinnedActivity as PinnedCard, type PinnedPhase } from '$lib/pinnedActivity';
+	import type { StepState } from './ds/chat/stepState';
 	import { applyStreamEvent, emptyStream, type LiveReply } from '$lib/liveReply';
 	import type { MessageMemory } from '$lib/types';
 	import { dayLabel, toISODate } from '$lib/dates';
@@ -502,10 +503,6 @@
 		if (phase === 'calling_tool') return detail ? toolActivityLabel(detail) : m.tool_using_a_tool();
 		return m.chat_working();
 	}
-	function phaseText(phase: string, detail: string | null): string {
-		if (phase === 'retrying') return retryActivity(detail, now);
-		return m.chat_nomi_is({ activity: phaseActivity(phase, detail) });
-	}
 
 	// Resync whenever the page's own `messages` prop changes — navigating to a different
 	// session, or a full invalidateAll() (still used for AgentDelegationUpdated and on
@@ -611,13 +608,19 @@
 		submitting = false;
 		openTurns = [];
 		currentPhase = null;
+		activityCard = null;
 	}
 
-	/** A turn ended. Also ends "sending": a turn can finish without streaming anything (an approval, a stop). */
-	function closeTurn(turnId: string) {
+	/** A turn ended. Also ends "sending": a turn can finish without streaming anything (an approval, a stop).
+	 * The last one open settles the pinned card as `outcome`. */
+	function closeTurn(turnId: string, outcome: 'done' | 'failed') {
+		const took = untrack(() => elapsed);
 		openTurns = openTurns.filter((id) => id !== turnId);
 		submitting = false;
-		if (openTurns.length === 0) currentPhase = null;
+		if (openTurns.length === 0) {
+			currentPhase = null;
+			if (activityCard?.status === 'working') activityCard = settled(activityCard, outcome, took, Date.now());
+		}
 	}
 
 	async function fetchAndUpsertMessage(id: string) {
@@ -794,6 +797,77 @@
 	);
 	const involvedCrew = $derived(crew.filter((m) => m.involved));
 	const workingCrew = $derived(crew.filter((m) => m.working));
+
+	// The crew's work on this turn, pinned above the composer so nothing that lands in the thread
+	// pushes it away (see $lib/pinnedActivity). A new turn starts it over; it settles when the
+	// turn does, and stays until the person's next message (or DONE_LINGER_MS when it's done).
+	let activityCard = $state<PinnedCard | null>(null);
+	let pinnedWho = $state('Nomi');
+	$effect(() => {
+		if (!isWorking) return;
+		untrack(() => {
+			if (activityCard?.status !== 'working') activityCard = startPinned();
+		});
+	});
+	// Who's on it: a crew member handed the work over Nomi, who's always there.
+	$effect(() => {
+		const lead = workingCrew.find((member) => member.key !== 'nomi') ?? workingCrew[0];
+		if (lead && isWorking) pinnedWho = lead.name;
+	});
+	// What it's waiting on: the server's word, else what the thread shows; where it is, from the thread.
+	const pinnedWaiting = $derived.by(() => {
+		if (!activityCard) return null;
+		const found = waitingOn(threadMessages);
+		if (activityCard.waiting) return { on: activityCard.waiting, messageId: found?.messageId ?? null };
+		return found;
+	});
+	$effect(() => {
+		const card = activityCard;
+		if (!card || card.status !== 'done' || pinnedWaiting || card.settledAt === null) return;
+		const timer = setTimeout(() => {
+			if (activityCard && lingeredOut(activityCard, Date.now())) activityCard = null;
+		}, Math.max(0, card.settledAt + DONE_LINGER_MS - Date.now()));
+		return () => clearTimeout(timer);
+	});
+
+	const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+	function pinnedStepLabel(step: PinnedPhase, running: boolean): string {
+		if (step.phase === 'running_command') return capitalize(commandActivity(step.detail, now));
+		if (running) return capitalize(step.detail ? toolActivityLabel(step.detail) : m.tool_using_a_tool());
+		return stepLabel(step.detail ?? '', null);
+	}
+	const pinnedView = $derived.by(() => {
+		const card = activityCard;
+		if (!card) return null;
+		const who = card.who ?? pinnedWho;
+		const status: 'working' | 'done' | 'failed' | 'waiting' = pinnedWaiting ? 'waiting' : card.status;
+		const steps = card.steps.map((step, index) => {
+			const running = card.status === 'working' && index === card.steps.length - 1;
+			const state: StepState = running ? 'running' : card.status === 'failed' && index === card.steps.length - 1 ? 'failed' : 'done';
+			return { label: pinnedStepLabel(step, running), state };
+		});
+		let headline: string;
+		if (pinnedWaiting) {
+			headline =
+				pinnedWaiting.on === 'question' ? m.pinned_question({ who }) : pinnedWaiting.on === 'approval' ? m.pinned_approval({ who }) : m.pinned_connect({ who });
+		} else if (card.status === 'done') {
+			headline = m.pinned_done({ who });
+		} else if (card.status === 'failed') {
+			headline = m.pinned_failed({ who });
+		} else if (currentPhase?.phase === 'retrying') {
+			headline = retryActivity(currentPhase.detail, now);
+		} else {
+			headline = `${m.pinned_who_is({ who, activity: currentPhase ? phaseActivity(currentPhase.phase, currentPhase.detail) : m.chat_working() })}…`;
+		}
+		return { status, headline, steps, elapsed: card.status === 'working' ? elapsed : card.elapsed };
+	});
+
+	/** Brings a message into view (what the crew is waiting on, or why it failed). */
+	function revealMessage(id: string | null) {
+		const target = id ? messagesContainer?.querySelector(`[data-message-id="${CSS.escape(id)}"]`) : null;
+		if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		else jumpToLatest();
+	}
 	// App-bar meta line: "TRAVEL · NOMI + MONEY + PLANNING"
 	const metaLine = $derived(
 		[context, involvedCrew.map((m) => m.name).join(' + ')].filter(Boolean).join(' · '),
@@ -857,7 +931,21 @@
 			}
 		},
 		message(data) {
-			let envelope: { kind: string; turn_job_id?: string; message_id?: string; phase?: string; detail?: string | null; error?: string; title?: string; message_ids?: string[]; event?: unknown };
+			let envelope: {
+				kind: string;
+				turn_job_id?: string;
+				message_id?: string;
+				phase?: string;
+				detail?: string | null;
+				agent_display_name?: string;
+				error?: string;
+				title?: string;
+				message_ids?: string[];
+				event?: unknown;
+				outcome?: string;
+				waiting?: string | null;
+				agent?: string | null;
+			};
 			try {
 				envelope = JSON.parse(String(data));
 			} catch {
@@ -874,7 +962,7 @@
 				live = emptyStream();
 				liveEnd = null;
 				stopRequested = false;
-				closeTurn(turnId);
+				closeTurn(turnId, 'done');
 				turnError = false;
 				if (envelope.message_id && envelope.message_id !== NIL_UUID) {
 					fetchAndUpsertMessage(envelope.message_id);
@@ -884,7 +972,7 @@
 				if (live.text.trim() && envelope.error && !stopRequested) liveEnd = { status: 'interrupted', elapsed: untrack(() => elapsed), reason: envelope.error };
 				else live = emptyStream();
 				stopRequested = false;
-				closeTurn(turnId);
+				closeTurn(turnId, 'failed');
 				// The server posts why (out of credits, a rejected key, ...) as a message in the
 				// chat; the generic notice is only for a failure that came with no explanation.
 				turnError = !envelope.error;
@@ -896,7 +984,14 @@
 			} else if (envelope.kind === 'AgentDelegationUpdated') {
 				invalidateAll();
 				refreshPlans(); // a build starting or ending moves its plan on
+			} else if (envelope.kind === 'ChatSettled') {
+				// The crew is done with the chat for now: how it went, from the server.
+				if (typeof envelope.outcome === 'string' && !stopRequested && !isWorking) {
+					activityCard = withSettled(activityCard, { outcome: envelope.outcome, waiting: envelope.waiting ?? null, agent: envelope.agent ?? null }, null, Date.now());
+				}
 			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
+				// A card changed (an approval decided, a question answered): the thread says what's still waiting.
+				if (envelope.kind === 'MessageUpdated' && activityCard?.waiting) activityCard = { ...activityCard, waiting: null };
 				// A posted message is what was streaming (or comes after it): the real one takes over.
 				if (envelope.kind === 'MessageCreated' && !liveEnd) live = emptyStream();
 				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
@@ -911,6 +1006,10 @@
 			} else if (envelope.kind === 'AgentPhaseChanged') {
 				if (typeof envelope.phase === 'string' && !stopRequested) {
 					currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
+					if (activityCard && currentPhase) {
+						activityCard = withPhase(activityCard, currentPhase);
+						if (envelope.agent_display_name) activityCard = { ...activityCard, who: envelope.agent_display_name };
+					}
 				}
 			}
 		},
@@ -937,6 +1036,7 @@
 				openTurns = [];
 				currentPhase = null;
 				stopRequested = false;
+				activityCard = null;
 			});
 		}
 		connectedSession = id;
@@ -1114,14 +1214,6 @@
 							/>
 						</div>
 					{/if}
-					{#if isWorking}
-						<!-- The step the crew is on right now, with the time so far (LiveStep), and a way to
-						     stop it here or with Escape (StopHint). -->
-						<div class="thread__status">
-							<LiveStep step={currentPhase ? phaseText(currentPhase.phase, currentPhase.detail) : m.chat_nomi_is({ activity: m.chat_working() })} {elapsed} />
-							{#if !stopping}<StopHint onstop={stopCrew} />{/if}
-						</div>
-					{/if}
 					{#if typingPeople.length > 0}
 						<div class="thread__typing">
 							{#each typingPeople.slice(0, 2) as who (who.name)}<Typing {who} />{/each}
@@ -1147,6 +1239,26 @@
 			</div>
 
 			<div class="dock">
+				{#if pinnedView}
+					<!-- The step the crew is on, pinned here until the turn settles (PinnedActivity):
+					     stop it here or with Escape, or go to what it's waiting on. -->
+					<div class="dock__pinned">
+						<PinnedActivity
+							status={pinnedView.status}
+							headline={pinnedView.headline}
+							elapsed={pinnedView.elapsed}
+							steps={pinnedView.steps}
+							onstop={stopping || readOnlyNote ? undefined : stopCrew}
+							jumpLabel={pinnedView.status === 'failed' ? m.pinned_show_error() : m.pinned_jump()}
+							onjump={pinnedView.status === 'waiting'
+								? () => revealMessage(pinnedWaiting?.messageId ?? null)
+								: pinnedView.status === 'failed'
+									? () => revealMessage(failureMessageId(threadMessages))
+									: undefined}
+							ondismiss={pinnedView.status === 'done' || pinnedView.status === 'failed' ? () => (activityCard = null) : undefined}
+						/>
+					</div>
+				{/if}
 				{#if aboveComposer}<div class="dock__above">{@render aboveComposer()}</div>{/if}
 				{#if readOnlyNote}
 					<p class="dock__readonly" role="note">{readOnlyNote}</p>
@@ -1637,19 +1749,16 @@
 	.thread__live {
 		margin: 14px 0 0 48px;
 	}
-	.thread__status {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		margin-top: 18px;
-	}
 	/* Errors with no message of their own (a send that didn't go, a dropped connection), lined up
 	   with the crew's replies. */
 	.thread__notice {
 		margin: 14px 0 0 48px;
 	}
 
+	.dock__pinned {
+		max-width: 760px;
+		margin: 0 auto 8px;
+	}
 	.dock__above {
 		display: flex;
 		flex-direction: column;

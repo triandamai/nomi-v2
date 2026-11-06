@@ -1,9 +1,11 @@
 //! Telling the person how a chat ended up, wherever they are in the app: when the crew is done
 //! with a chat for now (finished, failed, or waiting on them), a `ChatActivity` goes to their own
 //! MQTT topic. The app subscribes to it once while it's open and shows a snackbar with a way back
-//! (frontend: $lib/userActivity). The workers call `announce` where a turn ends.
+//! (frontend: $lib/userActivity). The chat's own topic hears the same as `ChatSettled`, for a
+//! device showing that chat (frontend: ChatThread's pinned activity card). The workers call
+//! `announce` where a turn ends.
 
-use nomi_realtime::{MqttPublisher, UserEnvelope};
+use nomi_realtime::{MqttPublisher, StreamEnvelope, UserEnvelope};
 use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -83,9 +85,23 @@ pub async fn chat_activity(pool: &PgPool, session_id: Uuid, ended: Ended) -> Res
     }))
 }
 
-/// Tells the person how the chat ended up, when the crew is done with it for now. Best effort.
+/// The chat's own copy of a `ChatActivity`, for its topic.
+pub fn settled_envelope(activity: &UserEnvelope) -> Option<StreamEnvelope> {
+    match activity {
+        UserEnvelope::ChatActivity { outcome, waiting, agent, .. } => {
+            Some(StreamEnvelope::ChatSettled { outcome: outcome.clone(), waiting: waiting.clone(), agent: agent.clone() })
+        }
+        _ => None,
+    }
+}
+
+/// Tells the person how the chat ended up, when the crew is done with it for now: on their own
+/// topic, and on the chat's. Best effort.
 pub async fn announce(pool: &PgPool, mqtt: &MqttPublisher, session_id: Uuid, user_id: Uuid, ended: Ended) {
     if let Ok(Some(envelope)) = chat_activity(pool, session_id, ended).await {
+        if let Some(settled) = settled_envelope(&envelope) {
+            let _ = mqtt.publish(session_id, &settled).await;
+        }
         let _ = mqtt.publish_to_user(user_id, &envelope).await;
     }
 }

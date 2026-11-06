@@ -1,8 +1,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_realtime::UserEnvelope;
-use nomi_turn::activity::{chat_activity, Ended};
+use nomi_realtime::{StreamEnvelope, UserEnvelope};
+use nomi_turn::activity::{chat_activity, settled_envelope, Ended};
 
 /// A chat with its owner's channel identity: (session, identity, user).
 async fn seed_chat(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
@@ -113,4 +113,17 @@ async fn a_project_chat_carries_the_project_and_its_name(pool: PgPool) {
     say(&pool, session_id, None, Some("Koda"), None).await;
     let Some(UserEnvelope::ChatActivity { title, project_id: got, .. }) = chat_activity(&pool, session_id, Ended::Completed).await.unwrap() else { panic!() };
     assert_eq!((title.as_deref(), got), (Some("Landing page"), Some(project_id)));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_chat_hears_the_same_outcome_as_the_person(pool: PgPool) {
+    let (session_id, me, _) = seed_chat(&pool).await;
+    say(&pool, session_id, Some(me), None, None).await;
+    let questions = serde_json::json!([{"kind": "questions", "intro": null, "questions": []}]);
+    say(&pool, session_id, None, Some("Mira"), Some(questions)).await;
+    let activity = chat_activity(&pool, session_id, Ended::Completed).await.unwrap().unwrap();
+    assert_eq!(
+        settled_envelope(&activity),
+        Some(StreamEnvelope::ChatSettled { outcome: "waiting".into(), waiting: Some("question".into()), agent: Some("Mira".into()) })
+    );
 }

@@ -287,6 +287,7 @@
 {:else if !spentSuggestions}
 <div
 	class="message"
+	data-message-id={message.id}
 	class:message--user={message.sender === 'user'}
 	class:message--threaded={inThread}
 	class:message--continues={continues}

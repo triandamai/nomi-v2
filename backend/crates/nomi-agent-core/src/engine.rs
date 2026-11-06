@@ -1545,22 +1545,24 @@ async fn update_agent_phase(
     phase: &str,
     detail: Option<&str>,
 ) {
-    let result = sqlx::query("UPDATE agent_sessions SET current_phase = $1, current_phase_detail = $2 WHERE id = $3")
-        .bind(phase)
-        .bind(detail)
-        .bind(agent_session_id)
-        .execute(&mut **conn)
-        .await;
+    let updated: Result<Option<(String, Option<String>)>, _> = sqlx::query_as(&format!(
+        "UPDATE agent_sessions a SET current_phase = $1, current_phase_detail = $2 WHERE a.id = $3 RETURNING {}",
+        crate::crew::SESSION_AGENT_COLUMNS
+    ))
+    .bind(phase)
+    .bind(detail)
+    .bind(agent_session_id)
+    .fetch_optional(&mut **conn)
+    .await;
 
-    if let (Ok(outcome), Some(publisher)) = (&result, mqtt) {
-        if outcome.rows_affected() > 0 {
-            let envelope = StreamEnvelope::AgentPhaseChanged {
-                agent_session_id,
-                phase: phase.to_string(),
-                detail: detail.map(|d| d.to_string()),
-            };
-            let _ = publisher.publish(session_id, &envelope).await;
-        }
+    if let (Ok(Some((agent_type, dynamic_name))), Some(publisher)) = (updated, mqtt) {
+        let envelope = StreamEnvelope::AgentPhaseChanged {
+            agent_session_id,
+            phase: phase.to_string(),
+            detail: detail.map(|d| d.to_string()),
+            agent_display_name: Some(crate::crew::session_agent_name(&agent_type, dynamic_name)),
+        };
+        let _ = publisher.publish(session_id, &envelope).await;
     }
 }
 
