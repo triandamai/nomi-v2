@@ -966,17 +966,23 @@ async fn release_lock_ignoring_errors(conn: &mut sqlx::pool::PoolConnection<sqlx
 /// After a turn fails: every agent in the chat that was thinking, writing or calling a tool is
 /// set back to waiting (and the chat is told), since the failure ended whatever it was doing.
 async fn settle_agent_phases(conn: &mut PoolConnection<Postgres>, mqtt: Option<&MqttPublisher>, session_id: Uuid) {
-    let settled: Vec<Uuid> = sqlx::query_scalar(
-        "UPDATE agent_sessions SET current_phase = 'waiting', current_phase_detail = NULL \
-         WHERE session_id = $1 AND current_phase <> 'waiting' RETURNING id",
-    )
+    let settled: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(&format!(
+        "UPDATE agent_sessions a SET current_phase = 'waiting', current_phase_detail = NULL \
+         WHERE a.session_id = $1 AND a.current_phase <> 'waiting' RETURNING a.id, {}",
+        nomi_agent_core::crew::SESSION_AGENT_COLUMNS
+    ))
     .bind(session_id)
     .fetch_all(&mut **conn)
     .await
     .unwrap_or_default();
     let Some(mqtt) = mqtt else { return };
-    for agent_session_id in settled {
-        let envelope = StreamEnvelope::AgentPhaseChanged { agent_session_id, phase: "waiting".to_string(), detail: None };
+    for (agent_session_id, agent_type, dynamic_name) in settled {
+        let envelope = StreamEnvelope::AgentPhaseChanged {
+            agent_session_id,
+            phase: "waiting".to_string(),
+            detail: None,
+            agent_display_name: Some(nomi_agent_core::crew::session_agent_name(&agent_type, dynamic_name)),
+        };
         let _ = mqtt.publish(session_id, &envelope).await;
     }
 }

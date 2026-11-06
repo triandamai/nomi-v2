@@ -192,7 +192,7 @@ fn admin_frame_for(topic_session_id: Uuid, payload: &[u8]) -> Option<AdminStream
         nomi_realtime::StreamEnvelope::AgentSessionEnded { agent_session_id, session_id, reason } => {
             Some(AdminStreamFrame::AgentSessionEnded { agent_session_id, session_id, reason })
         }
-        nomi_realtime::StreamEnvelope::AgentPhaseChanged { agent_session_id, phase, detail } => {
+        nomi_realtime::StreamEnvelope::AgentPhaseChanged { agent_session_id, phase, detail, .. } => {
             Some(AdminStreamFrame::AgentPhaseChanged { agent_session_id, session_id: topic_session_id, phase, detail })
         }
         _ => None,

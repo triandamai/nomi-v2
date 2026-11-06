@@ -27,6 +27,16 @@ pub fn display_name_for(agent_type: &str) -> String {
     chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
+/// What to call the agent an `agent_sessions` row belongs to: a dynamic agent by its row's
+/// name, anyone else by `display_name_for`.
+pub fn session_agent_name(agent_type: &str, dynamic_name: Option<String>) -> String {
+    dynamic_name.unwrap_or_else(|| display_name_for(agent_type))
+}
+
+/// Selects `agent_type` and the dynamic agent's name (or NULL) for an `agent_sessions` row
+/// aliased `a`, for `session_agent_name`.
+pub const SESSION_AGENT_COLUMNS: &str = "a.agent_type, (SELECT d.name FROM dynamic_agents d WHERE d.id::text = a.agent_type)";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -36,6 +46,12 @@ mod tests {
         assert_eq!(display_name_for("money"), "Dana");
         assert_eq!(display_name_for("chitchat"), "Nomi");
         assert_eq!(display_name_for("supervisor"), "Supervisor");
+    }
+
+    #[test]
+    fn a_dynamic_agent_goes_by_its_own_name() {
+        assert_eq!(session_agent_name("money", None), "Dana");
+        assert_eq!(session_agent_name("6f9c2a1e-0000-4000-8000-000000000001", Some("Scout".to_string())), "Scout");
     }
 }
 
