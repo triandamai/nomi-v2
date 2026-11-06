@@ -58,3 +58,25 @@ if (typeof window !== 'undefined') {
 if (typeof navigator !== 'undefined' && !navigator.clipboard) {
 	Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {}, readText: async () => '' }, configurable: true });
 }
+
+// Sockets never connect in component tests (and jsdom refuses relative socket URLs): a quiet
+// stand-in. Tests that drive a socket install their own.
+if (typeof window !== 'undefined') {
+	class QuietSocket extends EventTarget {
+		static CONNECTING = 0;
+		static OPEN = 1;
+		static CLOSING = 2;
+		static CLOSED = 3;
+		readyState = 0;
+		url: string;
+		constructor(url: string | URL) {
+			super();
+			this.url = String(url);
+		}
+		send() {}
+		close() {
+			this.readyState = 3;
+		}
+	}
+	(globalThis as Record<string, unknown>).WebSocket = QuietSocket;
+}
