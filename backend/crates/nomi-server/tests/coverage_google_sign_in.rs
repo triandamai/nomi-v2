@@ -89,4 +89,45 @@ async fn google_signs_people_up_in_links_and_unlinks(pool: PgPool) {
     let (_, started) = app.call("POST", "/api/auth/google/start", None, Some(json!({"invite_code": "  "}))).await;
     let (status, _) = app.call("POST", "/api/auth/google/callback", None, Some(json!({"code": "unknown", "state": state_of(started["url"].as_str().unwrap())}))).await;
     assert!(status.is_client_error() || status.is_server_error());
+
+    workspace_connection(&app, &server).await;
+}
+
+/// Connecting Google for the Workspace agent, on the same fake Google (the OAuth client is
+/// read once per process, so it runs inside the sign-in test).
+async fn workspace_connection(app: &App, google_at: &MockServer) {
+    let ana = app.person("ana@acme.test").await;
+
+    let (status, before) = app.get("/api/connections/google", &ana).await;
+    assert_eq!(status, StatusCode::OK, "{before}");
+    assert_eq!(before["configured"], true);
+    assert!(before["email"].is_null());
+    assert_eq!(app.send("POST", "/api/connections/google/start", &ana, json!({"services": []})).await.0, StatusCode::BAD_REQUEST);
+
+    let (status, started) = app.send("POST", "/api/connections/google/start", &ana, json!({"services": ["gmail", "sheets"]})).await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+    let state = state_of(started["url"].as_str().unwrap());
+
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("code=ws-code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"access_token": "ws-token", "expires_in": 3600, "refresh_token": "ws-refresh", "scope": "openid email https://www.googleapis.com/auth/gmail.modify"})))
+        .mount(google_at)
+        .await;
+    Mock::given(method("GET")).and(path("/v1/userinfo")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"sub": "g1", "email": "ana@gmail.test", "email_verified": true}))).mount(google_at).await;
+    let (status, done) = app.send("POST", "/api/connections/google/callback", &ana, json!({"code": "ws-code", "state": state})).await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    assert_eq!(done["services"], json!(["gmail"]));
+
+    let (_, overview) = app.get("/api/connections", &ana).await;
+    assert_eq!(overview["google"]["email"], "ana@gmail.test");
+    assert!(overview["hevy"].is_null());
+    assert_eq!(app.call("DELETE", "/api/connections/google", Some(&ana.token), None).await.0, StatusCode::NO_CONTENT);
+    let (_, after) = app.get("/api/connections/google", &ana).await;
+    assert!(after["email"].is_null());
+    let (status, _) = app.send("POST", "/api/connections/google/callback", &ana, json!({"code": "ws-code", "state": "used"})).await;
+    assert!(status.is_client_error());
+
+    assert_eq!(app.get("/api/connections/hevy", &ana).await.0, StatusCode::OK);
+    let _ = app.call("DELETE", "/api/connections/hevy", Some(&ana.token), None).await;
 }
