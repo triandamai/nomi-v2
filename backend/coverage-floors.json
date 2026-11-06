@@ -1,8 +1,8 @@
 {
   "_comment": "Per-crate coverage floors (percent), checked by .github/scripts/llvm-cov-check.py: one point under what each crate reached (Nov 2026). Raise them as tests improve.",
   "default": {
-    "lines": 80,
-    "functions": 75
+    "lines": 85,
+    "functions": 80
   },
   "crates": {
     "nomi-agent-chitchat": {
@@ -14,7 +14,7 @@
       "functions": 80
     },
     "nomi-agent-core": {
-      "lines": 86,
+      "lines": 87,
       "functions": 83
     },
     "nomi-agent-files": {
@@ -90,12 +90,12 @@
       "functions": 86
     },
     "nomi-server": {
-      "lines": 81,
-      "functions": 77
+      "lines": 84,
+      "functions": 79
     },
     "nomi-settings": {
-      "lines": 93,
-      "functions": 89
+      "lines": 95,
+      "functions": 90
     },
     "nomi-shipyard": {
       "lines": 96,
