@@ -2883,5 +2883,14 @@
 	"code_whole_file": "seluruh file",
 	"code_ask_about_file": "Tentang `{path}`:",
 	"code_edit_mode": "Ubah kodenya",
-	"code_read_mode": "Baca dan tanya Koda"
+	"code_read_mode": "Baca dan tanya Koda",
+	"pinned_who_is": "{who} sedang {activity}",
+	"pinned_done": "{who} sudah selesai",
+	"pinned_failed": "{who} tidak bisa menyelesaikan",
+	"pinned_question": "{who} butuh jawabanmu",
+	"pinned_approval": "{who} butuh persetujuanmu",
+	"pinned_connect": "{who} butuh koneksi",
+	"pinned_jump": "Buka",
+	"pinned_show_error": "Lihat yang terjadi",
+	"pinned_dismiss": "Tutup"
 }
