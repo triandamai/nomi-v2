@@ -21,8 +21,8 @@ export default defineConfig({
 			exclude: ['src/lib/paraglide/**', 'src/test-stubs/**', '**/*.test.ts', '**/*.test.js', '**/*.d.ts'],
 			reporter: ['text-summary', 'json-summary', 'html'],
 			reportsDirectory: './coverage',
-			// Floors at the coverage reached (Nov 2026, from 22.8% lines); raise them as tests grow.
-			thresholds: { lines: 55, statements: 54, functions: 54, branches: 44 },
+			// Floors at the coverage reached (Nov 2026, from 22.8% to 73% lines); raise them as tests grow.
+			thresholds: { lines: 72, statements: 73, functions: 75, branches: 55 },
 		},
 		projects: [
 			{

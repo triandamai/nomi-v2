@@ -10,6 +10,7 @@ import DraftPlanCard from './ds/chat/DraftPlanCard.svelte';
 import DatePicker from './m3/DatePicker.svelte';
 import TimePicker from './m3/TimePicker.svelte';
 import ProjectPreview from './ProjectPreview.svelte';
+import PlanBlock from './blocks/PlanBlock.svelte';
 
 async function tryAll(root: HTMLElement) {
 	await settle(4);
@@ -20,6 +21,39 @@ async function tryAll(root: HTMLElement) {
 }
 
 describe('more components', () => {
+	it('a plan card loads its versions and the build that followed', async () => {
+		const version = (n: number, state: string) => ({
+			id: `pl${n}`,
+			title: 'Trip to Bali',
+			version: n,
+			content_html: `<h2>Day ${n}</h2><ul><li>Ubud</li></ul>`,
+			checklist: [{ text: 'Book flights', status: 'done' }, { text: 'Book villa', status: n === 2 ? 'in_progress' : 'pending' }],
+			excerpt: 'Five days in Bali',
+			created_at: `2026-11-0${n}T00:00:00Z`,
+			state,
+		});
+		const build = {
+			delegation_id: 'd1',
+			status: 'completed',
+			report: { status: 'failing', files_version: 4, changed_files: ['index.html'], deleted_files: ['old.js'], checks: [{ command: 'npm run check', outcome: 'failed', source: 'koda' }, { command: 'npm run build', outcome: 'passed', source: 'preview' }] },
+			error: null,
+			updated_at: '2026-11-03T00:00:00Z',
+			started_at: '2026-11-03T00:00:00Z',
+			finished_at: '2026-11-03T00:05:00Z',
+		};
+		const calls = fakeBackend([['*', /plans/, { plans: [version(1, 'updated'), version(2, 'active')], build }]]);
+		const block = { kind: 'plan', plan_id: 'pl2', agent_session_id: 'as1', title: 'Trip to Bali', version: 2 } as const;
+		const root = render(PlanBlock as never, { block, agent: 'planning', answered: false });
+		await tryAll(root);
+		await tryAll(root);
+		expect(calls.length).toBeGreaterThan(0);
+		expect(text()).toContain('Trip to Bali');
+
+		fakeBackend([['*', /.*/, new Response('no', { status: 500 })]]);
+		const failed = render(PlanBlock as never, { block, agent: null, answered: true });
+		await tryAll(failed);
+	});
+
 	it('the pickers open, move and pick', async () => {
 		const onchange = vi.fn();
 		for (const props of [
