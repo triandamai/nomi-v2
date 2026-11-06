@@ -87,3 +87,11 @@ if (typeof window !== 'undefined') {
 	URL.createObjectURL = () => 'blob:test';
 	URL.revokeObjectURL = () => {};
 }
+
+// jsdom can't play media; play() resolves as if it started and pause() does nothing.
+if (typeof window !== 'undefined') {
+	window.HTMLMediaElement.prototype.play = function () {
+		return Promise.resolve();
+	};
+	window.HTMLMediaElement.prototype.pause = function () {};
+}
