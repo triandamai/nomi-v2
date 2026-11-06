@@ -117,6 +117,10 @@ jobs:
         if: ${{ !cancelled() && hashFiles('backend/coverage.json') != '' }}
         run: python3 .github/scripts/llvm-cov-summary.py backend/coverage.json backend >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Coverage floors
+        if: ${{ !cancelled() && hashFiles('backend/coverage.json') != '' }}
+        run: python3 .github/scripts/llvm-cov-check.py backend/coverage.json backend/coverage-floors.json backend
+
       - name: Upload coverage report
         if: ${{ !cancelled() && hashFiles('backend/coverage.json') != '' }}
         uses: actions/upload-artifact@v6
