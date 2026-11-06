@@ -17,3 +17,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 tracing = "0.1.44"
 
 
+
+[dev-dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
