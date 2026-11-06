@@ -53,3 +53,8 @@ if (typeof window !== 'undefined') {
 			headers: { 'content-type': 'application/json' },
 		})) as typeof fetch;
 }
+
+// Copy buttons: jsdom has no clipboard.
+if (typeof navigator !== 'undefined' && !navigator.clipboard) {
+	Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {}, readText: async () => '' }, configurable: true });
+}
