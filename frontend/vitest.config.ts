@@ -5,7 +5,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
 	resolve: {
 		// Helpers under test import the compiled Paraglide messages through SvelteKit's alias.
-		alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) },
+		// SvelteKit's virtual `$env` modules don't exist outside its Vite plugin either.
+		alias: {
+			$lib: fileURLToPath(new URL('./src/lib', import.meta.url)),
+			'$env/dynamic/private': fileURLToPath(new URL('./src/test-stubs/env-dynamic-private.ts', import.meta.url)),
+			'$env/dynamic/public': fileURLToPath(new URL('./src/test-stubs/env-dynamic-public.ts', import.meta.url)),
+		},
 	},
 	test: {
 		// `npm run test:coverage` runs both projects into one report: `text-summary` for the
@@ -23,7 +28,7 @@ export default defineConfig({
 				test: {
 					name: 'unit',
 					include: ['ws-proxy/**/*.test.js', 'src/**/*.test.ts'],
-					exclude: ['src/lib/components/**/*.test.ts'],
+					exclude: ['src/lib/components/**/*.test.ts', 'src/**/*.svelte.test.ts'],
 					environment: 'node',
 				},
 			},
@@ -44,8 +49,10 @@ export default defineConfig({
 				},
 				test: {
 					name: 'components',
-					include: ['src/lib/components/**/*.test.ts'],
+					// Components, and route pages and rune modules (`*.svelte.test.ts`) mounted the same way.
+					include: ['src/lib/components/**/*.test.ts', 'src/**/*.svelte.test.ts'],
 					environment: 'jsdom',
+					setupFiles: ['./src/test-stubs/jsdom-setup.ts'],
 				},
 			},
 		],
