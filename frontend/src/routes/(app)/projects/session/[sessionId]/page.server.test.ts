@@ -82,3 +82,41 @@ describe('project chat: model actions', () => {
 		expect(apiFetch.mock.calls[0][2]).toBe('/api/llm/model-options');
 	});
 });
+
+describe('project chat: messages, feedback and approvals', () => {
+	const form = (fields: Record<string, string>) => {
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		return { request: new Request('http://localhost/projects/session/s1', { method: 'POST', body }), params: { sessionId: 's1' }, cookies: {} as Cookies, fetch } as never;
+	};
+	const status = (r: unknown) => (r as { status?: number }).status;
+
+	it('sends a message, going back to projects when the chat is gone', async () => {
+		expect(status(await actions.sendMessage(form({ text: ' ' })))).toBe(400);
+		answer((path) => (path === '/api/sessions/s1/messages' ? json({ user_message: { id: 'm1' }, supervisor_reply: { id: 'm2' } }) : undefined));
+		expect(await actions.sendMessage(form({ text: 'stop' }))).toMatchObject({ stopped: true });
+		answer((path) => (path === '/api/sessions/s1/messages' ? json({}, 404) : undefined));
+		await expect(actions.sendMessage(form({ text: 'hi' }))).rejects.toMatchObject({ status: 303, location: '/projects' });
+		answer((path) => (path === '/api/sessions/s1/messages' ? json({}, 502) : undefined));
+		expect(status(await actions.sendMessage(form({ text: 'hi' })))).toBe(502);
+	});
+
+	it('records feedback and approval decisions', async () => {
+		answer(() => json({}));
+		expect(status(await actions.feedback(form({})))).toBe(400);
+		expect(await actions.feedback(form({ messageId: 'm1', rating: 'up', reason: 'clear' }))).toEqual({ success: true });
+		expect(await actions.feedback(form({ messageId: 'm1', rating: '' }))).toEqual({ success: true });
+		expect(status(await actions.resolveApproval(form({ messageId: 'm1', decision: 'perhaps' })))).toBe(400);
+		expect(await actions.resolveApproval(form({ messageId: 'm1', decision: 'approve' }))).toMatchObject({ success: true });
+		answer(() => json({}, 500));
+		expect(status(await actions.feedback(form({ messageId: 'm1', rating: 'down' })))).toBe(500);
+		expect(status(await actions.resolveApproval(form({ messageId: 'm1', decision: 'deny' })))).toBe(500);
+	});
+
+	it('loads a project chat, sending a missing one back to projects', async () => {
+		answer((path) => (path.startsWith('/api/sessions/s1/messages') ? json({}, 404) : undefined));
+		await expect(loadPage()).rejects.toMatchObject({ status: 303 });
+		answer((path) => (path.startsWith('/api/sessions/s1/messages') ? json({}, 500) : undefined));
+		await expect(loadPage()).rejects.toMatchObject({ status: 500 });
+	});
+});

@@ -1,0 +1,121 @@
+{
+  "_comment": "Per-crate coverage floors (percent), checked by .github/scripts/llvm-cov-check.py: one point under what each crate reached (Nov 2026). Raise them as tests improve.",
+  "default": {
+    "lines": 80,
+    "functions": 75
+  },
+  "crates": {
+    "nomi-agent-chitchat": {
+      "lines": 84,
+      "functions": 82
+    },
+    "nomi-agent-coding": {
+      "lines": 89,
+      "functions": 80
+    },
+    "nomi-agent-core": {
+      "lines": 86,
+      "functions": 83
+    },
+    "nomi-agent-files": {
+      "lines": 93,
+      "functions": 90
+    },
+    "nomi-agent-health": {
+      "lines": 97,
+      "functions": 96
+    },
+    "nomi-agent-inspector": {
+      "lines": 98,
+      "functions": 95
+    },
+    "nomi-agent-money": {
+      "lines": 94,
+      "functions": 81
+    },
+    "nomi-agent-personality": {
+      "lines": 95,
+      "functions": 86
+    },
+    "nomi-agent-planning": {
+      "lines": 93,
+      "functions": 81
+    },
+    "nomi-agent-reminders": {
+      "lines": 96,
+      "functions": 86
+    },
+    "nomi-agent-supervisor": {
+      "lines": 95,
+      "functions": 92
+    },
+    "nomi-agent-workspace": {
+      "lines": 94,
+      "functions": 88
+    },
+    "nomi-attachments": {
+      "lines": 92,
+      "functions": 93
+    },
+    "nomi-auth": {
+      "lines": 96,
+      "functions": 92
+    },
+    "nomi-embedding": {
+      "lines": 96,
+      "functions": 95
+    },
+    "nomi-i18n": {
+      "lines": 97,
+      "functions": 92
+    },
+    "nomi-llm": {
+      "lines": 89,
+      "functions": 90
+    },
+    "nomi-mail": {
+      "lines": 89,
+      "functions": 81
+    },
+    "nomi-payment": {
+      "lines": 85,
+      "functions": 91
+    },
+    "nomi-realtime": {
+      "lines": 94,
+      "functions": 99
+    },
+    "nomi-relay-client": {
+      "lines": 92,
+      "functions": 86
+    },
+    "nomi-server": {
+      "lines": 81,
+      "functions": 77
+    },
+    "nomi-settings": {
+      "lines": 93,
+      "functions": 89
+    },
+    "nomi-shipyard": {
+      "lines": 96,
+      "functions": 92
+    },
+    "nomi-storage": {
+      "lines": 87,
+      "functions": 89
+    },
+    "nomi-test-support": {
+      "lines": 96,
+      "functions": 91
+    },
+    "nomi-turn": {
+      "lines": 92,
+      "functions": 91
+    },
+    "nomi-usage": {
+      "lines": 94,
+      "functions": 92
+    }
+  }
+}
