@@ -387,5 +387,12 @@ fun ChatViewBlock(view: ChatView, agent: String?, answered: Boolean, onSend: ((S
         is ChatView.LinkPreview -> LinkViewBlock(view)
         is ChatView.Task -> TaskViewBlock(view, agent)
         is ChatView.Shell -> ShellViewBlock(view)
+        is ChatView.Code -> CodeViewBlock(view)
+        is ChatView.Diff -> DiffViewBlock(view)
+        is ChatView.Sources -> SourcesViewBlock(view)
+        is ChatView.Selection -> SelectionViewBlock(view, agent, answered, onSend, timeZone)
+        is ChatView.Cart -> CartViewBlock(view, answered, onSend, timeZone)
+        is ChatView.Boundary -> BoundaryViewBlock(view, answered, onSend)
+        is ChatView.QuickReplies -> QuickRepliesViewBlock(view, answered, onSend)
     }
 }
