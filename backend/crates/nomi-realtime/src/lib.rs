@@ -44,6 +44,10 @@ pub enum StreamEnvelope {
         detail: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent_display_name: Option<String>,
+        /// What a tool is working on (a file's path, a search's query), so a person watching sees
+        /// "writing src/app.ts" rather than just the tool. Live only; not stored with the phase.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subject: Option<String>,
     },
     /// The crew is done with this chat for now: the chat's own copy of `UserEnvelope::ChatActivity`
     /// (same rules, same values), so a device showing the chat knows it finished, failed, or is

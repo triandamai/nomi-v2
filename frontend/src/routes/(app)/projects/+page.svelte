@@ -129,11 +129,18 @@
 		return 'idle';
 	}
 
-	function projectSubdomain(project: ProjectSummary): string {
-		const slug = project.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-		const org = currentOrg?.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'trian';
-		return `${slug}-${project.id.slice(0, 6)}.${org}.space`;
+	/** The project's published address without the scheme, or null before its first publish. */
+	function projectHost(project: ProjectSummary): string | null {
+		return project.deploy_url ? project.deploy_url.replace(/^https?:\/\//, '').replace(/\/$/, '') : null;
 	}
+
+	/** Who's in the organization, as the panel lists them: the people's names, the owner first. */
+	const memberLine = $derived.by(() => {
+		const members = [...(data.members ?? [])].sort((a, b) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : 0));
+		if (members.length === 0) return currentOrg?.name ?? '';
+		const shown = members.slice(0, 3).map((member) => (member.role === 'owner' ? `${member.name} (${m.projects_member_owner()})` : member.name));
+		return members.length > 3 ? `${shown.join(', ')} +${members.length - 3}` : shown.join(', ');
+	});
 
 	// Filtered & Sorted Projects
 	const liveCount = $derived(data.projects.filter((p) => p.status === 'ready' && p.open_issues === 0).length);
@@ -449,7 +456,7 @@
 					method="POST"
 					action="?/createProject"
 					use:enhance
-					class="mb-6 rounded-xl border border-border bg-surface p-3.5 sm:p-5 shadow-sm transition-colors focus-within:border-border-strong"
+					class="hero-prompt mb-6 rounded-xl border border-border bg-surface p-3.5 sm:p-5 shadow-sm transition-colors"
 				>
 					<input type="hidden" name="org_id" value={currentOrg.id} />
 					<div class="flex items-center gap-3">
@@ -460,7 +467,7 @@
 							name="prompt"
 							bind:value={promptText}
 							placeholder={m.projects_prompt_placeholder()}
-							class="min-w-0 flex-1 border-0 bg-transparent text-[16px] sm:text-body text-text placeholder:text-text-3 focus:outline-none"
+							class="hero-prompt__input min-w-0 flex-1 border-0 bg-transparent text-[16px] sm:text-body text-text placeholder:text-text-3"
 							onkeydown={(e) => {
 								if (e.key === 'Enter') {
 									e.preventDefault();
@@ -473,7 +480,7 @@
 						<div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-caption text-text-3">
 							<span class="mr-1 text-ui text-text-3">{m.projects_koda_sets_up()}</span>
 							<Chip kind="provision" icon={GitBranch} label={m.projects_tag_git()} />
-							<Chip kind="provision" icon={Globe} label={`*.${currentOrg.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'trian'}.space`} />
+							{#if data.baseDomain}<Chip kind="provision" icon={Globe} label={`*.${data.baseDomain}`} />{/if}
 							<Chip kind="provision" icon={Database} label={m.projects_tag_database()} />
 						</div>
 						<div class="flex items-center gap-2 w-full sm:w-auto">
@@ -581,7 +588,7 @@
 														label: m.projects_visit(),
 														icon: ExternalLink,
 														onselect: () => {
-															window.open(project.deploy_url || `https://${projectSubdomain(project)}`, '_blank');
+															if (project.deploy_url) window.open(project.deploy_url, '_blank');
 														}
 													},
 													'divider',
@@ -613,14 +620,14 @@
 										{:else if statusKind === 'live'}
 											<Status kind="live" label={m.projects_live_dot()} small />
 											<span class="truncate font-mono text-caption text-text-3">
-												{project.deploy_url || projectSubdomain(project)}
+												{projectHost(project) ?? m.projects_not_published()}
 											</span>
 										{:else if statusKind === 'failed'}
 											<Status kind="failed" label={m.projects_deploy_failed()} small />
 											<span class="truncate font-mono text-caption text-text-3">{project.open_issues} issue(s)</span>
 										{:else}
 											<Status kind="idle" label={m.projects_draft()} small />
-											<span class="truncate font-mono text-caption text-text-3">not deployed yet</span>
+											<span class="truncate font-mono text-caption text-text-3">{m.projects_not_published()}</span>
 										{/if}
 									</div>
 								</div>
@@ -826,13 +833,9 @@
 							iconEnd={ArrowRight}
 							href="/projects/session/{project.session_id}"
 						/>
-						<Button
-							variant="secondary"
-							label={m.projects_visit()}
-							iconEnd={ArrowUpRight}
-							href={project.deploy_url || `https://${projectSubdomain(project)}`}
-							external
-						/>
+						{#if project.deploy_url}
+							<Button variant="secondary" label={m.projects_visit()} iconEnd={ArrowUpRight} href={project.deploy_url} external />
+						{/if}
 					</div>
 
 					<!-- WHAT'S IN THIS PROJECT -->
@@ -840,7 +843,7 @@
 						<SectionLabel label={m.projects_whats_in()} />
 						<div class="mt-3 space-y-1">
 							<div class="flex items-center justify-between text-caption">
-								<KVRow icon={FileCode} label={m.projects_code_kv()} value={`${project.files_count ?? 0} files · main@${project.id.slice(0, 7)}`} />
+								<KVRow icon={FileCode} label={m.projects_code_kv()} value={m.projects_files_count({ count: project.files_count ?? 0 })} />
 								<Button
 									variant="ghost"
 									label="Export"
@@ -851,10 +854,10 @@
 									}}
 								/>
 							</div>
-							<KVRow icon={Globe} label={m.projects_url_kv()} value={project.deploy_url ? `...${project.deploy_url.slice(-24)}` : `...${projectSubdomain(project).slice(-20)}`} />
-							<KVRow icon={Database} label={m.projects_data_kv()} value={project.backend === 'relay' ? 'Nomi Relay' : (project.backend === 'drizzle' ? 'PostgreSQL' : 'localStorage only · no server')} />
-							<KVRow icon={Rocket} label={m.projects_deploys_kv()} value={project.deploys_count ? `${project.deploys_count} deploys` : 'Draft'} />
-							<KVRow icon={Users} label={m.projects_members_kv()} value={`${currentOrg.name} (owner), you`} />
+							<KVRow icon={Globe} label={m.projects_url_kv()} value={projectHost(project) ?? m.projects_not_published()} />
+							<KVRow icon={Database} label={m.projects_data_kv()} value={project.backend === 'relay' ? 'Nomi Relay' : project.backend === 'drizzle' ? 'PostgreSQL' : m.projects_data_none()} />
+							<KVRow icon={Rocket} label={m.projects_deploys_kv()} value={project.deploys_count ? m.projects_deploys_count({ count: project.deploys_count }) : m.projects_draft()} />
+							<KVRow icon={Users} label={m.projects_members_kv()} value={memberLine} />
 						</div>
 					</div>
 
@@ -929,3 +932,14 @@
 		<Button label={m.org_create()} variant="primary" type="submit" disabled={!newOrgName.trim()} />
 	{/snippet}
 </Dialog>
+
+<style>
+	/* The prompt shows focus on the whole rounded card, not as a square around the bare input. */
+	.hero-prompt__input:focus-visible {
+		outline: none;
+	}
+	.hero-prompt:focus-within {
+		border-color: var(--md-sys-color-primary);
+		box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+	}
+</style>

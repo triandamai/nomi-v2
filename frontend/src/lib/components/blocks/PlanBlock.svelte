@@ -17,6 +17,7 @@
 	import TextField from '$lib/components/ds/inputs/TextField.svelte';
 	import { useChatSend } from '$lib/chatSend';
 	import { crewId } from '$lib/crewId';
+	import Mascot from '$lib/components/ds/agents/Mascot.svelte';
 	import type { CrewRosterMember } from '$lib/crew';
 	import type { StepState } from '$lib/components/ds/chat/stepState';
 	import BuildPlan from '$lib/components/ds/build/BuildPlan.svelte';
@@ -362,16 +363,24 @@
 </div>
 
 <SideSheet bind:open={sheetOpen} wide title={m.plan_draft({ agent: agent ?? 'Nomi' })}>
-	{#if loading}
-		<p class="plan-sheet__quiet">{m.common_loading()}</p>
+	{#if loading && !active}
+		<!-- The same width and shape as the plan, so it doesn't jump when the plan arrives. -->
+		<div class="plan-sheet plan-sheet--loading" aria-busy="true">
+			<span class="sr-only">{m.common_loading()}</span>
+			<span class="plan-sheet__ghost plan-sheet__ghost--title"></span>
+			<span class="plan-sheet__ghost plan-sheet__ghost--meta"></span>
+			{#each [92, 100, 84, 96, 70] as width, index (index)}<span class="plan-sheet__ghost" style="width: {width}%"></span>{/each}
+		</div>
 	{:else if loadError}
-		<p class="plan-sheet__error" role="alert">{loadError}</p>
+		<div class="plan-sheet"><p class="plan-sheet__error" role="alert">{loadError}</p></div>
 	{:else if active}
 		<article class="plan-sheet">
 			<header class="plan-sheet__head">
-				<h2 class="plan-sheet__title">{active.title}</h2>
 				<div class="plan-sheet__meta">
-					<span>{m.plan_sheet_meta({ agent: agent ?? 'Nomi', version: String(active.version) })}</span>
+					<span class="plan-sheet__by">
+						<Mascot agent={crewId(agent)} size={20} />
+						<span>{m.plan_sheet_meta({ agent: agent ?? 'Nomi', version: String(active.version) })}</span>
+					</span>
 					{#if versions.length > 1}
 						<label class="plan-sheet__version">
 							<span class="sr-only">{m.plan_sheet_version()}</span>
@@ -385,6 +394,7 @@
 						</label>
 					{/if}
 				</div>
+				<h2 class="plan-sheet__title">{active.title}</h2>
 				{#if sheetStatus}
 					<p class="plan-sheet__status" data-tone={sheetStatus.tone} role="status">
 						<strong>{sheetStatus.label}</strong>{sheetStatus.detail ? `: ${sheetStatus.detail}` : ''}
@@ -523,16 +533,58 @@
 	/* The plan as a document to read: its title leads, one plain line on where it stands, then the
 	   plan at a reading width. */
 	.plan-sheet {
+		width: 100%;
 		max-width: 68ch;
 		margin: 4px auto 0;
-		padding-bottom: 24px;
+		padding: 0 4px 32px;
+		animation: plan-sheet-in var(--md-sys-motion-duration-medium2, 300ms) var(--md-sys-motion-easing-standard) both;
+	}
+	/* The words arrive with the sheet sliding in from the right, not ahead of it. */
+	@keyframes plan-sheet-in {
+		from {
+			opacity: 0;
+			transform: translateX(16px);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.plan-sheet {
+			animation: none;
+		}
+	}
+	.plan-sheet--loading {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding-top: 8px;
+	}
+	.plan-sheet__ghost {
+		display: block;
+		height: 14px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-surface-container-highest);
+	}
+	.plan-sheet__ghost--title {
+		width: 70%;
+		height: 28px;
+		margin-bottom: 4px;
+	}
+	.plan-sheet__ghost--meta {
+		width: 40%;
+		margin-bottom: 12px;
 	}
 	.plan-sheet__head {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: 12px;
 		padding-bottom: 20px;
+		margin-bottom: 8px;
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.plan-sheet__by {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
 	}
 	.plan-sheet__title {
 		margin: 0;
@@ -577,8 +629,11 @@
 	}
 	.plan-sheet__status {
 		margin: 0;
+		padding: 10px 12px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface-variant);
-		font-size: 0.9375rem;
+		font-size: 0.875rem;
 		line-height: 1.5;
 	}
 	.plan-sheet__status strong {
@@ -615,38 +670,82 @@
 	}
 
 	.plan-sheet__doc {
-		padding-top: 8px;
 		color: var(--md-sys-color-on-surface);
-		font-size: 1rem;
+		font-size: 0.9375rem;
 		line-height: 1.65;
+	}
+	.plan-sheet__doc > :global(:first-child) {
+		margin-top: 0.75em;
 	}
 	.plan-sheet__doc :global(h1),
 	.plan-sheet__doc :global(h2),
-	.plan-sheet__doc :global(h3) {
-		margin: 1.6em 0 0.4em;
+	.plan-sheet__doc :global(h3),
+	.plan-sheet__doc :global(h4) {
+		margin: 1.75em 0 0.5em;
+		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
-		line-height: 1.25;
+		font-weight: 650;
+		line-height: 1.3;
 		letter-spacing: -0.01em;
+		text-wrap: balance;
 	}
 	.plan-sheet__doc :global(h1) {
-		font-size: 1.375rem;
+		font-size: 1.25rem;
 	}
 	.plan-sheet__doc :global(h2) {
-		font-size: 1.1875rem;
+		font-size: 1.125rem;
 	}
-	.plan-sheet__doc :global(h3) {
+	.plan-sheet__doc :global(h3),
+	.plan-sheet__doc :global(h4) {
 		font-size: 1rem;
+	}
+	.plan-sheet__doc :global(hr) {
+		height: 0;
+		margin: 1.75em 0;
+		border: 0;
+		border-top: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.plan-sheet__doc :global(hr + h1),
+	.plan-sheet__doc :global(hr + h2),
+	.plan-sheet__doc :global(hr + h3) {
+		margin-top: 0;
 	}
 	.plan-sheet__doc :global(p) {
 		margin: 0.6em 0;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.plan-sheet__doc :global(ul),
 	.plan-sheet__doc :global(ol) {
 		margin: 0.5em 0;
-		padding-left: 1.3em;
+		padding-left: 1.25em;
+	}
+	/* Nested lists step in a little, not a whole column, so deep plans keep their width. */
+	.plan-sheet__doc :global(li ul),
+	.plan-sheet__doc :global(li ol) {
+		margin: 0.35em 0 0.5em;
+		padding-left: 1em;
 	}
 	.plan-sheet__doc :global(li) {
-		margin: 0.25em 0;
+		margin: 0.35em 0;
+		padding-left: 0.15em;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.plan-sheet__doc :global(li::marker) {
+		color: var(--md-sys-color-outline);
+	}
+	.plan-sheet__doc :global(li > p) {
+		margin: 0.2em 0;
+	}
+	/* A list item that leads with a bold name ("Palette: …") reads as a term and its note. */
+	.plan-sheet__doc :global(li > strong:first-child),
+	.plan-sheet__doc :global(li > p:first-child > strong:first-child) {
+		color: var(--md-sys-color-on-surface);
+	}
+	.plan-sheet__doc :global(blockquote) {
+		margin: 1em 0;
+		padding: 2px 0 2px 14px;
+		border-left: 2px solid var(--md-sys-color-outline-variant);
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.plan-sheet__doc :global(li:has(> input[type='checkbox'])) {
 		margin-left: -1.3em;
@@ -734,9 +833,6 @@
 		margin: 0;
 		padding-left: 18px;
 		line-height: 1.7;
-	}
-	.plan-sheet__quiet {
-		color: var(--md-sys-color-on-surface-variant);
 	}
 	.plan-sheet__error {
 		color: var(--md-sys-color-error);

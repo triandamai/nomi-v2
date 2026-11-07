@@ -47,4 +47,27 @@ describe('PinnedActivity', () => {
 		expect(ondismiss).toHaveBeenCalledOnce();
 		done();
 	});
+
+	it('names who is on it and shows the to-do as segments, with a plain Stop instead of the key hint', () => {
+		const { target, done } = render({
+			status: 'working',
+			who: 'Koda',
+			agent: 'koda',
+			meta: 'running · started 08:13',
+			headline: 'Writing src/routes/menu/+page.svelte',
+			elapsed: '01:12',
+			progress: { done: 1, total: 6, current: 'menu page', position: 2 },
+			eta: '~3 min left',
+			onstop: () => {},
+		});
+		expect(target.textContent).toContain('Koda');
+		expect(target.textContent).toContain('running · started 08:13');
+		expect(target.textContent).toContain('menu page');
+		expect(target.textContent).toContain('~3 min left');
+		expect(target.textContent).not.toContain('esc');
+		const segments = [...target.querySelectorAll<HTMLElement>('.pinned__segment')].map((segment) => segment.dataset.state);
+		expect(segments).toEqual(['done', 'now', 'todo', 'todo', 'todo', 'todo']);
+		expect(target.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('1');
+		done();
+	});
 });

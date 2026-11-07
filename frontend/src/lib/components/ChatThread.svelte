@@ -50,7 +50,7 @@
 	import ReplyText from './ds/chat/ReplyText.svelte';
 	import Typing from './ds/build/Typing.svelte';
 	import PinnedActivity from './blocks/PinnedActivity.svelte';
-	import { DONE_LINGER_MS, failureMessageId, lingeredOut, settled, startPinned, waitingOn, withPhase, withSettled, type PinnedActivity as PinnedCard, type PinnedPhase } from '$lib/pinnedActivity';
+	import { DONE_LINGER_MS, failureMessageId, lingeredOut, minutesLeft, settled, startPinned, todoProgress, waitingOn, withPhase, withSettled, type PinnedActivity as PinnedCard, type PinnedPhase } from '$lib/pinnedActivity';
 	import type { StepState } from './ds/chat/stepState';
 	import { applyStreamEvent, emptyStream, type LiveReply } from '$lib/liveReply';
 	import type { MessageMemory } from '$lib/types';
@@ -74,6 +74,7 @@
 		agentActivity,
 		agentStatus = null,
 		sendError = null,
+		initialDraft = '',
 		title = m.chat_title(),
 		context,
 		extraControls,
@@ -103,6 +104,8 @@
 		agentActivity: AgentActivityItem[];
 		agentStatus?: AgentStatus | null;
 		sendError?: string | null;
+		/** Text to start the composer with, e.g. a prompt handed over in the page's link. */
+		initialDraft?: string;
 		/** Shown in the app bar. */
 		title?: string;
 		/** Optional lead-in for the app bar's meta line, e.g. a project name. */
@@ -249,7 +252,7 @@
 	// Composer state: the typed draft, attached files, and the chat's thinking level. Files
 	// upload as soon as they're picked; the message carries a reference to each (see
 	// $lib/attachments), so it can be sent once every upload is done.
-	let draft = $state('');
+	let draft = $state(untrack(() => initialDraft));
 	let attachments = $state<ComposerFile[]>([]);
 	let attachError = $state<string | null>(null);
 	let composerForm: HTMLFormElement | undefined = $state();
@@ -482,7 +485,7 @@
 
 	let localMessages = $state(untrack(() => messages));
 
-	let currentPhase = $state<{ phase: string; detail: string | null } | null>(
+	let currentPhase = $state<PinnedPhase | null>(
 		untrack(() => (agentStatus ? { phase: agentStatus.current_phase, detail: agentStatus.current_phase_detail } : null)),
 	);
 
@@ -831,11 +834,21 @@
 	});
 
 	const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+	/** A file tool says the file ("writing src/app.ts"); others add what they work on after. */
+	const FILE_TOOL_LABELS: Record<string, (subject: string) => string> = {
+		write_file: (path) => m.pinned_writing({ path }),
+		read_file: (path) => m.pinned_reading({ path }),
+		delete_file: (path) => m.pinned_deleting({ path }),
+	};
 	function pinnedStepLabel(step: PinnedPhase, running: boolean): string {
 		if (step.phase === 'running_command') return capitalize(commandActivity(step.detail, now));
-		if (running) return capitalize(step.detail ? toolActivityLabel(step.detail) : m.tool_using_a_tool());
-		return stepLabel(step.detail ?? '', null);
+		const fileLabel = step.detail && step.subject ? FILE_TOOL_LABELS[step.detail] : undefined;
+		if (fileLabel && step.subject) return capitalize(fileLabel(step.subject));
+		const label = running ? capitalize(step.detail ? toolActivityLabel(step.detail) : m.tool_using_a_tool()) : stepLabel(step.detail ?? '', null);
+		return step.subject ? `${label} · ${step.subject}` : label;
 	}
+	const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+	const pinnedProgress = $derived(activityCard ? todoProgress(threadMessages) : null);
 	const pinnedView = $derived.by(() => {
 		const card = activityCard;
 		if (!card) return null;
@@ -856,10 +869,32 @@
 			headline = m.pinned_failed({ who });
 		} else if (currentPhase?.phase === 'retrying') {
 			headline = retryActivity(currentPhase.detail, now);
+		} else if (card.steps.length > 0 && currentPhase && (currentPhase.phase === 'calling_tool' || currentPhase.phase === 'running_command')) {
+			// What it's doing right now: the running step, with its file or command.
+			headline = steps[steps.length - 1].label;
 		} else {
 			headline = `${m.pinned_who_is({ who, activity: currentPhase ? phaseActivity(currentPhase.phase, currentPhase.detail) : m.chat_working() })}…`;
 		}
-		return { status, headline, steps, elapsed: card.status === 'working' ? elapsed : card.elapsed };
+		const meta =
+			status === 'working'
+				? m.pinned_meta_running({ time: clockTime(card.startedAt) })
+				: status === 'waiting'
+					? m.pinned_meta_waiting()
+					: status === 'done'
+						? m.pinned_meta_done({ time: clockTime(card.settledAt ?? card.startedAt) })
+						: m.pinned_meta_failed({ time: clockTime(card.settledAt ?? card.startedAt) });
+		const left = card.status === 'working' ? minutesLeft(pinnedProgress, clock - card.startedAt) : null;
+		return {
+			status,
+			who,
+			agent: crewId(who),
+			meta,
+			headline,
+			steps,
+			elapsed: card.status === 'working' ? elapsed : card.elapsed,
+			progress: card.status === 'working' || pinnedWaiting ? pinnedProgress : null,
+			eta: left === null ? null : m.pinned_minutes_left({ count: left }),
+		};
 	});
 
 	/** Brings a message into view (what the crew is waiting on, or why it failed). */
@@ -938,6 +973,7 @@
 				phase?: string;
 				detail?: string | null;
 				agent_display_name?: string;
+				subject?: string | null;
 				error?: string;
 				title?: string;
 				message_ids?: string[];
@@ -1005,7 +1041,7 @@
 				void goto('/chats', { replaceState: true });
 			} else if (envelope.kind === 'AgentPhaseChanged') {
 				if (typeof envelope.phase === 'string' && !stopRequested) {
-					currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null };
+					currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null, subject: envelope.subject ?? null };
 					if (activityCard && currentPhase) {
 						activityCard = withPhase(activityCard, currentPhase);
 						if (envelope.agent_display_name) activityCard = { ...activityCard, who: envelope.agent_display_name };
@@ -1245,6 +1281,11 @@
 					<div class="dock__pinned">
 						<PinnedActivity
 							status={pinnedView.status}
+							who={pinnedView.who}
+							agent={pinnedView.agent}
+							meta={pinnedView.meta}
+							progress={pinnedView.progress}
+							eta={pinnedView.eta}
 							headline={pinnedView.headline}
 							elapsed={pinnedView.elapsed}
 							steps={pinnedView.steps}

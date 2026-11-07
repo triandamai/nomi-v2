@@ -117,6 +117,19 @@
 			window.removeEventListener('resize', measure);
 		};
 	});
+	// A prompt handed over in the link (`?prompt=`, e.g. "Fix the build errors" on the projects
+	// page) starts the composer, once; the address drops it so a reload doesn't bring it back.
+	const handedPrompt = page.url.searchParams.get('prompt') ?? '';
+	onMount(() => {
+		if (!handedPrompt) return;
+		const url = new URL(page.url);
+		url.searchParams.delete('prompt');
+		try {
+			replaceState(url, {});
+		} catch {
+			// Before the router started: the next navigation drops it.
+		}
+	});
 	onMount(() => {
 		const asked = page.url.searchParams.get('sheet') as Sheet | null;
 		if (asked && SHEETS.includes(asked)) openSheet(asked);
@@ -899,6 +912,7 @@
 			agentActivity={data.agentActivity}
 			agentStatus={data.agentStatus}
 			sendError={form?.error ?? null}
+			initialDraft={handedPrompt}
 			thinkingLevel={data.thinkingLevel}
 			placeholder={m.composer_placeholder_project()}
 			project={{ status: data.project?.status ?? 'planning' }}

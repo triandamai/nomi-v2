@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DONE_LINGER_MS, failureMessageId, lingeredOut, settled, startPinned, waitingOn, withPhase, withSettled } from './pinnedActivity';
+import { DONE_LINGER_MS, failureMessageId, lingeredOut, minutesLeft, settled, startPinned, todoProgress, waitingOn, withPhase, withSettled } from './pinnedActivity';
 import type { ContentBlock, RenderedMessage } from './types';
 
 const SETTLED_AT = 1_000;
@@ -72,5 +72,42 @@ describe('waitingOn views', () => {
 	it('counts a decision or form view as a question, like the server does', () => {
 		const decision = { kind: 'view', view: 'decision' } as unknown as ContentBlock;
 		expect(waitingOn([msg('u', 'user'), msg('d', 'assistant', [decision])])).toEqual({ on: 'question', messageId: 'd' });
+	});
+});
+
+describe('withPhase subjects', () => {
+	it('keeps the same tool on a new file as a new step', () => {
+		let card = startPinned(SETTLED_AT);
+		card = withPhase(card, { phase: 'calling_tool', detail: 'write_file', subject: 'src/a.ts' });
+		card = withPhase(card, { phase: 'calling_tool', detail: 'write_file', subject: 'src/a.ts' });
+		card = withPhase(card, { phase: 'calling_tool', detail: 'write_file', subject: 'src/b.ts' });
+		expect(card.steps.map((step) => step.subject)).toEqual(['src/a.ts', 'src/b.ts']);
+		expect(card.startedAt).toBe(SETTLED_AT);
+	});
+});
+
+describe('todoProgress', () => {
+	const todo = (statuses: ('pending' | 'in_progress' | 'done')[]): ContentBlock => ({
+		kind: 'todo_list',
+		items: statuses.map((status, index) => ({ id: String(index), text: `item ${index + 1}`, status })),
+	});
+
+	it('counts the newest to-do since the person spoke and names the item on now', () => {
+		expect(todoProgress([msg('u', 'user'), msg('t', 'assistant', [todo(['done', 'in_progress', 'pending'])])])).toEqual({ done: 1, total: 3, current: 'item 2', position: 2 });
+	});
+
+	it('falls back to the first unfinished item, and ignores lists from before the last message', () => {
+		expect(todoProgress([msg('u', 'user'), msg('t', 'assistant', [todo(['done', 'pending'])])])?.current).toBe('item 2');
+		expect(todoProgress([msg('t', 'assistant', [todo(['pending'])]), msg('u', 'user')])).toBeNull();
+	});
+});
+
+describe('minutesLeft', () => {
+	it('goes at the pace of what is done, and says nothing before the first item or after the last', () => {
+		const MINUTE = 60_000;
+		expect(minutesLeft({ done: 2, total: 6, current: null, position: 3 }, 4 * MINUTE)).toBe(8);
+		expect(minutesLeft({ done: 0, total: 6, current: null, position: 1 }, MINUTE)).toBeNull();
+		expect(minutesLeft({ done: 6, total: 6, current: null, position: 6 }, MINUTE)).toBeNull();
+		expect(minutesLeft(null, MINUTE)).toBeNull();
 	});
 });

@@ -31,6 +31,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 		orgs: orgs.orgs,
 		orgId: list.org_id,
 		projects: list.projects,
+		baseDomain: list.base_domain ?? null,
 		sessions,
 		members: orgMembers,
 	};
@@ -98,8 +99,17 @@ export const actions: Actions = {
 			throw error(500, m.err_new_project());
 		}
 		const { session_id } = (await response.json()) as { session_id: string; project_id: string };
-		const targetUrl = prompt ? `/projects/session/${session_id}?prompt=${encodeURIComponent(prompt)}` : `/projects/session/${session_id}`;
-		throw redirect(303, targetUrl);
+		// What they typed is the project's first message, sent here like a new chat from home, so
+		// the crew starts on it before the workspace even opens. If it can't be sent, the
+		// workspace opens with it in the composer to send again.
+		if (prompt) {
+			const sent = await apiFetch(fetch, cookies, `/api/sessions/${session_id}/messages`, {
+				method: 'POST',
+				body: JSON.stringify({ text: prompt }),
+			}).catch(() => null);
+			if (!sent?.ok) throw redirect(303, `/projects/session/${session_id}?prompt=${encodeURIComponent(prompt)}`);
+		}
+		throw redirect(303, `/projects/session/${session_id}`);
 	},
 
 	// A new project to import existing code into: the page fills it, then opens it.

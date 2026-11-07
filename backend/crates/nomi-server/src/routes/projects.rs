@@ -49,6 +49,9 @@ pub struct ListProjectsResponse {
     /// The organization shown; null until the person picks one for projects.
     pub org_id: Option<Uuid>,
     pub projects: Vec<ProjectSummary>,
+    /// The domain published apps are addressed under (Admin → Configuration → Domains), so the
+    /// page can say where a new project will live; null when none is set.
+    pub base_domain: Option<String>,
 }
 
 fn internal(context: &'static str) -> impl Fn(sqlx::Error) -> (StatusCode, &'static str) {
@@ -96,7 +99,7 @@ pub async fn list_projects(
         None => project_org(&state.pool, claims.sub).await.map_err(internal("failed to list projects"))?,
     };
     let Some(org_id) = org_id else {
-        return Ok(Json(ListProjectsResponse { org_id: None, projects: Vec::new() }));
+        return Ok(Json(ListProjectsResponse { org_id: None, projects: Vec::new(), base_domain: crate::configuration::apps_base_domain().await }));
     };
 
     let projects: Vec<ProjectSummary> = sqlx::query_as(
@@ -107,7 +110,7 @@ pub async fn list_projects(
                 (SELECT count(*) FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id) AS chats_count, \
                 (SELECT count(*) FROM project_publishes pp WHERE pp.project_id = p.id) AS deploys_count, \
                 (SELECT count(*) FROM project_files pf WHERE pf.project_id = p.id) AS files_count, \
-                (SELECT pp.url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'success' ORDER BY pp.created_at DESC LIMIT 1) AS deploy_url \
+                (SELECT pp.url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' ORDER BY pp.created_at DESC LIMIT 1) AS deploy_url \
          FROM projects p \
          LEFT JOIN user_profiles up ON up.user_id = p.user_id \
          LEFT JOIN web_credentials w ON w.user_id = p.user_id \
@@ -119,7 +122,7 @@ pub async fn list_projects(
     .await
     .map_err(internal("failed to list projects"))?;
 
-    Ok(Json(ListProjectsResponse { org_id: Some(org_id), projects }))
+    Ok(Json(ListProjectsResponse { org_id: Some(org_id), projects, base_domain: crate::configuration::apps_base_domain().await }))
 }
 
 #[derive(Serialize)]
