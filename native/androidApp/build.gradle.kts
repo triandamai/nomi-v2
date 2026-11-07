@@ -8,7 +8,7 @@ plugins {
  * backend (backend/crates/nomi-server listens on 8080), pass `-Pnomi.apiUrl.debug=http://10.0.2.2:8080` (the emulator's
  * address for the host).
  */
-val hostedBackendUrl = "https://api-nomi.trian.space"
+val hostedBackendUrl = "https://api-staging.nomi.build"
 
 /** Release builds must name an https backend; there is no safe default to ship. */
 val releaseApiUrl: String? = providers.gradleProperty("nomi.apiUrl.release").orNull?.takeIf { it.isNotBlank() }
