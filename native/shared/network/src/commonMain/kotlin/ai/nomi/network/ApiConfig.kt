@@ -1,10 +1,12 @@
 package ai.nomi.network
 
-private const val INSECURE_DEFAULT_PREFIX = "http://api-nomi.trian.space"
-private const val SECURE_DEFAULT_PREFIX = "https://api-nomi.trian.space"
 /** The hosted API sits at `api-<web host>`; the web app (and its share pages) at the host without it. */
 private const val API_HOST_PREFIX = "api-"
 private const val SCHEME_SEPARATOR = "://"
+/** [HOSTED_API_URL]'s host and path, so it's reached over https however it's written. */
+private val HOSTED_HOST = HOSTED_API_URL.substringAfter(SCHEME_SEPARATOR).trimEnd('/')
+private val INSECURE_DEFAULT_PREFIX = "http://$HOSTED_HOST"
+private val SECURE_DEFAULT_PREFIX = "https://$HOSTED_HOST"
 
 /**
  * Where the Nomi backend lives; the Rust engine builds every URL under [baseUrl]. The hosted API is always reached

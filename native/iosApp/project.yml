@@ -33,7 +33,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # Lets Compose render at 120 Hz on ProMotion iPhones.
         CADisableMinimumFrameDurationOnPhone: true
-        # Backend the shared code talks to (read by MainViewController), from the NOMI_API_URL build setting.
+        # A backend this build overrides to (read by MainViewController); empty means nomi.apiUrl in native/gradle.properties.
         NomiApiUrl: $(NOMI_API_URL)
     settings:
       base:
@@ -47,14 +47,9 @@ targets:
           - $(inherited)
           - -framework
           - Shared
-      configs:
-        # The hosted API, as the desktop app uses. For the Mac's local backend (nomi-server listens on 8080), build
-        # with NOMI_API_URL=http://localhost:8080.
-        Debug:
-          NOMI_API_URL: https://api-nomi.trian.space
-        # Must be set for release builds (NOMI_API_URL=https://… xcodebuild …); the build fails without it.
-        Release:
-          NOMI_API_URL: ""
+        # Empty: the app uses nomi.apiUrl from native/gradle.properties, like Android and desktop. For the Mac's local
+        # backend (nomi-server listens on 8080), build with NOMI_API_URL=http://localhost:8080.
+        NOMI_API_URL: ""
     preBuildScripts:
       - name: Compile Kotlin framework
         basedOnDependencyAnalysis: false
@@ -68,12 +63,15 @@ targets:
           fi
           cd "$SRCROOT/.."
           ./gradlew :shared:app:embedAndSignAppleFrameworkForXcode
-      - name: Require a backend URL for release
+      - name: Require an https backend for release
         basedOnDependencyAnalysis: false
         script: |
-          if [ "$CONFIGURATION" = "Release" ] && [ -z "$NOMI_API_URL" ]; then
-            echo "error: set NOMI_API_URL (https) for release builds"
-            exit 1
+          URL="${NOMI_API_URL:-$(sed -n 's/^nomi\.apiUrl=//p' "$SRCROOT/../gradle.properties" | tr -d '[:space:]')}"
+          if [ "$CONFIGURATION" = "Release" ]; then
+            case "$URL" in
+              https://*) ;;
+              *) echo "error: release builds need an https backend: set nomi.apiUrl in native/gradle.properties (or NOMI_API_URL)"; exit 1 ;;
+            esac
           fi
     postBuildScripts:
       # Debug only: plain HTTP to local addresses (the development backend). Release keeps App Transport Security whole.

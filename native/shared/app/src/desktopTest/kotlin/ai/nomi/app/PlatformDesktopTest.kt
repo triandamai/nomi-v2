@@ -1,5 +1,6 @@
 package ai.nomi.app
 
+import ai.nomi.network.HOSTED_API_URL
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -7,7 +8,7 @@ import kotlin.test.assertTrue
 class PlatformDesktopTest {
     @Test
     fun defaultDesktopApiUrlUsesHttps() {
-        assertEquals("https://api-nomi.trian.space", DEFAULT_DESKTOP_API_URL)
+        assertEquals(HOSTED_API_URL, DEFAULT_DESKTOP_API_URL)
         assertTrue(DEFAULT_DESKTOP_API_URL.startsWith("https://"))
     }
 
@@ -18,7 +19,7 @@ class PlatformDesktopTest {
         try {
             System.clearProperty(API_URL_PROPERTY)
             val url = desktopApiUrl()
-            assertEquals("https://api-nomi.trian.space", url)
+            assertEquals(HOSTED_API_URL, url)
         } finally {
             if (originalProp != null) {
                 System.setProperty(API_URL_PROPERTY, originalProp)
