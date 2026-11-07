@@ -982,6 +982,7 @@ async fn settle_agent_phases(conn: &mut PoolConnection<Postgres>, mqtt: Option<&
             phase: "waiting".to_string(),
             detail: None,
             agent_display_name: Some(nomi_agent_core::crew::session_agent_name(&agent_type, dynamic_name)),
+            subject: None,
         };
         let _ = mqtt.publish(session_id, &envelope).await;
     }

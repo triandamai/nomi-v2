@@ -1269,7 +1269,10 @@ pub async fn resolve_tool_batch(
                     let detail = serde_json::json!({ "command": command, "started_at": chrono::Utc::now() }).to_string();
                     update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_RUNNING_COMMAND, Some(&detail)).await;
                 }
-                None => update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name)).await,
+                None => {
+                    let subject = tool_subject(input);
+                    update_agent_phase_about(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_CALLING_TOOL, Some(name), subject).await
+                }
             }
             tracing::info!(%session_id, %agent_session_id, agent = %agent.agent_type(), tool = %name, "agent executing tool");
 
@@ -1545,6 +1548,31 @@ async fn update_agent_phase(
     phase: &str,
     detail: Option<&str>,
 ) {
+    update_agent_phase_about(conn, mqtt, session_id, agent_session_id, phase, detail, None).await;
+}
+
+/// The longest subject a phase carries; past it the start of the text stands for the rest.
+const PHASE_SUBJECT_MAX_CHARS: usize = 160;
+
+/// The inputs, in order, that name what a tool is working on: a file, a page, a search.
+const PHASE_SUBJECT_KEYS: [&str; 5] = ["path", "file_path", "url", "query", "name"];
+
+/// What a tool call is about, from its input (`PHASE_SUBJECT_KEYS`), for the phase's `subject`.
+fn tool_subject(input: &serde_json::Value) -> Option<String> {
+    let text = PHASE_SUBJECT_KEYS.iter().find_map(|key| input.get(*key).and_then(|v| v.as_str()).map(str::trim).filter(|v| !v.is_empty()))?;
+    Some(text.chars().take(PHASE_SUBJECT_MAX_CHARS).collect())
+}
+
+/// [`update_agent_phase`], saying what the phase is about (`subject`) on the live event.
+async fn update_agent_phase_about(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<&MqttPublisher>,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    phase: &str,
+    detail: Option<&str>,
+    subject: Option<String>,
+) {
     let updated: Result<Option<(String, Option<String>)>, _> = sqlx::query_as(&format!(
         "UPDATE agent_sessions a SET current_phase = $1, current_phase_detail = $2 WHERE a.id = $3 RETURNING {}",
         crate::crew::SESSION_AGENT_COLUMNS
@@ -1561,6 +1589,7 @@ async fn update_agent_phase(
             phase: phase.to_string(),
             detail: detail.map(|d| d.to_string()),
             agent_display_name: Some(crate::crew::session_agent_name(&agent_type, dynamic_name)),
+            subject,
         };
         let _ = publisher.publish(session_id, &envelope).await;
     }
@@ -1888,5 +1917,23 @@ mod background_engine_tests {
         assert!(!is_gateable(RUN_BACKGROUND_TASK_TOOL_NAME));
         assert!(!is_gateable(LIST_BACKGROUND_TASKS_TOOL_NAME));
         assert!(!is_gateable(CANCEL_BACKGROUND_TASK_TOOL_NAME));
+    }
+}
+
+#[cfg(test)]
+mod tool_subject_tests {
+    use super::*;
+
+    #[test]
+    fn a_tool_is_about_its_file_page_or_search_in_that_order() {
+        assert_eq!(tool_subject(&serde_json::json!({ "path": "src/app.ts", "query": "x" })).as_deref(), Some("src/app.ts"));
+        assert_eq!(tool_subject(&serde_json::json!({ "query": " kos murah " })).as_deref(), Some("kos murah"));
+        assert_eq!(tool_subject(&serde_json::json!({ "path": "  ", "content": "x" })), None);
+    }
+
+    #[test]
+    fn a_long_subject_is_cut_to_its_start() {
+        let long = "a".repeat(PHASE_SUBJECT_MAX_CHARS * 2);
+        assert_eq!(tool_subject(&serde_json::json!({ "query": long })).map(|s| s.chars().count()), Some(PHASE_SUBJECT_MAX_CHARS));
     }
 }
