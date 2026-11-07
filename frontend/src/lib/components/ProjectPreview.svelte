@@ -4,9 +4,9 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import ProjectWaitScreen from '$lib/components/project/ProjectWaitScreen.svelte';
-	import type { ProjectRuntime, RuntimePhase } from '$lib/projectRuntime.svelte';
+	import type { ProjectRuntime } from '$lib/projectRuntime.svelte';
 	import PhoneFrame from '$lib/components/ds/build/PhoneFrame.svelte';
-	import DeviceBar from '$lib/components/ds/build/DeviceBar.svelte';
+	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
 
 	// The project's live preview, from its dev server running in the browser (WebContainer),
 	// with what it's doing while it gets there. Static projects, and browsers WebContainer can't
@@ -18,6 +18,7 @@
 		files = [],
 		liveUrl = null,
 		onShowCode,
+		device = $bindable('desktop'),
 	}: {
 		projectId: string;
 		runtime: ProjectRuntime | null;
@@ -28,14 +29,12 @@
 		/** The published app's address: what "Open on your phone" sends. */
 		liveUrl?: string | null;
 		onShowCode?: () => void;
+		/** Desktop or phone width; the pane's top bar switches it. */
+		device?: 'desktop' | 'phone';
 	} = $props();
 
-	// The device the preview is shown at (Build → Phone preview): the pane's width, or a phone at
-	// real size. Remembered for the session.
-	let device = $state<'desktop' | 'phone'>('desktop');
-	const deviceLabel = $derived(device === 'phone' ? m.device_phone() : m.device_desktop());
-	let linkCopied = $state(false);
-	async function openOnPhone() {
+	/** Sends the published address to the person's own phone (share sheet, else the clipboard). */
+	export async function openOnPhone() {
 		if (!liveUrl) return;
 		if (navigator.share) {
 			try {
@@ -46,8 +45,6 @@
 			}
 		}
 		await navigator.clipboard.writeText(liveUrl);
-		linkCopied = true;
-		setTimeout(() => (linkCopied = false), 1500);
 	}
 
 	// Showing the files as they are only works for a plain page with an index.html at the top;
@@ -57,23 +54,11 @@
 
 	let frame = $state<HTMLIFrameElement | null>(null);
 
-	const PHASE_LABEL: Record<RuntimePhase, () => string> = {
-		unsupported: m.project_phase_unsupported,
-		booting: m.project_phase_booting,
-		loading: m.project_phase_loading,
-		waiting: m.project_phase_waiting,
-		installing: m.project_phase_installing,
-		checking: m.project_phase_checking,
-		starting: m.project_phase_starting,
-		running: m.project_phase_running,
-		failed: m.project_phase_failed,
-		stopped: m.project_phase_stopped,
-	};
-
 	// What the dev server is printing (installing, starting), passed down to the wait screen / terminal.
 	const logText = $derived(runtime ? runtime.log.trimEnd().split('\n').slice(-500).join('\n') : '');
 
-	function reload() {
+	/** Loads the running preview again. */
+	export function reload() {
 		if (frame && runtime?.previewUrl) frame.src = runtime.previewUrl;
 	}
 </script>
@@ -88,10 +73,7 @@
 	{:else if hasIndex && (staticStack || runtime)}
 		<div class="preview">
 			{#if runtime}<p class="preview__note">{m.project_unsupported_body()}</p>{/if}
-			<div class="preview__bar">
-				<DeviceBar device={deviceLabel} ondevice={() => (device = device === 'phone' ? 'desktop' : 'phone')} onphone={liveUrl ? openOnPhone : undefined} />
-				{#if linkCopied}<span class="preview__running">{m.copy_done()}</span>{/if}
-			</div>
+
 			{#if device === 'phone'}
 				<div class="preview__phone"><PhoneFrame src={`/projects/${projectId}/preview/`} title={m.project_preview_title()} /></div>
 			{:else}
@@ -111,15 +93,6 @@
 	{/if}
 {:else if runtime.previewUrl}
 	<div class="preview">
-		<div class="preview__bar">
-			<span class="preview__status" data-phase={runtime.phase}>{PHASE_LABEL[runtime.phase]()}</span>
-			{#if runtime.running}<span class="preview__running">{m.project_koda_running({ command: runtime.running })}</span>{/if}
-			<span class="preview__spacer"></span>
-			<DeviceBar device={deviceLabel} ondevice={() => (device = device === 'phone' ? 'desktop' : 'phone')} onphone={liveUrl ? openOnPhone : undefined} />
-			{#if linkCopied}<span class="preview__running">{m.copy_done()}</span>{/if}
-			<Button variant="text" size="s" onclick={reload}>{m.project_reload_preview()}</Button>
-			<Button variant="text" size="s" href={runtime.previewUrl} target="_blank" rel="noopener">{m.project_open_new_tab()}</Button>
-		</div>
 		{#if device === 'phone'}
 			<div class="preview__phone"><PhoneFrame src={runtime.previewUrl} title={m.project_preview_title()} /></div>
 		{:else}
@@ -160,31 +133,6 @@
 		gap: 12px;
 		padding: 20px;
 		text-align: center;
-	}
-	.preview__bar {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 6px 12px;
-		border-bottom: 1px solid var(--md-sys-color-outline-variant);
-		font-size: 0.8125rem;
-	}
-	.preview__status {
-		padding: 2px 10px;
-		border-radius: var(--md-sys-shape-corner-full);
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
-		font-weight: 600;
-	}
-	.preview__running {
-		overflow: hidden;
-		color: var(--md-sys-color-on-surface-variant);
-		font-family: var(--md-ref-typeface-mono);
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.preview__spacer {
-		flex: 1;
 	}
 	.preview__frame {
 		flex: 1;

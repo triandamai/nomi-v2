@@ -8,18 +8,14 @@
 	import CodeWorkbench from '$lib/components/CodeWorkbench.svelte';
 	import { relocateFilePath, relocateFolderFilePath } from '$lib/code/fileOperations';
 	import ProjectPreview from '$lib/components/ProjectPreview.svelte';
+	import PreviewAddressBar from '$lib/components/project/PreviewAddressBar.svelte';
+	import PreviewDevices from '$lib/components/project/PreviewDevices.svelte';
+	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
 	import { ProjectRuntime } from '$lib/projectRuntime.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconSidePanel from '$lib/components/icons/IconSidePanel.svelte';
-	import IconRocket from '$lib/components/icons/IconRocket.svelte';
 	import IconBug from '$lib/components/icons/IconBug.svelte';
-	import IconPulse from '$lib/components/icons/IconPulse.svelte';
-	import IconDatabase from '$lib/components/icons/IconDatabase.svelte';
-	import IconGroup from '$lib/components/icons/IconGroup.svelte';
-	import IconSettings from '$lib/components/icons/IconSettings.svelte';
-	import IconLink from '$lib/components/icons/IconLink.svelte';
-	import IconHistory from '$lib/components/icons/IconHistory.svelte';
 	import IconOpenInNew from '$lib/components/icons/IconOpenInNew.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
@@ -64,7 +60,9 @@
 	import DsButton from '$lib/components/ds/actions/Button.svelte';
 	import { Download } from '@lucide/svelte';
 	import { projectApi } from '$lib/projectApi';
-	import { Activity, Bug, Database, History, Link2, Settings, Users } from '@lucide/svelte';
+	import { Activity, Bug, Database, History, Link2, Settings, Share2, Users } from '@lucide/svelte';
+	import SplitButton from '$lib/components/project/SplitButton.svelte';
+	import type { MenuEntry } from '$lib/components/ds/overlays/MenuPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -192,6 +190,14 @@
 		};
 	});
 
+	let previewDevice = $state<'desktop' | 'phone'>('desktop');
+	let preview: ProjectPreview | undefined = $state();
+	/** The preview's address in the pane's bar: the published app's when there is one, else the running preview's. */
+	const previewAddress = $derived.by(() => {
+		const url = deploy?.overview?.url ?? runtime?.previewUrl ?? '';
+		return url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+	});
+
 	let presence = $state<ProjectPresence | null>(null);
 	/** Shown at most this many faces in the toolbar; the rest are counted in the label. */
 	const TOOLBAR_FACES = 3;
@@ -235,14 +241,20 @@
 		return data.project?.backend === 'relay' ? m.pj_tab_relay() : m.pj_tab_database();
 	}
 
-	const TOOLS: { id: Sheet; label: () => string; icon: typeof IconRocket }[] = [
-		{ id: 'deploy', label: m.pj_tab_deploy, icon: IconHistory },
-		{ id: 'domain', label: m.pj_tab_domain, icon: IconLink },
-		{ id: 'monitor', label: m.pj_tab_monitor, icon: IconPulse },
-		{ id: 'database', label: () => dataTitle(), icon: IconDatabase },
-		{ id: 'members', label: m.pj_tab_members, icon: IconGroup },
-		{ id: 'settings', label: m.pj_tab_settings, icon: IconSettings },
-	];
+	// The tools behind the Share button's chevron, grouped so the bar itself stays light.
+	const toolMenu = $derived<MenuEntry[]>([
+		{ group: m.pj_menu_project() },
+		{ label: m.pj_tab_members(), icon: Users, onselect: () => openSheet('members') },
+		{ label: m.pj_tab_settings(), icon: Settings, onselect: () => openSheet('settings') },
+		{ group: m.pj_menu_ship() },
+		{ label: m.pj_tab_domain(), icon: Link2, onselect: () => openSheet('domain') },
+		{ label: m.pj_tab_deploy(), icon: History, onselect: () => openSheet('deploy') },
+		{ group: m.pj_menu_watch() },
+		{ label: m.pj_tab_monitor(), icon: Activity, onselect: () => openSheet('monitor') },
+		{ label: dataTitle(), icon: Database, onselect: () => openSheet('database') },
+		'divider',
+		{ label: m.export_tool(), icon: Download, onselect: openExport },
+	]);
 	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, database: Database, members: Users, issues: Bug, settings: Settings } as const;
 	const SHEET_TITLE: Record<Sheet, () => string> = {
 		deploy: m.pj_tab_deploy,
@@ -852,14 +864,7 @@
 				<IconBug size={18} /><span class="tool__label">{m.workspace_issues()}</span>
 				{#if openIssues > 0}<span class="tool__count">{openIssues}</span>{/if}
 			</button>
-			{#each TOOLS as tool (tool.id)}
-				<button type="button" class="tool" onclick={() => openSheet(tool.id)} title={tool.label()}>
-					<tool.icon size={18} /><span class="tool__label">{tool.label()}</span>
-				</button>
-			{/each}
-			<button type="button" class="tool" onclick={openExport} title={m.export_tool()}>
-				<Download size={18} strokeWidth={1.75} /><span class="tool__label">{m.export_tool()}</span>
-			</button>
+			<SplitButton label={m.share_title()} icon={Share2} compact moreLabel={m.pj_menu_more()} items={toolMenu} onclick={() => openSheet('members')} />
 		</nav>
 		{#if presence && peers.length > 0}
 			<div class="here-wrap">
@@ -975,6 +980,18 @@
 						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => { view = 'terminal'; following = null; }}>{m.project_terminal()}</button>
 					{/if}
 				</div>
+				{#if view === 'preview'}
+					<div class="pane-bar__address">
+						<PreviewAddressBar
+							status={runtime ? PHASE_LABEL[runtime.phase]() : m.project_phase_stopped()}
+							running={runtime?.phase === 'running'}
+							address={previewAddress}
+							href={deploy?.overview?.url ?? runtime?.previewUrl ?? null}
+							onreload={runtime?.previewUrl ? () => preview?.reload() : undefined}
+						/>
+					</div>
+					<PreviewDevices device={previewDevice} onchange={(next) => (previewDevice = next)} />
+				{/if}
 				<IconButton onclick={() => setPane(false)} aria-label={m.project_pane_hide()} title={m.project_pane_hide()}>
 					<IconClose size={18} />
 				</IconButton>
@@ -995,6 +1012,8 @@
 				{/each}
 				{#if view === 'preview'}
 					<ProjectPreview
+						bind:this={preview}
+						bind:device={previewDevice}
 						projectId={project.id}
 						{runtime}
 						stack={project.stack}
@@ -1315,6 +1334,15 @@
 	.workspace--narrow .pane-bar__tabs {
 		margin-right: auto;
 	}
+	/* A narrow pane puts the address on a row of its own under the tabs, devices and close. */
+	.workspace--narrow .pane-bar {
+		flex-wrap: wrap;
+	}
+	.workspace--narrow .pane-bar__address {
+		order: 5;
+		flex-basis: 100%;
+		margin-bottom: 6px;
+	}
 	@keyframes pane-up {
 		from {
 			opacity: 0.6;
@@ -1334,7 +1362,13 @@
 	.pane-bar__title {
 		display: none;
 	}
+	.pane-bar__address {
+		display: flex;
+		flex: 1;
+		min-width: 0;
+	}
 	.pane-bar__tabs {
+		flex: none;
 		margin-right: auto;
 	}
 	.pane-bar__title {
