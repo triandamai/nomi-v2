@@ -2892,5 +2892,20 @@
 	"pinned_connect": "{who} butuh koneksi",
 	"pinned_jump": "Buka",
 	"pinned_show_error": "Lihat yang terjadi",
-	"pinned_dismiss": "Tutup"
+	"pinned_dismiss": "Tutup",
+	"projects_member_owner": "pemilik",
+	"projects_not_published": "Belum dipublikasikan",
+	"projects_files_count": "{count} berkas",
+	"projects_data_none": "Disimpan di browser · tanpa server",
+	"projects_deploys_count": "{count} publikasi",
+	"pinned_stop": "Hentikan",
+	"pinned_meta_running": "berjalan · mulai {time}",
+	"pinned_meta_waiting": "menunggu kamu",
+	"pinned_meta_done": "selesai pukul {time}",
+	"pinned_meta_failed": "berhenti pukul {time}",
+	"pinned_progress": "Langkah {position} dari {total}",
+	"pinned_minutes_left": "~{count} menit lagi",
+	"pinned_writing": "menulis {path}",
+	"pinned_reading": "membaca {path}",
+	"pinned_deleting": "menghapus {path}"
 }

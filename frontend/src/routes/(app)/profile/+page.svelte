@@ -2,8 +2,9 @@
 	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
+	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
-	import { ArrowRight, Eye, Flame, Link2, Moon, Plus, Sparkles, X } from '@lucide/svelte';
+	import { Eye, Flame, Link2, Plus, X } from '@lucide/svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import Button from '$lib/components/ds/actions/Button.svelte';
 	import IconButton from '$lib/components/ds/actions/IconButton.svelte';
@@ -22,7 +23,7 @@
 	const initialDisplayName = $derived(data.profile?.display_name ?? '');
 	const initialUsername = $derived(data.profile?.username ?? '');
 	const initialAvatarUrl = $derived(data.profile?.avatar_url ?? '');
-	const initialLocation = $derived(data.profile?.location ?? 'Jakarta');
+	const initialLocation = $derived(data.profile?.location ?? '');
 	const initialShowStats = $derived(data.profile?.show_stats_publicly ?? true);
 	const initialShowCrew = $derived(data.profile?.show_crew_publicly ?? false);
 	const initialShowcaseIds = $derived((data.profile?.showcase_projects ?? []).map((p) => p.id));
@@ -31,7 +32,7 @@
 	let displayName = $state('');
 	let username = $state('');
 	let avatarUrl = $state('');
-	let location = $state('Jakarta');
+	let location = $state('');
 	let showStatsPublicly = $state(true);
 	let showCrewPublicly = $state(false);
 	let showcaseProjects = $state<ShowcaseProject[]>([]);
@@ -40,6 +41,15 @@
 	let copiedLink = $state(false);
 	let usernameAvailable = $state<boolean | null>(null);
 	let usernameChecking = $state(false);
+	let usernameReason = $state<string | null>(null);
+	/** How long typing pauses before the username is checked. */
+	const USERNAME_CHECK_DELAY_MS = 300;
+	/** Where a profile lives: this Nomi's own address, as /@username. */
+	const profileHost = $derived(page.url.host);
+	/** Most projects a profile can feature. */
+	const SHOWCASE_MAX = 3;
+	/** Crew rows shown before "+N more". */
+	const CREW_SHOWN = 4;
 	let usernameDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let showAllCrew = $state(false);
 
@@ -50,7 +60,7 @@
 			displayName = profile?.display_name ?? '';
 			username = profile?.username ?? '';
 			avatarUrl = profile?.avatar_url ?? '';
-			location = profile?.location ?? 'Jakarta';
+			location = profile?.location ?? '';
 			showStatsPublicly = profile?.show_stats_publicly ?? true;
 			showCrewPublicly = profile?.show_crew_publicly ?? false;
 			showcaseProjects = profile?.showcase_projects ?? [];
@@ -87,6 +97,7 @@
 		showCrewPublicly = initialShowCrew;
 		showcaseProjects = data.profile?.showcase_projects ?? [];
 		usernameAvailable = null;
+		usernameReason = null;
 	}
 
 	function handleUsernameInput(e: Event) {
@@ -102,21 +113,21 @@
 		}
 
 		usernameChecking = true;
+		usernameReason = null;
 		usernameDebounceTimer = setTimeout(async () => {
 			try {
-				const res = await fetch(`/api/profile/check-username?username=${encodeURIComponent(raw)}`);
-				if (res.ok) {
-					const body = (await res.json()) as { available: boolean };
-					usernameAvailable = body.available;
-				} else {
-					usernameAvailable = false;
-				}
+				const res = await fetch(`/profile/check-username?username=${encodeURIComponent(raw)}`);
+				const body = (await res.json()) as { available: boolean | null; reason: string | null };
+				// Only the answer for what's in the field now counts; an older one may land late.
+				if (raw !== username) return;
+				usernameAvailable = body.available;
+				usernameReason = body.reason;
 			} catch {
 				usernameAvailable = null;
 			} finally {
-				usernameChecking = false;
+				if (raw === username) usernameChecking = false;
 			}
-		}, 300);
+		}, USERNAME_CHECK_DELAY_MS);
 	}
 
 	let uploading = $state(false);
@@ -189,7 +200,7 @@
 	}
 
 	function addShowcaseProject(project: ProjectSummary) {
-		if (showcaseProjects.length >= 3) return;
+		if (showcaseProjects.length >= SHOWCASE_MAX) return;
 		if (showcaseProjects.some((p) => p.id === project.id)) return;
 		showcaseProjects = [
 			...showcaseProjects,
@@ -198,7 +209,7 @@
 				name: project.name,
 				description: project.description ?? null,
 				status: project.status,
-				deploy_url: null,
+				deploy_url: project.deploy_url ?? null,
 				build_duration_secs: null,
 			},
 		];
@@ -206,15 +217,16 @@
 	}
 
 	// Calculations for stats
-	const lifetimeTokens = $derived(data.profile?.stats?.lifetime_tokens ?? 186400);
-	const peakDayTokens = $derived(data.profile?.stats?.peak_day_tokens ?? 14200);
-	const peakDayDate = $derived(data.profile?.stats?.peak_day_date ?? '2026-08-02');
-	const longestTaskSecs = $derived(data.profile?.stats?.longest_task_secs ?? 252);
-	const longestTaskName = $derived(data.profile?.stats?.longest_task_name ?? 'salah tracker');
-	const longestStreakDays = $derived(data.profile?.stats?.longest_streak_days ?? 9);
-	const longestStreakRange = $derived(data.profile?.stats?.longest_streak_range ?? '1-9 Aug');
-	const currentStreakDays = $derived(data.profile?.stats?.current_streak_days ?? 3);
-	const bestStreakTarget = $derived(data.profile?.stats?.best_streak_target ?? 9);
+	const stats = $derived(data.profile?.stats ?? null);
+	const lifetimeTokens = $derived(stats?.lifetime_tokens ?? 0);
+	const peakDayTokens = $derived(stats?.peak_day_tokens ?? 0);
+	const peakDayDate = $derived(stats?.peak_day_date ?? null);
+	const longestTaskSecs = $derived(stats?.longest_task_secs ?? null);
+	const longestTaskName = $derived(stats?.longest_task_name ?? null);
+	const longestStreakDays = $derived(stats?.longest_streak_days ?? 0);
+	const longestStreakRange = $derived(stats?.longest_streak_range ?? null);
+	const currentStreakDays = $derived(stats?.current_streak_days ?? 0);
+	const bestStreakTarget = $derived(stats?.best_streak_target ?? 0);
 
 	// Formatting helpers
 	function formatTokens(n: number): string {
@@ -231,53 +243,28 @@
 	}
 
 	function formatJoinedDate(dateStr?: string): string {
-		if (!dateStr) return '14 Jul 2026';
-		try {
-			const d = new Date(dateStr);
-			return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-		} catch {
-			return '14 Jul 2026';
-		}
+		if (!dateStr) return '';
+		const d = new Date(dateStr);
+		return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 	}
 
 	const joinedFormatted = $derived(formatJoinedDate(data.profile?.joined_at));
 
 	// Initials for avatar
 	const initials = $derived.by(() => {
-		const name = displayName || data.profile?.email || 'Nomi User';
+		const name = displayName || data.profile?.email || '';
 		return name
 			.trim()
 			.split(/\s+/)
 			.slice(0, 2)
 			.map((p) => p[0]?.toUpperCase() ?? '')
-			.join('') || 'MP';
+			.join('') || '?';
 	});
 
-	// Models breakdown (fallback to mock if empty)
-	const topModels = $derived.by(() => {
-		if (data.profile?.top_models && data.profile.top_models.length > 0) {
-			return data.profile.top_models;
-		}
-		return [
-			{ label: 'deepseek-flash', tokens: 13500, percentage: 62 },
-			{ label: 'gemini-flash', tokens: 5200, percentage: 24 },
-			{ label: 'qwen-coder', tokens: 2000, percentage: 9 },
-			{ label: 'llama · local', tokens: 1100, percentage: 5 },
-		];
-	});
+	// What the backend measured; empty until there's usage to show.
+	const topModels = $derived(data.profile?.top_models ?? []);
 
-	// Crew usage list (fallback to mock if empty)
-	const crewUsage = $derived.by(() => {
-		if (data.profile?.crew_usage && data.profile.crew_usage.length > 0) {
-			return data.profile.crew_usage;
-		}
-		return [
-			{ agent_id: 'nomi', name: 'Nomi', count: 142, kind: 'chats' },
-			{ agent_id: 'dana', name: 'Dana', count: 31, kind: 'chats' },
-			{ agent_id: 'kala', name: 'Kala', count: 18, kind: 'chats' },
-			{ agent_id: 'koda', name: 'Koda', count: 2, kind: 'projects' },
-		];
-	});
+	const crewUsage = $derived(data.profile?.crew_usage ?? []);
 
 	// Maximum crew count for bar scaling
 	const maxCrewCount = $derived(Math.max(1, ...crewUsage.map((c) => c.count)));
@@ -346,16 +333,13 @@
 					{/if}
 					<div class="flex flex-col min-w-0">
 						<h1 class="text-display font-bold text-text tracking-tight truncate">
-							{displayName || 'Mario Prasetyo'}
+							{displayName || data.profile?.email || 'Profile'}
 						</h1>
 						<div class="flex flex-wrap items-center gap-1.5 text-caption text-text-2 mt-1">
-							<span>@{username || 'mario'}</span>
-							<span class="text-text-3">·</span>
-							<span>{location || 'Jakarta'}</span>
-							<span class="text-text-3">·</span>
-							<span>joined {joinedFormatted}</span>
-							<span class="text-text-3">·</span>
-							<span>{data.profile?.plan_name || 'Free plan'}</span>
+							{#each [username ? `@${username}` : 'No username yet', location, joinedFormatted ? `joined ${joinedFormatted}` : '', data.profile?.plan_name ?? ''].filter(Boolean) as part, index (index)}
+								{#if index > 0}<span class="text-text-3">·</span>{/if}
+								<span>{part}</span>
+							{/each}
 						</div>
 					</div>
 				</div>
@@ -368,7 +352,7 @@
 							<div class="text-display font-bold text-text tracking-tight">{formatTokens(lifetimeTokens)}</div>
 							<div class="text-ui text-text-2 mt-1 font-medium">Lifetime tokens</div>
 						</div>
-						<div class="text-caption text-text-3 mt-2 truncate">since {joinedFormatted.slice(0, 6)}</div>
+						<div class="text-caption text-text-3 mt-2 truncate">{joinedFormatted ? `since ${joinedFormatted}` : ''}</div>
 					</div>
 
 					<!-- 2. Peak day -->
@@ -377,37 +361,37 @@
 							<div class="text-display font-bold text-text tracking-tight">{formatTokens(peakDayTokens)}</div>
 							<div class="text-ui text-text-2 mt-1 font-medium">Peak day</div>
 						</div>
-						<div class="text-caption text-text-3 mt-2 truncate">{peakDayDate}</div>
+						<div class="text-caption text-text-3 mt-2 truncate">{peakDayDate ?? 'No usage yet'}</div>
 					</div>
 
 					<!-- 3. Longest task -->
 					<div class="rounded-xl border border-border bg-surface p-3.5 sm:p-4 flex flex-col justify-between">
 						<div>
-							<div class="text-display font-bold text-text tracking-tight">{formatDuration(longestTaskSecs)}</div>
+							<div class="text-display font-bold text-text tracking-tight">{longestTaskSecs === null ? '—' : formatDuration(longestTaskSecs)}</div>
 							<div class="text-ui text-text-2 mt-1 font-medium">Longest task</div>
 						</div>
-						<div class="text-caption text-text-3 mt-2 truncate">Koda · {longestTaskName}</div>
+						<div class="text-caption text-text-3 mt-2 truncate">{longestTaskName ? `Koda · ${longestTaskName}` : 'No builds yet'}</div>
 					</div>
 
 					<!-- 4. Longest streak -->
 					<div class="rounded-xl border border-border bg-surface p-3.5 sm:p-4 flex flex-col justify-between">
 						<div>
-							<div class="text-display font-bold text-text tracking-tight">{longestStreakDays} days</div>
+							<div class="text-display font-bold text-text tracking-tight">{longestStreakDays} {longestStreakDays === 1 ? 'day' : 'days'}</div>
 							<div class="text-ui text-text-2 mt-1 font-medium">Longest streak</div>
 						</div>
-						<div class="text-caption text-text-3 mt-2 truncate">{longestStreakRange}</div>
+						<div class="text-caption text-text-3 mt-2 truncate">{longestStreakRange ?? '—'}</div>
 					</div>
 
 					<!-- 5. Current streak -->
 					<div class="rounded-xl border border-border bg-surface p-3.5 sm:p-4 flex flex-col justify-between col-span-2 sm:col-span-1">
 						<div>
 							<div class="text-display font-bold text-text tracking-tight flex items-center gap-1.5">
-								{currentStreakDays} days <span class="text-accent text-body inline-flex"><Icon icon={Flame} size={20} /></span>
+								{currentStreakDays} {currentStreakDays === 1 ? 'day' : 'days'} <span class="text-accent text-body inline-flex"><Icon icon={Flame} size={20} /></span>
 							</div>
 							<div class="text-ui text-text-2 mt-1 font-medium">Current streak</div>
 						</div>
 						<div class="text-caption text-text-3 mt-2 truncate">
-							best is {bestStreakTarget} — {Math.max(0, bestStreakTarget - currentStreakDays)} to go
+							{#if bestStreakTarget > currentStreakDays}best is {bestStreakTarget} — {bestStreakTarget - currentStreakDays} to go{:else if currentStreakDays > 0}your best yet{:else}use Nomi today to start one{/if}
 						</div>
 					</div>
 				</div>
@@ -420,7 +404,7 @@
 				/>
 
 				<!-- Bottom 3 Cards (Models, Crew, Insights) -->
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<!-- Models you use most -->
 					<div class="rounded-xl border border-border bg-surface p-4 sm:p-5 flex flex-col justify-between gap-3">
 						<div class="flex items-center justify-between">
@@ -428,6 +412,7 @@
 							<span class="text-caption text-text-3">last 30 days</span>
 						</div>
 						<div class="flex flex-col gap-2.5">
+							{#if topModels.length === 0}<p class="text-caption text-text-3">Nothing yet — models show up here once you chat.</p>{/if}
 							{#each topModels as model}
 								<div class="flex flex-col gap-1">
 									<div class="flex items-center justify-between text-caption">
@@ -449,7 +434,8 @@
 							<span class="text-caption text-text-3">chats</span>
 						</div>
 						<div class="flex flex-col gap-2.5">
-							{#each crewUsage.slice(0, showAllCrew ? undefined : 4) as member}
+							{#if crewUsage.length === 0}<p class="text-caption text-text-3">Nothing yet — the crew you talk to shows up here.</p>{/if}
+							{#each crewUsage.slice(0, showAllCrew ? undefined : CREW_SHOWN) as member}
 								<div class="flex items-center gap-2">
 									<Mascot agent={member.agent_id as CrewId} size={20} />
 									<span class="text-ui text-text font-medium w-14 truncate">{member.name}</span>
@@ -465,52 +451,17 @@
 								</div>
 							{/each}
 						</div>
-						{#if crewUsage.length > 4 || !showAllCrew}
+						{#if crewUsage.length > CREW_SHOWN}
 							<button
 								type="button"
 								class="text-left text-caption text-text-3 hover:text-text transition-colors pt-1 cursor-pointer"
 								onclick={() => (showAllCrew = !showAllCrew)}
 							>
-								{showAllCrew ? 'Show less' : '+6 more agents'}
+								{showAllCrew ? 'Show less' : `+${crewUsage.length - CREW_SHOWN} more`}
 							</button>
 						{/if}
 					</div>
 
-					<!-- Insights -->
-					<div class="rounded-xl border border-border bg-surface p-4 sm:p-5 flex flex-col justify-between gap-3">
-						<div>
-							<h3 class="text-ui font-semibold text-text tracking-tight">Insights</h3>
-						</div>
-						<div class="flex flex-col gap-4 text-ui">
-							<!-- Insight 1 -->
-							<div class="flex flex-col gap-1">
-								<div class="flex items-center gap-1.5 font-semibold text-text text-ui">
-									<span class="text-warning"><Icon icon={Sparkles} size={15} /></span>
-									<span>Save ~18% on Nomi</span>
-								</div>
-								<p class="text-caption text-text-2 leading-relaxed">
-									gemini-flash answered 9 of your last 10 quick questions just as well.
-								</p>
-								<a href="/models" class="text-caption text-accent hover:underline font-medium inline-flex items-center gap-1 mt-0.5">
-									Switch default →
-								</a>
-							</div>
-
-							<!-- Insight 2 -->
-							<div class="flex flex-col gap-1 pt-2 border-t border-border">
-								<div class="flex items-center gap-1.5 font-semibold text-text text-ui">
-									<span class="text-accent"><Icon icon={Moon} size={15} /></span>
-									<span>You work late</span>
-								</div>
-								<p class="text-caption text-text-2 leading-relaxed">
-									68% of your tokens land after 21:00 WIB. Kala can hold reminders until 08:00.
-								</p>
-								<a href="/reminders" class="text-caption text-accent hover:underline font-medium inline-flex items-center gap-1 mt-0.5">
-									Set quiet hours →
-								</a>
-							</div>
-						</div>
-					</div>
 				</div>
 			</div>
 
@@ -595,13 +546,13 @@
 								placeholder="@username"
 							/>
 							<div class="text-caption text-text-3">
-								nomi.app/@{username || 'username'} ·
+								{profileHost}/@{username || 'username'}
 								{#if usernameChecking}
-									<span class="text-warning">checking...</span>
+									· <span class="text-text-2">checking…</span>
 								{:else if usernameAvailable === false}
-									<span class="text-danger">taken or invalid</span>
-								{:else}
-									<span class="text-accent">available</span>
+									· <span class="text-danger">{usernameReason ?? 'taken or invalid'}</span>
+								{:else if usernameAvailable === true}
+									· <span class="text-accent">available</span>
 								{/if}
 							</div>
 						</div>
@@ -643,7 +594,7 @@
 								<span class="text-caption text-text-2">{unsavedCount} unsaved change{unsavedCount > 1 ? 's' : ''}</span>
 								<div class="flex items-center gap-2">
 									<Button variant="ghost" label="Discard" onclick={discardChanges} />
-									<Button variant="inverse" label="Save" type="submit" />
+									<Button variant="inverse" label="Save" type="submit" disabled={usernameChecking || usernameAvailable === false} />
 								</div>
 							</div>
 						{/if}
@@ -654,7 +605,7 @@
 				<div class="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
 					<div class="flex items-center justify-between">
 						<h2 class="text-label font-semibold tracking-wider text-text-3 uppercase">SHOWCASE</h2>
-						<span class="text-caption text-text-3">{showcaseProjects.length} of 3</span>
+						<span class="text-caption text-text-3">{showcaseProjects.length} of {SHOWCASE_MAX}</span>
 					</div>
 
 					<!-- Featured project list -->
@@ -668,18 +619,13 @@
 								<div class="rounded-lg border border-border bg-surface-2 p-3 flex items-center justify-between gap-3 group">
 									<!-- Mini preview + Details -->
 									<div class="flex items-center gap-3 min-w-0">
-										<div class="w-10 h-10 rounded-md bg-surface border border-border flex flex-col items-center justify-center text-nano text-text-2 p-1 text-center font-mono shrink-0">
-											<span class="text-text-3">APP</span>
-											<span class="font-bold truncate w-full text-center text-accent">Live</span>
-										</div>
 										<div class="flex flex-col min-w-0">
 											<div class="flex items-center gap-1.5">
 												<span class="text-ui font-semibold text-text truncate">{project.name}</span>
 											</div>
 											<div class="flex items-center gap-1.5 text-caption text-text-3 mt-0.5">
-												<Status kind="live" label="Live" small />
-												<span>·</span>
-												<span>built with Koda · {formatDuration(project.build_duration_secs ?? 252)}</span>
+												{#if project.deploy_url}<Status kind="live" label="Live" small />{:else}<Status kind="idle" label="Not published" small />{/if}
+												{#if project.build_duration_secs}<span>·</span><span>built with Koda · {formatDuration(project.build_duration_secs)}</span>{/if}
 											</div>
 										</div>
 									</div>
@@ -696,7 +642,7 @@
 						{/if}
 
 						<!-- Add project button -->
-						{#if showcaseProjects.length < 3}
+						{#if showcaseProjects.length < SHOWCASE_MAX}
 							<button
 								type="button"
 								onclick={() => (showAddProjectModal = true)}

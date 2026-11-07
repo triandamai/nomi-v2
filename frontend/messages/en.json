@@ -2892,5 +2892,20 @@
 	"pinned_connect": "{who} needs a connection",
 	"pinned_jump": "Go to it",
 	"pinned_show_error": "See what happened",
-	"pinned_dismiss": "Dismiss"
+	"pinned_dismiss": "Dismiss",
+	"projects_member_owner": "owner",
+	"projects_not_published": "Not published yet",
+	"projects_files_count": "{count} files",
+	"projects_data_none": "Stored in the browser · no server",
+	"projects_deploys_count": "{count} publishes",
+	"pinned_stop": "Stop",
+	"pinned_meta_running": "running · started {time}",
+	"pinned_meta_waiting": "waiting on you",
+	"pinned_meta_done": "done at {time}",
+	"pinned_meta_failed": "stopped at {time}",
+	"pinned_progress": "Step {position} of {total}",
+	"pinned_minutes_left": "~{count} min left",
+	"pinned_writing": "writing {path}",
+	"pinned_reading": "reading {path}",
+	"pinned_deleting": "deleting {path}"
 }

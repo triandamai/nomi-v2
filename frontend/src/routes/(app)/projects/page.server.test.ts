@@ -14,7 +14,7 @@ function backend(override: (path: string, method: string) => Response | undefine
 		const custom = override(path, init?.method ?? 'GET');
 		if (custom) return custom;
 		if (path === '/api/orgs') return json({ orgs: [{ id: 'o1', name: 'Acme' }], project_org_id: 'o1' });
-		if (path === '/api/projects') return json({ org_id: 'o1', projects: [{ id: 'p1', name: 'Bakery' }] });
+		if (path === '/api/projects') return json({ org_id: 'o1', projects: [{ id: 'p1', name: 'Bakery' }], base_domain: 'apps.nomi.build' });
 		if (path === '/api/sessions') return json({ sessions: [{ id: 's1' }] });
 		if (path === '/api/orgs/o1') return json({ members: [{ user_id: 'u1', name: 'Ana', role: 'owner' }] });
 		return json({});
@@ -32,6 +32,7 @@ describe('projects: load', () => {
 			orgs: [{ id: 'o1', name: 'Acme' }],
 			orgId: 'o1',
 			projects: [{ id: 'p1', name: 'Bakery' }],
+			baseDomain: 'apps.nomi.build',
 			sessions: [{ id: 's1' }],
 			members: [{ user_id: 'u1', name: 'Ana', role: 'owner' }],
 		});
@@ -58,13 +59,27 @@ describe('projects: actions', () => {
 		expect(status(await actions.createOrg(event({ form: { name: 'Team' } })))).toBe(500);
 	});
 
-	it('starts a project and opens it, with the first prompt', async () => {
+	it('starts a project, sends what was typed as its first message, and opens it', async () => {
 		backend((path, method) => (path === '/api/projects' && method === 'POST' ? json({ session_id: 's9', project_id: 'p9' }) : undefined));
 		expect(await settle(() => actions.createProject(event({ form: { org_id: 'o1', prompt: 'a bakery site' } })))).toMatchObject({
-			thrown: { status: 303, location: '/projects/session/s9?prompt=a%20bakery%20site' },
+			thrown: { status: 303, location: '/projects/session/s9' },
 		});
-		expect(await settle(() => actions.createProject(event({ form: {} })))).toMatchObject({ thrown: { location: '/projects/session/s9' } });
+		expect(calls().at(-1)).toMatchObject({ path: '/api/sessions/s9/messages', method: 'POST', body: { text: 'a bakery site' } });
+		apiFetch.mockClear();
+		expect(await settle(() => actions.createProject(event({ form: { prompt: '  ' } })))).toMatchObject({ thrown: { location: '/projects/session/s9' } });
+		expect(calls().some((call) => call.path.endsWith('/messages'))).toBe(false);
 		expect(await actions.createForImport(event({ form: { org_id: 'o1' } }))).toEqual({ imported: { session_id: 's9', project_id: 'p9' } });
+	});
+
+	it('hands the prompt to the composer when it could not be sent', async () => {
+		backend((path, method) => {
+			if (path === '/api/projects' && method === 'POST') return json({ session_id: 's9', project_id: 'p9' });
+			if (path === '/api/sessions/s9/messages') return json({}, 500);
+			return undefined;
+		});
+		expect(await settle(() => actions.createProject(event({ form: { prompt: 'a bakery site' } })))).toMatchObject({
+			thrown: { location: '/projects/session/s9?prompt=a%20bakery%20site' },
+		});
 	});
 
 	it('asks for an organization first, and reports other failures', async () => {

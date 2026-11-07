@@ -14,7 +14,8 @@ export const DONE_LINGER_MS = 60_000;
 /** Phases worth a line in the card's steps; thinking and writing only show as the headline. */
 const STEP_PHASES = new Set(['calling_tool', 'running_command']);
 
-export type PinnedPhase = { phase: string; detail: string | null };
+/** A phase as the server sent it; `subject` is what a tool works on (a file, a search). */
+export type PinnedPhase = { phase: string; detail: string | null; subject?: string | null };
 
 export interface PinnedActivity {
 	status: 'working' | 'done' | 'failed';
@@ -28,9 +29,11 @@ export interface PinnedActivity {
 	waiting: Waiting | null;
 	/** Who's on it, as the server named them (the agent's phase, or who answered last). */
 	who: string | null;
+	/** When the turn started (ms), for "started 08:13". */
+	startedAt: number;
 }
 
-export const startPinned = (): PinnedActivity => ({ status: 'working', steps: [], elapsed: null, settledAt: null, waiting: null, who: null });
+export const startPinned = (at: number = Date.now()): PinnedActivity => ({ status: 'working', steps: [], elapsed: null, settledAt: null, waiting: null, who: null, startedAt: at });
 
 const WAITING: readonly string[] = ['question', 'approval', 'connect'] satisfies Waiting[];
 
@@ -52,7 +55,7 @@ export function withSettled(
 export function withPhase(card: PinnedActivity, phase: PinnedPhase): PinnedActivity {
 	if (card.status !== 'working' || !STEP_PHASES.has(phase.phase)) return card;
 	const last = card.steps.at(-1);
-	if (last && last.phase === phase.phase && last.detail === phase.detail) return card;
+	if (last && last.phase === phase.phase && last.detail === phase.detail && (last.subject ?? null) === (phase.subject ?? null)) return card;
 	return { ...card, steps: [...card.steps, phase] };
 }
 
@@ -89,4 +92,34 @@ export function failureMessageId(messages: RenderedMessage[]): string | null {
 		if (messages[at].content_blocks?.some((block) => block.kind === 'run_failed')) return messages[at].id;
 	}
 	return null;
+}
+
+/** Where the crew's to-do stands this turn: how many are done, how many in all, and the one on
+ * now (the first in progress, else the first not done), with its place in the list. */
+export type TodoProgress = { done: number; total: number; current: string | null; position: number };
+
+/** The newest to-do list posted since the person's last message, as progress. */
+export function todoProgress(messages: RenderedMessage[]): TodoProgress | null {
+	const lastUser = messages.findLastIndex((message) => message.sender === 'user');
+	for (let at = messages.length - 1; at > lastUser; at--) {
+		if (messages[at].deleted) continue;
+		const list = messages[at].content_blocks?.findLast((block) => block.kind === 'todo_list');
+		if (list?.kind !== 'todo_list' || list.items.length === 0) continue;
+		const items = list.items;
+		const done = items.filter((item) => item.status === 'done').length;
+		let on = items.findIndex((item) => item.status === 'in_progress');
+		if (on < 0) on = items.findIndex((item) => item.status !== 'done');
+		return { done, total: items.length, current: on >= 0 ? items[on].text : null, position: on >= 0 ? on + 1 : items.length };
+	}
+	return null;
+}
+
+const MINUTE_MS = 60_000;
+
+/** About how many minutes are left, going at the pace of the items done so far; null until one
+ * is done (there's no pace yet) or once all are. */
+export function minutesLeft(progress: TodoProgress | null, workedMs: number): number | null {
+	if (!progress || progress.done < 1 || progress.done >= progress.total) return null;
+	const perItem = workedMs / progress.done;
+	return Math.max(1, Math.ceil((perItem * (progress.total - progress.done)) / MINUTE_MS));
 }

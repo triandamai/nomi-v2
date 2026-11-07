@@ -539,6 +539,8 @@ export interface ProjectList {
 	/** The organization shown; null until the person picks one for projects. */
 	org_id: string | null;
 	projects: ProjectSummary[];
+	/** The domain published apps live under (Admin → Configuration); null when none is set. */
+	base_domain?: string | null;
 }
 
 export type OrgRole = 'owner' | 'admin' | 'member';
