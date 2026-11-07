@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { enablePageTransitions } from '$lib/pageTransitions';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import AdminSidebar from '$lib/components/AdminSidebar.svelte';
@@ -12,8 +11,6 @@
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
-
-	enablePageTransitions();
 
 	let mobileNavOpen = $state(false);
 	let appearanceOpen = $state(false);

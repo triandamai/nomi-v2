@@ -2,6 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
+	import { FormPending } from '$lib/formPending.svelte';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
@@ -12,7 +13,7 @@
 
 	let toastOpen = $state(false);
 	let toast = $state('');
-	let submitting = $state(false);
+	const sending = new FormPending({ reset: false });
 	// "Use a different email" goes back to the form without a reload.
 	let again = $state(false);
 	const sent = $derived(!again && form && 'sent' in form ? (form.sent as string) : null);
@@ -43,13 +44,7 @@
 		<form
 			method="POST"
 			class="flex flex-col gap-5"
-			use:enhance={() => {
-				submitting = true;
-				return async ({ update }) => {
-					await update({ reset: false });
-					submitting = false;
-				};
-			}}
+			use:enhance={sending.submit}
 		>
 			{#if formError}
 				<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{formError}</p>
@@ -65,7 +60,7 @@
 				supportingText={emailError}
 				required
 			/>
-			<Button type="submit" variant="gradient" size="m" class="mt-2 w-full" disabled={submitting}>{m.forgot_submit()}</Button>
+			<Button type="submit" variant="gradient" size="m" class="mt-2 w-full" loading={sending.on}>{m.forgot_submit()}</Button>
 		</form>
 	{/if}
 </AuthShell>

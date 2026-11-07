@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes, HTMLAnchorAttributes } from 'svelte/elements';
+	import { navigating } from '$app/state';
+	import { opensPage } from '$lib/navPending';
 
 	type Variant = 'filled' | 'gradient' | 'tonal' | 'outlined' | 'text' | 'elevated';
 	type Size = 'xs' | 's' | 'm' | 'l' | 'xl';
@@ -11,6 +13,8 @@
 		href,
 		children,
 		class: extraClass = '',
+		loading = false,
+		disabled,
 		...rest
 	}: {
 		variant?: Variant;
@@ -18,17 +22,27 @@
 		href?: string;
 		children: Snippet;
 		class?: string;
+		/** Waiting on the server (a form being sent): a spinner, and no second press. */
+		loading?: boolean;
 	} & HTMLButtonAttributes &
 		HTMLAnchorAttributes = $props();
+
+	// A link button also spins while the page it opens is loading.
+	const busy = $derived(loading || (href !== undefined && opensPage(href, navigating.to?.url)));
 </script>
 
+{#snippet content()}
+	{#if busy}<span class="m3-button__spinner" aria-hidden="true"></span>{/if}
+	{@render children()}
+{/snippet}
+
 {#if href}
-	<a {href} class="m3-button m3-button--{variant} m3-button--size-{size} {extraClass}" {...rest}>
-		{@render children()}
+	<a {href} class="m3-button m3-button--{variant} m3-button--size-{size} {extraClass}" aria-busy={busy || undefined} {...rest}>
+		{@render content()}
 	</a>
 {:else}
-	<button class="m3-button m3-button--{variant} m3-button--size-{size} {extraClass}" {...rest}>
-		{@render children()}
+	<button class="m3-button m3-button--{variant} m3-button--size-{size} {extraClass}" disabled={disabled || busy} aria-busy={busy || undefined} {...rest}>
+		{@render content()}
 	</button>
 {/if}
 
@@ -112,6 +126,31 @@
 	.m3-button:disabled {
 		cursor: not-allowed;
 		opacity: 0.38;
+	}
+	/* Busy reads as working, not as unavailable: full color, a spinner, a wait cursor. */
+	.m3-button[aria-busy='true'] {
+		cursor: progress;
+		opacity: 1;
+	}
+	.m3-button__spinner {
+		flex-shrink: 0;
+		width: 1.1em;
+		height: 1.1em;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 50%;
+		animation: m3-button-spin 0.7s linear infinite;
+	}
+	@keyframes m3-button-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.m3-button__spinner {
+			border-right-color: currentColor;
+			opacity: 0.6;
+		}
 	}
 
 	.m3-button--filled {

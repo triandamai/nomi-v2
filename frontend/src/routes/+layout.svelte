@@ -3,6 +3,8 @@
 	import { page, updated } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
 	import { pageTitle } from '$lib/pageTitle';
+	import { enablePageTransitions } from '$lib/pageTransitions';
+	import NavProgress from '$lib/components/NavProgress.svelte';
 
 	let { children } = $props();
 
@@ -11,6 +13,9 @@
 	const TITLE = 'Nomi';
 	const DESCRIPTION = 'A small crew of agents that remembers, builds, works for you.';
 	const origin = $derived(page.url.origin);
+
+	// Every move between pages animates the area named `page` (the app's main pane, the auth card).
+	enablePageTransitions();
 
 	// A new build went out since this tab loaded: its pages need files this one doesn't know about,
 	// so go to the next page with a full load instead of client-side.
@@ -46,4 +51,5 @@
 	<meta name="twitter:description" content={DESCRIPTION} />
 	<meta name="twitter:image" content="{origin}/og-image.png" />
 </svelte:head>
+<NavProgress />
 {@render children()}

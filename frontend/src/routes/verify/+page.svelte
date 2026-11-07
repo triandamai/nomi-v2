@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
+	import { FormPending } from '$lib/formPending.svelte';
 	import { onMount } from 'svelte';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -8,6 +9,8 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
+	const leaving = new FormPending();
+	const resending = new FormPending({ reset: false });
 	let code = $state('');
 	let submitting = $state(false);
 	let formEl = $state<HTMLFormElement>();
@@ -56,8 +59,8 @@
 			<p class="md-body-large" role="alert" style="color: var(--md-sys-color-error)">
 				{form?.error ?? m.verify_expired()}
 			</p>
-			<form method="POST" action="?/cancel">
-				<Button type="submit" variant="gradient" size="m" class="w-full">{m.verify_back_to_sign_in()}</Button>
+			<form method="POST" action="?/cancel" use:enhance={leaving.submit}>
+				<Button type="submit" variant="gradient" size="m" class="w-full" loading={leaving.on}>{m.verify_back_to_sign_in()}</Button>
 			</form>
 		</div>
 	{:else}
@@ -104,19 +107,19 @@
 				/>
 				<span class="code__hint" id="code-hint">{m.verify_code_hint()}</span>
 			</label>
-			<Button type="submit" variant="gradient" size="m" class="w-full" disabled={submitting || digits.length !== 6}>
+			<Button type="submit" variant="gradient" size="m" class="w-full" disabled={digits.length !== 6} loading={submitting}>
 				{submitting ? m.verify_checking() : m.verify_submit()}
 			</Button>
 		</form>
 
-		<form method="POST" action="?/resend" class="resend" use:enhance={() => async ({ update }) => update({ reset: false })}>
+		<form method="POST" action="?/resend" class="resend" use:enhance={resending.submit}>
 			{#if sendsLeft <= 0}
 				<span class="resend__note">{m.verify_no_more_codes()}</span>
 			{:else if resendIn > 0}
 				<span class="resend__note">{m.verify_resend_in({ time: countdown(resendIn) })}</span>
 			{:else}
 				<span class="resend__note">{m.verify_no_code()}</span>
-				<button type="submit" class="resend__button">{m.verify_resend()}</button>
+				<button type="submit" class="resend__button" disabled={resending.on} aria-busy={resending.on || undefined}>{m.verify_resend()}</button>
 			{/if}
 		</form>
 	{/if}
