@@ -20,7 +20,7 @@
 </script>
 
 <div class="address">
-	<span class="address__status"><span class="address__dot" data-running={running || undefined}></span>{status}</span>
+	<span class="address__status"><span class="address__dot" data-running={running || undefined}></span><span class="address__label">{status}</span></span>
 	<span class="address__url" title={address}>{address}</span>
 	{#if onreload}
 		<button type="button" class="address__btn" aria-label={m.project_reload_preview()} title={m.project_reload_preview()} onclick={onreload}><Icon icon={RotateCw} size={18} /></button>
@@ -43,9 +43,13 @@
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container-lowest);
 	}
+	/* The status gives way well before the address (its label ellipsizes), so a tight bar keeps
+	 * localhost:<port> readable and never spills over its neighbours. */
 	.address__status {
 		display: inline-flex;
-		flex: none;
+		flex: 0 1000 auto;
+		min-width: 0;
+		overflow: hidden;
 		align-items: center;
 		gap: 8px;
 		padding-right: 10px;
@@ -55,7 +59,14 @@
 		color: var(--md-sys-color-on-surface-variant);
 		text-transform: lowercase;
 	}
+	.address__label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.address__dot {
+		flex: none;
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
@@ -64,8 +75,10 @@
 	.address__dot[data-running] {
 		background: var(--md-sys-color-primary);
 	}
+	/* Full width up to most of the bar (localhost:<port> always fits); a long published URL ellipsizes. */
 	.address__url {
-		flex: 1;
+		flex: 1 0 auto;
+		max-width: 70%;
 		min-width: 0;
 		overflow: hidden;
 		font-family: var(--md-ref-typeface-mono);

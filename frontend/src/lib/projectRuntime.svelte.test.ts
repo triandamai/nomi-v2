@@ -165,6 +165,7 @@ describe('ProjectRuntime', () => {
 		wc.state.listeners['server-ready'](5173, 'https://preview.local');
 		expect(runtime.phase).toBe('running');
 		expect(runtime.previewUrl).toBe('https://preview.local');
+		expect(runtime.previewPort).toBe(5173);
 		expect(runtime.log).toContain('$ npm install');
 
 		// The editor's own changes go straight in.
