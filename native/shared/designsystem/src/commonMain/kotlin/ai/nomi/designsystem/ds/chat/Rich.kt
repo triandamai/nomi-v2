@@ -3,6 +3,7 @@ package ai.nomi.designsystem.ds.chat
 import ai.nomi.designsystem.ds.Crew
 import ai.nomi.designsystem.ds.CopyGlyph
 import ai.nomi.designsystem.ds.Ds
+import ai.nomi.designsystem.ds.footerNote
 import ai.nomi.designsystem.ds.DsBareIcon
 import ai.nomi.designsystem.ds.DsButton
 import ai.nomi.designsystem.ds.DsButtonVariant
@@ -184,7 +185,7 @@ fun Diff(path: String, hunks: List<DiffHunk>, modifier: Modifier = Modifier, req
         },
         footer = if (request != null || onApply != null || onReject != null) {
             {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.footerNote(this), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (request != null) {
                         Mascot(request.agent, 20.dp)
                         Text(
@@ -256,7 +257,7 @@ fun DataTable(
         },
         footer = if (source != null || linkLabel != null) {
             {
-                DsText(source ?: "", Ds.label, Ds.text3, Modifier.weight(1f), singleLine = true)
+                DsText(source ?: "", Ds.label, Ds.text3, Modifier.footerNote(this), singleLine = true)
                 if (linkLabel != null && onLink != null) DsLink(linkLabel, onLink, quiet = true)
             }
         } else {
@@ -484,7 +485,7 @@ fun Cart(
             Text("$store · ${if (items.size == 1) "1 item" else "${items.size} items"}", style = Ds.label, color = Ds.text3)
         },
         footer = {
-            DsText(note ?: "", Ds.caption, Ds.text3, Modifier.weight(1f))
+            DsText(note ?: "", Ds.caption, Ds.text3, Modifier.footerNote(this))
             if (onSave != null) DsButton("Save as list", onSave, variant = DsButtonVariant.Ghost, iconStart = Lucide.Bookmark)
             DsButton("Checkout on $store", onCheckout, iconEnd = Lucide.ArrowUpRight)
         },
@@ -521,7 +522,7 @@ fun Cart(
                     }
                     StepperButton(Lucide.Plus, "More ${item.name}", item.available && onQuantity != null) { onQuantity?.invoke(index, item.quantity + 1) }
                 }
-                Text(item.price, style = Ds.mono, color = if (item.available) Ds.text else Ds.text3, textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
+                Text(item.price, style = Ds.mono, color = if (item.available) Ds.text else Ds.text3, textAlign = TextAlign.End, maxLines = 1, softWrap = false, modifier = Modifier.widthIn(min = 72.dp))
             }
         }
         HorizontalDivider(thickness = Hairline, color = Ds.border)

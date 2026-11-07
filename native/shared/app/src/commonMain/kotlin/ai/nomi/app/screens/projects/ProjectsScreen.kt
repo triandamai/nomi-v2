@@ -1,5 +1,16 @@
 package ai.nomi.app.screens.projects
 
+import ai.nomi.designsystem.ds.Crew
+import ai.nomi.designsystem.ds.DsMotion
+import ai.nomi.designsystem.ds.DsSearch
+import ai.nomi.designsystem.ds.EmptyState
+import ai.nomi.designsystem.ds.ErrorCallout
+import ai.nomi.designsystem.ds.ErrorDetail
+import ai.nomi.designsystem.ds.ProjectRow
+import ai.nomi.designsystem.ds.ProjectStatus
+import ai.nomi.designsystem.ds.SkeletonRow
+import ai.nomi.designsystem.ds.StatusKind
+import ai.nomi.designsystem.icon.Lucide
 import ai.nomi.designsystem.component.NomiCard
 import ai.nomi.designsystem.component.NomiLoadingIndicator
 import ai.nomi.designsystem.component.NomiTextField
@@ -43,50 +54,31 @@ fun ProjectsScreen(
         modifier = modifier.testTag(PROJECTS_SCREEN_TAG),
     ) {
         when (val s = state) {
-            is ProjectsUiState.Loading -> {
-                Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    NomiLoadingIndicator(contentDescription = "Loading projects")
-                }
-            }
-            is ProjectsUiState.Error -> {
-                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = s.message,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
+            is ProjectsUiState.Loading -> repeat(SKELETON_ROWS) { SkeletonRow(if (it == 0) "loading projects…" else "") }
+            is ProjectsUiState.Error -> ErrorCallout("Couldn't load projects", details = listOf(ErrorDetail("reason", s.message, strong = true)))
             is ProjectsUiState.Ready -> {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    NomiTextField(
-                        value = s.query,
-                        onValueChange = viewModel::setSearchQuery,
-                        label = "Search projects",
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
+                    DsSearch(s.query, viewModel::setSearchQuery, "Search projects")
                     if (s.filteredProjects.isEmpty()) {
-                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = if (s.query.isBlank()) "No projects yet." else "No projects match '${s.query}'.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        if (s.query.isBlank()) {
+                            EmptyState(Lucide.Folder, "No projects yet", "Describe an app in a chat and Koda builds it here.", count = 0)
+                        } else {
+                            EmptyState(Lucide.Search, "Nothing matches", "No project's name has \"${s.query}\".")
                         }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
+                        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(s.filteredProjects, key = { it.id }) { project ->
-                                ProjectCard(
-                                    project = project,
-                                    onClick = {
-                                        if (project.sessionId.isNotBlank()) {
-                                            onOpenChat(project.sessionId)
-                                        }
-                                    },
+                                ProjectRow(
+                                    name = project.name,
+                                    tone = Crew.Koda,
+                                    status = projectStatus(project.status),
+                                    updated = project.updatedAt.take(DATE_CHARS),
+                                    onClick = { if (project.sessionId.isNotBlank()) onOpenChat(project.sessionId) },
+                                    modifier = Modifier.animateItem(fadeInSpec = DsMotion.effects(), placementSpec = DsMotion.spatial(), fadeOutSpec = DsMotion.fast()),
+                                    description = listOfNotNull(
+                                        project.description?.takeIf { it.isNotBlank() },
+                                        if (project.openIssues > 0) "${project.openIssues} open issues" else null,
+                                    ).joinToString(" · ").ifEmpty { "By ${project.createdBy}" },
                                 )
                             }
                         }
@@ -97,68 +89,15 @@ fun ProjectsScreen(
     }
 }
 
-@Composable
-private fun ProjectCard(
-    project: ProjectDto,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    NomiCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = project.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                ai.nomi.designsystem.component.NomiFilterChip(
-                    label = project.status.replaceFirstChar { it.uppercase() },
-                    selected = project.status == "ready",
-                    onClick = onClick,
-                )
-            }
-            val desc = project.description
-            if (!desc.isNullOrBlank()) {
-                Text(
-                    text = desc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+private const val SKELETON_ROWS = 3
+/** `2026-11-07T…` → `2026-11-07`. */
+private const val DATE_CHARS = 10
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = "By ${project.createdBy}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (project.openIssues > 0) {
-                    Text(
-                        text = "${project.openIssues} open issues",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-        }
-    }
+/** A project's state as the design system's status: live, ready, building (Koda's shape moving), failed, idle. */
+private fun projectStatus(status: String): ProjectStatus = when (status.lowercase()) {
+    "live", "deployed", "published" -> ProjectStatus(StatusKind.Live, "Live")
+    "ready" -> ProjectStatus(StatusKind.Ready, "Ready")
+    "building", "running", "deploying" -> ProjectStatus(StatusKind.Working, "Building")
+    "failed", "error" -> ProjectStatus(StatusKind.Failed, "Failed")
+    else -> ProjectStatus(StatusKind.Idle, status.replaceFirstChar { it.uppercase() })
 }

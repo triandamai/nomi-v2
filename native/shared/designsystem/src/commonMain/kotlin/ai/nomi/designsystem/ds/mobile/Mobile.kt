@@ -373,9 +373,11 @@ fun ChangeReady(who: Person, meta: String, onPublish: () -> Unit, onReview: () -
 
 /** A chat in the phone's list: the crew member on their tint, the title and time, the last line, and unread. */
 @Composable
-fun ChatRow(agent: Crew, title: String, onClick: () -> Unit, modifier: Modifier = Modifier, time: String? = null, preview: String? = null, unread: Boolean = false) {
+fun ChatRow(agent: Crew, title: String, onClick: () -> Unit, modifier: Modifier = Modifier, time: String? = null, preview: String? = null, unread: Boolean = false, selected: Boolean = false) {
+    val bg by animateColorAsState(if (selected) Ds.surface2 else Color.Transparent, DsMotion.fast(), label = "chat-row")
     Row(
-        modifier.fillMaxWidth().clip(DsShapes.md).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier.fillMaxWidth().clip(DsShapes.md).background(bg).clickable(role = Role.Button, onClick = onClick).semantics { this.selected = selected }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

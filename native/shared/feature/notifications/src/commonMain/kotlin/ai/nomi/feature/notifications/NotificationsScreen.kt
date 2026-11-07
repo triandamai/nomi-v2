@@ -1,5 +1,15 @@
 package ai.nomi.feature.notifications
 
+import ai.nomi.designsystem.ds.DsMotion
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import ai.nomi.designsystem.ds.DsSegmented
+import ai.nomi.designsystem.ds.EmptyState
+import ai.nomi.designsystem.ds.SegmentOption
+import ai.nomi.designsystem.ds.SegmentedSurface
+import ai.nomi.designsystem.ds.SkeletonRow
+import ai.nomi.designsystem.icon.Lucide
+
 import ai.nomi.core.timeAgo
 import ai.nomi.data.NotificationItem
 import ai.nomi.designsystem.component.NomiButton
@@ -41,6 +51,7 @@ import kotlin.time.Clock
 
 const val NOTIFICATIONS_SCREEN_TAG = "notifications-screen"
 
+private const val SKELETON_ROWS = 3
 private val RowAvatarSize = 36.dp
 private val EmptyAvatarSize = 64.dp
 private val EmptyVerticalPadding = 36.dp
@@ -107,23 +118,29 @@ fun NotificationsContent(
         },
     ) {
         if (items != null) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(FilterGap),
-                verticalArrangement = Arrangement.spacedBy(FilterGap),
-            ) {
-                NotificationFilter.entries.forEach { entry ->
-                    NomiFilterChip(
-                        label = entry.label,
-                        selected = filter == entry,
-                        onClick = { filter = entry },
-                    )
-                }
-            }
+            val all = items
+            DsSegmented(
+                "Show",
+                NotificationFilter.entries.map { entry ->
+                    val count = when (entry) {
+                        NotificationFilter.All -> all.size
+                        NotificationFilter.Unread -> all.count { it.readAt == null }
+                        NotificationFilter.Read -> all.count { it.readAt != null }
+                        NotificationFilter.Promo -> all.count { it.kind == "promo" }
+                    }
+                    SegmentOption(entry.name, entry.label, count.toString())
+                },
+                filter.name,
+                { filter = NotificationFilter.valueOf(it) },
+                surface = SegmentedSurface.Surface,
+                // Four views with counts outgrow a phone: the control scrolls sideways rather than wrapping.
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            )
         }
 
         when {
-            filtered == null -> NomiLoadingIndicator(Modifier.align(Alignment.CenterHorizontally), contentDescription = "Loading notifications")
-            filtered.isEmpty() -> EmptyInboxCard(filter.emptyMessage)
+            filtered == null -> repeat(SKELETON_ROWS) { SkeletonRow(if (it == 0) "loading your inbox…" else "") }
+            filtered.isEmpty() -> EmptyState(Lucide.Inbox, filter.label, filter.emptyMessage)
             else -> NomiListPanel(Modifier.padding(bottom = ListBottomPadding)) {
                 LazyColumn(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)) {
                     items(filtered, key = { it.id }) { item ->
@@ -134,28 +151,13 @@ fun NotificationsContent(
                             meta = timeAgo(item.createdAt, nowMs),
                             emphasized = unread,
                             onClick = { onOpen(item) },
+                            modifier = Modifier.animateItem(fadeInSpec = DsMotion.effects(), placementSpec = DsMotion.spatial(), fadeOutSpec = DsMotion.fast()),
                             leading = { AgentShape(kindIdentity(item.kind), RowAvatarSize) },
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyInboxCard(message: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(vertical = EmptyVerticalPadding, horizontal = EmptyHorizontalPadding),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(EmptyGap),
-    ) {
-        AgentShape(NomiIdentity, EmptyAvatarSize, face = true)
-        Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

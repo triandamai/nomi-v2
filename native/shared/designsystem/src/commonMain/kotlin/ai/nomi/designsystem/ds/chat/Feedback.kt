@@ -119,8 +119,8 @@ fun ResponseActions(
 }
 
 enum class DislikeReason(val label: String) {
-    Inaccurate("Not accurate"), Ignored("Ignored my request"), WrongCrew("Wrong crew member"),
-    TooLong("Too long"), Outdated("Out of date"), Unsafe("Unsafe or harmful"), Other("Something else"),
+    Inaccurate("Not accurate"), Ignored("Didn't do what I asked"), WrongCrew("Wrong crew member"),
+    TooLong("Too long"), Outdated("Out of date"), Unsafe("Unsafe or harmful"), Other("Other"),
 }
 
 /** What went wrong with a reply: pick reasons (two rows), add a note, optionally include the whole chat, then send. */
@@ -131,6 +131,7 @@ fun DislikeFeedback(
     modifier: Modifier = Modifier,
     initialReasons: List<DislikeReason> = emptyList(),
     initialNote: String = "",
+    sending: Boolean = false,
 ) {
     val reasons = remember { mutableStateListOf<DislikeReason>().apply { addAll(initialReasons) } }
     var note by remember { mutableStateOf(initialNote) }
@@ -163,7 +164,7 @@ fun DislikeFeedback(
             }
         }
         DsBareField(
-            note, { note = it }, "", Ds.caption,
+            note, { note = it }, "Add a note (optional)", Ds.caption,
             Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp).fillMaxWidth().height(72.dp).clip(DsShapes.sm).background(Ds.bg)
                 .border(Hairline, Ds.borderStrong, DsShapes.sm).padding(horizontal = 9.dp, vertical = 7.dp),
             singleLine = false,
@@ -181,7 +182,7 @@ fun DislikeFeedback(
         HorizontalDivider(thickness = Hairline, color = Ds.border)
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             DsButton("Cancel", onCancel, variant = DsButtonVariant.Ghost)
-            DsButton("Send feedback", { onSend(reasons.toList(), note.trim(), includeChat) }, enabled = reasons.isNotEmpty() || note.isNotBlank())
+            DsButton("Send feedback", { onSend(reasons.toList(), note.trim(), includeChat) }, enabled = !sending && (reasons.isNotEmpty() || note.isNotBlank()), loading = sending)
         }
     }
 }

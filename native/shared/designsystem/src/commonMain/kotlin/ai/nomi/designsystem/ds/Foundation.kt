@@ -31,6 +31,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -252,7 +255,7 @@ fun DsCard(
     strong: Boolean = true,
     background: Color = Ds.bg,
     header: (@Composable RowScope.() -> Unit)? = null,
-    footer: (@Composable RowScope.() -> Unit)? = null,
+    footer: (@Composable FlowRowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -275,15 +278,22 @@ fun DsCard(
         content()
         if (footer != null) {
             HorizontalDivider(thickness = Hairline, color = Ds.border)
-            Row(
+            FlowRow(
                 Modifier.fillMaxWidth().padding(CardFooterPadding),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
                 content = footer,
             )
         }
     }
 }
+
+/** The narrowest a card footer's note gets before the buttons wrap under it (the web's `basis-40`). */
+val FooterNoteMin = 160.dp
+
+/** A card footer's note: takes the room the buttons leave, never narrower than [FooterNoteMin]. */
+fun Modifier.footerNote(scope: RowScope): Modifier = with(scope) { this@footerNote.weight(1f).widthIn(min = FooterNoteMin) }
 
 /** A card header's title: `text-ui font-medium`. */
 @Composable

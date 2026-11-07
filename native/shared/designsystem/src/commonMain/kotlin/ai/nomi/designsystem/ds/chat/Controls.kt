@@ -5,6 +5,7 @@ import ai.nomi.designsystem.ds.DsCard
 import ai.nomi.designsystem.ds.DsCardTitle
 import ai.nomi.designsystem.ds.DsRule
 import ai.nomi.designsystem.ds.Ds
+import ai.nomi.designsystem.ds.footerNote
 import ai.nomi.designsystem.ds.DsBareField
 import ai.nomi.designsystem.ds.DsBareIcon
 import ai.nomi.designsystem.ds.DsButton
@@ -208,7 +209,7 @@ fun MessageEditor(value: String, onSave: (String) -> Unit, onCancel: () -> Unit,
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (version != null) "Sends as a new version. The old reply stays in $version." else "Sends as a new version. The old reply stays.",
-                    style = Ds.label, color = Ds.text3, modifier = Modifier.weight(1f),
+                    style = Ds.label, color = Ds.text3, modifier = Modifier.footerNote(this),
                 )
                 DsButton("Cancel", onCancel, variant = DsButtonVariant.Ghost)
                 DsButton("Save & send", { onSave(text.trim()) }, iconEnd = Lucide.ArrowUp, enabled = changed)
@@ -562,7 +563,7 @@ fun ConnectPrompt(agent: Crew, icon: NomiGlyph, service: String, why: String, re
             }
         },
         footer = {
-            DsText(alternative ?: "", Ds.caption, Ds.text3, Modifier.weight(1f))
+            DsText(alternative ?: "", Ds.caption, Ds.text3, Modifier.footerNote(this))
             if (onLater != null) DsButton("Not now", onLater, variant = DsButtonVariant.Ghost)
             DsButton("Connect", onConnect, iconEnd = Lucide.ArrowUpRight)
         },
@@ -641,7 +642,7 @@ fun SessionExpired(onSignIn: () -> Unit, modifier: Modifier = Modifier, draft: S
     DsCard(
         modifier,
         footer = {
-            Box(Modifier.weight(1f))
+            Box(Modifier.footerNote(this))
             DsButton("Sign in again", onSignIn, iconEnd = Lucide.ArrowRight)
         },
     ) {
@@ -681,7 +682,7 @@ fun SupervisorStopped(tasks: List<StoppedTask>, modifier: Modifier = Modifier, m
             if (meta != null) Text(meta, style = Ds.label, color = Ds.text3)
         },
         footer = {
-            Text("Nothing that left Nomi was undone.", style = Ds.caption, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text("Nothing that left Nomi was undone.", style = Ds.caption, color = Ds.text3, modifier = Modifier.footerNote(this))
             if (onDiscard != null) DsButton("Discard", onDiscard, variant = DsButtonVariant.Ghost)
             if (onResume != null) DsButton("Resume", onResume, variant = DsButtonVariant.Secondary, iconEnd = Lucide.Play)
         },

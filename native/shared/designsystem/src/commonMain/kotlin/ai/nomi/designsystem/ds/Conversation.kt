@@ -272,10 +272,14 @@ fun MessageUser(
     onCancel: (() -> Unit)? = null,
     onRetry: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
+    onDiscard: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    above: (@Composable () -> Unit)? = null,
 ) {
     val copier = rememberCopier()
     val fade by animateFloatAsState(if (status == SendStatus.Sent) 1f else UNSENT_ALPHA, DsMotion.effects(), label = "unsent-fade")
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        above?.invoke()
         if (files.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 files.forEach { file ->
@@ -293,7 +297,7 @@ fun MessageUser(
                 }
             }
         }
-        Text(
+        if (text.isNotEmpty()) Text(
             text,
             style = Ds.body,
             color = Ds.text,
@@ -322,6 +326,7 @@ fun MessageUser(
                         Text("not sent", style = Ds.label, color = Ds.danger)
                         if (onRetry != null) DsTextAction("Retry", onRetry)
                         if (onEdit != null) DsTextAction("Edit", onEdit)
+                        if (onDiscard != null) DsTextAction("Discard", onDiscard)
                     }
                     SendStatus.Sent -> when {
                         edited || version != null -> {
@@ -331,6 +336,7 @@ fun MessageUser(
                         else -> {
                             DsBareIcon(Lucide.Copy, if (copier.copied) "Copied" else "Copy message", { copier.copy(text) }, size = 13.dp)
                             if (onEdit != null) DsBareIcon(Lucide.Pencil, "Edit message", onEdit, size = 13.dp)
+                            if (onDelete != null) DsBareIcon(Lucide.Trash, "Delete message", onDelete, size = 13.dp)
                             if (time != null) Text(time, style = Ds.label, color = Ds.text3)
                         }
                     }

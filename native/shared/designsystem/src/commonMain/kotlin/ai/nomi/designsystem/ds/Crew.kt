@@ -1,5 +1,6 @@
 package ai.nomi.designsystem.ds
 
+import ai.nomi.designsystem.generated.NomiShapeSpecs
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.agentIdentity
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +44,13 @@ enum class Crew(val displayName: String, private val light: Long, private val da
     companion object {
         /** A crew member by id or name ("koda", "Koda"); Nomi when unknown. */
         fun of(id: String): Crew = entries.firstOrNull { it.name.equals(id, ignoreCase = true) } ?: Nomi
+
+        /** The crew member who is this backend agent_type ("money" → Dana); Nomi for anything else. */
+        fun forAgentType(agentType: String?): Crew {
+            if (agentType == null) return Nomi
+            val name = NomiShapeSpecs.crewTypeByName.entries.firstOrNull { it.value == agentType.lowercase() }?.key ?: agentType
+            return of(name)
+        }
     }
 }
 

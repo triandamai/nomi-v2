@@ -2,6 +2,7 @@ package ai.nomi.designsystem.ds.chat
 
 import ai.nomi.designsystem.ds.Crew
 import ai.nomi.designsystem.ds.Ds
+import ai.nomi.designsystem.ds.footerNote
 import ai.nomi.designsystem.ds.DsButton
 import ai.nomi.designsystem.ds.DsButtonVariant
 import ai.nomi.designsystem.ds.DsCard
@@ -160,7 +161,7 @@ fun PlanCard(subject: String, steps: List<PlanStep>, modifier: Modifier = Modifi
             AnimatedContent(done, label = "plan-done") { Text("$it of ${steps.size} done", style = Ds.label, color = Ds.text3) }
         },
         footer = {
-            Text("Each step goes to the crew member who owns it", style = Ds.caption, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text("Each step goes to the crew member who owns it", style = Ds.caption, color = Ds.text3, modifier = Modifier.footerNote(this))
             if (onStop != null) DsButton("Stop plan", onStop, variant = DsButtonVariant.Ghost, iconStart = Lucide.Square)
         },
     ) {
@@ -215,7 +216,7 @@ fun DraftPlanCard(
             DsTag(TagKind.Neutral, "Draft")
         },
         footer = {
-            Text(estimate, style = Ds.label, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text(estimate, style = Ds.label, color = Ds.text3, modifier = Modifier.footerNote(this))
             DsButton("Discard", onDiscard, variant = DsButtonVariant.Ghost, iconStart = Lucide.X)
             DsButton("Ask for changes", onChanges, variant = DsButtonVariant.Secondary)
             DsButton("Run plan", onRun, iconEnd = Lucide.Play)

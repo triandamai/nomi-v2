@@ -1,5 +1,13 @@
 package ai.nomi.feature.chats
 
+import ai.nomi.designsystem.ds.Crew
+import ai.nomi.designsystem.ds.DsMotion
+import ai.nomi.designsystem.ds.DsSearch
+import ai.nomi.designsystem.ds.EmptyState
+import ai.nomi.designsystem.ds.SkeletonRow
+import ai.nomi.designsystem.ds.mobile.ChatRow
+import ai.nomi.designsystem.icon.Lucide
+
 import ai.nomi.core.UNTITLED_CHAT
 import ai.nomi.core.timeAgo
 import ai.nomi.data.Session
@@ -35,6 +43,7 @@ import kotlin.time.Clock
 
 const val CHATS_SCREEN_TAG = "chats-screen"
 
+private const val SKELETON_ROWS = 3
 private val RefreshIndicatorSize = 24.dp
 private val RowAvatar = 32.dp
 private val ListBottomPadding = 20.dp
@@ -85,36 +94,26 @@ fun ChatsContent(
         },
     ) {
         when {
-            chats == null -> NomiLoadingIndicator(Modifier.align(Alignment.CenterHorizontally), contentDescription = "Loading chats")
-            chats.isEmpty() -> Text("No chats yet.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            chats == null -> repeat(SKELETON_ROWS) { SkeletonRow(if (it == 0) "loading chats…" else "") }
+            chats.isEmpty() -> EmptyState(Lucide.Message, "No chats yet", "Start one with New chat. Every conversation with the crew lands here.")
             else -> {
-                NomiTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = "Search",
-                    placeholder = "Search chats…",
-                )
+                DsSearch(query, { query = it }, "Search chats…")
                 val shown = filtered.orEmpty()
                 if (shown.isEmpty()) {
-                    Text(
-                        "No chats matching \"$query\".",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    EmptyState(Lucide.Search, "Nothing matches", "No chat's title or last message has \"$query\".")
                 } else {
-                    NomiListPanel(Modifier.padding(bottom = ListBottomPadding)) {
-                        LazyColumn(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)) {
-                            items(shown, key = { it.id }) { session ->
-                                NomiRow(
-                                    title = session.title.ifEmpty { UNTITLED_CHAT },
-                                    line = session.lastMessagePreview.ifBlank { NO_MESSAGES },
-                                    meta = timeAgo(session.updatedAt, nowMs),
-                                    emphasized = session.unread,
-                                    selected = session.id == selectedId,
-                                    onClick = { onOpenChat(session.id) },
-                                    leading = { AgentShape(NomiIdentity, RowAvatar) },
-                                )
-                            }
+                    LazyColumn(Modifier.fillMaxWidth().padding(bottom = ListBottomPadding)) {
+                        items(shown, key = { it.id }) { session ->
+                            ChatRow(
+                                agent = Crew.Nomi,
+                                title = session.title.ifEmpty { UNTITLED_CHAT },
+                                onClick = { onOpenChat(session.id) },
+                                modifier = Modifier.animateItem(fadeInSpec = DsMotion.effects(), placementSpec = DsMotion.spatial(), fadeOutSpec = DsMotion.fast()),
+                                time = timeAgo(session.updatedAt, nowMs),
+                                preview = session.lastMessagePreview.ifBlank { NO_MESSAGES },
+                                unread = session.unread,
+                                selected = session.id == selectedId,
+                            )
                         }
                     }
                 }

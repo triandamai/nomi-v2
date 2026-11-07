@@ -3,6 +3,7 @@ package ai.nomi.designsystem.ds.chat
 import ai.nomi.designsystem.ds.CheckMark
 import ai.nomi.designsystem.ds.Crew
 import ai.nomi.designsystem.ds.Ds
+import ai.nomi.designsystem.ds.footerNote
 import ai.nomi.designsystem.ds.DsBareIcon
 import ai.nomi.designsystem.ds.DsButton
 import ai.nomi.designsystem.ds.DsButtonVariant
@@ -116,14 +117,14 @@ fun ApprovalCard(
         footer = when (status) {
             ApprovalStatus.Editing -> {
                 {
-                    Box(Modifier.weight(1f))
+                    Box(Modifier.footerNote(this))
                     if (onCancel != null) DsButton("Cancel", onCancel, variant = DsButtonVariant.Ghost)
                     if (onSave != null) DsButton(approveLabel, { onSave(draft.trim()) }, iconEnd = approveIcon, enabled = draft.isNotBlank())
                 }
             }
             ApprovalStatus.Pending -> {
                 {
-                    Box(Modifier.weight(1f)) {
+                    Box(Modifier.footerNote(this)) {
                         if (rememberLabel != null) {
                             Row(
                                 Modifier.heightIn(min = MinTouch).toggleable(rememberChoice, role = Role.Checkbox) { rememberChoice = it },
@@ -220,7 +221,7 @@ fun ChoiceOption(
                     if (multiple) Modifier.toggleable(checked, role = Role.Checkbox, onValueChange = onChange)
                     else Modifier.selectable(checked, role = Role.RadioButton) { onChange(true) },
                 )
-                .padding(start = 11.dp, end = 11.dp, top = 9.dp, bottom = if (content == null) 9.dp else 0.dp),
+                .padding(horizontal = 11.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -235,7 +236,7 @@ fun ChoiceOption(
             }
             if (control == ChoiceControl.End) mark()
         }
-        if (content != null) Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 9.dp), content = content)
+        if (content != null) Column(Modifier.padding(horizontal = 11.dp), content = content)
     }
 }
 
@@ -313,7 +314,7 @@ fun ClarifyCard(
             val selected = (answer as? ClarifyAnswer.Choices)?.indices?.size ?: 0
             Text(
                 if (question.multiple) "$selected selected · ↵ review" else "1–$keys to pick · ↵ next",
-                style = Ds.label, color = Ds.text3, modifier = Modifier.weight(1f),
+                style = Ds.label, color = Ds.text3, modifier = Modifier.footerNote(this),
             )
             DsButton("Skip", { if (!question.multiple) answers[step] = null; next() }, variant = DsButtonVariant.Ghost)
             DsButton("Back", { go(step - 1) }, variant = DsButtonVariant.Secondary, enabled = step > 0)
@@ -403,7 +404,7 @@ fun ClarifyReview(answers: List<ReviewAnswer>, onEdit: (Int) -> Unit, onBack: ()
             Text("${answers.size} of ${answers.size}", style = Ds.label, color = Ds.text3)
         },
         footer = {
-            Text("Nothing runs yet. You’ll see the plan first.", style = Ds.caption, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text("Nothing runs yet. You’ll see the plan first.", style = Ds.caption, color = Ds.text3, modifier = Modifier.footerNote(this))
             DsButton("Back", onBack, variant = DsButtonVariant.Secondary)
             DsButton("Make the plan", onConfirm, iconEnd = Lucide.Sparkles)
         },
@@ -458,7 +459,7 @@ fun DecisionCard(question: String, options: List<DecisionOption>, onConfirm: (In
             DsCardTitle(question)
         },
         footer = {
-            Text("Or type your own answer", style = Ds.caption, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text("Or type your own answer", style = Ds.caption, color = Ds.text3, modifier = Modifier.footerNote(this))
             DsButton("Use ${options.getOrNull(value)?.title ?: ""}", { onConfirm(value) }, iconEnd = Lucide.Check)
         },
     ) {
@@ -495,7 +496,7 @@ fun FormCard(
             if (meta != null) Text(meta, style = Ds.label, color = Ds.text3)
         },
         footer = {
-            DsText(note ?: "", Ds.caption, Ds.text3, Modifier.weight(1f))
+            DsText(note ?: "", Ds.caption, Ds.text3, Modifier.footerNote(this))
             if (onCancel != null) DsButton("Cancel", onCancel, variant = DsButtonVariant.Ghost)
             DsButton(submitLabel, onSubmit, iconEnd = Lucide.Check)
         },
@@ -520,7 +521,7 @@ fun RunOptions(options: List<RunOption>, who: String, value: Int, onValue: (Int)
             DsFold(keep) {
                 DsBareField(
                     changes, { onChanges(it); onValue(options.size) }, "Tell $who what to change…", Ds.ui,
-                    Modifier.fillMaxWidth().clip(DsShapes.sm).background(Ds.surface).border(Hairline, Ds.borderStrong, DsShapes.sm).padding(horizontal = 10.dp, vertical = 8.dp),
+                    Modifier.padding(bottom = 9.dp).fillMaxWidth().clip(DsShapes.sm).background(Ds.surface).border(Hairline, Ds.borderStrong, DsShapes.sm).padding(horizontal = 10.dp, vertical = 8.dp),
                 )
             }
         }
@@ -541,7 +542,7 @@ fun PlanApproval(options: List<RunOption>, onRun: (choice: Int?, keepPlanning: S
             DsCardTitle("Ready to run this plan?")
         },
         footer = {
-            Text("1–${options.size + 1} to pick · ↵ confirm", style = Ds.label, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text("1–${options.size + 1} to pick · ↵ confirm", style = Ds.label, color = Ds.text3, modifier = Modifier.footerNote(this))
             AnimatedContent(keep, label = "plan-approval-action") { k ->
                 DsButton(
                     if (k) "Send changes" else "Run plan",
@@ -618,7 +619,7 @@ fun SelectionCard(
             DsTextAction(if (all) "Clear" else "Select all", { set(items.map { !all }) })
         },
         footer = {
-            AnimatedContent(count, Modifier.weight(1f), label = "selection-count") {
+            AnimatedContent(count, Modifier.footerNote(this), label = "selection-count") {
                 Text("$it selected${if (total != null) " · $total" else ""}", style = Ds.label, color = Ds.text3)
             }
             if (onSkip != null) DsButton("Skip", onSkip, variant = DsButtonVariant.Ghost)
