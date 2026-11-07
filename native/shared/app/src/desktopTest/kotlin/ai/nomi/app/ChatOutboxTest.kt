@@ -48,9 +48,9 @@ class ChatOutboxTest {
             }
         }
 
-        rule.onNodeWithText("Not sent").assertExists()
-        rule.onAllNodesWithText("Not sent").assertCountEquals(1)
-        rule.onNodeWithText("Sending…").assertExists()
+        rule.onNodeWithText("not sent").assertExists()
+        rule.onAllNodesWithText("not sent").assertCountEquals(1)
+        rule.onNodeWithText("sending…").assertExists()
 
         rule.onNodeWithText("Retry").performClick()
         rule.onNodeWithText("Discard").performClick()
