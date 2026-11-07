@@ -28,6 +28,8 @@ const ROUTE_TITLES: Record<string, () => string> = {
 	'/admin/(protected)/users': admin(m.admin_users),
 	'/login': m.login_submit,
 	'/register': m.title_sign_up,
+	'/forgot-password': m.title_forgot_password,
+	'/reset-password': m.title_reset_password,
 };
 
 /** The document title: "Money · Nomi", or just "Nomi" for Home and anything unnamed. */

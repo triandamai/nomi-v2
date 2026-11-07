@@ -7,6 +7,7 @@ pub mod google;
 pub mod grants;
 pub mod login;
 pub mod password;
+pub mod password_reset;
 pub mod permissions;
 pub mod refresh_token;
 pub mod registration;

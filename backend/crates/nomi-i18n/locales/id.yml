@@ -127,6 +127,15 @@ sign_in:
   register_intro: "Selamat datang di Nomi! Masukkan kode ini untuk mengonfirmasi email Anda:"
   register_warning: "Jika Anda tidak membuat akun Nomi, abaikan email ini."
   expires: "Kode berlaku selama %{minutes} menit."
+password_reset:
+  subject: "Atur ulang kata sandi Nomi Anda"
+  title: "Pilih kata sandi baru"
+  preheader: "Tautan ini berlaku selama %{minutes} menit."
+  intro: "Seseorang meminta untuk mengatur ulang kata sandi akun Nomi Anda. Gunakan tombol di bawah untuk memilih yang baru."
+  button: "Pilih kata sandi baru"
+  expires: "Tautan hanya berlaku sekali, selama %{minutes} menit. Anda akan keluar dari semua perangkat saat mengganti kata sandi."
+  warning: "Jika Anda tidak memintanya, abaikan email ini. Kata sandi Anda tidak berubah."
+  reason: "Anda menerima email ini karena ada permintaan atur ulang kata sandi untuk email ini."
 email:
   crew_label: "Kru Nomi"
   tagline: "Nomi · kru kecil para agen yang mengingat, membangun, bekerja untuk Anda."

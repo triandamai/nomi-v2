@@ -5,8 +5,9 @@
 use std::sync::Arc;
 
 use nomi_auth::email_code::{Challenge, Purpose, CODE_TTL_SECONDS};
+use nomi_auth::password_reset::RESET_TTL_SECONDS;
 use nomi_i18n::Locale;
-use nomi_mail::layout::{BrandedEmail, Sender};
+use nomi_mail::layout::{Action, BrandedEmail, Sender};
 use nomi_mail::{Email, Mailer};
 
 #[derive(Clone)]
@@ -60,6 +61,25 @@ pub fn code_email(challenge: &Challenge, code: &str, locale: Locale) -> Email {
     .build()
 }
 
+/// The email with the link that lets someone choose a new password (`url` opens the reset page).
+pub fn reset_email(to: &str, url: String, locale: Locale) -> Email {
+    let minutes = (RESET_TTL_SECONDS / 60).to_string();
+    BrandedEmail {
+        sender: Sender::nomi(),
+        to: to.to_string(),
+        subject: locale.t("password_reset.subject"),
+        preheader: locale.tf("password_reset.preheader", &[("minutes", &minutes)]),
+        title: locale.t("password_reset.title"),
+        paragraphs: vec![locale.t("password_reset.intro")],
+        highlight: None,
+        action: Some(Action { label: locale.t("password_reset.button"), url }),
+        notes: vec![locale.tf("password_reset.expires", &[("minutes", &minutes)]), locale.t("password_reset.warning")],
+        crew_label: locale.t("email.crew_label"),
+        footer: format!("{} {}", locale.t("password_reset.reason"), locale.t("email.tagline")),
+    }
+    .build()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +111,14 @@ mod tests {
         let email = code_email(&challenge(Purpose::Register), "111222", Locale::Id);
         assert!(email.subject.starts_with("Konfirmasi"));
         assert!(email.text.contains("111222"));
+    }
+
+    #[test]
+    fn the_reset_email_links_to_the_reset_page() {
+        let email = reset_email("ana@example.com", "https://nomi.example.com/reset-password?token=abc".into(), Locale::En);
+        assert_eq!(email.to, "ana@example.com");
+        assert!(email.text.contains("https://nomi.example.com/reset-password?token=abc") && email.text.contains("60 minutes"));
+        let email = reset_email("ana@example.com", "https://x.io/r?token=abc".into(), Locale::Id);
+        assert!(email.subject.starts_with("Atur ulang"));
     }
 }

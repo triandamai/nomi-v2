@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::sign_in_codes::{code_email, EmailCodes};
+use crate::sign_in_codes::{code_email, reset_email, EmailCodes};
 use nomi_auth::{
     email_code::{self, Challenge, CodeError, Purpose},
+    password_reset::{self, ResetError},
     login::{check_password, issue_access_token, login},
     refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token, tag_device},
     registration::{register_user, OrgMode},
@@ -286,4 +287,74 @@ pub async fn logout_handler(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to revoke refresh token"))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct ForgotRequest {
+    pub email: String,
+    /// The language the page was shown in, for the email.
+    pub language: Option<String>,
+}
+
+/// Starts "forgot password": emails a reset link when the address has an account. It answers the
+/// same either way (and when sending fails), so it can't be used to find out who has an account.
+pub async fn forgot_handler(State(state): State<AppState>, Json(req): Json<ForgotRequest>) -> StatusCode {
+    let started = match password_reset::start(&state.pool, &req.email).await {
+        Ok(started) => started,
+        Err(e) => {
+            tracing::error!(error = %e, "forgot password: database error");
+            return StatusCode::NO_CONTENT;
+        }
+    };
+    let Some(started) = started else { return StatusCode::NO_CONTENT };
+    let Some(url) = crate::public_url::link(&format!("/reset-password?token={}", started.token)) else {
+        tracing::error!("forgot password: APP_URL isn't set, so the reset link can't be built");
+        return StatusCode::NO_CONTENT;
+    };
+    let locale = match req.language.as_deref() {
+        Some(code) => nomi_i18n::Locale::from_code_or_default(Some(code)),
+        None => match state.pool.acquire().await {
+            Ok(mut conn) => nomi_agent_core::locale::user_locale(&mut conn, started.user_id).await,
+            Err(_) => nomi_i18n::Locale::default(),
+        },
+    };
+    let mailer = match &state.email_codes {
+        EmailCodes::Required(mailer) => mailer.clone(),
+        EmailCodes::Off => nomi_mail::configured(),
+    };
+    if let Err(e) = mailer.send(reset_email(&started.email, url, locale)).await {
+        tracing::error!(error = %e, "couldn't send a password reset link");
+    }
+    StatusCode::NO_CONTENT
+}
+
+/// Whether a reset link can still be used (for the page, before it asks for a password).
+pub async fn reset_check_handler(State(state): State<AppState>, Path(token): Path<String>) -> Result<StatusCode, JsonError> {
+    match password_reset::is_open(&state.pool, &token).await {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(json_error(StatusCode::GONE, "expired")),
+        Err(e) => {
+            tracing::error!(error = %e, "password reset: database error");
+            Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed"))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ResetRequest {
+    pub token: String,
+    pub password: String,
+}
+
+/// Chooses the new password with an emailed link; the account is signed out everywhere.
+pub async fn reset_handler(State(state): State<AppState>, Json(req): Json<ResetRequest>) -> Result<StatusCode, JsonError> {
+    match password_reset::finish(&state.pool, &req.token, &req.password).await {
+        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(ResetError::Expired) => Err(json_error(StatusCode::GONE, "expired")),
+        Err(ResetError::TooShort) => Err(json_error(StatusCode::BAD_REQUEST, "too_short")),
+        Err(e) => {
+            tracing::error!(error = %e, "password reset failed");
+            Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed"))
+        }
+    }
 }

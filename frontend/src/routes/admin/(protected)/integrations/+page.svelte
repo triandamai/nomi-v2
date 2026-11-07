@@ -736,10 +736,7 @@
 							</label>
 						</div>
 						{#if !secretGenerate}
-							<label class="field">
-								<span>{m.integ_secret_value()}</span>
-								<input type="password" bind:value={secretValue} autocomplete="new-password" required />
-							</label>
+							<TextField label={m.integ_secret_value()} type="password" bind:value={secretValue} autocomplete="new-password" required />
 						{/if}
 						<label class="check"><input type="checkbox" bind:checked={secretGenerate} /> {m.integ_generate()}</label>
 						{#if secretName && !SECRET_NAME.test(secretName)}<p class="error small">{m.integ_secret_name_rule()}</p>{/if}
