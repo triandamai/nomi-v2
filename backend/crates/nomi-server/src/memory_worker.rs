@@ -24,15 +24,40 @@ const SUMMARIES_PER_SWEEP: i64 = 5;
 const CONSOLIDATIONS_PER_SWEEP: i64 = 50;
 
 pub async fn run(pool: PgPool, settings_key: [u8; 32], http_client: reqwest::Client) {
-    tracing::info!("memory worker: started");
+    tracing::info!(
+        learn_every_secs = LEARN_INTERVAL.as_secs(),
+        sweep_every_secs = SWEEP_INTERVAL.as_secs(),
+        "memory worker: started"
+    );
     let mut last_sweep: Option<std::time::Instant> = None;
     loop {
-        learn(&pool, &settings_key, &http_client).await;
+        // Each pass runs in its own task: a panic (a provider that can't be built, say) is logged
+        // and the worker carries on, instead of the whole worker dying without a word.
+        let (p, h) = (pool.clone(), http_client.clone());
+        guarded("learning pass", async move { learn(&p, &settings_key, &h).await }).await;
         if last_sweep.is_none_or(|at| at.elapsed() >= SWEEP_INTERVAL) {
-            sweep(&pool, &settings_key, &http_client).await;
+            let (p, h) = (pool.clone(), http_client.clone());
+            guarded("sweep", async move { sweep(&p, &settings_key, &h).await }).await;
             last_sweep = Some(std::time::Instant::now());
         }
         tokio::time::sleep(LEARN_INTERVAL).await;
+    }
+}
+
+/// Runs one pass in its own task and logs it if it panics.
+async fn guarded(what: &'static str, pass: impl std::future::Future<Output = ()> + Send + 'static) {
+    if let Err(e) = tokio::spawn(pass).await {
+        if e.is_panic() {
+            let panic = e.into_panic();
+            let message = panic
+                .downcast_ref::<&str>()
+                .map(|m| m.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            tracing::error!(panic = %message, "memory worker: the {what} panicked; carrying on");
+        } else {
+            tracing::error!(error = %e, "memory worker: the {what} was cancelled");
+        }
     }
 }
 
@@ -49,14 +74,42 @@ pub async fn learn(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
     if jobs.is_empty() {
         return;
     }
+    tracing::info!(count = jobs.len(), "memory worker: picked up queued exchanges");
     for job in &jobs {
+        tracing::info!(
+            job_id = %job.id,
+            user_id = %job.user_id,
+            attempt = job.attempts,
+            of = memory::LEARNING_ATTEMPTS,
+            "memory worker: processing an exchange"
+        );
         let provider = build_llm_provider_for_user(pool, job.user_id, settings_key, http_client.clone()).await;
         let embedding_provider = build_embedding_provider_from_settings_or_env(pool, settings_key, http_client.clone(), Some(job.user_id)).await;
         let started = chrono::Utc::now();
+        let last_try = job.attempts >= memory::LEARNING_ATTEMPTS;
         match tokio::time::timeout(LEARNING_TIME_LIMIT, memory::run_learning_job(pool, provider.as_ref(), embedding_provider.as_ref(), job)).await {
-            Ok(Ok(())) => announce_saved(pool, job, started).await,
-            Ok(Err(e)) => tracing::warn!(error = %e, job_id = %job.id, "memory worker: learning from an exchange failed"),
-            Err(_) => tracing::warn!(job_id = %job.id, "memory worker: learning from an exchange timed out"),
+            Ok(Ok(learned)) => {
+                tracing::info!(job_id = %job.id, user_id = %job.user_id, ?learned, "memory worker: exchange done");
+                if matches!(learned, memory::Learned::Added { .. } | memory::Learned::Updated { .. }) {
+                    announce_saved(pool, job, started).await;
+                }
+            }
+            Ok(Err(e)) => tracing::warn!(
+                error = %e,
+                job_id = %job.id,
+                user_id = %job.user_id,
+                attempt = job.attempts,
+                last_try,
+                "memory worker: learning from an exchange failed"
+            ),
+            Err(_) => tracing::warn!(
+                job_id = %job.id,
+                user_id = %job.user_id,
+                attempt = job.attempts,
+                last_try,
+                limit_secs = LEARNING_TIME_LIMIT.as_secs(),
+                "memory worker: learning from an exchange timed out"
+            ),
         }
     }
     match memory::drop_failed_learning_jobs(pool).await {

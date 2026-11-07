@@ -223,9 +223,13 @@ pub async fn extract_and_store_memory_in(
     assistant_text: &str,
 ) {
     let Some((source_message_id, user_text)) = what_the_person_said(conn, session_id, user_text).await else {
+        tracing::info!(%user_id, ?session_id, "memory: nothing the person said to learn from");
         return;
     };
-    learn(conn, provider, embedding_provider, user_id, source_message_id, &user_text, assistant_text).await
+    match learn(conn, provider, embedding_provider, user_id, source_message_id, &user_text, assistant_text).await {
+        Ok(learned) => tracing::info!(%user_id, ?learned, "memory: learned from the exchange"),
+        Err(e) => tracing::warn!(error = %e, %user_id, "memory: learning from the exchange failed"),
+    }
 }
 
 /// The person's own latest message in the chat, and its id. The caller's `user_text` is the
@@ -266,17 +270,20 @@ pub async fn queue_learning(
     answer: &str,
 ) {
     let Some((source_message_id, person_text)) = what_the_person_said(conn, Some(session_id), fallback_user_text).await else {
+        tracing::info!(%user_id, %session_id, "memory: nothing the person said to learn from, not queued");
         return;
     };
-    let queued = sqlx::query("INSERT INTO memory_jobs (user_id, source_message_id, person_text, answer) VALUES ($1, $2, $3, $4)")
-        .bind(user_id)
-        .bind(source_message_id)
-        .bind(&person_text)
-        .bind(answer)
-        .execute(&mut **conn)
-        .await;
-    if let Err(e) = queued {
-        tracing::warn!(error = %e, "memory: failed to queue the exchange to learn from");
+    let queued: Result<Uuid, sqlx::Error> =
+        sqlx::query_scalar("INSERT INTO memory_jobs (user_id, source_message_id, person_text, answer) VALUES ($1, $2, $3, $4) RETURNING id")
+            .bind(user_id)
+            .bind(source_message_id)
+            .bind(&person_text)
+            .bind(answer)
+            .fetch_one(&mut **conn)
+            .await;
+    match queued {
+        Ok(job_id) => tracing::info!(%job_id, %user_id, %session_id, ?source_message_id, "memory: queued the exchange to learn from"),
+        Err(e) => tracing::error!(error = %e, %user_id, %session_id, "memory: failed to queue the exchange to learn from"),
     }
 }
 
@@ -288,6 +295,8 @@ pub struct LearningJob {
     pub source_message_id: Option<Uuid>,
     pub person_text: String,
     pub answer: String,
+    /// Tries so far, this one included.
+    pub attempts: i32,
 }
 
 /// How often a job is tried before it's dropped (a model that keeps failing or timing out).
@@ -298,7 +307,7 @@ pub async fn take_learning_jobs(pool: &sqlx::PgPool, limit: i64) -> Result<Vec<L
     sqlx::query_as(
         "UPDATE memory_jobs SET attempts = attempts + 1 \
          WHERE id IN (SELECT id FROM memory_jobs WHERE attempts < $2 ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED) \
-         RETURNING id, user_id, source_message_id, person_text, answer",
+         RETURNING id, user_id, source_message_id, person_text, answer, attempts",
     )
     .bind(limit)
     .bind(LEARNING_ATTEMPTS)
@@ -306,17 +315,18 @@ pub async fn take_learning_jobs(pool: &sqlx::PgPool, limit: i64) -> Result<Vec<L
     .await
 }
 
-/// Learns from one queued exchange, then removes it from the queue.
+/// Learns from one queued exchange, then removes it from the queue. On failure the job stays
+/// queued, so the worker tries it again (up to [`LEARNING_ATTEMPTS`]).
 pub async fn run_learning_job(
     pool: &sqlx::PgPool,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     job: &LearningJob,
-) -> Result<(), sqlx::Error> {
+) -> Result<Learned, LearnError> {
     let mut conn = pool.acquire().await?;
-    learn(&mut conn, provider, embedding_provider, job.user_id, job.source_message_id, &job.person_text, &job.answer).await;
+    let learned = learn(&mut conn, provider, embedding_provider, job.user_id, job.source_message_id, &job.person_text, &job.answer).await?;
     sqlx::query("DELETE FROM memory_jobs WHERE id = $1").bind(job.id).execute(&mut *conn).await?;
-    Ok(())
+    Ok(learned)
 }
 
 /// Clears jobs that ran out of attempts.
@@ -324,8 +334,59 @@ pub async fn drop_failed_learning_jobs(pool: &sqlx::PgPool) -> Result<u64, sqlx:
     Ok(sqlx::query("DELETE FROM memory_jobs WHERE attempts >= $1").bind(LEARNING_ATTEMPTS).execute(pool).await?.rows_affected())
 }
 
+/// What learning from one exchange did.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Learned {
+    /// The extractor found nothing lasting to remember.
+    Nothing,
+    /// A new memory was saved.
+    Added { kind: String, text: String },
+    /// A known memory was rewritten (the old one is retired).
+    Updated { text: String },
+    /// The same fact was already there and got stronger.
+    Strengthened,
+    /// A known memory is no longer true and was retired.
+    Retired,
+    /// The extractor pointed at a known memory that wasn't listed.
+    UnknownTarget { target: usize },
+}
+
+/// Why learning from an exchange failed. The job stays queued and is tried again.
+#[derive(Debug, thiserror::Error)]
+pub enum LearnError {
+    #[error("the extraction model call failed: {0}")]
+    Model(String),
+    #[error("the extraction model gave no answer (stop reason {0})")]
+    NoAnswer(String),
+    #[error("the embedding call failed ({provider}/{model}): {error}")]
+    Embedding { provider: String, model: String, error: String },
+    #[error("the embedding model {model} returns {got} dimensions, memories need {expected}; pick a model that outputs {expected}")]
+    Dimensions { model: String, got: usize, expected: usize },
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+fn embedding_failed(embedding_provider: &dyn EmbeddingProvider, error: impl std::fmt::Display) -> LearnError {
+    LearnError::Embedding {
+        provider: embedding_provider.provider_name().to_string(),
+        model: embedding_provider.model_id().to_string(),
+        error: error.to_string(),
+    }
+}
+
+/// Embeds `text`, checking the vector fits `memory_items.embedding`.
+async fn embed_checked(embedding_provider: &dyn EmbeddingProvider, text: &str, for_query: bool) -> Result<Vec<f32>, LearnError> {
+    let embedded = if for_query { embedding_provider.embed_for_query(text).await } else { embedding_provider.embed(text).await };
+    let embedding = embedded.map_err(|e| embedding_failed(embedding_provider, e))?;
+    if embedding.len() != STORED_DIMENSIONS {
+        return Err(LearnError::Dimensions { model: embedding_provider.model_id().to_string(), got: embedding.len(), expected: STORED_DIMENSIONS });
+    }
+    Ok(embedding)
+}
+
 /// Decides whether the exchange taught Nomi something lasting about the person, and adds,
-/// updates or retires one memory accordingly.
+/// updates or retires one memory accordingly. Every step is logged, so an empty Memory page can
+/// be traced to the step that stopped it.
 async fn learn(
     conn: &mut PoolConnection<Postgres>,
     provider: &dyn LlmProvider,
@@ -334,26 +395,33 @@ async fn learn(
     source_message_id: Option<Uuid>,
     user_text: &str,
     assistant_text: &str,
-) {
+) -> Result<Learned, LearnError> {
+    tracing::info!(
+        %user_id,
+        ?source_message_id,
+        embedding_provider = embedding_provider.provider_name(),
+        embedding_model = embedding_provider.model_id(),
+        person_chars = user_text.chars().count(),
+        "memory: learning from an exchange",
+    );
+
     // What's already known near this topic, so the extractor can update instead of duplicate.
-    let known: Vec<(Uuid, String, String)> = match embedding_provider.embed_for_query(user_text).await {
-        Ok(query) if query.len() == STORED_DIMENSIONS => sqlx::query_as(
-            "SELECT id, kind, content FROM memory_items \
-             WHERE user_id = $1 AND embedding_provider = $2 AND embedding_model = $3 AND archived_at IS NULL \
-               AND (1 - (embedding <=> $4::vector)) >= $6 \
-             ORDER BY embedding <=> $4::vector LIMIT $5",
-        )
-        .bind(user_id)
-        .bind(embedding_provider.provider_name())
-        .bind(embedding_provider.model_id())
-        .bind(to_vector_literal(&query))
-        .bind(KNOWN_FOR_EXTRACTION)
-        .bind(min_similarity())
-        .fetch_all(&mut **conn)
-        .await
-        .unwrap_or_default(),
-        _ => Vec::new(),
-    };
+    let query = embed_checked(embedding_provider, user_text, true).await?;
+    let known: Vec<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT id, kind, content FROM memory_items \
+         WHERE user_id = $1 AND embedding_provider = $2 AND embedding_model = $3 AND archived_at IS NULL \
+           AND (1 - (embedding <=> $4::vector)) >= $6 \
+         ORDER BY embedding <=> $4::vector LIMIT $5",
+    )
+    .bind(user_id)
+    .bind(embedding_provider.provider_name())
+    .bind(embedding_provider.model_id())
+    .bind(to_vector_literal(&query))
+    .bind(KNOWN_FOR_EXTRACTION)
+    .bind(min_similarity())
+    .fetch_all(&mut **conn)
+    .await?;
+    tracing::debug!(%user_id, known = known.len(), "memory: related memories found");
 
     let mut prompt = String::new();
     if known.is_empty() {
@@ -376,33 +444,28 @@ async fn learn(
         reasoning_effort: Default::default(),
     };
 
-    // Memory is best-effort and never fails the turn, but every way it can fail is logged:
-    // these used to be swallowed silently, which left the memory page empty with no clue why.
-    let response = match nomi_llm::complete(provider, request).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(error = %e, "memory: fact extraction call failed");
-            return;
-        }
-    };
-    let answer = response.content.into_iter().find_map(|block| match block {
-        ContentBlock::Text { text } => Some(text),
-        _ => None,
-    });
-    if answer.as_deref().is_none_or(|a| a.trim().is_empty()) {
-        tracing::warn!(stop_reason = ?response.stop_reason, "memory: the extractor gave no answer");
-    }
-    let change = answer.as_deref().map(parse_memory_change).unwrap_or(MemoryChange::None);
+    let response = nomi_llm::complete(provider, request).await.map_err(|e| LearnError::Model(e.to_string()))?;
+    let stop_reason = format!("{:?}", response.stop_reason);
+    let answer = response
+        .content
+        .into_iter()
+        .find_map(|block| match block {
+            ContentBlock::Text { text } => Some(text),
+            _ => None,
+        })
+        .filter(|a| !a.trim().is_empty())
+        .ok_or(LearnError::NoAnswer(stop_reason))?;
+    let change = parse_memory_change(&answer);
+    tracing::info!(%user_id, ?change, answer = %answer.trim(), "memory: the extractor decided");
 
-    let result = match change {
-        MemoryChange::None => Ok(()),
+    match change {
+        MemoryChange::None => Ok(Learned::Nothing),
         MemoryChange::Delete { target } => match known.get(target - 1) {
-            Some((id, _, _)) => sqlx::query("UPDATE memory_items SET archived_at = now(), updated_at = now() WHERE id = $1")
-                .bind(id)
-                .execute(&mut **conn)
-                .await
-                .map(|_| ()),
-            None => Ok(()),
+            Some((id, _, _)) => {
+                sqlx::query("UPDATE memory_items SET archived_at = now(), updated_at = now() WHERE id = $1").bind(id).execute(&mut **conn).await?;
+                Ok(Learned::Retired)
+            }
+            None => Ok(Learned::UnknownTarget { target }),
         },
         MemoryChange::Add { kind, text } => store_new(conn, embedding_provider, user_id, &kind, &text, source_message_id, None).await,
         MemoryChange::Update { target, kind, text } => match known.get(target - 1) {
@@ -412,9 +475,6 @@ async fn learn(
             }
             None => store_new(conn, embedding_provider, user_id, &kind.unwrap_or_else(|| "fact".to_string()), &text, source_message_id, None).await,
         },
-    };
-    if let Err(e) = result {
-        tracing::warn!(error = %e, "memory: storing the extracted fact failed");
     }
 }
 
@@ -428,23 +488,8 @@ async fn store_new(
     text: &str,
     source_message_id: Option<Uuid>,
     replaces: Option<Uuid>,
-) -> Result<(), sqlx::Error> {
-    let embedding = match embedding_provider.embed(text).await {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::warn!(error = %e, provider = embedding_provider.provider_name(), "memory: embedding the extracted fact failed");
-            return Ok(());
-        }
-    };
-    if embedding.len() != STORED_DIMENSIONS {
-        tracing::warn!(
-            got = embedding.len(),
-            expected = STORED_DIMENSIONS,
-            model = embedding_provider.model_id(),
-            "memory: the embedding model returns vectors of the wrong size, so memories can't be stored; pick a model that outputs 1536 dimensions",
-        );
-        return Ok(());
-    }
+) -> Result<Learned, LearnError> {
+    let embedding = embed_checked(embedding_provider, text, false).await?;
     let literal = to_vector_literal(&embedding);
 
     let duplicate: Option<Uuid> = sqlx::query_scalar(
@@ -469,7 +514,7 @@ async fn store_new(
             .bind(MAX_WEIGHT)
             .execute(&mut **conn)
             .await?;
-        return Ok(());
+        return Ok(Learned::Strengthened);
     }
 
     let mut tx = sqlx::Acquire::begin(&mut **conn).await?;
@@ -494,7 +539,12 @@ async fn store_new(
             .execute(&mut *tx)
             .await?;
     }
-    tx.commit().await
+    tx.commit().await?;
+    tracing::info!(%user_id, memory_id = %new_id, kind, "memory: saved");
+    Ok(match replaces {
+        Some(_) => Learned::Updated { text: text.to_string() },
+        None => Learned::Added { kind: kind.to_string(), text: text.to_string() },
+    })
 }
 
 #[cfg(test)]
