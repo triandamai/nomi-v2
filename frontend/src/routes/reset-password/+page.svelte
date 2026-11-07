@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
+	import { FormPending } from '$lib/formPending.svelte';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
@@ -10,7 +11,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let toastOpen = $state(false);
-	let submitting = $state(false);
+	const sending = new FormPending({ reset: false });
 	const expired = $derived(data.expired || Boolean(form && 'expired' in form && form.expired));
 	const errorFor = (field: string) => (form?.field === field ? form.error : undefined);
 	const formError = $derived(form?.error && !form.field ? form.error : undefined);
@@ -33,13 +34,7 @@
 		<form
 			method="POST"
 			class="flex flex-col gap-5"
-			use:enhance={() => {
-				submitting = true;
-				return async ({ update }) => {
-					await update({ reset: false });
-					submitting = false;
-				};
-			}}
+			use:enhance={sending.submit}
 		>
 			<input type="hidden" name="token" value={data.token} />
 			{#if formError}
@@ -65,7 +60,7 @@
 				supportingText={errorFor('confirm')}
 				required
 			/>
-			<Button type="submit" variant="gradient" size="m" class="mt-2 w-full" disabled={submitting}>{m.reset_submit()}</Button>
+			<Button type="submit" variant="gradient" size="m" class="mt-2 w-full" loading={sending.on}>{m.reset_submit()}</Button>
 		</form>
 	{/if}
 </AuthShell>
