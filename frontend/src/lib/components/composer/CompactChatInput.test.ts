@@ -32,6 +32,7 @@ interface Props {
 	transcribed?: string | null;
 	disabled?: boolean;
 	busy?: boolean;
+	stopForm?: string;
 	withModel?: boolean;
 }
 
@@ -294,6 +295,26 @@ describe('CompactChatInput', () => {
 		expect(send(root).disabled).toBe(true);
 		key(root, { key: 'Enter' });
 		expect(onsubmit).not.toHaveBeenCalled();
+	});
+
+	it('sends only the message when Send turns into Stop during the tap', () => {
+		const stopForm = document.createElement('form');
+		stopForm.id = 'stop-crew';
+		document.body.append(stopForm);
+		const stopped = vi.fn((event: Event) => event.preventDefault());
+		stopForm.addEventListener('submit', stopped);
+		const root = render({
+			value: 'Publish it',
+			stopForm: 'stop-crew',
+			// Sending makes the page busy, and in a browser the button re-renders as Stop before
+			// the click's default action runs.
+			onsubmit: () => {
+				send(root).type = 'submit';
+				send(root).setAttribute('form', 'stop-crew');
+			},
+		});
+		send(root).click();
+		expect(stopped).not.toHaveBeenCalled();
 	});
 
 	it('does not send on Enter while the crew is busy', () => {
