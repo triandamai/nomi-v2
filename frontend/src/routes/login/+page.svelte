@@ -2,6 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
+	import { FormPending } from '$lib/formPending.svelte';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
@@ -16,6 +17,7 @@
 	const invitedEmail = $derived(page.url.searchParams.get('email') ?? '');
 
 	// A failed sign-in is said twice: a toast, and under the field it concerns.
+	const sending = new FormPending();
 	let toastOpen = $state(false);
 	let toast = $state('');
 	$effect(() => {
@@ -52,7 +54,7 @@
 	{#if forInvite}
 		<p class="invite-note" role="note">{m.login_for_invite()}</p>
 	{/if}
-	<form method="POST" use:enhance class="flex flex-col gap-5">
+	<form method="POST" use:enhance={sending.submit} class="flex flex-col gap-5">
 		{#if formError}
 			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{formError}</p>
 		{/if}
@@ -80,7 +82,7 @@
 			/>
 			<a href={'/forgot-password' + page.url.search} class="forgot">{m.login_forgot()}</a>
 		</div>
-		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.login_submit()}</Button>
+		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full" loading={sending.on}>{m.login_submit()}</Button>
 	</form>
 </AuthShell>
 <Snackbar bind:open={toastOpen} message={toast} />
