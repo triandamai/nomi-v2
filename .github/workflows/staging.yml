@@ -3,11 +3,10 @@ name: Staging
 # Staging Deploy: only staging version tags trigger a build+push+deploy.
 # Push a tag like v1.2.3-staging to publish staging images and trigger rollouts on the staging environment.
 # All Shipyard secrets are prefixed with STAGING_*.
+# Release (release.yml) takes every other v*.*.* tag, so each tag starts exactly one of the two.
 on:
   push:
     tags:
-      - 'v*.*.*-staging'
-      - 'v*.*.*-staging.*'
       - 'v*.*.*-staging*'
 
 jobs:
