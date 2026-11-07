@@ -5,6 +5,7 @@
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import GoogleButton from '$lib/components/GoogleButton.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -13,6 +14,25 @@
 	// Came from a team invite: say so, and (from the invite email) fill in the invited address.
 	const forInvite = $derived((page.url.searchParams.get('redirect_to') ?? '').startsWith('/invite/'));
 	const invitedEmail = $derived(page.url.searchParams.get('email') ?? '');
+
+	// A failed sign-in is said twice: a toast, and under the field it concerns.
+	let toastOpen = $state(false);
+	let toast = $state('');
+	$effect(() => {
+		if (form?.error) {
+			toast = form.error;
+			toastOpen = true;
+		}
+	});
+	$effect(() => {
+		if (data.passwordChanged) {
+			toast = m.reset_done();
+			toastOpen = true;
+		}
+	});
+	const emailError = $derived(form?.field === 'email' ? form.error : undefined);
+	const passwordError = $derived(form?.field === 'password' ? form.error : undefined);
+	const formError = $derived(form?.error && !form.field ? form.error : undefined);
 </script>
 
 <AuthShell
@@ -33,16 +53,49 @@
 		<p class="invite-note" role="note">{m.login_for_invite()}</p>
 	{/if}
 	<form method="POST" use:enhance class="flex flex-col gap-5">
-		{#if form?.error}
-			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
+		{#if formError}
+			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{formError}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" value={invitedEmail} required />
-		<TextField id="password" name="password" type="password" label={m.auth_password()} autocomplete="current-password" required />
+		<TextField
+			id="email"
+			name="email"
+			type="email"
+			label={m.auth_email()}
+			autocomplete="email"
+			value={invitedEmail}
+			error={Boolean(emailError) || Boolean(passwordError)}
+			supportingText={emailError}
+			required
+		/>
+		<div class="flex flex-col gap-2">
+			<TextField
+				id="password"
+				name="password"
+				type="password"
+				label={m.auth_password()}
+				autocomplete="current-password"
+				error={Boolean(passwordError)}
+				supportingText={passwordError}
+				required
+			/>
+			<a href={'/forgot-password' + page.url.search} class="forgot">{m.login_forgot()}</a>
+		</div>
 		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.login_submit()}</Button>
 	</form>
 </AuthShell>
+<Snackbar bind:open={toastOpen} message={toast} />
 
 <style>
+	.forgot {
+		align-self: flex-end;
+		padding: 4px 0;
+		color: var(--md-sys-color-primary);
+		font-size: 0.875rem;
+		text-decoration: none;
+	}
+	.forgot:hover {
+		text-decoration: underline;
+	}
 	.invite-note {
 		margin: 0 0 14px;
 		padding: 10px 12px;

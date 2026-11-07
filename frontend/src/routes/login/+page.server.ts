@@ -10,7 +10,8 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 	const error = url.searchParams.get('google_error');
 	const googleError =
 		error === 'cancelled' ? m.err_google_cancelled() : error === 'unavailable' ? m.err_google_unavailable() : error;
-	return { google, googleError };
+	// Back from choosing a new password: say so (the page shows it as a toast).
+	return { google, googleError, passwordChanged: url.searchParams.get('reset') === '1' };
 };
 
 export const actions: Actions = {
@@ -20,7 +21,7 @@ export const actions: Actions = {
 		const password = data.get('password');
 
 		if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-			return fail(400, { error: m.err_email_password_required() });
+			return fail(400, { error: m.err_email_password_required(), field: typeof email === 'string' && email ? 'password' : 'email' });
 		}
 
 		const response = await fetch(apiUrl('/api/auth/login'), {
@@ -30,16 +31,16 @@ export const actions: Actions = {
 		});
 
 		if (response.status === 401) {
-			return fail(401, { error: m.err_invalid_login() });
+			return fail(401, { error: m.err_invalid_login(), field: 'password' });
 		}
 		if (response.status === 429) {
-			return fail(429, { error: m.verify_too_many_codes() });
+			return fail(429, { error: m.verify_too_many_codes(), field: null });
 		}
 		if (response.status === 502) {
-			return fail(502, { error: m.verify_email_failed() });
+			return fail(502, { error: m.verify_email_failed(), field: null });
 		}
 		if (!response.ok) {
-			return fail(response.status, { error: m.err_login_failed() });
+			return fail(response.status, { error: m.err_login_failed(), field: null });
 		}
 
 		const body = (await response.json()) as TokenPair | { verification: Verification };

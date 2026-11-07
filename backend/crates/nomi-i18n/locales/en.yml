@@ -127,6 +127,15 @@ sign_in:
   register_intro: "Welcome to Nomi! Enter this code to confirm your email:"
   register_warning: "If you didn't create a Nomi account, you can ignore this email."
   expires: "The code works for %{minutes} minutes."
+password_reset:
+  subject: "Reset your Nomi password"
+  title: "Choose a new password"
+  preheader: "This link works for %{minutes} minutes."
+  intro: "Someone asked to reset the password for your Nomi account. Use the button below to choose a new one."
+  button: "Choose a new password"
+  expires: "The link works once, for %{minutes} minutes. You'll be signed out everywhere when you change your password."
+  warning: "If you didn't ask for this, you can ignore this email. Your password stays the same."
+  reason: "You're getting this because a password reset was requested for this email."
 email:
   crew_label: "Nomi crew"
   tagline: "Nomi · a small crew of agents that remembers, builds, works for you."

@@ -1,11 +1,14 @@
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
+	import { Eye, EyeOff } from '@lucide/svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	let {
 		label,
 		value = $bindable(''),
 		error = false,
 		supportingText,
+		type = 'text',
 		class: extraClass = '',
 		...rest
 	}: {
@@ -15,11 +18,36 @@
 		supportingText?: string;
 		class?: string;
 	} & HTMLInputAttributes = $props();
+
+	// A secret (type="password") gets an eye to show it while checking what was typed.
+	const secret = $derived(type === 'password');
+	let revealed = $state(false);
 </script>
 
 <label class="m3-field {extraClass}">
 	<span class="m3-field__label">{label}</span>
-	<input class="m3-field__input" class:m3-field__input--error={error} bind:value {...rest} />
+	<span class="m3-field__control">
+		<input
+			class="m3-field__input"
+			class:m3-field__input--error={error}
+			class:m3-field__input--secret={secret}
+			type={secret && revealed ? 'text' : type}
+			aria-invalid={error ? 'true' : undefined}
+			bind:value
+			{...rest}
+		/>
+		{#if secret}
+			<button
+				type="button"
+				class="m3-field__eye"
+				aria-label={revealed ? m.field_hide_secret() : m.field_show_secret()}
+				aria-pressed={revealed}
+				onclick={() => (revealed = !revealed)}
+			>
+				{#if revealed}<EyeOff size={20} aria-hidden="true" />{:else}<Eye size={20} aria-hidden="true" />{/if}
+			</button>
+		{/if}
+	</span>
 	{#if supportingText}
 		<span class="m3-field__supporting" class:m3-field__supporting--error={error}>{supportingText}</span>
 	{/if}
@@ -38,6 +66,42 @@
 		font-size: var(--md-sys-typescale-body-small-size);
 		letter-spacing: var(--md-sys-typescale-body-small-tracking);
 		color: var(--md-sys-color-on-surface-variant);
+	}
+
+	.m3-field__control {
+		position: relative;
+		display: block;
+	}
+
+	.m3-field__input--secret {
+		padding-right: 48px;
+	}
+	.m3-field__input--secret:focus {
+		padding-right: 47px;
+	}
+
+	.m3-field__eye {
+		position: absolute;
+		top: 0;
+		right: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 48px;
+		height: 48px;
+		padding: 0;
+		border: 0;
+		border-radius: var(--md-sys-shape-corner-large);
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		cursor: pointer;
+	}
+	.m3-field__eye:hover {
+		color: var(--md-sys-color-on-surface);
+	}
+	.m3-field__eye:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: -4px;
 	}
 
 	.m3-field__input {

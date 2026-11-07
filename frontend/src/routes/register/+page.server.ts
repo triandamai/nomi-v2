@@ -21,6 +21,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const email = data.get('email');
 		const password = data.get('password');
+		const confirm = data.get('confirmPassword');
 		const orgName = data.get('orgName');
 
 		if (
@@ -31,7 +32,10 @@ export const actions: Actions = {
 			!password ||
 			!orgName
 		) {
-			return fail(400, { error: m.err_register_required() });
+			return fail(400, { error: m.err_register_required(), field: !email ? 'email' : !password ? 'password' : 'orgName' });
+		}
+		if (password !== confirm) {
+			return fail(400, { error: m.err_password_mismatch(), field: 'confirm' });
 		}
 
 		const response = await fetch(apiUrl('/api/auth/register'), {
@@ -41,14 +45,14 @@ export const actions: Actions = {
 		});
 
 		if (response.status === 409) {
-			return fail(409, { error: m.err_email_taken() });
+			return fail(409, { error: m.err_email_taken(), field: 'email' });
 		}
 		if (response.status === 502) {
 			// The account exists; signing in sends a new code.
-			return fail(502, { error: m.verify_register_email_failed() });
+			return fail(502, { error: m.verify_register_email_failed(), field: null });
 		}
 		if (!response.ok) {
-			return fail(response.status, { error: m.err_register_failed() });
+			return fail(response.status, { error: m.err_register_failed(), field: null });
 		}
 
 		const body = (await response.json()) as TokenPair | { verification: Verification };

@@ -5,6 +5,7 @@
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
+	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import GoogleButton from '$lib/components/GoogleButton.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -13,6 +14,14 @@
 	// Came from a team invite: say so, and (from the invite email) fill in the invited address.
 	const forInvite = $derived((page.url.searchParams.get('redirect_to') ?? '').startsWith('/invite/'));
 	const invitedEmail = $derived(page.url.searchParams.get('email') ?? '');
+
+	// A failed sign-up is said twice: a toast, and under the field it concerns.
+	let toastOpen = $state(false);
+	$effect(() => {
+		if (form?.error) toastOpen = true;
+	});
+	const errorFor = (field: string) => (form?.field === field ? form.error : undefined);
+	const formError = $derived(form?.error && !form.field ? form.error : undefined);
 </script>
 
 <AuthShell
@@ -33,15 +42,53 @@
 		<p class="invite-note" role="note">{m.register_for_invite()}</p>
 	{/if}
 	<form method="POST" use:enhance class="flex flex-col gap-5">
-		{#if form?.error}
-			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{form.error}</p>
+		{#if formError}
+			<p class="md-body-medium" role="alert" style="color: var(--md-sys-color-error)">{formError}</p>
 		{/if}
-		<TextField id="email" name="email" type="email" label={m.auth_email()} autocomplete="email" value={invitedEmail} required />
-		<TextField id="password" name="password" type="password" label={m.auth_password()} autocomplete="new-password" required />
-		<TextField id="orgName" name="orgName" type="text" label={m.register_org()} required />
+		<TextField
+			id="email"
+			name="email"
+			type="email"
+			label={m.auth_email()}
+			autocomplete="email"
+			value={invitedEmail}
+			error={Boolean(errorFor('email'))}
+			supportingText={errorFor('email')}
+			required
+		/>
+		<TextField
+			id="password"
+			name="password"
+			type="password"
+			label={m.auth_password()}
+			autocomplete="new-password"
+			error={Boolean(errorFor('password'))}
+			supportingText={errorFor('password')}
+			required
+		/>
+		<TextField
+			id="confirmPassword"
+			name="confirmPassword"
+			type="password"
+			label={m.auth_confirm_password()}
+			autocomplete="new-password"
+			error={Boolean(errorFor('confirm'))}
+			supportingText={errorFor('confirm')}
+			required
+		/>
+		<TextField
+			id="orgName"
+			name="orgName"
+			type="text"
+			label={m.register_org()}
+			error={Boolean(errorFor('orgName'))}
+			supportingText={errorFor('orgName')}
+			required
+		/>
 		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full">{m.register_submit()}</Button>
 	</form>
 </AuthShell>
+<Snackbar bind:open={toastOpen} message={form?.error ?? ''} />
 
 <style>
 	.invite-note {
