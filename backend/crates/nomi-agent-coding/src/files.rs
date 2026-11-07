@@ -11,8 +11,10 @@ use nomi_agent_core::{ContentBlock, FileWriteEntry, ToolOutcome};
 use nomi_llm::ToolDefinition;
 use nomi_storage::ProjectStore;
 
-/// Largest file Koda or the editor may save (source files, not assets).
+/// Largest text file Koda or the editor may save (source files).
 pub const MAX_FILE_BYTES: usize = 512 * 1024;
+/// Largest binary file (an image, font, audio or video the person added) a project may hold.
+pub const MAX_BINARY_FILE_BYTES: usize = 10 * 1024 * 1024;
 /// Most files one project may hold.
 pub const MAX_FILES: i64 = 600;
 /// Most files one write_files call may write.
@@ -52,8 +54,59 @@ pub fn guess_content_type(path: &str) -> &'static str {
         "json" => "application/json",
         "svg" => "image/svg+xml",
         "md" => "text/markdown",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "ico" => "image/x-icon",
+        "bmp" => "image/bmp",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "wasm" => "application/wasm",
         _ => "text/plain",
     }
+}
+
+/// A file's bytes as text, or None when it's binary (not UTF-8, or holding NUL bytes).
+pub fn as_text(bytes: Vec<u8>) -> Option<String> {
+    String::from_utf8(bytes).ok().filter(|text| !text.contains('\0'))
+}
+
+/// What a project file holds: text Koda can read and edit, or the bytes of a binary file.
+pub enum FileBody {
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+/// Reads one project file. `Ok(None)` when there's no such file.
+pub async fn read_body(storage: &ProjectStore, project_id: Uuid, path: &str) -> Result<Option<FileBody>, String> {
+    let Some(bytes) = storage.get_bytes(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    Ok(Some(match String::from_utf8(bytes) {
+        Ok(text) if !text.contains('\0') => FileBody::Text(text),
+        Ok(text) => FileBody::Binary(text.into_bytes()),
+        Err(e) => FileBody::Binary(e.into_bytes()),
+    }))
+}
+
+fn binary_note(path: &str, size: usize) -> String {
+    format!(
+        "{path} is a binary file ({} KB, {}), so it can't be read or edited as text. Use it by its path: \
+         reference it from the code (an <img src>, a CSS url(), an import) where the stack serves it from.",
+        size.div_ceil(1024),
+        guess_content_type(path)
+    )
 }
 
 pub(crate) fn parse_project_id(input: &Value) -> Result<Uuid, String> {
@@ -99,8 +152,8 @@ pub async fn bump_files_version(conn: &mut PgConnection, project_id: Uuid) -> Re
     Ok(())
 }
 
-/// Saves one file and its row, without bumping the version (callers do, once per change).
-/// Returns what it replaced, if anything.
+/// Saves one text file and its row, without bumping the version (callers do, once per change).
+/// Returns what it replaced, if that was text.
 pub async fn save_file(
     conn: &mut PgConnection,
     storage: &ProjectStore,
@@ -108,9 +161,28 @@ pub async fn save_file(
     path: &str,
     content: &str,
 ) -> Result<Option<String>, String> {
-    validate_path(path)?;
     if content.len() > MAX_FILE_BYTES {
         return Err(format!("{path} is {} KB; files can be at most {} KB", content.len() / 1024, MAX_FILE_BYTES / 1024));
+    }
+    save_bytes(conn, storage, project_id, path, content.as_bytes()).await
+}
+
+/// Saves one file of any kind (text or binary) and its row, without bumping the version.
+/// Returns what it replaced, if that was text.
+pub async fn save_bytes(
+    conn: &mut PgConnection,
+    storage: &ProjectStore,
+    project_id: Uuid,
+    path: &str,
+    content: &[u8],
+) -> Result<Option<String>, String> {
+    validate_path(path)?;
+    if content.len() > MAX_BINARY_FILE_BYTES {
+        return Err(format!(
+            "{path} is {} MB; files can be at most {} MB",
+            content.len().div_ceil(1024 * 1024),
+            MAX_BINARY_FILE_BYTES / (1024 * 1024)
+        ));
     }
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM project_files WHERE project_id = $1 AND path = $2)")
         .bind(project_id)
@@ -130,15 +202,19 @@ pub async fn save_file(
     }
     let key = project_file_key(project_id, path);
     let previous = if exists {
-        storage.get_object(&key).await.map_err(|e| {
-            tracing::error!(%project_id, %path, %key, error = %e, "failed to read existing file from project storage");
-            e.to_string()
-        })?
+        storage
+            .get_bytes(&key)
+            .await
+            .map_err(|e| {
+                tracing::error!(%project_id, %path, %key, error = %e, "failed to read existing file from project storage");
+                e.to_string()
+            })?
+            .and_then(as_text)
     } else {
         None
     };
     let content_type = guess_content_type(path);
-    if let Err(e) = storage.put_object(&key, content, content_type).await {
+    if let Err(e) = storage.put_bytes(&key, content.to_vec(), content_type).await {
         tracing::error!(%project_id, %path, %key, error = %e, "failed to save file to project storage");
         return Err(format!("failed to save {path} to storage: {e}"));
     }
@@ -190,17 +266,20 @@ pub fn write_file_tool_definition() -> ToolDefinition {
 pub fn add_attachment_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "add_attachment".to_string(),
-        description: "Copy a file the person attached in the chat into the project, as it is (a logo or icon as SVG, \
-             data as CSV or JSON). Use its id from its <attachment id=\"…\"> tag, and a path such as 'static/logo.svg' or \
-             'public/logo.svg' (where the stack serves files from). Text files only for now: for a PNG or JPG, say so and \
-             ask for an SVG."
-            .to_string(),
+        description: format!(
+            "Copy a file the person attached in the chat into the project, byte for byte: any kind (a logo as PNG, JPG \
+             or SVG, a photo, an icon, a font, a PDF, data as CSV or JSON), up to {} MB. Use its id from its \
+             <attachment id=\"…\"> tag, and a path where the stack serves files from, keeping the file's extension, \
+             such as 'static/logo.png' (SvelteKit) or 'public/logo.png' (Vite, React, Vue, Astro), then reference it from \
+             the code by that served path.",
+            MAX_BINARY_FILE_BYTES / (1024 * 1024)
+        ),
         input_schema: json!({
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
                 "attachment_id": {"type": "string", "description": "The attachment's id."},
-                "path": {"type": "string", "description": "Where it goes in the project, e.g. 'static/logo.svg'"}
+                "path": {"type": "string", "description": "Where it goes in the project, e.g. 'static/logo.png'"}
             },
             "required": ["project_id", "attachment_id", "path"]
         }),
@@ -336,13 +415,12 @@ pub async fn add_attachment(
     let path = str_field(&input, "path")?;
     let attachment_id: Uuid =
         str_field(&input, "attachment_id")?.trim().parse().map_err(|_| "attachment_id is not an attachment id".to_string())?;
-    let (name, content) = nomi_agent_core::attachments::attachment_text(conn, user_id, attachment_id).await?;
-    let previous_content = save_file(conn, storage, project_id, path, &content).await?;
+    let (name, bytes) = nomi_agent_core::attachments::attachment_bytes(conn, user_id, attachment_id).await?;
+    let previous_content = save_bytes(conn, storage, project_id, path, &bytes).await?;
     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
-    Ok(ToolOutcome {
-        display_text: format!("📎 Added {name} as `{path}`"),
-        block: Some(ContentBlock::FileWrite { project_id, path: path.to_string(), content, previous_content }),
-    })
+    // A text file shows as a file card with its content; a binary one only as the line saying it was added.
+    let block = as_text(bytes).map(|content| ContentBlock::FileWrite { project_id, path: path.to_string(), content, previous_content });
+    Ok(ToolOutcome { display_text: format!("📎 Added {name} as `{path}`"), block })
 }
 
 pub async fn write_files(
@@ -404,11 +482,11 @@ pub async fn edit_file(
     if old.is_empty() {
         return Err("old_string is empty; use write_file to write a whole file".to_string());
     }
-    let current = storage
-        .get_object(&project_file_key(project_id, path))
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or(format!("{path} doesn't exist; use write_file to create it"))?;
+    let current = match read_body(storage, project_id, path).await? {
+        Some(FileBody::Text(text)) => text,
+        Some(FileBody::Binary(bytes)) => return Err(binary_note(path, bytes.len())),
+        None => return Err(format!("{path} doesn't exist; use write_file to create it")),
+    };
     let count = current.matches(old).count();
     let updated = match (count, replace_all) {
         (0, _) => return Err(format!("old_string isn't in {path}. Read the file and copy the text exactly, including spaces and tabs.")),
@@ -427,15 +505,16 @@ pub async fn read_file(conn: &mut PoolConnection<Postgres>, storage: &ProjectSto
     let project_id = owned_project_id(conn, user_id, &input).await?;
     let path = str_field(&input, "path")?;
     validate_path(path)?;
-    match storage.get_object(&project_file_key(project_id, path)).await.map_err(|e| e.to_string())? {
-        Some(content) if content.len() > READ_LIMIT => {
+    match read_body(storage, project_id, path).await? {
+        Some(FileBody::Binary(bytes)) => Ok(binary_note(path, bytes.len())),
+        Some(FileBody::Text(content)) if content.len() > READ_LIMIT => {
             let mut end = READ_LIMIT;
             while !content.is_char_boundary(end) {
                 end -= 1;
             }
             Ok(format!("{}\n… (cut off: the file is {} KB)", &content[..end], content.len() / 1024))
         }
-        Some(content) => Ok(content),
+        Some(FileBody::Text(content)) => Ok(content),
         None => Ok("file not found".to_string()),
     }
 }
@@ -449,7 +528,7 @@ pub async fn delete_file(
     let project_id = owned_project_id(conn, user_id, &input).await?;
     let path = str_field(&input, "path")?;
     // What was removed, so the chat card can show it (best effort: the delete doesn't depend on it).
-    let previous_content = storage.get_object(&project_file_key(project_id, path)).await.ok().flatten();
+    let previous_content = storage.get_bytes(&project_file_key(project_id, path)).await.ok().flatten().and_then(as_text);
     remove_file(conn, storage, project_id, path).await?;
     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
     Ok(ToolOutcome {
@@ -500,7 +579,8 @@ pub async fn search_files(conn: &mut PoolConnection<Postgres>, storage: &Project
     .map_err(|e| e.to_string())?;
     let mut matches = Vec::new();
     'files: for path in paths {
-        let Some(content) = storage.get_object(&project_file_key(project_id, &path)).await.map_err(|e| e.to_string())? else {
+        // Binary files (images, fonts) have no lines to match.
+        let Some(FileBody::Text(content)) = read_body(storage, project_id, &path).await? else {
             continue;
         };
         for (n, line) in content.lines().enumerate() {

@@ -310,25 +310,16 @@ pub fn read_attachment_tool_definition() -> ToolDefinition {
     }
 }
 
-/// A text file the person attached (an SVG, CSV, JSON, Markdown…), whole, for copying into a
-/// project: its name and its text. Other kinds are refused with what to do instead. Only
-/// `user_id`'s own files are opened.
-pub async fn attachment_text(conn: &mut PoolConnection<Postgres>, user_id: Uuid, id: Uuid) -> Result<(String, String), String> {
+/// One file the person attached, of any kind (an image, a font, an SVG, a CSV…), whole, for
+/// copying into a project: its name and its bytes. Only `user_id`'s own files are opened.
+pub async fn attachment_bytes(conn: &mut PoolConnection<Postgres>, user_id: Uuid, id: Uuid) -> Result<(String, Vec<u8>), String> {
     let file = load_files(conn, user_id, &[id]).await.into_iter().next().ok_or("No attached file has that id.")?;
-    if file.kind() != Kind::Text {
-        return Err(format!(
-            "{} is a {} file. Only text files (SVG, CSV, JSON, Markdown and the like) can be added to a project for now: \
-             ask the person for an SVG version, or build without it and say so.",
-            file.name, file.kind
-        ));
-    }
     let bytes = nomi_storage::blob::attachment_store()
         .get_bytes(&file.storage_key)
         .await
         .map_err(|e| format!("couldn't open {}: {e}", file.name))?
         .ok_or_else(|| format!("{} is no longer available.", file.name))?;
-    let text = String::from_utf8(bytes).map_err(|_| format!("{} isn't readable text.", file.name))?;
-    Ok((file.name, text))
+    Ok((file.name, bytes))
 }
 
 /// `read_attachment`: one chunk of a file's text, from `offset`.

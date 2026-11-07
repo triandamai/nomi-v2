@@ -3,6 +3,7 @@
 // the server.
 
 import { unzipSync } from 'fflate';
+import { toPayload, type FilePayload } from '$lib/code/fileBytes';
 import { projectApi } from '$lib/projectApi';
 
 export interface ImportResult {
@@ -27,14 +28,13 @@ export function excluded(path: string): boolean {
 const MAX_FILE_BYTES = 1024 * 1024;
 const BATCH_BYTES = 300 * 1024;
 
-/** The text files of a zip, with the one folder they all sit in (GitHub's `repo-main/`) removed. */
-export function readZip(bytes: Uint8Array): { files: { path: string; content: string }[]; skipped: number } {
+/** The files of a zip (text as it is, binaries such as images in base64), with the one folder they all sit in (GitHub's `repo-main/`) removed. */
+export function readZip(bytes: Uint8Array): { files: FilePayload[]; skipped: number } {
 	const entries = Object.entries(unzipSync(bytes)).filter(([path]) => !path.endsWith('/'));
 	const first = entries[0]?.[0] ?? '';
 	const top = first.includes('/') ? `${first.split('/')[0]}/` : null;
 	const strip = top && entries.every(([path]) => path.startsWith(top)) ? top.length : 0;
-	const decoder = new TextDecoder('utf-8', { fatal: true });
-	const files: { path: string; content: string }[] = [];
+	const files: FilePayload[] = [];
 	let skipped = 0;
 	for (const [rawPath, data] of entries) {
 		const path = rawPath.slice(strip);
@@ -42,13 +42,7 @@ export function readZip(bytes: Uint8Array): { files: { path: string; content: st
 			skipped += 1;
 			continue;
 		}
-		try {
-			const content = decoder.decode(data);
-			if (content.includes('\0')) throw new Error('binary');
-			files.push({ path, content });
-		} catch {
-			skipped += 1;
-		}
+		files.push(toPayload(path, data));
 	}
 	return { files, skipped };
 }
@@ -56,7 +50,7 @@ export function readZip(bytes: Uint8Array): { files: { path: string; content: st
 /** Sends `files` in batches; `onProgress` gets how many were sent. */
 export async function uploadFiles(
 	projectId: string,
-	files: { path: string; content: string }[],
+	files: FilePayload[],
 	onProgress?: (sent: number) => void,
 ): Promise<ImportResult> {
 	let imported = 0;

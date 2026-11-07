@@ -1260,6 +1260,7 @@
 	"code_ln_col": "Brs {line}, Kol {column}",
 	"code_toggle_explorer": "Tampilkan atau sembunyikan file",
 	"code_unsaved": "Ada perubahan yang belum disimpan",
+	"code_binary_file": "File ini bukan teks, jadi tidak bisa diedit di sini. File tetap ada di proyek apa adanya.",
 	"code_delete_file": "Hapus",
 	"code_delete_confirm_file": "Apakah Anda yakin ingin menghapus '{name}'?",
 	"code_delete_confirm_folder": "Apakah Anda yakin ingin menghapus folder '{name}' beserta seluruh isinya?",

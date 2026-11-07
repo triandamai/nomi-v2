@@ -1,4 +1,5 @@
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync } from 'fflate';
+import { toPayload, type FilePayload } from './fileBytes';
 
 /**
  * Strips leading and trailing slashes and collapses multiple slashes.
@@ -119,28 +120,18 @@ export function shouldIgnoreZipEntry(entryName: string): boolean {
  * Extracts all files from a zip archive buffer, preserving internal directory structure,
  * and prepending targetFolder if provided.
  */
-export function extractZipArchive(
-	buffer: ArrayBuffer | Uint8Array,
-	targetFolder = ''
-): { path: string; content: string }[] {
+export function extractZipArchive(buffer: ArrayBuffer | Uint8Array, targetFolder = ''): FilePayload[] {
 	const data = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
 	const unzipped = unzipSync(data);
-	const results: { path: string; content: string }[] = [];
+	const results: FilePayload[] = [];
 
 	for (const [rawName, bytes] of Object.entries(unzipped)) {
 		if (shouldIgnoreZipEntry(rawName)) continue;
 		const cleanName = normalizePath(rawName);
 		if (!cleanName) continue;
 
-		let content: string;
-		try {
-			content = strFromU8(bytes);
-		} catch {
-			content = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-		}
-
-		const fullPath = joinPath(targetFolder, cleanName);
-		results.push({ path: fullPath, content });
+		// Text stays text; images, fonts and other binaries keep their exact bytes (as base64).
+		results.push(toPayload(joinPath(targetFolder, cleanName), bytes));
 	}
 
 	return results;

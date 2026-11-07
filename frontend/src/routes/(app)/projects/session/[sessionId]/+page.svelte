@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { payloadContents, payloadSize, type FilePayload } from '$lib/code/fileBytes';
 	import { m } from '$lib/paraglide/messages';
 	import { deserialize } from '$app/forms';
 	import { page } from '$app/state';
@@ -357,6 +358,8 @@
 
 	let activePath = $state<string | null>(null);
 	let activeContent = $state('');
+	/** The open file is an image, font or other binary file, shown instead of edited. */
+	let activeBinary = $state(false);
 	// When Koda rewrites the open file, show the new version (unless there are unsaved edits).
 	let activeVersion = $state<string | undefined>(undefined);
 	let editorDirty = $state(false);
@@ -385,17 +388,19 @@
 		const response = await fetch('?/loadFile', { method: 'POST', body });
 		const result = deserialize(await response.text());
 		activeContent = result.type === 'success' && typeof result.data?.content === 'string' ? result.data.content : '';
+		activeBinary = result.type === 'success' && result.data?.binary === true;
 		if (activePath !== path) activeVersion = undefined;
 		activePath = path;
 		contentKey += 1;
 	}
 
-	async function saveFilePath(projectId: string, path: string, content: string) {
+	async function saveFilePath(projectId: string, path: string, content: string, encoding?: 'base64') {
 		saveError = null;
 		const body = new FormData();
 		body.set('projectId', projectId);
 		body.set('path', path);
 		body.set('content', content);
+		if (encoding) body.set('encoding', encoding);
 		const response = await fetch('?/saveFile', { method: 'POST', body });
 		const result = deserialize(await response.text());
 		if (result.type !== 'success') {
@@ -403,7 +408,7 @@
 			saveError = err;
 			throw new Error(err);
 		}
-		await runtime?.writeFile(path, content);
+		await runtime?.writeFile(path, payloadContents({ content, encoding }));
 		const now = new Date().toISOString();
 		const current: { path: string; updated_at: string }[] = polledFiles
 			? [...polledFiles]
@@ -416,7 +421,7 @@
 		}
 		polledFiles = current;
 		if (runtime && !runtime.files.some((f) => f.path === path)) {
-			runtime.files = [...runtime.files, { path, size_bytes: content.length, updated_at: now }];
+			runtime.files = [...runtime.files, { path, size_bytes: payloadSize({ content, encoding }), updated_at: now }];
 		}
 	}
 
@@ -434,10 +439,10 @@
 		await openFile(projectId, path);
 	}
 
-	async function uploadFiles(projectId: string, items: { path: string; content: string }[]) {
+	async function uploadFiles(projectId: string, items: FilePayload[]) {
 		let lastPath: string | null = null;
 		for (const item of items) {
-			await saveFilePath(projectId, item.path, item.content);
+			await saveFilePath(projectId, item.path, item.content, item.encoding);
 			lastPath = item.path;
 		}
 		if (lastPath) {
@@ -1065,6 +1070,7 @@
 						files={filePaths}
 						{activePath}
 						content={activeContent}
+						binaryUrl={activeBinary && activePath ? `/projects/${project.id}/preview/${activePath}` : null}
 						{contentKey}
 						bind:dirty={editorDirty}
 						{saveError}

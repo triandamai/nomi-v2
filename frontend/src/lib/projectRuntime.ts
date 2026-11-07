@@ -3,6 +3,7 @@
 // terminal output for the log.
 
 import type { FileSystemTree } from '@webcontainer/api';
+import { payloadContents } from '$lib/code/fileBytes';
 
 export interface ManifestEntry {
 	path: string;
@@ -10,10 +11,12 @@ export interface ManifestEntry {
 	updated_at: string;
 }
 
-/** The nested tree `WebContainer.mount` takes, from flat `path → content`. */
-export function toFileTree(files: { path: string; content: string }[]): FileSystemTree {
+/** The nested tree `WebContainer.mount` takes, from flat `path → content` (binary files in base64). */
+export function toFileTree(files: { path: string; content: string; encoding?: string }[]): FileSystemTree {
 	const root: FileSystemTree = {};
-	for (const { path, content } of files) {
+	for (const file of files) {
+		const { path } = file;
+		const content = payloadContents(file);
 		const parts = path.split('/');
 		let dir = root;
 		for (const part of parts.slice(0, -1)) {

@@ -1260,6 +1260,7 @@
 	"code_ln_col": "Ln {line}, Col {column}",
 	"code_toggle_explorer": "Show or hide files",
 	"code_unsaved": "Unsaved changes",
+	"code_binary_file": "This file isn't text, so it can't be edited here. It's in the project as it is.",
 	"code_delete_file": "Delete",
 	"code_delete_confirm_file": "Are you sure you want to delete '{name}'?",
 	"code_delete_confirm_folder": "Are you sure you want to delete folder '{name}' and all its contents?",

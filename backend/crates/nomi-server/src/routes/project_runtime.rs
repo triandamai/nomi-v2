@@ -186,8 +186,22 @@ pub async fn manifest(State(state): State<AppState>, AuthClaims(claims): AuthCla
 #[derive(Serialize)]
 pub struct SnapshotFile {
     pub path: String,
+    /// The text, or for a binary file (an image, a font) its bytes in base64.
     pub content: String,
+    /// `"base64"` for a binary file; left out for text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<&'static str>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A stored file as the snapshot carries it: text as it is, anything else in base64.
+fn snapshot_content(bytes: Vec<u8>) -> (String, Option<&'static str>) {
+    use base64::Engine as _;
+    match String::from_utf8(bytes) {
+        Ok(text) if !text.contains('\0') => (text, None),
+        Ok(text) => (base64::engine::general_purpose::STANDARD.encode(text.as_bytes()), Some("base64")),
+        Err(e) => (base64::engine::general_purpose::STANDARD.encode(e.as_bytes()), Some("base64")),
+    }
 }
 
 #[derive(Serialize)]
@@ -203,8 +217,11 @@ pub async fn snapshot(State(state): State<AppState>, AuthClaims(claims): AuthCla
     let store = &state.project_storage;
     let files: Vec<Option<SnapshotFile>> = stream::iter(manifest.files)
         .map(|entry| async move {
-            let content = store.get_object(&project_file_key(project_id, &entry.path)).await.map_err(internal)?;
-            Ok::<_, ApiError>(content.map(|content| SnapshotFile { path: entry.path, content, updated_at: entry.updated_at }))
+            let bytes = store.get_bytes(&project_file_key(project_id, &entry.path)).await.map_err(internal)?;
+            Ok::<_, ApiError>(bytes.map(|bytes| {
+                let (content, encoding) = snapshot_content(bytes);
+                SnapshotFile { path: entry.path, content, encoding, updated_at: entry.updated_at }
+            }))
         })
         .buffered(LOAD_CONCURRENCY)
         .try_collect()
