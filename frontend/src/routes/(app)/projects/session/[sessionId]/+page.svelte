@@ -192,10 +192,11 @@
 
 	let previewDevice = $state<'desktop' | 'phone'>('desktop');
 	let preview: ProjectPreview | undefined = $state();
-	/** The preview's address in the pane's bar: the published app's when there is one, else the running preview's. */
+	/** The preview's address in the pane's bar: the published app's when there is one, else the
+	 * running preview as localhost:<port> (the dev server's own port, not the container's long URL). */
 	const previewAddress = $derived.by(() => {
-		const url = deploy?.overview?.url ?? runtime?.previewUrl ?? '';
-		return url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+		if (deploy?.overview?.url) return deploy.overview.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+		return runtime?.previewPort ? `localhost:${runtime.previewPort}` : '';
 	});
 
 	let presence = $state<ProjectPresence | null>(null);
@@ -1303,6 +1304,7 @@
 		flex: 1 1 auto;
 	}
 	.workspace__pane {
+		container: pane / inline-size;
 		display: flex;
 		flex: 1 1 0;
 		flex-direction: column;
@@ -1342,6 +1344,18 @@
 		order: 5;
 		flex-basis: 100%;
 		margin-bottom: 6px;
+	}
+	/* A pane too narrow for tabs, address and devices on one line (a medium window, or a wide chat)
+	 * gives the address its own row, like the phone layout. */
+	@container pane (max-width: 760px) {
+		.pane-bar {
+			flex-wrap: wrap;
+		}
+		.workspace__pane .pane-bar__address {
+			order: 5;
+			flex: 1 1 100%;
+			margin-bottom: 6px;
+		}
 	}
 	@keyframes pane-up {
 		from {

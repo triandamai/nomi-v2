@@ -61,6 +61,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export class ProjectRuntime {
 	phase = $state<RuntimePhase>('booting');
 	previewUrl = $state<string | null>(null);
+	/** The port the dev server listens on inside the container, shown as localhost:<port>. */
+	previewPort = $state<number | null>(null);
 	log = $state('');
 	/** The project's files as last copied in, so the Code view lists them as Koda writes them. */
 	files = $state<ManifestEntry[]>([]);
@@ -102,9 +104,10 @@ export class ProjectRuntime {
 				throw new Error(m.project_boot_timeout());
 			});
 			this.#wc = await Promise.race([boot(), timedOut]);
-			this.#wc.on('server-ready', (_port, url) => {
+			this.#wc.on('server-ready', (port, url) => {
 				if (this.#stopped) return;
 				this.previewUrl = url;
+				this.previewPort = port;
 				this.phase = 'running';
 			});
 			this.#wc.on('error', (e) => this.#fail(e.message));
@@ -331,6 +334,7 @@ export class ProjectRuntime {
 		this.#dev = null;
 		previous?.kill();
 		this.previewUrl = null;
+		this.previewPort = null;
 		this.phase = 'starting';
 		this.#append('\n$ npm run dev\n');
 		const proc = await this.#wc!.spawn('npm', ['run', 'dev'], { env: this.#env });
