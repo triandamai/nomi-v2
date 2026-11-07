@@ -12,6 +12,7 @@ import ai.nomi.designsystem.shape.NomiIdentity
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.layout.NomiPage
 import ai.nomi.feature.auth.SignInScreen
+import ai.nomi.app.rememberGoogleSignIn
 import ai.nomi.app.screens.projects.ChatDestination
 import ai.nomi.data.ProjectWorkspaceRepository
 import org.koin.compose.koinInject
@@ -30,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
@@ -51,6 +53,9 @@ fun NomiNavDisplay(
 ) {
     val listDetail = remember(wide) { ListDetailSceneStrategy<NomiRoute>(enabled = wide, placeholder = { NoChatSelected() }) }
     val openLink: (String) -> Unit = { link -> NomiRoute.fromLink(link)?.let(backStack::open) }
+    val density = LocalDensity.current
+    val reducedMotion = NomiTheme.reducedMotion
+    val pages = remember(density, reducedMotion) { PageTransitions(density, reducedMotion) }
     NavDisplay(
         backStack = backStack,
         modifier = modifier,
@@ -60,8 +65,11 @@ fun NomiNavDisplay(
             rememberViewModelStoreNavEntryDecorator(),
         ),
         sceneStrategies = listOf(listDetail),
+        transitionSpec = pages.forward(),
+        popTransitionSpec = pages.back(),
+        predictivePopTransitionSpec = pages.predictiveBack(),
         entryProvider = entryProvider {
-            entry<SignIn> { SignInScreen(koinViewModel()) }
+            entry<SignIn> { SignInScreen(koinViewModel(), openGoogle = rememberGoogleSignIn()) }
             entry<Home> {
                 HomeScreen(
                     viewModel = koinViewModel(),

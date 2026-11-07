@@ -116,5 +116,10 @@ class ProjectsRepository(
     suspend fun list(orgId: String? = null): Result<List<ai.nomi.network.ProjectDto>> = runCatching {
         session.run { api.list(orgId) }
     }
+
+    /** Starts an empty project; its workspace opens on the returned chat. */
+    suspend fun create(orgId: String? = null): Result<ai.nomi.network.CreatedProjectDto> = runCatching {
+        session.run { api.create(orgId) }
+    }
 }
 

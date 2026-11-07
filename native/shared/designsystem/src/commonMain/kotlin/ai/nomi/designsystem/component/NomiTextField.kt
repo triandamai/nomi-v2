@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -43,6 +44,9 @@ private const val ENABLED_ALPHA = 1f
  * A text field the way the web draws one: its label above an outlined box (large corner, surface fill), the
  * supporting text below. The outline turns primary and thicker on focus, and error-red on [isError].
  */
+/** Room at the end for a trailing icon button, which brings its own padding. */
+private val TrailingPadding = 4.dp
+
 @Composable
 fun NomiTextField(
     value: String,
@@ -59,6 +63,8 @@ fun NomiTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    /** At the field's end, inside the outline (the password field's show/hide). */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
@@ -99,13 +105,23 @@ fun NomiTextField(
                         .heightIn(min = FieldHeight)
                         .background(colors.surface, shape)
                         .border(outlineWidth, outline, shape)
-                        .padding(horizontal = FieldPadding, vertical = if (singleLine) 0.dp else FieldPaddingMultiline),
+                        .padding(
+                            start = FieldPadding,
+                            end = if (trailing != null) TrailingPadding else FieldPadding,
+                            top = if (singleLine) 0.dp else FieldPaddingMultiline,
+                            bottom = if (singleLine) 0.dp else FieldPaddingMultiline,
+                        ),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    if (value.isEmpty() && placeholder != null) {
-                        Text(placeholder, style = textStyle.copy(color = colors.onSurfaceVariant))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (value.isEmpty() && placeholder != null) {
+                                Text(placeholder, style = textStyle.copy(color = colors.onSurfaceVariant))
+                            }
+                            inner()
+                        }
+                        trailing?.invoke()
                     }
-                    inner()
                 }
             },
         )

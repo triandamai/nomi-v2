@@ -1,6 +1,7 @@
 package ai.nomi.app.android
 
 import ai.nomi.app.NomiApp
+import ai.nomi.data.GoogleSignInReturns
 import ai.nomi.companion.CompanionController
 import android.content.Intent
 import android.os.Bundle
@@ -50,6 +51,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleDeepLink(intent: Intent?) {
+        // Google's answer to a sign-in started from the sign-in screen.
+        intent?.data?.toString()?.let { if (GoogleSignInReturns.deliver(it)) return }
         val link = intent?.getStringExtra(EXTRA_DEEP_LINK)?.takeIf { it.isNotBlank() } ?: return
         companion.openLink(link)
     }

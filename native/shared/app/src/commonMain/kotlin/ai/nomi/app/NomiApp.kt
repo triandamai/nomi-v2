@@ -1,5 +1,7 @@
 package ai.nomi.app
 
+import ai.nomi.core.timeAgo
+import kotlin.time.Clock
 import ai.nomi.app.nav.Chat
 import ai.nomi.app.nav.Chats
 import ai.nomi.app.nav.Connections
@@ -302,7 +304,8 @@ private fun NomiShell(signedIn: Boolean) {
     val drawerRecentsEnabled by appearanceRepo.drawerRecents.collectAsStateWithLifecycle()
     val drawerRecentsLimit by appearanceRepo.drawerRecentsLimit.collectAsStateWithLifecycle()
     val recentChatItems = if (drawerRecentsEnabled) {
-        allSessions.take(drawerRecentsLimit).map { NomiRecentChat(it.id, it.title.ifBlank { "Untitled chat" }) }
+        val nowMs = Clock.System.now().toEpochMilliseconds()
+        allSessions.take(drawerRecentsLimit).map { NomiRecentChat(it.id, it.title.ifBlank { "Untitled chat" }, timeAgo(it.updatedAt, nowMs)) }
     } else emptyList()
     val usageBrief = usageBriefDto?.let {
         NomiUsageBrief(

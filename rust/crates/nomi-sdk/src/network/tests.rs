@@ -256,6 +256,69 @@ async fn an_email_code_challenge_stores_nothing_until_verified() {
 }
 
 #[tokio::test]
+async fn forgot_password_asks_for_a_reset_link() {
+    let harness = Harness::new(MemoryCredentials::default()).await;
+    Mock::given(method("POST"))
+        .and(path("/api/auth/forgot"))
+        .and(body_json(
+            json!({ "email": "a@nomi.test", "language": "en" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&harness.server)
+        .await;
+
+    harness
+        .sdk
+        .forgot_password("a@nomi.test".into(), "en".into())
+        .await
+        .unwrap();
+    assert_eq!(harness.store.get(), None);
+}
+
+#[tokio::test]
+async fn google_sign_in_stores_the_session_it_brings() {
+    let harness = Harness::new(MemoryCredentials::default()).await;
+    let mut body = token_pair(USER, "g");
+    body["email"] = json!("a@nomi.test");
+    body["is_new"] = json!(false);
+    body["linked"] = json!(false);
+    Mock::given(method("POST"))
+        .and(path("/api/auth/google/callback"))
+        .and(body_json(json!({ "code": "c0de", "state": "st" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(&harness.server)
+        .await;
+
+    let user = harness
+        .sdk
+        .finish_google_sign_in("c0de".into(), "st".into())
+        .await
+        .unwrap();
+    assert_eq!(user.user_id, USER);
+    assert_eq!(harness.store.get(), Some(credentials(USER, "g")));
+}
+
+#[tokio::test]
+async fn google_linking_without_a_session_is_refused() {
+    let harness = Harness::new(MemoryCredentials::default()).await;
+    Mock::given(method("POST"))
+        .and(path("/api/auth/google/callback"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "email": "a@nomi.test", "is_new": false, "linked": true, "access_token": null, "refresh_token": null
+        })))
+        .mount(&harness.server)
+        .await;
+
+    let result = harness
+        .sdk
+        .finish_google_sign_in("c0de".into(), "st".into())
+        .await;
+    assert!(matches!(result, Err(NomiError::InvalidResponse { .. })));
+    assert_eq!(harness.store.get(), None);
+}
+
+#[tokio::test]
 async fn rejected_credentials_are_unauthorized() {
     let harness = Harness::new(MemoryCredentials::default()).await;
     Mock::given(method("POST"))

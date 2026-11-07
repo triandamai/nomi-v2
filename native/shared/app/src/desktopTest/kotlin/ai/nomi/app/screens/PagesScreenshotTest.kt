@@ -5,6 +5,11 @@ import ai.nomi.app.screens.projects.OpenFile
 import ai.nomi.app.screens.projects.PROJECT_TAB_CHAT
 import ai.nomi.app.screens.projects.PROJECT_TAB_CODE
 import ai.nomi.app.screens.projects.PROJECT_TAB_PREVIEW
+import ai.nomi.app.screens.projects.PROJECT_TAB_TERMINAL
+import ai.nomi.app.screens.projects.TerminalLog
+import ai.nomi.app.screens.projects.ExportSheet
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import ai.nomi.app.screens.projects.ProjectWorkspaceContent
 import ai.nomi.data.AgentActivity
 import ai.nomi.data.ProjectDeployInfo
@@ -31,6 +36,22 @@ import org.junit.Rule
 import kotlin.test.Test
 
 private const val MINUTE = 60_000L
+
+private val SampleFile = """
+<script lang="ts">
+  // Orders for the weekend bake
+  import { onMount } from 'svelte';
+  let orders = ${'$'}state<Order[]>([]);
+  onMount(async () => {
+    orders = await fetch('/orders').then((r) => r.json());
+  });
+</script>
+
+<h1>Pre-orders</h1>
+{#each orders as order}
+  <p>{order.name} · {order.count} loaves</p>
+{/each}
+""".trimIndent()
 
 private fun msg(id: String, role: String, text: String, minutesAgo: Long, agent: String? = null, name: String? = null) =
     Message(id, "s1", role, agent, name, text, null, SNAPSHOT_NOW - minutesAgo * MINUTE, "done")
@@ -175,11 +196,26 @@ class PagesScreenshotTest {
         ChatContent("Orders file", Replies, ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)
     }
 
-    private fun workspace(tab: String, openFile: OpenFile? = null): @androidx.compose.runtime.Composable () -> Unit = {
+    private fun workspace(
+        tab: String,
+        openFile: OpenFile? = null,
+        deploy: Loadable<ProjectDeployInfo> = Published,
+    ): @androidx.compose.runtime.Composable () -> Unit = {
         ProjectWorkspaceContent(
-            project = Bakery, deploy = Published, notice = null, openFile = openFile, tab = tab,
+            project = Bakery, deploy = deploy, notice = null, openFile = openFile, tab = tab,
             onTabChange = {}, onBack = {}, onPublish = {}, onRetryDeploy = {}, onOpenTool = {}, onDismissNotice = {},
             onOpenFile = {}, onCloseFile = {},
+            terminal = TerminalLog(
+                Loadable.Ready(
+                    listOf(
+                        "$ node build/index.js",
+                        "Listening on 0.0.0.0:3000",
+                        "GET /orders 200 12ms",
+                        "warn: slow query on orders (412ms)",
+                        "error: relation \"pickups\" does not exist",
+                    ),
+                ),
+            ),
         ) {
             ChatContent("", Conversation, ChatComposerState(), {}, {}, {}, onBack = null, timeZone = utc, showAppBar = false)
         }
@@ -192,6 +228,24 @@ class PagesScreenshotTest {
     @Test fun projectPreviewPhoneLight() = rule.captureScreen("project_preview", Device.Phone, false, workspace(PROJECT_TAB_PREVIEW))
 
     @Test fun projectCodePhoneLight() = rule.captureScreen("project_code", Device.Phone, false, workspace(PROJECT_TAB_CODE))
+
+    @Test fun projectTerminalPhoneLight() = rule.captureScreen("project_terminal", Device.Phone, false, workspace(PROJECT_TAB_TERMINAL))
+
+    @Test fun projectTerminalPhoneDark() = rule.captureScreen("project_terminal", Device.Phone, true, workspace(PROJECT_TAB_TERMINAL))
+
+    @Test fun projectFilePhoneLight() = rule.captureScreen(
+        "project_file", Device.Phone, false,
+        workspace(PROJECT_TAB_CODE, OpenFile("src/routes/+page.svelte", Loadable.Ready(SampleFile))),
+    )
+
+    @Test fun projectUnpublishedPhoneLight() = rule.captureScreen(
+        "project_unpublished", Device.Phone, false,
+        workspace(PROJECT_TAB_PREVIEW, deploy = Loadable.Ready(ProjectDeployInfo(true, null, emptyList(), null, null))),
+    )
+
+    @Test fun projectExportPhoneLight() = rule.captureScreen("project_export", Device.Phone, false) {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(16.dp)) { ExportSheet(Bakery, "https://nomi.build", onClose = {}) }
+    }
 
     @Test fun chatEmptyPhoneLight() = rule.captureScreen("chat_empty", Device.Phone, false) {
         ChatContent("", ChatState(emptyList(), null, null), ChatComposerState(), {}, {}, {}, onBack = {}, timeZone = utc)

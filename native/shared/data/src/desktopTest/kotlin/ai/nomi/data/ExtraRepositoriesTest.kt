@@ -22,6 +22,14 @@ class FakeUsageApi : UsageApi {
 }
 
 class FakeProjectsApi : ProjectsApi {
+    val created = mutableListOf<String?>()
+    var nextCreate: Result<ai.nomi.network.CreatedProjectDto> = Result.success(ai.nomi.network.CreatedProjectDto("p-new", "s-new"))
+
+    override suspend fun create(orgId: String?): ai.nomi.network.CreatedProjectDto {
+        created += orgId
+        return nextCreate.getOrThrow()
+    }
+
     var projectsList = listOf(
         ProjectDto(
             id = "proj-1",

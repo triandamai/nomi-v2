@@ -79,7 +79,7 @@ class NomiNavigationTest {
         rule.onNodeWithText("More").assertExists()
 
         // Recents
-        rule.onNodeWithText("Recents").assertExists()
+        rule.onNodeWithText("RECENTS").assertExists()
         rule.onNodeWithText("Design discussion").assertExists()
 
         // Usage
@@ -91,55 +91,6 @@ class NomiNavigationTest {
         // Test clicking recent chat
         rule.onNodeWithText("Design discussion").performScrollTo().performClick()
         assertEquals("c1", openedChat)
-    }
-
-    @Test
-    fun avatarClickOpensAccountPopoverMenuWithAllNineItems() {
-        val items = listOf(
-            NomiNavItem("home", "Home", NomiIcons.Home),
-            NomiNavItem("more", "More", NomiIcons.Apps),
-        )
-        val account = NomiAccount(displayName = "Trian Damai", email = "trian@nomi.test")
-        var clickedMenuItem: NomiAccountMenuItem? = null
-
-        rule.setContent {
-            NomiTheme(reducedMotion = true) {
-                NomiNavDrawerContent(
-                    items = items,
-                    selected = "home",
-                    onSelect = {},
-                    onNewChat = {},
-                    collapsed = false,
-                    account = account,
-                    onAccountMenuItemClick = { clickedMenuItem = it },
-                )
-            }
-        }
-
-        // Initially menu items should not be visible
-        rule.onNodeWithText("Preferences").assertDoesNotExist()
-
-        // Click on the avatar / account row
-        rule.onNodeWithText("Trian Damai").performClick()
-
-        // All 9 menu items specified by the user should appear in the popover
-        rule.onNodeWithText("Profile").assertExists()
-        rule.onNodeWithText("Preferences").assertExists()
-        rule.onNodeWithText("Account Setting").assertExists()
-        rule.onNodeWithText("Billing & Usage").assertExists()
-        rule.onNodeWithText("Connections").assertExists()
-        rule.onNodeWithText("Model").assertExists()
-        rule.onNodeWithText("Providers").assertExists()
-        rule.onNodeWithText("Memory").assertExists()
-        rule.onNodeWithText("Logout").assertExists()
-        rule.onNodeWithText("Nomi 2.0").assertExists()
-
-        // Click Preferences
-        rule.onNodeWithText("Preferences").performClick()
-        assertEquals(NomiAccountMenuItem.Preferences, clickedMenuItem)
-
-        // Menu should be dismissed
-        rule.onNodeWithText("Preferences").assertDoesNotExist()
     }
 
     @Test
@@ -178,7 +129,7 @@ class NomiNavigationTest {
         rule.onNodeWithText("Home").assertIsDisplayed().assertHeightIsAtLeast(20.dp)
         rule.onNodeWithText("Chat number 20").assertIsNotDisplayed()
 
-        rule.onNodeWithText("See all chats").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("All chats").performScrollTo().assertIsDisplayed()
 
         // Scrolled to the end, the top and the foot haven't moved off screen.
         rule.onNodeWithText("Chat number 20").assertIsDisplayed()

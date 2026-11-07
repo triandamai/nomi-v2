@@ -114,6 +114,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 
@@ -380,11 +381,13 @@ fun CodeView(
     meta: String? = null,
     selection: Pair<Int, Int>? = null,
     onOpen: ((Int) -> Unit)? = null,
+    /** False on a phone, where the file list is its own page and the code takes the width. */
+    showTree: Boolean = true,
 ) {
-    var range by remember { mutableStateOf(selection) }
-    var anchor by remember { mutableStateOf(selection?.first) }
+    var range by remember(path) { mutableStateOf(selection) }
+    var anchor by remember(path) { mutableStateOf(selection?.first) }
     Row(modifier.fillMaxWidth().height(420.dp).clip(DsShapes.md).background(Ds.bg).dsOutline(Ds.borderStrong, DsShapes.md)) {
-        Column(Modifier.width(200.dp).fillMaxHeight().background(Ds.surface).verticalScroll(rememberScrollState()).padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (showTree) Column(Modifier.width(200.dp).fillMaxHeight().background(Ds.surface).verticalScroll(rememberScrollState()).padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("FILES${if (branch != null) " · $branch" else ""}", style = Ds.labelCaps, color = Ds.text3, modifier = Modifier.padding(bottom = 8.dp))
             tree.forEachIndexed { index, entry ->
                 val bg by animateColorAsState(if (entry.active) Ds.surface2 else Color.Transparent, DsMotion.fast(), label = "tree-active")
@@ -399,7 +402,7 @@ fun CodeView(
                 }
             }
         }
-        Box(Modifier.width(Hairline).fillMaxHeight().background(Ds.border))
+        if (showTree) Box(Modifier.width(Hairline).fillMaxHeight().background(Ds.border))
         Column(Modifier.weight(1f)) {
             Row(Modifier.fillMaxWidth().background(Ds.surface).padding(horizontal = 14.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 DsIcon(Lucide.FileCode, 14.dp, Ds.text2)
@@ -829,7 +832,15 @@ data class TermLine(val kind: TermLineKind, val text: String = "", val time: Str
 
 /** What Koda ran, read-only: the run, its log (following the end as it grows), copy, and asking Koda to fix a failure. */
 @Composable
-fun Terminal(run: String, lines: List<TermLine>, modifier: Modifier = Modifier, failureTitle: String? = null, failureDetail: String? = null, onFix: (() -> Unit)? = null) {
+fun Terminal(
+    run: String,
+    lines: List<TermLine>,
+    modifier: Modifier = Modifier,
+    failureTitle: String? = null,
+    failureDetail: String? = null,
+    onFix: (() -> Unit)? = null,
+    note: String = "Koda ran these · read-only",
+) {
     val copier = rememberCopier()
     val scroll = rememberScrollState()
     LaunchedEffect(lines.size) { scroll.animateScrollTo(scroll.maxValue) }
@@ -837,7 +848,7 @@ fun Terminal(run: String, lines: List<TermLine>, modifier: Modifier = Modifier, 
         Row(Modifier.fillMaxWidth().background(Ds.surface).padding(start = 14.dp, end = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             DsIcon(Lucide.Terminal, 14.dp, Ds.text)
             DsText(run, Ds.mono, Ds.text, singleLine = true)
-            Text("Koda ran these · read-only", style = Ds.label, color = Ds.text3, modifier = Modifier.weight(1f))
+            Text(note, style = Ds.label, color = Ds.text3, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Row(Modifier.heightIn(min = MinTouch).clip(DsShapes.xs).clickable(role = Role.Button) { copier.copy(lines.joinToString("\n") { it.text }) }.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 CopyGlyph(copier.copied, 14.dp, Ds.text2)
                 Text(if (copier.copied) "Copied" else "Copy log", style = Ds.caption, color = Ds.text2)

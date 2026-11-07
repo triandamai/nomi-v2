@@ -104,11 +104,11 @@ fun MessageBlocks(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(BlockGap)) {
         blocks.forEachIndexed { index, block ->
             when (block) {
-                is ContentBlock.Approval -> ApprovalCard(block, approval ?: ApprovalState(), onResolveApproval)
-                is ContentBlock.TodoList -> TodoListCard(block, agent, identity)
+                is ContentBlock.Approval -> ApprovalBlock(block, agent, approval ?: ApprovalState(), onResolveApproval)
+                is ContentBlock.TodoList -> TodoBlock(block, agent)
                 is ContentBlock.Plan -> PlanCard(block, agent, identity)
-                is ContentBlock.FileChange -> FileChangeCard(block, identity)
-                is ContentBlock.Reasoning -> ReasoningDisclosure(block.text)
+                is ContentBlock.FileChange -> FileChangeBlock(block)
+                is ContentBlock.Reasoning -> ReasoningBlock(block.text)
                 is ContentBlock.View -> ai.nomi.feature.chat.views.ChatViewBlock(block.view, agent, answered, onSend, timeZone)
                 is ContentBlock.Questions -> ai.nomi.feature.chat.views.QuestionsBlock(block.block, agent, answered, onSend)
                 is ContentBlock.Unknown -> if (index == firstUnknown) FallbackCard(fallbackText)
@@ -128,97 +128,6 @@ private val ResultIconSize = 18.dp
 private val StoppedMarkSize = 12.dp
 private val StoppedMarkCorner = 3.dp
 
-/**
- * `ApprovalCard.svelte`: ember (tertiary) while it needs the person's OK, so a pending decision is impossible to
- * scroll past; a neutral surface once decided.
- */
-@Composable
-private fun ApprovalCard(block: ContentBlock.Approval, state: ApprovalState, onResolve: (approve: Boolean, remember: Boolean) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val pending = block.status == ApprovalStatus.Pending
-    val container = if (pending) colors.tertiaryContainer else colors.surfaceContainerLowest
-    val content = if (pending) colors.onTertiaryContainer else colors.onSurface
-    var remember by rememberSaveable(block.id) { mutableStateOf(false) }
-    CompositionLocalProvider(LocalContentColor provides content) {
-        Column(
-            Modifier
-                .widthIn(max = CardMaxWidth)
-                .fillMaxWidth()
-                .background(container, NomiTheme.bubbleShapes.start)
-                .padding(horizontal = ApprovalPaddingH, vertical = ApprovalPaddingV),
-            verticalArrangement = Arrangement.spacedBy(ApprovalGap),
-        ) {
-            if (pending) Text("NEEDS YOUR OK", style = NomiTheme.metaStyle, color = content, modifier = Modifier.alpha(QUIET_ALPHA))
-            Text(block.description, style = cardTitleStyle(), color = content, modifier = Modifier.semantics { heading() })
-            Row(Modifier.alpha(QUIET_ALPHA), horizontalArrangement = Arrangement.spacedBy(SmallGap), verticalAlignment = Alignment.CenterVertically) {
-                Text("Tool:", style = MaterialTheme.typography.bodySmall, color = content)
-                Text(block.toolName, style = MaterialTheme.typography.bodySmall.copy(fontFamily = NomiTheme.metaStyle.fontFamily), color = content)
-            }
-            if (pending) {
-                state.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-                if (state.expired) {
-                    Text(
-                        "This request expired. Ask again and the agent will ask for your OK again.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = content,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                } else {
-                    val busy = state.sending || state.sent
-                    Row(
-                        Modifier
-                            .heightIn(min = TouchTarget)
-                            .toggleable(remember, enabled = !busy, role = Role.Checkbox) { remember = it },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = remember,
-                            onCheckedChange = null,
-                            enabled = !busy,
-                            colors = CheckboxDefaults.colors(checkedColor = colors.tertiary, checkmarkColor = colors.onTertiary, uncheckedColor = content),
-                        )
-                        Text("Remember this decision for next time", style = MaterialTheme.typography.bodySmall, color = content, modifier = Modifier.padding(start = SmallGap))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(BlockGap)) {
-                        NomiButton(
-                            onClick = { onResolve(true, remember) },
-                            enabled = !busy,
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.tertiary, contentColor = colors.onTertiary),
-                        ) { Text("Approve") }
-                        NomiButton(
-                            onClick = { onResolve(false, remember) },
-                            variant = NomiButtonVariant.Outlined,
-                            enabled = !busy,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = content),
-                        ) { Text("Deny") }
-                    }
-                }
-            } else {
-                ApprovalResult(block.status, content)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ApprovalResult(status: ApprovalStatus, color: Color) {
-    Row(horizontalArrangement = Arrangement.spacedBy(BlockGap), verticalAlignment = Alignment.CenterVertically) {
-        when (status) {
-            ApprovalStatus.Approved -> NomiIcon(NomiIcons.Check, contentDescription = null, tint = color, size = ResultIconSize)
-            ApprovalStatus.Denied -> NomiIcon(NomiIcons.Close, contentDescription = null, tint = color, size = ResultIconSize)
-            else -> Box(Modifier.size(ResultIconSize), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(StoppedMarkSize).background(color, RoundedCornerShape(StoppedMarkCorner)))
-            }
-        }
-        val label = when (status) {
-            ApprovalStatus.Approved -> "Approved"
-            ApprovalStatus.Denied -> "Denied"
-            else -> "Stopped before you decided"
-        }
-        Text(label, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight(EMPHASIS_WEIGHT)), color = color)
-    }
-}
-
 /** `.checklist`'s background: the agent's tone at 16% over the lowest surface. */
 private const val TINT_SHARE = 0.16f
 private val ChecklistAvatar = 26.dp
@@ -229,11 +138,6 @@ private val MarkIcon = 14.dp
 private const val PENDING_MARK_ALPHA = 0.45f
 
 private fun possessive(agent: String?) = "${agent ?: FALLBACK_AGENT}’s"
-
-@Composable
-private fun TodoListCard(block: ContentBlock.TodoList, agent: String?, identity: AgentIdentity) {
-    ChecklistCard(identity, "${possessive(agent)} to-do", block.items)
-}
 
 private const val PLAN_TITLE_SP = 15f
 
@@ -335,114 +239,6 @@ private const val NO_ROTATION = 0f
 private const val PREVIEW_MAX_LINES = 40
 private const val BADGE_MAX_CHARS = 3
 private const val NO_LINES = 0
-
-/**
- * `FileChangeBlock.svelte`: a file the agent created, changed or deleted, collapsed to its name and line counts; it
- * opens onto the file (the new text, or what was deleted).
- */
-@Composable
-private fun FileChangeCard(block: ContentBlock.FileChange, identity: AgentIdentity) {
-    val colors = MaterialTheme.colorScheme
-    val mono = NomiTheme.metaStyle.fontFamily
-    val body = block.content ?: block.previousContent
-    val stats = remember(block) {
-        if (block.action == FileAction.Deleted) diffStats(block.previousContent, null) else diffStats(block.previousContent, block.content)
-    }
-    var open by rememberSaveable(block.path) { mutableStateOf(false) }
-    val name = block.path.substringAfterLast('/')
-    val folder = block.path.substringBeforeLast('/', missingDelimiterValue = "")
-    val action = when (block.action) {
-        FileAction.Created -> "Created"
-        FileAction.Updated -> "Updated"
-        FileAction.Deleted -> "Deleted"
-    }
-    Column(
-        Modifier
-            .widthIn(max = CardMaxWidth)
-            .fillMaxWidth()
-            .background(colors.surfaceContainer, MaterialTheme.shapes.large),
-    ) {
-        val toggle = if (body != null) Modifier.clickable(onClickLabel = if (open) "Hide file" else "Show file") { open = !open } else Modifier
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = TouchTarget)
-                .then(toggle)
-                .padding(horizontal = FileRowPaddingH, vertical = FilePaddingV)
-                .semantics(mergeDescendants = true) { if (body != null) stateDescription = if (open) "expanded" else "collapsed" },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(BlockGap),
-        ) {
-            AgentShape(identity, FileAvatar)
-            Text(
-                block.path.substringAfterLast('.', missingDelimiterValue = "").take(BADGE_MAX_CHARS).uppercase(),
-                style = NomiTheme.metaStyle,
-                color = colors.primary,
-                modifier = Modifier.clearAndSetSemantics { },
-            )
-            Column(Modifier.weight(FILL)) {
-                Text(name, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = mono, fontWeight = FontWeight(EMPHASIS_WEIGHT)), color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (folder.isNotEmpty()) {
-                    Text(folder, style = NomiTheme.metaStyle, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Text(action.uppercase(), style = NomiTheme.metaStyle, color = colors.onSurfaceVariant)
-            if (stats.added > NO_LINES) Text("+${stats.added}", style = NomiTheme.metaStyle, color = colors.primary)
-            if (stats.removed > NO_LINES) Text("−${stats.removed}", style = NomiTheme.metaStyle, color = colors.error)
-            if (body != null) {
-                NomiIcon(NomiIcons.ChevronRight, contentDescription = null, modifier = Modifier.rotate(if (open) CHEVRON_OPEN_DEG else NO_ROTATION))
-            }
-        }
-        if (open && body != null) CodePreview(body, deleted = block.action == FileAction.Deleted)
-    }
-}
-
-@Composable
-private fun CodePreview(text: String, deleted: Boolean) {
-    val colors = MaterialTheme.colorScheme
-    val lines = text.removeSuffix("\n").split('\n')
-    val shown = lines.take(PREVIEW_MAX_LINES).joinToString("\n")
-    val hidden = lines.size - PREVIEW_MAX_LINES
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(colors.surfaceContainerHighest, MaterialTheme.shapes.large)
-            .padding(CodePadding),
-        verticalArrangement = Arrangement.spacedBy(SmallGap),
-    ) {
-        Text(
-            shown,
-            style = MaterialTheme.typography.bodySmall.copy(fontFamily = NomiTheme.metaStyle.fontFamily),
-            color = if (deleted) colors.onSurfaceVariant else colors.onSurface,
-            softWrap = false,
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        )
-        if (hidden > NO_LINES) Text("+ $hidden more lines", style = NomiTheme.metaStyle, color = colors.onSurfaceVariant)
-    }
-}
-
-/** `ReasoningDisclosure.svelte`: the model's thinking, collapsed to one quiet line. */
-@Composable
-private fun ReasoningDisclosure(text: String) {
-    val colors = MaterialTheme.colorScheme
-    var open by rememberSaveable(text) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .heightIn(min = TouchTarget)
-                .clickable(onClickLabel = if (open) "Hide thinking" else "Show thinking") { open = !open }
-                .semantics(mergeDescendants = true) { stateDescription = if (open) "expanded" else "collapsed" },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(SmallGap),
-        ) {
-            NomiIcon(NomiIcons.ChevronRight, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.rotate(if (open) CHEVRON_OPEN_DEG else NO_ROTATION))
-            Text("Thinking", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
-        }
-        if (open) {
-            NomiMarkdown(text, MaterialTheme.typography.bodyMedium, colors.onSurfaceVariant, Modifier.padding(start = CardPaddingH))
-        }
-    }
-}
 
 private val FallbackPadding = 14.dp
 

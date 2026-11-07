@@ -32,7 +32,8 @@ pub use network::auth::{
 pub use network::events::RealtimeEvent;
 pub use network::realtime::{ConnectionState, TopicWatch};
 pub use services::account::{
-    ConnectionsOverview, GoogleConnection, HealthConnection, Memory, Project, UsageBrief, UsagePlan,
+    ConnectionsOverview, CreatedProject, GoogleConnection, HealthConnection, Memory, Project,
+    UsageBrief, UsagePlan,
 };
 pub use services::home::{
     CrewMember, HomeSummary, OutItem, PlanItem, Preferences, PreferencesUpdate, TodayItem,

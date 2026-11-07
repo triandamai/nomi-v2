@@ -1,6 +1,8 @@
 package ai.nomi.app
 
+import ai.nomi.data.GoogleSignInReturns
 import ai.nomi.data.SessionGate
+import ai.nomi.feature.auth.SignInStep
 import ai.nomi.feature.auth.SignInViewModel
 import ai.nomi.network.EmailCodeError
 import ai.nomi.network.EmailCodeException
@@ -77,6 +79,77 @@ class SignInViewModelTest {
         assertNotNull(vm.state.value.error)
         assertTrue(graph.auth.signIns.isEmpty())
         assertNull(vm.state.value.challenge)
+    }
+
+    @Test
+    fun forgot_password_sends_a_reset_link_and_can_go_again() {
+        val vm = koin.get<SignInViewModel>()
+        vm.onEmailChange(" a@b.c ")
+        vm.openForgot()
+        assertEquals(SignInStep.Forgot, vm.state.value.step)
+
+        vm.sendResetLink()
+
+        assertEquals(listOf("a@b.c"), graph.auth.forgotten)
+        assertEquals(SignInStep.ResetSent, vm.state.value.step)
+        assertEquals("a@b.c", vm.state.value.resetSentTo)
+        assertEquals("Reset link sent.", vm.state.value.toast)
+        vm.forgotAgain()
+        assertEquals(SignInStep.Forgot, vm.state.value.step)
+        vm.closeForgot()
+        assertEquals(SignInStep.Password, vm.state.value.step)
+    }
+
+    @Test
+    fun forgot_password_needs_an_email_and_says_when_it_fails() {
+        val vm = koin.get<SignInViewModel>()
+        vm.openForgot()
+        vm.sendResetLink()
+        assertEquals("Enter your email.", vm.state.value.error)
+        assertTrue(graph.auth.forgotten.isEmpty())
+
+        graph.auth.nextForgot = Result.failure(IllegalStateException("offline"))
+        vm.onEmailChange("a@b.c")
+        vm.sendResetLink()
+        assertEquals(SignInStep.Forgot, vm.state.value.step)
+        assertEquals("Couldn't send the link. Try again in a moment.", vm.state.value.error)
+    }
+
+    @Test
+    fun google_opens_the_web_hand_off_and_its_answer_signs_in() {
+        val vm = koin.get<SignInViewModel>()
+        val opened = mutableListOf<String>()
+
+        vm.continueWithGoogle { opened += it }
+        assertTrue(vm.state.value.googleBusy)
+        assertTrue(opened.single().endsWith("/auth/google/native"))
+
+        GoogleSignInReturns.deliver("nomi://auth/google?code=c%2F0de&state=st")
+
+        assertEquals(listOf("c/0de" to "st"), graph.auth.googleSignIns)
+        assertTrue(koin.get<SessionGate>().signedIn.value)
+        assertFalse(vm.state.value.googleBusy)
+    }
+
+    @Test
+    fun a_cancelled_google_sign_in_says_so() {
+        val vm = koin.get<SignInViewModel>()
+        vm.continueWithGoogle { }
+
+        GoogleSignInReturns.deliver("nomi://auth/google?error=access_denied")
+
+        assertFalse(vm.state.value.googleBusy)
+        assertEquals("Google sign-in was cancelled.", vm.state.value.error)
+        assertFalse(koin.get<SessionGate>().signedIn.value)
+    }
+
+    @Test
+    fun password_can_be_shown_and_hidden() {
+        val vm = koin.get<SignInViewModel>()
+        vm.togglePasswordVisible()
+        assertTrue(vm.state.value.showPassword)
+        vm.togglePasswordVisible()
+        assertFalse(vm.state.value.showPassword)
     }
 
     private fun atCodeStep(): SignInViewModel {

@@ -89,6 +89,11 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
 
     override suspend fun resendEmailCode(challengeId: String): VerificationInfo = sdk.resendEmailCode(challengeId)
 
+    override suspend fun forgotPassword(email: String, language: String) = sdk.forgotPassword(email, language)
+
+    override suspend fun finishGoogleSignIn(code: String, state: String): SignedInUser =
+        userChange { sdk.finishGoogleSignIn(code, state) }
+
     override suspend fun refreshSession(): Boolean = userChange { sdk.refreshSession() }
 
     override suspend fun signOut() = userChange { accountChange { sdk.signOut() } }
@@ -212,6 +217,8 @@ class NativeNomiClient(config: SdkConfig, credentials: CredentialStore) : NomiCl
     override suspend fun usageBrief(): UsageBrief = sdk.usageBrief()
 
     override suspend fun projects(orgId: String?): List<Project> = sdk.projects(orgId)
+
+    override suspend fun createProject(orgId: String?): CreatedProject = sdk.createProject(orgId)
 
     override suspend fun projectForChat(sessionId: String): ProjectDetail = sdk.projectForChat(sessionId)
 

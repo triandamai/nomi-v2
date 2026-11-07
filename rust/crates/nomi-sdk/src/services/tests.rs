@@ -385,7 +385,8 @@ async fn reads_connections_usage_and_projects() {
             "org_id": "o1",
             "projects": [{
                 "id": "p1", "session_id": "s1", "name": "Site", "description": null, "status": "live",
-                "created_at": AT, "updated_at": AT, "created_by": "Ana", "open_issues": 2
+                "created_at": AT, "updated_at": AT, "created_by": "Ana", "open_issues": 2,
+                "stack": "sveltekit", "deploys_count": 3, "deploy_url": "https://site.nomi.app"
             }]
         })))
         .expect(1)
@@ -403,6 +404,33 @@ async fn reads_connections_usage_and_projects() {
     assert_eq!(
         (projects[0].name.as_str(), projects[0].open_issues),
         ("Site", 2)
+    );
+    assert_eq!(projects[0].deploys_count, Some(3));
+    assert_eq!(
+        projects[0].deploy_url.as_deref(),
+        Some("https://site.nomi.app")
+    );
+    assert_eq!(projects[0].files_count, None);
+}
+
+#[tokio::test]
+async fn creates_a_project_in_the_picked_organization() {
+    let h = Harness::new().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects"))
+        .and(body_json(json!({ "org_id": "o1" })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "project_id": "p9", "session_id": "s9" })),
+        )
+        .expect(1)
+        .mount(&h.server)
+        .await;
+
+    let created = h.sdk.create_project(Some("o1".into())).await.unwrap();
+    assert_eq!(
+        (created.project_id.as_str(), created.session_id.as_str()),
+        ("p9", "s9")
     );
 }
 

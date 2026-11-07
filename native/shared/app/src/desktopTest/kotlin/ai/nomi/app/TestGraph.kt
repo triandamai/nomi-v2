@@ -108,6 +108,21 @@ class FakeAuthRepository(var session: Tokens? = null) : AuthRepository {
         return nextResend.getOrThrow()
     }
 
+    val forgotten = mutableListOf<String>()
+    var nextForgot: Result<Unit> = Result.success(Unit)
+    val googleSignIns = mutableListOf<Pair<String, String>>()
+    var nextGoogle: Result<Tokens> = Result.success(Tokens("a-google", "r-google"))
+
+    override suspend fun forgotPassword(email: String, language: String) {
+        forgotten += email
+        nextForgot.getOrThrow()
+    }
+
+    override suspend fun finishGoogleSignIn(code: String, state: String) {
+        googleSignIns += code to state
+        session = nextGoogle.getOrThrow()
+    }
+
     override suspend fun signOut() {
         session = null
     }

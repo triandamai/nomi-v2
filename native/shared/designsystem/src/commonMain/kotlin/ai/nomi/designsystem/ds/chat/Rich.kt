@@ -32,6 +32,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -201,7 +203,10 @@ fun Diff(path: String, hunks: List<DiffHunk>, modifier: Modifier = Modifier, req
             null
         },
     ) {
-        Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp)) {
+        // Rows as wide as the widest line (and at least the card), so a line's colour runs the full width.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cardWidth = maxWidth
+        Column(Modifier.horizontalScroll(rememberScrollState()).width(IntrinsicSize.Max).widthIn(min = cardWidth).padding(bottom = 6.dp)) {
             hunks.forEach { hunk ->
                 Text(hunk.header, style = Ds.label, color = Ds.text3, modifier = Modifier.fillMaxWidth().background(Ds.surface).padding(horizontal = 14.dp, vertical = 4.dp))
                 hunk.lines.forEach { line ->
@@ -210,7 +215,7 @@ fun Diff(path: String, hunks: List<DiffHunk>, modifier: Modifier = Modifier, req
                         DiffLineKind.Del -> Ds.diffDel
                         DiffLineKind.Context -> Color.Transparent
                     }
-                    Row(Modifier.background(bg)) {
+                    Row(Modifier.fillMaxWidth().background(bg)) {
                         Text(line.old?.toString() ?: "", style = style, color = Ds.text3, textAlign = TextAlign.End, modifier = Modifier.width(36.dp))
                         Text(line.new?.toString() ?: "", style = style, color = Ds.text3, textAlign = TextAlign.End, modifier = Modifier.width(36.dp))
                         Text(
@@ -222,6 +227,7 @@ fun Diff(path: String, hunks: List<DiffHunk>, modifier: Modifier = Modifier, req
                     }
                 }
             }
+        }
         }
     }
 }
