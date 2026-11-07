@@ -3,6 +3,7 @@ package ai.nomi.app
 import ai.nomi.app.di.initKoin
 import ai.nomi.data.SdkSetup
 import ai.nomi.network.ApiConfig
+import ai.nomi.network.HOSTED_API_URL
 import ai.nomi.network.IosTokenStore
 import ai.nomi.network.TokenStore
 import ai.nomi.sdk.DeviceInfo
@@ -30,7 +31,7 @@ import platform.posix.uname
 import platform.posix.utsname
 import platform.UIKit.UIViewController
 
-/** Info.plist key holding the backend URL (Debug: the local backend; Release: required at build time, project.yml). */
+/** Info.plist key for a build that overrides the backend (the NOMI_API_URL build setting); empty means `nomi.apiUrl`. */
 private const val API_URL_PLIST_KEY = "NomiApiUrl"
 
 /** The Rust engine's data, in Application Support (backed up, not user-visible). */
@@ -46,9 +47,7 @@ actual fun rememberReducedMotion(): Boolean = remember { UIAccessibilityIsReduce
 actual fun rememberShareText(): ((String) -> Unit)? = null
 
 fun iosPlatformModule(): Module = module {
-    val apiUrl = requireNotNull((NSBundle.mainBundle.objectForInfoDictionaryKey(API_URL_PLIST_KEY) as? String)?.takeIf { it.isNotBlank() }) {
-        "Info.plist has no $API_URL_PLIST_KEY: set the NOMI_API_URL build setting"
-    }
+    val apiUrl = (NSBundle.mainBundle.objectForInfoDictionaryKey(API_URL_PLIST_KEY) as? String)?.takeIf { it.isNotBlank() } ?: HOSTED_API_URL
     single { ApiConfig(apiUrl) }
     single<TokenStore> { IosTokenStore() }
     single { SdkSetup(get<ApiConfig>().baseUrl, applicationSupportPath() + "/" + SDK_DIR, iosDevice()) }

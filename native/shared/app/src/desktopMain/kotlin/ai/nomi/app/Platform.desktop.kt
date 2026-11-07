@@ -3,6 +3,7 @@ package ai.nomi.app
 import ai.nomi.data.SdkSetup
 import ai.nomi.network.ApiConfig
 import ai.nomi.network.DesktopTokenStore
+import ai.nomi.network.HOSTED_API_URL
 import ai.nomi.network.TokenStore
 import ai.nomi.network.desktopDataDir
 import ai.nomi.sdk.DeviceInfo
@@ -12,12 +13,12 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 
 /**
- * `-Dnomi.apiUrl=…` wins over the `NOMI_API_URL` environment variable; both fall back to the hosted API. For local
- * development point either at your backend, e.g. `NOMI_API_URL=http://localhost:8080`.
+ * `-Dnomi.apiUrl=…` wins over the `NOMI_API_URL` environment variable; both fall back to `nomi.apiUrl` in
+ * native/gradle.properties. For local development point either at your backend, e.g. `NOMI_API_URL=http://localhost:8080`.
  */
 const val API_URL_PROPERTY = "nomi.apiUrl"
 const val API_URL_ENV = "NOMI_API_URL"
-const val DEFAULT_DESKTOP_API_URL = "https://api-staging.trian.space"
+const val DEFAULT_DESKTOP_API_URL = HOSTED_API_URL
 
 /** The Rust engine's data, under the app's data directory. */
 private const val SDK_DIR = "sdk"

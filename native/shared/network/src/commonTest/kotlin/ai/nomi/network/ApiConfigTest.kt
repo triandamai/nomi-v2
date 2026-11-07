@@ -6,8 +6,10 @@ import kotlin.test.assertEquals
 class ApiConfigTest {
     @Test
     fun theHostedApiIsAlwaysReachedOverHttps() {
-        assertEquals("https://api-nomi.trian.space", ApiConfig("http://api-nomi.trian.space").baseUrl)
-        assertEquals("https://api-nomi.trian.space/", ApiConfig(" http://api-nomi.trian.space/ ").baseUrl)
+        val host = HOSTED_API_URL.substringAfter("://").trimEnd('/')
+        assertEquals("https://$host", ApiConfig("http://$host").baseUrl)
+        assertEquals("https://$host/", ApiConfig(" http://$host/ ").baseUrl)
+        assertEquals("https://$host", ApiConfig(HOSTED_API_URL).baseUrl)
     }
 
     @Test
