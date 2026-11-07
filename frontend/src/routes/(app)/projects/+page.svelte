@@ -335,7 +335,7 @@
 	{/if}
 </Dialog>
 
-<div class="min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-bg text-text pb-[calc(env(safe-area-inset-bottom,0px)+2rem)] font-sans">
+<div class="h-full w-full overflow-x-hidden overflow-y-auto bg-bg text-text pb-[calc(env(safe-area-inset-bottom,0px)+2rem)] font-sans">
 	<!-- Top Bar -->
 	<header class="flex min-h-14 w-full shrink-0 items-center justify-between border-b border-border px-3 sm:px-6 py-2 gap-2">
 		<div class="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -483,7 +483,7 @@
 							{#if data.baseDomain}<Chip kind="provision" icon={Globe} label={`*.${data.baseDomain}`} />{/if}
 							<Chip kind="provision" icon={Database} label={m.projects_tag_database()} />
 						</div>
-						<div class="flex items-center gap-2 w-full sm:w-auto">
+						<div class="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
 							<Button
 								variant="secondary"
 								label={m.projects_import_github()}
@@ -770,7 +770,7 @@
 				></div>
 
 				<aside
-					class="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-border bg-surface p-4 sm:p-5 shadow-float transition-transform duration-200 ease-out xl:static xl:z-auto xl:h-auto xl:max-w-none xl:w-[380px] xl:shadow-none xl:shrink-0"
+					class="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col overflow-y-auto overscroll-contain *:shrink-0 border-l border-border bg-surface p-4 sm:p-5 shadow-float transition-transform duration-200 ease-out xl:static xl:z-auto xl:h-auto xl:max-w-none xl:w-[380px] xl:shadow-none xl:shrink-0"
 				>
 					<!-- Panel Header -->
 					<div class="flex items-start justify-between gap-3">

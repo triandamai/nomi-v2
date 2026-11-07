@@ -18,7 +18,7 @@ pub const CODING_AGENT_TYPE: &str = "coding";
 
 // The build-request heuristic lives in nomi-agent-core so Rena can use it too (her app-building
 // playbook is only for build requests); kept here under its old path for the router and tests.
-pub use nomi_agent_core::build_intent::wants_to_build;
+pub use nomi_agent_core::build_intent::{wants_to_build, wants_to_publish};
 
 /// The project this chat belongs to, if it's a project chat.
 pub async fn session_project(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<Option<Uuid>, TurnError> {
