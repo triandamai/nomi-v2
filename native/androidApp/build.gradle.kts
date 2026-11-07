@@ -4,22 +4,22 @@ plugins {
 }
 
 /**
- * Debug builds talk to the hosted API, as the desktop app does, so they sign in on any emulator or phone. For a local
- * backend (backend/crates/nomi-server listens on 8080), pass `-Pnomi.apiUrl.debug=http://10.0.2.2:8080` (the emulator's
- * address for the host).
+ * Every build talks to `nomi.apiUrl` (native/gradle.properties), the backend all the apps share. For a local backend
+ * (backend/crates/nomi-server listens on 8080), pass `-Pnomi.apiUrl.debug=http://10.0.2.2:8080` (the emulator's address
+ * for the host). `-Pnomi.apiUrl.release=https://…` overrides it for one release build.
  */
-val hostedBackendUrl = "https://api-staging.nomi.build"
+val hostedBackendUrl: String = providers.gradleProperty("nomi.apiUrl").get().trim()
 
-/** Release builds must name an https backend; there is no safe default to ship. */
-val releaseApiUrl: String? = providers.gradleProperty("nomi.apiUrl.release").orNull?.takeIf { it.isNotBlank() }
+/** Release builds must talk to an https backend. */
+val releaseApiUrl: String = providers.gradleProperty("nomi.apiUrl.release").orNull?.takeIf { it.isNotBlank() }?.trim() ?: hostedBackendUrl
 
 /** Task names that build the release variant (explicitly, or as part of `assemble` / `build` / `bundle`). */
 val releaseTaskRequested = gradle.startParameter.taskNames.any { requested ->
     val name = requested.substringAfterLast(':')
     name.contains("Release", ignoreCase = true) || name in setOf("assemble", "build", "bundle")
 }
-if (releaseTaskRequested && releaseApiUrl == null) {
-    throw GradleException("Release builds need the backend URL: pass -Pnomi.apiUrl.release=https://…")
+if (releaseTaskRequested && !releaseApiUrl.startsWith("https://")) {
+    throw GradleException("Release builds need an https backend: set nomi.apiUrl in native/gradle.properties (or pass -Pnomi.apiUrl.release=https://…)")
 }
 
 /** The Android libraries :shared:sdk builds; JNA loads `libnomi_sdk.so` from the APK. */
@@ -43,9 +43,9 @@ android {
         debug {
             buildConfigField("String", "NOMI_API_URL", "\"${providers.gradleProperty("nomi.apiUrl.debug").getOrElse(hostedBackendUrl)}\"")
         }
-        // Checked above: a release task without -Pnomi.apiUrl.release fails at configuration time.
+        // Checked above: a release task without an https backend fails at configuration time.
         release {
-            buildConfigField("String", "NOMI_API_URL", "\"${releaseApiUrl.orEmpty()}\"")
+            buildConfigField("String", "NOMI_API_URL", "\"$releaseApiUrl\"")
         }
     }
 
