@@ -128,6 +128,15 @@
 		onsubmit({ text: value, thinkingLevel: level, attachments });
 	}
 
+	// Send's click only calls `onsubmit`; the button itself submits nothing. Sending makes the
+	// page busy, which turns this same button into Stop (a submit button for the stop form), and
+	// the browser runs a click's default action after that re-render: without this, one tap on
+	// Send also sent "stop".
+	function sendClick(event: MouseEvent) {
+		event.preventDefault();
+		submit();
+	}
+
 	function pickFiles() {
 		if (disabled) return;
 		fileInput?.click();
@@ -381,7 +390,7 @@
 				{stopForm}
 				type={busy && stopForm ? 'submit' : 'button'}
 				disabled={!canSend}
-				onclick={busy ? undefined : submit}
+				onclick={busy ? undefined : sendClick}
 			/>
 		</div>
 	</div>
