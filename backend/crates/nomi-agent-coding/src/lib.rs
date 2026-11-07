@@ -25,7 +25,7 @@ use nomi_llm::ToolDefinition;
 use nomi_storage::ProjectStore;
 
 pub use files::{
-    delete_file, delete_file_tool_definition, edit_file, edit_file_tool_definition, guess_content_type, list_files,
+    add_attachment, add_attachment_tool_definition, delete_file, delete_file_tool_definition, edit_file, edit_file_tool_definition, guess_content_type, list_files,
     list_files_tool_definition, project_file_key, read_file, read_file_tool_definition, search_files, search_files_tool_definition,
     validate_path, write_file, write_file_tool_definition, write_files, write_files_tool_definition,
 };
@@ -34,7 +34,7 @@ pub const CODING_AGENT_TYPE: &str = "coding";
 
 /// Every tool Koda has, by name (also used by the tool catalog for custom agents).
 pub const TOOL_NAMES: &[&str] =
-    &["read_guide", "list_files", "read_file", "search_files", "write_files", "write_file", "edit_file", "delete_file", "run_command"];
+    &["read_guide", "list_files", "read_file", "search_files", "write_files", "write_file", "add_attachment", "edit_file", "delete_file", "run_command"];
 
 pub fn tool_definition(name: &str) -> Option<ToolDefinition> {
     Some(match name {
@@ -44,6 +44,7 @@ pub fn tool_definition(name: &str) -> Option<ToolDefinition> {
         "search_files" => search_files_tool_definition(),
         "write_files" => write_files_tool_definition(),
         "write_file" => write_file_tool_definition(),
+        "add_attachment" => add_attachment_tool_definition(),
         "edit_file" => edit_file_tool_definition(),
         "delete_file" => delete_file_tool_definition(),
         "run_command" => runtime::run_command_tool_definition(),
@@ -60,6 +61,7 @@ pub async fn execute(conn: &mut PoolConnection<Postgres>, storage: &ProjectStore
         "search_files" => search_files(conn, storage, user_id, input).await.map(ToolOutcome::text),
         "write_files" => write_files(conn, storage, user_id, input).await,
         "write_file" => write_file(conn, storage, user_id, input).await,
+        "add_attachment" => add_attachment(conn, storage, user_id, input).await,
         "edit_file" => edit_file(conn, storage, user_id, input).await,
         "delete_file" => delete_file(conn, storage, user_id, input).await,
         "run_command" => runtime::run_command(conn, user_id, input).await.map(ToolOutcome::text),
@@ -126,6 +128,7 @@ impl SubAgent for CodingAgent {
             search_files_tool_definition(),
             write_files_tool_definition(),
             write_file_tool_definition(),
+            add_attachment_tool_definition(),
             edit_file_tool_definition(),
             delete_file_tool_definition(),
             runtime::run_command_tool_definition(),

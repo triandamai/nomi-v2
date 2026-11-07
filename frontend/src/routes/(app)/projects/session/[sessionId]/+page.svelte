@@ -609,6 +609,16 @@
 	const peers = $derived((presence?.people ?? []).map((person) => ({ ...person, initials: initials(person.name), peer: peerFor(person.name) })));
 	const myName = $derived(page.data.profile?.display_name || page.data.profile?.username || (page.data.userEmail ?? '').split('@')[0] || m.msg_you());
 	let presenceMenuOpen = $state(false);
+	let hereWrap = $state<HTMLElement | null>(null);
+	// The menu closes on a press anywhere outside it (or its button), like the other menus.
+	$effect(() => {
+		if (!presenceMenuOpen) return;
+		const close = (event: PointerEvent) => {
+			if (hereWrap && !hereWrap.contains(event.target as Node)) presenceMenuOpen = false;
+		};
+		document.addEventListener('pointerdown', close, true);
+		return () => document.removeEventListener('pointerdown', close, true);
+	});
 	let following = $state<string | null>(null);
 	const followed = $derived(peers.find((person) => person.user_id === following) ?? null);
 
@@ -868,7 +878,7 @@
 			<SplitButton label={m.share_title()} icon={Share2} compact moreLabel={m.pj_menu_more()} items={toolMenu} onclick={() => openSheet('members')} />
 		</nav>
 		{#if presence && peers.length > 0}
-			<div class="here-wrap">
+			<div class="here-wrap" bind:this={hereWrap}>
 				<button type="button" class="here" aria-haspopup="dialog" aria-expanded={presenceMenuOpen} aria-label={m.pj_here_now_people({ names: peers.map((p) => p.name).join(', ') })} onclick={() => (presenceMenuOpen = !presenceMenuOpen)}>
 					<Presence people={peers.slice(0, TOOLBAR_FACES).map((person, index) => ({ name: person.name, initials: person.initials, peer: person.peer, online: index === Math.min(peers.length, TOOLBAR_FACES) - 1 }))} />
 					{#if peers.length > TOOLBAR_FACES}<span class="here__more">+{peers.length - TOOLBAR_FACES}</span>{/if}
@@ -991,7 +1001,7 @@
 							onreload={runtime?.previewUrl ? () => preview?.reload() : undefined}
 						/>
 					</div>
-					<PreviewDevices device={previewDevice} onchange={(next) => (previewDevice = next)} />
+					<div class="pane-bar__devices"><PreviewDevices device={previewDevice} onchange={(next) => (previewDevice = next)} /></div>
 				{/if}
 				<IconButton onclick={() => setPane(false)} aria-label={m.project_pane_hide()} title={m.project_pane_hide()}>
 					<IconClose size={18} />
@@ -1277,6 +1287,21 @@
 			gap: 4px 8px;
 			padding: 6px 8px;
 		}
+		/* The people menu spans the bar on a phone instead of hanging off the faces, past the left edge. */
+		.topbar {
+			position: relative;
+		}
+		.here-wrap {
+			position: static;
+		}
+		.here-menu {
+			left: 8px;
+			right: 8px;
+			top: calc(100% + 4px);
+		}
+		.here-menu > :global(div) {
+			width: auto;
+		}
 		.topbar__tools {
 			order: 3;
 			width: 100%;
@@ -1335,6 +1360,11 @@
 	}
 	.workspace--narrow .pane-bar__tabs {
 		margin-right: auto;
+	}
+	/* A phone shows the preview at its own width already: no desktop/phone switch, so the tabs and
+	 * close share one row instead of close dropping onto a row of its own. */
+	.workspace--narrow .pane-bar__devices {
+		display: none;
 	}
 	/* A narrow pane puts the address on a row of its own under the tabs, devices and close. */
 	.workspace--narrow .pane-bar {
@@ -1483,6 +1513,9 @@
 		font: inherit;
 		font-size: 0.8125rem;
 		cursor: pointer;
+	}
+	.pane-bar__devices {
+		display: contents;
 	}
 	.pane-body {
 		position: relative;

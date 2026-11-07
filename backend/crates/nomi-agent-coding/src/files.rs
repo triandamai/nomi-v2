@@ -187,6 +187,26 @@ pub fn write_file_tool_definition() -> ToolDefinition {
     }
 }
 
+pub fn add_attachment_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "add_attachment".to_string(),
+        description: "Copy a file the person attached in the chat into the project, as it is (a logo or icon as SVG, \
+             data as CSV or JSON). Use its id from its <attachment id=\"…\"> tag, and a path such as 'static/logo.svg' or \
+             'public/logo.svg' (where the stack serves files from). Text files only for now: for a PNG or JPG, say so and \
+             ask for an SVG."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "attachment_id": {"type": "string", "description": "The attachment's id."},
+                "path": {"type": "string", "description": "Where it goes in the project, e.g. 'static/logo.svg'"}
+            },
+            "required": ["project_id", "attachment_id", "path"]
+        }),
+    }
+}
+
 pub fn write_files_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "write_files".to_string(),
@@ -302,6 +322,26 @@ pub async fn write_file(
     Ok(ToolOutcome {
         display_text: format!("📝 Wrote `{path}`"),
         block: Some(ContentBlock::FileWrite { project_id, path: path.to_string(), content: content.to_string(), previous_content }),
+    })
+}
+
+/// `add_attachment`: an attached text file, written into the project like `write_file` would.
+pub async fn add_attachment(
+    conn: &mut PoolConnection<Postgres>,
+    storage: &ProjectStore,
+    user_id: Uuid,
+    input: Value,
+) -> Result<ToolOutcome, String> {
+    let project_id = owned_project_id(conn, user_id, &input).await?;
+    let path = str_field(&input, "path")?;
+    let attachment_id: Uuid =
+        str_field(&input, "attachment_id")?.trim().parse().map_err(|_| "attachment_id is not an attachment id".to_string())?;
+    let (name, content) = nomi_agent_core::attachments::attachment_text(conn, user_id, attachment_id).await?;
+    let previous_content = save_file(conn, storage, project_id, path, &content).await?;
+    bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
+    Ok(ToolOutcome {
+        display_text: format!("📎 Added {name} as `{path}`"),
+        block: Some(ContentBlock::FileWrite { project_id, path: path.to_string(), content, previous_content }),
     })
 }
 

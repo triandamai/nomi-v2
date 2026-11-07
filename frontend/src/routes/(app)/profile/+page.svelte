@@ -275,7 +275,7 @@
 	);
 </script>
 
-<div class="min-h-[100dvh] bg-bg text-text px-4 py-5 sm:px-8 sm:py-7 font-sans pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]">
+<div class="h-full overflow-y-auto bg-bg text-text px-4 py-5 sm:px-8 sm:py-7 font-sans pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]">
 	<div class="max-w-6xl mx-auto flex flex-col gap-6">
 		<!-- Top Navigation & Action Bar -->
 		<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

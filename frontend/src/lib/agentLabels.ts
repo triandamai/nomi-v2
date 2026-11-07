@@ -22,6 +22,7 @@ const TOOL_LABELS: Record<string, () => string> = {
 	create_project: m.tool_create_project,
 	read_file: m.tool_read_file,
 	write_file: m.tool_write_file,
+	add_attachment: m.tool_add_attachment,
 	delete_file: m.tool_delete_file,
 	list_files: m.tool_list_files,
 	// Personality agent
@@ -137,6 +138,7 @@ const STEP_LABELS: Record<string, () => string> = {
 	create_project: m.step_create_project,
 	write_file: m.step_write_file,
 	write_files: m.step_write_files,
+	add_attachment: m.step_add_attachment,
 	edit_file: m.step_edit_file,
 	delete_file: m.step_delete_file,
 	read_file: m.step_read_file,
