@@ -142,7 +142,7 @@ val coreModule: Module = module {
 
 /** One ViewModel per screen; the chat's takes its session id as a parameter. */
 val featureModule: Module = module {
-    viewModel { SignInViewModel(get()) }
+    viewModel { SignInViewModel(get(), webUrl = get<ApiConfig>().webUrl) }
     viewModel { HomeViewModel(get(), get(), get(), getOrNull(), log = ::appLog) }
     viewModel { ChatsViewModel(get(), log = ::appLog) }
     viewModel { (sessionId: String) -> ChatViewModel(sessionId, get(), get(), get(), log = ::appLog) }
@@ -154,7 +154,12 @@ val featureModule: Module = module {
     viewModel { ConnectionsViewModel(get()) }
     viewModel {
         val workspaces = get<ai.nomi.data.ProjectWorkspaceRepository>()
-        ai.nomi.app.screens.projects.ProjectsViewModel(get(), onProjectChats = workspaces::rememberProjectChats)
+        val chats = get<ChatRepository>()
+        ai.nomi.app.screens.projects.ProjectsViewModel(
+            get(),
+            onProjectChats = workspaces::rememberProjectChats,
+            sendFirstMessage = { sessionId, text -> chats.send(sessionId, text) },
+        )
     }
     viewModel { (sessionId: String) -> ai.nomi.app.screens.projects.ProjectWorkspaceViewModel(sessionId, get(), log = ::appLog) }
     viewModel { (projectId: String, name: String, relay: Boolean) ->

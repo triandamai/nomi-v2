@@ -2,10 +2,14 @@ import { setSession } from '$lib/server/sessionCookies';
 import { redirect } from '@sveltejs/kit';
 import { apiUrl } from '$lib/server/api';
 import { settleLanguageAfterSignIn } from '$lib/server/locale';
+import { nativeReturn } from '$lib/server/googleNative';
 import type { RequestHandler } from './$types';
 
 /** Google sends people back here after signing in (or adding Google to their account). */
 export const GET: RequestHandler = async ({ url, cookies, fetch }) => {
+	// Started in the native app: it trades the code for its own session.
+	const toApp = nativeReturn(cookies, url.searchParams);
+	if (toApp) redirect(303, toApp);
 	// Already signed in means this was "Link Google" from Account settings.
 	const errorPage = cookies.get('access_token') ? '/account' : '/login';
 	const code = url.searchParams.get('code');

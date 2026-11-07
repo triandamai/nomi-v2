@@ -618,25 +618,6 @@ private fun lerpColor(from: Color, to: Color, share: Float) = Color(
 private val LinkTextPaddingH = 16.dp
 private val LinkTextPaddingV = 14.dp
 
-/** A page worth opening, as a preview card; the whole card opens it in the browser. */
-@Composable
-internal fun LinkViewBlock(view: ChatView.LinkPreview) {
-    val colors = MaterialTheme.colorScheme
-    val uri = LocalUriHandler.current
-    val host = remember(view.url) { view.url.substringAfter("://").substringBefore('/').removePrefix("www.").ifEmpty { view.url } }
-    val shape = MaterialTheme.shapes.extraLarge
-    Column(
-        Modifier.fillMaxWidth().clip(shape).background(colors.surfaceContainerLowest).border(Hairline, colors.outlineVariant, shape)
-            .clickable(role = Role.Button, onClickLabel = "Open ${view.title ?: host}") { uri.openUri(view.url) }
-            .padding(horizontal = LinkTextPaddingH, vertical = LinkTextPaddingV),
-        verticalArrangement = Arrangement.spacedBy(GapXs),
-    ) {
-        Text(view.site ?: host, style = smallStyle(), color = colors.onSurfaceVariant)
-        Text(view.title ?: view.url, style = rowStyle().copy(fontWeight = TitleWeight), color = colors.primary)
-        view.description?.let { Text(it, style = detailStyle(), color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-    }
-}
-
 private val TaskAvatar = 32.dp
 
 /** Work going on in the background: what it is, who has it, where it stands, how far along. */
@@ -677,49 +658,3 @@ private const val BAR_INK_ALPHA = 0.14f
 private const val CWD_ALPHA = 0.7f
 private val ShellCopySize = 44.dp
 
-/** A command and what it printed, as a terminal; opens scrolled to the end of a long output. Copy takes the command. */
-@Composable
-internal fun ShellViewBlock(view: ChatView.Shell) {
-    val colors = MaterialTheme.colorScheme
-    val clipboard = LocalClipboardManager.current
-    var copied by remember { mutableStateOf(false) }
-    LaunchedEffect(copied) {
-        if (copied) {
-            delay(COPIED_RESET_MS)
-            copied = false
-        }
-    }
-    val mono = NomiTheme.metaStyle.fontFamily
-    val ink = colors.inverseOnSurface
-    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.inverseSurface)) {
-        Row(Modifier.fillMaxWidth().padding(start = InsetM, end = GapXs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(GapMd)) {
-            Text(view.cwd.orEmpty(), style = TextStyle(fontFamily = mono, fontSize = SHELL_BAR_SP.sp), color = ink.copy(alpha = CWD_ALPHA), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(FILL))
-            view.exitCode?.let { code ->
-                val failed = code != 0
-                Text(
-                    "exit $code",
-                    style = TextStyle(fontFamily = mono, fontSize = SHELL_BAR_SP.sp),
-                    color = if (failed) colors.onError else ink,
-                    modifier = Modifier.clip(CircleShape).background(if (failed) colors.error else ink.copy(alpha = BAR_INK_ALPHA)).padding(horizontal = GapM, vertical = GapS),
-                )
-            }
-            IconButton(onClick = { clipboard.setText(AnnotatedString(view.command)); copied = true }, modifier = Modifier.size(ShellCopySize)) {
-                NomiIcon(if (copied) NomiIcons.Check else NomiIcons.Copy, contentDescription = if (copied) "Copied" else "Copy command", tint = ink, size = GapXl)
-            }
-        }
-        HorizontalDivider(thickness = Hairline, color = ink.copy(alpha = BAR_INK_ALPHA))
-        val scroll = rememberScrollState()
-        LaunchedEffect(view.output) { scroll.scrollTo(scroll.maxValue) }
-        val screen = androidx.compose.ui.text.buildAnnotatedString {
-            pushStyle(androidx.compose.ui.text.SpanStyle(color = colors.inversePrimary)); append("$ "); pop()
-            pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = TitleWeight)); append(view.command); pop()
-            view.output?.let { append("\n"); append(it) }
-        }
-        Text(
-            screen,
-            style = TextStyle(fontFamily = mono, fontSize = SHELL_SP.sp, lineHeight = (SHELL_SP * SHELL_LINE_HEIGHT).sp),
-            color = ink,
-            modifier = Modifier.fillMaxWidth().heightIn(max = ShellMaxHeight).verticalScroll(scroll).padding(horizontal = InsetM, vertical = GapL),
-        )
-    }
-}

@@ -1,5 +1,29 @@
 package ai.nomi.designsystem.navigation
 
+import ai.nomi.designsystem.ds.Crew
+import ai.nomi.designsystem.ds.Ds
+import ai.nomi.designsystem.ds.DsAvatar
+import ai.nomi.designsystem.ds.DsIcon
+import ai.nomi.designsystem.ds.DsIconButton
+import ai.nomi.designsystem.ds.DsIconButtonVariant
+import ai.nomi.designsystem.ds.DsMotion
+import ai.nomi.designsystem.ds.Mascot
+import ai.nomi.designsystem.ds.NavItem
+import ai.nomi.designsystem.ds.RecentItem
+import ai.nomi.designsystem.ds.RecentKind
+import ai.nomi.designsystem.ds.RecentsList
+import ai.nomi.designsystem.ds.UsageCard
+import ai.nomi.designsystem.ds.UserRow
+import ai.nomi.designsystem.icon.Lucide
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.em
 import ai.nomi.designsystem.brand.NomiNewChatButton
 import ai.nomi.designsystem.brand.NomiWordmark
 import ai.nomi.designsystem.component.nomiFocusRing
@@ -92,7 +116,7 @@ fun <K> NomiNavigationBar(items: List<NomiNavItem<K>>, selected: K, onSelect: (K
     }
 }
 
-data class NomiRecentChat(val id: String, val title: String)
+data class NomiRecentChat(val id: String, val title: String, val whenLabel: String = "")
 
 data class NomiUsageBrief(
     val planName: String,
@@ -126,36 +150,39 @@ fun formatTokens(tokens: Long): String = when {
     else -> tokens.toString()
 }
 
-/** `Sidebar.svelte`: 288px drawer, or a 96px rail when collapsed. */
-private val SidebarWidth = 288.dp
-private val RailWidth = 96.dp
-private val HeaderPadding = 16.dp
-private val HeaderTopPadding = 20.dp
-private val NavPadding = 12.dp
-private val NavTopPadding = 14.dp
-private val ItemHeight = 44.dp
-private val ItemGap = 2.dp
-private val IndicatorWidth = 56.dp
-private val IndicatorHeight = 32.dp
-private val ItemStartPadding = 4.dp
-private val ItemLabelGap = 12.dp
-private val BadgeOffsetX = 18.dp
-private val BadgeOffsetY = (-6).dp
-private const val ITEM_LABEL_WEIGHT = 600
-private const val ITEM_ACTIVE_WEIGHT = 700
+/** `Sidebar.svelte`: the design system's 300px drawer, or an 80px icon rail when collapsed. */
+private val SidebarWidth = 300.dp
+private val RailWidth = 80.dp
+private val DrawerPadding = 12.dp
+private val BrandGap = 8.dp
+private val BrandMascot = 32.dp
+private val NewChatHeight = 56.dp
+private val NewChatGap = 12.dp
+private val NewChatIcon = 20.dp
+private val SectionGap = 8.dp
+private val RecentsTop = 14.dp
+private val RailGap = 12.dp
+private val RailTop = 16.dp
+private val RailItem = 56.dp
+private val RailPill = 32.dp
+private val RailItemMargin = 4.dp
+private val RailIcon = 20.dp
+private val RailBadgeX = 14.dp
+private val RailBadgeY = (-4).dp
+private val LogOutHeight = 44.dp
+private val LogOutIcon = 18.dp
+private val LogOutGap = 12.dp
+private val LogOutPadding = 16.dp
+private const val BRAND_TRACKING_EM = -0.045f
 private const val FILL = 1f
-private val BrandMarkSize = 40.dp
-private val FooterIconSize = 20.dp
-private val FooterRowPadding = 14.dp
-private val FooterRowGap = 12.dp
+
+/** Tokens used of the plan's allowance, 0–1. */
+private fun NomiUsageBrief.share(): Float = if (monthlyTokens <= 0) 0f else (tokensUsed.toFloat() / monthlyTokens).coerceIn(0f, FILL)
 
 /**
- * The complete navigation drawer content matching web's `Sidebar.svelte`:
- * 1. Brand header with Nomi shape and close/collapse action
- * 2. `+ New chat` hero gradient button
- * 3. Scrollable navigation list + collapsible Recents section
- * 4. Usage progress meter (tokens used / plan allowance)
- * 5. Account avatar with display name and tap action, a settings button and Log out
+ * The navigation drawer (web `NavDrawer.svelte` on the design system's `Sidebar`): the brand with collapse, New chat,
+ * then the places, More and the recent chats in one scrolling column, and usage, the person and Log out at the foot.
+ * [collapsed] draws the web's icon rail of the same places instead.
  */
 @Composable
 fun <K> NomiNavDrawerContent(
@@ -180,293 +207,175 @@ fun <K> NomiNavDrawerContent(
     onLogOut: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
-
-    var recentsExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
-
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
-        horizontalAlignment = if (collapsed) Alignment.CenterHorizontally else Alignment.Start,
-    ) {
-        // --- 1. Header ---
-        Row(
-            Modifier.fillMaxWidth().padding(start = HeaderPadding, end = HeaderPadding, top = HeaderTopPadding, bottom = NavPadding),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.SpaceBetween,
-        ) {
-            if (collapsed) {
-                AgentShape(NomiIdentity, BrandMarkSize, face = true)
-            } else {
-                NomiWordmark(markSize = BrandMarkSize)
-            }
-            if (!collapsed) {
-                if (onClose != null) {
-                    IconButton(onClick = onClose) {
-                        NomiIcon(NomiIcons.Close, contentDescription = "Close navigation menu")
-                    }
-                } else if (onToggleCollapsed != null) {
-                    IconButton(onClick = onToggleCollapsed) {
-                        NomiIcon(NomiIcons.ChevronLeft, contentDescription = "Collapse sidebar")
-                    }
-                }
-            }
-        }
-
-        // --- 2. Hero Action: New Chat ---
-        Box(Modifier.padding(horizontal = if (collapsed) 0.dp else HeaderPadding).padding(top = ItemGap * 4)) {
-            NomiNewChatButton(onNewChat, Modifier.then(if (collapsed) Modifier else Modifier.fillMaxWidth()), compact = collapsed)
-        }
-
-        // --- 3. Scrollable Items (NavList + Recents) ---
-        Column(
-            Modifier
-                .weight(FILL)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = NavPadding, vertical = NavTopPadding),
-            verticalArrangement = Arrangement.spacedBy(ItemGap),
-            horizontalAlignment = if (collapsed) Alignment.CenterHorizontally else Alignment.Start,
-        ) {
-            items.forEach { item ->
-                SidebarItem(item, item.key == selected, collapsed) { onSelect(item.key) }
-            }
-
-            // Recents section
-            if (!collapsed && recents.isNotEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(ItemHeight)
-                            .clip(CircleShape)
-                            .clickable { recentsExpanded = !recentsExpanded }
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = "Recents",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        NomiIcon(
-                            glyph = if (recentsExpanded) NomiIcons.ChevronDown else NomiIcons.ChevronRight,
-                            contentDescription = if (recentsExpanded) "Collapse recents" else "Expand recents",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            size = 18.dp,
-                        )
-                    }
-                }
-
-                if (recentsExpanded) {
-                    recents.forEach { chat ->
-                        val active = chat.id == currentChatId
-                        val colors = MaterialTheme.colorScheme
-                        val ink = if (active) colors.onPrimaryContainer else colors.onSurfaceVariant
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp)
-                                .clip(CircleShape)
-                                .background(if (active) colors.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
-                                .semantics(mergeDescendants = true) {}
-                                .clickable { onOpenRecentChat?.invoke(chat.id) }
-                                .padding(horizontal = 18.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = chat.title,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (active) FontWeight.Bold else FontWeight.Normal),
-                                color = ink,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    if (onSeeAllChats != null) {
-                        Text(
-                            text = "See all chats",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(CircleShape)
-                                .clickable(onClick = onSeeAllChats)
-                                .padding(horizontal = 18.dp, vertical = 8.dp),
-                        )
-                    }
-                }
-            }
-        }
-
-        // Expand toggle when collapsed
-        if (collapsed && onToggleCollapsed != null) {
-            IconButton(onClick = onToggleCollapsed) {
-                NomiIcon(NomiIcons.ChevronRight, contentDescription = "Expand sidebar")
-            }
-        }
-
-        // --- 4. Usage meter & Account footer ---
-        Column(
-            Modifier.fillMaxWidth().padding(NavPadding),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (!collapsed && usage != null) {
-                val share = if (usage.monthlyTokens > 0) (usage.tokensUsed.toFloat() / usage.monthlyTokens.toFloat()).coerceIn(0f, 1f) else 0f
-                val percent = (share * 100).toInt()
-                val colors = MaterialTheme.colorScheme
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.large)
-                        .background(colors.surfaceContainer)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = usage.planName,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = colors.onSurface,
-                        )
-                        Text(
-                            text = "$percent%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (share >= 0.9f) colors.error else colors.onSurfaceVariant,
-                        )
-                    }
-                    ai.nomi.designsystem.component.NomiWavyProgress(
-                        progress = { share },
-                        contentDescription = "Token usage $percent%",
-                        color = if (share >= 0.9f) colors.error else colors.primary,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = "${formatTokens(usage.tokensUsed)} / ${formatTokens(usage.monthlyTokens)} tokens",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant,
-                    )
-                    if (usage.canUpgrade && onUpgrade != null) {
-                        Text(
-                            text = "Upgrade plan",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = colors.primary,
-                            modifier = Modifier.clickable(onClick = onUpgrade),
-                        )
-                    }
-                }
-            }
-
-            if (footer != null) {
-                footer()
-            } else if (account != null || onOpenAccount != null || onAccountMenuItemClick != null) {
-                val label = account?.displayName?.ifBlank { null } ?: account?.email ?: "Account"
-                val colors = MaterialTheme.colorScheme
-                var accountMenuExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-
-                Box(Modifier.fillMaxWidth()) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Row(
-                            modifier = Modifier
-                                .weight(FILL)
-                                .clip(CircleShape)
-                                .semantics(mergeDescendants = true) {}
-                                .clickable {
-                                    if (onAccountMenuItemClick != null) {
-                                        accountMenuExpanded = true
-                                    } else {
-                                        onOpenAccount?.invoke()
-                                    }
-                                }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            ai.nomi.designsystem.component.NomiAvatar(
-                                name = label,
-                                avatarUrl = account?.avatarUrl,
-                                size = 36.dp,
-                            )
-                            if (!collapsed) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = colors.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        if (!collapsed && onOpenSettings != null) {
-                            IconButton(onClick = onOpenSettings) {
-                                NomiIcon(NomiIcons.Settings, contentDescription = "Settings", tint = colors.onSurfaceVariant, size = FooterIconSize)
-                            }
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = accountMenuExpanded,
-                        onDismissRequest = { accountMenuExpanded = false },
-                    ) {
-                        NomiAccountMenuItem.entries.forEach { item ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = item.label,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontWeight = if (item == NomiAccountMenuItem.Logout) FontWeight.Bold else FontWeight.Normal,
-                                        ),
-                                        color = if (item == NomiAccountMenuItem.Logout) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                                    )
-                                },
-                                onClick = {
-                                    accountMenuExpanded = false
-                                    onAccountMenuItemClick?.invoke(item)
-                                },
-                            )
-                        }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Text(
-                            text = "Nomi 2.0",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        )
-                    }
-                }
-            }
-
-            if (footer == null && !collapsed && onLogOut != null) {
-                val colors = MaterialTheme.colorScheme
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(ItemHeight)
-                        .clip(CircleShape)
-                        .semantics(mergeDescendants = true) {}
-                        .clickable(onClick = onLogOut)
-                        .padding(horizontal = FooterRowPadding),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(FooterRowGap),
-                ) {
-                    NomiIcon(NomiIcons.Logout, contentDescription = null, tint = colors.onSurfaceVariant, size = FooterIconSize)
-                    Text(
-                        text = "Log out",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = colors.onSurfaceVariant,
-                    )
-                }
-            }
+    val frame = modifier
+        .fillMaxHeight()
+        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+        .statusBarsPadding()
+        .navigationBarsPadding()
+    val fadeIn = fadeIn(DsMotion.effects())
+    val fadeOut = fadeOut(DsMotion.effects())
+    AnimatedContent(
+        collapsed,
+        frame,
+        transitionSpec = { fadeIn togetherWith fadeOut },
+        label = "drawer-rail",
+    ) { rail ->
+        if (rail) {
+            DrawerRail(items, selected, onSelect, onNewChat, onToggleCollapsed, account, onOpenSettings ?: onOpenAccount)
+        } else {
+            DrawerPanel(
+                items, selected, onSelect, onNewChat, onToggleCollapsed ?: onClose, recents, currentChatId, onOpenRecentChat,
+                onSeeAllChats, usage, onUpgrade ?: onOpenSettings, account, onOpenSettings ?: onOpenAccount, onLogOut, footer,
+            )
         }
     }
 }
+
+@Composable
+private fun <K> DrawerPanel(
+    items: List<NomiNavItem<K>>,
+    selected: K,
+    onSelect: (K) -> Unit,
+    onNewChat: () -> Unit,
+    onCollapse: (() -> Unit)?,
+    recents: List<NomiRecentChat>,
+    currentChatId: String?,
+    onOpenRecentChat: ((String) -> Unit)?,
+    onSeeAllChats: (() -> Unit)?,
+    usage: NomiUsageBrief?,
+    onUsage: (() -> Unit)?,
+    account: NomiAccount?,
+    onSettings: (() -> Unit)?,
+    onLogOut: (() -> Unit)?,
+    footer: (@Composable () -> Unit)?,
+) {
+    var recentsOpen by rememberSaveable { mutableStateOf(true) }
+    Column(Modifier.width(SidebarWidth).fillMaxHeight().padding(DrawerPadding), verticalArrangement = Arrangement.spacedBy(ItemGapDp)) {
+        Row(Modifier.fillMaxWidth().padding(start = BrandGap, bottom = BrandGap), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(FILL), horizontalArrangement = Arrangement.spacedBy(BrandGap), verticalAlignment = Alignment.CenterVertically) {
+                Mascot(Crew.Nomi, BrandMascot)
+                Text("nomi", style = brandWordmark(), color = Ds.text)
+            }
+            if (onCollapse != null) DsIconButton(Lucide.PanelLeft, "Collapse sidebar", onCollapse, variant = DsIconButtonVariant.Ghost)
+        }
+        NewChatButton(onNewChat)
+        Spacer(Modifier.height(SectionGap))
+        Column(Modifier.weight(FILL).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(ItemGapDp)) {
+            items.forEach { item ->
+                NavItem(
+                    item.glyph,
+                    item.label,
+                    onClick = { onSelect(item.key) },
+                    count = item.badge.takeIf { it > 0 }?.let(::badgeText),
+                    active = item.key == selected,
+                )
+            }
+            if (recents.isNotEmpty()) {
+                Spacer(Modifier.height(RecentsTop))
+                RecentsList(
+                    recents.map { chat ->
+                        RecentItem(RecentKind.Chat, chat.title, chat.whenLabel, active = chat.id == currentChatId, onClick = { onOpenRecentChat?.invoke(chat.id) })
+                    },
+                    open = recentsOpen,
+                    onToggle = { recentsOpen = !recentsOpen },
+                    onAll = { onSeeAllChats?.invoke() },
+                )
+            }
+        }
+        Spacer(Modifier.height(SectionGap))
+        if (usage != null) {
+            UsageCard(
+                usage.planName,
+                usage.share(),
+                "${formatTokens(usage.tokensUsed)} of ${formatTokens(usage.monthlyTokens)} tokens",
+                onOpen = { onUsage?.invoke() },
+            )
+        }
+        footer?.invoke()
+        if (account != null) UserRow(account.displayName, onSettings = { onSettings?.invoke() })
+        if (onLogOut != null) LogOutRow(onLogOut)
+    }
+}
+
+/** The drawer's FAB: New chat on the primary container. */
+@Composable
+private fun NewChatButton(onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(NewChatHeight).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = LogOutPadding),
+        horizontalArrangement = Arrangement.spacedBy(NewChatGap),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DsIcon(Lucide.Plus, NewChatIcon, MaterialTheme.colorScheme.onPrimaryContainer)
+        Text("New chat", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+    }
+}
+
+/** `.log-out`: a quiet full-width row. */
+@Composable
+private fun LogOutRow(onLogOut: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(LogOutHeight).clip(CircleShape).clickable(role = Role.Button, onClick = onLogOut).padding(horizontal = LogOutPadding),
+        horizontalArrangement = Arrangement.spacedBy(LogOutGap),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DsIcon(Lucide.Logout, LogOutIcon, Ds.text2)
+        Text("Log out", style = MaterialTheme.typography.labelLarge, color = Ds.text2)
+    }
+}
+
+/** `.rail`: the brand, New chat, the places as pills with their badges, expand, and the person. */
+@Composable
+private fun <K> DrawerRail(
+    items: List<NomiNavItem<K>>,
+    selected: K,
+    onSelect: (K) -> Unit,
+    onNewChat: () -> Unit,
+    onExpand: (() -> Unit)?,
+    account: NomiAccount?,
+    onSettings: (() -> Unit)?,
+) {
+    Column(
+        Modifier.width(RailWidth).fillMaxHeight().padding(top = RailTop, bottom = DrawerPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(RailGap),
+    ) {
+        Mascot(Crew.Nomi, BrandMascot, label = "Nomi home")
+        Box(
+            Modifier.size(RailItem).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.primaryContainer)
+                .clickable(role = Role.Button, onClickLabel = "New chat", onClick = onNewChat),
+            contentAlignment = Alignment.Center,
+        ) { DsIcon(Lucide.Plus, RailIcon, MaterialTheme.colorScheme.onPrimaryContainer) }
+        Column(Modifier.weight(FILL).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            items.forEach { item -> RailItem(item, item.key == selected) { onSelect(item.key) } }
+        }
+        if (onExpand != null) DsIconButton(Lucide.PanelLeftOpen, "Expand sidebar", onExpand, variant = DsIconButtonVariant.Ghost)
+        if (account != null) {
+            Box(Modifier.clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Settings") { onSettings?.invoke() }) { DsAvatar(account.displayName) }
+        }
+    }
+}
+
+@Composable
+private fun <K> RailItem(item: NomiNavItem<K>, active: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val fill by animateColorAsState(if (active) colors.secondaryContainer else colors.secondaryContainer.copy(alpha = 0f), DsMotion.fast(), label = "rail-fill")
+    Box(
+        Modifier.padding(vertical = RailItemMargin).size(RailItem, RailPill).clip(CircleShape).background(fill)
+            .semantics { selected = active }
+            .clickable(role = Role.Tab, onClickLabel = item.label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        DsIcon(item.glyph, RailIcon, if (active) colors.onSecondaryContainer else Ds.text2)
+        if (item.badge > 0) Badge(Modifier.offset(RailBadgeX, RailBadgeY)) { Text(badgeText(item.badge)) }
+    }
+}
+
+private val ItemGapDp = 4.dp
+
+/** The wordmark beside the mascot (`font-weight: 800; letter-spacing: -0.045em`). */
+@Composable
+private fun brandWordmark() = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = BRAND_TRACKING_EM.em)
 
 /**
  * The wide-window sidebar: wraps [NomiNavDrawerContent] with collapsible rail animation.
@@ -498,6 +407,7 @@ fun <K> NomiSidebar(
         modifier
             .width(width)
             .fillMaxHeight()
+            .clipToBounds()
     ) {
         NomiNavDrawerContent(
             items = items,
@@ -519,41 +429,5 @@ fun <K> NomiSidebar(
             onLogOut = onLogOut,
             footer = footer,
         )
-    }
-}
-
-@Composable
-private fun <K> SidebarItem(item: NomiNavItem<K>, active: Boolean, collapsed: Boolean, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val effects = MaterialTheme.motionScheme.fastEffectsSpec<androidx.compose.ui.graphics.Color>()
-    val indicator by animateColorAsState(if (active) colors.primaryContainer else colors.primaryContainer.copy(alpha = 0f), effects)
-    val ink = if (active) colors.onSurface else colors.onSurfaceVariant
-    val pill = CircleShape
-    Row(
-        Modifier
-            .then(if (collapsed) Modifier else Modifier.fillMaxWidth())
-            .height(ItemHeight)
-            .nomiFocusRing(pill)
-            .semantics(mergeDescendants = true) { selected = active }
-            .clickable(role = Role.Tab, onClickLabel = item.label, onClick = onClick)
-            .padding(start = ItemStartPadding, end = if (collapsed) ItemStartPadding else HeaderPadding - 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ItemLabelGap),
-    ) {
-        Box(Modifier.size(IndicatorWidth, IndicatorHeight).background(indicator, pill), contentAlignment = Alignment.Center) {
-            NomiIcon(item.glyph, contentDescription = if (collapsed) item.label else null, tint = if (active) colors.onPrimaryContainer else ink)
-            if (item.badge > 0) {
-                Badge(Modifier.align(Alignment.Center).offset(BadgeOffsetX, BadgeOffsetY)) { Text(badgeText(item.badge)) }
-            }
-        }
-        if (!collapsed) {
-            Text(
-                item.label,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(if (active) ITEM_ACTIVE_WEIGHT else ITEM_LABEL_WEIGHT)),
-                color = ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }

@@ -88,6 +88,15 @@ class SessionGate(
         startSession()
     }
 
+    /** "Continue with Google": trades Google's answer for a session; serialized with sign-out like [signIn]. */
+    suspend fun signInWithGoogle(code: String, state: String) = lock.withLock {
+        auth.finishGoogleSignIn(code, state)
+        startSession()
+    }
+
+    /** Emails a link for choosing a new password. */
+    suspend fun forgotPassword(email: String, language: String) = auth.forgotPassword(email, language)
+
     /** Emails a fresh code for a waiting sign-in. */
     suspend fun resendCode(challengeId: String): VerificationInfo = auth.resendCode(challengeId)
 

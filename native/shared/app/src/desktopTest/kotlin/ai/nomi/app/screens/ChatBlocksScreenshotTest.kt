@@ -83,10 +83,10 @@ private val PlanAndFilesChat = ChatState(
         ),
         reply(
             "m2", "Wrote src/lib/hero.ts", 7,
-            """[{"kind":"reasoning","text":"The hero copy lives in **one** file, so a single write is enough."},
-                {"kind":"file_write","project_id":"pr","path":"src/lib/hero.ts","content":"export const title = 'Hello';\nexport const lede = 'I build things.';\n",
+            """[{"kind":"file_write","project_id":"pr","path":"src/lib/hero.ts","content":"export const title = 'Hello';\nexport const lede = 'I build things.';\n",
                  "previous_content":"export const title = 'Hi';\n"},
-                {"kind":"file_delete","project_id":"pr","path":"src/routes/old/+page.svelte","previous_content":"<h1>Old</h1>\n"}]""",
+                {"kind":"file_delete","project_id":"pr","path":"src/routes/old/+page.svelte","previous_content":"<h1>Old</h1>\n"},
+                {"kind":"reasoning","text":"The hero copy lives in **one** file, so a single write is enough."}]""",
         ),
         reply(
             "m3", "Here is the **comparison** you asked for: the new host is cheaper.", 6,

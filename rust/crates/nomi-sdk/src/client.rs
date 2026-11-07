@@ -17,7 +17,7 @@ use crate::network::auth::{
 use crate::network::events::RealtimeEvent;
 use crate::network::realtime::{normalize_topic, ConnectionState, RealtimeSettings, TopicWatch};
 use crate::network::Network;
-use crate::services::account::{ConnectionsOverview, Memory, Project, UsageBrief};
+use crate::services::account::{ConnectionsOverview, CreatedProject, Memory, Project, UsageBrief};
 use crate::services::home::{CrewMember, HomeSummary, Preferences, PreferencesUpdate};
 use crate::services::money::{MoneySummary, NewTransaction};
 use crate::services::project_tools::{
@@ -182,6 +182,25 @@ impl NomiSdk {
     ) -> Result<VerificationInfo, NomiError> {
         let auth = self.network.auth.clone();
         self.on_runtime(async move { auth.resend_email_code(&challenge_id).await })
+            .await
+    }
+
+    /// Emails a link for choosing a new password (in `language`, e.g. "en"); the same answer
+    /// whether or not the address has an account.
+    pub async fn forgot_password(&self, email: String, language: String) -> Result<(), NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move { auth.forgot_password(&email, &language).await })
+            .await
+    }
+
+    /// Finishes "Continue with Google" with the `code` and `state` Google sent back.
+    pub async fn finish_google_sign_in(
+        &self,
+        code: String,
+        state: String,
+    ) -> Result<SignedInUser, NomiError> {
+        let auth = self.network.auth.clone();
+        self.on_runtime(async move { auth.finish_google_sign_in(&code, &state).await })
             .await
     }
 
@@ -857,6 +876,17 @@ impl NomiSdk {
     pub async fn projects(&self, org_id: Option<String>) -> Result<Vec<Project>, NomiError> {
         let services = self.services.clone();
         self.on_runtime(async move { services.projects(org_id).await })
+            .await
+    }
+
+    /// Starts an empty project in `org_id`, or in the organization picked for projects; send its
+    /// chat (`session_id`) the first message to have Koda start building.
+    pub async fn create_project(
+        &self,
+        org_id: Option<String>,
+    ) -> Result<CreatedProject, NomiError> {
+        let services = self.services.clone();
+        self.on_runtime(async move { services.create_project(org_id).await })
             .await
     }
 

@@ -232,8 +232,20 @@ class SdkUsageApi(private val engine: NomiEngine) : UsageApi {
 class SdkProjectsApi(private val engine: NomiEngine) : ProjectsApi {
     override suspend fun list(orgId: String?): List<ProjectDto> = translated {
         engine.get().projects(orgId).map {
-            ProjectDto(it.id, it.sessionId, it.name, it.description, it.status, it.createdAt, it.updatedAt, it.createdBy, it.openIssues)
+            ProjectDto(
+                it.id, it.sessionId, it.name, it.description, it.status, it.createdAt, it.updatedAt, it.createdBy, it.openIssues,
+                stack = it.stack,
+                backend = it.backend,
+                chatsCount = it.chatsCount,
+                deploysCount = it.deploysCount,
+                filesCount = it.filesCount,
+                deployUrl = it.deployUrl,
+            )
         }
+    }
+
+    override suspend fun create(orgId: String?): ai.nomi.network.CreatedProjectDto = translated {
+        engine.get().createProject(orgId).let { ai.nomi.network.CreatedProjectDto(it.projectId, it.sessionId) }
     }
 }
 

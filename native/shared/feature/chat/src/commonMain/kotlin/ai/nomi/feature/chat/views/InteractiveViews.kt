@@ -151,26 +151,6 @@ private fun ChoiceChip(label: String, picked: Boolean, enabled: Boolean, onClick
     }
 }
 
-/** Next things the person might ask, as chips: tapping one sends it. Once the conversation moved on, they go. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun SuggestionsViewBlock(view: ChatView.Suggestions, answered: Boolean, onSend: ((String) -> Unit)?) {
-    var sent by rememberSaveable { mutableStateOf<String?>(null) }
-    if (answered && sent == null) return
-    val done = answered || sent != null
-    Column(verticalArrangement = Arrangement.spacedBy(GapM)) {
-        view.title?.let { Text(it, style = detailStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(GapM), verticalArrangement = Arrangement.spacedBy(GapM)) {
-            view.items.forEach { item ->
-                ChoiceChip(item, picked = sent == item, enabled = !done && onSend != null, leadingArrow = true, onClick = {
-                    onSend?.invoke(item)
-                    sent = item
-                })
-            }
-        }
-    }
-}
-
 private val OptionMinWidth = 200.dp
 private val OptionPaddingH = 14.dp
 
@@ -381,12 +361,12 @@ fun ChatViewBlock(view: ChatView, agent: String?, answered: Boolean, onSend: ((S
         is ChatView.Card -> CardViewBlock(view, timeZone, answered, onSend)
         is ChatView.Chart -> ChartViewBlock(view)
         is ChatView.Answer -> AnswerViewBlock(view, timeZone)
-        is ChatView.Suggestions -> SuggestionsViewBlock(view, answered, onSend)
+        is ChatView.Suggestions -> ai.nomi.feature.chat.blocks.FollowUpsBlock(view, answered, onSend)
         is ChatView.Decision -> DecisionViewBlock(view, agent, answered, onSend)
         is ChatView.Form -> FormViewBlock(view, answered, onSend)
-        is ChatView.LinkPreview -> LinkViewBlock(view)
+        is ChatView.LinkPreview -> ai.nomi.feature.chat.blocks.LinkBlock(view)
         is ChatView.Task -> TaskViewBlock(view, agent)
-        is ChatView.Shell -> ShellViewBlock(view)
+        is ChatView.Shell -> ai.nomi.feature.chat.blocks.ShellBlock(view)
         is ChatView.Code -> CodeViewBlock(view)
         is ChatView.Diff -> DiffViewBlock(view)
         is ChatView.Sources -> SourcesViewBlock(view)

@@ -22,6 +22,8 @@ const RESEND_PATH: &str = "/api/auth/resend";
 const REFRESH_PATH: &str = "/api/auth/refresh";
 const LOGOUT_PATH: &str = "/api/auth/logout";
 const PROFILE_PATH: &str = "/api/profile";
+const FORGOT_PATH: &str = "/api/auth/forgot";
+const GOOGLE_CALLBACK_PATH: &str = "/api/auth/google/callback";
 const API_ROOT: &str = "/api";
 const JWT_SEGMENTS: usize = 3;
 
@@ -111,6 +113,25 @@ struct VerifyRequest<'a> {
 #[derive(Serialize)]
 struct ChallengeRequest<'a> {
     challenge_id: &'a str,
+}
+
+#[derive(Serialize)]
+struct ForgotRequest<'a> {
+    email: &'a str,
+    language: &'a str,
+}
+
+#[derive(Serialize)]
+struct GoogleCallbackRequest<'a> {
+    code: &'a str,
+    state: &'a str,
+}
+
+/// `/api/auth/google/callback`: a sign-in brings tokens; linking Google to a signed-in account doesn't.
+#[derive(Deserialize)]
+struct GoogleCallbackResponse {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -241,6 +262,37 @@ impl Auth {
             .post_public(RESEND_PATH, &ChallengeRequest { challenge_id })
             .await?;
         http::json(code_checked(response).await?).await
+    }
+
+    /// Emails a link for choosing a new password. The backend answers the same whether or not
+    /// the address has an account.
+    pub async fn forgot_password(&self, email: &str, language: &str) -> Result<(), NomiError> {
+        let response = self
+            .post_public(FORGOT_PATH, &ForgotRequest { email, language })
+            .await?;
+        http::success(response).await.map(|_| ())
+    }
+
+    /// Finishes "Continue with Google": trades the code Google sent back (with its `state`) for a
+    /// session.
+    pub async fn finish_google_sign_in(
+        &self,
+        code: &str,
+        state: &str,
+    ) -> Result<SignedInUser, NomiError> {
+        let response = self
+            .post_public(GOOGLE_CALLBACK_PATH, &GoogleCallbackRequest { code, state })
+            .await?;
+        let body = http::json::<GoogleCallbackResponse>(response).await?;
+        match (body.access_token, body.refresh_token) {
+            (Some(access_token), Some(refresh_token)) => self.begin_session(TokenPair {
+                access_token,
+                refresh_token,
+            }),
+            _ => Err(NomiError::InvalidResponse {
+                reason: "Google sign-in brought no session".into(),
+            }),
+        }
     }
 
     /// Exchanges the refresh token for a new access token. With `stale_access`, a refresh that

@@ -45,6 +45,12 @@ interface NomiClient {
 
     suspend fun resendEmailCode(challengeId: String): VerificationInfo
 
+    /** Emails a link for choosing a new password (in [language]); the same whether or not the address has an account. */
+    suspend fun forgotPassword(email: String, language: String)
+
+    /** Finishes "Continue with Google" with the code and state Google sent back. */
+    suspend fun finishGoogleSignIn(code: String, state: String): SignedInUser
+
     /** False when there is no session or the backend refused it (the session has then ended). */
     suspend fun refreshSession(): Boolean
 
@@ -220,6 +226,9 @@ interface NomiClient {
 
     /** Projects in [orgId], or in the organization picked for projects. */
     suspend fun projects(orgId: String?): List<Project>
+
+    /** Starts an empty project; send its chat the first message to have Koda start building. */
+    suspend fun createProject(orgId: String?): CreatedProject
 
     /** The project whose chat is [sessionId]; [NomiException.Http] 404 for an ordinary chat. */
     suspend fun projectForChat(sessionId: String): ProjectDetail

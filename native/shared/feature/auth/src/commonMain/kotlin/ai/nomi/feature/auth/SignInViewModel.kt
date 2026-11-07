@@ -1,5 +1,7 @@
 package ai.nomi.feature.auth
 
+import ai.nomi.data.GoogleReturn
+import ai.nomi.data.GoogleSignInReturns
 import ai.nomi.data.SessionGate
 import ai.nomi.network.ApiException
 import ai.nomi.network.EmailCodeError
@@ -9,6 +11,8 @@ import ai.nomi.network.VerificationInfo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +33,26 @@ data class SignInUiState(
     val code: String = "",
     val notice: String? = null,
     val mustStartOver: Boolean = false,
-)
+    /** The password shows as typed (the field's eye). */
+    val showPassword: Boolean = false,
+    /** "Forgot password?": asking for a reset link, and [resetSentTo] once it's sent. */
+    val forgot: Boolean = false,
+    val resetSentTo: String? = null,
+    /** Off to Google's sign-in in the browser, or trading its answer for a session. */
+    val googleBusy: Boolean = false,
+    /** A passing note for the snackbar (the web's toast), cleared once shown. */
+    val toast: String? = null,
+) {
+    /** Which page of the sign-in the person is on, for the transitions between them. */
+    val step: SignInStep get() = when {
+        challenge != null -> SignInStep.Code
+        forgot && resetSentTo != null -> SignInStep.ResetSent
+        forgot -> SignInStep.Forgot
+        else -> SignInStep.Password
+    }
+}
+
+enum class SignInStep { Password, Code, Forgot, ResetSent }
 
 const val CODE_LENGTH = 6
 private const val SECONDS_PER_MINUTE = 60
@@ -47,6 +70,21 @@ private const val MESSAGE_RESENT = "New code sent. The old one no longer works."
 private const val MESSAGE_NO_MORE_CODES = "No more codes can be sent for this sign-in. Start over to try again."
 private const val MESSAGE_RESEND_FAILED = "Couldn't send the code email. Try again in a moment."
 
+// "Forgot password?" and Google, worded like the web (frontend/messages/en.json, forgot_* and google_*).
+private const val MESSAGE_EMAIL_REQUIRED = "Enter your email."
+private const val MESSAGE_FORGOT_FAILED = "Couldn't send the link. Try again in a moment."
+private const val MESSAGE_RESET_SENT = "Reset link sent."
+private const val MESSAGE_GOOGLE_CANCELLED = "Google sign-in was cancelled."
+private const val MESSAGE_GOOGLE_UNAVAILABLE = "Google sign-in isn't available right now."
+private const val MESSAGE_GOOGLE_FAILED = "Couldn't sign in with Google. Try again."
+private const val GOOGLE_UNAVAILABLE = "unavailable"
+/** The reset email's language; the app speaks English. */
+private const val RESET_LANGUAGE = "en"
+/** The web page that sends the browser on to Google and hands its answer back to the app. */
+const val GOOGLE_NATIVE_PATH = "/auth/google/native"
+/** Back from the browser without an answer: wait this long for one to arrive before the button stops spinning. */
+private const val GOOGLE_RETURN_GRACE_MS = 1_500L
+
 private fun wrongCodeMessage(left: Int) = "That code isn't right. $left tries left."
 private fun waitMessage(seconds: Int) = "Wait $seconds seconds before asking for another code."
 
@@ -56,9 +94,101 @@ fun VerificationInfo.instructions(): String =
         "It works for ${expiresIn / SECONDS_PER_MINUTE} minutes; check your spam folder if it isn't there."
 
 /** Signing in routes the whole app: [SessionGate.signedIn] flips and the shell swaps the back stack. */
-class SignInViewModel(private val gate: SessionGate) : ViewModel() {
+class SignInViewModel(
+    private val gate: SessionGate,
+    private val webUrl: String,
+    googleReturns: Flow<GoogleReturn> = GoogleSignInReturns.flow,
+) : ViewModel() {
     private val mutableState = MutableStateFlow(SignInUiState())
     val state: StateFlow<SignInUiState> = mutableState.asStateFlow()
+    private var exchanging = false
+
+    init {
+        viewModelScope.launch { googleReturns.collect(::onGoogleReturn) }
+    }
+
+    /** Where "Continue with Google" opens in the browser. */
+    val googleUrl: String get() = webUrl.trimEnd('/') + GOOGLE_NATIVE_PATH
+
+    fun togglePasswordVisible() = mutableState.update { it.copy(showPassword = !it.showPassword) }
+
+    fun toastShown() = mutableState.update { it.copy(toast = null) }
+
+    /** Off to Google: [open] shows [googleUrl] in the browser; the answer comes back through the returns flow. */
+    fun continueWithGoogle(open: (String) -> Unit) {
+        if (mutableState.value.busy || mutableState.value.googleBusy) return
+        mutableState.update { it.copy(googleBusy = true, error = null) }
+        try {
+            open(googleUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            mutableState.update { it.copy(googleBusy = false, error = MESSAGE_GOOGLE_FAILED) }
+        }
+    }
+
+    /** Back in the app: a browser closed without an answer stops the button spinning (the web's `pageshow`). */
+    fun onResumed() {
+        if (!mutableState.value.googleBusy) return
+        viewModelScope.launch {
+            delay(GOOGLE_RETURN_GRACE_MS)
+            if (!exchanging) mutableState.update { it.copy(googleBusy = false) }
+        }
+    }
+
+    private suspend fun onGoogleReturn(answer: GoogleReturn) {
+        when (answer) {
+            is GoogleReturn.Failed -> {
+                val message = if (answer.reason == GOOGLE_UNAVAILABLE) MESSAGE_GOOGLE_UNAVAILABLE else MESSAGE_GOOGLE_CANCELLED
+                mutableState.update { it.copy(googleBusy = false, error = message, toast = message) }
+            }
+            is GoogleReturn.Code -> {
+                exchanging = true
+                mutableState.update { it.copy(googleBusy = true, error = null) }
+                try {
+                    gate.signInWithGoogle(answer.code, answer.state)
+                    mutableState.update { it.copy(googleBusy = false) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    mutableState.update { it.copy(googleBusy = false, error = MESSAGE_GOOGLE_FAILED, toast = MESSAGE_GOOGLE_FAILED) }
+                } finally {
+                    exchanging = false
+                }
+            }
+        }
+    }
+
+    /** "Forgot password?": the reset-link step, keeping the email typed so far. */
+    fun openForgot() = mutableState.update { it.copy(forgot = true, resetSentTo = null, error = null, busy = false) }
+
+    /** Back to the password step from the reset-link steps. */
+    fun closeForgot() = mutableState.update { it.copy(forgot = false, resetSentTo = null, error = null) }
+
+    /** "Use a different email": back to the reset-link form. */
+    fun forgotAgain() = mutableState.update { it.copy(resetSentTo = null, error = null) }
+
+    fun sendResetLink() {
+        val current = mutableState.value
+        if (current.busy) return
+        val email = current.email.trim()
+        if (email.isEmpty()) {
+            mutableState.update { it.copy(error = MESSAGE_EMAIL_REQUIRED) }
+            return
+        }
+        mutableState.update { it.copy(busy = true, error = null) }
+        viewModelScope.launch {
+            val next = try {
+                gate.forgotPassword(email, RESET_LANGUAGE)
+                mutableState.value.copy(busy = false, resetSentTo = email, toast = MESSAGE_RESET_SENT)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                mutableState.value.copy(busy = false, error = MESSAGE_FORGOT_FAILED, toast = MESSAGE_FORGOT_FAILED)
+            }
+            mutableState.value = next
+        }
+    }
 
     fun onEmailChange(value: String) = mutableState.update { it.copy(email = value, error = null) }
 
@@ -70,7 +200,7 @@ class SignInViewModel(private val gate: SessionGate) : ViewModel() {
 
     fun submit() {
         val current = mutableState.value
-        if (current.busy) return
+        if (current.busy || current.googleBusy) return
         val email = current.email.trim()
         if (email.isEmpty() || current.password.isEmpty()) {
             mutableState.update { it.copy(error = MESSAGE_MISSING_FIELDS) }
@@ -87,9 +217,9 @@ class SignInViewModel(private val gate: SessionGate) : ViewModel() {
                 throw e
             } catch (e: ApiException) {
                 val message = if (e.status == HTTP_UNAUTHORIZED) MESSAGE_BAD_CREDENTIALS else MESSAGE_FAILED
-                mutableState.value.copy(busy = false, error = message)
+                mutableState.value.copy(busy = false, error = message, toast = message)
             } catch (_: Exception) {
-                mutableState.value.copy(busy = false, error = MESSAGE_FAILED)
+                mutableState.value.copy(busy = false, error = MESSAGE_FAILED, toast = MESSAGE_FAILED)
             }
             mutableState.value = next
         }
@@ -151,5 +281,5 @@ class SignInViewModel(private val gate: SessionGate) : ViewModel() {
     }
 
     /** Back to the password step, keeping the email. */
-    fun startOver() = mutableState.update { SignInUiState(email = it.email) }
+    fun startOver() = mutableState.update { SignInUiState(email = it.email, showPassword = it.showPassword) }
 }

@@ -26,6 +26,12 @@ interface AuthRepository {
     /** Emails a fresh code for a waiting sign-in; throws `EmailCodeException` when it can't. */
     suspend fun resendCode(challengeId: String): VerificationInfo
 
+    /** Emails a link for choosing a new password; the same answer whether or not the address has an account. */
+    suspend fun forgotPassword(email: String, language: String)
+
+    /** Finishes "Continue with Google" with the code and state Google sent back, and stores the session. */
+    suspend fun finishGoogleSignIn(code: String, state: String)
+
     /** Forgets the stored session right away and revokes it on the backend, best effort. */
     suspend fun signOut()
 }
@@ -48,6 +54,14 @@ class SdkAuthRepository(private val engine: NomiEngine, private val tokens: Toke
 
     override suspend fun resendCode(challengeId: String): VerificationInfo =
         translated { engine.get().resendEmailCode(challengeId).toDomain() }
+
+    override suspend fun forgotPassword(email: String, language: String) {
+        translated { engine.get().forgotPassword(email, language) }
+    }
+
+    override suspend fun finishGoogleSignIn(code: String, state: String) {
+        translated { engine.get().finishGoogleSignIn(code, state) }
+    }
 
     override suspend fun signOut() = engine.get().signOut()
 }

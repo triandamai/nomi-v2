@@ -234,6 +234,12 @@ data class ProjectDto(
     @SerialName("updated_at") val updatedAt: String = "",
     @SerialName("created_by") val createdBy: String = "",
     @SerialName("open_issues") val openIssues: Long = 0,
+    val stack: String? = null,
+    val backend: String? = null,
+    @SerialName("chats_count") val chatsCount: Long? = null,
+    @SerialName("deploys_count") val deploysCount: Long? = null,
+    @SerialName("files_count") val filesCount: Long? = null,
+    @SerialName("deploy_url") val deployUrl: String? = null,
 )
 
 @Serializable
@@ -242,8 +248,14 @@ data class ListProjectsResponse(
     val projects: List<ProjectDto> = emptyList(),
 )
 
+/** A project just started, and the chat its workspace opens on. */
+data class CreatedProjectDto(val projectId: String, val sessionId: String)
+
 interface ProjectsApi {
     suspend fun list(orgId: String? = null): List<ProjectDto>
+
+    /** Starts an empty project in [orgId] (or the picked organization). */
+    suspend fun create(orgId: String? = null): CreatedProjectDto
 }
 
 

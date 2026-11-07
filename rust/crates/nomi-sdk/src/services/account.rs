@@ -102,6 +102,34 @@ pub struct Project {
     pub updated_at: String,
     pub created_by: String,
     pub open_issues: i64,
+    /// The app's framework ("sveltekit"), when known.
+    #[serde(default)]
+    pub stack: Option<String>,
+    /// Its data store: "drizzle" (PostgreSQL), "relay", or none.
+    #[serde(default)]
+    pub backend: Option<String>,
+    #[serde(default)]
+    pub chats_count: Option<i64>,
+    #[serde(default)]
+    pub deploys_count: Option<i64>,
+    #[serde(default)]
+    pub files_count: Option<i64>,
+    /// Where it's published; none before its first publish.
+    #[serde(default)]
+    pub deploy_url: Option<String>,
+}
+
+/// A project just started: its id and the chat its workspace opens on.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, uniffi::Record)]
+pub struct CreatedProject {
+    pub project_id: String,
+    pub session_id: String,
+}
+
+#[derive(Serialize)]
+struct NewProject<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    org_id: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -157,5 +185,17 @@ impl Services {
             None => self.get(&[PROJECTS], &[]).await?,
         };
         Ok(list.projects)
+    }
+
+    /// Starts an empty project in `org_id` (or the picked organization). The backend answers 409
+    /// when no organization is picked for projects yet.
+    pub async fn create_project(
+        &self,
+        org_id: Option<String>,
+    ) -> Result<CreatedProject, NomiError> {
+        let body = NewProject {
+            org_id: org_id.as_deref(),
+        };
+        self.call_for(Method::POST, &[PROJECTS], Some(&body)).await
     }
 }

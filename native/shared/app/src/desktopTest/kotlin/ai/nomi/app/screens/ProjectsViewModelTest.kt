@@ -1,5 +1,6 @@
 package ai.nomi.app.screens
 
+import ai.nomi.app.screens.projects.ProjectFilter
 import ai.nomi.app.screens.projects.ProjectsUiState
 import ai.nomi.app.screens.projects.ProjectsViewModel
 import ai.nomi.data.ProjectsRepository
@@ -21,6 +22,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class FakeProjectsApi : ProjectsApi {
+    val created = mutableListOf<String?>()
+    var nextCreate: Result<ai.nomi.network.CreatedProjectDto> = Result.success(ai.nomi.network.CreatedProjectDto("p-new", "s-new"))
+
+    override suspend fun create(orgId: String?): ai.nomi.network.CreatedProjectDto {
+        created += orgId
+        return nextCreate.getOrThrow()
+    }
+
     var projects = listOf(
         ProjectDto(
             id = "p1",
@@ -84,5 +93,74 @@ class ProjectsViewModelTest {
         val state = vm.uiState.value as ProjectsUiState.Ready
         assertEquals(1, state.filteredProjects.size)
         assertEquals("Project Beta", state.filteredProjects[0].name)
+    }
+
+    @Test
+    fun filtersCountAndNarrowByState() = runTest {
+        val session = SessionScope(backgroundScope).also { it.open() }
+        val vm = ProjectsViewModel(ProjectsRepository(FakeProjectsApi(), session))
+        val ready = vm.uiState.filterIsInstance<ProjectsUiState.Ready>().first()
+
+        // Alpha is "ready" but has open issues: it needs attention, not live.
+        assertEquals(2, ready.count(ProjectFilter.All))
+        assertEquals(0, ready.count(ProjectFilter.Live))
+        assertEquals(1, ready.count(ProjectFilter.Building))
+        assertEquals(1, ready.count(ProjectFilter.Attention))
+        vm.setFilter(ProjectFilter.Attention)
+        assertEquals(listOf("Project Alpha"), (vm.uiState.value as ProjectsUiState.Ready).filteredProjects.map { it.name })
+    }
+
+    @Test
+    fun sortTogglesBetweenUpdatedAndName() = runTest {
+        val api = FakeProjectsApi().apply {
+            projects = listOf(
+                ProjectDto(id = "a", name = "Zebra", updatedAt = "2026-11-07T10:00:00Z"),
+                ProjectDto(id = "b", name = "apple", updatedAt = "2026-11-01T10:00:00Z"),
+            )
+        }
+        val session = SessionScope(backgroundScope).also { it.open() }
+        val vm = ProjectsViewModel(ProjectsRepository(api, session))
+        vm.uiState.filterIsInstance<ProjectsUiState.Ready>().first()
+
+        assertEquals(listOf("Zebra", "apple"), (vm.uiState.value as ProjectsUiState.Ready).filteredProjects.map { it.name })
+        vm.toggleSort()
+        assertEquals(listOf("apple", "Zebra"), (vm.uiState.value as ProjectsUiState.Ready).filteredProjects.map { it.name })
+    }
+
+    @Test
+    fun startBuildingCreatesAProjectSendsThePromptAndOpensIt() = runTest {
+        val api = FakeProjectsApi()
+        val session = SessionScope(backgroundScope).also { it.open() }
+        val sent = mutableListOf<Pair<String, String>>()
+        var opened: String? = null
+        val vm = ProjectsViewModel(ProjectsRepository(api, session), sendFirstMessage = { id, text -> sent += id to text })
+        vm.uiState.filterIsInstance<ProjectsUiState.Ready>().first()
+
+        vm.setPrompt("  a booking page  ")
+        vm.startBuilding { opened = it }
+        vm.newProject.first { !it.starting }
+
+        assertEquals(listOf<String?>(null), api.created)
+        assertEquals(listOf("s-new" to "a booking page"), sent)
+        assertEquals("s-new", opened)
+        assertEquals("", vm.newProject.value.prompt)
+    }
+
+    @Test
+    fun aProjectThatCantStartSaysSo() = runTest {
+        val api = FakeProjectsApi().apply { nextCreate = Result.failure(IllegalStateException("409")) }
+        val session = SessionScope(backgroundScope).also { it.open() }
+        var opened: String? = null
+        val vm = ProjectsViewModel(ProjectsRepository(api, session))
+        vm.uiState.filterIsInstance<ProjectsUiState.Ready>().first()
+
+        vm.setPrompt("x")
+        vm.startBuilding { opened = it }
+        vm.newProject.first { !it.starting }
+
+        assertEquals(null, opened)
+        assertEquals(false, vm.newProject.value.starting)
+        assertEquals("Couldn't start a new project. Try again.", vm.newProject.value.error)
+        assertEquals("x", vm.newProject.value.prompt)
     }
 }
