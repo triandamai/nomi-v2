@@ -17,7 +17,7 @@ import org.koin.dsl.module
  */
 const val API_URL_PROPERTY = "nomi.apiUrl"
 const val API_URL_ENV = "NOMI_API_URL"
-const val DEFAULT_DESKTOP_API_URL = "https://api-nomi.trian.space"
+const val DEFAULT_DESKTOP_API_URL = "https://api-staging.trian.space"
 
 /** The Rust engine's data, under the app's data directory. */
 private const val SDK_DIR = "sdk"

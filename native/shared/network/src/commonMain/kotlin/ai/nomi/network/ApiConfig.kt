@@ -1,7 +1,7 @@
 package ai.nomi.network
 
-private const val INSECURE_DEFAULT_PREFIX = "http://api-nomi.trian.space"
-private const val SECURE_DEFAULT_PREFIX = "https://api-nomi.trian.space"
+private const val INSECURE_DEFAULT_PREFIX = "http://api-staging.nomi.build"
+private const val SECURE_DEFAULT_PREFIX = "https://api-staging.nomi.build"
 /** The hosted API sits at `api-<web host>`; the web app (and its share pages) at the host without it. */
 private const val API_HOST_PREFIX = "api-"
 private const val SCHEME_SEPARATOR = "://"
