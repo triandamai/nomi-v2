@@ -16,6 +16,7 @@ private const val SEGMENT_REMINDERS = "reminders"
 private const val SEGMENT_MEMORY = "memory"
 private const val SEGMENT_CONNECTIONS = "connections"
 private const val SEGMENT_SETTINGS = "settings"
+private const val SEGMENT_DESIGN_SYSTEM = "design-system"
 private const val CHAT_PATH_SEGMENTS = 2
 private const val CHAT_ID_SEGMENT = 1
 private const val PERCENT = '%'
@@ -77,6 +78,7 @@ sealed interface NomiRoute : NavKey {
                 segments.firstOrNull() == SEGMENT_REMINDERS -> Reminders
                 segments.firstOrNull() == SEGMENT_MEMORY -> Memory
                 segments.firstOrNull() == SEGMENT_CONNECTIONS -> Connections
+                segments.firstOrNull() == SEGMENT_DESIGN_SYSTEM -> DesignSystem
                 segments.firstOrNull() == SEGMENT_SETTINGS -> Settings
                 else -> Home
             }
@@ -105,6 +107,9 @@ sealed interface NomiRoute : NavKey {
 @Serializable data object Connections : NomiRoute
 
 @Serializable data object Settings : NomiRoute
+
+/** The design system's components, as on the web's /design-system sheets (from Settings › About). */
+@Serializable data object DesignSystem : NomiRoute
 
 /** The destinations of the navigation bar on phones. */
 val TopLevelRoutes: List<NomiRoute> = listOf(Home, Chats, Projects, Money, Reminders, Settings)

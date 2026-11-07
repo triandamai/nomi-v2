@@ -1,17 +1,16 @@
 package ai.nomi.feature.chat
 
 import ai.nomi.data.Message
+import ai.nomi.designsystem.ds.DsChevron
+import ai.nomi.designsystem.ds.DsFold
+import ai.nomi.designsystem.ds.DsSpinner
+import ai.nomi.designsystem.ds.StepMark
+import ai.nomi.designsystem.ds.StepState
 import ai.nomi.designsystem.icon.NomiIcon
 import ai.nomi.designsystem.icon.NomiIcons
 import ai.nomi.designsystem.theme.NomiTheme
 import ai.nomi.feature.chat.blocks.ContentBlock
 import ai.nomi.feature.chat.blocks.parseContentBlocks
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -39,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -182,10 +180,6 @@ private fun agentLabel(agentType: String): String = agentType.replaceFirstChar {
 private const val LONG_THOUGHT_CHARS = 240
 private const val LONG_THOUGHT_LINES = 3
 private const val CLAMPED_LINES = 3
-private const val CHEVRON_OPEN_DEG = 180f
-private const val NO_ROTATION = 0f
-private const val SPIN_MS = 900
-private const val FULL_TURN = 360f
 private const val TOGGLE_WEIGHT = 600
 private val ToggleMinHeight = 36.dp
 private val TogglePaddingStart = 10.dp
@@ -196,6 +190,8 @@ private val TimelineIndent = 18.dp
 private val TimelineGap = 10.dp
 private val DotSize = 7.dp
 private val DotTop = 7.dp
+private val MarkTop = 3.dp
+private val StepMarkSize = 14.dp
 private val ItemLineGap = 2.dp
 private val RailWidth = 2.dp
 private val OutputPadding = 10.dp
@@ -234,21 +230,15 @@ fun ActivityDisclosure(thinking: List<String>, steps: List<ReplyStep>, live: Boo
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ToggleGap),
         ) {
-            if (live) Spinner(colors.onSurfaceVariant) else NomiIcon(NomiIcons.Lightbulb, null, size = ToggleIcon, tint = colors.onSurfaceVariant)
+            if (live) DsSpinner(ToggleIcon, colors.onSurfaceVariant) else NomiIcon(NomiIcons.Lightbulb, null, size = ToggleIcon, tint = colors.onSurfaceVariant)
             Text(
                 summary.joinToString(" · "),
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(TOGGLE_WEIGHT)),
                 color = colors.onSurfaceVariant,
             )
-            NomiIcon(
-                NomiIcons.ChevronDown,
-                null,
-                size = ToggleIcon,
-                tint = colors.onSurfaceVariant,
-                modifier = Modifier.rotate(if (open) CHEVRON_OPEN_DEG else NO_ROTATION),
-            )
+            DsChevron(open, ToggleIcon, colors.onSurfaceVariant)
         }
-        if (open) Timeline(thinking, steps)
+        DsFold(open) { Timeline(thinking, steps) }
     }
 }
 
@@ -281,7 +271,7 @@ private fun Timeline(thinking: List<String>, steps: List<ReplyStep>) {
             }
         }
         steps.forEachIndexed { i, step ->
-            TimelineItem(if (step.ok) colors.primary else colors.error) {
+            TimelineItem(if (step.ok) colors.primary else colors.error, mark = if (step.ok) StepState.Done else StepState.Failed) {
                 Text(stepLabel(step), style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
                 if (step.detail != null && step.tool != TOOL_DELEGATE) {
                     Text(step.detail, style = NomiTheme.metaStyle, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -290,7 +280,7 @@ private fun Timeline(thinking: List<String>, steps: List<ReplyStep>) {
                 step.output?.let { output ->
                     val shown = outputs[i] == true
                     MoreToggle(if (shown) "Hide output" else "Show output") { outputs[i] = !shown }
-                    if (shown) {
+                    DsFold(shown) {
                         Text(
                             output,
                             style = NomiTheme.metaStyle,
@@ -310,10 +300,12 @@ private fun Timeline(thinking: List<String>, steps: List<ReplyStep>) {
 }
 
 @Composable
-private fun TimelineItem(dot: Color, content: @Composable () -> Unit) {
+private fun TimelineItem(dot: Color, mark: StepState? = null, content: @Composable () -> Unit) {
     Row {
-        Box(Modifier.width(TimelineIndent).padding(top = DotTop), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.size(DotSize).background(dot, CircleShape))
+        Box(Modifier.width(TimelineIndent).padding(top = if (mark != null) MarkTop else DotTop), contentAlignment = Alignment.TopCenter) {
+            // A step shows its mark (done or failed) on a ground-coloured disc so the rail stops behind it.
+            if (mark != null) Box(Modifier.background(MaterialTheme.colorScheme.surface, CircleShape)) { StepMark(mark, StepMarkSize) }
+            else Box(Modifier.size(DotSize).background(dot, CircleShape))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ItemLineGap)) { content() }
     }
@@ -329,13 +321,6 @@ private fun MoreToggle(label: String, onClick: () -> Unit) {
     )
 }
 
-/** A small turning arc, for "still at it". */
+/** A small turning loader, for "still at it" (the design system's spinner). */
 @Composable
-internal fun Spinner(tint: Color, size: Dp = ToggleIcon) {
-    val turn by rememberInfiniteTransition().animateFloat(
-        initialValue = NO_ROTATION,
-        targetValue = FULL_TURN,
-        animationSpec = infiniteRepeatable(tween(SPIN_MS, easing = LinearEasing), RepeatMode.Restart),
-    )
-    NomiIcon(NomiIcons.Refresh, null, size = size, tint = tint, modifier = Modifier.rotate(turn))
-}
+internal fun Spinner(tint: Color, size: Dp = ToggleIcon) = DsSpinner(size, tint)

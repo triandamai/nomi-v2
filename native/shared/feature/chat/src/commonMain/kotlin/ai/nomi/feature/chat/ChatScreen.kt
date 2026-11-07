@@ -6,6 +6,29 @@ import ai.nomi.data.ChatState
 import ai.nomi.data.MESSAGE_STATUS_FAILED
 import ai.nomi.data.MESSAGE_STATUS_SENDING
 import ai.nomi.data.Message
+import ai.nomi.designsystem.ds.Crew
+import ai.nomi.designsystem.ds.DsMotion
+import ai.nomi.designsystem.ds.ErrorCallout
+import ai.nomi.designsystem.ds.LiveStep
+import ai.nomi.designsystem.ds.MessageUser
+import ai.nomi.designsystem.ds.SendStatus
+import ai.nomi.designsystem.ds.blinkAlpha
+import ai.nomi.designsystem.ds.chat.CrewWorking
+import ai.nomi.designsystem.ds.chat.DateDivider
+import ai.nomi.designsystem.ds.chat.JumpToLatest
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
+import kotlin.time.Clock
 import ai.nomi.designsystem.brand.brandStyle
 import ai.nomi.designsystem.component.Composer
 import ai.nomi.designsystem.component.NomiButton
@@ -117,6 +140,11 @@ private const val COPIED_RESET_MS = 2000L
 /** A message still waiting in the outbox reads as not there yet. */
 private const val SENDING_ALPHA = 0.6f
 private const val OPAQUE = 1f
+private const val MONTH_CHARS = 3
+private val CaretGap = 2.dp
+private val CaretLift = 5.dp
+private val CaretWidth = 8.dp
+private val CaretHeight = 16.dp
 
 private val Suggestions = listOf("Plan my week", "What did I spend on food?", "Remind me to call mom tomorrow")
 
@@ -328,10 +356,18 @@ private fun Thread(
     val count = items.size + if (working) LAST_OFFSET else NO_ITEMS
     var deleting by remember { mutableStateOf<Deleting?>(null) }
     var regenerating by remember { mutableStateOf<String?>(null) }
-    // Follow the conversation: new messages and streaming text keep the newest line in view.
+    // Where the reader is: following the newest line, or scrolled back (then new replies wait behind Jump to latest).
+    val atEnd by remember { derivedStateOf { !list.canScrollForward } }
+    var unseen by remember { mutableIntStateOf(NO_ITEMS) }
+    val scope = rememberCoroutineScope()
+    // Follow the conversation: new messages and streaming text keep the newest line in view, unless the reader
+    // scrolled back to read; then what arrives is counted on the jump button instead.
     LaunchedEffect(count, chat.draft?.text?.length) {
-        if (count > NO_ITEMS) list.scrollToItem(count - LAST_OFFSET)
+        if (count <= NO_ITEMS) return@LaunchedEffect
+        if (atEnd || list.firstVisibleItemIndex == NO_ITEMS) list.animateScrollToItem(count - LAST_OFFSET) else unseen++
     }
+    LaunchedEffect(atEnd) { if (atEnd) unseen = NO_ITEMS }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(state = list, modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         itemsIndexed(items, key = { _, item -> item.key }) { i, item ->
             val previous = items.getOrNull(i - 1)
@@ -339,7 +375,16 @@ private fun Thread(
             // Consecutive turns by the same author read as one: no repeated avatar or name.
             val chained = previous != null && previous.isUser() == item.isUser() && previous.author() == item.author()
             val lastInChain = next == null || next.isUser() != item.isUser() || next.author() != item.author()
-            Box(Modifier.widthIn(max = ColumnMaxWidth).fillMaxWidth().padding(horizontal = ThreadPaddingH).padding(top = if (i == 0) TurnGap else if (chained) ChainGap else TurnGap)) {
+            // A new day starts with its date (`DateDivider`), as the web thread does.
+            val day = item.createdAt()?.let { dayOf(it, timeZone) }
+            val newDay = day != null && day != previous?.createdAt()?.let { dayOf(it, timeZone) }
+            Column(
+                Modifier
+                    .animateItem(fadeInSpec = DsMotion.effects(), placementSpec = DsMotion.spatial(), fadeOutSpec = DsMotion.fast())
+                    .widthIn(max = ColumnMaxWidth).fillMaxWidth().padding(horizontal = ThreadPaddingH),
+            ) {
+            if (newDay && day != null) DateDivider(dayLabel(day, timeZone), Modifier.padding(top = TurnGap))
+            Box(Modifier.fillMaxWidth().padding(top = if (i == 0 || newDay) TurnGap else if (chained) ChainGap else TurnGap)) {
                 when {
                     item.isUser() -> {
                         val message = (item as ThreadItem.Stored).message
@@ -405,19 +450,34 @@ private fun Thread(
                         }
                     }
                     item is ThreadItem.Streaming -> AssistantTurn(item.author(), chained, agentType = item.agentType, streaming = true) {
-                        MessageText(item.text, Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        // The reply as it streams in, with the blinking caret where the next words land.
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            MessageText(item.text, Modifier.weight(FILL, fill = false).semantics { liveRegion = LiveRegionMode.Polite })
+                            Box(Modifier.padding(start = CaretGap, bottom = CaretLift).size(CaretWidth, CaretHeight).alpha(blinkAlpha()).background(MaterialTheme.colorScheme.onSurfaceVariant))
+                        }
                     }
                 }
+            }
             }
         }
         if (working && chat.draft == null) {
             item(key = "working") {
-                Box(Modifier.widthIn(max = ColumnMaxWidth).fillMaxWidth().padding(horizontal = ThreadPaddingH).padding(top = TurnGap)) {
+                Box(Modifier.animateItem(fadeInSpec = DsMotion.effects(), fadeOutSpec = DsMotion.fast()).widthIn(max = ColumnMaxWidth).fillMaxWidth().padding(horizontal = ThreadPaddingH).padding(top = TurnGap)) {
                     WorkingLine(chat.activeAgent)
                 }
             }
         }
         item(key = "end") { Box(Modifier.padding(bottom = TurnGap)) }
+    }
+    // Back to the bottom when the reader has scrolled up, with how many replies came in meanwhile.
+    AnimatedVisibility(
+        visible = !atEnd && count > NO_ITEMS,
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = TurnGap),
+        enter = slideInVertically(DsMotion.spatial()) { it } + fadeIn(DsMotion.effects()),
+        exit = slideOutVertically(DsMotion.fast()) { it } + fadeOut(DsMotion.fast()),
+    ) {
+        JumpToLatest(unseen, onClick = { scope.launch { list.animateScrollToItem(count - LAST_OFFSET) } })
+    }
     }
     deleting?.let { target ->
         val dismiss = { deleting = null }
@@ -429,78 +489,48 @@ private fun Thread(
     }
 }
 
+private fun dayOf(epochMs: Long, timeZone: TimeZone): LocalDate = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(timeZone).date
+
+/** "Today", "Yesterday", or the date ("12 Nov"), as the thread's day dividers say it. */
+private fun dayLabel(day: LocalDate, timeZone: TimeZone): String {
+    val today = Clock.System.now().toLocalDateTime(timeZone).date
+    return when (day) {
+        today -> "Today"
+        today.minus(1, DateTimeUnit.DAY) -> "Yesterday"
+        else -> "${day.day} ${day.month.name.take(MONTH_CHARS).lowercase().replaceFirstChar { it.uppercase() }}"
+    }
+}
+
+private fun ThreadItem.createdAt(): Long? = (this as? ThreadItem.Stored)?.message?.createdAt
+
 private fun clock(epochMs: Long, timeZone: TimeZone): String {
     val local = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(timeZone)
     return "${local.hour}:${local.minute.toString().padStart(MINUTES_PAD, '0')}"
 }
 
 /**
- * `.message-bubble--user`: a primary bubble with the tight corner at the bottom end, up to 78% wide, with copy and
- * delete under it. A message still in the outbox is dimmed and says it is sending; one that wasn't sent says so,
- * with [onRetry] and [onDiscard].
+ * `MessageUser`, as the web thread draws it: attached files above, the bubble (up to 78% wide), then where it is
+ * (sending; not sent, with retry and discard) or, once sent, copy, delete and the time.
  */
 @Composable
 private fun UserTurn(message: Message, time: String?, onRetry: () -> Unit, onDiscard: () -> Unit, onDelete: () -> Unit) {
     val sending = message.status == MESSAGE_STATUS_SENDING
     val failed = message.status == MESSAGE_STATUS_FAILED
-    val clipboard = LocalClipboardManager.current
-    var copied by remember { mutableStateOf(false) }
     val split = remember(message.content) { splitAttachments(message.content) }
-    LaunchedEffect(copied) {
-        if (copied) {
-            delay(COPIED_RESET_MS)
-            copied = false
-        }
-    }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val maxBubble: Dp = maxWidth * UserBubbleShare
-        Column(Modifier.align(Alignment.CenterEnd).widthIn(max = maxBubble), horizontalAlignment = Alignment.End) {
-            Column(
-                Modifier.alpha(if (sending) SENDING_ALPHA else OPAQUE),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(ChainGap),
-            ) {
-                // Attached files show as previews and cards above what was typed, never as their tags.
-                if (split.files.isNotEmpty()) MessageAttachments(split.files)
-                if (split.text.isNotEmpty()) {
-                    Text(
-                        split.text,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp, lineHeight = (USER_SP * USER_LINE_HEIGHT).sp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.primary, NomiTheme.bubbleShapes.end)
-                            .padding(horizontal = UserBubblePaddingH, vertical = UserBubblePaddingV),
-                    )
-                }
-            }
-            if (failed) {
-                NotSent(onRetry, onDiscard)
-                return@Column
-            }
-            Row(
-                Modifier.padding(top = ChainGap),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ActionGap),
-            ) {
-                if (sending) Meta("Sending…") else time?.let { Meta(it) }
-                UserAction(if (copied) NomiIcons.Check else NomiIcons.Copy, if (copied) "Copied" else "Copy message", active = copied) {
-                    clipboard.setText(AnnotatedString(split.text.ifEmpty { message.content }))
-                    copied = true
-                }
-                if (!sending) UserAction(NomiIcons.Delete, "Delete message", onClick = onDelete)
-            }
-        }
-    }
-}
-
-@Composable
-private fun UserAction(glyph: ai.nomi.designsystem.icon.NomiGlyph, label: String, active: Boolean = false, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(ActionIconSize)) {
-        NomiIcon(
-            glyph = glyph,
-            contentDescription = label,
-            size = ActionGlyphSize,
-            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        MessageUser(
+            text = split.text,
+            modifier = Modifier.align(Alignment.CenterEnd).widthIn(max = maxWidth * UserBubbleShare),
+            status = when {
+                failed -> SendStatus.Failed
+                sending -> SendStatus.Sending
+                else -> SendStatus.Sent
+            },
+            time = time,
+            onRetry = onRetry,
+            onDiscard = onDiscard,
+            onDelete = if (sending) null else onDelete,
+            above = if (split.files.isNotEmpty()) ({ MessageAttachments(split.files) }) else null,
         )
     }
 }
@@ -523,25 +553,6 @@ private fun DeleteMessageDialog(onDelete: () -> Unit, onDismiss: () -> Unit) {
         },
         dismissButton = { NomiButton(onClick = onDismiss, variant = NomiButtonVariant.Text) { Text("Cancel") } },
     )
-}
-
-/** Under a message that wasn't sent: why it stands out, and what can be done about it. */
-@Composable
-private fun NotSent(onRetry: () -> Unit, onDiscard: () -> Unit) {
-    Row(
-        Modifier.padding(top = ChainGap),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ActionGap),
-    ) {
-        Text(
-            "Not sent",
-            style = NomiTheme.metaStyle,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        NomiButton(onClick = onRetry, variant = NomiButtonVariant.Text, size = NomiButtonSize.ExtraSmall) { Text("Retry") }
-        NomiButton(onClick = onDiscard, variant = NomiButtonVariant.Text, size = NomiButtonSize.ExtraSmall) { Text("Discard") }
-    }
 }
 
 /**
@@ -593,17 +604,17 @@ private fun Meta(text: String, modifier: Modifier = Modifier) {
 private val LoaderSize = 28.dp
 private val StatusPaddingStart = 4.dp
 
-/** `.thread__status`: the morphing loader and what the crew is doing ("Nomi is checking your transactions…"). */
+/**
+ * `.thread__status`: who on the crew is working (their shape moving, `CrewWorking`) and the step they're on right now
+ * (`LiveStep`, "Nomi is checking your transactions…"), changing in place as the work moves on.
+ */
 @Composable
 private fun WorkingLine(agent: AgentActivity?) {
     val activity = agent?.let { phaseActivity(it.phase, it.detail) } ?: "working"
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(MessageGap),
-        modifier = Modifier.padding(start = StatusPaddingStart).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-    ) {
-        NomiLoadingIndicator(size = LoaderSize, contentDescription = "Nomi is working")
-        Text("Nomi is $activity…", style = MaterialTheme.typography.bodyLarge.copy(fontSize = USER_SP.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val crew = Crew.forAgentType(agent?.agentType)
+    Column(verticalArrangement = Arrangement.spacedBy(ChainGap)) {
+        CrewWorking(listOf(crew))
+        LiveStep("${crew.displayName} is $activity…")
     }
 }
 
@@ -632,20 +643,8 @@ private fun EmptyThread(onSuggestion: (String) -> Unit, modifier: Modifier) {
     }
 }
 
-private val NoticePaddingH = 14.dp
-private val NoticePaddingV = 12.dp
-
-/** `.thread__notice`: an error in the error container, announced politely. */
+/** `.thread__notice`: a failure, named plainly in the error callout and announced. */
 @Composable
 private fun Notice(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onErrorContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.large)
-            .padding(horizontal = NoticePaddingH, vertical = NoticePaddingV)
-            .semantics { liveRegion = LiveRegionMode.Polite },
-    )
+    ErrorCallout(text)
 }

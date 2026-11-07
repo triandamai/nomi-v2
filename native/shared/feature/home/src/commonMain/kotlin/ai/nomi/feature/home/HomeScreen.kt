@@ -11,7 +11,8 @@ import ai.nomi.designsystem.component.NomiButtonVariant
 import ai.nomi.designsystem.component.NomiListPanel
 import ai.nomi.designsystem.component.NomiRow
 import ai.nomi.designsystem.component.NomiSectionHeader
-import ai.nomi.designsystem.component.NomiSuggestionChip
+import ai.nomi.designsystem.ds.Crew
+import ai.nomi.designsystem.ds.SuggestionRow
 import ai.nomi.designsystem.shape.AgentIdentity
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.MorphingMark
@@ -87,7 +88,13 @@ private val RecentAvatar = 32.dp
 private const val PLACEHOLDER = "Ask Nomi, or hand something to the crew…"
 private const val START_LABEL = "Start chat"
 private const val DESKTOP_HINT = "Enter to send · Shift+Enter for a new line"
-private val Suggestions = listOf("Summarize this week’s spending", "Plan my Saturday", "Start a small website project", "Remind me to stretch at 4pm")
+/** Things to ask, each with the crew member it goes to (`SuggestionRow`, "→ dana"). */
+private val Suggestions = listOf(
+    "Summarize this week’s spending" to Crew.Dana,
+    "Plan my Saturday" to Crew.Rena,
+    "Start a small website project" to Crew.Koda,
+    "Remind me to stretch at 4pm" to Crew.Kala,
+)
 
 @Composable
 fun HomeScreen(
@@ -201,8 +208,8 @@ private fun StageLayout(
                 hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
             )
             state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
-                Suggestions.forEach { NomiSuggestionChip(it, onClick = { onSuggestion(it) }) }
+            Column(Modifier.fillMaxWidth()) {
+                Suggestions.forEach { (text, crew) -> SuggestionRow(crew, text, { onSuggestion(text) }, route = "→ ${crew.name.lowercase()}") }
             }
         }
         if (state.crew.isNotEmpty()) CrewStrip(state)
@@ -248,8 +255,8 @@ private fun ClassicLayout(
                         hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
                     )
                     state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
-                        Suggestions.forEach { NomiSuggestionChip(it, onClick = { onSuggestion(it) }) }
+                    Column(Modifier.fillMaxWidth()) {
+                        Suggestions.forEach { (text, crew) -> SuggestionRow(crew, text, { onSuggestion(text) }, route = "→ ${crew.name.lowercase()}") }
                     }
                 }
                 if (state.crew.isNotEmpty()) {
@@ -271,8 +278,8 @@ private fun ClassicLayout(
                     hint = if (LocalComposerPlatform.current == ComposerPlatform.Desktop) DESKTOP_HINT else "",
                 )
                 state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap), verticalArrangement = Arrangement.spacedBy(ChipGap)) {
-                    Suggestions.forEach { NomiSuggestionChip(it, onClick = { onSuggestion(it) }) }
+                Column(Modifier.fillMaxWidth()) {
+                    Suggestions.forEach { (text, crew) -> SuggestionRow(crew, text, { onSuggestion(text) }, route = "→ ${crew.name.lowercase()}") }
                 }
             }
             if (state.crew.isNotEmpty()) {

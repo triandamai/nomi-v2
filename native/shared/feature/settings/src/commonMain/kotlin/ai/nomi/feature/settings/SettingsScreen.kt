@@ -83,6 +83,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
     onOpenConnections: () -> Unit = {},
+    onOpenDesignSystem: () -> Unit = {},
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val theme by viewModel.theme.collectAsStateWithLifecycle()
@@ -119,6 +120,7 @@ fun SettingsScreen(
         bubbleEnabled = bubbleEnabled,
         onBubbleEnabledChange = viewModel::setBubbleEnabled,
         onOpenConnections = onOpenConnections,
+        onOpenDesignSystem = onOpenDesignSystem,
     )
 }
 
@@ -150,6 +152,7 @@ fun SettingsContent(
     bubbleEnabled: Boolean = true,
     onBubbleEnabledChange: (Boolean) -> Unit = {},
     onOpenConnections: () -> Unit = {},
+    onOpenDesignSystem: () -> Unit = {},
 ) {
     NomiPage(title = "Settings", modifier = modifier.testTag(SETTINGS_SCREEN_TAG)) {
         Column(
@@ -226,6 +229,16 @@ fun SettingsContent(
                     line = "Google Workspace, Hevy and health integrations",
                     onClick = onOpenConnections,
                     leading = { IconBadge(NomiIcons.Link, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) },
+                )
+            }
+
+            NomiSectionHeader("About")
+            NomiListPanel {
+                NomiRow(
+                    title = "Design system",
+                    line = "Every component, as on the web's design sheets",
+                    onClick = onOpenDesignSystem,
+                    leading = { IconBadge(NomiIcons.Sparkle, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer) },
                 )
             }
 

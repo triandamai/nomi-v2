@@ -144,10 +144,40 @@ sealed interface ChatView {
     }
 
     data class Shell(val command: String, val output: String?, val exitCode: Int?, val cwd: String?) : ChatView { override val name get() = "shell" }
+
+    data class Code(val code: String, val language: String?, val file: String?) : ChatView { override val name get() = "code" }
+
+    enum class DiffKind { Context, Add, Del }
+    data class DiffLine(val kind: DiffKind, val text: String, val old: Int?, val new: Int?)
+    data class DiffHunk(val header: String, val lines: kotlin.collections.List<DiffLine>)
+    data class Diff(val path: String, val hunks: kotlin.collections.List<DiffHunk>) : ChatView { override val name get() = "diff" }
+
+    data class Source(val title: String, val url: String?, val detail: String?, val web: Boolean)
+    data class Sources(val items: kotlin.collections.List<Source>) : ChatView { override val name get() = "sources" }
+
+    data class SelectionItem(val name: String, val detail: String?, val amount: Double?, val selected: Boolean)
+    data class Selection(val question: String, val items: kotlin.collections.List<SelectionItem>, val confirmLabel: String?, val per: String?) : ChatView {
+        override val name get() = "selection"
+    }
+
+    data class CartItem(val name: String, val detail: String?, val quantity: Int, val price: Double?, val available: Boolean, val swap: String?)
+    data class Cart(val title: String, val store: String, val items: kotlin.collections.List<CartItem>, val delivery: Double?, val checkoutUrl: String, val note: String?) : ChatView {
+        override val name get() = "cart"
+    }
+
+    data class Alternative(val title: String, val detail: String?, val agent: String?, val message: String?, val url: String?)
+    data class Boundary(val title: String, val reason: String, val alternatives: kotlin.collections.List<Alternative>) : ChatView {
+        override val name get() = "boundary"
+    }
+
+    data class QuickReplies(val replies: kotlin.collections.List<String>) : ChatView { override val name get() = "quick_replies" }
 }
 
 /** Every view this build draws (`VIEW_NAMES` on the web). */
-val ViewNames = listOf("list", "table", "comparison", "stepper", "timeline", "card", "chart", "answer", "suggestions", "decision", "form", "link", "task", "shell")
+val ViewNames = listOf(
+    "list", "table", "comparison", "stepper", "timeline", "card", "chart", "answer", "suggestions", "decision", "form", "link", "task", "shell",
+    "code", "diff", "sources", "selection", "cart", "boundary", "quick_replies",
+)
 
 /**
  * A view from its block (the `view` field names it). Null for a view this build doesn't know or one missing what it
@@ -211,6 +241,42 @@ private fun JsonObject.view(): ChatView? = when (string("view")) {
     "link" -> ChatView.LinkPreview(require("url"), string("title"), string("description"), string("image"), string("site"))
     "task" -> ChatView.Task(require("title"), ChatView.TaskStatus.of(string("status")), string("detail"), double("progress"), string("agent"))
     "shell" -> ChatView.Shell(require("command"), string("output"), int("exit_code"), string("cwd"))
+    "code" -> ChatView.Code(require("code"), string("language"), string("file"))
+    "diff" -> ChatView.Diff(
+        require("path"),
+        objects("hunks").map { hunk ->
+            ChatView.DiffHunk(
+                hunk.string("header").orEmpty(),
+                hunk.objects("lines").map {
+                    val kind = when (it.string("kind")) { "add" -> ChatView.DiffKind.Add; "del" -> ChatView.DiffKind.Del; else -> ChatView.DiffKind.Context }
+                    ChatView.DiffLine(kind, it.string("text").orEmpty(), it.int("old"), it.int("new"))
+                },
+            )
+        },
+    )
+    "sources" -> ChatView.Sources(objects("items").map { ChatView.Source(it.require("title"), it.string("url"), it.string("detail"), it.string("kind") != "file") })
+    "selection" -> ChatView.Selection(
+        require("question"),
+        objects("items").map { ChatView.SelectionItem(it.require("name"), it.string("detail"), it.double("amount"), it.bool("selected") == true) },
+        string("confirm_label"),
+        string("per"),
+    )
+    "cart" -> ChatView.Cart(
+        require("title"),
+        require("store"),
+        objects("items").map {
+            ChatView.CartItem(it.require("name"), it.string("detail"), it.int("quantity") ?: 1, it.double("price"), it.bool("available") != false, it.string("swap"))
+        },
+        double("delivery"),
+        require("checkout_url"),
+        string("note"),
+    )
+    "boundary" -> ChatView.Boundary(
+        require("title"),
+        require("reason"),
+        objects("alternatives").map { ChatView.Alternative(it.require("title"), it.string("detail"), it.string("agent"), it.string("message"), it.string("url")) },
+    )
+    "quick_replies" -> ChatView.QuickReplies(strings("replies"))
     else -> null
 }
 

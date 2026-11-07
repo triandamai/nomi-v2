@@ -1,5 +1,6 @@
 package ai.nomi.app.nav
 
+import ai.nomi.designsystem.gallery.DesignSystemGallery
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxSize
@@ -92,7 +93,10 @@ fun NomiNavDisplay(
             entry<Memory> { MemoryScreen(koinViewModel()) }
             entry<Notifications> { NotificationsScreen(koinViewModel(), onOpenLink = openLink) }
             entry<Connections> { ConnectionsScreen(koinViewModel()) }
-            entry<Settings> { SettingsScreen(koinViewModel(), onOpenConnections = { backStack.open(Connections) }) }
+            entry<Settings> {
+                SettingsScreen(koinViewModel(), onOpenConnections = { backStack.open(Connections) }, onOpenDesignSystem = { backStack.open(DesignSystem) })
+            }
+            entry<DesignSystem> { DesignSystemGallery(onBack = { backStack.back() }) }
         },
     )
 }
