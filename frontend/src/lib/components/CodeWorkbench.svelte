@@ -13,6 +13,7 @@
 	} from '$lib/code/fileOperations';
 	import { fileBadge } from '$lib/code/diffStats';
 	import { languageName } from '$lib/code/language';
+	import { isImagePath, toPayload, type FilePayload } from '$lib/code/fileBytes';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 
@@ -21,6 +22,7 @@
 		files,
 		activePath,
 		content,
+		binaryUrl = null,
 		contentKey = 0,
 		dirty = $bindable(false),
 		saveError = null,
@@ -35,6 +37,8 @@
 		files: string[];
 		activePath: string | null;
 		content: string;
+		/** Where the open file is served, when it's an image, font or other binary file (shown, not edited). */
+		binaryUrl?: string | null;
 		/** Changes when `content` was (re)loaded, so the editor shows it. */
 		contentKey?: number;
 		/** Unsaved edits in the open file. */
@@ -43,7 +47,7 @@
 		onOpen: (path: string) => void;
 		onSave: (content: string) => void;
 		onCreateFile?: (path: string, content: string) => Promise<void> | void;
-		onUploadFiles?: (items: { path: string; content: string }[]) => Promise<void> | void;
+		onUploadFiles?: (items: FilePayload[]) => Promise<void> | void;
 		onDeleteFile?: (path: string, isFolder: boolean) => Promise<void> | void;
 		onMoveFile?: (sourcePath: string, targetFolder: string) => Promise<void> | void;
 	} = $props();
@@ -140,7 +144,7 @@
 	async function processUploadedFiles(uploadedFiles: FileList | File[], targetDir: string) {
 		if (!uploadedFiles || uploadedFiles.length === 0) return;
 		if (onUploadFiles) {
-			const items: { path: string; content: string }[] = [];
+			const items: FilePayload[] = [];
 			for (let i = 0; i < uploadedFiles.length; i++) {
 				const file = uploadedFiles[i];
 				if (isZipFile(file)) {
@@ -148,10 +152,10 @@
 					const extracted = extractZipArchive(buffer, targetDir);
 					items.push(...extracted);
 				} else {
-					const content = await file.text();
 					const cleanName = file.name.replace(/^\/+/, '');
 					const path = targetDir ? `${targetDir}/${cleanName}` : cleanName;
-					items.push({ path, content });
+					// Images, fonts and other binaries keep their exact bytes.
+					items.push(toPayload(path, new Uint8Array(await file.arrayBuffer())));
 				}
 			}
 			if (items.length > 0) {
@@ -598,7 +602,14 @@
 				<p class="save-error" role="alert">{saveError}</p>
 			{/if}
 			<div class="editor-body">
-				{#if activePath}
+				{#if activePath && binaryUrl}
+					<div class="editor-binary">
+						{#if isImagePath(activePath)}
+							<img src={binaryUrl} alt={activePath.split('/').pop()} />
+						{/if}
+						<p>{m.code_binary_file()}</p>
+					</div>
+				{:else if activePath}
 					{#key `${activePath}:${contentKey}`}
 						{#await codeEditor() then { default: CodeEditor }}
 							<CodeEditor
@@ -622,7 +633,7 @@
 
 	<footer class="status">
 		<span>{projectName}</span>
-		{#if activePath}
+		{#if activePath && !binaryUrl}
 			<span class="status__right">
 				<span>{m.code_ln_col({ line: cursor.line, column: cursor.column })}</span>
 				<span>UTF-8</span>
@@ -1007,6 +1018,24 @@
 	.editor-body {
 		flex: 1;
 		min-height: 0;
+	}
+	.editor-binary {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 16px;
+		height: 100%;
+		padding: 24px;
+		color: var(--md-sys-color-on-surface-variant);
+		text-align: center;
+	}
+	.editor-binary img {
+		max-width: min(100%, 480px);
+		max-height: 60%;
+		object-fit: contain;
+		border-radius: 8px;
+		background: var(--md-sys-color-surface-container-low);
 	}
 	.editor-empty {
 		display: grid;

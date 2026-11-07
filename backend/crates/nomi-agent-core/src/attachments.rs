@@ -310,6 +310,18 @@ pub fn read_attachment_tool_definition() -> ToolDefinition {
     }
 }
 
+/// One file the person attached, of any kind (an image, a font, an SVG, a CSV…), whole, for
+/// copying into a project: its name and its bytes. Only `user_id`'s own files are opened.
+pub async fn attachment_bytes(conn: &mut PoolConnection<Postgres>, user_id: Uuid, id: Uuid) -> Result<(String, Vec<u8>), String> {
+    let file = load_files(conn, user_id, &[id]).await.into_iter().next().ok_or("No attached file has that id.")?;
+    let bytes = nomi_storage::blob::attachment_store()
+        .get_bytes(&file.storage_key)
+        .await
+        .map_err(|e| format!("couldn't open {}: {e}", file.name))?
+        .ok_or_else(|| format!("{} is no longer available.", file.name))?;
+    Ok((file.name, bytes))
+}
+
 /// `read_attachment`: one chunk of a file's text, from `offset`.
 pub async fn read_attachment(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: &Value) -> Result<String, String> {
     let id: Uuid = input.get("id").and_then(Value::as_str).and_then(|s| s.trim().parse().ok()).ok_or("id must be an attachment id")?;

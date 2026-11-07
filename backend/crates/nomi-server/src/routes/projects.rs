@@ -384,7 +384,7 @@ pub async fn get_project_file(
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let content = state.project_storage.get_object(&project_file_key(project_id, &path)).await.map_err(|e| {
+    let content = state.project_storage.get_bytes(&project_file_key(project_id, &path)).await.map_err(|e| {
         tracing::error!(error = %e, "failed to read project file");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to read file".to_string())
     })?;
@@ -393,9 +393,15 @@ pub async fn get_project_file(
     Ok(([(header::CONTENT_TYPE, guess_content_type(&path))], content).into_response())
 }
 
+/// How [`PutFileRequest::content`] is written when the file isn't text.
+const BASE64_ENCODING: &str = "base64";
+
 #[derive(serde::Deserialize)]
 pub struct PutFileRequest {
     pub content: String,
+    /// `"base64"` for a binary file (an image, a font); left out for text.
+    #[serde(default)]
+    pub encoding: Option<String>,
 }
 
 #[tracing::instrument(skip(state, claims, req))]
@@ -416,9 +422,18 @@ pub async fn put_project_file(
     crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await.map_err(|(code, why)| (code, why))?;
 
     let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, &path, &req.content)
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    match req.encoding.as_deref() {
+        None => nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, &path, &req.content).await,
+        Some(BASE64_ENCODING) => {
+            use base64::Engine as _;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(req.content.as_bytes())
+                .map_err(|_| (StatusCode::BAD_REQUEST, "content isn't valid base64".to_string()))?;
+            nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, &path, &bytes).await
+        }
+        Some(other) => return Err((StatusCode::BAD_REQUEST, format!("unknown encoding {other}"))),
+    }
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     nomi_agent_coding::files::bump_files_version(&mut conn, project_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to bump project files version");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save file".to_string())
@@ -468,7 +483,7 @@ async fn render_preview(state: &AppState, user_id: Uuid, project_id: Uuid, path:
         return Err((StatusCode::NOT_FOUND, "project not found".to_string()));
     }
 
-    let content = state.project_storage.get_object(&project_file_key(project_id, &path)).await.map_err(|e| {
+    let content = state.project_storage.get_bytes(&project_file_key(project_id, &path)).await.map_err(|e| {
         tracing::error!(error = %e, "failed to read project file for preview");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preview".to_string())
     })?;

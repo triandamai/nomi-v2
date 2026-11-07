@@ -24,7 +24,7 @@ describe('project import', () => {
 		expect(excluded('src/app.ts')).toBe(false);
 	});
 
-	it('reads a zip, dropping its single top folder and what can’t be imported', () => {
+	it('reads a zip, dropping its single top folder and what can’t be imported, keeping binaries', () => {
 		const zip = zipSync({
 			'repo/package.json': strToU8('{}'),
 			'repo/src/app.ts': strToU8('export {}'),
@@ -33,8 +33,10 @@ describe('project import', () => {
 			'repo/': new Uint8Array(),
 		});
 		const { files, skipped } = readZip(zip);
-		expect(files.map((f) => f.path).sort()).toEqual(['package.json', 'src/app.ts']);
-		expect(skipped).toBeGreaterThanOrEqual(2);
+		expect(files.map((f) => f.path).sort()).toEqual(['logo.bin', 'package.json', 'src/app.ts']);
+		// Binary files come along as base64, byte for byte.
+		expect(files.find((f) => f.path === 'logo.bin')).toEqual({ path: 'logo.bin', content: 'AAECAA==', encoding: 'base64' });
+		expect(skipped).toBeGreaterThanOrEqual(1);
 	});
 
 	it('uploads in batches and finishes on the last one', async () => {

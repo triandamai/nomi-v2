@@ -294,11 +294,14 @@ async fn run_locked_turn(
         .await;
     }
 
-    // Attachments (files, voice notes) always go to the Files agent first: it reads them and
-    // decides whether to answer itself or hand parts to Money, Reminders, Planning or Coding.
-    // It runs without an agent session of its own, so an ongoing conversation with another agent
-    // carries on afterwards.
-    if nomi_agent_core::attachments::has_attachments(text) {
+    let in_project = projects::session_project(conn, session_id).await?.is_some();
+
+    // Attachments (files, voice notes) go to the Files agent first: it reads them and decides
+    // whether to answer itself or hand parts to Money, Reminders, Planning or Coding. It runs
+    // without an agent session of its own, so an ongoing conversation with another agent carries
+    // on afterwards. In a project's chat a file is for the project (a logo to use, data to load):
+    // Rena or Koda take it like any other message there, and see the file in it.
+    if !in_project && nomi_agent_core::attachments::has_attachments(text) {
         if let Some(files) = registry.find(nomi_agent_core::attachments::FILES_AGENT_TYPE) {
             return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, files, session_id, session_id, sender_channel_identity_id, user_id).await;
         }
@@ -306,7 +309,6 @@ async fn run_locked_turn(
 
     // Building something is a project's job (Rena plans it, Koda builds it), whoever was talking.
     let planning = registry.find(projects::PLANNING_AGENT_TYPE);
-    let in_project = projects::session_project(conn, session_id).await?.is_some();
     let build_request = projects::wants_to_build(text);
     if let (Some(planning), true) = (&planning, build_request) {
         if !in_project && projects::is_web_session(conn, session_id).await? {
@@ -333,7 +335,10 @@ async fn run_locked_turn(
     }
 
     let mut active = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await?;
-    if let (true, true, Some(agent_session_id)) = (planning.is_some(), build_request, active) {
+    // Publishing a project is Rena's or Koda's (only they have the tool): a "publish it" said to Iris
+    // after she looked into the app goes to Rena instead of Iris saying she isn't allowed.
+    let publish_request = in_project && projects::wants_to_publish(text);
+    if let (true, true, Some(agent_session_id)) = (planning.is_some(), build_request || publish_request, active) {
         let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
         if details.agent_type != projects::PLANNING_AGENT_TYPE && details.agent_type != projects::CODING_AGENT_TYPE {
             routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, &details.agent_type, "completed", "handed over to planning").await?;
@@ -371,7 +376,7 @@ async fn run_locked_turn(
         }
         RoutingOutcome::NeedsClassification => {
             let agent = match &planning {
-                Some(planning) if build_request => planning.clone(),
+                Some(planning) if build_request || publish_request => planning.clone(),
                 _ => {
                     let agent = routing::classify_intent(conn, provider, registry, catalog, text).await;
                     // In a project chat, anything that isn't clearly for another agent is about the project.

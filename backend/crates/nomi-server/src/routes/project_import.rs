@@ -11,6 +11,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use nomi_agent_coding::files::MAX_BINARY_FILE_BYTES;
 use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
@@ -19,7 +20,7 @@ use crate::routes::deploy::{internal, ApiError};
 /// The biggest archive accepted.
 pub const MAX_ARCHIVE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_FILES: usize = 2000;
-/// Larger files are skipped (lock files and assets rarely need editing in the project).
+/// Larger text files are skipped (lock files rarely need editing in the project).
 const MAX_FILE_BYTES: usize = 1024 * 1024;
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -31,8 +32,9 @@ pub struct ImportResult {
     pub stack: String,
 }
 
-/// The files of a zip, with a top folder every path shares removed (GitHub's `repo-main/`).
-pub fn read_archive(bytes: &[u8]) -> Result<(Vec<(String, String)>, usize), String> {
+/// The files of a zip, text and binary (images, fonts), with a top folder every path shares
+/// removed (GitHub's `repo-main/`).
+pub fn read_archive(bytes: &[u8]) -> Result<(Vec<(String, Vec<u8>)>, usize), String> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|_| "that isn't a zip file".to_string())?;
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     let mut skipped = 0;
@@ -45,12 +47,12 @@ pub fn read_archive(bytes: &[u8]) -> Result<(Vec<(String, String)>, usize), Stri
             skipped += 1;
             continue;
         };
-        if file.size() as usize > MAX_FILE_BYTES {
+        if file.size() as usize > MAX_BINARY_FILE_BYTES {
             skipped += 1;
             continue;
         }
         let mut content = Vec::with_capacity(file.size() as usize);
-        if (&mut file).take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut content).is_err() || content.len() > MAX_FILE_BYTES {
+        if (&mut file).take(MAX_BINARY_FILE_BYTES as u64 + 1).read_to_end(&mut content).is_err() || content.len() > MAX_BINARY_FILE_BYTES {
             skipped += 1;
             continue;
         }
@@ -73,10 +75,12 @@ pub fn read_archive(bytes: &[u8]) -> Result<(Vec<(String, String)>, usize), Stri
             skipped += 1;
             continue;
         }
-        match String::from_utf8(content) {
-            Ok(text) if !text.contains('\0') => files.push((path, text)),
-            _ => skipped += 1,
+        // Text is held to the source-file limit; binaries (images, fonts) to the larger one.
+        if content.len() > MAX_FILE_BYTES && std::str::from_utf8(&content).is_ok_and(|text| !text.contains('\0')) {
+            skipped += 1;
+            continue;
         }
+        files.push((path, content));
     }
     if files.len() > MAX_FILES {
         return Err(format!("the archive has too many files (at most {MAX_FILES})"));
@@ -85,6 +89,12 @@ pub fn read_archive(bytes: &[u8]) -> Result<(Vec<(String, String)>, usize), Stri
         return Err("there's no code in that archive".to_string());
     }
     Ok((files, skipped))
+}
+
+/// [`detect_stack`] over files as they came out of an archive.
+pub fn detect_stack_of(files: &[(String, Vec<u8>)]) -> &'static str {
+    let package = files.iter().find(|(p, _)| p == "package.json").and_then(|(_, c)| std::str::from_utf8(c).ok()).unwrap_or_default();
+    detect_stack(&[("package.json".to_string(), package.to_string())])
 }
 
 /// The stack a project is built with, read from its files.
@@ -105,13 +115,13 @@ pub fn detect_stack(files: &[(String, String)]) -> &'static str {
     }
 }
 
-async fn import_files(state: &AppState, project_id: Uuid, files: Vec<(String, String)>, skipped: usize) -> Result<ImportResult, ApiError> {
-    let stack = detect_stack(&files);
+async fn import_files(state: &AppState, project_id: Uuid, files: Vec<(String, Vec<u8>)>, skipped: usize) -> Result<ImportResult, ApiError> {
+    let stack = detect_stack_of(&files);
     let mut conn = state.pool.acquire().await.map_err(internal("failed to import the code"))?;
     let mut imported = 0;
     let mut skipped = skipped;
     for (path, content) in &files {
-        match nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, path, content).await {
+        match nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, path, content).await {
             Ok(_) => imported += 1,
             Err(e) => {
                 tracing::debug!(%path, error = %e, "skipped an imported file");
@@ -146,10 +156,17 @@ pub async fn import_archive(
     Ok(Json(import_files(&state, project_id, files, skipped).await?))
 }
 
+/// How [`ImportedFile::content`] is written when the file isn't text.
+const BASE64_ENCODING: &str = "base64";
+
 #[derive(Deserialize)]
 pub struct ImportedFile {
     pub path: String,
+    /// The text, or for a binary file (an image, a font) its bytes in base64.
     pub content: String,
+    /// `"base64"` for a binary file; left out for text.
+    #[serde(default)]
+    pub encoding: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -177,11 +194,26 @@ pub async fn import_batch(
     let mut skipped = 0;
     for file in &batch.files {
         let path = file.path.trim_start_matches('/');
-        if nomi_shipyard::bundle::excluded(path) || file.content.len() > MAX_FILE_BYTES {
+        if nomi_shipyard::bundle::excluded(path) {
             skipped += 1;
             continue;
         }
-        match nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, path, &file.content).await {
+        let saved = match file.encoding.as_deref() {
+            None if file.content.len() > MAX_FILE_BYTES => {
+                skipped += 1;
+                continue;
+            }
+            None => nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, path, &file.content).await,
+            Some(BASE64_ENCODING) => {
+                use base64::Engine as _;
+                match base64::engine::general_purpose::STANDARD.decode(file.content.as_bytes()) {
+                    Ok(bytes) => nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, path, &bytes).await,
+                    Err(_) => Err("content isn't valid base64".to_string()),
+                }
+            }
+            Some(_) => Err("unknown encoding".to_string()),
+        };
+        match saved {
             Ok(_) => imported += 1,
             Err(_) => skipped += 1,
         }
@@ -308,9 +340,10 @@ mod tests {
         ]);
         let (files, skipped) = read_archive(&bytes).unwrap();
         let paths: Vec<_> = files.iter().map(|(p, _)| p.as_str()).collect();
-        assert_eq!(paths, ["package.json", "src/routes/+page.svelte"]);
-        assert_eq!(skipped, 3);
-        assert_eq!(detect_stack(&files), "sveltekit");
+        assert_eq!(paths, ["package.json", "src/routes/+page.svelte", "static/logo.png"]);
+        assert_eq!(files[2].1, b"\x89PNG\0\0");
+        assert_eq!(skipped, 2);
+        assert_eq!(detect_stack_of(&files), "sveltekit");
     }
 
     #[test]
@@ -318,7 +351,7 @@ mod tests {
         let bytes = zip_of(&[("index.html", b"<p>a</p>"), ("css/site.css", b"p{}")]);
         let (files, _) = read_archive(&bytes).unwrap();
         assert_eq!(files.len(), 2);
-        assert_eq!(detect_stack(&files), "static");
+        assert_eq!(detect_stack_of(&files), "static");
         assert!(read_archive(b"not a zip").is_err());
     }
 

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const wc = vi.hoisted(() => {
 	type Proc = { command: string; args: string[]; env: Record<string, string>; exit: Promise<number>; finish: (code: number) => void; kill: ReturnType<typeof import('vitest').vi.fn>; say: (text: string) => void };
 	const state = {
-		files: new Map<string, string>(),
+		files: new Map<string, string | Uint8Array>(),
 		dirs: new Set<string>(),
 		procs: [] as Proc[],
 		listeners: {} as Record<string, (...args: unknown[]) => void>,
@@ -31,12 +31,13 @@ const wc = vi.hoisted(() => {
 			async mkdir(dir: string) {
 				state.dirs.add(dir);
 			},
-			async writeFile(path: string, content: string) {
+			async writeFile(path: string, content: string | Uint8Array) {
 				state.files.set(path, content);
 			},
-			async readFile(path: string) {
+			async readFile(path: string, encoding?: string) {
 				if (!state.files.has(path)) throw new Error('ENOENT');
-				return state.files.get(path)!;
+				const content = state.files.get(path)!;
+				return encoding && content instanceof Uint8Array ? new TextDecoder().decode(content) : content;
 			},
 			async readdir(dir: string) {
 				if (!state.dirs.has(dir)) throw new Error('ENOENT');
@@ -208,7 +209,7 @@ describe('ProjectRuntime', () => {
 		expect(requests.find((r) => r.path === 'runtime/runs/r1')?.body).toMatchObject({ exit_code: 0 });
 		await until(() => wc.state.procs.some((p) => p.args.join(' ') === 'run dev'));
 		expect(wc.state.files.has('README.md')).toBe(false);
-		expect(wc.state.files.get('package.json')).toBe('{}');
+		expect(new TextDecoder().decode(wc.state.files.get('package.json') as Uint8Array)).toBe('{}');
 		const dev = wc.state.procs.find((p) => p.args.join(' ') === 'run dev')!;
 		expect(dev.env).toMatchObject({ PUBLIC_NOMI_URL: 'https://relay.dev', NOMI_SERVICE_KEY: 'svc' });
 		expect(runtime.running).toBeNull();

@@ -1,3 +1,4 @@
+import { bytesAsText } from '$lib/code/fileBytes';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { retryRun } from '$lib/server/retryRun';
@@ -137,8 +138,10 @@ export const actions: Actions = {
 		if (!response.ok) {
 			return fail(response.status, { error: m.err_load_file() });
 		}
-		const content = await response.text();
-		return { success: true, path, content };
+		// An image, font or other binary file isn't opened as text (it would be garbled, and saving it back would break it).
+		const content = bytesAsText(new Uint8Array(await response.arrayBuffer()));
+		if (content === null) return { success: true, path, content: '', binary: true };
+		return { success: true, path, content, binary: false };
 	},
 
 	saveFile: async ({ request, cookies, fetch }) => {
@@ -146,6 +149,7 @@ export const actions: Actions = {
 		const projectId = data.get('projectId');
 		const path = data.get('path');
 		const content = data.get('content');
+		const encoding = data.get('encoding') === 'base64' ? 'base64' : undefined;
 		if (
 			typeof projectId !== 'string' ||
 			!projectId ||
@@ -157,7 +161,7 @@ export const actions: Actions = {
 		}
 		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}/files/${path}`, {
 			method: 'PUT',
-			body: JSON.stringify({ content }),
+			body: JSON.stringify({ content, encoding }),
 		});
 		if (!response.ok) {
 			const message = await response.text();

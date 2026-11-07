@@ -6,6 +6,7 @@
 // hooks.server.ts); without that, or on a browser WebContainer doesn't support, the phase is
 // 'unsupported' and the page falls back to the static preview.
 
+import { payloadSize } from '$lib/code/fileBytes';
 import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import { m } from '$lib/paraglide/messages';
 import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree, watchExit, type ManifestEntry, type RelayPreviewAccess } from '$lib/projectRuntime';
@@ -129,7 +130,7 @@ export class ProjectRuntime {
 	}
 
 	/** A file the person saved in the editor (the backend has it too). */
-	async writeFile(path: string, content: string) {
+	async writeFile(path: string, content: string | Uint8Array) {
 		if (!this.#wc) return;
 		await this.#write(path, content);
 	}
@@ -180,15 +181,18 @@ export class ProjectRuntime {
 	async #loadAll() {
 		const response = await this.#api('snapshot');
 		if (!response.ok) throw new Error(`couldn't load the project (${response.status})`);
-		const snapshot = (await response.json()) as { files_version: number; files: { path: string; content: string; updated_at: string }[] };
+		const snapshot = (await response.json()) as {
+			files_version: number;
+			files: { path: string; content: string; encoding?: 'base64'; updated_at: string }[];
+		};
 		await this.#wc!.mount(toFileTree(snapshot.files));
 		this.#known = new Map(snapshot.files.map((f) => [f.path, f.updated_at]));
-		this.files = snapshot.files.map((f) => ({ path: f.path, size_bytes: f.content.length, updated_at: f.updated_at }));
+		this.files = snapshot.files.map((f) => ({ path: f.path, size_bytes: payloadSize(f), updated_at: f.updated_at }));
 		this.#version = snapshot.files_version;
 		this.#seen = snapshot.files_version;
 	}
 
-	async #write(path: string, content: string) {
+	async #write(path: string, content: string | Uint8Array) {
 		const dir = parentDir(path);
 		if (dir) await this.#wc!.fs.mkdir(dir, { recursive: true });
 		await this.#wc!.fs.writeFile(path, content);
@@ -203,7 +207,8 @@ export class ProjectRuntime {
 		for (const path of changed) {
 			const file = await this.#api(`files/${path}`);
 			if (!file.ok) continue;
-			await this.#write(path, await file.text());
+			// Bytes as they are, so images and fonts arrive intact.
+			await this.#write(path, new Uint8Array(await file.arrayBuffer()));
 		}
 		for (const path of removed) {
 			await this.#wc!.fs.rm(path, { force: true });

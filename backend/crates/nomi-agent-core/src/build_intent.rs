@@ -43,9 +43,34 @@ pub fn wants_to_build(text: &str) -> bool {
     MAKE.iter().any(|w| has_phrase(&text, w)) && THINGS.iter().any(|w| has_phrase(&text, w))
 }
 
+/// Asks to put a project live (English and Indonesian): what the Publish suggestion and button send,
+/// and how people say it. Not questions about a publish ("why did the publish fail?").
+const PUBLISH: &[&str] = &[
+    "publish it", "publish this", "publish now", "publish the app", "publish my app", "publish again", "republish",
+    "deploy it", "deploy this", "deploy now", "deploy the app", "deploy my app", "deploy again", "redeploy", "go live",
+    "make it live", "update the live app", "terbitkan", "publikasikan", "rilis", "tolong publish", "tolong deploy",
+];
+
+/// Whether the message asks for the project to be published (or the live app updated): only Rena
+/// and Koda can, so the router hands it to Rena whoever was talking.
+pub fn wants_to_publish(text: &str) -> bool {
+    let text = text.trim().trim_end_matches(['.', '!']).to_lowercase();
+    matches!(text.as_str(), "publish" | "deploy") || PUBLISH.iter().any(|p| has_phrase(&text, p))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn publish_requests() {
+        for text in ["Publish it", "publish", "Deploy!", "please go live", "Update the live app", "tolong publish ya", "terbitkan aplikasinya"] {
+            assert!(wants_to_publish(text), "{text}");
+        }
+        for text in ["why did the publish fail?", "is it published?", "the website is down", "check the deploy logs"] {
+            assert!(!wants_to_publish(text), "{text}");
+        }
+    }
 
     #[test]
     fn whole_words_only() {
