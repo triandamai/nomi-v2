@@ -2937,5 +2937,6 @@
 	"reset_failed": "Kata sandi belum berhasil diganti. Coba lagi.",
 	"reset_done": "Kata sandi sudah diganti. Masuk dengan kata sandi barumu.",
 	"title_forgot_password": "Lupa kata sandi",
-	"title_reset_password": "Kata sandi baru"
+	"title_reset_password": "Kata sandi baru",
+	"nav_loading": "Memuat halaman"
 }

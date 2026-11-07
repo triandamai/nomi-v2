@@ -2937,5 +2937,6 @@
 	"reset_failed": "Couldn't change your password. Try again.",
 	"reset_done": "Password changed. Log in with your new password.",
 	"title_forgot_password": "Forgot password",
-	"title_reset_password": "New password"
+	"title_reset_password": "New password",
+	"nav_loading": "Loading page"
 }

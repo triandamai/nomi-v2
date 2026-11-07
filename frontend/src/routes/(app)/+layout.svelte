@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { enablePageTransitions } from '$lib/pageTransitions';
 	import { m } from '$lib/paraglide/messages';
 	import { untrack, type Snippet } from 'svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
@@ -22,9 +21,6 @@
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
-
-	enablePageTransitions();
-
 
 	// Dynamic agents' chosen shapes: registered before any child renders an AgentShape, and again
 	// whenever the crew reloads.

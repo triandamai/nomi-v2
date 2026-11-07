@@ -107,7 +107,7 @@
 			<a href={switchHref} class="panel__switch">{switchLabel}</a>
 		</div>
 
-		<div class="panel__card">
+		<div class="panel__card" style="view-transition-name: page">
 			<div class="panel__heading">
 				<h1 class="panel__title">{title}</h1>
 				<p class="panel__subtitle">{subtitle}</p>
