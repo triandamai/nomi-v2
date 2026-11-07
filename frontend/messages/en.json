@@ -2907,5 +2907,10 @@
 	"pinned_minutes_left": "~{count} min left",
 	"pinned_writing": "writing {path}",
 	"pinned_reading": "reading {path}",
-	"pinned_deleting": "deleting {path}"
+	"pinned_deleting": "deleting {path}",
+	"pj_menu_project": "Project",
+	"pj_menu_ship": "Ship",
+	"pj_menu_watch": "Watch",
+	"pj_menu_more": "More project tools",
+	"pj_preview_device": "Preview size"
 }

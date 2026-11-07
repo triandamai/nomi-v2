@@ -2907,5 +2907,10 @@
 	"pinned_minutes_left": "~{count} menit lagi",
 	"pinned_writing": "menulis {path}",
 	"pinned_reading": "membaca {path}",
-	"pinned_deleting": "menghapus {path}"
+	"pinned_deleting": "menghapus {path}",
+	"pj_menu_project": "Proyek",
+	"pj_menu_ship": "Rilis",
+	"pj_menu_watch": "Pantau",
+	"pj_menu_more": "Alat proyek lainnya",
+	"pj_preview_device": "Ukuran pratinjau"
 }
