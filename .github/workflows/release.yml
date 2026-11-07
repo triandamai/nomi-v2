@@ -9,9 +9,14 @@ name: Release
 # The new frontend builds and deploys on its own track, so a failure there never holds up the others.
 # So do its design-system docs: a static bundle in the Shipyard registry, redeployed through
 # SHIPYARD_DOCS_DEPLOY_HOOK.
+#
+# Staging tags (v1.2.3-staging, v1.2.3-staging4) match v*.*.* too, so they're excluded here:
+# they belong to staging.yml alone and must never deploy to production.
 on:
   push:
-    tags: ['v*.*.*']
+    tags:
+      - 'v*.*.*'
+      - '!v*.*.*-staging*'
 
 jobs:
   backend:
