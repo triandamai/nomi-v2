@@ -165,3 +165,45 @@ async fn a_failed_check_goes_to_koda_once_per_version(pool: PgPool) {
         .unwrap();
     assert_eq!(runtime::record_check(&mut conn, project_id, 4, false, "still broken").await.unwrap(), None);
 }
+
+/// The first bytes of a PNG: not UTF-8, so a binary file.
+const PNG_HEADER: [u8; 10] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00];
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn binary_files_are_kept_byte_for_byte_and_never_handled_as_text(pool: PgPool) {
+    use nomi_agent_coding::files::{read_body, save_bytes, FileBody, MAX_BINARY_FILE_BYTES};
+
+    let (user_id, _, project_id) = seed(&pool).await;
+    let store = storage();
+    let mut conn = pool.acquire().await.unwrap();
+    let pid = project_id.to_string();
+
+    assert_eq!(save_bytes(&mut conn, &store, project_id, "static/logo.png", &PNG_HEADER).await.unwrap(), None);
+    match read_body(&store, project_id, "static/logo.png").await.unwrap() {
+        Some(FileBody::Binary(bytes)) => assert_eq!(bytes, PNG_HEADER),
+        _ => panic!("a PNG reads back as its bytes"),
+    }
+    assert!(read_body(&store, project_id, "static/missing.png").await.unwrap().is_none());
+
+    let read = execute(&mut conn, &store, user_id, "read_file", json!({ "project_id": pid, "path": "static/logo.png" })).await.unwrap();
+    assert!(read.display_text.contains("binary file") && read.display_text.contains("image/png"), "{}", read.display_text);
+    let err = execute(&mut conn, &store, user_id, "edit_file", json!({ "project_id": pid, "path": "static/logo.png", "old_string": "PNG", "new_string": "GIF" }))
+        .await
+        .unwrap_err();
+    assert!(err.contains("binary file"), "{err}");
+
+    // Search skips it rather than matching inside its bytes.
+    execute(&mut conn, &store, user_id, "write_file", json!({ "project_id": pid, "path": "src/app.css", "content": "/* PNG logo */" })).await.unwrap();
+    let found = execute(&mut conn, &store, user_id, "search_files", json!({ "project_id": pid, "query": "PNG" })).await.unwrap();
+    assert_eq!(found.display_text, "src/app.css:1: /* PNG logo */");
+
+    // Replacing a text file with bytes hands back the text it replaced.
+    let previous = save_bytes(&mut conn, &store, project_id, "src/app.css", b"body{}").await.unwrap();
+    assert_eq!(previous.as_deref(), Some("/* PNG logo */"));
+
+    let too_big = vec![0u8; MAX_BINARY_FILE_BYTES + 1];
+    let err = save_bytes(&mut conn, &store, project_id, "static/huge.bin", &too_big).await.unwrap_err();
+    assert!(err.contains("at most 10 MB"), "{err}");
+    let err = save_bytes(&mut conn, &store, project_id, "../escape.png", &PNG_HEADER).await.unwrap_err();
+    assert!(err.contains("invalid path"), "{err}");
+}

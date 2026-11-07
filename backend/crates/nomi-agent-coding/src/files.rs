@@ -617,4 +617,54 @@ mod tests {
         assert!(validate_path("src/routes/+page.svelte").is_ok());
         assert!(validate_path(".gitignore").is_ok());
     }
+
+    #[test]
+    fn content_types_follow_the_extension() {
+        for (path, expected) in [
+            ("index.html", "text/html"),
+            ("a.htm", "text/html"),
+            ("app.css", "text/css"),
+            ("main.mjs", "application/javascript"),
+            ("data.json", "application/json"),
+            ("logo.svg", "image/svg+xml"),
+            ("README.md", "text/markdown"),
+            ("logo.png", "image/png"),
+            ("photo.jpeg", "image/jpeg"),
+            ("photo.jpg", "image/jpeg"),
+            ("a.gif", "image/gif"),
+            ("a.webp", "image/webp"),
+            ("a.avif", "image/avif"),
+            ("favicon.ico", "image/x-icon"),
+            ("a.bmp", "image/bmp"),
+            ("f.woff", "font/woff"),
+            ("f.woff2", "font/woff2"),
+            ("f.ttf", "font/ttf"),
+            ("f.otf", "font/otf"),
+            ("s.mp3", "audio/mpeg"),
+            ("s.wav", "audio/wav"),
+            ("s.ogg", "audio/ogg"),
+            ("v.mp4", "video/mp4"),
+            ("v.webm", "video/webm"),
+            ("doc.pdf", "application/pdf"),
+            ("a.zip", "application/zip"),
+            ("m.wasm", "application/wasm"),
+            ("Makefile", "text/plain"),
+        ] {
+            assert_eq!(guess_content_type(path), expected, "{path}");
+        }
+    }
+
+    #[test]
+    fn only_utf8_without_nul_bytes_is_text() {
+        assert_eq!(as_text(b"<svg/>".to_vec()).as_deref(), Some("<svg/>"));
+        assert_eq!(as_text(vec![0x89, 0x50, 0x4e, 0x47]), None);
+        assert_eq!(as_text(b"a\0b".to_vec()), None);
+    }
+
+    #[test]
+    fn the_binary_note_says_what_the_file_is_and_how_to_use_it() {
+        let note = binary_note("static/logo.png", 1500);
+        assert!(note.starts_with("static/logo.png is a binary file (2 KB, image/png)"), "{note}");
+        assert!(note.contains("Use it by its path"), "{note}");
+    }
 }
