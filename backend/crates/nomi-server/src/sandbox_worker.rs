@@ -120,14 +120,16 @@ impl SandboxWorker {
 }
 
 /// What makes two configs need different managers (the key is compared, never logged).
-fn signature(cfg: &SandboxConfig) -> (String, String, String, u64, u32, u32) {
+type Signature = (String, String, String, u64, u32, u32);
+
+fn signature(cfg: &SandboxConfig) -> Signature {
     (cfg.api_base.clone(), cfg.api_key.clone(), format!("{:?}", cfg.size), cfg.idle_stop_secs, cfg.starts_per_minute, cfg.starts_per_hour)
 }
 
 /// Run until the process ends (like the other background workers). The admin switch is read on
 /// every pass, so turning it off stops new work without a restart.
 pub async fn run(pool: PgPool, http_client: reqwest::Client) {
-    let mut current: Option<((String, String, String, u64, u32, u32), SandboxWorker)> = None;
+    let mut current: Option<(Signature, SandboxWorker)> = None;
     let mut last_sweep = Instant::now();
     loop {
         let Some(cfg) = sandbox_config().await else {
