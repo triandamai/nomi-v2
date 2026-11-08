@@ -144,12 +144,22 @@ impl SandboxManager {
         if err.is_retryable() {
             return self.defer(row.project_id, at).await;
         }
-        if let Err(exit) = self.set_state(row.project_id, State::Error).await {
-            return exit;
+        // The state, the reason and the retry time are saved together, and the pages told only
+        // after: a page that reloads on the event must see the error message too.
+        let project_id = row.project_id;
+        let saved = async {
+            let mut tx = self.pool.begin().await?;
+            store::set_state(&mut tx, project_id, State::Error, Some(&why)).await?;
+            store::record_attempt_failure(&mut tx, project_id, at, &why).await?;
+            tx.commit().await
         }
-        match self.retry_at(row.project_id, at, &why).await {
-            ReconcileOutcome::RetryAt(_) => ReconcileOutcome::Failed(why),
-            other => other,
+        .await;
+        match saved {
+            Ok(()) => {
+                announce(project_id, State::Error);
+                ReconcileOutcome::Failed(why)
+            }
+            Err(e) => ReconcileOutcome::Failed(format!("database: {e}")),
         }
     }
 

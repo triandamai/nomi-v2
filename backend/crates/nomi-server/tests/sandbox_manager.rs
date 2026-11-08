@@ -363,3 +363,40 @@ async fn stopped_sandbox_that_vanished_is_recreated_at_once(pool: PgPool) {
     assert_eq!(attempts_and_retry(&f).await.0, 0);
     assert_eq!(f.reconcile().await, ReconcileOutcome::Settled);
 }
+
+/// What the page would read when it hears the error event.
+type SeenAtEvent = Mutex<Vec<(Uuid, String, Option<String>)>>;
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn error_event_is_sent_after_last_error_is_stored(pool: PgPool) {
+    static SEEN: SeenAtEvent = Mutex::new(Vec::new());
+    let f = fixture(pool.clone(), GENEROUS_LIMIT).await;
+    let reader = pool.clone();
+    let watched = f.project;
+    nomi_server::project_events::observe_sandbox_changes_for_test(move |project, phase| {
+        // Other tests in this process announce too, against their own databases.
+        if project != watched {
+            return;
+        }
+        // Read the row from another thread: the event is sent from inside the reconciler's task.
+        // (its own connection: the pool belongs to the runtime this call is blocking)
+        let options = reader.connect_options();
+        let error = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async move {
+                use sqlx::ConnectOptions;
+                let mut conn = options.connect().await.unwrap();
+                sqlx::query_scalar::<_, Option<String>>("SELECT last_error FROM project_sandboxes WHERE project_id = $1").bind(project).fetch_one(&mut conn).await.unwrap()
+            })
+        })
+        .join()
+        .unwrap();
+        SEEN.lock().unwrap().push((project, phase.to_string(), error));
+    });
+
+    f.want(Desired::Running).await;
+    f.provider.fail_next(SandboxError::Refused("no capacity for you".into()));
+    assert!(matches!(f.reconcile().await, ReconcileOutcome::Failed(_)));
+    let seen = SEEN.lock().unwrap().clone();
+    let error_event = seen.iter().find(|(p, phase, _)| *p == f.project && phase == "error").expect("an error event was sent");
+    assert!(error_event.2.as_deref().is_some_and(|e| e.contains("no capacity")), "last_error was stored by the time of the event: {error_event:?}");
+}
