@@ -131,8 +131,9 @@ impl ServerSteps {
         for action in plan_sync(known, &manifest, ARCHIVE_THRESHOLD) {
             match action {
                 SyncAction::Archive => {
-                    archived = manifest.iter().map(|e| e.path.clone()).collect();
-                    let current: std::collections::BTreeSet<&str> = archived.iter().map(String::as_str).collect();
+                    // Only a sandbox that holds nothing gets the whole project; otherwise just what changed.
+                    archived = manifest.iter().filter(|e| known.is_empty() || known.get(&e.path) != Some(&e.updated_at)).map(|e| e.path.clone()).collect();
+                    let current: std::collections::BTreeSet<&str> = manifest.iter().map(|e| e.path.as_str()).collect();
                     deleted = known.keys().filter(|p| !current.contains(p.as_str())).cloned().collect();
                     direct.clear();
                     break;
@@ -146,14 +147,20 @@ impl ServerSteps {
         let at: BTreeMap<&str, &str> = manifest.iter().map(|e| (e.path.as_str(), e.updated_at.as_str())).collect();
         if !archived.is_empty() {
             let files = self.load(project_id, archived).await?;
+            copied.extend(files.iter().map(|(p, _)| p.clone()));
             if !files.is_empty() {
-                self.provider.upload_archive(sandbox, PROJECT_DIR, build_archive(&files)?).await?;
+                let tar = build_archive(&files)?;
+                // The files are in the archive now; don't hold both copies while uploading.
+                drop(files);
+                self.provider.upload_archive(sandbox, PROJECT_DIR, tar).await?;
             }
-            copied.extend(files.into_iter().map(|(p, _)| p));
         }
-        for (path, bytes) in self.load(project_id, direct).await? {
-            self.provider.write_file(sandbox, &sandbox_path(&path), &bytes).await?;
-            copied.insert(path);
+        // One file at a time, so memory holds a single file rather than the whole batch.
+        for path in direct {
+            if let Some((path, bytes)) = self.load(project_id, vec![path]).await?.pop() {
+                self.provider.write_file(sandbox, &sandbox_path(&path), &bytes).await?;
+                copied.insert(path);
+            }
         }
         for path in deleted {
             match self.provider.delete_file(sandbox, &sandbox_path(&path)).await {

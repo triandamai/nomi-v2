@@ -138,6 +138,20 @@ async fn many_changes_go_via_archive(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn archive_above_threshold_contains_only_changed_files(pool: PgPool) {
+    let f = fixture(pool).await;
+    f.save("old.txt", b"old").await;
+    f.steps.sync_project(f.project, &f.sandbox).await.unwrap();
+    for i in 0..MANY_FILES {
+        f.save(&format!("f{i}.txt"), b"x").await;
+    }
+    f.steps.sync_project(f.project, &f.sandbox).await.unwrap();
+    let paths = f.archive_paths();
+    assert_eq!(paths.len(), MANY_FILES);
+    assert!(!paths.contains(&"old.txt".to_string()));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn file_over_5mib_goes_via_archive(pool: PgPool) {
     let f = fixture(pool).await;
     f.save("a.txt", b"a").await;
