@@ -5,6 +5,133 @@ project's files, commands and dev server live in a boat.dev sandbox driven by th
 (`nomi-sandbox` crate, `nomi-server/src/sandbox_*.rs`). It is off unless an admin turns it on in
 Admin -> Configuration -> Sandbox and sets a boat API key.
 
+## Architecture
+
+The Nomi server owns every sandbox. A per-project row (`project_sandboxes`) records what the
+project wants (`desired`: running or stopped) and where the sandbox is (`state`). A background
+worker claims due rows and a reconciler walks each one toward its goal through a provider trait,
+so boat.dev is one implementation among possible others and tests use a fake. The sandbox holds
+only project files; the agent, the database and all credentials stay on the server. The page
+asks to wake the sandbox, shows its phase from MQTT `SandboxChanged` events, and loads the
+preview URL in an iframe. With the switch off, every project keeps using WebContainer.
+
+| Piece | Where |
+| --- | --- |
+| Provider trait, boat client, fake provider, start limiter, sync planning | `backend/crates/nomi-sandbox/` |
+| Row store (desired/state, leases, retries, deletion outbox) | `backend/crates/nomi-server/src/sandbox_store.rs` |
+| Reconciler (create, resume, stop, limits, backoff, stop-only mode) | `.../sandbox_manager.rs` |
+| Worker loop (claims, idle sweep, wind-down, usage drift, reaper schedule) | `.../sandbox_worker.rs` |
+| File sync into the sandbox | `.../sandbox_sync.rs` |
+| Dev server start, readiness, preview environment | `.../sandbox_devserver.rs` |
+| Project steps glue (sync + preview) | `.../sandbox_steps.rs` |
+| Koda's commands run inside the sandbox | `.../sandbox_runs.rs` |
+| Agent-side wake and wait | `.../sandbox_ops.rs` |
+| Metered minutes and monthly allowance | `.../sandbox_usage.rs` |
+| Deletion outbox drain and orphan reaper | `.../sandbox_cleanup.rs` |
+| HTTP routes `/api/projects/:id/sandbox*` | `.../routes/project_sandbox.rs` |
+| Schema | `backend/migrations/0106_project_sandboxes.sql` |
+| Settings section and parsing | `backend/crates/nomi-settings/src/config.rs`, `.../nomi-server/src/configuration.rs` |
+| Frontend state, runtime choice, preview iframe | `frontend/src/lib/sandboxRuntime.svelte.ts`, `runtimeChooser.ts`, `components/ProjectPreview.svelte` |
+
+Migration 0106 was edited in place while the feature was being developed. Any development
+database that already ran an earlier version of it must be reset. It must never be edited after
+the branch is merged; further schema changes go in a new migration.
+
+## Configuration reference
+
+Admin -> Configuration -> Sandbox (section `sandbox`). Values are saved in settings; only
+`api_base` and `api_key` can also come from the environment when nothing is saved.
+
+| Field | Meaning | Default |
+| --- | --- | --- |
+| `enabled` | Master switch and kill switch. Anything but `on` keeps projects on WebContainer and puts the worker in stop-only mode. | off |
+| `api_base` (env `BOAT_API_BASE`) | boat API address. | `https://boat.dev/api/v1` |
+| `api_key` (env `BOAT_API_KEY`) | boat API key, stored encrypted, never returned. Without it the runtime is unavailable. | none |
+| `size` | `small`, `default` or `large`. | `small` |
+| `idle_stop_secs` | Idle time before a sandbox is stopped. | 600 |
+| `rollout` | Who gets sandboxes for new projects: `off`, `allowlist`, `percent`, `all`. | `off` |
+| `rollout_allowlist` | Comma-separated user ids for `allowlist`. | empty |
+| `rollout_percent` | 1 to 100 for `percent`; a user stays in as it is raised. | 0 |
+| `starts_per_minute` | Create/resume starts per minute (boat allows 12). | 10 |
+| `starts_per_hour` | Create/resume starts per hour (boat allows 60). | 50 |
+| `monthly_minutes_per_user` | Sandbox minutes per owner per month. | 600 |
+| `reaper_mode` | Hourly orphan sweep: `dry_run` logs, `delete` deletes. | `dry_run` |
+
+## Runbook
+
+Where to look first: the admin overview shows sandboxes running, starting, in error, and minutes
+this month. Server logs carry `sandbox:` and `sandbox reaper` lines with ids but never URLs or
+keys.
+
+| Situation | What to do |
+| --- | --- |
+| Provider outage | Rows back off and retry on their own; after repeated failures a row is parked in `error` with a redacted `last_error`, and after a provider cooldown the worker tries again. Pages show the error and the project can still use WebContainer. If it lasts, turn the switch off (below). Stuck rows clear with the worker's `unstick` pass once the provider is back. |
+| Rate limits | Starts are paced by `starts_per_minute` and `starts_per_hour`; over the limit a wake is deferred, not failed. A provider 429 is honoured via its retry-after. If users wait too long, raise the limits only up to the plan's. |
+| Stuck rows | A row in `creating`, `starting` or `stopping` for over 20 minutes is released by the worker (`SandboxManager::unstick`). Inspect with `SELECT project_id, state, attempts, last_error, retry_at FROM project_sandboxes WHERE state IN ('error','creating','starting','stopping')`. A row parked in `error` stays held back until the cause is fixed; read `last_error` first. |
+| Orphaned sandboxes | The hourly reaper lists provider sandboxes labelled `nomi-project` that no row or outbox entry names. Keep `reaper_mode` at `dry_run` first, read the `would delete` log lines, then set `delete`. Use a boat account dedicated to this deployment. |
+| Deletion outbox | A sandbox that could not be deleted is queued in `sandbox_deletions` and retried by the worker; rows with a repeating `last_error` need the provider checked, not the table edited. |
+| Key rotation | Create a new key at boat, save it in Admin -> Configuration -> Sandbox, confirm a sandbox still starts, then revoke the old key. (Not yet verified live: whether running sandboxes survive a key change.) |
+| Cost spike | Check minutes this month on the overview, lower `idle_stop_secs`, lower `monthly_minutes_per_user`, or move `rollout` back a stage. Usage is compared with the provider's and drift is logged. |
+| Kill switch | Set `enabled` to off. The worker enters stop-only mode: it stops and deletes sandboxes, and never creates or resumes one, even if a start races the switch. New pages use WebContainer. Needs the key saved to keep winding down. |
+| Rollback | Switch off, wait until the overview shows no running sandboxes, then set `rollout` to `off`. Projects fall back to WebContainer; files are in Nomi's storage and come back from there. |
+
+## Test results
+
+Automated, against `nomi_sandbox::FakeProvider` (no boat account exists yet):
+
+- `cargo test -p nomi-server --test sandbox_load`: `burst_of_200_wakes_respects_start_limits_and_all_settle`
+  wakes 200 projects at once with 50 starts per minute. The manager's limiter runs on the real
+  clock, so each of the four minute windows is stood in for by a fresh manager; the test asserts
+  no window admits more than 50 starts, every project ends `running`, each is started exactly
+  once, and no deferral counts as a failed attempt. It runs in seconds.
+
+OWED (needs a boat key; not done): the live run and the 24-hour soak. Run these once a key
+exists, using a throwaway key and a small `ttlSeconds`, and record the results here:
+
+- [ ] Create a sandbox project as each seed account; let Koda build a SvelteKit page.
+- [ ] Time stop and resume; record cold start, resume and sync times and the cost of the run.
+- [ ] Edit a file and confirm HMR works through the preview iframe.
+- [ ] Confirm the preview works under the project page's `Cross-Origin-Embedder-Policy: credentialless`.
+- [ ] Check whether boat's `kill_process` kills the whole process tree (dev server children).
+- [ ] Check whether `fuser` exists in the image (port cleanup depends on it).
+- [ ] Record the real upload-URL host and confirm it passes the SSRF check.
+- [ ] Check preview token behaviour across stop and resume (the security model assumes it is stable).
+- [ ] 24-hour soak with 10 sandboxes on a use/idle cycle: no leaked sandboxes, no stuck rows,
+  usage within the agreed drift of the provider's.
+- [ ] Clean up: delete test sandboxes, projects and the key; keep the seed accounts
+  `admin.full@nomi.test`, `user.noaccess@nomi.test` and `user.partial@nomi.test`.
+
+## Production-readiness checklist
+
+| Item | Status |
+| --- | --- |
+| Backend tests green (`cargo test --workspace`) | DONE for the sandbox suites on this branch (see Test results); run the full workspace before merge |
+| Frontend tests green (`pnpm --dir frontend vitest run`, `pnpm --dir frontend check`) | OWED: run before merge |
+| Migration 0106 applied on a staging copy | OWED |
+| Key rotated into Admin -> Configuration | OWED: no boat account yet |
+| Provider plan limits above configured starts per minute and hour | OWED: defaults (10 and 50) sit under boat's published 12 and 60; confirm for the actual plan |
+| Alerts or a daily check on the dashboard counters | OWED: the counters exist (running, starting, error, minutes) on the admin overview; someone must check them daily |
+| Reaper dry-run reviewed, then enabled | OWED: ships in `dry_run`; review a week of logs, then set `delete` |
+| Rollback rehearsed (kill switch, pages fall back to WebContainer) | DONE in tests (`kill_switch_*`, `stop_only_never_creates_*` in `tests/sandbox_worker.rs`); OWED on staging |
+| Security review | DONE: findings fixed in commits `5f89291b` and `2f8de288`; residual risks listed in Security model |
+| Load test against the fake provider | DONE (`tests/sandbox_load.rs`) |
+| Live run and 24-hour soak | OWED (checklist above) |
+
+## Staged rollout
+
+Rollout is configuration only, and applies to **new** projects. Existing projects stay on the
+browser runtime until their owner opts in.
+
+1. `off`: everyone on WebContainer. Start here with the key saved and the switch on.
+2. `allowlist`: the team's user ids, for one week.
+3. `percent` 10, then `percent` 50.
+4. `all`.
+
+Between stages watch the error count, resume latency (p95), minutes per user and spend against
+the plan. Do not advance automatically: review with the product owner after the allowlist week
+and decide on the first percentage; each later step is a separate decision. To go back, lower
+the stage or use the kill switch.
+
 ## Security model
 
 ### What the sandbox is trusted with
