@@ -166,6 +166,12 @@ impl SandboxManager {
 
     /// Forget the provider's sandbox: it is gone, or can't be started again.
     async fn forget(&self, project_id: Uuid) -> Result<(), Exit> {
+        self.forget_keeping(project_id, 0).await
+    }
+
+    /// Like `forget`, but the row keeps `attempts` failed attempts (reaching `none` would reset
+    /// them), so a sandbox that keeps dying while it starts backs off further each time.
+    async fn forget_keeping(&self, project_id: Uuid, attempts: i32) -> Result<(), Exit> {
         let result = async {
             let mut tx = self.pool.begin().await?;
             sqlx::query(
@@ -175,6 +181,7 @@ impl SandboxManager {
             .execute(&mut *tx)
             .await?;
             store::set_state(&mut tx, project_id, State::None, None).await?;
+            sqlx::query("UPDATE project_sandboxes SET attempts = $2 WHERE project_id = $1").bind(project_id).bind(attempts).execute(&mut *tx).await?;
             if close_session(&mut tx, project_id).await? == 0 {
                 // Nothing was open, so a sandbox that never ran leaves no trace in the count the
                 // next key is built from. A zero-length closed session advances it.
@@ -231,7 +238,7 @@ impl SandboxManager {
             match self.provider.get(id).await {
                 Ok(info) if info.state == SandboxState::Running => return Ok(()),
                 Ok(info) if matches!(info.state, SandboxState::Gone | SandboxState::Error) => {
-                    self.forget(row.project_id).await?;
+                    self.forget_keeping(row.project_id, row.attempts).await?;
                     let at = Utc::now() + Self::wait_after(row.attempts, None);
                     return Err(self.retry_at(row.project_id, at, "sandbox went away while starting").await);
                 }

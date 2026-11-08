@@ -304,3 +304,29 @@ async fn stale_walk_cannot_overwrite_sandbox_id(pool: PgPool) {
     assert_eq!(f.provider.list().await.unwrap().len(), 0, "the sandbox this walk made is deleted");
     assert!(f.steps.calls().is_empty());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn repeated_deaths_back_off_exponentially(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    f.want(Desired::Running).await;
+    let mut delays = Vec::new();
+    for n in 0..3 {
+        // Each create sends the next key; kill the sandbox it would get before it can run.
+        let spec = nomi_sandbox::CreateSpec {
+            size: nomi_sandbox::Size::Small,
+            ttl_seconds: None,
+            from_snapshot: None,
+            idempotency_key: format!("nomi-project-{}-{n}", f.project),
+            labels: Default::default(),
+        };
+        let dead = f.provider.create(spec).await.unwrap().id;
+        f.provider.set_state(&dead, SandboxState::Gone);
+        let before = chrono::Utc::now();
+        match f.reconcile().await {
+            ReconcileOutcome::RetryAt(at) => delays.push((at - before).num_seconds()),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(attempts_and_retry(&f).await.0, n + 1);
+    }
+    assert!(delays[0] < delays[1] && delays[1] < delays[2], "{delays:?}");
+}
