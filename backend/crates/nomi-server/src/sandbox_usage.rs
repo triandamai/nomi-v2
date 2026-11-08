@@ -26,10 +26,14 @@ const SECONDS_IN_MONTH: &str = "GREATEST(0, EXTRACT(EPOCH FROM ( \
     LEAST(COALESCE(stopped_at, now()), (date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC') \
     - GREATEST(started_at, date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))))";
 
+/// Keeps sessions that ended before this month out of the sum, so the (user, started_at) index
+/// can narrow the rows read.
+const MONTH_NOT_OVER: &str = "COALESCE(stopped_at, now()) >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
+
 /// Whole minutes this person's projects have run in the sandbox this month. Open sessions count
 /// up to now.
 pub async fn minutes_this_month(conn: &mut PgConnection, user_id: Uuid) -> Result<i64, sqlx::Error> {
-    let seconds: f64 = sqlx::query_scalar(&format!("SELECT COALESCE(SUM({SECONDS_IN_MONTH}), 0)::float8 FROM sandbox_sessions WHERE user_id = $1"))
+    let seconds: f64 = sqlx::query_scalar(&format!("SELECT COALESCE(SUM({SECONDS_IN_MONTH}), 0)::float8 FROM sandbox_sessions WHERE user_id = $1 AND {MONTH_NOT_OVER}"))
         .bind(user_id)
         .fetch_one(conn)
         .await?;

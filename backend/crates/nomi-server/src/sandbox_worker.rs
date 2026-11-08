@@ -27,6 +27,8 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const OFF_POLL_INTERVAL: Duration = Duration::from_secs(15);
 /// How often idle sandboxes are looked for.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
+/// How often long-stopped sandboxes are looked for.
+const EXPIRY_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 /// Most rows claimed in one pass.
 const BATCH_SIZE: i64 = 10;
 /// Most rows reconciled at the same time.
@@ -163,6 +165,16 @@ impl SandboxWorker {
         crate::sandbox_usage::reconcile_usage_drift(&self.pool, self.manager.provider().as_ref()).await;
     }
 
+    /// Hand back rows stuck mid-change (see `SandboxManager::unstick`).
+    pub async fn run_watchdog(&self) -> usize {
+        self.manager.unstick().await
+    }
+
+    /// Delete long-stopped sandboxes at the provider (see `SandboxManager::expire_stopped`).
+    pub async fn expire_old(&self) -> usize {
+        self.manager.expire_stopped().await
+    }
+
     /// Ask for the sandboxes of projects whose page has gone quiet to be stopped.
     pub async fn sweep_idle(&self) {
         let result = async {
@@ -194,6 +206,8 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
     let mut last_sweep = Instant::now();
     // The first check waits a full interval, so a restart doesn't repeat it.
     let mut last_drift_check = Instant::now();
+    // Expiry runs on the first pass after a start, then once a day.
+    let mut last_expiry: Option<Instant> = None;
     loop {
         let Some(cfg) = sandbox_config().await else {
             current = None;
@@ -212,7 +226,12 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
             worker.dispatch_runs().await;
             if last_sweep.elapsed() >= SWEEP_INTERVAL {
                 worker.sweep_idle().await;
+                worker.run_watchdog().await;
                 last_sweep = Instant::now();
+            }
+            if last_expiry.is_none_or(|t| t.elapsed() >= EXPIRY_INTERVAL) {
+                worker.expire_old().await;
+                last_expiry = Some(Instant::now());
             }
             if last_drift_check.elapsed() >= DRIFT_INTERVAL {
                 worker.check_usage_drift().await;

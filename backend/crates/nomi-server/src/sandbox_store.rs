@@ -235,18 +235,75 @@ pub async fn set_state(conn: &mut PgConnection, project_id: Uuid, state: State, 
     Ok(())
 }
 
-/// A failed attempt: count it, say why, and hold the row back until `retry_at`.
-pub async fn record_attempt_failure(conn: &mut PgConnection, project_id: Uuid, retry_at: DateTime<Utc>, error: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(
+/// A failed attempt: count it, say why, and hold the row back until `retry_at`. Returns how many
+/// failed attempts the row now has.
+pub async fn record_attempt_failure(conn: &mut PgConnection, project_id: Uuid, retry_at: DateTime<Utc>, error: &str) -> Result<i32, sqlx::Error> {
+    sqlx::query_scalar(
         "UPDATE project_sandboxes SET attempts = attempts + 1, retry_at = $2, last_error = $3, updated_at = now()
-         WHERE project_id = $1",
+         WHERE project_id = $1 RETURNING attempts",
     )
     .bind(project_id)
     .bind(retry_at)
     .bind(error)
+    .fetch_one(conn)
+    .await
+}
+
+/// Too many real failures in a row: put the row in `error` and hold it back until `until`, with
+/// a fresh attempt count for when the cooldown is over. The page falls back to the browser while
+/// the cooldown lasts.
+pub async fn enter_cooldown(conn: &mut PgConnection, project_id: Uuid, until: DateTime<Utc>, error: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET state = 'error', attempts = 0, retry_at = $2, last_error = $3, updated_at = now() WHERE project_id = $1")
+        .bind(project_id)
+        .bind(until)
+        .bind(error)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Hand back rows stuck in `creating`, `starting` or `stopping` for longer than `stuck_secs`
+/// with no live walk lease: they become due at once, without counting an attempt, and the lease
+/// is cleared. Returns the projects moved.
+pub async fn release_stuck(conn: &mut PgConnection, stuck_secs: i64) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar(
+        "UPDATE project_sandboxes SET retry_at = now(), leased_until = NULL, updated_at = now()
+         WHERE state IN ('creating', 'starting', 'stopping')
+           AND updated_at < now() - make_interval(secs => $1)
+           AND (leased_until IS NULL OR leased_until <= now())
+         RETURNING project_id",
+    )
+    .bind(stuck_secs as f64)
+    .fetch_all(conn)
+    .await
+}
+
+/// Projects whose sandbox has sat stopped (and wanted stopped) for longer than `secs`.
+pub async fn long_stopped(conn: &mut PgConnection, secs: i64) -> Result<Vec<(Uuid, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT project_id, sandbox_id FROM project_sandboxes
+         WHERE state = 'stopped' AND desired = 'stopped' AND sandbox_id IS NOT NULL
+           AND updated_at < now() - make_interval(secs => $1)
+           AND (leased_until IS NULL OR leased_until <= now())",
+    )
+    .bind(secs as f64)
+    .fetch_all(conn)
+    .await
+}
+
+/// The provider's copy of a long-stopped sandbox is deleted: mark the row `gone` and drop what
+/// was synced, so the next start builds a new sandbox from the project's files. Does nothing if
+/// the row has moved on since it was read. Returns whether the row was changed.
+pub async fn mark_expired(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE project_sandboxes SET state = 'gone', sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL, updated_at = now()
+         WHERE project_id = $1 AND state = 'stopped' AND desired = 'stopped' AND sandbox_id = $2",
+    )
+    .bind(project_id)
+    .bind(sandbox_id)
     .execute(conn)
     .await?;
-    Ok(())
+    Ok(done.rows_affected() > 0)
 }
 
 /// Hold the row back until `retry_at` without counting a failure: a wait, not a fault.

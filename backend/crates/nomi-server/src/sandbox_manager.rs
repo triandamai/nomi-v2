@@ -27,6 +27,17 @@ const STOPPING_RECHECK: Duration = Duration::from_secs(5);
 const RETRY_BASE: Duration = Duration::from_secs(5);
 /// The longest wait between attempts.
 const RETRY_CAP: Duration = Duration::from_secs(900);
+/// Real failures in a row after which the row goes to `error` and the page falls back to the
+/// browser. Waits and rate limits never count.
+pub const MAX_ATTEMPTS: i32 = 5;
+/// How long a row stays in `error` after `MAX_ATTEMPTS` failures before it is tried again.
+pub const PROVIDER_COOLDOWN: Duration = Duration::from_secs(30 * 60);
+/// How long a row may sit in `creating`, `starting` or `stopping` with no walk holding it before
+/// the watchdog hands it back. Longer than the walk lease, so a live walk is never disturbed.
+pub const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
+/// How long a sandbox may sit stopped before it is deleted at the provider, which keeps stopped
+/// disks for at least 14 days; the next start rebuilds from the project's files.
+pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
 const PROJECT_LABEL: &str = "nomi-project";
 
@@ -113,14 +124,28 @@ impl SandboxManager {
     /// Hold the row back until `at`, saying why.
     async fn retry_at(&self, project_id: Uuid, at: DateTime<Utc>, why: &str) -> Exit {
         let result = async {
-            let mut conn = self.pool.acquire().await?;
-            store::record_attempt_failure(&mut conn, project_id, at, why).await
+            let mut tx = self.pool.begin().await?;
+            let attempts = store::record_attempt_failure(&mut tx, project_id, at, why).await?;
+            let cooled = attempts >= MAX_ATTEMPTS;
+            if cooled {
+                store::enter_cooldown(&mut tx, project_id, Self::cooldown_end(), why).await?;
+            }
+            tx.commit().await?;
+            Ok::<bool, sqlx::Error>(cooled)
         }
         .await;
         match result {
-            Ok(()) => ReconcileOutcome::RetryAt(at),
+            Ok(true) => {
+                announce(project_id, State::Error);
+                ReconcileOutcome::Failed(why.to_string())
+            }
+            Ok(false) => ReconcileOutcome::RetryAt(at),
             Err(e) => ReconcileOutcome::Failed(format!("database: {e}")),
         }
+    }
+
+    fn cooldown_end() -> DateTime<Utc> {
+        Utc::now() + chrono::Duration::from_std(PROVIDER_COOLDOWN).unwrap_or_else(|_| chrono::Duration::minutes(30))
     }
 
     /// Wait until `at` without counting a failure.
@@ -155,7 +180,9 @@ impl SandboxManager {
         let saved = async {
             let mut tx = self.pool.begin().await?;
             store::set_state(&mut tx, project_id, State::Error, Some(&why)).await?;
-            store::record_attempt_failure(&mut tx, project_id, at, &why).await?;
+            if store::record_attempt_failure(&mut tx, project_id, at, &why).await? >= MAX_ATTEMPTS {
+                store::enter_cooldown(&mut tx, project_id, Self::cooldown_end(), &why).await?;
+            }
             tx.commit().await
         }
         .await;
@@ -365,6 +392,70 @@ impl SandboxManager {
         let _ = self.provider.delete(old).await;
         self.forget(row.project_id).await?;
         Ok(Some(self.create(row).await?))
+    }
+
+    /// Hand back rows that have sat mid-change with nobody walking them for longer than
+    /// `STUCK_AFTER`; they are due at once and no attempt is counted. Returns how many.
+    pub async fn unstick(&self) -> usize {
+        let moved = async {
+            let mut conn = self.pool.acquire().await?;
+            store::release_stuck(&mut conn, STUCK_AFTER.as_secs() as i64).await
+        }
+        .await;
+        match moved {
+            Ok(ids) => {
+                for id in &ids {
+                    tracing::warn!(project_id = %id, "sandbox watchdog: row was stuck, handing it back");
+                }
+                ids.len()
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "sandbox watchdog failed");
+                0
+            }
+        }
+    }
+
+    /// Delete the provider copy of sandboxes that have been stopped longer than `EXPIRY_WARN`
+    /// and mark their rows `gone`, so the next start builds a fresh one from the project's
+    /// files. A running or starting sandbox is never touched. Returns how many were expired.
+    pub async fn expire_stopped(&self) -> usize {
+        let due = async {
+            let mut conn = self.pool.acquire().await?;
+            store::long_stopped(&mut conn, EXPIRY_WARN.as_secs() as i64).await
+        }
+        .await;
+        let due = match due {
+            Ok(due) => due,
+            Err(e) => {
+                tracing::warn!(error = %e, "sandbox expiry: looking for old sandboxes failed");
+                return 0;
+            }
+        };
+        let mut expired = 0;
+        for (project_id, sandbox_id) in due {
+            match self.provider.delete(&SandboxId(sandbox_id.clone())).await {
+                Ok(()) | Err(SandboxError::NotFound) => {}
+                Err(e) => {
+                    tracing::warn!(%project_id, error = %e, "sandbox expiry: deleting at the provider failed");
+                    continue;
+                }
+            }
+            let marked = async {
+                let mut conn = self.pool.acquire().await?;
+                store::mark_expired(&mut conn, project_id, &sandbox_id).await
+            }
+            .await;
+            match marked {
+                Ok(true) => {
+                    announce(project_id, State::Gone);
+                    expired += 1;
+                }
+                Ok(false) => {}
+                Err(e) => tracing::warn!(%project_id, error = %e, "sandbox expiry: marking the row failed"),
+            }
+        }
+        expired
     }
 
     async fn bring_down(&self, row: SandboxRow) -> Result<ReconcileOutcome, Exit> {

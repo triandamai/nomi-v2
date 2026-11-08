@@ -50,6 +50,8 @@ CREATE TABLE sandbox_sessions (
 );
 
 CREATE INDEX sandbox_sessions_project_idx ON sandbox_sessions (project_id, started_at);
+-- The monthly allowance sums one person's sessions.
+CREATE INDEX sandbox_sessions_user_idx ON sandbox_sessions (user_id, started_at);
 
 -- A project has at most one open stretch at a time.
 CREATE UNIQUE INDEX sandbox_sessions_one_open_idx ON sandbox_sessions (project_id) WHERE stopped_at IS NULL;
