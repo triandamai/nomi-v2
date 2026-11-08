@@ -164,4 +164,9 @@ pub trait SandboxProvider: Send + Sync {
         tar_gz: Vec<u8>,
     ) -> Result<(), SandboxError>;
     async fn expose_port(&self, id: &SandboxId, port: u16) -> Result<PreviewUrl, SandboxError>;
+    /// How long the provider says the sandbox has run (and billed) since it was created, or `None`
+    /// when the provider can't say.
+    async fn usage(&self, _id: &SandboxId) -> Result<Option<Duration>, SandboxError> {
+        Ok(None)
+    }
 }

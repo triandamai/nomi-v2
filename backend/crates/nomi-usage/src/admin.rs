@@ -18,6 +18,16 @@ pub struct AdminUsage {
     pub by_day: Vec<AdminDay>,
     pub models: Vec<AdminModelUsage>,
     pub embedding_models: Vec<EmbeddingModelUsage>,
+    /// Minutes each person's projects ran in the server-side sandbox this month, most first.
+    pub sandbox_minutes: Vec<SandboxUserMinutes>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, sqlx::FromRow)]
+pub struct SandboxUserMinutes {
+    pub user_id: Uuid,
+    pub email: Option<String>,
+    /// Whole minutes inside the month (sessions spanning its edge count only their part in it).
+    pub minutes: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, sqlx::FromRow)]
@@ -157,5 +167,19 @@ pub async fn report(pool: &PgPool, month: Option<&str>, current_embedding: Optio
     .fetch_all(pool)
     .await?;
 
-    Ok(AdminUsage { month, current_month, chat, embedding, by_day, models, embedding_models })
+    let sandbox_minutes: Vec<SandboxUserMinutes> = sqlx::query_as(
+        "SELECT x.user_id, (SELECT min(email) FROM web_credentials w WHERE w.user_id = x.user_id) AS email, \
+                (floor(SUM(x.secs) / 60))::bigint AS minutes \
+         FROM ( \
+            SELECT user_id, GREATEST(0, EXTRACT(EPOCH FROM ( \
+                LEAST(COALESCE(stopped_at, now()), (($1 || '-01')::timestamp + interval '1 month') AT TIME ZONE 'UTC') \
+                - GREATEST(started_at, ($1 || '-01')::timestamp AT TIME ZONE 'UTC')))) AS secs \
+            FROM sandbox_sessions WHERE user_id IS NOT NULL \
+         ) x GROUP BY x.user_id HAVING SUM(x.secs) > 0 ORDER BY minutes DESC, email",
+    )
+    .bind(&month)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(AdminUsage { month, current_month, chat, embedding, by_day, models, embedding_models, sandbox_minutes })
 }

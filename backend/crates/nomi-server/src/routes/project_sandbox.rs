@@ -38,12 +38,13 @@ async fn load_project(state: &AppState, project_id: Uuid, user_id: Uuid) -> Resu
 }
 
 /// Whether the sandbox can be used for this project by this person right now: the admin switch
-/// is on, the rollout reaches them (the owner of a project already in a sandbox always does), and
-/// the row isn't cooling down after a provider error.
-pub fn sandbox_available(config: Option<&SandboxConfig>, runtime: &str, is_owner: bool, user_id: Uuid, status: Option<&Status>) -> bool {
+/// is on, the rollout reaches them (the owner of a project already in a sandbox always does), the
+/// row isn't cooling down after a provider error, and the owner has minutes left this month.
+/// Running out of minutes only stops new starts: a sandbox that is up idles out as usual.
+pub fn sandbox_available(config: Option<&SandboxConfig>, runtime: &str, is_owner: bool, user_id: Uuid, status: Option<&Status>, within_allowance: bool) -> bool {
     let Some(config) = config else { return false };
     let reached = (runtime == RUNTIME_SANDBOX && is_owner) || config.rollout.includes(user_id);
-    reached && !status.is_some_and(cooling_down)
+    reached && within_allowance && !status.is_some_and(cooling_down)
 }
 
 /// A row in `error` that is held back until a later time.
@@ -68,7 +69,14 @@ async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid, runtime: St
         store::status(&mut conn, project_id).await.map_err(internal)?
     };
     let config = sandbox_config().await;
-    let available = sandbox_available(config.as_ref(), &runtime, owner == user_id, user_id, status.as_ref());
+    let within_allowance = match &config {
+        Some(cfg) => {
+            let mut conn = state.pool.acquire().await.map_err(internal)?;
+            crate::sandbox_usage::within_allowance(&mut conn, owner, cfg).await.map_err(internal)?
+        }
+        None => false,
+    };
+    let available = sandbox_available(config.as_ref(), &runtime, owner == user_id, user_id, status.as_ref(), within_allowance);
     let sandbox_state = status.as_ref().map_or(SandboxState::None, |s| s.state);
     let running = sandbox_state == SandboxState::Running;
     Ok(SandboxResponse {

@@ -936,6 +936,8 @@ export interface AdminUsage {
 		spend_usd: number;
 	}[];
 	embedding_models: { provider: string; model_id: string; tokens: number; calls: number; estimated_calls: number; people: number; current: boolean }[];
+	/** Minutes each person's projects ran in the server-side sandbox this month, most first. */
+	sandbox_minutes: { user_id: string; email: string | null; minutes: number }[];
 }
 
 /** A connected health or fitness app (Connections → Hevy). */

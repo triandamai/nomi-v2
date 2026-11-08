@@ -432,3 +432,29 @@ async fn api_key_never_leaks_into_errors_or_debug() {
     assert!(matches!(err, SandboxError::Unavailable(_)));
     assert!(!format!("{err} {err:?}").contains(KEY));
 }
+
+#[tokio::test]
+async fn usage_reads_the_seconds_the_sandbox_has_run() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sandboxes/bx_7k2m9p4q/usage"))
+        .and(header("authorization", format!("Bearer {KEY}").as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "type": "sandbox.usage", "sandboxId": "bx_7k2m9p4q", "seconds": 5400,
+            "dollars": 0.5, "secondsPerDollar": 10800, "running": true
+        })))
+        .mount(&server)
+        .await;
+    assert_eq!(provider(&server).usage(&sid()).await.unwrap(), Some(Duration::from_secs(5400)));
+}
+
+#[tokio::test]
+async fn usage_of_an_unknown_sandbox_is_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sandboxes/bx_7k2m9p4q/usage"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(error_body(404, "not_found")))
+        .mount(&server)
+        .await;
+    assert!(matches!(provider(&server).usage(&sid()).await, Err(SandboxError::NotFound)));
+}

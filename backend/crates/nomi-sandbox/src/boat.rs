@@ -485,6 +485,13 @@ impl SandboxProvider for BoatProvider {
         }
     }
 
+    async fn usage(&self, id: &SandboxId) -> Result<Option<Duration>, SandboxError> {
+        let body = self
+            .send(self.req(Method::GET, &format!("/sandboxes/{}/usage", id.0)))
+            .await?;
+        Ok(secs_field(&body["seconds"]))
+    }
+
     async fn expose_port(&self, id: &SandboxId, port: u16) -> Result<PreviewUrl, SandboxError> {
         // Private (token in the URL) rather than public: the URL is treated as the secret.
         let rb = self

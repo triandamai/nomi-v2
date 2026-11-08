@@ -29,6 +29,7 @@ pub mod sandbox_runs;
 pub mod sandbox_steps;
 pub mod sandbox_store;
 pub mod sandbox_sync;
+pub mod sandbox_usage;
 pub mod sandbox_worker;
 pub mod scheduler_worker;
 pub mod shipyard;

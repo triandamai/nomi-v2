@@ -16,6 +16,7 @@ use crate::configuration::{sandbox_config, SandboxConfig};
 use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
 use crate::sandbox_runs::RUN_LEASE;
 use crate::sandbox_steps::ServerSteps;
+use crate::sandbox_usage::DRIFT_INTERVAL;
 use crate::sandbox_store as store;
 
 /// The provider name stored on a project's sandbox row.
@@ -157,6 +158,11 @@ impl SandboxWorker {
         Ok(rows)
     }
 
+    /// Compare our metered time with the provider's and log the differences.
+    pub async fn check_usage_drift(&self) {
+        crate::sandbox_usage::reconcile_usage_drift(&self.pool, self.manager.provider().as_ref()).await;
+    }
+
     /// Ask for the sandboxes of projects whose page has gone quiet to be stopped.
     pub async fn sweep_idle(&self) {
         let result = async {
@@ -186,6 +192,8 @@ fn signature(cfg: &SandboxConfig) -> Signature {
 pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: ProjectStore, settings_key: [u8; 32], shipyard: Option<nomi_shipyard::ShipyardConfig>) {
     let mut current: Option<(Signature, SandboxWorker)> = None;
     let mut last_sweep = Instant::now();
+    // The first check waits a full interval, so a restart doesn't repeat it.
+    let mut last_drift_check = Instant::now();
     loop {
         let Some(cfg) = sandbox_config().await else {
             current = None;
@@ -205,6 +213,10 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
             if last_sweep.elapsed() >= SWEEP_INTERVAL {
                 worker.sweep_idle().await;
                 last_sweep = Instant::now();
+            }
+            if last_drift_check.elapsed() >= DRIFT_INTERVAL {
+                worker.check_usage_drift().await;
+                last_drift_check = Instant::now();
             }
         }
         tokio::time::sleep(POLL_INTERVAL).await;

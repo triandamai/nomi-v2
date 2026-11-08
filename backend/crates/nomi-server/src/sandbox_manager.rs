@@ -66,6 +66,11 @@ fn db<T>(result: Result<T, sqlx::Error>) -> Result<T, Exit> {
 }
 
 impl SandboxManager {
+    /// The provider the manager talks to.
+    pub fn provider(&self) -> &Arc<dyn SandboxProvider> {
+        &self.provider
+    }
+
     pub fn new(provider: Arc<dyn SandboxProvider>, steps: Arc<dyn ProjectSteps>, pool: PgPool, cfg: SandboxConfig) -> Self {
         let limiter = Mutex::new(StartLimiter::new(cfg.starts_per_minute, cfg.starts_per_hour));
         Self { provider, limiter, pool, steps, cfg }
@@ -339,7 +344,7 @@ impl SandboxManager {
             store::set_state(&mut tx, project_id, State::Running, None).await?;
             // The unique index keeps a racing walk from opening a second session.
             sqlx::query(
-                "INSERT INTO sandbox_sessions (project_id, size) VALUES ($1, $2)
+                "INSERT INTO sandbox_sessions (project_id, user_id, size) VALUES ($1, (SELECT user_id FROM projects WHERE id = $1), $2)
                  ON CONFLICT (project_id) WHERE stopped_at IS NULL DO NOTHING",
             )
             .bind(project_id)

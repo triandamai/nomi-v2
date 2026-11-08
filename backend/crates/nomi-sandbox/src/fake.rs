@@ -44,6 +44,8 @@ struct Inner {
     process_exit: Option<(u32, i32)>,
     /// What every background process reports as its output so far.
     process_logs: (String, String),
+    /// What `usage` reports per sandbox.
+    usage: BTreeMap<SandboxId, Duration>,
     next_id: u64,
     next_process: u64,
 }
@@ -98,6 +100,11 @@ impl FakeProvider {
             .get(id)
             .map(|s| s.files.clone())
             .unwrap_or_default()
+    }
+
+    /// Make `usage` report `used` for the sandbox.
+    pub fn set_usage(&self, id: &SandboxId, used: Duration) {
+        self.lock().usage.insert(id.clone(), used);
     }
 
     /// Every call made so far, as `method` or `method arg`, in order.
@@ -334,5 +341,11 @@ impl SandboxProvider for FakeProvider {
                 id.0, sb.generation
             ),
         })
+    }
+
+    async fn usage(&self, id: &SandboxId) -> Result<Option<Duration>, SandboxError> {
+        let mut g = self.enter(format!("usage {}", id.0))?;
+        g.sandbox(id)?;
+        Ok(g.usage.get(id).copied())
     }
 }
