@@ -100,7 +100,7 @@ fn decode<T>(what: &str, value: &str, parsed: Option<T>) -> Result<T, sqlx::Erro
 
 /// Ask for the project's sandbox to be running, creating its row the first time. Flipping a settled
 /// row (none, stopped, running) from stopped also drops any leftover backoff so the person's open
-/// isn't delayed; a repeat call, an errored row and an in-flight row keeps its `retry_at`, which is the lease on the walk in progress.
+/// isn't delayed; a repeat call, an errored row and an in-flight row keeps its `retry_at`; the walk lease is `leased_until`, which these never touch.
 pub async fn want_running(conn: &mut PgConnection, project_id: Uuid, provider: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO project_sandboxes (project_id, provider, desired) VALUES ($1, $2, 'running')
@@ -131,7 +131,7 @@ pub async fn want_stopped(conn: &mut PgConnection, project_id: Uuid) -> Result<(
 /// Rows whose state hasn't reached what they want (or is mid-change) and whose retry time has
 /// come, locked with `FOR UPDATE SKIP LOCKED` so two reconcilers never take the same one. The
 /// locks last until the transaction ends, so the caller must run this inside a transaction and
-/// keep it open while it works the rows. Claimed rows are leased: their `retry_at` moves
+/// keep it open while it works the rows. Claimed rows are leased: their `leased_until` moves
 /// `WALK_LEASE_SECS` ahead so a later claim skips them until the walk records its outcome.
 pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<SandboxRow>, sqlx::Error> {
     let rows = sqlx::query(
@@ -141,6 +141,7 @@ pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<Sandbo
                 OR desired = 'stopped' AND state NOT IN ('stopped', 'none', 'gone')
                 OR state IN ('creating', 'starting', 'stopping'))
            AND (retry_at IS NULL OR retry_at <= now())
+           AND (leased_until IS NULL OR leased_until <= now())
          ORDER BY updated_at
          LIMIT $1
          FOR UPDATE SKIP LOCKED",
@@ -150,12 +151,18 @@ pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<Sandbo
     .await?;
     let claimed = rows.iter().map(row_from).collect::<Result<Vec<_>, _>>()?;
     let ids: Vec<Uuid> = claimed.iter().map(|r| r.project_id).collect();
-    sqlx::query("UPDATE project_sandboxes SET retry_at = $2 WHERE project_id = ANY($1)")
+    sqlx::query("UPDATE project_sandboxes SET leased_until = $2 WHERE project_id = ANY($1)")
         .bind(&ids)
         .bind(Utc::now() + Duration::seconds(WALK_LEASE_SECS))
         .execute(conn)
         .await?;
     Ok(claimed)
+}
+
+/// Let go of the walk lease taken by `claim_due`; the walk is over.
+pub async fn release(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET leased_until = NULL WHERE project_id = $1").bind(project_id).execute(conn).await?;
+    Ok(())
 }
 
 fn row_from(r: &sqlx::postgres::PgRow) -> Result<SandboxRow, sqlx::Error> {

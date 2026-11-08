@@ -127,7 +127,7 @@ async fn overlapping_claims_do_not_both_walk_a_row(pool: PgPool) {
     assert!(store::claim_due(&mut second, CLAIM_LIMIT).await.unwrap().is_empty());
     second.rollback().await.unwrap();
 
-    store::defer(&mut conn, p, Utc::now() - Duration::seconds(1)).await.unwrap();
+    store::release(&mut conn, p).await.unwrap();
     let mut third = pool.begin().await.unwrap();
     assert_eq!(store::claim_due(&mut third, CLAIM_LIMIT).await.unwrap().len(), 1);
     third.rollback().await.unwrap();
@@ -154,7 +154,7 @@ async fn want_running_clears_backoff_on_a_settled_row_but_not_an_in_flight_lease
     store::want_stopped(&mut conn, p).await.unwrap();
     assert!(retry_at().await.is_none());
 
-    // In flight: the retry_at is the walk's lease and stays, even when desired flips.
+    // In flight: backoff stays (the walk lease is separate), even when desired flips.
     set("starting", "stopped").await;
     store::want_running(&mut conn, p, PROVIDER).await.unwrap();
     assert!(retry_at().await.is_some());
@@ -186,5 +186,25 @@ async fn repeated_want_running_keeps_the_walk_lease(pool: PgPool) {
     store::want_running(&mut conn, p, PROVIDER).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
     assert!(store::claim_due(&mut tx, CLAIM_LIMIT).await.unwrap().is_empty());
+    tx.rollback().await.unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn two_flips_during_a_walk_do_not_release_the_lease(pool: PgPool) {
+    let p = project(&pool, "flips").await;
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert_eq!(store::claim_due(&mut tx, CLAIM_LIMIT).await.unwrap().len(), 1);
+    tx.commit().await.unwrap();
+    store::want_stopped(&mut conn, p).await.unwrap();
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(store::claim_due(&mut tx, CLAIM_LIMIT).await.unwrap().is_empty());
+    tx.rollback().await.unwrap();
+    // Once the walk lets go, the row is due again.
+    store::release(&mut conn, p).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert_eq!(store::claim_due(&mut tx, CLAIM_LIMIT).await.unwrap().len(), 1);
     tx.rollback().await.unwrap();
 }

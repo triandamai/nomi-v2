@@ -77,8 +77,10 @@ impl SandboxManager {
         let outcome = match self.walk(row.project_id).await {
             Ok(outcome) | Err(outcome) => outcome,
         };
+        // The walk is over, whichever way it ended: let the next claim take the row.
+        let _ = sqlx::query("UPDATE project_sandboxes SET leased_until = NULL WHERE project_id = $1").bind(row.project_id).execute(&self.pool).await;
         if outcome == ReconcileOutcome::Settled {
-            // Drop the claim lease; a settled row has nothing left to wait for.
+            // A settled row has nothing left to wait for.
             let _ = sqlx::query("UPDATE project_sandboxes SET retry_at = NULL WHERE project_id = $1").bind(row.project_id).execute(&self.pool).await;
         }
         outcome

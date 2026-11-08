@@ -22,6 +22,9 @@ CREATE TABLE project_sandboxes (
     preview_url    TEXT,
     -- Failed attempts since the last settled state, when to try next, and why the last one failed.
     retry_at       TIMESTAMPTZ,
+    -- Held while a worker walks the row, so no second worker takes it; separate from retry_at,
+    -- which a person's open or close may clear.
+    leased_until   TIMESTAMPTZ,
     attempts       INT NOT NULL DEFAULT 0,
     last_error     TEXT,
     last_active_at TIMESTAMPTZ,
