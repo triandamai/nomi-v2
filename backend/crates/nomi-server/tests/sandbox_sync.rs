@@ -211,3 +211,20 @@ async fn recreated_sandbox_starts_from_an_empty_manifest(pool: PgPool) {
     f.steps.sync_project(f.project, &f.sandbox).await.unwrap();
     assert_eq!(f.calls("upload_archive").len(), 2);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn remembered_paths_that_climb_out_are_never_deleted(pool: PgPool) {
+    let f = fixture(pool).await;
+    f.save("a.txt", b"a").await;
+    f.steps.sync_project(f.project, &f.sandbox).await.unwrap();
+    // A tampered memory names paths outside the project directory (or the directory itself).
+    sqlx::query("UPDATE project_sandboxes SET synced_manifest = synced_manifest || '{\"../../etc\": \"x\", \"\": \"x\", \"/root\": \"x\"}'::jsonb WHERE project_id = $1")
+        .bind(f.project)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    f.save("b.txt", b"b").await;
+    f.steps.sync_project(f.project, &f.sandbox).await.unwrap();
+    let deletes = f.calls("delete_file");
+    assert!(deletes.is_empty(), "{deletes:?}");
+}

@@ -9,6 +9,7 @@ use base64::Engine;
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use serde_json::{json, Value};
 
+use crate::redact::redact;
 use crate::{
     CreateSpec, ExecOutput, PreviewUrl, ProcessHandle, ProcessStatus, ResumeSpec, SandboxError,
     SandboxId, SandboxInfo, SandboxProvider, SandboxState,
@@ -46,6 +47,14 @@ const SERVER_ERROR_MIN_STATUS: u16 = 500;
 const CLIENT_ERROR_MIN_STATUS: u16 = 400;
 /// Header the delete endpoint needs, set to the sandbox id.
 const CONFIRM_DELETE_HEADER: &str = "X-Ascii-Confirm-Delete";
+/// The only scheme accepted for a preview address or an upload address on another host.
+const HTTPS_SCHEME: &str = "https";
+/// Longest sandbox id accepted into a request path.
+const MAX_SANDBOX_ID_LEN: usize = 128;
+/// Host names that never belong to a public upload store; a signed upload URL on one is refused.
+const PRIVATE_HOST_NAMES: &[&str] = &["localhost"];
+/// Host name endings that never belong to a public upload store.
+const PRIVATE_HOST_SUFFIXES: &[&str] = &[".localhost", ".internal", ".local", ".lan", ".home.arpa"];
 
 /// Where boat is and how to sign in. The key is never printed.
 #[derive(Clone)]
@@ -94,6 +103,10 @@ impl BoatProvider {
 
     /// Send a request, turn failures into `SandboxError`, return the JSON body on success.
     async fn send(&self, rb: RequestBuilder) -> Result<Value, SandboxError> {
+        self.send_unscrubbed(rb).await.map_err(|e| self.scrub(e))
+    }
+
+    async fn send_unscrubbed(&self, rb: RequestBuilder) -> Result<Value, SandboxError> {
         let resp = rb.send().await.map_err(transport_error)?;
         if resp.status().is_success() {
             let bytes = resp.bytes().await.map_err(transport_error)?;
@@ -104,6 +117,19 @@ impl BoatProvider {
                 .map_err(|e| SandboxError::Other(format!("unreadable response: {e}")));
         }
         Err(error_from_response(resp).await)
+    }
+
+    /// Take the API key, URL query strings (preview tokens, upload signatures) and URL user info
+    /// out of an error's text: provider bodies may echo any of them, and error text ends up in
+    /// logs and in `last_error`, which project members can read.
+    fn scrub(&self, err: SandboxError) -> SandboxError {
+        let clean = |m: String| redact(&m, &self.config.api_key);
+        match err {
+            SandboxError::Refused(m) => SandboxError::Refused(clean(m)),
+            SandboxError::Unavailable(m) => SandboxError::Unavailable(clean(m)),
+            SandboxError::Other(m) => SandboxError::Other(clean(m)),
+            other => other,
+        }
     }
 
     async fn sandbox_call(&self, rb: RequestBuilder) -> Result<SandboxInfo, SandboxError> {
@@ -255,13 +281,77 @@ fn upload_url_from(body: &Value) -> Result<String, SandboxError> {
         .ok_or_else(|| SandboxError::Other("upload-url response had no url".to_string()))
 }
 
+/// True for a host that is an IP literal or a name that only resolves on a private network.
+fn private_host(host: &str) -> bool {
+    let host = host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+    host.parse::<std::net::IpAddr>().is_ok()
+        || PRIVATE_HOST_NAMES.contains(&host.as_str())
+        || PRIVATE_HOST_SUFFIXES.iter().any(|s| host.ends_with(s))
+}
+
+/// The server sends project bytes to whatever URL the upload-url call returns, so the URL is
+/// checked first: it must be on the API's own origin, or be `https` on a public host name (no IP
+/// literal, no private name, no user info). The URL never appears in the refusal.
+fn check_upload_url(base_url: &str, raw: &str) -> Result<reqwest::Url, SandboxError> {
+    let refuse = |why: &str| SandboxError::Refused(format!("the upload address {why}"));
+    let url = reqwest::Url::parse(raw).map_err(|_| refuse("isn't a valid URL"))?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(refuse("carries user info"));
+    }
+    let same_origin = reqwest::Url::parse(base_url).is_ok_and(|base| {
+        base.scheme() == url.scheme()
+            && base.host_str() == url.host_str()
+            && base.port_or_known_default() == url.port_or_known_default()
+    });
+    if same_origin {
+        return Ok(url);
+    }
+    if url.scheme() != HTTPS_SCHEME {
+        return Err(refuse("isn't https"));
+    }
+    match url.host_str() {
+        Some(host) if !private_host(host) => Ok(url),
+        _ => Err(refuse("isn't on a public host")),
+    }
+}
+
+/// A preview address goes straight into an iframe's `src`, so only `https` is accepted (never
+/// `javascript:`, `data:` or plain http). The address never appears in the refusal.
+fn check_preview_url(raw: &str) -> Result<(), SandboxError> {
+    match reqwest::Url::parse(raw) {
+        Ok(url) if url.scheme() == HTTPS_SCHEME && url.host_str().is_some() => Ok(()),
+        _ => Err(SandboxError::Other(
+            "the provider returned a preview address that isn't https".to_string(),
+        )),
+    }
+}
+
+/// True for a value safe to put in a request path as one segment: ASCII letters, digits, `_`, `-`.
+fn plain_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_SANDBOX_ID_LEN
+        && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// `/sandboxes/{id}{rest}`. Sandbox ids come from the provider and from Nomi's database, so one
+/// that could change the path (a `/`, `..`, `?`) is refused before any request is made.
+fn sandbox_path(id: &SandboxId, rest: &str) -> Result<String, SandboxError> {
+    if !plain_segment(&id.0) {
+        return Err(SandboxError::Refused("not a valid sandbox id".to_string()));
+    }
+    Ok(format!("/sandboxes/{}{rest}", id.0))
+}
+
 impl BoatProvider {
-    fn commands_path(id: &SandboxId) -> String {
-        format!("/sandboxes/{}/commands", id.0)
+    fn commands_path(id: &SandboxId) -> Result<String, SandboxError> {
+        sandbox_path(id, "/commands")
     }
 
-    fn process_path(id: &SandboxId, handle: &ProcessHandle) -> String {
-        format!("/sandboxes/{}/commands/{}", id.0, handle.process_id)
+    fn process_path(id: &SandboxId, handle: &ProcessHandle) -> Result<String, SandboxError> {
+        if !plain_segment(&handle.process_id) {
+            return Err(SandboxError::Refused("not a valid process id".to_string()));
+        }
+        sandbox_path(id, &format!("/commands/{}", handle.process_id))
     }
 }
 
@@ -286,7 +376,7 @@ impl SandboxProvider for BoatProvider {
     }
 
     async fn get(&self, id: &SandboxId) -> Result<SandboxInfo, SandboxError> {
-        self.sandbox_call(self.req(Method::GET, &format!("/sandboxes/{}", id.0)))
+        self.sandbox_call(self.req(Method::GET, &sandbox_path(id, "")?))
             .await
     }
 
@@ -296,7 +386,7 @@ impl SandboxProvider for BoatProvider {
             body["ttlSeconds"] = json!(ttl);
         }
         let rb = self
-            .req(Method::POST, &format!("/sandboxes/{}/resume", id.0))
+            .req(Method::POST, &sandbox_path(id, "/resume")?)
             .json(&body);
         let resp = self.send(rb).await?;
         // The 202 may carry `sandbox: null`; the sandbox is then on its way up.
@@ -313,14 +403,14 @@ impl SandboxProvider for BoatProvider {
 
     async fn stop(&self, id: &SandboxId, force: bool) -> Result<(), SandboxError> {
         let rb = self
-            .req(Method::POST, &format!("/sandboxes/{}/stop", id.0))
+            .req(Method::POST, &sandbox_path(id, "/stop")?)
             .json(&json!({ "force": force }));
         self.send(rb).await.map(|_| ())
     }
 
     async fn delete(&self, id: &SandboxId) -> Result<(), SandboxError> {
         let rb = self
-            .req(Method::DELETE, &format!("/sandboxes/{}", id.0))
+            .req(Method::DELETE, &sandbox_path(id, "")?)
             .header(CONFIRM_DELETE_HEADER, &id.0);
         self.send(rb).await.map(|_| ())
     }
@@ -357,7 +447,7 @@ impl SandboxProvider for BoatProvider {
     ) -> Result<ExecOutput, SandboxError> {
         let secs = timeout_secs(timeout);
         let rb = self
-            .req(Method::POST, &Self::commands_path(id))
+            .req(Method::POST, &Self::commands_path(id)?)
             .timeout(Duration::from_secs(secs) + EXEC_NETWORK_SLACK)
             .json(&json!({ "command": command, "timeoutSeconds": secs }));
         let body = self.send(rb).await?;
@@ -379,7 +469,7 @@ impl SandboxProvider for BoatProvider {
         command: &str,
     ) -> Result<ProcessHandle, SandboxError> {
         let rb = self
-            .req(Method::POST, &Self::commands_path(id))
+            .req(Method::POST, &Self::commands_path(id)?)
             .json(&json!({ "command": command, "detached": true }));
         let body = self.send(rb).await?;
         let pid = body["processId"]
@@ -398,7 +488,7 @@ impl SandboxProvider for BoatProvider {
         stderr_from: u64,
     ) -> Result<ProcessStatus, SandboxError> {
         let rb = self
-            .req(Method::GET, &Self::process_path(id, handle))
+            .req(Method::GET, &Self::process_path(id, handle)?)
             .query(&[("stdoutOffset", stdout_from), ("stderrOffset", stderr_from)]);
         let body = self.send(rb).await?;
         Ok(ProcessStatus {
@@ -416,7 +506,7 @@ impl SandboxProvider for BoatProvider {
         id: &SandboxId,
         handle: &ProcessHandle,
     ) -> Result<(), SandboxError> {
-        self.send(self.req(Method::DELETE, &Self::process_path(id, handle)))
+        self.send(self.req(Method::DELETE, &Self::process_path(id, handle)?))
             .await
             .map(|_| ())
     }
@@ -434,7 +524,7 @@ impl SandboxProvider for BoatProvider {
             )));
         }
         let rb = self
-            .req(Method::PUT, &format!("/sandboxes/{}/files", id.0))
+            .req(Method::PUT, &sandbox_path(id, "/files")?)
             .json(&json!({
                 "path": path,
                 "content": base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -446,7 +536,7 @@ impl SandboxProvider for BoatProvider {
     async fn delete_file(&self, id: &SandboxId, path: &str) -> Result<(), SandboxError> {
         // `recursive` lets a directory go too; the API refuses the home and tmp roots itself.
         let rb = self
-            .req(Method::DELETE, &format!("/sandboxes/{}/files", id.0))
+            .req(Method::DELETE, &sandbox_path(id, "/files")?)
             .query(&[("path", path), ("recursive", "true")]);
         self.send(rb).await.map(|_| ())
     }
@@ -460,10 +550,13 @@ impl SandboxProvider for BoatProvider {
         let rb = self
             .req(
                 Method::POST,
-                &format!("/sandboxes/{}/files/upload-url", id.0),
+                &sandbox_path(id, "/files/upload-url")?,
             )
             .json(&json!({ "path": ARCHIVE_STAGING_PATH }));
-        let url = upload_url_from(&self.send(rb).await?)?;
+        let url = check_upload_url(
+            &self.config.base_url,
+            &upload_url_from(&self.send(rb).await?)?,
+        )?;
 
         // The signed URL authenticates itself, so no bearer token goes with it.
         let resp = self
@@ -473,28 +566,32 @@ impl SandboxProvider for BoatProvider {
             .body(tar_gz)
             .send()
             .await
-            .map_err(transport_error)?;
+            .map_err(|e| self.scrub(transport_error(e)))?;
         if !resp.status().is_success() {
-            return Err(error_from_response(resp).await);
+            return Err(self.scrub(error_from_response(resp).await));
         }
 
         let dest = shell_quote(dest_dir);
         let tmp = shell_quote(ARCHIVE_STAGING_PATH);
-        let command =
-            format!("mkdir -p {dest} && tar -xzf {tmp} -C {dest}; rc=$?; rm -f {tmp}; exit $rc");
+        // GNU tar already drops a leading `/` and refuses `..` members; the archive (built by
+        // `plan::build_archive`) holds only regular files with checked relative paths. Owners and
+        // modes recorded in the archive are ignored.
+        let command = format!(
+            "mkdir -p {dest} && tar --no-same-owner --no-same-permissions -xzf {tmp} -C {dest}; rc=$?; rm -f {tmp}; exit $rc"
+        );
         let out = self.exec(id, &command, EXTRACT_TIMEOUT).await?;
         match out.exit_code {
             Some(0) => Ok(()),
-            _ => Err(SandboxError::Other(format!(
+            _ => Err(self.scrub(SandboxError::Other(format!(
                 "unpacking the archive failed: {}",
                 out.stderr.trim()
-            ))),
+            )))),
         }
     }
 
     async fn usage(&self, id: &SandboxId) -> Result<Option<Duration>, SandboxError> {
         let body = self
-            .send(self.req(Method::GET, &format!("/sandboxes/{}/usage", id.0)))
+            .send(self.req(Method::GET, &sandbox_path(id, "/usage")?))
             .await?;
         Ok(secs_field(&body["seconds"]))
     }
@@ -502,12 +599,13 @@ impl SandboxProvider for BoatProvider {
     async fn expose_port(&self, id: &SandboxId, port: u16) -> Result<PreviewUrl, SandboxError> {
         // Private (token in the URL) rather than public: the URL is treated as the secret.
         let rb = self
-            .req(Method::POST, &format!("/sandboxes/{}/host", id.0))
+            .req(Method::POST, &sandbox_path(id, "/host")?)
             .json(&json!({ "port": port, "public": false }));
         let body = self.send(rb).await?;
         let url = body["url"]
             .as_str()
             .ok_or_else(|| SandboxError::Other("response had no url".to_string()))?;
+        check_preview_url(url)?;
         Ok(PreviewUrl {
             url: url.to_string(),
         })

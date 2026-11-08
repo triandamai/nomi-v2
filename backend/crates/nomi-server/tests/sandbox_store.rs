@@ -208,3 +208,22 @@ async fn two_flips_during_a_walk_do_not_release_the_lease(pool: PgPool) {
     assert_eq!(store::claim_due(&mut tx, CLAIM_LIMIT).await.unwrap().len(), 1);
     tx.rollback().await.unwrap();
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn saved_errors_never_keep_a_url_token_or_signature(pool: PgPool) {
+    let p = project(&pool, "redact").await;
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    let leaky = "dev server failed at https://x-5173.on.boat.dev/?_token=prevsecret (signed https://s3.test/u?X-Sig=sigsecret)";
+    let last = || async {
+        let e: Option<String> = sqlx::query_scalar("SELECT last_error FROM project_sandboxes WHERE project_id = $1").bind(p).fetch_one(&pool).await.unwrap();
+        e.unwrap_or_default()
+    };
+    store::set_state(&mut conn, p, State::Error, Some(leaky)).await.unwrap();
+    let saved = last().await;
+    assert!(!saved.contains("prevsecret") && saved.contains("x-5173.on.boat.dev"), "{saved}");
+    store::record_attempt_failure(&mut conn, p, Utc::now(), leaky).await.unwrap();
+    assert!(!last().await.contains("sigsecret"));
+    store::enter_cooldown(&mut conn, p, Utc::now(), leaky).await.unwrap();
+    assert!(!last().await.contains("prevsecret"));
+}

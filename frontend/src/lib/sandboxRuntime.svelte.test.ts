@@ -53,6 +53,17 @@ describe('sandbox runtime', () => {
 		expect(await createRuntime('p1')).toBeInstanceOf(ProjectRuntime);
 	});
 
+	it('never_frames_a_preview_address_that_is_not_https', async () => {
+		for (const bad of ['javascript:alert(1)', 'http://x.on.boat.dev/?_token=t', 'data:text/html,hi', 'not a url']) {
+			status = { ...status, phase: 'running', preview_url: bad };
+			const runtime = new SandboxRuntime('p1');
+			await runtime.start();
+			expect(runtime.previewUrl, bad).toBeNull();
+			expect(runtime.phase, bad).toBe('starting');
+			await runtime.stop();
+		}
+	});
+
 	it('maps_backend_phases_to_runtime_phases', () => {
 		expect(toRuntimePhase('idle', null)).toBe('waiting');
 		expect(toRuntimePhase('stopped', null)).toBe('waiting');

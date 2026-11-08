@@ -477,3 +477,122 @@ async fn list_returns_each_sandboxes_labels() {
     assert_eq!(all[0].labels, BTreeMap::from([("nomi-project".to_string(), "p1".to_string())]));
     assert!(all[1].labels.is_empty());
 }
+
+/// A preview address as boat returns it for a private port.
+const PREVIEW_WITH_TOKEN: &str = "https://x-3000.on.boat.dev/?_token=prevsecret";
+
+#[tokio::test]
+async fn provider_error_text_never_carries_the_key_or_a_tokened_url() {
+    let server = MockServer::start().await;
+    let echo = format!("bad key {KEY} for {PREVIEW_WITH_TOKEN}");
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/host"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({"code": "bad", "message": echo})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(500).set_body_string(echo.clone()))
+        .mount(&server)
+        .await;
+    let p = provider(&server);
+    for err in [p.expose_port(&sid(), 3000).await.unwrap_err(), p.get(&sid()).await.unwrap_err()] {
+        let text = format!("{err} {err:?}");
+        assert!(!text.contains(KEY) && !text.contains("prevsecret"), "{text}");
+        assert!(text.contains("x-3000.on.boat.dev"), "the host stays for debugging: {text}");
+    }
+}
+
+/// Mounts an upload-url answer pointing at `url`, and a successful extract.
+async fn mount_upload(server: &MockServer, url: &str) {
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/files/upload-url"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "url": url })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/commands"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "exitCode": 0, "stdout": "", "stderr": "", "timedOut": false
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn upload_url_must_be_https_on_a_public_host_or_the_api_host() {
+    for bad in [
+        "http://localhost:1/signed",
+        "http://169.254.169.254/latest/meta-data",
+        "https://127.0.0.1:1/signed",
+        "https://10.0.0.5/signed",
+        "https://[::1]/signed",
+        "https://metadata.internal/signed",
+        "https://user:pw@up.example.com/signed",
+        "file:///etc/passwd",
+        "not a url",
+    ] {
+        let server = MockServer::start().await;
+        mount_upload(&server, bad).await;
+        let err = provider(&server).upload_archive(&sid(), "/home/user/app", vec![1]).await.unwrap_err();
+        assert!(matches!(err, SandboxError::Refused(_)), "{bad}: {err:?}");
+        let reqs = server.received_requests().await.unwrap();
+        assert!(!reqs.iter().any(|r| r.url.path().ends_with("/commands")), "{bad}: nothing is extracted");
+    }
+}
+
+#[tokio::test]
+async fn a_failed_upload_does_not_echo_the_signed_url() {
+    let server = MockServer::start().await;
+    let signed = format!("{}/signed/abc?X-Signature=sigsecret", server.uri());
+    mount_upload(&server, &signed).await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(format!("<Error><Url>{signed}</Url></Error>")))
+        .mount(&server)
+        .await;
+    let err = provider(&server).upload_archive(&sid(), "/home/user/app", vec![1]).await.unwrap_err();
+    assert!(!format!("{err} {err:?}").contains("sigsecret"), "{err}");
+}
+
+#[tokio::test]
+async fn extraction_refuses_owners_and_permissions_from_the_archive_and_never_sees_the_key() {
+    let server = MockServer::start().await;
+    mount_upload(&server, &format!("{}/signed/abc", server.uri())).await;
+    Mock::given(method("PUT")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    provider(&server).upload_archive(&sid(), "/home/user/app", vec![1]).await.unwrap();
+    let reqs = server.received_requests().await.unwrap();
+    let exec = reqs.iter().find(|r| r.url.path().ends_with("/commands")).unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&exec.body).unwrap();
+    let cmd = body["command"].as_str().unwrap();
+    assert!(cmd.contains("--no-same-owner") && cmd.contains("--no-same-permissions"), "{cmd}");
+    for r in reqs.iter().filter(|r| r.method.as_str() != "GET") {
+        assert!(!String::from_utf8_lossy(&r.body).contains(KEY), "the key only travels in the auth header");
+    }
+}
+
+#[tokio::test]
+async fn expose_port_refuses_an_address_that_is_not_https() {
+    for bad in ["javascript:alert(1)", "http://x-3000.on.boat.dev/?_token=t", "data:text/html,hi"] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sandboxes/bx_7k2m9p4q/host"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "url": bad })))
+            .mount(&server)
+            .await;
+        let err = provider(&server).expose_port(&sid(), 3000).await.unwrap_err();
+        assert!(!format!("{err}").contains("_token=t"), "{err}");
+    }
+}
+
+#[tokio::test]
+async fn a_sandbox_id_that_is_not_a_plain_name_never_reaches_a_request_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET")).respond_with(ResponseTemplate::new(200).set_body_json(json!({}))).mount(&server).await;
+    let p = provider(&server);
+    for bad in ["../account", "bx_1/commands", "bx_1?x=1", "", "bx 1"] {
+        let id = SandboxId(bad.to_string());
+        assert!(matches!(p.get(&id).await, Err(SandboxError::Refused(_))), "{bad}");
+        assert!(matches!(p.delete(&id).await, Err(SandboxError::Refused(_))), "{bad}");
+        assert!(matches!(p.exec(&id, "true", Duration::from_secs(1)).await, Err(SandboxError::Refused(_))), "{bad}");
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

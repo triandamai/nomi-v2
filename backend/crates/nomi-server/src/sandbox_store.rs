@@ -3,6 +3,7 @@
 //! move one toward the other.
 
 use chrono::{DateTime, Duration, Utc};
+use nomi_sandbox::redact::redact_urls;
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
@@ -219,6 +220,9 @@ pub async fn get(conn: &mut PgConnection, project_id: Uuid) -> Result<Option<San
 
 /// Record the state the provider reported, with an error message if it gave one. Reaching a
 /// settled state (running, stopped, none) resets the retry bookkeeping.
+///
+/// Every saved error goes through `redact_urls` (here and in the two writers below): project
+/// members read `last_error`, so a preview token or signed URL must never be stored in it.
 pub async fn set_state(conn: &mut PgConnection, project_id: Uuid, state: State, error: Option<&str>) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE project_sandboxes SET state = $2, last_error = $3, updated_at = now(),
@@ -228,7 +232,7 @@ pub async fn set_state(conn: &mut PgConnection, project_id: Uuid, state: State, 
     )
     .bind(project_id)
     .bind(state.as_str())
-    .bind(error)
+    .bind(error.map(redact_urls))
     .bind(state.is_settled())
     .execute(conn)
     .await?;
@@ -244,7 +248,7 @@ pub async fn record_attempt_failure(conn: &mut PgConnection, project_id: Uuid, r
     )
     .bind(project_id)
     .bind(retry_at)
-    .bind(error)
+    .bind(redact_urls(error))
     .fetch_one(conn)
     .await
 }
@@ -256,7 +260,7 @@ pub async fn enter_cooldown(conn: &mut PgConnection, project_id: Uuid, until: Da
     sqlx::query("UPDATE project_sandboxes SET state = 'error', attempts = 0, retry_at = $2, last_error = $3, updated_at = now() WHERE project_id = $1")
         .bind(project_id)
         .bind(until)
-        .bind(error)
+        .bind(redact_urls(error))
         .execute(conn)
         .await?;
     Ok(())

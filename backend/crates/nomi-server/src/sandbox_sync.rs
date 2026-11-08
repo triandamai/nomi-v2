@@ -87,7 +87,11 @@ impl ServerSteps {
                 .bind(&sandbox.0)
                 .fetch_optional(&self.pool)
                 .await?;
-        Ok(row.map(|(v, m)| (v, serde_json::from_value(m).unwrap_or_default())).unwrap_or_default())
+        let (version, mut known): (i64, BTreeMap<String, String>) = row.map(|(v, m)| (v, serde_json::from_value(m).unwrap_or_default())).unwrap_or_default();
+        // Remembered paths are deleted (recursively) when they leave the project, so one that
+        // isn't a safe project path is forgotten here rather than ever reaching the provider.
+        known.retain(|path, _| validate_path(path).is_ok());
+        Ok((version, known))
     }
 
     /// Record what the sandbox now holds, unless the row has moved on to another sandbox.

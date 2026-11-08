@@ -246,6 +246,18 @@ mod tests {
     }
 
     #[test]
+    fn archive_holds_only_regular_files_with_relative_paths() {
+        let bytes = build_archive(&[("a/b.txt".into(), b"x".to_vec()), ("./c".into(), vec![])]).unwrap();
+        let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(bytes.as_slice()));
+        for e in ar.entries().unwrap() {
+            let e = e.unwrap();
+            assert_eq!(e.header().entry_type(), tar::EntryType::Regular, "no links or devices");
+            let path = e.path().unwrap().into_owned();
+            assert!(!path.has_root() && !path.components().any(|c| c == Component::ParentDir), "{path:?}");
+        }
+    }
+
+    #[test]
     fn archive_round_trips_files() {
         use std::io::Read;
         let bytes = build_archive(&[("src/a.txt".into(), b"hi".to_vec())]).unwrap();

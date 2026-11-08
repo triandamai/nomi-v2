@@ -26,6 +26,19 @@ const HEARTBEAT_MS = 20_000;
 /** The slow poll behind the live events (and the logs' tail). */
 const POLL_MS = 5_000;
 
+/** The only scheme a preview address may have: it goes straight into an iframe's `src`. */
+const PREVIEW_PROTOCOL = 'https:';
+
+/** The address if it is a real https URL, else null (never a `javascript:` or `data:` frame). */
+export function safePreviewUrl(url: string | null): string | null {
+	if (!url) return null;
+	try {
+		return new URL(url).protocol === PREVIEW_PROTOCOL ? url : null;
+	} catch {
+		return null;
+	}
+}
+
 /** The backend's phase in the runtime's words; a sandbox that runs but has no preview yet is still starting. */
 export function toRuntimePhase(phase: SandboxPhase, previewUrl: string | null): RuntimePhase {
 	switch (phase) {
@@ -165,7 +178,7 @@ export class SandboxRuntime {
 	}
 
 	#apply(status: SandboxStatus) {
-		this.previewUrl = status.phase === 'running' ? status.preview_url : null;
+		this.previewUrl = status.phase === 'running' ? safePreviewUrl(status.preview_url) : null;
 		this.phase = toRuntimePhase(status.phase, this.previewUrl);
 		this.error = status.phase === 'error' ? (status.error ?? '') : null;
 	}

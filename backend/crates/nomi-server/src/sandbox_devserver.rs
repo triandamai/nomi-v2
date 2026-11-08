@@ -275,3 +275,37 @@ fn tail(text: &str) -> String {
     append_log(&mut running, text);
     running.log
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::relay_ops::PreviewAccess;
+
+    /// Every variable the sandbox may ever be given: the preview flags and the project's own
+    /// dev-backend address and keys. Nothing of Nomi's own (JWT secret, database URL, settings
+    /// key, LLM or Shipyard keys, the boat key) is on this list or read from the process.
+    const ALLOWED_NAMES: &[&str] = &["NOMI_PREVIEW", "NODE_NO_WARNINGS", "PUBLIC_NOMI_URL", "PUBLIC_NOMI_KEY", "NOMI_URL", "NOMI_ANON_KEY", "NOMI_SERVICE_KEY"];
+
+    fn access() -> PreviewAccess {
+        PreviewAccess { url: "https://todo-dev.api.relay.test".into(), anon_key: "anon'; id #".into(), service_key: Some("svc $(id)".into()) }
+    }
+
+    #[test]
+    fn the_sandbox_environment_holds_only_preview_and_project_backend_variables() {
+        for env in [preview_env(None), preview_env(Some(&access()))] {
+            for (name, _) in &env {
+                assert!(ALLOWED_NAMES.contains(name), "{name} must not reach the sandbox");
+            }
+        }
+        let names: Vec<&str> = preview_env(None).iter().map(|(k, _)| *k).collect();
+        assert_eq!(names, vec!["NOMI_PREVIEW", "NODE_NO_WARNINGS"]);
+    }
+
+    #[test]
+    fn environment_values_are_shell_quoted_in_the_start_command() {
+        let line = start_command(&preview_env(Some(&access())), "vite");
+        assert!(line.contains(r#"NOMI_ANON_KEY='anon'\''; id #'"#), "{line}");
+        assert!(line.contains("NOMI_SERVICE_KEY='svc $(id)'"), "{line}");
+        assert!(line.starts_with(&format!("cd {PROJECT_DIR} && exec env ")), "{line}");
+    }
+}

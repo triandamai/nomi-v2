@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use nomi_sandbox::redact::redact_urls;
 use nomi_sandbox::{PreviewUrl, SandboxId, SandboxProvider};
 use nomi_storage::ProjectStore;
 use sqlx::PgPool;
@@ -89,7 +90,7 @@ impl ServerSteps {
 #[async_trait]
 impl ProjectSteps for ServerSteps {
     async fn sync(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<i64, String> {
-        self.sync_project(project_id, sandbox).await.map_err(|e| e.to_string())
+        self.sync_project(project_id, sandbox).await.map_err(|e| redact_urls(&e.to_string()))
     }
 
     async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, String> {
@@ -98,7 +99,8 @@ impl ProjectSteps for ServerSteps {
         if let Some(version) = version {
             self.record_first_check(project_id, version, &started).await;
         }
-        started.map_err(|e| e.to_string())
+        // Step errors are logged and saved as `last_error`; storage or Relay errors may hold URLs.
+        started.map_err(|e| redact_urls(&e.to_string()))
     }
 }
 

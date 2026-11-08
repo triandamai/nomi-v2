@@ -12,6 +12,7 @@ pub mod boat;
 pub mod error;
 pub mod fake;
 pub mod plan;
+pub mod redact;
 
 pub use boat::{BoatConfig, BoatProvider};
 pub use error::SandboxError;

@@ -279,3 +279,27 @@ async fn failed_first_check_creates_one_fix_request_per_version(pool: PgPool) {
     let _ = ProjectSteps::start_preview(&steps, f.project, &f.sandbox).await;
     assert_eq!(delegations(f.pool.clone()).await, 2);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn queued_commands_are_checked_again_before_they_reach_the_shell(pool: PgPool) {
+    let f = fixture(pool).await;
+    // Rows that never came from Koda's tool: a program off the allow-list, shell operators, a
+    // server start, and an argument trying to break out of its quotes.
+    let bad = [
+        f.queue("bash", &["-c", "id"], 50).await,
+        f.queue("npm", &["install", "&&", "curl", "evil.test"], 40).await,
+        f.queue("npm", &["run", "dev"], 30).await,
+        f.queue("node", &["-e", "x'\"; id; echo \"'"], 20).await,
+        f.queue("node; id", &[], 10).await,
+    ];
+    let ok = f.queue("node", &["a'b.js"], 5).await;
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    let execs = f.execs();
+    assert_eq!(execs.len(), 1, "only the valid command reaches the sandbox: {execs:?}");
+    assert!(execs[0].contains(r#"node 'a'\''b.js'"#), "every argument is shell-quoted: {}", execs[0]);
+    for id in bad {
+        let (status, exit_code, _) = f.run(id).await;
+        assert_eq!((status.as_str(), exit_code), ("failed", None), "{id}");
+    }
+    assert_eq!(f.run(ok).await.0, "done");
+}
