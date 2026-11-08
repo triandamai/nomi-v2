@@ -19,6 +19,8 @@ CREATE TABLE project_sandboxes (
                    CHECK (state IN ('none', 'creating', 'starting', 'running', 'stopping', 'stopped', 'error', 'gone')),
     -- The files_version last copied into the sandbox.
     synced_version BIGINT NOT NULL DEFAULT 0,
+    -- What the sandbox holds: path -> updated_at of each file as last copied in. Emptied with synced_version.
+    synced_manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
     preview_url    TEXT,
     -- Failed attempts since the last settled state, when to try next, and why the last one failed.
     retry_at       TIMESTAMPTZ,

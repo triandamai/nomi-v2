@@ -173,20 +173,22 @@ pub struct Manifest {
     pub files: Vec<ManifestEntry>,
 }
 
-async fn manifest_of(state: &AppState, project_id: Uuid) -> Result<Manifest, ApiError> {
-    let mut tx = state.pool.begin().await.map_err(internal)?;
-    let files_version: i64 = sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1")
-        .bind(project_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(internal)?;
+/// Reads the files version and every file's row in one consistent look, so the version always
+/// describes the list beside it.
+pub async fn load_manifest(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Manifest, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ").execute(&mut *tx).await?;
+    let files_version: i64 = sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1").bind(project_id).fetch_one(&mut *tx).await?;
     let files: Vec<ManifestEntry> = sqlx::query_as("SELECT path, size_bytes, updated_at FROM project_files WHERE project_id = $1 ORDER BY path")
         .bind(project_id)
         .fetch_all(&mut *tx)
-        .await
-        .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
+        .await?;
+    tx.commit().await?;
     Ok(Manifest { files_version, files })
+}
+
+async fn manifest_of(state: &AppState, project_id: Uuid) -> Result<Manifest, ApiError> {
+    load_manifest(&state.pool, project_id).await.map_err(internal)
 }
 
 /// `GET /api/projects/:id/manifest`: every file's path, size and last change.

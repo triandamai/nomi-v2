@@ -5,14 +5,15 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use futures_util::stream::{self, StreamExt};
-use nomi_sandbox::{BoatConfig, BoatProvider, PreviewUrl, SandboxId};
+use nomi_sandbox::{BoatConfig, BoatProvider};
+use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::configuration::{sandbox_config, SandboxConfig};
-use crate::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager};
+use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
+use crate::sandbox_steps::ServerSteps;
 use crate::sandbox_store as store;
 
 /// The provider name stored on a project's sandbox row.
@@ -27,20 +28,6 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 const BATCH_SIZE: i64 = 10;
 /// Most rows reconciled at the same time.
 const CONCURRENCY: usize = 4;
-
-/// Stand-in for the project-specific work until the real steps arrive (Task 8/9 replaces this).
-pub struct NotYetSteps;
-
-#[async_trait]
-impl ProjectSteps for NotYetSteps {
-    async fn sync(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<i64, String> {
-        Err("not implemented yet".to_string())
-    }
-
-    async fn start_preview(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<PreviewUrl, String> {
-        Err("not implemented yet".to_string())
-    }
-}
 
 /// The page checking in for a project that runs in a sandbox: marks the page online, asks for the
 /// sandbox to be running and returns the files version. Returns `None` for a project that runs in
@@ -128,7 +115,7 @@ fn signature(cfg: &SandboxConfig) -> Signature {
 
 /// Run until the process ends (like the other background workers). The admin switch is read on
 /// every pass, so turning it off stops new work without a restart.
-pub async fn run(pool: PgPool, http_client: reqwest::Client) {
+pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: ProjectStore) {
     let mut current: Option<(Signature, SandboxWorker)> = None;
     let mut last_sweep = Instant::now();
     loop {
@@ -140,7 +127,8 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client) {
         let sig = signature(&cfg);
         if current.as_ref().map(|(s, _)| s) != Some(&sig) {
             let provider = Arc::new(BoatProvider::new(BoatConfig { base_url: cfg.api_base.clone(), api_key: cfg.api_key.clone() }, http_client.clone()));
-            let manager = Arc::new(SandboxManager::new(provider, Arc::new(NotYetSteps), pool.clone(), cfg.clone()));
+            let steps = Arc::new(ServerSteps::new(pool.clone(), project_storage.clone(), provider.clone()));
+            let manager = Arc::new(SandboxManager::new(provider, steps, pool.clone(), cfg.clone()));
             current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs)));
         }
         if let Some((_, worker)) = &current {
