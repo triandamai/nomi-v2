@@ -9,7 +9,7 @@
 
 use std::time::{Duration, Instant};
 
-use nomi_agent_coding::runtime::{claim_runs, finish_run, parse_command, ClaimedRun, OUTPUT_KEPT};
+use nomi_agent_coding::runtime::{finish_run, parse_command, ClaimedRun, OUTPUT_KEPT};
 use nomi_sandbox::{ExecOutput, SandboxId};
 use uuid::Uuid;
 
@@ -59,6 +59,28 @@ fn validate(run: &ClaimedRun) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
+/// Move the project's oldest pending run to `running` and return it; only that one, so the runs
+/// behind it stay `pending` (and are never taken for abandoned). Returns `None` when nothing waits,
+/// or when a run of the project started within `RUN_LEASE` is still going (another worker has it).
+/// Serialised per project by an advisory lock, so two workers can't both pass the check.
+pub async fn claim_next(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Result<Option<ClaimedRun>, sqlx::Error> {
+    let mut tx = sqlx::Connection::begin(&mut *conn).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))").bind(project_id.to_string()).execute(&mut *tx).await?;
+    let row: Option<(Uuid, String, serde_json::Value)> = sqlx::query_as(
+        "UPDATE project_runs SET status = 'running', started_at = now() WHERE id = ( \
+             SELECT id FROM project_runs WHERE project_id = $1 AND status = 'pending' \
+             AND NOT EXISTS (SELECT 1 FROM project_runs WHERE project_id = $1 AND status = 'running' AND started_at >= now() - make_interval(secs => $2)) \
+             ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) \
+         RETURNING id, command, args",
+    )
+    .bind(project_id)
+    .bind(RUN_LEASE.as_secs() as f64)
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(row.map(|(id, command, args)| ClaimedRun { id, command, args: args.as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default() }))
+}
+
 fn combined(out: &ExecOutput) -> String {
     format!("{}{}", out.stdout, out.stderr)
 }
@@ -70,31 +92,27 @@ impl ServerSteps {
             tracing::warn!(%project_id, error = %e, "sandbox runs: looking for abandoned runs failed");
             return;
         }
-        let env = self.run_env(project_id).await;
         loop {
-            let claimed = {
+            let run = {
                 let Ok(mut conn) = self.pool.acquire().await else { return };
-                match claim_runs(&mut conn, project_id).await {
-                    Ok(runs) => runs,
+                match claim_next(&mut conn, project_id).await {
+                    Ok(Some(run)) => run,
+                    Ok(None) => return,
                     Err(e) => {
-                        tracing::warn!(%project_id, error = %e, "sandbox runs: claiming runs failed");
+                        tracing::warn!(%project_id, error = %e, "sandbox runs: claiming a run failed");
                         return;
                     }
                 }
             };
-            if claimed.is_empty() {
-                return;
-            }
-            for run in claimed {
-                let (exit_code, output) = self.run_one(sandbox, &run, &env).await;
-                match self.pool.acquire().await {
-                    Ok(mut conn) => {
-                        if let Err(e) = finish_run(&mut conn, project_id, run.id, exit_code, &output).await {
-                            tracing::warn!(%project_id, run = %run.id, error = %e, "sandbox runs: saving the result failed");
-                        }
+            let env = self.run_env(project_id).await;
+            let (exit_code, output) = self.run_one(sandbox, &run, &env).await;
+            match self.pool.acquire().await {
+                Ok(mut conn) => {
+                    if let Err(e) = finish_run(&mut conn, project_id, run.id, exit_code, &output).await {
+                        tracing::warn!(%project_id, run = %run.id, error = %e, "sandbox runs: saving the result failed");
                     }
-                    Err(e) => tracing::warn!(%project_id, run = %run.id, error = %e, "sandbox runs: saving the result failed"),
                 }
+                Err(e) => tracing::warn!(%project_id, run = %run.id, error = %e, "sandbox runs: saving the result failed"),
             }
         }
     }

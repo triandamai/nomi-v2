@@ -9,7 +9,7 @@ use std::time::Duration;
 use nomi_agent_coding::runtime::OUTPUT_KEPT;
 use nomi_sandbox::{CreateSpec, ExecOutput, FakeProvider, SandboxId, SandboxProvider, Size};
 use nomi_server::sandbox_devserver::DevServerTiming;
-use nomi_server::sandbox_runs::{RUN_LEASE, REQUEUED_NOTE};
+use nomi_server::sandbox_runs::{claim_next, RUN_LEASE, REQUEUED_NOTE};
 use nomi_server::sandbox_steps::ServerSteps;
 use nomi_server::sandbox_store as store;
 use serde_json::json;
@@ -132,10 +132,8 @@ async fn long_command_uses_detached_and_polls_until_exit(pool: PgPool) {
 async fn abandoned_running_run_is_requeued_after_lease(pool: PgPool) {
     let f = fixture(pool).await;
     let stale = f.queue("npm", &["install"], 100).await;
-    let fresh = f.queue("npm", &["run", "build"], 90).await;
     let again = f.queue("npm", &["test"], 80).await;
     sqlx::query("UPDATE project_runs SET status = 'running', started_at = now() - make_interval(secs => $2) WHERE id = $1").bind(stale).bind(PAST_LEASE_SECS).execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE project_runs SET status = 'running', started_at = now() WHERE id = $1").bind(fresh).execute(&f.pool).await.unwrap();
     sqlx::query("UPDATE project_runs SET status = 'running', output = $3, started_at = now() - make_interval(secs => $2) WHERE id = $1")
         .bind(again)
         .bind(PAST_LEASE_SECS)
@@ -145,7 +143,6 @@ async fn abandoned_running_run_is_requeued_after_lease(pool: PgPool) {
         .unwrap();
     f.steps().execute_pending(f.project, &f.sandbox).await;
     assert_eq!(f.run(stale).await.0, "done", "requeued once, then run");
-    assert_eq!(f.run(fresh).await, ("running".into(), None, None), "inside the lease, left alone");
     assert_eq!(f.run(again).await.0, "timed_out", "abandoned a second time");
     assert_eq!(f.execs().len(), 1);
 }
@@ -166,4 +163,35 @@ async fn command_failure_is_finished_as_failed(pool: PgPool) {
     assert_eq!((status.as_str(), code), ("failed", None));
     assert!(output.unwrap().starts_with("partial"));
     assert_eq!(f.execs().len(), 1, "only the allowed command reached the sandbox");
+}
+
+async fn statuses(f: &Fixture) -> Vec<String> {
+    sqlx::query_scalar("SELECT status FROM project_runs WHERE project_id = $1 ORDER BY created_at").bind(f.project).fetch_all(&f.pool).await.unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn queued_runs_stay_pending_while_an_earlier_run_executes(pool: PgPool) {
+    let f = fixture(pool).await;
+    let first = f.queue("npm", &["install"], 30).await;
+    f.queue("npm", &["run", "build"], 20).await;
+    f.queue("npm", &["test"], 10).await;
+    let mut conn = f.pool.acquire().await.unwrap();
+    let claimed = claim_next(&mut conn, f.project).await.unwrap().expect("the oldest is claimed");
+    assert_eq!(claimed.id, first);
+    assert_eq!(statuses(&f).await, ["running", "pending", "pending"]);
+    // A long wait for the first run doesn't make the queued ones look abandoned to another worker.
+    sqlx::query("UPDATE project_runs SET started_at = now() - make_interval(secs => $2) WHERE id = $1").bind(first).bind(PAST_LEASE_SECS).execute(&f.pool).await.unwrap();
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert_eq!(statuses(&f).await[1..], ["done", "done"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn second_instance_does_not_start_a_run_while_one_is_running(pool: PgPool) {
+    let f = fixture(pool).await;
+    let busy = f.queue("npm", &["install"], 30).await;
+    f.queue("npm", &["test"], 10).await;
+    sqlx::query("UPDATE project_runs SET status = 'running', started_at = now() WHERE id = $1").bind(busy).execute(&f.pool).await.unwrap();
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert_eq!(statuses(&f).await, ["running", "pending"]);
+    assert!(f.execs().is_empty());
 }
