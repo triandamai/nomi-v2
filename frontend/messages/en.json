@@ -3024,5 +3024,22 @@
 	"issue_followup_not_yet_hint": "Tell {name} what's still missing, below.",
 	"issue_followup_err": "Couldn't mark it done. Try again.",
 	"issue_chat_readonly_done": "Issue #{number} is done. This chat is read-only.",
-	"issue_chat_readonly_closed": "Issue #{number} is closed. This chat is read-only."
+	"issue_chat_readonly_closed": "Issue #{number} is closed. This chat is read-only.",
+	"config_sandbox": "Sandbox runtime",
+	"config_sandbox_lede": "Run projects in a server-side sandbox (boat.dev) instead of in the visitor's browser.",
+	"config_sandbox_note": "Off by default. While it is off, or if it is turned off later, every project keeps using the in-browser runtime.",
+	"config_sandbox_enabled": "Sandbox runtime",
+	"config_sandbox_enabled_hint": "Choose on to enable it. Default or off: every project uses the in-browser runtime.",
+	"config_sandbox_api_base": "API address",
+	"config_sandbox_api_key": "API key",
+	"config_sandbox_size": "Sandbox size",
+	"config_sandbox_idle_stop_secs": "Stop after idle (seconds)",
+	"config_sandbox_rollout": "Rollout",
+	"config_sandbox_rollout_hint": "Who gets the sandbox while it is on: nobody, the allowlist, a percentage of users, or everyone.",
+	"config_sandbox_rollout_allowlist": "Allowlist",
+	"config_sandbox_rollout_allowlist_hint": "Comma-separated user ids, used when the rollout is allowlist.",
+	"config_sandbox_rollout_percent": "Rollout percentage",
+	"config_sandbox_starts_per_minute": "Starts per minute",
+	"config_sandbox_starts_per_hour": "Starts per hour",
+	"config_sandbox_monthly_minutes_per_user": "Monthly minutes per user"
 }

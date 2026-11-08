@@ -3024,5 +3024,22 @@
 	"issue_followup_not_yet_hint": "Beri tahu {name} apa yang masih kurang, di bawah.",
 	"issue_followup_err": "Gagal menandai selesai. Coba lagi.",
 	"issue_chat_readonly_done": "Isu #{number} sudah selesai. Obrolan ini hanya bisa dibaca.",
-	"issue_chat_readonly_closed": "Isu #{number} sudah ditutup. Obrolan ini hanya bisa dibaca."
+	"issue_chat_readonly_closed": "Isu #{number} sudah ditutup. Obrolan ini hanya bisa dibaca.",
+	"config_sandbox": "Runtime sandbox",
+	"config_sandbox_lede": "Jalankan proyek di sandbox sisi server (boat.dev), bukan di browser pengunjung.",
+	"config_sandbox_note": "Nonaktif secara bawaan. Selama nonaktif, atau jika dimatikan nanti, semua proyek tetap memakai runtime di browser.",
+	"config_sandbox_enabled": "Runtime sandbox",
+	"config_sandbox_enabled_hint": "Pilih on untuk mengaktifkan. Bawaan atau off: semua proyek memakai runtime di browser.",
+	"config_sandbox_api_base": "Alamat API",
+	"config_sandbox_api_key": "Kunci API",
+	"config_sandbox_size": "Ukuran sandbox",
+	"config_sandbox_idle_stop_secs": "Hentikan saat menganggur (detik)",
+	"config_sandbox_rollout": "Peluncuran bertahap",
+	"config_sandbox_rollout_hint": "Siapa yang mendapat sandbox saat aktif: tidak ada, daftar izin, sebagian persen pengguna, atau semua.",
+	"config_sandbox_rollout_allowlist": "Daftar izin",
+	"config_sandbox_rollout_allowlist_hint": "Id pengguna dipisah koma, dipakai saat peluncuran allowlist.",
+	"config_sandbox_rollout_percent": "Persentase peluncuran",
+	"config_sandbox_starts_per_minute": "Mulai per menit",
+	"config_sandbox_starts_per_hour": "Mulai per jam",
+	"config_sandbox_monthly_minutes_per_user": "Menit per bulan per pengguna"
 }
