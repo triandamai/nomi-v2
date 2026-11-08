@@ -212,14 +212,43 @@ impl SandboxManager {
 
     /// Forget the provider's sandbox: it is gone, or can't be started again.
     async fn forget(&self, project_id: Uuid) -> Result<(), Exit> {
-        self.forget_keeping(project_id, 0).await
+        self.forget_inner(project_id, 0, false).await
+    }
+
+    /// Queue a sandbox for deletion at the provider, when a delete just now didn't work.
+    async fn enqueue_deletion(&self, project_id: Uuid, id: &SandboxId) {
+        let queued = sqlx::query("INSERT INTO sandbox_deletions (provider, sandbox_id, project_id) VALUES ($1, $2, $3) ON CONFLICT (sandbox_id) DO NOTHING")
+            .bind(crate::sandbox_worker::PROVIDER_NAME)
+            .bind(&id.0)
+            .bind(project_id)
+            .execute(&self.pool)
+            .await;
+        if let Err(e) = queued {
+            tracing::warn!(%project_id, error = %e, "sandbox: queueing a sandbox for deletion failed");
+        }
+    }
+
+    /// Delete a sandbox we no longer want; if the provider can't do it now, queue it for the worker.
+    async fn delete_or_enqueue(&self, project_id: Uuid, id: &SandboxId) {
+        match self.provider.delete(id).await {
+            Ok(()) | Err(SandboxError::NotFound) => {}
+            Err(_) => self.enqueue_deletion(project_id, id).await,
+        }
     }
 
     /// Like `forget`, but the row keeps `attempts` failed attempts (reaching `none` would reset
     /// them), so a sandbox that keeps dying while it starts backs off further each time.
-    async fn forget_keeping(&self, project_id: Uuid, attempts: i32) -> Result<(), Exit> {
+    /// `enqueue` is for a sandbox that still exists at the provider (in its `error` state): its
+    /// id goes to the deletion outbox in the same transaction, so it isn't leaked.
+    async fn forget_inner(&self, project_id: Uuid, attempts: i32, enqueue: bool) -> Result<(), Exit> {
         let result = async {
             let mut tx = self.pool.begin().await?;
+            if enqueue {
+                sqlx::query("INSERT INTO sandbox_deletions (provider, sandbox_id, project_id) SELECT provider, sandbox_id, project_id FROM project_sandboxes WHERE project_id = $1 AND sandbox_id IS NOT NULL ON CONFLICT (sandbox_id) DO NOTHING")
+                    .bind(project_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
             sqlx::query(
                 "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL WHERE project_id = $1",
             )
@@ -273,7 +302,7 @@ impl SandboxManager {
             .execute(&self.pool)
             .await)?;
         if written.rows_affected() == 0 {
-            let _ = self.provider.delete(&info.id).await;
+            self.delete_or_enqueue(row.project_id, &info.id).await;
             return Err(self.defer(row.project_id, Utc::now() + STOPPING_RECHECK).await);
         }
         Ok(info.id)
@@ -286,7 +315,7 @@ impl SandboxManager {
             match self.provider.get(id).await {
                 Ok(info) if info.state == SandboxState::Running => return Ok(()),
                 Ok(info) if matches!(info.state, SandboxState::Gone | SandboxState::Error) => {
-                    self.forget_keeping(row.project_id, row.attempts).await?;
+                    self.forget_inner(row.project_id, row.attempts, info.state == SandboxState::Error).await?;
                     let at = Utc::now() + Self::wait_after(row.attempts, None);
                     return Err(self.retry_at(row.project_id, at, "sandbox went away while starting").await);
                 }
@@ -304,13 +333,14 @@ impl SandboxManager {
     /// The provider's sandbox is gone. One that never got past starting keeps its attempt count
     /// and backs off, so a sandbox that keeps dying doesn't loop; one that had been healthy is
     /// recreated at once with a fresh count.
-    async fn vanished(&self, row: &SandboxRow) -> Result<ReconcileOutcome, Exit> {
+    /// `still_exists` is true for a sandbox in the provider's `error` state: it is deleted later.
+    async fn vanished(&self, row: &SandboxRow, still_exists: bool) -> Result<ReconcileOutcome, Exit> {
         if matches!(row.state, State::Creating | State::Starting) {
-            self.forget_keeping(row.project_id, row.attempts).await?;
+            self.forget_inner(row.project_id, row.attempts, still_exists).await?;
             let at = Utc::now() + Self::wait_after(row.attempts + 1, None);
             return Ok(self.retry_at(row.project_id, at, "sandbox went away while starting").await);
         }
-        self.forget(row.project_id).await?;
+        self.forget_inner(row.project_id, 0, still_exists).await?;
         Ok(self.defer(row.project_id, Utc::now()).await)
     }
 
@@ -323,7 +353,7 @@ impl SandboxManager {
                 Ok(info) => match info.state {
                     SandboxState::Running if row.state == State::Running => return Ok(ReconcileOutcome::Settled),
                     SandboxState::Gone | SandboxState::Error => {
-                        return self.vanished(&row).await;
+                        return self.vanished(&row, info.state == SandboxState::Error).await;
                     }
                     SandboxState::Stopping => {
                         return Ok(self.defer(project_id, Utc::now() + STOPPING_RECHECK).await);
@@ -339,7 +369,7 @@ impl SandboxManager {
                     }
                     SandboxState::Starting | SandboxState::Running => {}
                 },
-                Err(SandboxError::NotFound) => return self.vanished(&row).await,
+                Err(SandboxError::NotFound) => return self.vanished(&row, false).await,
                 Err(SandboxError::SnapshotExpired) => id = self.start_over(&existing, &row).await?,
                 Err(e) => return Ok(self.provider_failed(&row, e).await),
             }
@@ -389,7 +419,7 @@ impl SandboxManager {
     /// The sandbox can't be started again (its snapshot expired): drop it and make a new one.
     async fn start_over(&self, old: &SandboxId, row: &SandboxRow) -> Result<Option<SandboxId>, Exit> {
         // Best effort: the old one is useless either way, and a failure here must not stop the new one.
-        let _ = self.provider.delete(old).await;
+        self.delete_or_enqueue(row.project_id, old).await;
         self.forget(row.project_id).await?;
         Ok(Some(self.create(row).await?))
     }

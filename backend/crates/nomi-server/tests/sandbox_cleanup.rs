@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use nomi_sandbox::{CreateSpec, FakeProvider, PreviewUrl, SandboxError, SandboxId, SandboxProvider, Size};
+use nomi_sandbox::{CreateSpec, FakeProvider, PreviewUrl, SandboxError, SandboxId, SandboxProvider, SandboxState, Size};
+use nomi_server::sandbox_store as store;
 use nomi_server::configuration::{ReaperMode, Rollout, SandboxConfig};
 use nomi_server::sandbox_manager::{ProjectSteps, SandboxManager};
 use nomi_server::sandbox_worker::SandboxWorker;
@@ -194,4 +195,52 @@ async fn reaper_leaves_a_sandbox_whose_project_is_still_creating_it(pool: PgPool
     let fresh = labelled(&provider, &project.to_string()).await;
     assert_eq!(worker.reap_orphans().await, 0);
     assert!(exists(&provider, &fresh).await);
+}
+
+/// A manager over a fresh fake provider, and a project that wants to run.
+async fn manager_with_running_project(pool: &PgPool, owner: &str) -> (SandboxManager, Arc<FakeProvider>, Uuid) {
+    let provider = Arc::new(FakeProvider::new());
+    let manager = SandboxManager::new(provider.clone(), Arc::new(OkSteps), pool.clone(), config(ReaperMode::DryRun));
+    let app = App::new(pool.clone());
+    let person = app.person(&format!("{owner}@cleanup.test")).await;
+    let project = app.project(&person, owner).await.0;
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, project, PROVIDER).await.unwrap();
+    (manager, provider, project)
+}
+
+async fn reconcile(manager: &SandboxManager, pool: &PgPool, project: Uuid) {
+    let mut conn = pool.acquire().await.unwrap();
+    let row = store::get(&mut conn, project).await.unwrap().unwrap();
+    manager.reconcile(row).await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn provider_error_sandbox_is_enqueued_for_deletion_when_forgotten(pool: PgPool) {
+    let (manager, provider, project) = manager_with_running_project(&pool, "errored").await;
+    reconcile(&manager, &pool, project).await;
+    let id = SandboxId(sqlx::query_scalar("SELECT sandbox_id FROM project_sandboxes WHERE project_id = $1").bind(project).fetch_one(&pool).await.unwrap());
+    provider.set_state(&id, SandboxState::Error);
+    reconcile(&manager, &pool, project).await;
+    let queued: Vec<String> = sqlx::query_scalar("SELECT sandbox_id FROM sandbox_deletions").fetch_all(&pool).await.unwrap();
+    assert_eq!(queued, vec![id.0.clone()]);
+    // The row let go of it.
+    assert_ne!(sqlx::query_scalar::<_, Option<String>>("SELECT sandbox_id FROM project_sandboxes WHERE project_id = $1").bind(project).fetch_one(&pool).await.unwrap(), Some(id.0));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn failed_best_effort_delete_is_enqueued(pool: PgPool) {
+    let (manager, provider, project) = manager_with_running_project(&pool, "expired").await;
+    reconcile(&manager, &pool, project).await;
+    let old: String = sqlx::query_scalar("SELECT sandbox_id FROM project_sandboxes WHERE project_id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_stopped(&mut conn, project).await.unwrap();
+    reconcile(&manager, &pool, project).await;
+    store::want_running(&mut conn, project, PROVIDER).await.unwrap();
+    // Resume says the snapshot expired, then deleting the old sandbox fails.
+    provider.fail_next(SandboxError::SnapshotExpired);
+    provider.fail_next(SandboxError::Unavailable("down".into()));
+    reconcile(&manager, &pool, project).await;
+    let queued: Vec<String> = sqlx::query_scalar("SELECT sandbox_id FROM sandbox_deletions").fetch_all(&pool).await.unwrap();
+    assert_eq!(queued, vec![old]);
 }
