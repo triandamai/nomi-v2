@@ -24,6 +24,13 @@
 		{ label: m.admin_tokens_all(), value: data.stats.tokens_all_time, note: m.admin_tokens_all_note() },
 	]);
 	const running = $derived(data.stats.running_agents);
+	const sandbox = $derived(data.stats.sandbox);
+	const sandboxStats = $derived([
+		{ label: m.admin_sandbox_running(), value: sandbox.running, note: '' },
+		{ label: m.admin_sandbox_starting(), value: sandbox.starting, note: '' },
+		{ label: m.admin_sandbox_error(), value: sandbox.error, note: '' },
+		{ label: m.admin_sandbox_minutes(), value: sandbox.minutes_this_month, note: m.admin_sandbox_minutes_note() },
+	]);
 
 	const AREAS = [
 		{ href: '/admin/agents', title: m.admin_live_agents(), body: m.admin_area_agents(), icon: IconAgents, area: 'dashboard' },
@@ -56,6 +63,16 @@
 	{/each}
 </section>
 
+<section class="stats sandbox-stats" aria-label={m.admin_sandbox_title()}>
+	{#each sandboxStats as stat (stat.label)}
+		<div class="stat" data-testid="sandbox-stat">
+			<span class="nomi-meta">{stat.label}</span>
+			<span class="stat__value" title={full.format(stat.value)}>{compact.format(stat.value)}</span>
+			{#if stat.note}<span class="stat__note">{stat.note}</span>{/if}
+		</div>
+	{/each}
+</section>
+
 <section class="areas" aria-labelledby="areas-title">
 	<h2 id="areas-title" class="section-label">{m.admin_manage()}</h2>
 	<ul class="areas__grid">
@@ -76,6 +93,9 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
 		gap: 12px;
+	}
+	.sandbox-stats {
+		margin-top: 12px;
 	}
 	.stat {
 		display: flex;

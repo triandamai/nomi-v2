@@ -298,6 +298,15 @@ export interface DashboardStats {
 	tokens_today: number;
 	tokens_all_time: number;
 	running_agents: number;
+	sandbox: SandboxStats;
+}
+
+export interface SandboxStats {
+	running: number;
+	/** Being created or started. */
+	starting: number;
+	error: number;
+	minutes_this_month: number;
 }
 
 export interface RunningAgentItem {

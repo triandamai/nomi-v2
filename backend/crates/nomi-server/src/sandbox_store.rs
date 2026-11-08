@@ -154,6 +154,20 @@ pub async fn want_stopped(conn: &mut PgConnection, project_id: Uuid) -> Result<(
     Ok(())
 }
 
+/// The admin switch is off: every sandbox that is wanted running is asked to stop, so the ones
+/// that are up wind down and none is created or resumed. Returns how many rows changed. Like
+/// `want_stopped`, a settled row's backoff is dropped.
+pub async fn want_all_stopped(conn: &mut PgConnection) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE project_sandboxes SET desired = 'stopped', updated_at = now(),
+             retry_at = CASE WHEN state IN ('none', 'stopped', 'running') THEN NULL ELSE retry_at END
+         WHERE desired = 'running'",
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected())
+}
+
 /// Rows whose state hasn't reached what they want (or is mid-change) and whose retry time has
 /// come, locked with `FOR UPDATE SKIP LOCKED` so two reconcilers never take the same one. The
 /// locks last until the transaction ends, so the caller must run this inside a transaction and

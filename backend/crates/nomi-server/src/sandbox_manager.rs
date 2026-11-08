@@ -3,7 +3,7 @@
 //! or has failed. Every state change is written before the provider call that follows it, so a
 //! crash in the middle picks the walk up again from the row.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -41,6 +41,25 @@ pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
 pub(crate) const PROJECT_LABEL: &str = "nomi-project";
 
+/// The `provider_error_kind` of a row that went to `error` after too many failures in a row,
+/// when no single provider call is to blame.
+const ATTEMPTS_EXHAUSTED: &str = "attempts_exhausted";
+
+/// What kind of provider failure this is, for logs. The kind only, never the message: messages
+/// can carry URLs and tokens.
+fn error_kind(err: &SandboxError) -> &'static str {
+    match err {
+        SandboxError::RateLimited { .. } => "rate_limited",
+        SandboxError::OutOfCapacity { .. } => "out_of_capacity",
+        SandboxError::BillingRequired => "billing_required",
+        SandboxError::SnapshotExpired => "snapshot_expired",
+        SandboxError::NotFound => "not_found",
+        SandboxError::Refused(_) => "refused",
+        SandboxError::Unavailable(_) => "unavailable",
+        SandboxError::Other(_) => "other",
+    }
+}
+
 /// What reconciling a row came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReconcileOutcome {
@@ -67,6 +86,9 @@ pub struct SandboxManager {
     pool: PgPool,
     steps: Arc<dyn ProjectSteps>,
     cfg: SandboxConfig,
+    /// The last state each project in flight was seen in, and when, so a transition can say what
+    /// it came from and how long that took. Settled projects are dropped from it.
+    seen: Mutex<HashMap<Uuid, (State, Instant)>>,
 }
 
 /// An early exit from the walk: the outcome to report.
@@ -84,7 +106,7 @@ impl SandboxManager {
 
     pub fn new(provider: Arc<dyn SandboxProvider>, steps: Arc<dyn ProjectSteps>, pool: PgPool, cfg: SandboxConfig) -> Self {
         let limiter = Mutex::new(StartLimiter::new(cfg.starts_per_minute, cfg.starts_per_hour));
-        Self { provider, limiter, pool, steps, cfg }
+        Self { provider, limiter, pool, steps, cfg, seen: Mutex::default() }
     }
 
     /// Take the row toward what it wants. The row passed in only says which project to work on;
@@ -108,16 +130,53 @@ impl SandboxManager {
             db(store::get(&mut conn, project_id).await)?
         };
         let Some(row) = row else { return Ok(ReconcileOutcome::Settled) };
+        // Where the walk starts from, for the first transition's `from`.
+        self.seen.lock().unwrap_or_else(|e| e.into_inner()).entry(project_id).or_insert((row.state, Instant::now()));
         match row.desired {
             Desired::Running => self.bring_up(row).await,
             Desired::Stopped => self.bring_down(row).await,
         }
     }
 
+    /// Text for a log line, with the API key and any URL's secrets removed.
+    pub fn redact(&self, text: &str) -> String {
+        nomi_sandbox::redact::redact(text, &self.cfg.api_key)
+    }
+
+    /// Tell the project's open pages the sandbox is now in `to`, and log the transition. Called
+    /// once the change is saved (after the commit, where the change was made in a transaction) so
+    /// a page that reloads on the event sees it. Every state this module writes goes through
+    /// here, so this is the one place transitions are logged: the project, the sandbox when the
+    /// row has one, where it came from, how long it was there, and the kind of provider failure
+    /// when there was one. Never the key, the preview address or an error message.
+    async fn announce(&self, project_id: Uuid, to: State, error_kind: Option<&'static str>) {
+        let (from, elapsed_ms) = {
+            let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+            let previous = seen.get(&project_id).copied();
+            if matches!(to, State::None | State::Stopped | State::Gone) {
+                seen.remove(&project_id);
+            } else {
+                seen.insert(project_id, (to, Instant::now()));
+            }
+            previous.map_or((None, None), |(state, at)| (Some(state), Some(at.elapsed().as_millis() as u64)))
+        };
+        let sandbox_id: Option<String> = sqlx::query_scalar("SELECT sandbox_id FROM project_sandboxes WHERE project_id = $1").bind(project_id).fetch_optional(&self.pool).await.ok().flatten();
+        tracing::info!(
+            %project_id,
+            sandbox_id = sandbox_id.as_deref().unwrap_or(""),
+            from = from.map_or("unknown", State::as_str),
+            to = to.as_str(),
+            elapsed_ms = elapsed_ms.unwrap_or(0),
+            provider_error_kind = error_kind.unwrap_or(""),
+            "sandbox: state changed"
+        );
+        crate::project_events::sandbox_changed(project_id, to.phase());
+    }
+
     async fn set_state(&self, project_id: Uuid, state: State) -> Result<(), Exit> {
         let mut conn = db(self.pool.acquire().await)?;
         db(store::set_state(&mut conn, project_id, state, None).await)?;
-        announce(project_id, state);
+        self.announce(project_id, state, None).await;
         Ok(())
     }
 
@@ -136,7 +195,7 @@ impl SandboxManager {
         .await;
         match result {
             Ok(true) => {
-                announce(project_id, State::Error);
+                self.announce(project_id, State::Error, Some(ATTEMPTS_EXHAUSTED)).await;
                 ReconcileOutcome::Failed(why.to_string())
             }
             Ok(false) => ReconcileOutcome::RetryAt(at),
@@ -188,7 +247,7 @@ impl SandboxManager {
         .await;
         match saved {
             Ok(()) => {
-                announce(project_id, State::Error);
+                self.announce(project_id, State::Error, Some(error_kind(&err))).await;
                 ReconcileOutcome::Failed(why)
             }
             Err(e) => ReconcileOutcome::Failed(format!("database: {e}")),
@@ -269,7 +328,7 @@ impl SandboxManager {
         }
         .await;
         db(result)?;
-        announce(project_id, State::None);
+        self.announce(project_id, State::None, None).await;
         Ok(())
     }
 
@@ -412,7 +471,7 @@ impl SandboxManager {
         }
         .await;
         db(result)?;
-        announce(project_id, State::Running);
+        self.announce(project_id, State::Running, None).await;
         Ok(ReconcileOutcome::Settled)
     }
 
@@ -478,7 +537,7 @@ impl SandboxManager {
             .await;
             match marked {
                 Ok(true) => {
-                    announce(project_id, State::Gone);
+                    self.announce(project_id, State::Gone, None).await;
                     expired += 1;
                 }
                 Ok(false) => {}
@@ -516,16 +575,9 @@ impl SandboxManager {
         }
         .await;
         db(result)?;
-        announce(project_id, State::Stopped);
+        self.announce(project_id, State::Stopped, None).await;
         Ok(ReconcileOutcome::Settled)
     }
-}
-
-/// Tell the project's open pages the sandbox is now in `state`. Called once the change is saved
-/// (after the commit, where the change was made in a transaction) so a page that reloads on the
-/// event sees it. Every state this module writes goes through here.
-fn announce(project_id: Uuid, state: State) {
-    crate::project_events::sandbox_changed(project_id, state.phase());
 }
 
 /// End the project's open metering session, if it has one.

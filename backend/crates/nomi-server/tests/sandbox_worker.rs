@@ -9,7 +9,7 @@ use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxError, SandboxId};
 use nomi_server::configuration::{Rollout, SandboxConfig};
 use nomi_server::sandbox_manager::{ProjectSteps, SandboxManager};
 use nomi_server::sandbox_store::{self as store, Desired, State};
-use nomi_server::sandbox_worker::{sandbox_check_in, SandboxWorker, PROVIDER_NAME};
+use nomi_server::sandbox_worker::{pass_mode, sandbox_check_in, PassMode, SandboxWorker, PROVIDER_NAME};
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
@@ -182,4 +182,50 @@ async fn dispatch_runs_executes_waiting_commands_of_running_sandbox_projects(poo
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
     panic!("the run never finished");
+}
+
+fn creds() -> SandboxConfig {
+    config()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn kill_switch_stops_new_starts_but_winds_down_running_sandboxes(pool: PgPool) {
+    let up = project(&pool, "up").await;
+    let waiting = project(&pool, "waiting").await;
+    want_running(&pool, up).await;
+    let (worker, provider) = worker(&pool);
+    // Bring `up` up while the switch is still on.
+    assert_eq!(worker.tick().await, 1);
+    assert_eq!(row(&pool, up).await.state, State::Running);
+    let creates_before = provider.calls().iter().filter(|c| c.starts_with("create") || c.starts_with("resume")).count();
+    // A page asks for another sandbox, then the switch goes off.
+    want_running(&pool, waiting).await;
+    assert_eq!(worker.wind_down().await, 2);
+    assert_eq!(row(&pool, up).await.desired, Desired::Stopped);
+    assert_eq!(row(&pool, waiting).await.desired, Desired::Stopped);
+    worker.tick().await;
+    assert_eq!(row(&pool, up).await.state, State::Stopped);
+    assert_eq!(row(&pool, waiting).await.state, State::None);
+    let starts_after = provider.calls().iter().filter(|c| c.starts_with("create") || c.starts_with("resume")).count();
+    assert_eq!(starts_after, creates_before, "{:?}", provider.calls());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn kill_switch_wind_down_leaves_already_stopped_rows_alone(pool: PgPool) {
+    let p = project(&pool, "quiet").await;
+    want_running(&pool, p).await;
+    let (worker, _) = worker(&pool);
+    worker.tick().await;
+    worker.wind_down().await;
+    worker.tick().await;
+    assert_eq!(worker.wind_down().await, 0);
+}
+
+#[test]
+fn kill_switch_off_without_credentials_does_nothing() {
+    assert!(pass_mode(None, None).is_none());
+    let (mode, _) = pass_mode(None, Some(creds())).unwrap();
+    assert_eq!(mode, PassMode::StopOnly);
+    let (mode, _) = pass_mode(Some(creds()), Some(creds())).unwrap();
+    assert_eq!(mode, PassMode::On);
 }

@@ -107,6 +107,17 @@ pub async fn sandbox_config() -> Option<SandboxConfig> {
     if section.get("enabled").as_deref() != Some("on") {
         return None;
     }
+    parse_sandbox(&section)
+}
+
+/// The sandbox settings whatever the switch says, or `None` when no key is saved. The worker
+/// uses it to keep winding sandboxes down after the switch is turned off: with the switch off
+/// it may only stop and delete, never create or resume.
+pub async fn sandbox_credentials() -> Option<SandboxConfig> {
+    parse_sandbox(&config::current(&config::SANDBOX).await)
+}
+
+fn parse_sandbox(section: &config::Section) -> Option<SandboxConfig> {
     let api_key = section.get("api_key")?;
     let size = match section.get("size").as_deref() {
         Some("default") => nomi_sandbox::Size::Default,

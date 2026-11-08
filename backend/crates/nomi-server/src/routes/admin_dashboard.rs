@@ -17,6 +17,19 @@ pub struct DashboardResponse {
     pub tokens_today: i64,
     pub tokens_all_time: i64,
     pub running_agents: i64,
+    pub sandbox: SandboxStats,
+}
+
+/// The sandbox runtime at a glance. Rate-limited retries are not counted: a deferral leaves no
+/// trace in the row (only `retry_at`, which a failed attempt sets too), so there is no reliable
+/// count to show without a new table.
+#[derive(Serialize)]
+pub struct SandboxStats {
+    pub running: i64,
+    /// Being created or started.
+    pub starting: i64,
+    pub error: i64,
+    pub minutes_this_month: i64,
 }
 
 #[tracing::instrument(skip(state, claims))]
@@ -56,7 +69,24 @@ pub async fn get_dashboard(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to sum token usage")
     })?;
 
-    Ok(Json(DashboardResponse { total_users, tokens_today, tokens_all_time, running_agents }))
+    let sandbox = sandbox_stats(&state.pool).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to count sandboxes");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to count sandboxes")
+    })?;
+
+    Ok(Json(DashboardResponse { total_users, tokens_today, tokens_all_time, running_agents, sandbox }))
+}
+
+async fn sandbox_stats(pool: &sqlx::PgPool) -> Result<SandboxStats, sqlx::Error> {
+    let (running, starting, error): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*) FILTER (WHERE state = 'running'), COUNT(*) FILTER (WHERE state IN ('creating', 'starting')), \
+                COUNT(*) FILTER (WHERE state = 'error') FROM project_sandboxes",
+    )
+    .fetch_one(pool)
+    .await?;
+    let mut conn = pool.acquire().await?;
+    let minutes_this_month = crate::sandbox_usage::minutes_this_month_all(&mut conn).await?;
+    Ok(SandboxStats { running, starting, error, minutes_this_month })
 }
 
 #[derive(Serialize)]

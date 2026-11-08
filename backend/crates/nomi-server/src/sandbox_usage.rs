@@ -40,6 +40,14 @@ pub async fn minutes_this_month(conn: &mut PgConnection, user_id: Uuid) -> Resul
     Ok(seconds as i64 / SECS_PER_MINUTE)
 }
 
+/// Whole minutes every project has run in the sandbox this month, for the admin dashboard.
+pub async fn minutes_this_month_all(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
+    let seconds: f64 = sqlx::query_scalar(&format!("SELECT COALESCE(SUM({SECONDS_IN_MONTH}), 0)::float8 FROM sandbox_sessions WHERE {MONTH_NOT_OVER}"))
+        .fetch_one(conn)
+        .await?;
+    Ok(seconds as i64 / SECS_PER_MINUTE)
+}
+
 /// Whether the person still has minutes left this month.
 pub async fn within_allowance(conn: &mut PgConnection, user_id: Uuid, cfg: &SandboxConfig) -> Result<bool, sqlx::Error> {
     Ok(minutes_this_month(conn, user_id).await? < i64::from(cfg.monthly_minutes_per_user))

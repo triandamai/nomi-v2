@@ -1,6 +1,7 @@
 //! The background loop that keeps sandboxes where their projects want them: it claims the rows
 //! that are due, reconciles each one, and stops the sandboxes whose page has gone quiet. It only
-//! does anything while the admin switch is on; with it off, projects stay on WebContainer.
+//! does anything while the admin switch is on. With it off, projects stay on WebContainer and the
+//! worker only winds down what is already running (see `PassMode`).
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -12,7 +13,7 @@ use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::configuration::{sandbox_config, ReaperMode, SandboxConfig};
+use crate::configuration::{sandbox_config, sandbox_credentials, ReaperMode, SandboxConfig};
 use crate::sandbox_cleanup::{self, REAP_INTERVAL};
 use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
 use crate::sandbox_runs::RUN_LEASE;
@@ -24,7 +25,7 @@ use crate::sandbox_store as store;
 pub const PROVIDER_NAME: &str = "boat";
 /// How long the loop sleeps between looks for due rows.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
-/// How long the loop sleeps while the admin switch is off.
+/// How long the loop sleeps while the admin switch is off and there is nothing to wind down.
 const OFF_POLL_INTERVAL: Duration = Duration::from_secs(15);
 /// How often idle sandboxes are looked for.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
@@ -34,6 +35,27 @@ const EXPIRY_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const BATCH_SIZE: i64 = 10;
 /// Most rows reconciled at the same time.
 const CONCURRENCY: usize = 4;
+
+/// What a pass of the loop may do, from the admin switch and the saved credentials.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassMode {
+    /// The switch is on: everything.
+    On,
+    /// The switch is off but a key is saved: stop what is running and delete what is queued for
+    /// deletion, so nothing keeps billing. Never create or resume.
+    StopOnly,
+}
+
+/// The mode for this pass and the config to build the provider from. `enabled` is
+/// `configuration::sandbox_config()`, `credentials` is `configuration::sandbox_credentials()`.
+/// With the switch off and no key there is nothing to reach the provider with, so: nothing.
+pub fn pass_mode(enabled: Option<SandboxConfig>, credentials: Option<SandboxConfig>) -> Option<(PassMode, SandboxConfig)> {
+    match (enabled, credentials) {
+        (Some(cfg), _) => Some((PassMode::On, cfg)),
+        (None, Some(cfg)) => Some((PassMode::StopOnly, cfg)),
+        (None, None) => None,
+    }
+}
 
 /// The page checking in for a project that runs in a sandbox: marks the page online, asks for the
 /// sandbox to be running and returns the files version. Returns `None` for a project that runs in
@@ -165,7 +187,7 @@ impl SandboxWorker {
                 match self.manager.reconcile(row).await {
                     ReconcileOutcome::Settled => {}
                     ReconcileOutcome::RetryAt(at) => tracing::debug!(%project_id, %at, "sandbox: will retry"),
-                    ReconcileOutcome::Failed(why) => tracing::warn!(%project_id, %why, "sandbox: failed"),
+                    ReconcileOutcome::Failed(why) => tracing::warn!(%project_id, why = %self.manager.redact(&why), "sandbox: failed"),
                 }
             })
             .await;
@@ -192,6 +214,23 @@ impl SandboxWorker {
     /// Delete long-stopped sandboxes at the provider (see `SandboxManager::expire_stopped`).
     pub async fn expire_old(&self) -> usize {
         self.manager.expire_stopped().await
+    }
+
+    /// The switch is off: ask every sandbox wanted running to stop, so `tick` winds them down.
+    /// Returns how many rows changed.
+    pub async fn wind_down(&self) -> usize {
+        let result = async {
+            let mut conn = self.pool.acquire().await?;
+            store::want_all_stopped(&mut conn).await
+        }
+        .await;
+        match result {
+            Ok(n) => n as usize,
+            Err(e) => {
+                tracing::warn!(error = %e, "sandbox worker: winding down failed");
+                0
+            }
+        }
     }
 
     /// Ask for the sandboxes of projects whose page has gone quiet to be stopped.
@@ -230,7 +269,9 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
     // The orphan sweep runs on the first pass after a start, then once an hour.
     let mut last_reap: Option<Instant> = None;
     loop {
-        let Some(cfg) = sandbox_config().await else {
+        let enabled = sandbox_config().await;
+        let credentials = if enabled.is_some() { None } else { sandbox_credentials().await };
+        let Some((mode, cfg)) = pass_mode(enabled, credentials) else {
             current = None;
             tokio::time::sleep(OFF_POLL_INTERVAL).await;
             continue;
@@ -242,9 +283,15 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
             let manager = Arc::new(SandboxManager::new(provider, steps.clone(), pool.clone(), cfg.clone()));
             current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs).with_runs(steps).with_reaper_mode(cfg.reaper_mode)));
         }
+        let mut busy = true;
         if let Some((_, worker)) = &current {
-            worker.tick().await;
-            worker.dispatch_runs().await;
+            if mode == PassMode::StopOnly {
+                busy = worker.wind_down().await > 0;
+            }
+            busy |= worker.tick().await > 0;
+            if mode == PassMode::On {
+                worker.dispatch_runs().await;
+            }
             worker.drain_deletions().await;
             if last_sweep.elapsed() >= SWEEP_INTERVAL {
                 worker.sweep_idle().await;
@@ -255,14 +302,20 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
                 worker.expire_old().await;
                 last_expiry = Some(Instant::now());
             }
-            if last_reap.is_none_or(|t| t.elapsed() >= REAP_INTERVAL) {
-                worker.reap_orphans().await;
-                last_reap = Some(Instant::now());
+            if mode == PassMode::On {
+                if last_reap.is_none_or(|t| t.elapsed() >= REAP_INTERVAL) {
+                    worker.reap_orphans().await;
+                    last_reap = Some(Instant::now());
+                }
+                if last_drift_check.elapsed() >= DRIFT_INTERVAL {
+                    worker.check_usage_drift().await;
+                    last_drift_check = Instant::now();
+                }
             }
-            if last_drift_check.elapsed() >= DRIFT_INTERVAL {
-                worker.check_usage_drift().await;
-                last_drift_check = Instant::now();
-            }
+        }
+        if mode == PassMode::StopOnly && !busy {
+            tokio::time::sleep(OFF_POLL_INTERVAL).await;
+            continue;
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
