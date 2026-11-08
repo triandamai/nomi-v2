@@ -17,7 +17,10 @@ function storedForced(): string[] {
 	}
 }
 
-/** Runs this project in the browser instead of the sandbox for the rest of this page session. */
+/**
+ * Runs this project in the browser instead of the sandbox for the rest of this page session, and
+ * asks the backend to stop the sandbox so it doesn't keep running (and billing) beside the browser.
+ */
 export function forceBrowserRuntime(projectId: string) {
 	forced.add(projectId);
 	try {
@@ -25,6 +28,8 @@ export function forceBrowserRuntime(projectId: string) {
 	} catch {
 		// The in-memory choice still holds.
 	}
+	// Best effort: a sandbox that can't be stopped now idles out on its own.
+	void projectApi(projectId, 'sandbox/stop', { method: 'POST' }).catch(() => undefined);
 }
 
 export function browserRuntimeForced(projectId: string): boolean {

@@ -237,4 +237,17 @@ describe('sandbox runtime', () => {
 		expect(await createRuntime('p1')).toBeInstanceOf(ProjectRuntime);
 		expect(requests).toEqual([]);
 	});
+
+	it('choosing_the_browser_asks_the_backend_to_stop_the_sandbox', async () => {
+		requests.length = 0;
+		forceBrowserRuntime('p1');
+		await vi.waitFor(() => expect(requests).toContainEqual({ path: 'sandbox/stop', method: 'POST' }));
+	});
+
+	it('choosing_the_browser_still_holds_when_stopping_the_sandbox_fails', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+		expect(() => forceBrowserRuntime('p3')).not.toThrow();
+		expect(browserRuntimeForced('p3')).toBe(true);
+		await vi.runAllTimersAsync();
+	});
 });
