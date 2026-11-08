@@ -134,22 +134,34 @@ pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<Sandbo
     .bind(limit)
     .fetch_all(conn)
     .await?;
-    rows.iter()
-        .map(|r| {
-            let desired: String = r.try_get("desired")?;
-            let state: String = r.try_get("state")?;
-            Ok(SandboxRow {
-                project_id: r.try_get("project_id")?,
-                provider: r.try_get("provider")?,
-                sandbox_id: r.try_get("sandbox_id")?,
-                desired: decode("desired", &desired, Desired::parse(&desired))?,
-                state: decode("state", &state, State::parse(&state))?,
-                synced_version: r.try_get("synced_version")?,
-                preview_url: r.try_get("preview_url")?,
-                attempts: r.try_get("attempts")?,
-            })
-        })
-        .collect()
+    rows.iter().map(row_from).collect()
+}
+
+fn row_from(r: &sqlx::postgres::PgRow) -> Result<SandboxRow, sqlx::Error> {
+    let desired: String = r.try_get("desired")?;
+    let state: String = r.try_get("state")?;
+    Ok(SandboxRow {
+        project_id: r.try_get("project_id")?,
+        provider: r.try_get("provider")?,
+        sandbox_id: r.try_get("sandbox_id")?,
+        desired: decode("desired", &desired, Desired::parse(&desired))?,
+        state: decode("state", &state, State::parse(&state))?,
+        synced_version: r.try_get("synced_version")?,
+        preview_url: r.try_get("preview_url")?,
+        attempts: r.try_get("attempts")?,
+    })
+}
+
+/// One project's row as it is now, or `None` if it has no sandbox.
+pub async fn get(conn: &mut PgConnection, project_id: Uuid) -> Result<Option<SandboxRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT project_id, provider, sandbox_id, desired, state, synced_version, preview_url, attempts
+         FROM project_sandboxes WHERE project_id = $1",
+    )
+    .bind(project_id)
+    .fetch_optional(conn)
+    .await?;
+    row.as_ref().map(row_from).transpose()
 }
 
 /// Record the state the provider reported, with an error message if it gave one. Reaching a
