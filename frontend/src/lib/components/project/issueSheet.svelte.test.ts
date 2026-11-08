@@ -6,6 +6,8 @@ import { fakeBackend, render, settle, text, type } from '../../../test-stubs/ren
 import { localToday } from '$lib/issues';
 import IssueEditorSheet from './IssueEditorSheet.svelte';
 import IssueWorkStrip from './IssueWorkStrip.svelte';
+import IssueFollowUp from './IssueFollowUp.svelte';
+import IssueBoard from './IssueBoard.svelte';
 import MarkdownEditor from '../MarkdownEditor.svelte';
 
 const issue = (over: Record<string, unknown> = {}) => ({
@@ -125,5 +127,46 @@ describe('crew work in the project chat', () => {
 		for (const listener of listeners) listener('{"kind":"DeployChanged","event":"issues.changed"}');
 		await settle(4);
 		expect(calls.filter((c) => c.path.endsWith('/board')).length).toBe(2);
+	});
+});
+
+describe('finishing an issue', () => {
+	it('asks whether it is done, and "Not yet" leaves the composer to say what is missing', async () => {
+		const ondone = vi.fn(async () => {});
+		const root = render(IssueFollowUp as never, { number: 4, crewAgent: 'coding', ondone });
+		await settle(2);
+		expect(text(root)).toContain('Koda finished. Is issue #4 done?');
+		[...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Yes, mark as done')!.click();
+		await settle(2);
+		expect(ondone).toHaveBeenCalled();
+		[...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Not yet')!.click();
+		await settle(2);
+		expect(text(root).replace(/’/g, "'")).toContain("Tell Koda what's still missing");
+	});
+
+	it('says so when marking it done fails', async () => {
+		const root = render(IssueFollowUp as never, { number: 4, crewAgent: 'coding', ondone: async () => { throw new Error('no'); } });
+		await settle(2);
+		[...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Yes, mark as done')!.click();
+		await settle(4);
+		expect(text(root).replace(/’/g, "'")).toContain("Couldn't mark it done");
+	});
+
+	it('the board ends with Done and Closed, fixed, holding the closed issues', async () => {
+		fakeBackend([]);
+		const board = { columns: [
+			{ id: 'c-back', name: 'Backlog', position: 0, fixed: 'backlog', issues: [] },
+			{ id: 'c-ready', name: 'Ready to dev', position: 1, fixed: 'ready', issues: [issue({ number: 1, crew_state: 'done', session_id: 's-1' })] },
+			{ id: 'c-done', name: 'Done', position: 1000, fixed: 'done', issues: [issue({ number: 2, status: 'closed', crew_state: 'done', column_id: 'c-done' })] },
+			{ id: 'c-closed', name: 'Closed', position: 1001, fixed: 'closed', issues: [issue({ number: 3, status: 'closed', crew_state: 'failed', column_id: 'c-closed' })] },
+		] };
+		const root = render(IssueBoard as never, { projectId: 'p1', board, canEditColumns: true, onopen: vi.fn(), onchange: vi.fn(), ...labels });
+		await settle(2);
+		const shown = text(root);
+		for (const piece of ['Koda finished: check it', 'Done by Koda', 'Checked and finished']) expect(shown).toContain(piece);
+		expect([...root.querySelectorAll('.column__name')].map((h) => h.firstChild?.textContent?.trim())).toEqual(['Backlog', 'Ready to dev', 'Done', 'Closed']);
+		// Fixed columns have no menu, and a closed one that failed isn't offered "Try again".
+		expect(root.querySelectorAll('[aria-label^="Edit column"]').length).toBe(0);
+		expect(shown).not.toContain('Try again');
 	});
 });

@@ -53,6 +53,8 @@
 	function columnName(column: BoardColumn): string {
 		if (column.fixed === 'backlog') return m.board_backlog();
 		if (column.fixed === 'ready') return m.board_ready();
+		if (column.fixed === 'done') return m.board_done_column();
+		if (column.fixed === 'closed') return m.board_closed_column();
 		return column.name;
 	}
 
@@ -61,8 +63,10 @@
 	}
 
 	/** The card's quiet line: how the crew is getting on, else its deadline. */
-	function status(issue: ProjectIssue): string | null {
+	function status(issue: ProjectIssue, column: BoardColumn): string | null {
 		const name = crewMember(issue.crew_agent).name;
+		if (column.fixed === 'done') return issue.crew_state ? m.board_done_by({ name }) : null;
+		if (column.fixed === 'closed') return null;
 		switch (issue.crew_state) {
 			case 'queued':
 				return m.board_queued({ name });
@@ -208,6 +212,7 @@
 				{/if}
 			</header>
 			{#if column.fixed === 'ready'}<p class="column__hint">{m.board_ready_hint()}</p>{/if}
+			{#if column.fixed === 'done'}<p class="column__hint">{m.board_done_hint()}</p>{/if}
 
 			{#if column.issues.length === 0}
 				<p class="column__empty">{m.board_empty_column()}</p>
@@ -215,7 +220,7 @@
 				<ul class="cards">
 					{#each column.issues as issue (issue.number)}
 						{@const who = crewMember(issue.crew_agent)}
-						{@const line = status(issue)}
+						{@const line = status(issue, column)}
 						<li
 							class="card"
 							class:card--dragging={dragging?.number === issue.number}
@@ -257,7 +262,7 @@
 										{/each}
 									</select>
 								</label>
-								{#if issue.crew_state === 'failed'}
+								{#if issue.crew_state === 'failed' && column.fixed === 'ready'}
 									<Button type="button" variant="text" size="s" onclick={() => retry(issue)}>{m.board_retry()}</Button>
 								{/if}
 								{#if issue.session_id}

@@ -125,5 +125,18 @@ export const MAX_WORK_ROWS = 3;
  * board's order, for the project chat to show.
  */
 export function crewWork(columns: BoardColumn[]): ProjectIssue[] {
-	return columns.flatMap((column) => column.issues).filter((issue) => issue.crew_state !== null);
+	return columns
+		.filter((column) => !closesIssues(column))
+		.flatMap((column) => column.issues)
+		.filter((issue) => issue.crew_state !== null);
+}
+
+/** Done and Closed: an issue in either is closed. */
+export function closesIssues(column: BoardColumn): boolean {
+	return column.fixed === 'done' || column.fixed === 'closed';
+}
+
+/** How many open issues the board holds (Done and Closed hold closed ones). */
+export function openOnBoard(columns: BoardColumn[]): number {
+	return columns.filter((column) => !closesIssues(column)).reduce((sum, column) => sum + column.issues.length, 0);
 }

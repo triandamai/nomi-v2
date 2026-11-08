@@ -1028,13 +1028,21 @@ async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, tit
     }
 }
 
-/// A project's chat takes messages only from people who may change the project, not its viewers.
+/// A project's chat takes messages only from people who may change the project, not its viewers,
+/// and an issue chat takes none once its issue is finished (in Done or Closed).
 pub(crate) async fn refuse_project_viewer(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid) -> Result<(), (StatusCode, &'static str)> {
-    let project: Option<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1 LIMIT 1")
-        .bind(session_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up the project"))?;
+    // The project's own chat or one of its issue chats; an issue chat whose issue is Done or
+    // Closed is read-only for everyone.
+    let (project, finished_issue): (Option<Uuid>, bool) = sqlx::query_as(
+        "SELECT chat_project($1), EXISTS (SELECT 1 FROM project_issues WHERE session_id = $1 AND status = 'closed')",
+    )
+    .bind(session_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to look up the project"))?;
+    if finished_issue {
+        return Err((StatusCode::CONFLICT, "this issue is finished; its chat is read-only"));
+    }
     let Some(project_id) = project else { return Ok(()) };
     match crate::routes::deploy::project_role(pool, project_id, user_id).await {
         Ok("viewer") => Err((StatusCode::FORBIDDEN, "you can view this project but not change it")),

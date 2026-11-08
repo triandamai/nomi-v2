@@ -20,6 +20,7 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'issues/\\d+',
 			'issues/\\d+/move',
 			'issues/\\d+/retry',
+	'issues/\\d+/done',
 			'board',
 			'board/columns',
 			`board/columns/${UUID}`,
