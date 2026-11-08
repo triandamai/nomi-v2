@@ -92,7 +92,7 @@
 
 {#if standalone}
 <div class="app-shell" style="background: var(--nomi-color-ground)">
-	<main class="h-full overflow-hidden">
+	<main class="h-full min-h-0 overflow-clip">
 		{@render children()}
 	</main>
 </div>
@@ -102,7 +102,7 @@
 	<div class="md:hidden">
 		<MobileNavDrawer bind:open={mobileNav.open} userEmail={data.userEmail} profile={data.profile} usage={data.usage} savedPins={data.preferences.drawer_pins} recents={resolveRecents(data.preferences)} />
 	</div>
-	<div class="flex flex-1 flex-col overflow-hidden">
+	<div class="flex min-w-0 flex-1 flex-col overflow-clip">
 		{#if !ownAppBar}
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
 			<IconButton onclick={() => (mobileNav.open = true)} aria-label={m.nav_open_menu()}>
@@ -118,7 +118,7 @@
 			</a>
 		</header>
 		{/if}
-		<main class="flex-1 overflow-hidden" style="view-transition-name: page">
+		<main class="min-h-0 flex-1 overflow-clip" style="view-transition-name: page">
 			{@render children()}
 		</main>
 	</div>
