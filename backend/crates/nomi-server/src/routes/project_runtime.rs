@@ -63,10 +63,18 @@ pub async fn check_in(
     ensure_owner(&state, project_id, claims.sub).await?;
     let deadline = Instant::now() + Duration::from_secs(query.wait.unwrap_or(0).min(MAX_WAIT_SECS));
 
-    // First round: mark runner online and check for changes/commands immediately.
-    let (mut files_version, mut runs) = {
+    // First round: mark runner online and check for changes/commands immediately. A project that
+    // runs in a sandbox asks for it to be running instead and never claims commands.
+    let sandbox_enabled = crate::configuration::sandbox_config().await.is_some();
+    let (mut files_version, mut runs, in_sandbox) = {
         let mut conn = state.pool.acquire().await.map_err(internal)?;
-        runtime::check_in(&mut conn, project_id).await.map_err(internal)?
+        match crate::sandbox_worker::sandbox_check_in(&mut conn, project_id, sandbox_enabled).await.map_err(internal)? {
+            Some(version) => (version, Vec::new(), true),
+            None => {
+                let (version, runs) = runtime::check_in(&mut conn, project_id).await.map_err(internal)?;
+                (version, runs, false)
+            }
+        }
     };
 
     if !runs.is_empty() || query.since != Some(files_version) || Instant::now() >= deadline {
@@ -84,7 +92,11 @@ pub async fn check_in(
                 runtime::touch_runner(&mut conn, project_id).await.map_err(internal)?;
                 last_touched = Instant::now();
             }
-            runtime::poll(&mut conn, project_id).await.map_err(internal)?
+            if in_sandbox {
+                (runtime::files_version(&mut conn, project_id).await.map_err(internal)?, Vec::new())
+            } else {
+                runtime::poll(&mut conn, project_id).await.map_err(internal)?
+            }
         };
         files_version = current_version;
         runs = current_runs;

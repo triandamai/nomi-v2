@@ -132,3 +132,29 @@ async fn overlapping_claims_do_not_both_walk_a_row(pool: PgPool) {
     assert_eq!(store::claim_due(&mut third, CLAIM_LIMIT).await.unwrap().len(), 1);
     third.rollback().await.unwrap();
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn want_running_clears_backoff_on_a_settled_row_but_not_an_in_flight_lease(pool: PgPool) {
+    let p = project(&pool, "backoff").await;
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    let retry_at = || async { sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>("SELECT retry_at FROM project_sandboxes WHERE project_id = $1").bind(p).fetch_one(&pool).await.unwrap() };
+    let hold = || async { sqlx::query("UPDATE project_sandboxes SET retry_at = now() + interval '1 hour' WHERE project_id = $1").bind(p).execute(&pool).await.unwrap() };
+
+    // Settled (error) with a leftover backoff: the user's open drops it.
+    sqlx::query("UPDATE project_sandboxes SET state = 'error' WHERE project_id = $1").bind(p).execute(&pool).await.unwrap();
+    hold().await;
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    assert!(retry_at().await.is_none());
+    hold().await;
+    store::want_stopped(&mut conn, p).await.unwrap();
+    assert!(retry_at().await.is_none());
+
+    // In flight: the retry_at is the walk's lease and stays.
+    sqlx::query("UPDATE project_sandboxes SET state = 'starting' WHERE project_id = $1").bind(p).execute(&pool).await.unwrap();
+    hold().await;
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    assert!(retry_at().await.is_some());
+    store::want_stopped(&mut conn, p).await.unwrap();
+    assert!(retry_at().await.is_some());
+}

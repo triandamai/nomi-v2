@@ -24,6 +24,7 @@ pub mod quota;
 pub mod reminders_worker;
 pub mod sandbox_manager;
 pub mod sandbox_store;
+pub mod sandbox_worker;
 pub mod scheduler_worker;
 pub mod shipyard;
 pub mod sign_in_codes;
