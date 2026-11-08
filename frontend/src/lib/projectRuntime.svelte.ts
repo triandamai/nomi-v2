@@ -15,6 +15,8 @@ export type RuntimePhase =
 	| 'unsupported'
 	| 'booting'
 	| 'loading'
+	| 'waking'
+	| 'syncing'
 	| 'waiting'
 	| 'installing'
 	| 'checking'
