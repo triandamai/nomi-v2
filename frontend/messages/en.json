@@ -2888,6 +2888,8 @@
 	"code_edit_mode": "Edit the code",
 	"code_read_mode": "Read and ask Koda",
 	"pinned_who_is": "{who} is {activity}",
+	"pinned_handing_over": "{from} is handing this to {to}",
+	"pinned_handing_to": "Handing it to {name}",
 	"pinned_done": "{who} is done",
 	"pinned_failed": "{who} couldn't finish",
 	"pinned_question": "{who} needs your answer",

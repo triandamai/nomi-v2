@@ -124,6 +124,28 @@ describe('ChatThread', () => {
 		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('m3'))).toBe(true);
 	});
 
+	it('shows Nomi handing the message over before the crew member takes it', () => {
+		vi.useFakeTimers();
+		try {
+			const root = thread();
+			const socket = FakeSocket.all[0];
+			socket.send({ kind: 'Delta', turn_job_id: 't1', event: { type: 'thinking' } });
+			expect(text(root)).toContain('Nomi is');
+			socket.send({ kind: 'AgentSessionStarted', agent_session_id: 'a1', agent_type: 'money', agent_display_name: 'Dana' });
+			socket.send({ kind: 'AgentPhaseChanged', turn_job_id: 't1', agent_session_id: 'a1', phase: 'thinking', detail: null, agent_display_name: 'Dana' });
+			expect(text(root)).toContain('Nomi is handing this to Dana');
+			vi.advanceTimersByTime(1_500);
+			flushSync();
+			expect(text(root)).not.toContain('handing this to Dana');
+			expect(text(root)).toContain('Dana is');
+			(root.querySelector('.pinned__steps button') as HTMLButtonElement).click();
+			flushSync();
+			expect(text(root)).toContain('Handed it to Dana');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('drops deleted messages and renames from the feed', () => {
 		const root = thread();
 		const socket = FakeSocket.all[0];

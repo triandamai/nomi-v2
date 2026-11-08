@@ -11,6 +11,13 @@ import type { RenderedMessage } from '$lib/types';
 /** How long a finished card stays when nobody writes anything. */
 export const DONE_LINGER_MS = 5_000;
 
+/** How long "Nomi is handing this to Dana" stays as the headline once another agent takes the
+ * turn, so the hand-over shows before the new agent's own status replaces it. */
+export const HANDOFF_SHOWN_MS = 1_500;
+
+/** The step a hand-over adds: `detail` is who took the turn. */
+export const HANDOFF_PHASE = 'handing_over';
+
 /** Phases worth a line in the card's steps; thinking and writing only show as the headline. */
 const STEP_PHASES = new Set(['calling_tool', 'running_command']);
 
@@ -35,6 +42,9 @@ export interface PinnedActivity {
 
 export const startPinned = (at: number = Date.now()): PinnedActivity => ({ status: 'working', steps: [], elapsed: null, settledAt: null, waiting: null, who: null, startedAt: at });
 
+/** The tool an agent hands work over with (backend: nomi_agent_core::engine::DELEGATE_TOOL_NAME). */
+const DELEGATE_TOOL = 'delegate_to_agent';
+
 const WAITING: readonly string[] = ['question', 'approval', 'connect'] satisfies Waiting[];
 
 /** The server's word on how the chat settled (`ChatSettled`). A card that wasn't there (the page
@@ -57,6 +67,15 @@ export function withPhase(card: PinnedActivity, phase: PinnedPhase): PinnedActiv
 	const last = card.steps.at(-1);
 	if (last && last.phase === phase.phase && last.detail === phase.detail && (last.subject ?? null) === (phase.subject ?? null)) return card;
 	return { ...card, steps: [...card.steps, phase] };
+}
+
+/** Another agent took the turn (its session started): a step saying who, unless the delegating
+ * tool call already shows it. */
+export function withHandoff(card: PinnedActivity, to: string): PinnedActivity {
+	if (card.status !== 'working') return card;
+	const last = card.steps.at(-1);
+	if (last && ((last.phase === HANDOFF_PHASE && last.detail === to) || (last.phase === 'calling_tool' && last.detail === DELEGATE_TOOL))) return card;
+	return { ...card, steps: [...card.steps, { phase: HANDOFF_PHASE, detail: to }] };
 }
 
 export function settled(card: PinnedActivity, status: 'done' | 'failed', elapsed: string, at: number): PinnedActivity {
