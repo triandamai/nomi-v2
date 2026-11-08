@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crewMember, datesInOrder, dropIndex, issuesHref, issuesQuery, localToday, moveOnBoard, overdue, readIssueFilters } from './issues';
+import { crewMatches, crewMember, crewWork, datesInOrder, dropIndex, issuesHref, issuesQuery, localToday, moveOnBoard, overdue, readIssueFilters } from './issues';
 import type { BoardColumn, ProjectIssue } from './types';
 
 describe('issue filters', () => {
@@ -54,5 +54,26 @@ describe('issue board', () => {
 		expect(datesInOrder('2026-11-12', '2026-11-09')).toBe(false);
 		expect(datesInOrder('', '2026-11-09')).toBe(true);
 		expect(localToday(new Date(2026, 10, 8, 23, 30))).toBe('2026-11-08');
+	});
+});
+
+describe('crew search and work', () => {
+	const role = (agent: string) => ({ money: 'Transactions, budgets, subscriptions', coding: 'Builds and edits project files' })[agent] ?? '';
+
+	it('finds a crew member by name or by a word of what they do', () => {
+		expect(crewMatches('', role).length).toBeGreaterThan(2);
+		expect(crewMatches('da', role).map((m) => m.name)).toEqual(['Dana']);
+		expect(crewMatches('BUDGETS', role).map((m) => m.name)).toEqual(['Dana']);
+		expect(crewMatches('files', role).map((m) => m.name)).toEqual(['Koda']);
+		expect(crewMatches('qq', role)).toEqual([]);
+	});
+
+	it('lists the issues the crew has taken, in board order', () => {
+		const at = (number: number, crew_state: ProjectIssue['crew_state']) => ({ number, crew_state }) as ProjectIssue;
+		const columns = [
+			{ issues: [at(1, null)] },
+			{ issues: [at(2, 'working'), at(3, 'queued'), at(4, 'done')] },
+		] as BoardColumn[];
+		expect(crewWork(columns).map((i) => i.number)).toEqual([2, 3, 4]);
 	});
 });

@@ -129,6 +129,14 @@ async fn the_crew_takes_ready_issues_one_at_a_time_in_their_own_chats(pool: PgPo
     assert_eq!(title.as_deref(), Some("#1 · One"));
     let (status, issue) = call(&router, "GET", &format!("/api/projects/{project_id}/issues/1"), Value::Null, &ana).await;
     assert_eq!((status, issue["session_id"].as_str()), (StatusCode::OK, Some(session_id.to_string().as_str())));
+    // Opened by its own address, the issue's chat is the project's workspace, marked as the issue's.
+    let (status, workspace) = call(&router, "GET", &format!("/api/projects/by-session/{session_id}"), Value::Null, &ana).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(workspace["id"].as_str(), Some(project_id.as_str()));
+    assert_ne!(workspace["session_id"].as_str(), Some(session_id.to_string().as_str()));
+    assert_eq!((workspace["issue"]["number"].as_i64(), workspace["issue"]["title"].as_str()), (Some(1), Some("One")));
+    let (_, own) = call(&router, "GET", &format!("/api/projects/by-session/{}", workspace["session_id"].as_str().unwrap()), Value::Null, &ana).await;
+    assert!(own.get("issue").is_none(), "{own}");
 
     // Still going: the next waits.
     assert_eq!(sweep(&pool, 1).await.unwrap(), Swept::default());

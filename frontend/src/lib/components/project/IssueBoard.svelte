@@ -261,7 +261,7 @@
 									<Button type="button" variant="text" size="s" onclick={() => retry(issue)}>{m.board_retry()}</Button>
 								{/if}
 								{#if issue.session_id}
-									<a class="chat-link" href="/chat/{issue.session_id}">{m.board_open_chat()}</a>
+									<a class="chat-link" href="/projects/session/{issue.session_id}">{m.board_open_chat()}</a>
 								{/if}
 							</div>
 						</li>

@@ -230,6 +230,18 @@ pub struct ProjectDetailResponse {
     pub open_issues: i64,
     /// `drizzle` or `relay`: where the app keeps its data, and so what the data sheet shows.
     pub backend: String,
+    /// Set when the chat asked about is one of the project's issue chats rather than its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue: Option<IssueChatRef>,
+}
+
+/// The issue a project's issue chat works on.
+#[derive(Serialize, sqlx::FromRow)]
+pub struct IssueChatRef {
+    pub number: i32,
+    pub title: String,
+    pub crew_agent: String,
+    pub crew_state: Option<String>,
 }
 
 /// The chat, organization, open issue count and backend of a project.
@@ -300,6 +312,7 @@ pub async fn get_project(
         org_name,
         open_issues,
         backend,
+        issue: None,
     }))
 }
 
@@ -308,12 +321,12 @@ async fn load_owned_project_by_session(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<(Uuid, String, Option<String>, Option<String>, String, String, i64)>, sqlx::Error> {
-    // A session can accumulate more than one project if the user asks to build multiple things
-    // in the same chat over time — most recent wins, so the workspace page always matches what
-    // the conversation most recently started building.
+    // The project's own chat or one of its issue chats (chat_project). A chat can accumulate more
+    // than one project if the user asks to build several things in it over time; the most recent
+    // wins, so the workspace page always matches what the conversation last started building.
     sqlx::query_as(
         "SELECT id, name, description, plan, status, stack, files_version FROM projects \
-         WHERE session_id = $1 AND can_open_project(id, $2) ORDER BY created_at DESC LIMIT 1",
+         WHERE id = chat_project($1) AND can_open_project(id, $2)",
     )
     .bind(session_id)
     .bind(user_id)
@@ -328,9 +341,9 @@ async fn load_owned_project_by_session(
 pub async fn get_project_by_session(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
-    Path(session_id): Path<Uuid>,
+    Path(chat): Path<Uuid>,
 ) -> Result<Json<ProjectDetailResponse>, (StatusCode, &'static str)> {
-    let row = load_owned_project_by_session(&state.pool, session_id, claims.sub).await.map_err(|e| {
+    let row = load_owned_project_by_session(&state.pool, chat, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to load project by session");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
@@ -352,6 +365,18 @@ pub async fn get_project_by_session(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
 
+    let issue: Option<IssueChatRef> = sqlx::query_as(
+        "SELECT number, title, crew_agent, crew_state FROM project_issues WHERE project_id = $1 AND session_id = $2",
+    )
+    .bind(project_id)
+    .bind(chat)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to load the chat's issue");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
+    })?;
+
     Ok(Json(ProjectDetailResponse {
         id: project_id,
         name,
@@ -366,6 +391,7 @@ pub async fn get_project_by_session(
         org_name,
         open_issues,
         backend,
+        issue,
     }))
 }
 
