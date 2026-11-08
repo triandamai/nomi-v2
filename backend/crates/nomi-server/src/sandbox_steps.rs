@@ -25,6 +25,8 @@ pub struct ServerSteps {
     /// Opens the sealed Relay keys of projects that have their own backend.
     pub(crate) settings_key: Option<[u8; 32]>,
     pub(crate) http_client: reqwest::Client,
+    /// Wakes a project's sleeping Relay before its dev server starts; not woken when unset.
+    pub(crate) shipyard: Option<nomi_shipyard::ShipyardConfig>,
 }
 
 impl ServerSteps {
@@ -38,6 +40,7 @@ impl ServerSteps {
             relay_config: None,
             settings_key: None,
             http_client: reqwest::Client::new(),
+            shipyard: None,
         }
     }
 
@@ -57,6 +60,12 @@ impl ServerSteps {
     /// Read every project's dev backend through this Relay. For tests.
     pub fn with_relay_config(mut self, config: nomi_relay_client::RelayConfig) -> Self {
         self.relay_config = Some(config);
+        self
+    }
+
+    /// Wake projects' sleeping Relay backends through this Shipyard.
+    pub fn with_shipyard(mut self, config: Option<nomi_shipyard::ShipyardConfig>) -> Self {
+        self.shipyard = config;
         self
     }
 

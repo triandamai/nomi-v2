@@ -35,21 +35,18 @@ const FIRST_ANSWER_CODE: u16 = 200;
 /// The last HTTP status code that counts as an answer (a 4xx page is still a running server; 5xx is not).
 const LAST_ANSWER_CODE: u16 = 499;
 
-/// Command and flags for the stacks that run on Vite (`npm run dev`).
-const VITE_DEV_COMMAND: &str = "npm run dev -- --host 0.0.0.0 --port 5173";
-/// A plain static project has no build or dependencies: its files are served as they are.
-const STATIC_DEV_COMMAND: &str = "npx --yes serve -l 5173 .";
-/// Stacks (as stored in `projects.stack`) and the command that serves each in development.
-const DEV_COMMANDS: &[(&str, &str)] = &[
-    ("sveltekit", VITE_DEV_COMMAND),
-    ("svelte", VITE_DEV_COMMAND),
-    ("react", VITE_DEV_COMMAND),
-    ("vue", VITE_DEV_COMMAND),
-    ("astro", VITE_DEV_COMMAND),
-    ("static", STATIC_DEV_COMMAND),
-];
-/// The stack with no dependencies to install.
+/// The stack with no build step: its files are served as they are.
 const STATIC_STACK: &str = "static";
+
+/// The command that serves a stack in development on `DEV_PORT`: `npm run dev` for the Vite and Astro stacks. `--strictPort` makes Vite fail
+/// rather than hop to the next port when a stale server still holds this one.
+fn dev_command(stack: &str) -> String {
+    if stack == STATIC_STACK {
+        format!("npx --yes serve -l {DEV_PORT} .")
+    } else {
+        format!("npm run dev -- --host 0.0.0.0 --port {DEV_PORT} --strictPort")
+    }
+}
 /// The files whose contents decide whether dependencies must be installed again.
 const DEPENDENCY_FILES: &[&str] = &["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"];
 
@@ -123,10 +120,6 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn dev_command(stack: &str) -> &'static str {
-    DEV_COMMANDS.iter().find(|(s, _)| *s == stack).map(|(_, c)| *c).unwrap_or(VITE_DEV_COMMAND)
-}
-
 /// The environment of the dev server: what the browser runtime passes, plus the Relay variables
 /// when the project has a backend (the same names `previewEnv` builds in the frontend).
 fn preview_env(access: Option<&crate::relay_ops::PreviewAccess>) -> Vec<(&'static str, String)> {
@@ -160,7 +153,12 @@ impl ServerSteps {
     pub async fn ensure_dev_server(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, DevServerError> {
         let (stack, on_relay, owner): (String, bool, Uuid) =
             sqlx::query_as("SELECT stack, backend = 'relay', user_id FROM projects WHERE id = $1").bind(project_id).fetch_one(&self.pool).await?;
-        let access = if on_relay { Some(self.relay_access(project_id, owner).await?) } else { None };
+        let access = if on_relay {
+            self.wake_backend(project_id).await?;
+            Some(self.relay_access(project_id, owner).await?)
+        } else {
+            None
+        };
         if stack != STATIC_STACK {
             self.install_if_needed(project_id, sandbox).await?;
         }
@@ -171,6 +169,16 @@ impl ServerSteps {
         });
         self.wait_until_ready(project_id, sandbox, &handle).await?;
         Ok(self.provider.expose_port(sandbox, DEV_PORT).await?)
+    }
+
+    /// Wake the project's own Relay if it sleeps, and wait for it (the same wait the browser's
+    /// preview does), so a sleeping or still-starting backend doesn't fail the start.
+    async fn wake_backend(&self, project_id: Uuid) -> Result<(), DevServerError> {
+        if let (Some(shipyard), Some(key)) = (self.shipyard.as_ref(), self.settings_key.as_ref()) {
+            let deps = crate::relay_backend::Deps { pool: &self.pool, http: &self.http_client, shipyard, settings_key: key };
+            crate::relay_backend::ensure_awake(&deps, project_id).await.map_err(DevServerError::Backend)?;
+        }
+        Ok(())
     }
 
     /// The dev backend's address and keys, as the owner's browser gets them (the service key is

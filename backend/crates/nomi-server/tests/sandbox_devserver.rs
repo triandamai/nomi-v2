@@ -14,7 +14,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PROVIDER: &str = "boat";
@@ -77,7 +77,7 @@ async fn starts_dev_server_after_install_and_exposes_port(pool: PgPool) {
     let start = calls.iter().position(|c| c.starts_with("exec_detached") && c.contains("npm run dev")).expect("starts the dev server");
     let expose = calls.iter().position(|c| c.starts_with("expose_port")).expect("exposes the port");
     assert!(install < start && start < expose);
-    assert!(calls[start].contains("--host 0.0.0.0") && calls[start].contains("--port 5173"));
+    assert!(calls[start].contains("--host 0.0.0.0") && calls[start].contains("--port 5173 --strictPort"));
     assert!(calls[start].contains("NOMI_PREVIEW='1'") && calls[start].contains("NODE_NO_WARNINGS='1'"));
 }
 
@@ -154,4 +154,42 @@ async fn preview_env_includes_relay_variables_for_projects_with_a_backend(pool: 
         assert!(start.contains(expected), "missing {expected} in the start command");
     }
     let _ = f.owner;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sleeping_relay_is_woken_before_the_dev_server_starts(pool: PgPool) {
+    use nomi_server::project_relays::{self, READY, SLEEPING};
+    let mut f = fixture(pool, ROOMY_READY).await;
+    sqlx::query("UPDATE projects SET backend = 'relay', shipyard_app = 'todo-' || left(id::text, 8) WHERE id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    let key = [3u8; 32];
+    let relay = MockServer::start().await;
+    let backend = json!({
+        "id": f.project, "slug": "todo", "tier": "free",
+        "environments": { "dev": { "url": "https://todo-dev.api.relay.test", "anon_key": "dev-anon", "service_key": "dev-service" } }
+    });
+    Mock::given(method("GET")).and(path("/health")).respond_with(ResponseTemplate::new(200)).mount(&relay).await;
+    Mock::given(method("GET"))
+        .and(path(format!("/control/projects/{}", f.project)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": backend, "error": null })))
+        .mount(&relay)
+        .await;
+    project_relays::begin(&f.pool, &key, f.project, "dev", "control-key", "0.1.5").await.unwrap();
+    project_relays::set_url(&f.pool, f.project, "dev", &relay.uri()).await.unwrap();
+    project_relays::set_state(&f.pool, f.project, "dev", SLEEPING, None, None).await.unwrap();
+    let shipyard = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(r"^/orgs/[^/]+/apps/todo-[0-9a-f]{8}/envs/dev/scale$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "replicas": 1 }, "error": null })))
+        .expect(1)
+        .mount(&shipyard)
+        .await;
+    let config = RelayConfig::from_values(Some(&relay.uri()), Some("relay_control_key")).unwrap();
+    f.steps = ServerSteps::new(f.pool.clone(), nomi_test_support::test_project_storage(), f.provider.clone())
+        .with_devserver_timing(DevServerTiming { ready_timeout: ROOMY_READY, poll_interval: FAST_POLL })
+        .with_relay_config(config)
+        .with_relay_access(Some(key), reqwest::Client::new())
+        .with_shipyard(Some(nomi_shipyard::ShipyardConfig { base_url: shipyard.uri(), key: "ship_int_manage".into(), reveal_key: None, webhook_secret: None }));
+    f.steps.ensure_dev_server(f.project, &f.sandbox).await.unwrap();
+    assert_eq!(project_relays::stack(&f.pool, f.project, "dev").await.unwrap().unwrap().state, READY);
+    assert!(f.calls("exec_detached").pop().unwrap().contains("PUBLIC_NOMI_URL"));
 }
