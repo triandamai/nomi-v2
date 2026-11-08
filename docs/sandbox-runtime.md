@@ -65,7 +65,7 @@ keys.
 
 | Situation | What to do |
 | --- | --- |
-| Provider outage | Rows back off and retry on their own; after repeated failures a row is parked in `error` with a redacted `last_error`, and after a provider cooldown the worker tries again. Pages show the error and the project can still use WebContainer. If it lasts, turn the switch off (below). Stuck rows clear with the worker's `unstick` pass once the provider is back. |
+| Provider outage | Rows back off and retry on their own; after repeated failures a row is parked in `error` with a redacted `last_error` (its sandbox is stopped and its metering closed; closing the page or the kill switch stops it at once), and after a provider cooldown the worker tries again. Pages show the error and the project can still use WebContainer. If it lasts, turn the switch off (below). Stuck rows clear with the worker's `unstick` pass once the provider is back. |
 | Rate limits | Starts are paced by `starts_per_minute` and `starts_per_hour`; over the limit a wake is deferred, not failed. A provider 429 is honoured via its retry-after. If users wait too long, raise the limits only up to the plan's. |
 | Stuck rows | A row in `creating`, `starting` or `stopping` for over 20 minutes is released by the worker (`SandboxManager::unstick`). Inspect with `SELECT project_id, state, attempts, last_error, retry_at FROM project_sandboxes WHERE state IN ('error','creating','starting','stopping')`. A row parked in `error` stays held back until the cause is fixed; read `last_error` first. |
 | Orphaned sandboxes | The hourly reaper lists provider sandboxes labelled `nomi-project` that no row or outbox entry names. Keep `reaper_mode` at `dry_run` first, read the `would delete` log lines, then set `delete`. Use a boat account dedicated to this deployment. |
@@ -73,6 +73,9 @@ keys.
 | Key rotation | Create a new key at boat, save it in Admin -> Configuration -> Sandbox, confirm a sandbox still starts, then revoke the old key. (Not yet verified live: whether running sandboxes survive a key change.) |
 | Cost spike | Check minutes this month on the overview, lower `idle_stop_secs`, lower `monthly_minutes_per_user`, or move `rollout` back a stage. Usage is compared with the provider's and drift is logged. |
 | Kill switch | Set `enabled` to off. The worker enters stop-only mode: it stops and deletes sandboxes, and never creates or resumes one, even if a start races the switch. New pages use WebContainer. Needs the key saved to keep winding down. |
+| Install or dev server fails | The sandbox still counts as running (metered, idles out as usual) with no preview and the reason in `last_error`; the failure goes to Koda as a failed check, Koda's commands run in it, and the preview is tried again when the files change or the person presses Retry. |
+| Dead running sandbox | Every 2 minutes (at most 25 per pass) the worker asks the provider about running sandboxes; one that stopped, crashed or vanished goes back to `stopped`, its session is closed, and it is resumed or recreated. Sandboxes are created and resumed with no provider auto-stop (`ttlSeconds: null`); the idle sweep stops them, with this check and the reaper as backstops. |
+| Dev server logs | The end of the dev server's output (8 KiB) and its process id are saved on the row, so the API process serves logs written by the worker binary. |
 | Rollback | Switch off, wait until the overview shows no running sandboxes, then set `rollout` to `off`. Projects fall back to WebContainer; files are in Nomi's storage and come back from there. |
 
 ## Test results
@@ -215,7 +218,13 @@ it connects to.
 
 Every `/api/projects/:id/sandbox*` route loads the project with `can_open_project` and answers
 404 to anyone else (tested for all four routes). Starting also requires the admin switch, the
-rollout and the owner's monthly allowance; stopping is open to members. The sandbox settings
+rollout, the owner's monthly allowance and no cooldown, and the same check
+(`routes::project_sandbox::availability`) gates the sandbox page's heartbeat
+(`GET /runtime?runtime=sandbox`, sent only by the sandbox page) and Koda's wake. The browser
+runtime's check-in (the fallback, or "run in my browser") never wakes the sandbox and claims Koda's
+commands as before; Koda uses the sandbox only when no browser runtime is open on the project.
+Background tasks of sandbox projects always go through the project runtime, never the host shell.
+Stopping is open to members. The sandbox settings
 section is behind the admin configuration permission. `sandbox_deletions` and the reaper are
 worker-only and have no routes. The reaper only touches sandboxes labelled `nomi-project`, so a
 boat account should be dedicated to one Nomi deployment.
