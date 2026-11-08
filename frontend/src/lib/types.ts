@@ -650,8 +650,9 @@ export interface BoardColumn {
 	id: string;
 	name: string;
 	position: number;
-	/** The two every project has, which can't be renamed, moved or deleted. */
-	fixed: 'backlog' | 'ready' | null;
+	/** The four every project has, which can't be renamed, moved or deleted. Done and Closed hold
+	 * the closed issues (the most recently closed). */
+	fixed: 'backlog' | 'ready' | 'done' | 'closed' | null;
 	issues: ProjectIssue[];
 }
 
@@ -697,6 +698,10 @@ export interface IssueChatRef {
 	title: string;
 	crew_agent: string;
 	crew_state: ProjectIssue['crew_state'];
+	/** Closed once it's in Done or Closed: the chat is read-only then. */
+	status: 'open' | 'closed';
+	/** The fixed column it's in; null in a column people added. */
+	column: BoardColumn['fixed'];
 }
 
 export type AdminStreamFrame =

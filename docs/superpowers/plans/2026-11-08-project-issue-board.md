@@ -212,3 +212,14 @@ Log each step: `issue board: picked up #12 for Koda`, `issue board: Koda handed 
   resolves the chat with `chat_project()` and adds `issue` (number, title, crew). The page shows
   the same chat, code, preview and terminal, with "<project> chat / Issue #1 · title" at the top
   linking back to the project's own chat. The chat list links issue chats there too.
+- **Done and Closed are fixed columns too** (migration 0105), at the end of every board; columns
+  people add go between Ready to dev and Done. An issue in either is closed: moving it in closes
+  it, moving it out opens it again, closing it from the list puts it in Closed and reopening it
+  sends it back to Backlog. The board shows the 50 most recently closed in each.
+- **The crew always follows up.** `ISSUE_CHAT_PROMPT` ends every reply by asking the person to
+  check the work and say whether the issue is done. In the issue's chat a card asks the same: "Yes,
+  mark as done" (`POST /issues/:n/done`, into Done) or "Not yet", which leaves the composer to say
+  what's missing. A new turn in the chat of a finished issue makes it `working` again
+  (`resume_followed_up` in the worker).
+- **A Done or Closed issue's chat is read-only**: `refuse_project_viewer` refuses messages there
+  (409), and the page says "Issue #n is done. This chat is read-only." in place of the composer.

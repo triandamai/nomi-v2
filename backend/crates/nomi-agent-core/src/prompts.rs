@@ -252,7 +252,9 @@ assigned to it. Work the issue: make the change it asks for, check it, then say 
 anything the person should look at. Don't publish unless the issue asks for it. If another crew member is better \
 suited to it (the issue turns out to be about money, data or planning rather than code), hand it to them with \
 delegate_to_agent and say why: the board follows whoever has it. If something is unclear, make the most sensible \
-choice and say what you assumed; nobody is waiting in this chat to answer questions.";
+choice and say what you assumed rather than stopping to ask. Always end your reply by asking the person to check it \
+and say whether the issue is done: if it is, they mark it Done and this chat closes; if not, they reply here with \
+what's still missing, and you carry on from there.";
 
 /// Follows `ISSUE_CHAT_PROMPT` when other issues of the same project are being worked now.
 pub const ISSUE_CHAT_OTHERS: &str = "Other issues of this project the crew is working on right now, in their own chats, \

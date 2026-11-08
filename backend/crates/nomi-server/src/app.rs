@@ -457,6 +457,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/projects/:id/issues/:number/move", post(crate::routes::project_issues::move_issue))
         .route("/api/projects/:id/issues/:number/retry", post(crate::routes::project_issues::retry_issue))
+        .route("/api/projects/:id/issues/:number/done", post(crate::routes::project_issues::mark_done))
         .route("/api/projects/:id/board", get(crate::routes::project_issues::get_board))
         .route("/api/projects/:id/board/columns", post(crate::routes::project_issues::add_column))
         .route(

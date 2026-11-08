@@ -29,6 +29,9 @@
 	import { postAction } from '$lib/providerActions';
 	import IssuesPanel from '$lib/components/project/IssuesPanel.svelte';
 	import IssueWorkStrip from '$lib/components/project/IssueWorkStrip.svelte';
+	import IssueFollowUp from '$lib/components/project/IssueFollowUp.svelte';
+	import type { IssueBoard as Board, IssueChatRef } from '$lib/types';
+	import { openOnBoard } from '$lib/issues';
 	import DeployPanel from '$lib/components/project/DeployPanel.svelte';
 	import MonitorPanel from '$lib/components/project/MonitorPanel.svelte';
 	import DatabasePanel from '$lib/components/project/DatabasePanel.svelte';
@@ -38,7 +41,7 @@
 	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
-	import { isBackendEvent } from '$lib/presenceView';
+	import { isBackendEvent, isIssuesEvent } from '$lib/presenceView';
 	import ResizeHandle from '$lib/components/ds/build/ResizeHandle.svelte';
 	import WorkspaceSheet from '$lib/components/ds/build/WorkspaceSheet.svelte';
 	import PublishButton from '$lib/components/ds/build/PublishButton.svelte';
@@ -717,6 +720,49 @@
 	}
 	const viewer = $derived(deploy?.overview?.role === 'viewer');
 
+	// On an issue's chat: the issue as it is now, following the board (the crew finishing, someone
+	// marking it done elsewhere). Once it's in Done or Closed the chat is read-only.
+	let issueNow = $state<IssueChatRef | null>(null);
+	$effect(() => {
+		issueNow = data.project?.issue ?? null;
+	});
+	async function refreshIssue() {
+		const project = data.project;
+		if (!project?.issue) return;
+		try {
+			const board = await projectApi<Board>(project.id, 'board');
+			openIssues = openOnBoard(board.columns);
+			for (const column of board.columns) {
+				const found = column.issues.find((issue) => issue.number === project.issue!.number);
+				if (found) {
+					issueNow = { number: found.number, title: found.title, crew_agent: found.crew_agent, crew_state: found.crew_state, status: found.status, column: column.fixed };
+					return;
+				}
+			}
+		} catch {
+			// Keeps what it had; the next change tries again.
+		}
+	}
+	$effect(() => {
+		if (!deploy || !data.project?.issue) return;
+		return deploy.onEvent((raw) => {
+			if (isIssuesEvent(raw)) void refreshIssue();
+		});
+	});
+	async function markIssueDone() {
+		const project = data.project;
+		if (!project?.issue) return;
+		await projectApi(project.id, `issues/${project.issue.number}/done`, { method: 'POST' });
+		await refreshIssue();
+	}
+	const issueReadOnly = $derived(
+		issueNow?.status === 'closed'
+			? issueNow.column === 'closed'
+				? m.issue_chat_readonly_closed({ number: issueNow.number })
+				: m.issue_chat_readonly_done({ number: issueNow.number })
+			: null,
+	);
+
 	// The code, read-only (Build → Code view): what Koda wrote; picking lines quotes them for the
 	// next message (Code quote). People who aren't admins see it this way; admins edit, and can
 	// switch to reading.
@@ -952,13 +998,16 @@
 			extraControls={paneToggle}
 			compactHeader={Boolean(data.project)}
 			{typingLabel}
-			readOnlyNote={viewer ? m.pj_viewer_note() : null}
+			readOnlyNote={viewer ? m.pj_viewer_note() : issueReadOnly}
 			quote={quoted?.text ?? null}
 			onquotesent={() => (quoted = null)}
 			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
 		>
 			{#snippet aboveComposer()}
+				{#if issueNow && issueNow.status === 'open' && issueNow.crew_state === 'done' && !viewer}
+					<IssueFollowUp number={issueNow.number} crewAgent={issueNow.crew_agent} ondone={markIssueDone} />
+				{/if}
 				{#if data.project && !data.project.issue}
 					<IssueWorkStrip
 						projectId={data.project.id}

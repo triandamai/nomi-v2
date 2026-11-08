@@ -2,9 +2,10 @@
 //! the project can file, edit, close and reopen them; the person who filed one (or the project's
 //! owner) can delete it.
 //!
-//! They sit on a board: two fixed columns every project has (Backlog, where new issues land, and
-//! Ready to dev) and the columns people add after them. Moving an issue into Ready to dev queues it
-//! for the crew (`issue_worker` picks it up); only the project's admins change the columns.
+//! They sit on a board: four fixed columns every project has (Backlog, where new issues land,
+//! Ready to dev, Done and Closed) and the columns people add between Ready to dev and Done. Moving
+//! an issue into Ready to dev queues it for the crew (`issue_worker` picks it up); into Done or
+//! Closed closes it, which leaves its chat read-only. Only the project's admins change the columns.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -25,8 +26,10 @@ const MAX_TITLE_CHARS: usize = 200;
 const MAX_BODY_CHARS: usize = 20_000;
 /// The most points one issue can be estimated at.
 const MAX_POINTS: i16 = 100;
-/// Columns a board can have, the two fixed ones included.
-const MAX_COLUMNS: i64 = 12;
+/// Columns a board can have, the four fixed ones included.
+const MAX_COLUMNS: i64 = 14;
+/// The most closed issues the board shows in Done and in Closed (the most recently closed).
+const MAX_CLOSED_SHOWN: i64 = 50;
 const MAX_COLUMN_NAME_CHARS: usize = 40;
 /// Below this gap between neighbours a column's issues are renumbered 1, 2, 3…
 const MIN_POSITION_GAP: f64 = 1e-6;
@@ -37,10 +40,17 @@ pub const ISSUES_CHANGED: &str = "issues.changed";
 /// The fixed columns, by their `fixed` key.
 pub const BACKLOG: &str = "backlog";
 pub const READY: &str = "ready";
-/// Positions of the fixed columns; the ones people add come after them.
+pub const DONE: &str = "done";
+pub const CLOSED: &str = "closed";
+/// The fixed columns an issue is closed in.
+const CLOSING: [&str; 2] = [DONE, CLOSED];
+/// Positions of the fixed columns; the ones people add come between Ready to dev and Done (there
+/// are never enough of them to reach Done).
 const BACKLOG_POSITION: i32 = 0;
 const READY_POSITION: i32 = 1;
 const FIRST_ADDED_POSITION: i32 = 2;
+const DONE_POSITION: i32 = 1_000;
+const CLOSED_POSITION: i32 = 1_001;
 
 fn internal(context: &'static str) -> impl Fn(sqlx::Error) -> ApiError {
     move |e| {
@@ -309,16 +319,18 @@ pub struct NewIssue {
     pub start_now: bool,
 }
 
-/// The project's two fixed columns, made the first time its board is used.
+/// The project's fixed columns, made the first time its board is used.
 pub async fn ensure_fixed_columns<'e>(executor: impl sqlx::PgExecutor<'e>, project_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO project_issue_columns (project_id, name, position, fixed) \
-         VALUES ($1, 'Backlog', $2, 'backlog'), ($1, 'Ready to dev', $3, 'ready') \
+         VALUES ($1, 'Backlog', $2, 'backlog'), ($1, 'Ready to dev', $3, 'ready'), ($1, 'Done', $4, 'done'), ($1, 'Closed', $5, 'closed') \
          ON CONFLICT (project_id, fixed) DO NOTHING",
     )
     .bind(project_id)
     .bind(BACKLOG_POSITION)
     .bind(READY_POSITION)
+    .bind(DONE_POSITION)
+    .bind(CLOSED_POSITION)
     .execute(executor)
     .await?;
     Ok(())
@@ -443,6 +455,7 @@ pub async fn update_issue(
             due_on = CASE WHEN $10 THEN $11 ELSE due_on END, \
             points = CASE WHEN $12 THEN $13 ELSE points END, \
             crew_agent = COALESCE($14, crew_agent), \
+            crew_state = CASE WHEN $7 = 'closed' AND crew_state = 'queued' THEN NULL ELSE crew_state END, \
             assigned_by_agent = CASE WHEN $14::text IS NULL THEN assigned_by_agent ELSE NULL END, \
             updated_at = now() \
          WHERE project_id = $1 AND number = $2",
@@ -467,6 +480,77 @@ pub async fn update_issue(
     if updated.rows_affected() == 0 {
         return Err((StatusCode::NOT_FOUND, "issue not found"));
     }
+    // Closed from the list: it goes to Closed (unless it's in Done already); opened again: back
+    // to Backlog from Done or Closed.
+    let column = issue_column(&state.pool, project_id, number).await.map_err(internal("failed to update issue"))?;
+    let in_closing = column.as_deref().is_some_and(|f| CLOSING.contains(&f));
+    let target = match req.status.as_deref() {
+        Some("closed") if !in_closing => Some(CLOSED),
+        Some("open") if in_closing => Some(BACKLOG),
+        _ => None,
+    };
+    if let Some(target) = target {
+        to_bottom_of(&state.pool, project_id, number, target).await.map_err(internal("failed to update issue"))?;
+    }
+    crate::project_events::changed(project_id, ISSUES_CHANGED);
+    Ok(Json(load_issue(&state.pool, claims.sub, project_id, number).await?))
+}
+
+/// The fixed column (its key) an issue is in; None in a column people added.
+async fn issue_column(pool: &sqlx::PgPool, project_id: Uuid, number: i32) -> Result<Option<String>, sqlx::Error> {
+    let fixed: Option<Option<String>> = sqlx::query_scalar(
+        "SELECT c.fixed FROM project_issues i LEFT JOIN project_issue_columns c ON c.id = i.column_id WHERE i.project_id = $1 AND i.number = $2",
+    )
+    .bind(project_id)
+    .bind(number)
+    .fetch_optional(pool)
+    .await?;
+    Ok(fixed.flatten())
+}
+
+/// Moves an issue to the bottom of the fixed column `fixed`.
+async fn to_bottom_of(pool: &sqlx::PgPool, project_id: Uuid, number: i32, fixed: &str) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let column = fixed_column(&mut tx, project_id, fixed).await?;
+    sqlx::query(
+        "UPDATE project_issues SET column_id = $3, \
+            position = (SELECT COALESCE(max(position), 0) + 1 FROM project_issues WHERE column_id = $3) \
+         WHERE project_id = $1 AND number = $2",
+    )
+    .bind(project_id)
+    .bind(number)
+    .bind(column)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await
+}
+
+/// `POST /api/projects/:id/issues/:number/done`: someone checked the crew's work and it's done: the
+/// issue is closed in Done, and its chat becomes read-only.
+pub async fn mark_done(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((project_id, number)): Path<(Uuid, i32)>,
+) -> Result<Json<Issue>, ApiError> {
+    require_builder(&state.pool, claims.sub, project_id).await?;
+    let updated = sqlx::query(
+        "UPDATE project_issues SET status = 'closed', closed_at = CASE WHEN status = 'closed' THEN closed_at ELSE now() END, \
+            crew_state = CASE WHEN crew_state = 'queued' THEN NULL ELSE crew_state END, updated_at = now() \
+         WHERE project_id = $1 AND number = $2",
+    )
+    .bind(project_id)
+    .bind(number)
+    .execute(&state.pool)
+    .await
+    .map_err(internal("failed to mark the issue done"))?;
+    if updated.rows_affected() == 0 {
+        return Err((StatusCode::NOT_FOUND, "issue not found"));
+    }
+    let column = issue_column(&state.pool, project_id, number).await.map_err(internal("failed to mark the issue done"))?;
+    if column.as_deref() != Some(DONE) {
+        to_bottom_of(&state.pool, project_id, number, DONE).await.map_err(internal("failed to mark the issue done"))?;
+    }
+    tracing::info!(%project_id, issue = number, "issue board: done");
     crate::project_events::changed(project_id, ISSUES_CHANGED);
     Ok(Json(load_issue(&state.pool, claims.sub, project_id, number).await?))
 }
@@ -529,17 +613,30 @@ async fn load_board(pool: &sqlx::PgPool, user_id: Uuid, project_id: Uuid) -> Res
             .await
             .map_err(internal("failed to load the board"))?;
     let issues: Vec<Issue> = sqlx::query_as(&format!(
-        "SELECT {ISSUE_COLUMNS} {ISSUE_JOINS} WHERE i.project_id = $1 AND i.status = 'open' ORDER BY i.position, i.number"
+        "SELECT {ISSUE_COLUMNS} {ISSUE_JOINS} WHERE i.project_id = $1 AND (i.status = 'open' OR i.id IN ( \
+             SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY column_id ORDER BY closed_at DESC NULLS LAST) AS n \
+                             FROM project_issues WHERE project_id = $1 AND status = 'closed') r WHERE r.n <= $3)) \
+         ORDER BY i.position, i.number"
     ))
     .bind(project_id)
     .bind(user_id)
+    .bind(MAX_CLOSED_SHOWN)
     .fetch_all(pool)
     .await
     .map_err(internal("failed to load the board"))?;
-    let backlog = columns.iter().position(|c| c.fixed.as_deref() == Some(BACKLOG));
+    let at_fixed = |key: &str| columns.iter().position(|c| c.fixed.as_deref() == Some(key));
+    let (backlog, closed) = (at_fixed(BACKLOG), at_fixed(CLOSED));
     for issue in issues {
-        // An issue whose column was deleted under it shows in Backlog.
-        let at = issue.column_id.and_then(|id| columns.iter().position(|c| c.id == id)).or(backlog);
+        let column = issue.column_id.and_then(|id| columns.iter().position(|c| c.id == id));
+        let closing = column.is_some_and(|at| columns[at].fixed.as_deref().is_some_and(|f| CLOSING.contains(&f)));
+        // An open issue whose column was deleted under it shows in Backlog; a closed one outside
+        // Done and Closed shows in Closed.
+        let at = match (issue.status.as_str(), column) {
+            ("closed", Some(at)) if closing => Some(at),
+            ("closed", _) => closed,
+            (_, Some(at)) => Some(at),
+            _ => backlog,
+        };
         if let Some(at) = at {
             columns[at].issues.push(issue);
         }
@@ -593,11 +690,12 @@ pub async fn add_column(
     }
     sqlx::query(
         "INSERT INTO project_issue_columns (project_id, name, position) \
-         VALUES ($1, $2, GREATEST($3, (SELECT max(position) + 1 FROM project_issue_columns WHERE project_id = $1)))",
+         VALUES ($1, $2, GREATEST($3, (SELECT max(position) + 1 FROM project_issue_columns WHERE project_id = $1 AND (fixed IS NULL OR NOT fixed = ANY($4)))))",
     )
     .bind(project_id)
     .bind(&name)
     .bind(FIRST_ADDED_POSITION)
+    .bind(&CLOSING[..])
     .execute(&state.pool)
     .await
     .map_err(internal("failed to add the column"))?;
@@ -621,7 +719,7 @@ async fn added_column(pool: &sqlx::PgPool, project_id: Uuid, column_id: Uuid) ->
         .map_err(internal("failed to look up the column"))?;
     match fixed {
         None => Err((StatusCode::NOT_FOUND, "column not found")),
-        Some(Some(_)) => Err((StatusCode::CONFLICT, "Backlog and Ready to dev can't be renamed, moved or deleted")),
+        Some(Some(_)) => Err((StatusCode::CONFLICT, "Backlog, Ready to dev, Done and Closed can't be renamed, moved or deleted")),
         Some(None) => Ok(()),
     }
 }
@@ -733,9 +831,9 @@ pub struct IssueMove {
     pub index: usize,
 }
 
-/// The open issues' positions in a column, in order, without `skip`.
+/// The positions of a column's issues, in order, without `skip`.
 async fn column_positions(conn: &mut sqlx::PgConnection, column_id: Uuid, skip: Uuid) -> Result<Vec<f64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT position FROM project_issues WHERE column_id = $1 AND id <> $2 AND status = 'open' ORDER BY position, number")
+    sqlx::query_scalar("SELECT position FROM project_issues WHERE column_id = $1 AND id <> $2 ORDER BY position, number")
         .bind(column_id)
         .bind(skip)
         .fetch_all(conn)
@@ -743,7 +841,7 @@ async fn column_positions(conn: &mut sqlx::PgConnection, column_id: Uuid, skip: 
 }
 
 /// `POST /api/projects/:id/issues/:number/move`: to a column, at a place in it. Into Ready to dev
-/// queues it for the crew.
+/// queues it for the crew; into Done or Closed closes it, and out of them opens it again.
 pub async fn move_issue(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -797,10 +895,13 @@ pub async fn move_issue(
     let into_ready = target_fixed.as_deref() == Some(READY) && from_fixed.as_deref() != Some(READY);
     let out_of_ready = from_fixed.as_deref() == Some(READY) && target_fixed.as_deref() != Some(READY);
     let next_state = crew_state_after_move(crew_state.as_deref(), into_ready, out_of_ready);
+    let closes = target_fixed.as_deref().is_some_and(|f| CLOSING.contains(&f));
     sqlx::query(
         "UPDATE project_issues SET column_id = $2, position = $3, updated_at = now(), \
             crew_state = CASE WHEN $4 THEN $5 ELSE crew_state END, \
-            queued_by = CASE WHEN $4 AND $5 = 'queued' THEN $6 ELSE queued_by END \
+            queued_by = CASE WHEN $4 AND $5 = 'queued' THEN $6 ELSE queued_by END, \
+            closed_at = CASE WHEN NOT $7 THEN NULL WHEN status = 'closed' THEN closed_at ELSE now() END, \
+            status = CASE WHEN $7 THEN 'closed' ELSE 'open' END \
          WHERE id = $1",
     )
     .bind(issue_id)
@@ -809,6 +910,7 @@ pub async fn move_issue(
     .bind(next_state.is_some())
     .bind(next_state.flatten())
     .bind(claims.sub)
+    .bind(closes)
     .execute(&mut *tx)
     .await
     .map_err(internal("failed to move the issue"))?;

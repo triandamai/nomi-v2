@@ -242,6 +242,10 @@ pub struct IssueChatRef {
     pub title: String,
     pub crew_agent: String,
     pub crew_state: Option<String>,
+    /// "open", or "closed" once it's in Done or Closed, which leaves the chat read-only.
+    pub status: String,
+    /// The fixed column it's in ("backlog", "ready", "done", "closed"); None in one people added.
+    pub column: Option<String>,
 }
 
 /// The chat, organization, open issue count and backend of a project.
@@ -366,7 +370,9 @@ pub async fn get_project_by_session(
     })?;
 
     let issue: Option<IssueChatRef> = sqlx::query_as(
-        "SELECT number, title, crew_agent, crew_state FROM project_issues WHERE project_id = $1 AND session_id = $2",
+        "SELECT i.number, i.title, i.crew_agent, i.crew_state, i.status, c.fixed AS column \
+         FROM project_issues i LEFT JOIN project_issue_columns c ON c.id = i.column_id \
+         WHERE i.project_id = $1 AND i.session_id = $2",
     )
     .bind(project_id)
     .bind(chat)

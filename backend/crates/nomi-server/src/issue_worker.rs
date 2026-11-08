@@ -7,7 +7,10 @@
 //! The worker follows each one: when the crew member hands it on (`delegate_to_agent`, or a
 //! hand-off inside the turn) the issue's assignee follows, and once the chat's turn and every
 //! hand-over in it have ended the issue is marked done (it stays in Ready to dev, still open,
-//! for the person to check) or failed (with "Try again" on the board).
+//! for the person to check: the crew ends by asking whether it is) or failed (with "Try again" on
+//! the board). When the person answers in the issue's chat that it isn't done yet, the crew's
+//! new turn there makes it `working` again; once someone moves it to Done (or Closed) it's
+//! closed and its chat is read-only.
 
 use std::time::Duration;
 
@@ -35,6 +38,8 @@ pub struct Swept {
     pub picked_up: usize,
     pub handed_on: usize,
     pub finished: usize,
+    /// Finished issues the crew took up again after a follow-up in their chat.
+    pub resumed: usize,
 }
 
 /// The limit from Admin → Configuration, kept between 1 and `MAX_ISSUES_PER_PROJECT`.
@@ -64,9 +69,33 @@ pub async fn run(pool: PgPool) {
 
 /// Follows the issues being worked, then picks up queued ones while their projects have room.
 pub async fn sweep(pool: &PgPool, per_project: u64) -> Result<Swept, sqlx::Error> {
+    let resumed = resume_followed_up(pool).await?;
     let mut swept = follow_working(pool).await?;
+    swept.resumed = resumed;
     swept.picked_up = pick_up(pool, per_project).await?;
     Ok(swept)
+}
+
+/// Open issues the crew finished (or couldn't) whose chat has a newer turn: the person followed
+/// up ("not yet, the button is still grey"), so the crew is working on it again, on that turn.
+async fn resume_followed_up(pool: &PgPool) -> Result<usize, sqlx::Error> {
+    let resumed: Vec<(Uuid, i32)> = sqlx::query_as(
+        "WITH latest AS ( \
+             SELECT i.id, (SELECT j.id FROM turn_jobs j WHERE j.session_id = i.session_id ORDER BY j.created_at DESC LIMIT 1) AS job \
+             FROM project_issues i \
+             WHERE i.crew_state IN ('done', 'failed') AND i.status = 'open' AND i.session_id IS NOT NULL \
+         ) \
+         UPDATE project_issues i SET crew_state = 'working', turn_job_id = l.job, picked_up_at = now(), updated_at = now() \
+         FROM latest l WHERE i.id = l.id AND l.job IS NOT NULL AND l.job IS DISTINCT FROM i.turn_job_id \
+         RETURNING i.project_id, i.number",
+    )
+    .fetch_all(pool)
+    .await?;
+    for (project_id, number) in &resumed {
+        tracing::info!(%project_id, issue = number, "issue board: followed up, working again");
+        crate::project_events::changed(*project_id, ISSUES_CHANGED);
+    }
+    Ok(resumed.len())
 }
 
 #[derive(sqlx::FromRow)]
