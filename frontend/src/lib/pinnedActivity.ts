@@ -9,7 +9,7 @@ import type { Waiting } from '$lib/chatActivity';
 import type { RenderedMessage } from '$lib/types';
 
 /** How long a finished card stays when nobody writes anything. */
-export const DONE_LINGER_MS = 60_000;
+export const DONE_LINGER_MS = 5_000;
 
 /** Phases worth a line in the card's steps; thinking and writing only show as the headline. */
 const STEP_PHASES = new Set(['calling_tool', 'running_command']);

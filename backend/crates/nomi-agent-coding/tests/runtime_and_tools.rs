@@ -137,6 +137,25 @@ async fn commands_wait_for_an_open_project_page(pool: PgPool) {
     assert_eq!(checked, Some(files_version(&pool, project_id).await));
 }
 
+/// Longer than a skipped heartbeat takes, far shorter than waiting on the lock would.
+const HEARTBEAT_MAX: std::time::Duration = std::time::Duration::from_secs(2);
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_page_heartbeat_never_waits_on_a_busy_project_row(pool: PgPool) {
+    let (_, _, project_id) = seed(&pool).await;
+    let mut busy = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM projects WHERE id = $1 FOR UPDATE").bind(project_id).execute(&mut *busy).await.unwrap();
+
+    let mut page = pool.acquire().await.unwrap();
+    let touched = tokio::time::timeout(HEARTBEAT_MAX, runtime::touch_runner(&mut page, project_id)).await;
+    assert!(touched.expect("the heartbeat waited on the row lock").is_ok());
+    assert!(!runtime::runner_online(&mut page, project_id).await.unwrap(), "a busy row skips the write");
+
+    busy.rollback().await.unwrap();
+    runtime::touch_runner(&mut page, project_id).await.unwrap();
+    assert!(runtime::runner_online(&mut page, project_id).await.unwrap());
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_failed_check_goes_to_koda_once_per_version(pool: PgPool) {
     let (_, session_id, project_id) = seed(&pool).await;

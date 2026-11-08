@@ -80,7 +80,7 @@ pub async fn check_in(
 
         let (current_version, current_runs) = {
             let mut conn = state.pool.acquire().await.map_err(internal)?;
-            if last_touched.elapsed() >= Duration::from_secs(10) {
+            if last_touched.elapsed() >= Duration::from_secs(runtime::RUNNER_TOUCH_EVERY_SECS as u64) {
                 runtime::touch_runner(&mut conn, project_id).await.map_err(internal)?;
                 last_touched = Instant::now();
             }

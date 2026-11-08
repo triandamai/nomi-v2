@@ -803,7 +803,7 @@
 
 	// The crew's work on this turn, pinned above the composer so nothing that lands in the thread
 	// pushes it away (see $lib/pinnedActivity). A new turn starts it over; it settles when the
-	// turn does, and stays until the person's next message (or DONE_LINGER_MS when it's done).
+	// turn does, and stays until the person's next message (or DONE_LINGER_MS, 5s, when it's done).
 	let activityCard = $state<PinnedCard | null>(null);
 	let pinnedWho = $state('Nomi');
 	$effect(() => {
