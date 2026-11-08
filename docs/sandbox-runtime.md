@@ -74,8 +74,15 @@ plain names before they go into a boat request path.
 The server makes outgoing requests only to the configured API base, plus one `PUT` of the project
 archive to the signed upload URL boat returns. That URL is checked first: it must be on the API's
 own origin, or be `https` on a public host name (no IP literal, no `localhost`, `.internal`,
-`.local` and similar names, no user info). The preview URL is never fetched by the server; the
-readiness check runs `curl` inside the sandbox against `localhost`.
+`.local` and similar names, with or without a trailing dot, no user info). The PUT is sent on a
+client that never follows redirects, and a redirect answer fails the upload, so a checked URL
+cannot hop to an unchecked host. The preview URL is never fetched by the server; the readiness
+check runs `curl` inside the sandbox against `localhost`.
+
+Residual risk: the check looks at the host name only, not at what it resolves to. A public name
+that resolves to a private address (for example `127.0.0.1.nip.io`), or DNS rebinding between
+the check and the request, is not blocked; that would need a resolver that checks the addresses
+it connects to.
 
 ### Authorization
 

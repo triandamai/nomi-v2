@@ -77,6 +77,10 @@ impl fmt::Debug for BoatConfig {
 pub struct BoatProvider {
     config: BoatConfig,
     client: reqwest::Client,
+    /// Sends archives to the signed upload URL. It never follows redirects: only the first URL
+    /// is checked by `check_upload_url`, so a hop to another host must not be taken. `None`
+    /// when it couldn't be built, and uploads are then refused.
+    upload_client: Option<reqwest::Client>,
 }
 
 impl BoatProvider {
@@ -87,6 +91,10 @@ impl BoatProvider {
                 api_key: config.api_key,
             },
             client,
+            upload_client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .ok(),
         }
     }
 
@@ -283,9 +291,11 @@ fn upload_url_from(body: &Value) -> Result<String, SandboxError> {
 
 /// True for a host that is an IP literal or a name that only resolves on a private network.
 fn private_host(host: &str) -> bool {
+    // `localhost.` and `x.internal.` are the same names as without the final dot.
     let host = host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+    let host = host.strip_suffix('.').unwrap_or(&host);
     host.parse::<std::net::IpAddr>().is_ok()
-        || PRIVATE_HOST_NAMES.contains(&host.as_str())
+        || PRIVATE_HOST_NAMES.contains(&host)
         || PRIVATE_HOST_SUFFIXES.iter().any(|s| host.ends_with(s))
 }
 
@@ -559,14 +569,21 @@ impl SandboxProvider for BoatProvider {
         )?;
 
         // The signed URL authenticates itself, so no bearer token goes with it.
-        let resp = self
-            .client
+        let upload_client = self.upload_client.as_ref().ok_or_else(|| {
+            SandboxError::Unavailable("the upload client couldn't be built".to_string())
+        })?;
+        let resp = upload_client
             .put(url)
             .timeout(UPLOAD_TIMEOUT)
             .body(tar_gz)
             .send()
             .await
             .map_err(|e| self.scrub(transport_error(e)))?;
+        if resp.status().is_redirection() {
+            return Err(SandboxError::Refused(
+                "the upload address redirected elsewhere".to_string(),
+            ));
+        }
         if !resp.status().is_success() {
             return Err(self.scrub(error_from_response(resp).await));
         }

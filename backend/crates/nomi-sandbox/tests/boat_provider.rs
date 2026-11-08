@@ -596,3 +596,31 @@ async fn a_sandbox_id_that_is_not_a_plain_name_never_reaches_a_request_path() {
     }
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn upload_does_not_follow_redirects_to_private_hosts() {
+    let server = MockServer::start().await;
+    mount_upload(&server, &format!("{}/signed/abc", server.uri())).await;
+    // The checked address answers with a redirect; following it would skip the host check.
+    Mock::given(method("PUT"))
+        .and(path("/signed/abc"))
+        .respond_with(ResponseTemplate::new(307).insert_header("location", format!("{}/landing", server.uri()).as_str()))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT")).and(path("/landing")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    let err = provider(&server).upload_archive(&sid(), "/home/user/app", vec![1]).await.unwrap_err();
+    assert!(matches!(err, SandboxError::Refused(_)), "{err:?}");
+    let reqs = server.received_requests().await.unwrap();
+    assert!(!reqs.iter().any(|r| r.url.path() == "/landing"), "the redirect is not followed");
+    assert!(!reqs.iter().any(|r| r.url.path().ends_with("/commands")), "nothing is extracted");
+}
+
+#[tokio::test]
+async fn trailing_dot_private_names_are_rejected() {
+    for bad in ["https://localhost./signed", "https://metadata.internal./signed", "https://NAS.LOCAL./signed"] {
+        let server = MockServer::start().await;
+        mount_upload(&server, bad).await;
+        let err = provider(&server).upload_archive(&sid(), "/home/user/app", vec![1]).await.unwrap_err();
+        assert!(matches!(err, SandboxError::Refused(_)), "{bad}: {err:?}");
+    }
+}
