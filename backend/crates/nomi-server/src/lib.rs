@@ -24,6 +24,7 @@ pub mod quota;
 pub mod reminders_worker;
 pub mod sandbox_devserver;
 pub mod sandbox_manager;
+pub mod sandbox_ops;
 pub mod sandbox_runs;
 pub mod sandbox_steps;
 pub mod sandbox_store;
@@ -55,7 +56,7 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(nomi_agent_personality::PersonalityAgent),
         Box::new(nomi_agent_supervisor::SupervisorAgent),
         Box::new(nomi_agent_planning::PlanningAgent::new().with_project_ops(project_ops.clone()).with_relay_ops(relay_ops.clone())),
-        Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops)),
+        Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops).with_sandbox_ops(sandbox_ops::ServerSandboxOps::shared(pool.clone()))),
         Box::new(nomi_agent_inspector::InspectorAgent::new().with_project_ops(project_ops)),
     ])
 }

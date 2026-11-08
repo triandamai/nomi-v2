@@ -9,7 +9,7 @@ use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::sandbox_devserver::DevServerTiming;
+use crate::sandbox_devserver::{DevServerError, DevServerTiming};
 use crate::sandbox_manager::ProjectSteps;
 use crate::sandbox_sync::PassHook;
 
@@ -93,6 +93,39 @@ impl ProjectSteps for ServerSteps {
     }
 
     async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, String> {
-        self.ensure_dev_server(project_id, sandbox).await.map_err(|e| e.to_string())
+        let version: Option<i64> = sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1").bind(project_id).fetch_optional(&self.pool).await.map_err(|e| e.to_string())?;
+        let started = self.ensure_dev_server(project_id, sandbox).await;
+        if let Some(version) = version {
+            self.record_first_check(project_id, version, &started).await;
+        }
+        started.map_err(|e| e.to_string())
+    }
+}
+
+impl ServerSteps {
+    /// The check the browser page runs on opening a project is `npm install`, and the dev server
+    /// start has just run it, so its outcome is the check's: record it once per `files_version`,
+    /// and when the install failed hand it to Koda as the page's check does (see
+    /// `routes::project_runtime::record_check_for_koda`). Other start failures (the dev server
+    /// not answering) are not a check result, as in the browser.
+    async fn record_first_check(&self, project_id: Uuid, version: i64, started: &Result<PreviewUrl, DevServerError>) {
+        let (ok, output) = match started {
+            Ok(_) => (true, String::new()),
+            Err(DevServerError::Install(why)) => (false, why.clone()),
+            Err(_) => return,
+        };
+        let recorded = async {
+            let (owner, checked): (Uuid, Option<i64>) =
+                sqlx::query_as("SELECT user_id, checked_version FROM projects WHERE id = $1").bind(project_id).fetch_one(&self.pool).await.map_err(|e| e.to_string())?;
+            if checked == Some(version) {
+                return Ok(());
+            }
+            let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+            crate::routes::project_runtime::record_check_for_koda(&mut conn, project_id, owner, version, ok, &output).await.map(|_| ())
+        }
+        .await;
+        if let Err(why) = recorded {
+            tracing::warn!(error = %why, %project_id, "sandbox: recording the first check failed");
+        }
     }
 }

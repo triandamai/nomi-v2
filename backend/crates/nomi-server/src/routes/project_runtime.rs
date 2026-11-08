@@ -152,12 +152,25 @@ pub async fn record_check(
 ) -> Result<Json<CheckResponse>, ApiError> {
     ensure_owner(&state, project_id, claims.sub).await?;
     let mut conn = state.pool.acquire().await.map_err(internal)?;
-    let fix = runtime::record_check(&mut conn, project_id, result.files_version, result.ok, &result.output).await.map_err(internal)?;
-    let Some(fix) = fix else { return Ok(Json(CheckResponse { handed_to_koda: false })) };
-    nomi_agent_core::delegation::create_delegation(&mut conn, None, fix.session_id, REQUESTED_BY, CODING_AGENT_TYPE, &fix.task, claims.sub)
-        .await
-        .map_err(internal)?;
-    Ok(Json(CheckResponse { handed_to_koda: true }))
+    let handed_to_koda = record_check_for_koda(&mut conn, project_id, claims.sub, result.files_version, result.ok, &result.output).await.map_err(internal)?;
+    Ok(Json(CheckResponse { handed_to_koda }))
+}
+
+/// Records a check of the project's install and, when it failed and this version wasn't handed
+/// over before, gives Koda the failure as a task. True when it went to Koda. The page's check
+/// route and the sandbox's first start both end here.
+pub async fn record_check_for_koda(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+    project_id: Uuid,
+    user_id: Uuid,
+    files_version: i64,
+    ok: bool,
+    output: &str,
+) -> Result<bool, String> {
+    let fix = runtime::record_check(conn, project_id, files_version, ok, output).await.map_err(|e| e.to_string())?;
+    let Some(fix) = fix else { return Ok(false) };
+    nomi_agent_core::delegation::create_delegation(conn, None, fix.session_id, REQUESTED_BY, CODING_AGENT_TYPE, &fix.task, user_id).await?;
+    Ok(true)
 }
 
 #[derive(Serialize, sqlx::FromRow)]

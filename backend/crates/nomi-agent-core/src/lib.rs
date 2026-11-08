@@ -25,6 +25,7 @@ pub mod records;
 pub mod issue_chat;
 pub mod recent_activity;
 pub mod relay_ops;
+pub mod sandbox_ops;
 pub mod registry;
 pub mod scheduled_jobs;
 pub mod stop;

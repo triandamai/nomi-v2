@@ -6,10 +6,13 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use nomi_agent_coding::runtime::OUTPUT_KEPT;
+use nomi_agent_coding::runtime::{run_command_with, OUTPUT_KEPT};
+use nomi_agent_core::prompts::SANDBOX_STARTING;
 use nomi_sandbox::{CreateSpec, ExecOutput, FakeProvider, SandboxId, SandboxProvider, Size};
 use nomi_server::sandbox_devserver::DevServerTiming;
 use nomi_server::sandbox_runs::{claim_next, RUN_LEASE, REQUEUED_NOTE};
+use nomi_server::sandbox_manager::ProjectSteps;
+use nomi_server::sandbox_ops::ServerSandboxOps;
 use nomi_server::sandbox_steps::ServerSteps;
 use nomi_server::sandbox_store as store;
 use serde_json::json;
@@ -194,4 +197,85 @@ async fn second_instance_does_not_start_a_run_while_one_is_running(pool: PgPool)
     f.steps().execute_pending(f.project, &f.sandbox).await;
     assert_eq!(statuses(&f).await, ["running", "pending"]);
     assert!(f.execs().is_empty());
+}
+
+/// How often the test's fake reconciler and the waiting command look at the row.
+const TEST_POLL: Duration = Duration::from_millis(20);
+/// Room for a woken sandbox to come up in a test.
+const WAKE_ROOM: Duration = Duration::from_secs(10);
+
+async fn owner_of(f: &Fixture) -> Uuid {
+    sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sandbox_project_wakes_a_stopped_sandbox_and_runs_the_command(pool: PgPool) {
+    let f = fixture(pool).await;
+    sqlx::query("UPDATE project_sandboxes SET desired = 'stopped', state = 'stopped' WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.provider.on_exec("'check'", out(0, "all good", ""));
+    // The reconciler: once the project wants its sandbox running, it comes up, and the worker
+    // runs what is queued. No browser page ever checks in.
+    let (pool, project, steps, sandbox) = (f.pool.clone(), f.project, f.steps(), f.sandbox.clone());
+    let worker = tokio::spawn(async move {
+        loop {
+            let desired: String = sqlx::query_scalar("SELECT desired FROM project_sandboxes WHERE project_id = $1").bind(project).fetch_one(&pool).await.unwrap();
+            if desired == "running" {
+                break;
+            }
+            tokio::time::sleep(TEST_POLL).await;
+        }
+        sqlx::query("UPDATE project_sandboxes SET state = 'running' WHERE project_id = $1").bind(project).execute(&pool).await.unwrap();
+        loop {
+            steps.execute_pending(project, &sandbox).await;
+            let waiting: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_runs WHERE status IN ('pending', 'running')").fetch_one(&pool).await.unwrap();
+            let any: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_runs").fetch_one(&pool).await.unwrap();
+            if any > 0 && waiting == 0 {
+                return;
+            }
+            tokio::time::sleep(TEST_POLL).await;
+        }
+    });
+    let ops = ServerSandboxOps::new(f.pool.clone()).for_tests(TEST_POLL, WAKE_ROOM);
+    let mut conn = f.pool.acquire().await.unwrap();
+    let input = json!({ "project_id": f.project.to_string(), "command": "npm run check" });
+    let answer = run_command_with(&mut conn, &ops, owner_of(&f).await, input).await.unwrap();
+    worker.await.unwrap();
+    assert_eq!(answer, "$ npm run check\nexit code 0\nall good");
+    let desired: String = sqlx::query_scalar("SELECT desired FROM project_sandboxes WHERE project_id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(desired, "running");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_sandbox_that_stays_down_gives_the_starting_message(pool: PgPool) {
+    let f = fixture(pool).await;
+    sqlx::query("UPDATE project_sandboxes SET state = 'starting' WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    let ops = ServerSandboxOps::new(f.pool.clone()).for_tests(TEST_POLL, Duration::from_millis(100));
+    let mut conn = f.pool.acquire().await.unwrap();
+    let input = json!({ "project_id": f.project.to_string(), "command": "npm run check" });
+    let answer = run_command_with(&mut conn, &ops, owner_of(&f).await, input).await.unwrap();
+    assert_eq!(answer, SANDBOX_STARTING);
+    assert_eq!(statuses(&f).await.len(), 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn failed_first_check_creates_one_fix_request_per_version(pool: PgPool) {
+    let f = fixture(pool).await;
+    f.provider.on_exec("test -d", out(1, "", ""));
+    f.provider.on_exec("npm install", out(1, "", "ERESOLVE could not resolve"));
+    let steps = f.steps();
+    let delegations = |pool: PgPool| async move { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM agent_delegations").fetch_one(&pool).await.unwrap() };
+    assert!(ProjectSteps::start_preview(&steps, f.project, &f.sandbox).await.is_err());
+    assert_eq!(delegations(f.pool.clone()).await, 1);
+    let (checked, ok, output): (Option<i64>, Option<bool>, Option<String>) =
+        sqlx::query_as("SELECT checked_version, check_ok, check_output FROM projects WHERE id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap();
+    assert_eq!((checked, ok), (Some(0), Some(false)));
+    assert!(output.unwrap().contains("ERESOLVE"));
+    // The reconciler retries the start: same version, no second task.
+    let _ = ProjectSteps::start_preview(&steps, f.project, &f.sandbox).await;
+    assert_eq!(delegations(f.pool.clone()).await, 1);
+    // New files, a new version, and so a new check and a new task once Koda is free again.
+    sqlx::query("UPDATE projects SET files_version = files_version + 1 WHERE id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE agent_delegations SET status = 'completed'").execute(&f.pool).await.unwrap();
+    let _ = ProjectSteps::start_preview(&steps, f.project, &f.sandbox).await;
+    assert_eq!(delegations(f.pool.clone()).await, 2);
 }

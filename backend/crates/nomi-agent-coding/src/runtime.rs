@@ -13,6 +13,8 @@ use sqlx::pool::PoolConnection;
 use sqlx::{PgConnection, Postgres};
 use uuid::Uuid;
 
+use nomi_agent_core::prompts::{RUN_COMMAND_DESCRIPTION, SANDBOX_FAILED, SANDBOX_STARTING, SANDBOX_STOPPED_MID_RUN};
+use nomi_agent_core::sandbox_ops::{NoSandboxOps, SandboxOps, WakeOutcome};
 use nomi_llm::ToolDefinition;
 
 use crate::files::owned_project_id;
@@ -29,6 +31,9 @@ const POLL_EVERY: Duration = Duration::from_millis(750);
 /// Most output kept per run, and how much of it Koda sees.
 pub const OUTPUT_KEPT: usize = 64 * 1024;
 const OUTPUT_SHOWN: usize = 12 * 1024;
+/// How long a command waits for the project's sandbox to come up before Koda is told it is still
+/// starting. A cold start creates or resumes the sandbox, copies the files in and starts the dev server.
+pub const SANDBOX_START_WAIT: Duration = Duration::from_secs(90);
 const PROGRAMS: &[&str] = &["npm", "npx", "node"];
 
 pub const NOT_OPEN: &str = "The project isn't open in the user's browser right now, so commands can't run. Your files are \
@@ -38,10 +43,7 @@ pub const NOT_OPEN: &str = "The project isn't open in the user's browser right n
 pub fn run_command_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "run_command".to_string(),
-        description: "Run one command in the project's preview (Node in the user's browser) and get its output: \
-            'npm install', 'npm install zod', 'npm run db:generate', 'npx ...', 'node ...'. \
-            One command at a time, no shell operators. Don't start the dev server; Nomi runs it. Do not run 'npm run build' during development."
-            .to_string(),
+        description: RUN_COMMAND_DESCRIPTION.to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -130,11 +132,24 @@ pub fn tail(output: &str, max: usize) -> &str {
 }
 
 pub async fn run_command(conn: &mut PoolConnection<Postgres>, user_id: Uuid, input: Value) -> Result<String, String> {
+    run_command_with(conn, &NoSandboxOps, user_id, input).await
+}
+
+/// `run_command`, where a project that runs in a sandbox wakes it and waits for it instead of
+/// needing its page open in the browser; the run is queued and waited for the same way.
+pub async fn run_command_with(conn: &mut PoolConnection<Postgres>, sandbox: &dyn SandboxOps, user_id: Uuid, input: Value) -> Result<String, String> {
     let project_id = owned_project_id(conn, user_id, &input).await?;
     let line = input.get("command").and_then(|v| v.as_str()).ok_or("command is required")?;
     let words = parse_command(line)?;
     let timeout = input.get("timeout_seconds").and_then(|v| v.as_u64()).unwrap_or(DEFAULT_TIMEOUT_SECS).clamp(10, MAX_TIMEOUT_SECS);
-    if !runner_online(conn, project_id).await.map_err(|e| e.to_string())? {
+    let in_sandbox = sandbox.uses_sandbox(project_id).await;
+    if in_sandbox {
+        match sandbox.wake_and_wait(project_id, SANDBOX_START_WAIT).await {
+            WakeOutcome::Running => {}
+            WakeOutcome::Starting => return Ok(SANDBOX_STARTING.to_string()),
+            WakeOutcome::Failed(why) => return Ok(SANDBOX_FAILED.replace("{why}", &why)),
+        }
+    } else if !runner_online(conn, project_id).await.map_err(|e| e.to_string())? {
         return Ok(NOT_OPEN.to_string());
     }
     let run_id: Uuid = sqlx::query_scalar(
@@ -151,12 +166,17 @@ pub async fn run_command(conn: &mut PoolConnection<Postgres>, user_id: Uuid, inp
     let started = Instant::now();
     loop {
         tokio::time::sleep(POLL_EVERY).await;
+        // The page's check-in decides whether a browser project is online; a sandbox project is
+        // online while its sandbox runs, so a closed tab doesn't end a command there.
         let (status, exit_code, output, online): (String, Option<i32>, Option<String>, bool) = sqlx::query_as(
-            "SELECT r.status, r.exit_code, r.output, COALESCE(p.runner_seen_at > now() - make_interval(secs => $2), false) \
+            "SELECT r.status, r.exit_code, r.output, \
+                 CASE WHEN $3 THEN COALESCE((SELECT s.state = 'running' FROM project_sandboxes s WHERE s.project_id = p.id), false) \
+                 ELSE COALESCE(p.runner_seen_at > now() - make_interval(secs => $2), false) END \
              FROM project_runs r JOIN projects p ON p.id = r.project_id WHERE r.id = $1",
         )
         .bind(run_id)
         .bind((RUNNER_FRESH_SECS + 15) as f64)
+        .bind(in_sandbox)
         .fetch_one(&mut **conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -175,6 +195,8 @@ pub async fn run_command(conn: &mut PoolConnection<Postgres>, user_id: Uuid, inp
                     .map_err(|e| e.to_string())?;
                 return Ok(if online {
                     format!("$ {line}\nstopped waiting after {timeout}s with no result.")
+                } else if in_sandbox {
+                    format!("$ {line}\n{SANDBOX_STOPPED_MID_RUN}")
                 } else {
                     format!("$ {line}\nThe user closed the project before it finished. {NOT_OPEN}")
                 });
@@ -350,5 +372,102 @@ mod tests {
         assert_eq!(tail("hello", 10), "hello");
         assert_eq!(tail("hello world", 5), "world");
         assert_eq!(tail("ééé", 3), "é");
+    }
+
+    /// Answers `wake_and_wait` with `outcome` and counts the calls.
+    struct FakeSandbox {
+        sandboxed: bool,
+        outcome: WakeOutcome,
+        woken: std::sync::Mutex<Vec<Duration>>,
+    }
+
+    impl FakeSandbox {
+        fn new(sandboxed: bool, outcome: WakeOutcome) -> Self {
+            Self { sandboxed, outcome, woken: Default::default() }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl SandboxOps for FakeSandbox {
+        async fn uses_sandbox(&self, _project_id: Uuid) -> bool {
+            self.sandboxed
+        }
+        async fn wake_and_wait(&self, _project_id: Uuid, timeout: Duration) -> WakeOutcome {
+            self.woken.lock().unwrap().push(timeout);
+            self.outcome.clone()
+        }
+    }
+
+    async fn seed(pool: &sqlx::PgPool) -> (Uuid, Uuid) {
+        let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+        let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(pool).await.unwrap();
+        let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+            .bind(org_id)
+            .bind(Uuid::new_v4().to_string())
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let project_id: Uuid = sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name, runtime) VALUES ($1, $2, 'Tasks', 'sandbox') RETURNING id")
+            .bind(user_id)
+            .bind(session_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        (user_id, project_id)
+    }
+
+    fn input(project_id: Uuid) -> Value {
+        json!({ "project_id": project_id.to_string(), "command": "npm run check", "timeout_seconds": 10 })
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn sandbox_project_wakes_a_stopped_sandbox_and_runs_the_command(pool: sqlx::PgPool) {
+        let (user_id, project_id) = seed(&pool).await;
+        sqlx::query("INSERT INTO project_sandboxes (project_id, provider, desired, state) VALUES ($1, 'boat', 'running', 'running')").bind(project_id).execute(&pool).await.unwrap();
+        // The sandbox worker answers the queued run; no browser page ever checks in.
+        let worker_pool = pool.clone();
+        let worker = tokio::spawn(async move {
+            loop {
+                let id: Option<Uuid> = sqlx::query_scalar("UPDATE project_runs SET status = 'done', exit_code = 0, output = 'ok' WHERE status = 'pending' RETURNING id")
+                    .fetch_optional(&worker_pool)
+                    .await
+                    .unwrap();
+                if id.is_some() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+        let ops = FakeSandbox::new(true, WakeOutcome::Running);
+        let mut conn = pool.acquire().await.unwrap();
+        let out = run_command_with(&mut conn, &ops, user_id, input(project_id)).await.unwrap();
+        worker.await.unwrap();
+        assert_eq!(out, "$ npm run check\nexit code 0\nok");
+        assert_eq!(*ops.woken.lock().unwrap(), [SANDBOX_START_WAIT]);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn start_wait_expiry_returns_the_starting_message_not_not_open(pool: sqlx::PgPool) {
+        let (user_id, project_id) = seed(&pool).await;
+        let mut conn = pool.acquire().await.unwrap();
+        let out = run_command_with(&mut conn, &FakeSandbox::new(true, WakeOutcome::Starting), user_id, input(project_id)).await.unwrap();
+        assert_eq!(out, SANDBOX_STARTING);
+        assert_ne!(out, NOT_OPEN);
+        let failed = run_command_with(&mut conn, &FakeSandbox::new(true, WakeOutcome::Failed("no capacity".into())), user_id, input(project_id)).await.unwrap();
+        assert!(failed.contains("no capacity") && failed != NOT_OPEN, "{failed}");
+        let queued: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_runs").fetch_one(&pool).await.unwrap();
+        assert_eq!(queued, 0, "nothing was queued for a sandbox that isn't up");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn browser_projects_behave_exactly_as_before(pool: sqlx::PgPool) {
+        let (user_id, project_id) = seed(&pool).await;
+        sqlx::query("UPDATE projects SET runtime = 'browser' WHERE id = $1").bind(project_id).execute(&pool).await.unwrap();
+        let ops = FakeSandbox::new(false, WakeOutcome::Running);
+        let mut conn = pool.acquire().await.unwrap();
+        let out = run_command_with(&mut conn, &ops, user_id, input(project_id)).await.unwrap();
+        assert_eq!(out, NOT_OPEN);
+        assert!(ops.woken.lock().unwrap().is_empty(), "a browser project never wakes a sandbox");
+        assert_eq!(run_command(&mut conn, user_id, input(project_id)).await.unwrap(), NOT_OPEN);
     }
 }
