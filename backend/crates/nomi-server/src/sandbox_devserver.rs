@@ -104,6 +104,12 @@ pub fn log_tail(project_id: Uuid) -> String {
     with_running(project_id, |r| r.log.clone())
 }
 
+/// Adds to a project's dev server output as if the server had printed it. For tests of what reads the log.
+#[doc(hidden)]
+pub fn push_log_for_test(project_id: Uuid, text: &str) {
+    with_running(project_id, |r| append_log(r, text));
+}
+
 fn append_log(running: &mut Running, text: &str) {
     running.log.push_str(text);
     if running.log.len() > LOG_KEPT {

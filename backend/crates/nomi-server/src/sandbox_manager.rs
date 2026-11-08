@@ -100,7 +100,9 @@ impl SandboxManager {
 
     async fn set_state(&self, project_id: Uuid, state: State) -> Result<(), Exit> {
         let mut conn = db(self.pool.acquire().await)?;
-        db(store::set_state(&mut conn, project_id, state, None).await)
+        db(store::set_state(&mut conn, project_id, state, None).await)?;
+        announce(project_id, state);
+        Ok(())
     }
 
     /// Hold the row back until `at`, saying why.
@@ -195,7 +197,9 @@ impl SandboxManager {
             tx.commit().await
         }
         .await;
-        db(result)
+        db(result)?;
+        announce(project_id, State::None);
+        Ok(())
     }
 
     /// The number of sandboxes this project has had running. A create that is retried before the
@@ -336,6 +340,7 @@ impl SandboxManager {
         }
         .await;
         db(result)?;
+        announce(project_id, State::Running);
         Ok(ReconcileOutcome::Settled)
     }
 
@@ -375,8 +380,16 @@ impl SandboxManager {
         }
         .await;
         db(result)?;
+        announce(project_id, State::Stopped);
         Ok(ReconcileOutcome::Settled)
     }
+}
+
+/// Tell the project's open pages the sandbox is now in `state`. Called once the change is saved
+/// (after the commit, where the change was made in a transaction) so a page that reloads on the
+/// event sees it. Every state this module writes goes through here.
+fn announce(project_id: Uuid, state: State) {
+    crate::project_events::sandbox_changed(project_id, state.phase());
 }
 
 /// End the project's open metering session, if it has one.

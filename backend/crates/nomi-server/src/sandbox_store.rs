@@ -11,6 +11,19 @@ use uuid::Uuid;
 /// with the real retry time.
 const WALK_LEASE_SECS: i64 = 600;
 
+/// No sandbox exists (or it was dropped); opening the project will start one.
+pub const PHASE_IDLE: &str = "idle";
+/// The sandbox is being created or resumed.
+pub const PHASE_WAKING: &str = "waking";
+/// The sandbox is up and serving the preview.
+pub const PHASE_RUNNING: &str = "running";
+/// The sandbox is being stopped.
+pub const PHASE_STOPPING: &str = "stopping";
+/// The sandbox is stopped and can be resumed.
+pub const PHASE_STOPPED: &str = "stopped";
+/// The provider failed; the row is backing off before it tries again.
+pub const PHASE_ERROR: &str = "error";
+
 /// What a project wants its sandbox to be doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Desired {
@@ -73,6 +86,18 @@ impl State {
             "error" => Some(State::Error),
             "gone" => Some(State::Gone),
             _ => None,
+        }
+    }
+
+    /// The stable word the project page and its realtime events use for this state.
+    pub fn phase(self) -> &'static str {
+        match self {
+            State::None | State::Gone => PHASE_IDLE,
+            State::Creating | State::Starting => PHASE_WAKING,
+            State::Running => PHASE_RUNNING,
+            State::Stopping => PHASE_STOPPING,
+            State::Stopped => PHASE_STOPPED,
+            State::Error => PHASE_ERROR,
         }
     }
 
@@ -246,4 +271,32 @@ pub async fn idle_candidates(conn: &mut PgConnection, idle_secs: u64) -> Result<
     .bind(idle_secs as f64)
     .fetch_all(conn)
     .await
+}
+
+/// What the project page shows about a project's sandbox.
+#[derive(Debug, Clone)]
+pub struct Status {
+    pub state: State,
+    pub preview_url: Option<String>,
+    pub last_error: Option<String>,
+    /// Set while the row is held back, so a row in `error` with a future time is cooling down.
+    pub retry_at: Option<DateTime<Utc>>,
+}
+
+/// The project's sandbox as the page should see it, or `None` if it has no sandbox.
+pub async fn status(conn: &mut PgConnection, project_id: Uuid) -> Result<Option<Status>, sqlx::Error> {
+    let row = sqlx::query("SELECT state, preview_url, last_error, retry_at FROM project_sandboxes WHERE project_id = $1")
+        .bind(project_id)
+        .fetch_optional(conn)
+        .await?;
+    row.map(|r| {
+        let state: String = r.try_get("state")?;
+        Ok(Status {
+            state: decode("state", &state, State::parse(&state))?,
+            preview_url: r.try_get("preview_url")?,
+            last_error: r.try_get("last_error")?,
+            retry_at: r.try_get("retry_at")?,
+        })
+    })
+    .transpose()
 }
