@@ -8,9 +8,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+pub mod boat;
 pub mod error;
 pub mod fake;
 
+pub use boat::{BoatConfig, BoatProvider};
 pub use error::SandboxError;
 pub use fake::FakeProvider;
 

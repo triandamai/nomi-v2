@@ -3159,8 +3159,12 @@ name = "nomi-sandbox"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
+ "reqwest",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "wiremock",
 ]
 
 [[package]]
