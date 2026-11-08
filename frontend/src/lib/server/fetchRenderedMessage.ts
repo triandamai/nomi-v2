@@ -5,8 +5,8 @@ import { renderMarkdown } from '$lib/server/markdown';
 import type { MessageItem, RenderedMessage } from '$lib/types';
 import { m } from '$lib/paraglide/messages';
 
-/** Fetches one message from the backend and server-renders its markdown (skipped when it
- * carries content_blocks — those render client-side via ContentBlockView, not {@html}). Used by
+/** Fetches one message from the backend and server-renders its markdown (also when it carries
+ * content_blocks: some blocks, like a publish's logged line, sit above the text). Used by
  * the two `message/[messageId]/+server.ts` proxy routes (chat and project-workspace pages) so
  * ChatThread.svelte can patch a single message instead of refetching the whole conversation. */
 export async function fetchRenderedMessage(
@@ -20,7 +20,5 @@ export async function fetchRenderedMessage(
 		throw error(response.status, m.err_load_message());
 	}
 	const message = (await response.json()) as MessageItem;
-	const content_html =
-		message.content_blocks && message.content_blocks.length > 0 ? '' : await renderMarkdown(message.content);
-	return { ...message, content_html };
+	return { ...message, content_html: await renderMarkdown(message.content) };
 }

@@ -126,10 +126,14 @@
 	const sourcesId = $derived(`sources-${message.id}`);
 	const cited = $derived(message.sender === 'assistant' ? citedSources(message.content, sources) : []);
 
+	// The rendered HTML as its own value, so a reload that brings the same message back as a new
+	// object doesn't count as a change: {@html} keeps the DOM then, and re-enriching it after
+	// unmounting the swapped-in links would leave their slots empty.
+	const html = $derived(message.content_html);
 	$effect(() => {
 		// Re-run whenever this message's rendered HTML changes: {@html} replaces the DOM, and the
 		// components mounted into the old one are unmounted.
-		void message.content_html;
+		void html;
 		const root = bubbleEl?.querySelector<HTMLElement>('.message-markdown');
 		if (!root) return;
 		return enrichReply(root, untrack(() => cited), sourcesId);
