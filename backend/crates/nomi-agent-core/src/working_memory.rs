@@ -40,7 +40,7 @@ summary only.";
 
 /// Whether a chat is a project's chat.
 pub async fn is_project_chat<'c, E: sqlx::PgExecutor<'c>>(executor: E, session_id: Uuid) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM projects WHERE session_id = $1)").bind(session_id).fetch_one(executor).await
+    sqlx::query_scalar("SELECT chat_project($1) IS NOT NULL").bind(session_id).fetch_one(executor).await
 }
 
 /// How many of the chat's latest messages its agents see in full.

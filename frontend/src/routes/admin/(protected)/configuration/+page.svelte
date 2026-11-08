@@ -93,6 +93,7 @@
 				turn_concurrency: { label: m.config_agent_loop_turn_concurrency, hint: m.config_agent_loop_turn_concurrency_hint },
 				turn_time_limit_secs: { label: m.config_agent_loop_turn_time_limit_secs, hint: m.config_agent_loop_turn_time_limit_secs_hint },
 				delegation_time_limit_secs: { label: m.config_agent_loop_delegation_time_limit_secs, hint: m.config_agent_loop_delegation_time_limit_secs_hint },
+				issues_per_project: { label: m.config_agent_loop_issues_per_project, hint: m.config_agent_loop_issues_per_project_hint },
 			},
 		},
 		relay: {

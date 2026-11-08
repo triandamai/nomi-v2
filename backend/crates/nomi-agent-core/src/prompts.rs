@@ -244,6 +244,20 @@ Reply with the note only.";
 pub const RECENT_ACTIVITY_HEADING: &str =
     "What this person did lately with the crew, across their chats (use it only where it helps; this chat itself may be part of it):";
 
+/// What every agent's system prompt says in an issue's own chat (the project's issue board sent
+/// it to the crew). `{number}`, `{title}` and `{assignee}` are filled in; `ISSUE_CHAT_OTHERS`
+/// follows when other issues of the project are being worked at the same time.
+pub const ISSUE_CHAT_PROMPT: &str = "This chat works issue #{number} \"{title}\" from the project's issue board; {assignee} was \
+assigned to it. Work the issue: make the change it asks for, check it, then say in a few lines what you changed and \
+anything the person should look at. Don't publish unless the issue asks for it. If another crew member is better \
+suited to it (the issue turns out to be about money, data or planning rather than code), hand it to them with \
+delegate_to_agent and say why: the board follows whoever has it. If something is unclear, make the most sensible \
+choice and say what you assumed; nobody is waiting in this chat to answer questions.";
+
+/// Follows `ISSUE_CHAT_PROMPT` when other issues of the same project are being worked now.
+pub const ISSUE_CHAT_OTHERS: &str = "Other issues of this project the crew is working on right now, in their own chats, \
+on the same files; stay out of what they change:";
+
 /// System prompt for generating a chat session's title from its first message
 /// (`nomi-server::routes::sessions::generate_session_title`).
 pub const SESSION_TITLE_SYSTEM_PROMPT: &str =

@@ -125,6 +125,8 @@ pub const AGENT_LOOP: SectionDef = SectionDef {
         field("turn_concurrency", "TURN_CONCURRENCY", Kind::Number),
         field("turn_time_limit_secs", "TURN_TIME_LIMIT_SECS", Kind::Number),
         field("delegation_time_limit_secs", "DELEGATION_TIME_LIMIT_SECS", Kind::Number),
+        // How many of a project's issues the crew works at once (issue board → Ready to dev).
+        saved_only("issues_per_project", Kind::Number),
     ],
 };
 

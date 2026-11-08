@@ -143,7 +143,7 @@ pub(crate) async fn authorize_session_access(
 ) -> Result<(), (StatusCode, &'static str)> {
     let row: Option<(Uuid, bool)> = sqlx::query_as(
         "SELECT s.org_id, s.user_id = $2 FROM sessions s WHERE s.id = $1 \
-           AND (s.user_id = $2 OR EXISTS (SELECT 1 FROM projects p WHERE p.session_id = s.id AND can_open_project(p.id, $2)))",
+           AND (s.user_id = $2 OR EXISTS (SELECT 1 FROM projects p WHERE p.id = chat_project(s.id) AND can_open_project(p.id, $2)))",
     )
     .bind(session_id)
     .bind(user_id)

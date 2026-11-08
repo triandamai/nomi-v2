@@ -7,6 +7,7 @@ pub mod chat_events;
 pub mod delegation_worker;
 pub mod github;
 pub mod routes;
+pub mod issue_worker;
 pub mod memory_worker;
 pub mod notifications;
 pub mod presence;

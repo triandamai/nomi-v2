@@ -94,7 +94,7 @@ impl SubAgent for PlanningAgent {
         if asked_to_build {
             return Some(PLANNING_APP_PLAYBOOK.to_string());
         }
-        let project_chat: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM projects WHERE session_id = $1)")
+        let project_chat: bool = sqlx::query_scalar("SELECT chat_project($1) IS NOT NULL")
             .bind(session_id)
             .fetch_one(&mut **conn)
             .await
@@ -209,7 +209,7 @@ pub async fn create_project(
     }
 
     let existing_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM projects WHERE session_id = $1 AND can_open_project(id, $2) ORDER BY created_at DESC LIMIT 1",
+        "SELECT id FROM projects WHERE id = chat_project($1) AND can_open_project(id, $2)",
     )
     .bind(session_id)
     .bind(user_id)

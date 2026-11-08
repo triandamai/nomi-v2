@@ -193,11 +193,12 @@
 
 	let previewDevice = $state<'desktop' | 'phone'>('desktop');
 	let preview: ProjectPreview | undefined = $state();
-	/** The preview's address in the pane's bar: the published app's when there is one, else the
-	 * running preview as localhost:<port> (the dev server's own port, not the container's long URL). */
+	/** The preview's address in the pane's bar: the running preview as localhost:<port> (the dev
+	 * server's own port, not the container's long URL), since that's what the pane shows; the
+	 * published app's only while nothing runs here. */
 	const previewAddress = $derived.by(() => {
-		if (deploy?.overview?.url) return deploy.overview.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-		return runtime?.previewPort ? `localhost:${runtime.previewPort}` : '';
+		if (runtime?.previewPort) return `localhost:${runtime.previewPort}`;
+		return deploy?.overview?.url ? deploy.overview.url.replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
 	});
 
 	let presence = $state<ProjectPresence | null>(null);
@@ -1002,7 +1003,7 @@
 							status={runtime ? PHASE_LABEL[runtime.phase]() : m.project_phase_stopped()}
 							running={runtime?.phase === 'running'}
 							address={previewAddress}
-							href={deploy?.overview?.url ?? runtime?.previewUrl ?? null}
+							href={runtime?.previewPort ? (runtime.previewUrl ?? null) : (deploy?.overview?.url ?? runtime?.previewUrl ?? null)}
 							onreload={runtime?.previewUrl ? () => preview?.reload() : undefined}
 						/>
 					</div>
@@ -1136,7 +1137,13 @@
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
 		<WorkspaceSheet icon={SHEET_ICON[sheet]} title={SHEET_TITLE[sheet]()} meta={project.name} onclose={() => (sheetOpen = false)}>
 			{#if sheet === 'issues'}
-				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
+				<IssuesPanel
+					projectId={project.id}
+					onCountChange={(n) => (openIssues = n)}
+					onAskKoda={sendToChat}
+					canEditColumns={deploy?.isAdmin ?? false}
+					subscribe={deploy ? (listener) => deploy!.onEvent(listener) : undefined}
+				/>
 			{:else if sheet === 'deploy' && deploy}
 				<DeployPanel {deploy} onaskfix={sendToChat} />
 			{:else if sheet === 'domain' && deploy}

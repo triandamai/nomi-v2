@@ -22,7 +22,7 @@ pub use nomi_agent_core::build_intent::{wants_to_build, wants_to_publish};
 
 /// The project this chat belongs to, if it's a project chat.
 pub async fn session_project(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<Option<Uuid>, TurnError> {
-    Ok(sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1")
+    Ok(sqlx::query_scalar("SELECT id FROM projects WHERE id = chat_project($1)")
         .bind(session_id)
         .fetch_optional(&mut **conn)
         .await?)
