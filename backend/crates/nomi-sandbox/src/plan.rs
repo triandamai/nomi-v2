@@ -58,13 +58,15 @@ impl StartLimiter {
                 .copied()
                 .filter(|s| now.saturating_duration_since(*s) < window)
                 .collect();
+            if limit == 0 {
+                // Nothing is ever allowed; report the whole window as the wait.
+                wait = wait.max(window);
+                continue;
+            }
             if inside.len() >= limit as usize {
                 // Allowed again once enough of the window's oldest starts have left it.
-                let blocking = inside[inside.len() - (limit as usize).max(1)];
+                let blocking = inside[inside.len() - limit as usize];
                 wait = wait.max(window.saturating_sub(now.saturating_duration_since(blocking)));
-                if limit == 0 {
-                    wait = wait.max(window);
-                }
             }
         }
         if wait > Duration::ZERO {
@@ -197,6 +199,13 @@ mod tests {
         l.try_acquire(t0 + Duration::from_secs(120)).unwrap();
         let wait = l.try_acquire(t0 + Duration::from_secs(240)).unwrap_err();
         assert_eq!(wait, Duration::from_secs(3600 - 240));
+    }
+
+    #[test]
+    fn limiter_with_zero_limit_denies_without_panicking() {
+        let t0 = Instant::now();
+        assert!(StartLimiter::new(0, 5).try_acquire(t0).is_err());
+        assert!(StartLimiter::new(5, 0).try_acquire(t0).is_err());
     }
 
     #[test]
