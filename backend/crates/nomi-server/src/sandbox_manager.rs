@@ -74,9 +74,14 @@ impl SandboxManager {
     /// Take the row toward what it wants. The row passed in only says which project to work on;
     /// the current row is read again so a stale copy never decides anything.
     pub async fn reconcile(&self, row: SandboxRow) -> ReconcileOutcome {
-        match self.walk(row.project_id).await {
+        let outcome = match self.walk(row.project_id).await {
             Ok(outcome) | Err(outcome) => outcome,
+        };
+        if outcome == ReconcileOutcome::Settled {
+            // Drop the claim lease; a settled row has nothing left to wait for.
+            let _ = sqlx::query("UPDATE project_sandboxes SET retry_at = NULL WHERE project_id = $1").bind(row.project_id).execute(&self.pool).await;
         }
+        outcome
     }
 
     async fn walk(&self, project_id: Uuid) -> Result<ReconcileOutcome, Exit> {
@@ -109,6 +114,19 @@ impl SandboxManager {
         }
     }
 
+    /// Wait until `at` without counting a failure.
+    async fn defer(&self, project_id: Uuid, at: DateTime<Utc>) -> Exit {
+        let result = async {
+            let mut conn = self.pool.acquire().await?;
+            store::defer(&mut conn, project_id, at).await
+        }
+        .await;
+        match result {
+            Ok(()) => ReconcileOutcome::RetryAt(at),
+            Err(e) => ReconcileOutcome::Failed(format!("database: {e}")),
+        }
+    }
+
     /// How long to wait after a failure: what the provider asked for, or a growing delay.
     fn wait_after(attempts: i32, err: Option<&SandboxError>) -> Duration {
         err.and_then(SandboxError::retry_after).unwrap_or_else(|| backoff(attempts.max(0) as u32, RETRY_BASE, RETRY_CAP))
@@ -120,7 +138,7 @@ impl SandboxManager {
         let at = Utc::now() + Self::wait_after(row.attempts, Some(&err));
         let why = err.to_string();
         if err.is_retryable() {
-            return self.retry_at(row.project_id, at, &why).await;
+            return self.defer(row.project_id, at).await;
         }
         if let Err(exit) = self.set_state(row.project_id, State::Error).await {
             return exit;
@@ -142,7 +160,7 @@ impl SandboxManager {
         let verdict = self.limiter.lock().unwrap_or_else(|e| e.into_inner()).try_acquire(Instant::now());
         match verdict {
             Ok(()) => Ok(()),
-            Err(wait) => Err(self.retry_at(row.project_id, Utc::now() + wait, "waiting for the start limit").await),
+            Err(wait) => Err(self.defer(row.project_id, Utc::now() + wait).await),
         }
     }
 
@@ -157,7 +175,14 @@ impl SandboxManager {
             .execute(&mut *tx)
             .await?;
             store::set_state(&mut tx, project_id, State::None, None).await?;
-            close_session(&mut tx, project_id).await?;
+            if close_session(&mut tx, project_id).await? == 0 {
+                // Nothing was open, so a sandbox that never ran leaves no trace in the count the
+                // next key is built from. A zero-length closed session advances it.
+                sqlx::query("INSERT INTO sandbox_sessions (project_id, started_at, stopped_at) VALUES ($1, now(), now())")
+                    .bind(project_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
             tx.commit().await
         }
         .await;
@@ -186,11 +211,16 @@ impl SandboxManager {
             Ok(info) => info,
             Err(e) => return Err(self.provider_failed(row, e).await),
         };
-        db(sqlx::query("UPDATE project_sandboxes SET sandbox_id = $2 WHERE project_id = $1")
+        // Another walk may have recorded a sandbox since this one began; theirs stands.
+        let written = db(sqlx::query("UPDATE project_sandboxes SET sandbox_id = $2 WHERE project_id = $1 AND (sandbox_id IS NULL OR sandbox_id = $2)")
             .bind(row.project_id)
             .bind(&info.id.0)
             .execute(&self.pool)
             .await)?;
+        if written.rows_affected() == 0 {
+            let _ = self.provider.delete(&info.id).await;
+            return Err(self.defer(row.project_id, Utc::now() + STOPPING_RECHECK).await);
+        }
         Ok(info.id)
     }
 
@@ -202,7 +232,8 @@ impl SandboxManager {
                 Ok(info) if info.state == SandboxState::Running => return Ok(()),
                 Ok(info) if matches!(info.state, SandboxState::Gone | SandboxState::Error) => {
                     self.forget(row.project_id).await?;
-                    return Err(self.retry_at(row.project_id, Utc::now(), "sandbox went away while starting").await);
+                    let at = Utc::now() + Self::wait_after(row.attempts, None);
+                    return Err(self.retry_at(row.project_id, at, "sandbox went away while starting").await);
                 }
                 Ok(_) => {}
                 Err(e) => return Err(self.provider_failed(row, e).await),
@@ -225,10 +256,10 @@ impl SandboxManager {
                     SandboxState::Running if row.state == State::Running => return Ok(ReconcileOutcome::Settled),
                     SandboxState::Gone | SandboxState::Error => {
                         self.forget(project_id).await?;
-                        return Ok(self.retry_at(project_id, Utc::now(), "sandbox is gone").await);
+                        return Ok(self.defer(project_id, Utc::now()).await);
                     }
                     SandboxState::Stopping => {
-                        return Ok(self.retry_at(project_id, Utc::now() + STOPPING_RECHECK, "sandbox is still stopping").await);
+                        return Ok(self.defer(project_id, Utc::now() + STOPPING_RECHECK).await);
                     }
                     SandboxState::Stopped => {
                         self.take_start(&row).await?;
@@ -243,7 +274,7 @@ impl SandboxManager {
                 },
                 Err(SandboxError::NotFound) => {
                     self.forget(project_id).await?;
-                    return Ok(self.retry_at(project_id, Utc::now(), "sandbox is gone").await);
+                    return Ok(self.defer(project_id, Utc::now()).await);
                 }
                 Err(SandboxError::SnapshotExpired) => id = self.start_over(&existing, &row).await?,
                 Err(e) => return Ok(self.provider_failed(&row, e).await),
@@ -274,10 +305,10 @@ impl SandboxManager {
                 .execute(&mut *tx)
                 .await?;
             store::set_state(&mut tx, project_id, State::Running, None).await?;
-            // A second reconcile racing this one must not open a second session.
+            // The unique index keeps a racing walk from opening a second session.
             sqlx::query(
-                "INSERT INTO sandbox_sessions (project_id, size)
-                 SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM sandbox_sessions WHERE project_id = $1 AND stopped_at IS NULL)",
+                "INSERT INTO sandbox_sessions (project_id, size) VALUES ($1, $2)
+                 ON CONFLICT (project_id) WHERE stopped_at IS NULL DO NOTHING",
             )
             .bind(project_id)
             .bind(size)
@@ -331,10 +362,10 @@ impl SandboxManager {
 }
 
 /// End the project's open metering session, if it has one.
-async fn close_session(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE sandbox_sessions SET stopped_at = now() WHERE project_id = $1 AND stopped_at IS NULL")
+async fn close_session(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query("UPDATE sandbox_sessions SET stopped_at = now() WHERE project_id = $1 AND stopped_at IS NULL")
         .bind(project_id)
         .execute(conn)
         .await?;
-    Ok(())
+    Ok(done.rows_affected())
 }

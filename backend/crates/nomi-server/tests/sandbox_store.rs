@@ -113,3 +113,22 @@ async fn deleting_a_project_cascades_the_row(pool: PgPool) {
     sqlx::query("DELETE FROM projects WHERE id = $1").bind(p).execute(&pool).await.unwrap();
     assert_eq!(count(&pool).await, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn overlapping_claims_do_not_both_walk_a_row(pool: PgPool) {
+    let p = project(&pool, "seven").await;
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    let mut first = pool.begin().await.unwrap();
+    assert_eq!(store::claim_due(&mut first, CLAIM_LIMIT).await.unwrap().len(), 1);
+    first.commit().await.unwrap();
+    // The first claimer's transaction is over but its walk is still going: the lease holds.
+    let mut second = pool.begin().await.unwrap();
+    assert!(store::claim_due(&mut second, CLAIM_LIMIT).await.unwrap().is_empty());
+    second.rollback().await.unwrap();
+
+    store::defer(&mut conn, p, Utc::now() - Duration::seconds(1)).await.unwrap();
+    let mut third = pool.begin().await.unwrap();
+    assert_eq!(store::claim_due(&mut third, CLAIM_LIMIT).await.unwrap().len(), 1);
+    third.rollback().await.unwrap();
+}

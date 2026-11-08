@@ -236,3 +236,71 @@ async fn provider_gone_marks_row_none_and_recreates_next_time(pool: PgPool) {
     assert_eq!(row.state, State::Running);
     assert_ne!(row.sandbox_id.as_deref(), Some(first.0.as_str()));
 }
+
+async fn attempts_and_retry(f: &Fixture) -> (i32, Option<chrono::DateTime<chrono::Utc>>) {
+    sqlx::query_as("SELECT attempts, retry_at FROM project_sandboxes WHERE project_id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn limiter_waits_and_rate_limits_do_not_count_as_attempts(pool: PgPool) {
+    let f = fixture(pool, 0).await;
+    f.want(Desired::Running).await;
+    assert!(matches!(f.reconcile().await, ReconcileOutcome::RetryAt(_)));
+    assert_eq!(attempts_and_retry(&f).await.0, 0);
+
+    let g_pool = f.pool.clone();
+    let open = SandboxManager::new(f.provider.clone(), f.steps.clone(), g_pool, config(GENEROUS_LIMIT));
+    f.provider.fail_next(SandboxError::RateLimited { retry_after: Duration::from_secs(30) });
+    assert!(matches!(open.reconcile(f.row().await).await, ReconcileOutcome::RetryAt(_)));
+    let (attempts, retry) = attempts_and_retry(&f).await;
+    assert_eq!(attempts, 0);
+    assert!(retry.unwrap() > chrono::Utc::now());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sandbox_gone_before_running_gets_a_new_key_and_backs_off(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    f.want(Desired::Running).await;
+    // A sandbox already made under the key the first create will send, and dead.
+    let spec = nomi_sandbox::CreateSpec {
+        size: nomi_sandbox::Size::Small,
+        ttl_seconds: None,
+        from_snapshot: None,
+        idempotency_key: format!("nomi-project-{}-0", f.project),
+        labels: Default::default(),
+    };
+    let dead = f.provider.create(spec).await.unwrap().id;
+    f.provider.set_state(&dead, SandboxState::Gone);
+
+    assert!(matches!(f.reconcile().await, ReconcileOutcome::RetryAt(_)));
+    let (attempts, retry) = attempts_and_retry(&f).await;
+    assert_eq!(attempts, 1);
+    assert!(retry.unwrap() > chrono::Utc::now() + chrono::Duration::seconds(3));
+    assert_eq!(f.row().await.sandbox_id, None);
+
+    assert_eq!(f.reconcile().await, ReconcileOutcome::Settled);
+    assert!(f.provider.calls().contains(&format!("create nomi-project-{}-1", f.project)));
+    assert_ne!(f.row().await.sandbox_id.as_deref(), Some(dead.0.as_str()));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn stale_walk_cannot_overwrite_sandbox_id(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    f.want(Desired::Running).await;
+    // Another walk records its sandbox right after this one marks the row creating.
+    sqlx::query(
+        "CREATE FUNCTION other_walk() RETURNS trigger AS $$ BEGIN
+             IF NEW.state = 'creating' THEN NEW.sandbox_id := 'someone-else'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql",
+    )
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    sqlx::query("CREATE TRIGGER other_walk BEFORE UPDATE ON project_sandboxes FOR EACH ROW EXECUTE FUNCTION other_walk()")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(matches!(f.reconcile().await, ReconcileOutcome::RetryAt(_)));
+    assert_eq!(f.row().await.sandbox_id.as_deref(), Some("someone-else"));
+    assert_eq!(f.provider.list().await.unwrap().len(), 0, "the sandbox this walk made is deleted");
+    assert!(f.steps.calls().is_empty());
+}
