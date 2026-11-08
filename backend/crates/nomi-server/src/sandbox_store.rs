@@ -98,14 +98,14 @@ fn decode<T>(what: &str, value: &str, parsed: Option<T>) -> Result<T, sqlx::Erro
     parsed.ok_or_else(|| sqlx::Error::Decode(format!("unknown sandbox {what} {value:?}").into()))
 }
 
-/// Ask for the project's sandbox to be running, creating its row the first time. A settled row
-/// (none, stopped, running, error) also drops any leftover backoff so the person's open isn't
-/// delayed; an in-flight row keeps its `retry_at`, which is the lease on the walk in progress.
+/// Ask for the project's sandbox to be running, creating its row the first time. Flipping a settled
+/// row (none, stopped, running) from stopped also drops any leftover backoff so the person's open
+/// isn't delayed; a repeat call, an errored row and an in-flight row keeps its `retry_at`, which is the lease on the walk in progress.
 pub async fn want_running(conn: &mut PgConnection, project_id: Uuid, provider: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO project_sandboxes (project_id, provider, desired) VALUES ($1, $2, 'running')
          ON CONFLICT (project_id) DO UPDATE SET desired = 'running', updated_at = now(),
-             retry_at = CASE WHEN project_sandboxes.state IN ('none', 'stopped', 'running', 'error') THEN NULL ELSE project_sandboxes.retry_at END",
+             retry_at = CASE WHEN project_sandboxes.desired = 'stopped' AND project_sandboxes.state IN ('none', 'stopped', 'running') THEN NULL ELSE project_sandboxes.retry_at END",
     )
     .bind(project_id)
     .bind(provider)
@@ -119,7 +119,7 @@ pub async fn want_running(conn: &mut PgConnection, project_id: Uuid, provider: &
 pub async fn want_stopped(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE project_sandboxes SET desired = 'stopped', updated_at = now(),
-             retry_at = CASE WHEN state IN ('none', 'stopped', 'running', 'error') THEN NULL ELSE retry_at END
+             retry_at = CASE WHEN desired = 'running' AND state IN ('none', 'stopped', 'running') THEN NULL ELSE retry_at END
          WHERE project_id = $1",
     )
         .bind(project_id)
