@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use crate::redact::redact;
 use crate::{
     CreateSpec, ExecOutput, PreviewUrl, ProcessHandle, ProcessStatus, ResumeSpec, SandboxError,
-    SandboxId, SandboxInfo, SandboxProvider, SandboxState,
+    SandboxId, SandboxInfo, SandboxProvider, SandboxState, Ttl,
 };
 
 /// Longest command timeout the API accepts, in seconds.
@@ -23,6 +23,9 @@ pub const MIN_EXEC_TIMEOUT_SECS: u64 = 1;
 pub const MAX_WRITE_BYTES: usize = 5 * 1024 * 1024;
 /// How long to wait before retrying a throttled call when the API gives no hint.
 pub const DEFAULT_RATE_LIMIT_RETRY: Duration = Duration::from_secs(60);
+/// The longest wait the API may ask for; a larger hint is cut to this. An hour covers boat's
+/// hourly start limit.
+pub const MAX_RETRY_HINT: Duration = Duration::from_secs(60 * 60);
 /// How long to wait before retrying when the provider is out of capacity.
 pub const OUT_OF_CAPACITY_RETRY: Duration = Duration::from_secs(120);
 /// How long to wait before retrying when no machine is ready yet.
@@ -151,10 +154,30 @@ fn transport_error(e: reqwest::Error) -> SandboxError {
     SandboxError::Unavailable(e.without_url().to_string())
 }
 
+/// Write the auto-stop time into a create or resume body: `null` turns it off, and leaving the
+/// field out takes the provider's default.
+fn put_ttl(body: &mut Value, ttl: Ttl) {
+    match ttl {
+        Ttl::ProviderDefault => {}
+        Ttl::Never => body["ttlSeconds"] = Value::Null,
+        Ttl::Seconds(secs) => body["ttlSeconds"] = json!(secs),
+    }
+}
+
+/// A count of seconds from the API; `None` when it is missing, negative or too large for a
+/// `Duration` (never a panic).
 fn secs_field(v: &Value) -> Option<Duration> {
     v.as_f64()
         .filter(|s| s.is_finite() && s.is_sign_positive())
-        .map(Duration::from_secs_f64)
+        .and_then(|s| Duration::try_from_secs_f64(s).ok())
+}
+
+/// A wait the API asked for, capped at `MAX_RETRY_HINT`, so a huge value can't overflow the
+/// retry time computed from it.
+fn retry_field(v: &Value) -> Option<Duration> {
+    v.as_f64()
+        .filter(|s| s.is_finite() && s.is_sign_positive())
+        .map(|_| secs_field(v).map_or(MAX_RETRY_HINT, |d| d.min(MAX_RETRY_HINT)))
 }
 
 /// The wait the API asked for: body `retryAfter` / `retryAfterSeconds` (top level or in
@@ -166,7 +189,7 @@ fn retry_hint(body: &Value, header: Option<Duration>) -> Option<Duration> {
         &body["error"]["details"]["retryAfterSeconds"],
     ]
     .into_iter()
-    .find_map(secs_field)
+    .find_map(retry_field)
     .or(header)
 }
 
@@ -177,7 +200,7 @@ async fn error_from_response(resp: Response) -> SandboxError {
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse::<u64>().ok())
-        .map(Duration::from_secs);
+        .map(|secs| Duration::from_secs(secs).min(MAX_RETRY_HINT));
     let text = resp.text().await.unwrap_or_default();
     let body: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     map_error(status, &body, header, &text)
@@ -369,9 +392,7 @@ impl BoatProvider {
 impl SandboxProvider for BoatProvider {
     async fn create(&self, spec: CreateSpec) -> Result<SandboxInfo, SandboxError> {
         let mut body = json!({ "type": spec.size.as_api() });
-        if let Some(ttl) = spec.ttl_seconds {
-            body["ttlSeconds"] = json!(ttl);
-        }
+        put_ttl(&mut body, spec.ttl);
         if let Some(from) = &spec.from_snapshot {
             body["from"] = json!(from);
         }
@@ -392,9 +413,7 @@ impl SandboxProvider for BoatProvider {
 
     async fn resume(&self, id: &SandboxId, spec: ResumeSpec) -> Result<SandboxInfo, SandboxError> {
         let mut body = json!({});
-        if let Some(ttl) = spec.ttl_seconds {
-            body["ttlSeconds"] = json!(ttl);
-        }
+        put_ttl(&mut body, spec.ttl);
         let rb = self
             .req(Method::POST, &sandbox_path(id, "/resume")?)
             .json(&body);

@@ -32,7 +32,7 @@ pub async fn xendit_config() -> Option<nomi_payment::xendit::XenditConfig> {
 /// boat.dev's API when `api_base` isn't set.
 const DEFAULT_API_BASE: &str = "https://boat.dev/api/v1";
 /// How long a sandbox may sit idle before it is stopped, in seconds.
-const DEFAULT_IDLE_STOP_SECS: u64 = 600;
+pub(crate) const DEFAULT_IDLE_STOP_SECS: u64 = 600;
 /// Sandbox starts allowed per minute, under boat.dev's own limit of 12.
 const DEFAULT_STARTS_PER_MINUTE: u32 = 10;
 /// Sandbox starts allowed per hour, under boat.dev's own limit of 60.

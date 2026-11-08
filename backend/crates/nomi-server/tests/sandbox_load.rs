@@ -38,7 +38,7 @@ impl ProjectSteps for OkSteps {
     async fn sync(&self, _: Uuid, _: &SandboxId) -> Result<i64, String> {
         Ok(1)
     }
-    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, String> {
+    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, nomi_server::sandbox_manager::StepError> {
         Ok(PreviewUrl { url: "https://preview.example.test".into() })
     }
 }

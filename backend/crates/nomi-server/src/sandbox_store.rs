@@ -2,15 +2,17 @@
 //! what the provider last reported (`state`), and the retry bookkeeping the reconciler uses to
 //! move one toward the other.
 
-use chrono::{DateTime, Duration, Utc};
+use std::time::Duration as StdDuration;
+
+use chrono::{DateTime, Utc};
 use nomi_sandbox::redact::redact_urls;
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
-/// How long a claimed row is held back from other claimers, in seconds. It must outlast a whole
-/// walk (a start can wait two minutes for the sandbox, then sync); the walk's outcome replaces it
-/// with the real retry time.
-const WALK_LEASE_SECS: i64 = 600;
+/// How long a claim, or a renewal of it, holds a row back from other claimers. A walk renews it
+/// every `sandbox_manager::LEASE_RENEW_EVERY` for as long as it runs, and gives up the walk if it
+/// can't (see `sandbox_manager::hold_lease`), so no single step has to fit inside it.
+pub const WALK_LEASE: StdDuration = StdDuration::from_secs(5 * 60);
 
 /// No sandbox exists (or it was dropped); opening the project will start one.
 pub const PHASE_IDLE: &str = "idle";
@@ -118,19 +120,23 @@ pub struct SandboxRow {
     pub synced_version: i64,
     pub preview_url: Option<String>,
     pub attempts: i32,
+    /// Why the last attempt failed; on a running row with no preview, why the preview failed.
+    pub last_error: Option<String>,
 }
 
 fn decode<T>(what: &str, value: &str, parsed: Option<T>) -> Result<T, sqlx::Error> {
     parsed.ok_or_else(|| sqlx::Error::Decode(format!("unknown sandbox {what} {value:?}").into()))
 }
 
-/// Ask for the project's sandbox to be running, creating its row the first time. Flipping a settled
+/// Ask for the project's sandbox to be running, creating its row the first time. Every call is a
+/// sign of use (the page's heartbeat, a start, Koda waking it), so it also moves `last_active_at`,
+/// which keeps the idle sweep away. Flipping a settled
 /// row (none, stopped, running) from stopped also drops any leftover backoff so the person's open
 /// isn't delayed; a repeat call, an errored row and an in-flight row keeps its `retry_at`; the walk lease is `leased_until`, which these never touch.
 pub async fn want_running(conn: &mut PgConnection, project_id: Uuid, provider: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO project_sandboxes (project_id, provider, desired) VALUES ($1, $2, 'running')
-         ON CONFLICT (project_id) DO UPDATE SET desired = 'running', updated_at = now(),
+        "INSERT INTO project_sandboxes (project_id, provider, desired, last_active_at) VALUES ($1, $2, 'running', now())
+         ON CONFLICT (project_id) DO UPDATE SET desired = 'running', updated_at = now(), last_active_at = now(),
              retry_at = CASE WHEN project_sandboxes.desired = 'stopped' AND project_sandboxes.state IN ('none', 'stopped', 'running') THEN NULL ELSE project_sandboxes.retry_at END",
     )
     .bind(project_id)
@@ -141,11 +147,13 @@ pub async fn want_running(conn: &mut PgConnection, project_id: Uuid, provider: &
 }
 
 /// Ask for the project's sandbox to be stopped, clearing backoff on a settled row like
-/// `want_running`. Does nothing for a project with no sandbox.
+/// `want_running`, and on a row in `error`: its cooldown only holds back starts, and a sandbox
+/// that may still be up must not wait it out before it is stopped. Does nothing for a project
+/// with no sandbox.
 pub async fn want_stopped(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE project_sandboxes SET desired = 'stopped', updated_at = now(),
-             retry_at = CASE WHEN desired = 'running' AND state IN ('none', 'stopped', 'running') THEN NULL ELSE retry_at END
+             retry_at = CASE WHEN desired = 'running' AND state IN ('none', 'stopped', 'running', 'error') THEN NULL ELSE retry_at END
          WHERE project_id = $1",
     )
         .bind(project_id)
@@ -156,11 +164,11 @@ pub async fn want_stopped(conn: &mut PgConnection, project_id: Uuid) -> Result<(
 
 /// The admin switch is off: every sandbox that is wanted running is asked to stop, so the ones
 /// that are up wind down and none is created or resumed. Returns how many rows changed. Like
-/// `want_stopped`, a settled row's backoff is dropped.
+/// `want_stopped`, the backoff of a settled or errored row is dropped.
 pub async fn want_all_stopped(conn: &mut PgConnection) -> Result<u64, sqlx::Error> {
     let done = sqlx::query(
         "UPDATE project_sandboxes SET desired = 'stopped', updated_at = now(),
-             retry_at = CASE WHEN state IN ('none', 'stopped', 'running') THEN NULL ELSE retry_at END
+             retry_at = CASE WHEN state IN ('none', 'stopped', 'running', 'error') THEN NULL ELSE retry_at END
          WHERE desired = 'running'",
     )
     .execute(conn)
@@ -172,36 +180,52 @@ pub async fn want_all_stopped(conn: &mut PgConnection) -> Result<u64, sqlx::Erro
 /// come, locked with `FOR UPDATE SKIP LOCKED` so two reconcilers never take the same one. The
 /// locks last until the transaction ends, so the caller must run this inside a transaction and
 /// keep it open while it works the rows. Claimed rows are leased: their `leased_until` moves
-/// `WALK_LEASE_SECS` ahead so a later claim skips them until the walk records its outcome.
+/// `WALK_LEASE` ahead so a later claim skips them until the walk records its outcome.
+///
+/// A running sandbox is also due when the project's files moved past what it holds
+/// (`synced_version < projects.files_version`), so edits reach it, and when it runs without a
+/// preview and no failure is recorded (the person asked to retry it). Such a row is left alone
+/// while one of the project's commands is running in it (started within `run_lease`); the
+/// command claim in turn waits for the walk's lease (`sandbox_runs::claim_next`), so a sync or
+/// an install never overlaps a command.
 pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<SandboxRow>, sqlx::Error> {
     claim_due_in(conn, limit, false).await
 }
 
+/// The columns `row_from` reads.
+const ROW_COLUMNS: &str = "project_id, provider, sandbox_id, desired, state, synced_version, preview_url, attempts, last_error";
+
 /// `claim_due`, optionally only the rows that want to be stopped (the admin switch is off): a row
 /// that asks to be running between the switch going off and the claim is left alone.
 pub async fn claim_due_in(conn: &mut PgConnection, limit: i64, stop_only: bool) -> Result<Vec<SandboxRow>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT project_id, provider, sandbox_id, desired, state, synced_version, preview_url, attempts
-         FROM project_sandboxes
+    let rows = sqlx::query(&format!(
+        "SELECT {ROW_COLUMNS}
+         FROM project_sandboxes s
          WHERE (desired = 'running' AND state <> 'running'
                 OR desired = 'stopped' AND state NOT IN ('stopped', 'none', 'gone')
-                OR state IN ('creating', 'starting', 'stopping'))
+                OR state IN ('creating', 'starting', 'stopping')
+                OR desired = 'running' AND state = 'running' AND sandbox_id IS NOT NULL
+                   AND (synced_version < (SELECT p.files_version FROM projects p WHERE p.id = s.project_id)
+                        OR preview_url IS NULL AND last_error IS NULL)
+                   AND NOT EXISTS (SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id AND r.status = 'running'
+                                   AND r.started_at >= now() - make_interval(secs => $3)))
            AND (NOT $2 OR desired = 'stopped')
            AND (retry_at IS NULL OR retry_at <= now())
            AND (leased_until IS NULL OR leased_until <= now())
          ORDER BY updated_at
          LIMIT $1
-         FOR UPDATE SKIP LOCKED",
-    )
+         FOR UPDATE SKIP LOCKED"
+    ))
     .bind(limit)
     .bind(stop_only)
+    .bind(crate::sandbox_runs::RUN_LEASE.as_secs_f64())
     .fetch_all(&mut *conn)
     .await?;
     let claimed = rows.iter().map(row_from).collect::<Result<Vec<_>, _>>()?;
     let ids: Vec<Uuid> = claimed.iter().map(|r| r.project_id).collect();
-    sqlx::query("UPDATE project_sandboxes SET leased_until = $2 WHERE project_id = ANY($1)")
+    sqlx::query("UPDATE project_sandboxes SET leased_until = now() + make_interval(secs => $2) WHERE project_id = ANY($1)")
         .bind(&ids)
-        .bind(Utc::now() + Duration::seconds(WALK_LEASE_SECS))
+        .bind(WALK_LEASE.as_secs_f64())
         .execute(conn)
         .await?;
     Ok(claimed)
@@ -211,6 +235,106 @@ pub async fn claim_due_in(conn: &mut PgConnection, limit: i64, stop_only: bool) 
 pub async fn release(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE project_sandboxes SET leased_until = NULL WHERE project_id = $1").bind(project_id).execute(conn).await?;
     Ok(())
+}
+
+/// Move a walk's lease another `WALK_LEASE` ahead; the walk is still going.
+pub async fn renew_lease(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET leased_until = now() + make_interval(secs => $2) WHERE project_id = $1")
+        .bind(project_id)
+        .bind(WALK_LEASE.as_secs_f64())
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// The person asked to try the preview of a running sandbox again: forget its recorded failure
+/// so the next claim walks it (see `claim_due_in`). Does nothing to a row that has a preview or
+/// isn't running.
+pub async fn retry_preview(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET last_error = NULL, retry_at = NULL, updated_at = now() WHERE project_id = $1 AND state = 'running' AND preview_url IS NULL")
+        .bind(project_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Running sandboxes not asked about for `every_secs` (oldest first, at most `limit`) and not
+/// being walked: the liveness pass asks the provider whether they are still up.
+pub async fn alive_due(conn: &mut PgConnection, every_secs: f64, limit: i64) -> Result<Vec<(Uuid, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT project_id, sandbox_id FROM project_sandboxes
+         WHERE state = 'running' AND sandbox_id IS NOT NULL
+           AND (leased_until IS NULL OR leased_until <= now())
+           AND (alive_checked_at IS NULL OR alive_checked_at < now() - make_interval(secs => $1))
+         ORDER BY alive_checked_at NULLS FIRST
+         LIMIT $2",
+    )
+    .bind(every_secs)
+    .bind(limit)
+    .fetch_all(conn)
+    .await
+}
+
+/// The provider says this running sandbox is still up.
+pub async fn mark_alive(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET alive_checked_at = now() WHERE project_id = $1").bind(project_id).execute(conn).await?;
+    Ok(())
+}
+
+/// The provider says this sandbox is no longer running: the row becomes `stopped` (no preview) so
+/// the next claim walks it again (resumes it, or finds it gone and makes a new one). Only if the
+/// row still records this sandbox as running and no walk holds it. Returns whether it changed.
+pub async fn mark_dead(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE project_sandboxes SET state = 'stopped', preview_url = NULL, attempts = 0, retry_at = NULL, alive_checked_at = now(), updated_at = now()
+         WHERE project_id = $1 AND sandbox_id = $2 AND state = 'running' AND (leased_until IS NULL OR leased_until <= now())",
+    )
+    .bind(project_id)
+    .bind(sandbox_id)
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// Add to the end of the dev server's saved output, keeping at most `max_chars` characters.
+pub async fn append_log(conn: &mut PgConnection, project_id: Uuid, text: &str, max_chars: usize) -> Result<(), sqlx::Error> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("UPDATE project_sandboxes SET log_tail = right(log_tail || $2, $3) WHERE project_id = $1")
+        .bind(project_id)
+        .bind(text)
+        .bind(i32::try_from(max_chars).unwrap_or(i32::MAX))
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// A new dev server starts in this sandbox: forget the last one's output and remember the new
+/// one's process, so the start after it can kill it (from any Nomi process).
+pub async fn record_dev_server(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str, process_id: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET log_tail = '', devserver_process = $3 WHERE project_id = $1 AND sandbox_id = $2")
+        .bind(project_id)
+        .bind(sandbox_id)
+        .bind(process_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// The dev server process started last in this sandbox, if one was recorded.
+pub async fn dev_server_process(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str) -> Result<Option<String>, sqlx::Error> {
+    Ok(sqlx::query_scalar("SELECT devserver_process FROM project_sandboxes WHERE project_id = $1 AND sandbox_id = $2")
+        .bind(project_id)
+        .bind(sandbox_id)
+        .fetch_optional(conn)
+        .await?
+        .flatten())
+}
+
+/// The dev server's saved output; empty when it never printed anything (or there is no sandbox).
+pub async fn log_tail(conn: &mut PgConnection, project_id: Uuid) -> Result<String, sqlx::Error> {
+    Ok(sqlx::query_scalar("SELECT log_tail FROM project_sandboxes WHERE project_id = $1").bind(project_id).fetch_optional(conn).await?.unwrap_or_default())
 }
 
 fn row_from(r: &sqlx::postgres::PgRow) -> Result<SandboxRow, sqlx::Error> {
@@ -225,15 +349,13 @@ fn row_from(r: &sqlx::postgres::PgRow) -> Result<SandboxRow, sqlx::Error> {
         synced_version: r.try_get("synced_version")?,
         preview_url: r.try_get("preview_url")?,
         attempts: r.try_get("attempts")?,
+        last_error: r.try_get("last_error")?,
     })
 }
 
 /// One project's row as it is now, or `None` if it has no sandbox.
 pub async fn get(conn: &mut PgConnection, project_id: Uuid) -> Result<Option<SandboxRow>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT project_id, provider, sandbox_id, desired, state, synced_version, preview_url, attempts
-         FROM project_sandboxes WHERE project_id = $1",
-    )
+    let row = sqlx::query(&format!("SELECT {ROW_COLUMNS} FROM project_sandboxes WHERE project_id = $1"))
     .bind(project_id)
     .fetch_optional(conn)
     .await?;
@@ -342,14 +464,17 @@ pub async fn defer(conn: &mut PgConnection, project_id: Uuid, retry_at: DateTime
     Ok(())
 }
 
-/// Projects whose sandbox should be running but whose page hasn't checked in for `idle_secs`
-/// and which have no command waiting or running.
+/// Projects whose sandbox should be running but that nobody has used for `idle_secs`: no
+/// heartbeat from the sandbox page and no wake from Koda (`last_active_at`), no command waiting
+/// or running, and none finished within `idle_secs` either, so a sandbox Koda woke with no page
+/// open stays up while it works and for the same grace after its last command.
 pub async fn idle_candidates(conn: &mut PgConnection, idle_secs: u64) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar(
-        "SELECT s.project_id FROM project_sandboxes s JOIN projects p ON p.id = s.project_id
+        "SELECT s.project_id FROM project_sandboxes s
          WHERE s.desired = 'running'
-           AND (p.runner_seen_at IS NULL OR p.runner_seen_at < now() - make_interval(secs => $1))
-           AND NOT EXISTS (SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id AND r.status IN ('pending', 'running'))",
+           AND (s.last_active_at IS NULL OR s.last_active_at < now() - make_interval(secs => $1))
+           AND NOT EXISTS (SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id
+                           AND (r.status IN ('pending', 'running') OR r.finished_at >= now() - make_interval(secs => $1)))",
     )
     .bind(idle_secs as f64)
     .fetch_all(conn)

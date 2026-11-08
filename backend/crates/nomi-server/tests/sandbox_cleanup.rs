@@ -29,7 +29,7 @@ impl ProjectSteps for OkSteps {
     async fn sync(&self, _: Uuid, _: &SandboxId) -> Result<i64, String> {
         Ok(1)
     }
-    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, String> {
+    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, nomi_server::sandbox_manager::StepError> {
         Ok(PreviewUrl { url: "https://preview.example.test".into() })
     }
 }
@@ -75,7 +75,7 @@ async fn labelled(provider: &FakeProvider, project: &str) -> SandboxId {
     provider
         .create(CreateSpec {
             size: Size::Small,
-            ttl_seconds: None,
+            ttl: nomi_sandbox::Ttl::ProviderDefault,
             from_snapshot: None,
             idempotency_key: format!("key-{project}-{}", Uuid::new_v4()),
             labels: BTreeMap::from([("nomi-project".to_string(), project.to_string())]),
@@ -165,7 +165,7 @@ async fn reaper_deletes_only_unreferenced_nomi_labelled_sandboxes(pool: PgPool) 
     sqlx::query("INSERT INTO sandbox_deletions (provider, sandbox_id) VALUES ($1, $2)").bind(PROVIDER).bind(&queued.0).execute(&pool).await.unwrap();
     // Someone else's sandbox: no nomi-project label.
     let foreign = provider
-        .create(CreateSpec { size: Size::Small, ttl_seconds: None, from_snapshot: None, idempotency_key: "foreign".into(), labels: BTreeMap::from([("team".to_string(), "other".to_string())]) })
+        .create(CreateSpec { size: Size::Small, ttl: nomi_sandbox::Ttl::ProviderDefault, from_snapshot: None, idempotency_key: "foreign".into(), labels: BTreeMap::from([("team".to_string(), "other".to_string())]) })
         .await
         .unwrap()
         .id;

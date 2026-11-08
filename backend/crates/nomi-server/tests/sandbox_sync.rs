@@ -37,7 +37,7 @@ async fn fixture(pool: PgPool) -> Fixture {
     let provider = Arc::new(FakeProvider::new());
     let storage = nomi_test_support::test_project_storage();
     let sandbox = provider
-        .create(CreateSpec { size: Size::Small, ttl_seconds: None, from_snapshot: None, idempotency_key: "k".into(), labels: Default::default() })
+        .create(CreateSpec { size: Size::Small, ttl: nomi_sandbox::Ttl::ProviderDefault, from_snapshot: None, idempotency_key: "k".into(), labels: Default::default() })
         .await
         .unwrap()
         .id;

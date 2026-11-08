@@ -45,7 +45,7 @@ async fn fixture(pool: PgPool) -> Fixture {
     sqlx::query("UPDATE projects SET runtime = 'sandbox' WHERE id = $1").bind(project).execute(&pool).await.unwrap();
     let provider = Arc::new(FakeProvider::new());
     let sandbox = provider
-        .create(CreateSpec { size: Size::Small, ttl_seconds: None, from_snapshot: None, idempotency_key: "k".into(), labels: Default::default() })
+        .create(CreateSpec { size: Size::Small, ttl: nomi_sandbox::Ttl::ProviderDefault, from_snapshot: None, idempotency_key: "k".into(), labels: Default::default() })
         .await
         .unwrap()
         .id;
@@ -302,4 +302,22 @@ async fn queued_commands_are_checked_again_before_they_reach_the_shell(pool: PgP
         assert_eq!((status.as_str(), exit_code), ("failed", None), "{id}");
     }
     assert_eq!(f.run(ok).await.0, "done");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn runs_wait_until_the_sandbox_has_the_current_files(pool: PgPool) {
+    let f = fixture(pool).await;
+    let id = f.queue("npm", &["run", "check"], 1).await;
+    // The project moved past what the sandbox holds: the run waits for the resync.
+    sqlx::query("UPDATE projects SET files_version = 1 WHERE id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert!(f.execs().is_empty());
+    assert_eq!(f.run(id).await.0, "pending");
+    // Synced, but a walk (an install) holds the row: still waiting.
+    sqlx::query("UPDATE project_sandboxes SET synced_version = 1, leased_until = now() + interval '1 hour' WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert_eq!(f.run(id).await.0, "pending");
+    sqlx::query("UPDATE project_sandboxes SET leased_until = NULL WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert_eq!(f.run(id).await.0, "done");
 }

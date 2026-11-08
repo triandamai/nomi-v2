@@ -44,6 +44,9 @@ pub struct CheckInQuery {
     pub since: Option<i64>,
     /// Seconds to wait for a change or a command (0 = answer straight away).
     pub wait: Option<u64>,
+    /// The runtime the page runs: `sandbox` from the sandbox page only; the browser runtime
+    /// sends nothing (see `sandbox_worker::sandbox_check_in`).
+    pub runtime: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -52,8 +55,9 @@ pub struct CheckInResponse {
     pub runs: Vec<ClaimedRun>,
 }
 
-/// `GET /api/projects/:id/runtime?since=&wait=`: marks the page online and returns the files
-/// version and any commands to run, waiting up to `wait` seconds for either to change.
+/// `GET /api/projects/:id/runtime?since=&wait=&runtime=`: marks the page online and returns the
+/// files version and any commands to run, waiting up to `wait` seconds for either to change. The
+/// sandbox page (`runtime=sandbox`) keeps its sandbox awake instead and gets no commands.
 pub async fn check_in(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -63,12 +67,15 @@ pub async fn check_in(
     ensure_owner(&state, project_id, claims.sub).await?;
     let deadline = Instant::now() + Duration::from_secs(query.wait.unwrap_or(0).min(MAX_WAIT_SECS));
 
-    // First round: mark runner online and check for changes/commands immediately. A project that
-    // runs in a sandbox asks for it to be running instead and never claims commands.
-    let sandbox_enabled = crate::configuration::sandbox_config().await.is_some();
+    // First round: mark runner online and check for changes/commands immediately. The sandbox
+    // page asks for its sandbox to be running instead and never claims commands.
+    let config = match query.runtime.as_deref() {
+        Some(_) => crate::configuration::sandbox_config().await,
+        None => None,
+    };
     let (mut files_version, mut runs, in_sandbox) = {
         let mut conn = state.pool.acquire().await.map_err(internal)?;
-        match crate::sandbox_worker::sandbox_check_in(&mut conn, project_id, sandbox_enabled).await.map_err(internal)? {
+        match crate::sandbox_worker::sandbox_check_in(&mut conn, project_id, claims.sub, query.runtime.as_deref(), config.as_ref()).await.map_err(internal)? {
             Some(version) => (version, Vec::new(), true),
             None => {
                 let (version, runs) = runtime::check_in(&mut conn, project_id).await.map_err(internal)?;
@@ -88,7 +95,8 @@ pub async fn check_in(
 
         let (current_version, current_runs) = {
             let mut conn = state.pool.acquire().await.map_err(internal)?;
-            if last_touched.elapsed() >= Duration::from_secs(runtime::RUNNER_TOUCH_EVERY_SECS as u64) {
+            // The sandbox page never marks the browser runner online.
+            if !in_sandbox && last_touched.elapsed() >= Duration::from_secs(runtime::RUNNER_TOUCH_EVERY_SECS as u64) {
                 runtime::touch_runner(&mut conn, project_id).await.map_err(internal)?;
                 last_touched = Instant::now();
             }

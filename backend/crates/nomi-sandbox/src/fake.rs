@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use crate::{
     CreateSpec, ExecOutput, PreviewUrl, ProcessHandle, ProcessStatus, ResumeSpec, SandboxError,
-    SandboxId, SandboxInfo, SandboxProvider, SandboxState,
+    SandboxId, SandboxInfo, SandboxProvider, SandboxState, Ttl,
 };
 
 /// Exit code the fake gives every command that finishes.
@@ -38,6 +38,8 @@ struct Inner {
     sandboxes: BTreeMap<SandboxId, Sandbox>,
     by_key: BTreeMap<String, SandboxId>,
     calls: Vec<String>,
+    /// The auto-stop asked for by each create and resume, in order.
+    ttls: Vec<Ttl>,
     queued_failures: Vec<SandboxError>,
     /// (text a command must contain, what it answers); the latest matching rule wins.
     exec_rules: Vec<(String, ExecOutput)>,
@@ -113,6 +115,11 @@ impl FakeProvider {
         self.lock().calls.clone()
     }
 
+    /// The auto-stop each create and resume asked for, in order.
+    pub fn ttls(&self) -> Vec<Ttl> {
+        self.lock().ttls.clone()
+    }
+
     /// Records the call and returns the queued failure, if any.
     fn enter(&self, call: String) -> Result<MutexGuard<'_, Inner>, SandboxError> {
         let mut g = self.lock();
@@ -144,6 +151,7 @@ impl Inner {
 impl SandboxProvider for FakeProvider {
     async fn create(&self, spec: CreateSpec) -> Result<SandboxInfo, SandboxError> {
         let mut g = self.enter(format!("create {}", spec.idempotency_key))?;
+        g.ttls.push(spec.ttl);
         if let Some(id) = g.by_key.get(&spec.idempotency_key).cloned() {
             let state = g.sandbox(&id)?.state;
             let labels = g.sandbox(&id)?.labels.clone();
@@ -179,8 +187,9 @@ impl SandboxProvider for FakeProvider {
         })
     }
 
-    async fn resume(&self, id: &SandboxId, _spec: ResumeSpec) -> Result<SandboxInfo, SandboxError> {
+    async fn resume(&self, id: &SandboxId, spec: ResumeSpec) -> Result<SandboxInfo, SandboxError> {
         let mut g = self.enter(format!("resume {}", id.0))?;
+        g.ttls.push(spec.ttl);
         let sb = g.sandbox(id)?;
         sb.state = SandboxState::Running;
         sb.generation += 1;

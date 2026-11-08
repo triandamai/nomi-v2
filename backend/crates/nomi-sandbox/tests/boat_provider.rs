@@ -35,7 +35,7 @@ fn sid() -> SandboxId {
 fn spec() -> CreateSpec {
     CreateSpec {
         size: Size::Default,
-        ttl_seconds: Some(1800),
+        ttl: nomi_sandbox::Ttl::Seconds(1800),
         from_snapshot: None,
         idempotency_key: "idem-1".to_string(),
         labels: BTreeMap::from([("nomi-project".to_string(), "p1".to_string())]),
@@ -623,4 +623,46 @@ async fn trailing_dot_private_names_are_rejected() {
         let err = provider(&server).upload_archive(&sid(), "/home/user/app", vec![1]).await.unwrap_err();
         assert!(matches!(err, SandboxError::Refused(_)), "{bad}: {err:?}");
     }
+}
+
+#[tokio::test]
+async fn a_huge_retry_hint_is_capped_instead_of_panicking() {
+    use nomi_sandbox::boat::MAX_RETRY_HINT;
+    for hint in [json!(1e300), json!(f64::MAX), json!(18_446_744_073_709_551_615u64)] {
+        let server = MockServer::start().await;
+        let mut body = error_body(429, "rate_limited");
+        body["retryAfter"] = hint;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(body))
+            .mount(&server)
+            .await;
+        let err = provider(&server).create(spec()).await.unwrap_err();
+        assert_eq!(err.retry_after(), Some(MAX_RETRY_HINT));
+    }
+}
+
+#[tokio::test]
+async fn create_and_resume_can_turn_off_the_auto_stop() {
+    use nomi_sandbox::{ResumeSpec, Ttl};
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes"))
+        .and(body_json(json!({ "type": "default", "ttlSeconds": null })))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+            "ok": true, "sandbox": {"id": "bx_7k2m9p4q", "state": "provisioning"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/resume"))
+        .and(body_json(json!({ "ttlSeconds": null })))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "ok": true, "sandbox": null })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let p = provider(&server);
+    let spec = CreateSpec { ttl: Ttl::Never, labels: BTreeMap::new(), ..spec() };
+    p.create(spec).await.unwrap();
+    p.resume(&sid(), ResumeSpec { ttl: Ttl::Never }).await.unwrap();
 }

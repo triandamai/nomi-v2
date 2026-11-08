@@ -322,6 +322,13 @@ pub const SANDBOX_FAILED: &str = "The project's sandbox couldn't start ({why}), 
 pub const SANDBOX_STOPPED_MID_RUN: &str = "The project's sandbox stopped before the command finished. Your files are saved. \
      Finish the work and complete the task: Nomi starts the sandbox again when the project is opened.";
 
+/// Why a project's sandbox won't be woken for Koda: the sandbox runtime is off, the owner's monthly
+/// allowance is used up, or the sandbox is cooling down after repeated failures. Read inside
+/// `SANDBOX_FAILED`'s `{why}`.
+pub const SANDBOX_UNAVAILABLE_NOW: &str = "the project's sandbox can't be used right now (it is turned off, this \
+     month's sandbox time is used up, or it is recovering from errors); the project runs in the user's browser when \
+     they open it";
+
 /// What `NoSandboxOps` answers when asked to start a sandbox this Nomi doesn't have.
 pub const SANDBOX_NOT_AVAILABLE: &str = "Sandboxes aren't set up on this Nomi.";
 

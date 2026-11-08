@@ -7,13 +7,18 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
+
 use futures_util::stream::{self, StreamExt};
+use futures_util::FutureExt;
 use nomi_sandbox::{BoatConfig, BoatProvider, SandboxId};
 use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::configuration::{sandbox_config, sandbox_credentials, ReaperMode, SandboxConfig};
+use crate::routes::project_sandbox::{availability, RUNTIME_SANDBOX};
 use crate::sandbox_cleanup::{self, REAP_INTERVAL};
 use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
 use crate::sandbox_runs::RUN_LEASE;
@@ -36,6 +41,20 @@ const BATCH_SIZE: i64 = 10;
 /// Most rows reconciled at the same time.
 const CONCURRENCY: usize = 4;
 
+/// Run one piece of the worker's work, catching a panic in it: the panic is logged as `what`
+/// and `None` comes back, so one bad row or pass never ends the loop that every sandbox depends
+/// on. A walk that panicked keeps its lease until it runs out, then is claimed again.
+pub async fn guarded<F: Future>(what: &'static str, work: F) -> Option<F::Output> {
+    match AssertUnwindSafe(work).catch_unwind().await {
+        Ok(out) => Some(out),
+        Err(panic) => {
+            let message = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
+            tracing::error!(what, panic = %message, "sandbox worker: a task panicked; carrying on");
+            None
+        }
+    }
+}
+
 /// What a pass of the loop may do, from the admin switch and the saved credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PassMode {
@@ -57,20 +76,30 @@ pub fn pass_mode(enabled: Option<SandboxConfig>, credentials: Option<SandboxConf
     }
 }
 
-/// The page checking in for a project that runs in a sandbox: marks the page online, asks for the
-/// sandbox to be running and returns the files version. Returns `None` for a project that runs in
-/// the browser, or when the sandbox runtime is off, so the caller uses the WebContainer check-in.
-/// A sandbox project never claims runs here: Koda's commands go to the sandbox, not to the page.
-pub async fn sandbox_check_in(conn: &mut sqlx::PgConnection, project_id: Uuid, sandbox_enabled: bool) -> Result<Option<i64>, sqlx::Error> {
-    if !sandbox_enabled {
+/// The page checking in. `page_runtime` is what the page says it runs: only the sandbox page
+/// (`SandboxRuntime`) sends `runtime=sandbox`; the browser runtime (WebContainer, also the
+/// fallback and the person's "run in my browser" choice) sends nothing and gets `None`, so the
+/// caller does the WebContainer check-in exactly as before and the page claims Koda's commands.
+///
+/// For the sandbox page this returns the files version and never claims commands (they run in the
+/// sandbox). It asks for the sandbox to be running only while the sandbox may be used
+/// (`routes::project_sandbox::availability`: switch on, rollout, owner's allowance, no cooldown);
+/// otherwise it starts nothing and doesn't keep a running sandbox alive, which then idles out.
+/// It never marks the browser runner online, so Koda can tell the two pages apart.
+pub async fn sandbox_check_in(
+    conn: &mut sqlx::PgConnection,
+    project_id: Uuid,
+    user_id: Uuid,
+    page_runtime: Option<&str>,
+    config: Option<&SandboxConfig>,
+) -> Result<Option<i64>, sqlx::Error> {
+    if page_runtime != Some(RUNTIME_SANDBOX) {
         return Ok(None);
     }
-    let runtime: Option<String> = sqlx::query_scalar("SELECT runtime FROM projects WHERE id = $1").bind(project_id).fetch_optional(&mut *conn).await?;
-    if runtime.as_deref() != Some("sandbox") {
-        return Ok(None);
+    let found = availability(conn, project_id, Some(user_id), config).await?;
+    if found.is_some_and(|a| a.runtime == RUNTIME_SANDBOX && a.available) {
+        store::want_running(conn, project_id, PROVIDER_NAME).await?;
     }
-    nomi_agent_coding::runtime::touch_runner(conn, project_id).await?;
-    store::want_running(conn, project_id, PROVIDER_NAME).await?;
     Ok(Some(nomi_agent_coding::runtime::files_version(conn, project_id).await?))
 }
 
@@ -141,7 +170,8 @@ impl SandboxWorker {
         let Some(runner) = &self.runner else { return 0 };
         let due: Result<Vec<(Uuid, String)>, sqlx::Error> = sqlx::query_as(
             "SELECT s.project_id, s.sandbox_id FROM project_sandboxes s JOIN projects p ON p.id = s.project_id \
-             WHERE s.state = 'running' AND s.sandbox_id IS NOT NULL AND p.runtime = 'sandbox' AND EXISTS ( \
+             WHERE s.state = 'running' AND s.sandbox_id IS NOT NULL AND p.runtime = 'sandbox' \
+             AND s.synced_version >= p.files_version AND (s.leased_until IS NULL OR s.leased_until <= now()) AND EXISTS ( \
                  SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id AND (r.status = 'pending' \
                  OR (r.status = 'running' AND r.started_at < now() - make_interval(secs => $1)))) \
              ORDER BY s.project_id",
@@ -193,10 +223,11 @@ impl SandboxWorker {
         stream::iter(rows)
             .for_each_concurrent(CONCURRENCY, |row| async move {
                 let project_id = row.project_id;
-                match self.manager.reconcile(row).await {
-                    ReconcileOutcome::Settled => {}
-                    ReconcileOutcome::RetryAt(at) => tracing::debug!(%project_id, %at, "sandbox: will retry"),
-                    ReconcileOutcome::Failed(why) => tracing::warn!(%project_id, why = %self.manager.redact(&why), "sandbox: failed"),
+                match guarded("reconcile", self.manager.reconcile(row)).await {
+                    Some(ReconcileOutcome::Settled) => {}
+                    Some(ReconcileOutcome::RetryAt(at)) => tracing::debug!(%project_id, %at, "sandbox: will retry"),
+                    Some(ReconcileOutcome::Failed(why)) => tracing::warn!(%project_id, why = %self.manager.redact(&why), "sandbox: failed"),
+                    None => tracing::error!(%project_id, "sandbox: reconciling panicked"),
                 }
             })
             .await;
@@ -213,6 +244,11 @@ impl SandboxWorker {
     /// Compare our metered time with the provider's and log the differences.
     pub async fn check_usage_drift(&self) {
         crate::sandbox_usage::reconcile_usage_drift(&self.pool, self.manager.provider().as_ref()).await;
+    }
+
+    /// Ask the provider whether running sandboxes are still up (see `SandboxManager::check_alive`).
+    pub async fn check_alive(&self) -> usize {
+        self.manager.check_alive().await
     }
 
     /// Hand back rows stuck mid-change (see `SandboxManager::unstick`).
@@ -294,31 +330,35 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
         }
         let mut busy = true;
         if let Some((_, worker)) = &current {
+            // Every pass is guarded: a panic in one is logged and the loop goes on.
             worker.set_mode(mode);
             if mode == PassMode::StopOnly {
-                busy = worker.wind_down().await > 0;
+                busy = guarded("wind down", worker.wind_down()).await.unwrap_or(0) > 0;
             }
-            busy |= worker.tick().await > 0;
+            busy |= guarded("tick", worker.tick()).await.unwrap_or(0) > 0;
             if mode == PassMode::On {
-                worker.dispatch_runs().await;
+                guarded("dispatch runs", worker.dispatch_runs()).await;
             }
-            worker.drain_deletions().await;
+            guarded("drain deletions", worker.drain_deletions()).await;
             if last_sweep.elapsed() >= SWEEP_INTERVAL {
-                worker.sweep_idle().await;
-                worker.run_watchdog().await;
+                guarded("idle sweep", worker.sweep_idle()).await;
+                guarded("watchdog", worker.run_watchdog()).await;
+                if mode == PassMode::On {
+                    guarded("liveness", worker.check_alive()).await;
+                }
                 last_sweep = Instant::now();
             }
             if last_expiry.is_none_or(|t| t.elapsed() >= EXPIRY_INTERVAL) {
-                worker.expire_old().await;
+                guarded("expiry", worker.expire_old()).await;
                 last_expiry = Some(Instant::now());
             }
             if mode == PassMode::On {
                 if last_reap.is_none_or(|t| t.elapsed() >= REAP_INTERVAL) {
-                    worker.reap_orphans().await;
+                    guarded("orphan sweep", worker.reap_orphans()).await;
                     last_reap = Some(Instant::now());
                 }
                 if last_drift_check.elapsed() >= DRIFT_INTERVAL {
-                    worker.check_usage_drift().await;
+                    guarded("usage drift", worker.check_usage_drift()).await;
                     last_drift_check = Instant::now();
                 }
             }
@@ -328,5 +368,17 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
             continue;
         }
         tokio::time::sleep(POLL_INTERVAL).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_panicking_task_is_caught_and_the_caller_carries_on() {
+        let caught = guarded("test", async { if true { panic!("one bad row") } }).await;
+        assert_eq!(caught, None::<()>);
+        assert_eq!(guarded("test", async { 7 }).await, Some(7));
     }
 }

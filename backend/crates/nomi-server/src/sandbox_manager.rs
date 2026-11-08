@@ -4,6 +4,7 @@
 //! crash in the middle picks the walk up again from the row.
 
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -11,7 +12,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nomi_sandbox::plan::{backoff, StartLimiter};
-use nomi_sandbox::{CreateSpec, PreviewUrl, ResumeSpec, SandboxError, SandboxId, SandboxProvider, SandboxState};
+use nomi_sandbox::{CreateSpec, PreviewUrl, ResumeSpec, SandboxError, SandboxId, SandboxProvider, SandboxState, Ttl};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -41,10 +42,79 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
 pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
 pub(crate) const PROJECT_LABEL: &str = "nomi-project";
+/// The auto-stop asked of the provider on every create and resume: none. Nomi's idle sweep owns
+/// stopping (boat would otherwise stop a sandbox after an hour while its page is still open); the
+/// liveness pass and the orphan reaper are the backstops.
+pub const SANDBOX_TTL: Ttl = Ttl::Never;
+/// How often a walk moves its lease ahead. The lease (`sandbox_store::WALK_LEASE`) is more than
+/// twice this, so one missed renewal never lets it run out under a live walk.
+pub const LEASE_RENEW_EVERY: Duration = Duration::from_secs(60);
+const _: () = assert!(store::WALK_LEASE.as_secs() > 2 * LEASE_RENEW_EVERY.as_secs());
+/// The longest wait taken from a provider's retry hint; a larger one is cut to this, so the retry
+/// time can always be computed.
+pub const MAX_PROVIDER_WAIT: Duration = Duration::from_secs(60 * 60);
+/// How long a running sandbox goes between asks of the provider whether it is still up.
+pub const LIVENESS_INTERVAL: Duration = Duration::from_secs(2 * 60);
+/// Most running sandboxes asked about in one liveness pass, which bounds the calls it makes.
+pub const LIVENESS_BATCH: i64 = 25;
+
+/// What went wrong in a project step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepError {
+    /// The sandbox still runs commands; only the project's own setup failed (installing its
+    /// dependencies, starting its dev server). The sandbox counts as running, without a preview
+    /// and with this reason recorded, so Koda can run commands to fix it.
+    Usable(String),
+    /// Something outside the project failed (the provider, the database, a backend); try the
+    /// step again later.
+    Retry(String),
+}
+
+/// The time `wait` from now, with the wait cut to `MAX_PROVIDER_WAIT`: never a panic, whatever
+/// the provider asked for.
+pub fn retry_time(wait: Duration) -> DateTime<Utc> {
+    let wait = chrono::Duration::from_std(wait.min(MAX_PROVIDER_WAIT)).unwrap_or_else(|_| chrono::Duration::zero());
+    Utc::now().checked_add_signed(wait).unwrap_or_else(Utc::now)
+}
+
+/// Run `walk` while holding its lease: `renew` moves the lease `lease` ahead and is called at
+/// once and then every `every`. A renewal that fails leaves the walk running only while the
+/// lease last written is sure to outlast the next try; past that the walk is dropped (`None`),
+/// so a walk never goes on after its lease could have run out and another worker taken the row.
+/// The walk writes every state before the provider call that follows it, so dropping it between
+/// two awaits is a crash the next claim recovers from.
+pub async fn hold_lease<T, R, RF>(walk: impl Future<Output = T>, mut renew: R, every: Duration, lease: Duration) -> Option<T>
+where
+    R: FnMut() -> RF,
+    RF: Future<Output = bool>,
+{
+    tokio::pin!(walk);
+    let mut ticker = tokio::time::interval(every);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // The claim that handed the walk over has just written a lease.
+    let mut held_until = Instant::now() + lease;
+    loop {
+        tokio::select! {
+            biased;
+            out = &mut walk => return Some(out),
+            _ = ticker.tick() => {
+                let asked = Instant::now();
+                let renewed = tokio::time::timeout(every, renew()).await.unwrap_or(false);
+                if renewed {
+                    held_until = asked + lease;
+                } else if Instant::now() + every >= held_until {
+                    return None;
+                }
+            }
+        }
+    }
+}
 
 /// The `provider_error_kind` of a row that went to `error` after too many failures in a row,
 /// when no single provider call is to blame.
 const ATTEMPTS_EXHAUSTED: &str = "attempts_exhausted";
+/// Why a walk ended when its lease could no longer be renewed (for logs).
+const LEASE_LOST: &str = "the walk's lease could not be renewed";
 
 /// What kind of provider failure this is, for logs. The kind only, never the message: messages
 /// can carry URLs and tokens.
@@ -78,7 +148,12 @@ pub enum ReconcileOutcome {
 #[async_trait]
 pub trait ProjectSteps: Send + Sync {
     async fn sync(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<i64, String>;
-    async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, String>;
+    async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, StepError>;
+    /// Install the project's dependencies again if its dependency files changed since the last
+    /// install. Run after a sync into a sandbox that is already running.
+    async fn update_dependencies(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<(), StepError> {
+        Ok(())
+    }
 }
 
 pub struct SandboxManager {
@@ -92,6 +167,8 @@ pub struct SandboxManager {
     seen: Mutex<HashMap<Uuid, (State, Instant)>>,
     /// The admin switch is off: the walk only brings sandboxes down, never up.
     stop_only: AtomicBool,
+    /// How often a walk renews its lease (`LEASE_RENEW_EVERY`; tests shorten it).
+    lease_renew_every: Duration,
 }
 
 /// An early exit from the walk: the outcome to report.
@@ -109,20 +186,55 @@ impl SandboxManager {
 
     pub fn new(provider: Arc<dyn SandboxProvider>, steps: Arc<dyn ProjectSteps>, pool: PgPool, cfg: SandboxConfig) -> Self {
         let limiter = Mutex::new(StartLimiter::new(cfg.starts_per_minute, cfg.starts_per_hour));
-        Self { provider, limiter, pool, steps, cfg, seen: Mutex::default(), stop_only: AtomicBool::new(false) }
+        Self { provider, limiter, pool, steps, cfg, seen: Mutex::default(), stop_only: AtomicBool::new(false), lease_renew_every: LEASE_RENEW_EVERY }
+    }
+
+    /// Renew walk leases this often instead of `LEASE_RENEW_EVERY`. For tests.
+    pub fn with_lease_renewal(mut self, every: Duration) -> Self {
+        self.lease_renew_every = every;
+        self
     }
 
     /// Take the row toward what it wants. The row passed in only says which project to work on;
-    /// the current row is read again so a stale copy never decides anything.
+    /// the current row is read again so a stale copy never decides anything. The walk's lease is
+    /// renewed for as long as it runs (see `hold_lease`).
     pub async fn reconcile(&self, row: SandboxRow) -> ReconcileOutcome {
-        let outcome = match self.walk(row.project_id).await {
-            Ok(outcome) | Err(outcome) => outcome,
+        let project_id = row.project_id;
+        let pool = self.pool.clone();
+        let renew = move || {
+            let pool = pool.clone();
+            async move {
+                match pool.acquire().await {
+                    Ok(mut conn) => store::renew_lease(&mut conn, project_id).await.is_ok(),
+                    Err(_) => false,
+                }
+            }
+        };
+        let walked = hold_lease(self.walk(project_id), renew, self.lease_renew_every, store::WALK_LEASE).await;
+        let outcome = match walked {
+            Some(Ok(outcome) | Err(outcome)) => outcome,
+            // The lease could not be kept: leave the row to the lease running out.
+            None => return ReconcileOutcome::Failed(LEASE_LOST.to_string()),
         };
         // The walk is over, whichever way it ended: let the next claim take the row.
-        let _ = sqlx::query("UPDATE project_sandboxes SET leased_until = NULL WHERE project_id = $1").bind(row.project_id).execute(&self.pool).await;
-        if outcome == ReconcileOutcome::Settled {
+        if let Ok(mut conn) = self.pool.acquire().await {
+            let _ = store::release(&mut conn, project_id).await;
+        }
+        match &outcome {
             // A settled row has nothing left to wait for.
-            let _ = sqlx::query("UPDATE project_sandboxes SET retry_at = NULL WHERE project_id = $1").bind(row.project_id).execute(&self.pool).await;
+            ReconcileOutcome::Settled => {
+                let _ = sqlx::query("UPDATE project_sandboxes SET retry_at = NULL WHERE project_id = $1").bind(project_id).execute(&self.pool).await;
+            }
+            // Every failure leaves the row held back, even one (a database error) that wrote no
+            // retry time of its own, so the worker never claims it again on its next poll.
+            ReconcileOutcome::Failed(_) => {
+                let _ = sqlx::query("UPDATE project_sandboxes SET retry_at = $2 WHERE project_id = $1 AND (retry_at IS NULL OR retry_at <= now())")
+                    .bind(project_id)
+                    .bind(retry_time(RETRY_BASE))
+                    .execute(&self.pool)
+                    .await;
+            }
+            ReconcileOutcome::RetryAt(_) => {}
         }
         outcome
     }
@@ -205,6 +317,7 @@ impl SandboxManager {
         .await;
         match result {
             Ok(true) => {
+                self.stop_after_cooldown(project_id).await;
                 self.announce(project_id, State::Error, Some(ATTEMPTS_EXHAUSTED)).await;
                 ReconcileOutcome::Failed(why.to_string())
             }
@@ -214,7 +327,47 @@ impl SandboxManager {
     }
 
     fn cooldown_end() -> DateTime<Utc> {
-        Utc::now() + chrono::Duration::from_std(PROVIDER_COOLDOWN).unwrap_or_else(|_| chrono::Duration::minutes(30))
+        Utc::now() + chrono::Duration::from_std(PROVIDER_COOLDOWN).expect("the cooldown fits a chrono duration")
+    }
+
+    /// The row went to `error` for its cooldown: stop its sandbox, if it has one, so it doesn't
+    /// keep running (and billing) unmetered while nothing can use it, and close any metering
+    /// session. Best effort: a sandbox that can't be stopped now is stopped when the row is.
+    async fn stop_after_cooldown(&self, project_id: Uuid) {
+        let sandbox_id: Option<String> =
+            sqlx::query_scalar("SELECT sandbox_id FROM project_sandboxes WHERE project_id = $1").bind(project_id).fetch_optional(&self.pool).await.ok().flatten().flatten();
+        if let Some(id) = sandbox_id {
+            match self.provider.stop(&SandboxId(id), false).await {
+                Ok(()) | Err(SandboxError::NotFound) => {}
+                Err(e) => tracing::warn!(%project_id, provider_error_kind = error_kind(&e), "sandbox: stopping a sandbox entering its cooldown failed"),
+            }
+        }
+        if let Ok(mut conn) = self.pool.acquire().await {
+            if let Err(e) = close_session(&mut conn, project_id).await {
+                tracing::warn!(%project_id, error = %e, "sandbox: closing the session of a sandbox entering its cooldown failed");
+            }
+        }
+    }
+
+    /// The files version the project is at now.
+    async fn files_version(&self, project_id: Uuid) -> Result<i64, Exit> {
+        db(sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1").bind(project_id).fetch_one(&self.pool).await)
+    }
+
+    /// A step on a running sandbox failed in a way worth retrying: count it and hold the row back
+    /// (growing waits, at most `RETRY_CAP`), without ever moving it out of `running`, so its
+    /// commands keep running and the preview stays up.
+    async fn retry_running(&self, row: &SandboxRow, why: String) -> Exit {
+        let at = Utc::now() + Self::wait_after(row.attempts, None);
+        let result = async {
+            let mut conn = self.pool.acquire().await?;
+            store::record_attempt_failure(&mut conn, row.project_id, at, &why).await
+        }
+        .await;
+        match result {
+            Ok(_) => ReconcileOutcome::RetryAt(at),
+            Err(e) => ReconcileOutcome::Failed(format!("database: {e}")),
+        }
     }
 
     /// Wait until `at` without counting a failure.
@@ -230,15 +383,16 @@ impl SandboxManager {
         }
     }
 
-    /// How long to wait after a failure: what the provider asked for, or a growing delay.
+    /// How long to wait after a failure: what the provider asked for (at most
+    /// `MAX_PROVIDER_WAIT`), or a growing delay.
     fn wait_after(attempts: i32, err: Option<&SandboxError>) -> Duration {
-        err.and_then(SandboxError::retry_after).unwrap_or_else(|| backoff(attempts.max(0) as u32, RETRY_BASE, RETRY_CAP))
+        err.and_then(SandboxError::retry_after).map_or_else(|| backoff(attempts.max(0) as u32, RETRY_BASE, RETRY_CAP), |wait| wait.min(MAX_PROVIDER_WAIT))
     }
 
     /// A provider call failed: retry later if that can help, otherwise mark the row as errored
     /// (still held back, so the worker doesn't spin on it).
     async fn provider_failed(&self, row: &SandboxRow, err: SandboxError) -> Exit {
-        let at = Utc::now() + Self::wait_after(row.attempts, Some(&err));
+        let at = retry_time(Self::wait_after(row.attempts, Some(&err)));
         let why = err.to_string();
         if err.is_retryable() {
             return self.defer(row.project_id, at).await;
@@ -249,14 +403,19 @@ impl SandboxManager {
         let saved = async {
             let mut tx = self.pool.begin().await?;
             store::set_state(&mut tx, project_id, State::Error, Some(&why)).await?;
-            if store::record_attempt_failure(&mut tx, project_id, at, &why).await? >= MAX_ATTEMPTS {
+            let cooled = store::record_attempt_failure(&mut tx, project_id, at, &why).await? >= MAX_ATTEMPTS;
+            if cooled {
                 store::enter_cooldown(&mut tx, project_id, Self::cooldown_end(), &why).await?;
             }
-            tx.commit().await
+            tx.commit().await?;
+            Ok::<bool, sqlx::Error>(cooled)
         }
         .await;
         match saved {
-            Ok(()) => {
+            Ok(cooled) => {
+                if cooled {
+                    self.stop_after_cooldown(project_id).await;
+                }
                 self.announce(project_id, State::Error, Some(error_kind(&err))).await;
                 ReconcileOutcome::Failed(why)
             }
@@ -275,7 +434,7 @@ impl SandboxManager {
         let verdict = self.limiter.lock().unwrap_or_else(|e| e.into_inner()).try_acquire(Instant::now());
         match verdict {
             Ok(()) => Ok(()),
-            Err(wait) => Err(self.defer(row.project_id, Utc::now() + wait).await),
+            Err(wait) => Err(self.defer(row.project_id, retry_time(wait)).await),
         }
     }
 
@@ -319,7 +478,7 @@ impl SandboxManager {
                     .await?;
             }
             sqlx::query(
-                "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL WHERE project_id = $1",
+                "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL, devserver_process = NULL WHERE project_id = $1",
             )
             .bind(project_id)
             .execute(&mut *tx)
@@ -355,7 +514,7 @@ impl SandboxManager {
         let n = self.generation(row.project_id).await?;
         let spec = CreateSpec {
             size: self.cfg.size,
-            ttl_seconds: None,
+            ttl: SANDBOX_TTL,
             from_snapshot: None,
             idempotency_key: format!("nomi-project-{}-{n}", row.project_id),
             labels: BTreeMap::from([(PROJECT_LABEL.to_string(), row.project_id.to_string())]),
@@ -420,7 +579,7 @@ impl SandboxManager {
         if let Some(existing) = id.clone() {
             match self.provider.get(&existing).await {
                 Ok(info) => match info.state {
-                    SandboxState::Running if row.state == State::Running => return Ok(ReconcileOutcome::Settled),
+                    SandboxState::Running if row.state == State::Running => return self.refresh(&row, &existing).await,
                     SandboxState::Gone | SandboxState::Error => {
                         return self.vanished(&row, info.state == SandboxState::Error).await;
                     }
@@ -430,7 +589,7 @@ impl SandboxManager {
                     SandboxState::Stopped => {
                         self.take_start(&row).await?;
                         self.set_state(project_id, State::Starting).await?;
-                        match self.provider.resume(&existing, ResumeSpec::default()).await {
+                        match self.provider.resume(&existing, ResumeSpec { ttl: SANDBOX_TTL }).await {
                             Ok(_) => {}
                             Err(SandboxError::SnapshotExpired) => id = self.start_over(&existing, &row).await?,
                             Err(e) => return Ok(self.provider_failed(&row, e).await),
@@ -454,20 +613,24 @@ impl SandboxManager {
             Ok(version) => version,
             Err(why) => return Ok(self.step_failed(&row, why).await),
         };
-        let preview = match self.steps.start_preview(project_id, &id).await {
-            Ok(preview) => preview,
-            Err(why) => return Ok(self.step_failed(&row, why).await),
+        // A project whose own setup fails (its install, its dev server) still gets a running
+        // sandbox, without a preview and with the reason saved, so Koda can run the commands
+        // that fix it (the failure has gone to Koda as a failed check).
+        let (preview, failure) = match self.steps.start_preview(project_id, &id).await {
+            Ok(preview) => (Some(preview.url), None),
+            Err(StepError::Usable(why)) => (None, Some(why)),
+            Err(StepError::Retry(why)) => return Ok(self.step_failed(&row, why).await),
         };
         let size = self.cfg.size.as_api();
         let result = async {
             let mut tx = self.pool.begin().await?;
-            sqlx::query("UPDATE project_sandboxes SET synced_version = $2, preview_url = $3, last_active_at = now() WHERE project_id = $1")
+            sqlx::query("UPDATE project_sandboxes SET synced_version = $2, preview_url = $3, alive_checked_at = now() WHERE project_id = $1")
                 .bind(project_id)
                 .bind(version)
-                .bind(&preview.url)
+                .bind(&preview)
                 .execute(&mut *tx)
                 .await?;
-            store::set_state(&mut tx, project_id, State::Running, None).await?;
+            store::set_state(&mut tx, project_id, State::Running, failure.as_deref()).await?;
             // The unique index keeps a racing walk from opening a second session.
             sqlx::query(
                 "INSERT INTO sandbox_sessions (project_id, user_id, size) VALUES ($1, (SELECT user_id FROM projects WHERE id = $1), $2)
@@ -483,6 +646,114 @@ impl SandboxManager {
         db(result)?;
         self.announce(project_id, State::Running, None).await;
         Ok(ReconcileOutcome::Settled)
+    }
+
+    /// A running sandbox whose project moved on: copy the changed files in, install again if the
+    /// dependency files changed, and start the preview if it has none (it failed before, and the
+    /// files that changed may be Koda's fix, or the person asked to retry). Settled when there is
+    /// nothing to do. A failure of the project's own setup is recorded on the row, which stays
+    /// running; anything else is retried later, still running.
+    async fn refresh(&self, row: &SandboxRow, id: &SandboxId) -> Result<ReconcileOutcome, Exit> {
+        let project_id = row.project_id;
+        let behind = row.synced_version < self.files_version(project_id).await?;
+        let retry_preview = row.preview_url.is_none() && row.last_error.is_none();
+        if !behind && !retry_preview {
+            return Ok(ReconcileOutcome::Settled);
+        }
+        let mut version = row.synced_version;
+        let mut failure = None;
+        if behind {
+            version = match self.steps.sync(project_id, id).await {
+                Ok(version) => version,
+                Err(why) => return Ok(self.retry_running(row, why).await),
+            };
+            match self.steps.update_dependencies(project_id, id).await {
+                Ok(()) => {}
+                Err(StepError::Usable(why)) => failure = Some(why),
+                Err(StepError::Retry(why)) => return Ok(self.retry_running(row, why).await),
+            }
+        }
+        let mut preview = row.preview_url.clone();
+        if preview.is_none() && failure.is_none() {
+            match self.steps.start_preview(project_id, id).await {
+                Ok(url) => preview = Some(url.url),
+                Err(StepError::Usable(why)) => failure = Some(why),
+                Err(StepError::Retry(why)) => return Ok(self.retry_running(row, why).await),
+            }
+        }
+        let result = async {
+            let mut tx = self.pool.begin().await?;
+            sqlx::query("UPDATE project_sandboxes SET synced_version = $3, preview_url = $4 WHERE project_id = $1 AND sandbox_id = $2")
+                .bind(project_id)
+                .bind(&id.0)
+                .bind(version)
+                .bind(&preview)
+                .execute(&mut *tx)
+                .await?;
+            store::set_state(&mut tx, project_id, State::Running, failure.as_deref()).await?;
+            tx.commit().await
+        }
+        .await;
+        db(result)?;
+        self.announce(project_id, State::Running, None).await;
+        Ok(ReconcileOutcome::Settled)
+    }
+
+    /// Ask the provider whether the running sandboxes not asked about for `LIVENESS_INTERVAL` are
+    /// still up (at most `LIVENESS_BATCH` per pass, oldest first). One that stopped by itself,
+    /// crashed or is gone has its row moved back to `stopped` with its metering session closed,
+    /// so the next claim walks it again: resumes it, or finds it gone and makes a new one.
+    /// Returns how many were found down.
+    pub async fn check_alive(&self) -> usize {
+        let due = async {
+            let mut conn = self.pool.acquire().await?;
+            store::alive_due(&mut conn, LIVENESS_INTERVAL.as_secs_f64(), LIVENESS_BATCH).await
+        }
+        .await;
+        let due = match due {
+            Ok(due) => due,
+            Err(e) => {
+                tracing::warn!(error = %e, "sandbox liveness: looking for running sandboxes failed");
+                return 0;
+            }
+        };
+        let mut down = 0;
+        for (project_id, sandbox_id) in due {
+            let alive = match self.provider.get(&SandboxId(sandbox_id.clone())).await {
+                Ok(info) => matches!(info.state, SandboxState::Running | SandboxState::Starting),
+                Err(SandboxError::NotFound) => false,
+                Err(e) => {
+                    // Unknown: ask again next interval rather than hammering the provider.
+                    tracing::warn!(%project_id, provider_error_kind = error_kind(&e), "sandbox liveness: asking the provider failed");
+                    true
+                }
+            };
+            let result = async {
+                let mut tx = self.pool.begin().await?;
+                let moved = if alive {
+                    store::mark_alive(&mut tx, project_id).await?;
+                    false
+                } else if store::mark_dead(&mut tx, project_id, &sandbox_id).await? {
+                    close_session(&mut tx, project_id).await?;
+                    true
+                } else {
+                    false
+                };
+                tx.commit().await?;
+                Ok::<bool, sqlx::Error>(moved)
+            }
+            .await;
+            match result {
+                Ok(true) => {
+                    tracing::warn!(%project_id, "sandbox liveness: a running sandbox is down, walking it again");
+                    self.announce(project_id, State::Stopped, None).await;
+                    down += 1;
+                }
+                Ok(false) => {}
+                Err(e) => tracing::warn!(%project_id, error = %e, "sandbox liveness: saving the result failed"),
+            }
+        }
+        down
     }
 
     /// The sandbox can't be started again (its snapshot expired): drop it and make a new one.
@@ -563,6 +834,21 @@ impl SandboxManager {
             self.forget(project_id).await?;
             return Ok(ReconcileOutcome::Settled);
         };
+        // A row in `error` may hold a sandbox its cooldown already stopped, or one that is gone.
+        if row.state == State::Error {
+            match self.provider.get(&SandboxId(raw.clone())).await {
+                Ok(info) if info.state == SandboxState::Stopped => return self.mark_stopped(project_id).await,
+                Ok(info) if info.state == SandboxState::Gone => {
+                    self.forget(project_id).await?;
+                    return Ok(ReconcileOutcome::Settled);
+                }
+                Err(SandboxError::NotFound) => {
+                    self.forget(project_id).await?;
+                    return Ok(ReconcileOutcome::Settled);
+                }
+                _ => {}
+            }
+        }
         self.set_state(project_id, State::Stopping).await?;
         match self.provider.stop(&SandboxId(raw), false).await {
             Ok(()) => {}
@@ -577,6 +863,11 @@ impl SandboxManager {
             }
             Err(e) => return Ok(self.provider_failed(&row, e).await),
         }
+        self.mark_stopped(project_id).await
+    }
+
+    /// The sandbox is stopped at the provider: record it and close the metering session.
+    async fn mark_stopped(&self, project_id: Uuid) -> Result<ReconcileOutcome, Exit> {
         let result = async {
             let mut tx = self.pool.begin().await?;
             store::set_state(&mut tx, project_id, State::Stopped, None).await?;
@@ -597,4 +888,56 @@ async fn close_session(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Resul
         .execute(conn)
         .await?;
     Ok(done.rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A renewal interval short enough for a test.
+    const EVERY: Duration = Duration::from_millis(10);
+    /// A lease a few renewals long.
+    const LEASE: Duration = Duration::from_millis(35);
+
+    #[test]
+    fn a_huge_provider_wait_is_capped_and_never_panics() {
+        let huge = SandboxError::RateLimited { retry_after: Duration::MAX };
+        assert_eq!(SandboxManager::wait_after(0, Some(&huge)), MAX_PROVIDER_WAIT);
+        let at = retry_time(Duration::MAX);
+        assert!(at <= Utc::now() + chrono::Duration::from_std(MAX_PROVIDER_WAIT).unwrap());
+    }
+
+    #[test]
+    fn sandboxes_never_take_the_provider_auto_stop() {
+        assert_eq!(SANDBOX_TTL, Ttl::Never);
+    }
+
+    #[tokio::test]
+    async fn a_walk_that_keeps_its_lease_runs_to_the_end() {
+        let renewals = std::sync::atomic::AtomicUsize::new(0);
+        let walk = async {
+            tokio::time::sleep(LEASE * 3).await;
+            "done"
+        };
+        let out = hold_lease(
+            walk,
+            || {
+                renewals.fetch_add(1, Ordering::SeqCst);
+                async { true }
+            },
+            EVERY,
+            LEASE,
+        )
+        .await;
+        assert_eq!(out, Some("done"));
+        assert!(renewals.load(Ordering::SeqCst) >= 3, "the lease was renewed while the walk ran");
+    }
+
+    #[tokio::test]
+    async fn a_walk_that_loses_its_lease_is_dropped_before_the_lease_runs_out() {
+        let started = Instant::now();
+        let out = hold_lease(std::future::pending::<()>(), || async { false }, EVERY, LEASE).await;
+        assert_eq!(out, None);
+        assert!(started.elapsed() < LEASE, "dropped before the last lease written could run out: {:?}", started.elapsed());
+    }
 }

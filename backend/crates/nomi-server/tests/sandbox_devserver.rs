@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use nomi_relay_client::RelayConfig;
 use nomi_sandbox::{CreateSpec, ExecOutput, FakeProvider, ResumeSpec, SandboxId, SandboxProvider, Size};
-use nomi_server::sandbox_devserver::{log_tail, DevServerTiming};
+use nomi_server::sandbox_devserver::DevServerTiming;
+use nomi_server::sandbox_manager::{ProjectSteps, StepError};
 use nomi_server::sandbox_steps::ServerSteps;
 use nomi_server::sandbox_store as store;
 use serde_json::json;
@@ -44,7 +45,7 @@ async fn fixture(pool: PgPool, ready: Duration) -> Fixture {
     let project = app.project(&owner, "dev").await.0;
     let provider = Arc::new(FakeProvider::new());
     let sandbox = provider
-        .create(CreateSpec { size: Size::Small, ttl_seconds: None, from_snapshot: None, idempotency_key: "k".into(), labels: Default::default() })
+        .create(CreateSpec { size: Size::Small, ttl: nomi_sandbox::Ttl::ProviderDefault, from_snapshot: None, idempotency_key: "k".into(), labels: Default::default() })
         .await
         .unwrap()
         .id;
@@ -117,7 +118,51 @@ async fn readiness_timeout_marks_row_error_with_log_tail(pool: PgPool) {
     f.provider.set_process_logs("", "Error: Cannot find module 'left-pad'");
     let err = f.steps.ensure_dev_server(f.project, &f.sandbox).await.unwrap_err();
     assert!(err.to_string().contains("Cannot find module 'left-pad'"), "{err}");
-    assert!(log_tail(f.project).contains("left-pad"), "the tail stays available for the chat");
+    let mut conn = f.pool.acquire().await.unwrap();
+    let saved = store::log_tail(&mut conn, f.project).await.unwrap();
+    assert!(saved.contains("left-pad"), "the tail is saved on the row, for whichever process serves the log: {saved}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn another_nomi_process_kills_the_dev_server_this_one_started(pool: PgPool) {
+    let f = fixture(pool, ROOMY_READY).await;
+    f.steps.ensure_dev_server(f.project, &f.sandbox).await.unwrap();
+    let first: Option<String> = sqlx::query_scalar("SELECT devserver_process FROM project_sandboxes WHERE project_id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap();
+    let first = first.expect("the dev server's process is recorded on the row");
+    // A fresh ServerSteps shares nothing in memory with the first, like the worker binary next to the API.
+    let other = ServerSteps::new(f.pool.clone(), nomi_test_support::test_project_storage(), f.provider.clone())
+        .with_devserver_timing(DevServerTiming { ready_timeout: ROOMY_READY, poll_interval: FAST_POLL });
+    other.ensure_dev_server(f.project, &f.sandbox).await.unwrap();
+    assert!(f.provider.calls().iter().any(|c| c.starts_with("kill_process") && c.contains(&first)), "{:?}", f.provider.calls());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_changed_package_json_is_installed_again_in_a_running_sandbox(pool: PgPool) {
+    let f = fixture(pool, ROOMY_READY).await;
+    f.steps.ensure_dev_server(f.project, &f.sandbox).await.unwrap();
+    assert_eq!(f.calls("npm install").len(), 1);
+    ProjectSteps::update_dependencies(&f.steps, f.project, &f.sandbox).await.unwrap();
+    assert_eq!(f.calls("npm install").len(), 1, "nothing changed: no install");
+    let storage = nomi_test_support::test_project_storage();
+    let mut conn = f.pool.acquire().await.unwrap();
+    nomi_agent_coding::files::save_bytes(&mut conn, &storage, f.project, "package.json", br#"{"dependencies":{"zod":"3"}}"#).await.unwrap();
+    drop(conn);
+    ProjectSteps::update_dependencies(&f.steps, f.project, &f.sandbox).await.unwrap();
+    assert_eq!(f.calls("npm install").len(), 2, "package.json changed: installed again");
+    assert_eq!(f.calls("exec_detached").len(), 1, "the dev server keeps running");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failed_install_is_a_usable_failure_handed_to_koda(pool: PgPool) {
+    let f = fixture(pool, ROOMY_READY).await;
+    f.provider.on_exec("test -d", out(1, ""));
+    f.provider.on_exec("npm install", ExecOutput { exit_code: Some(1), stdout: String::new(), stderr: "ERESOLVE".into() });
+    match ProjectSteps::start_preview(&f.steps, f.project, &f.sandbox).await {
+        Err(StepError::Usable(why)) => assert!(why.contains("ERESOLVE"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+    let tasks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_delegations").fetch_one(&f.pool).await.unwrap();
+    assert_eq!(tasks, 1, "the failed install went to Koda");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

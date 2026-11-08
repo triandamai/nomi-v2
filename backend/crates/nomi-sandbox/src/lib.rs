@@ -45,8 +45,8 @@ impl Size {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateSpec {
     pub size: Size,
-    /// How long the sandbox may live before the provider stops it; the provider's default if unset.
-    pub ttl_seconds: Option<u64>,
+    /// How long the sandbox may run before the provider stops it on its own.
+    pub ttl: Ttl,
     /// Start from this snapshot instead of an empty machine.
     pub from_snapshot: Option<String>,
     /// Sending the same key twice gives back the same sandbox.
@@ -58,7 +58,20 @@ pub struct CreateSpec {
 /// What to resume a stopped sandbox with.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResumeSpec {
-    pub ttl_seconds: Option<u64>,
+    /// How long the resumed sandbox may run before the provider stops it on its own.
+    pub ttl: Ttl,
+}
+
+/// How long a sandbox may run before the provider stops it by itself.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Ttl {
+    /// Say nothing and take the provider's default (boat stops a sandbox after an hour).
+    #[default]
+    ProviderDefault,
+    /// Never stop it by itself; the caller stops it.
+    Never,
+    /// Stop it after this many seconds.
+    Seconds(u64),
 }
 
 /// Where a sandbox is in its life.

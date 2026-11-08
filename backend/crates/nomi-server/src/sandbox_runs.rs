@@ -63,9 +63,26 @@ fn validate(run: &ClaimedRun) -> Result<Vec<String>, String> {
 /// behind it stay `pending` (and are never taken for abandoned). Returns `None` when nothing waits,
 /// or when a run of the project started within `RUN_LEASE` is still going (another worker has it).
 /// Serialised per project by an advisory lock, so two workers can't both pass the check.
+///
+/// A run also waits while its sandbox is behind the project's files or a walk holds its row
+/// (syncing, installing): the reconciler brings it up to date first, so a command never runs on
+/// stale files nor beside an install. The sandbox row is locked for the check, which orders this
+/// against `sandbox_store::claim_due_in` (that one skips locked rows and won't take a row whose
+/// command is running).
 pub async fn claim_next(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Result<Option<ClaimedRun>, sqlx::Error> {
     let mut tx = sqlx::Connection::begin(&mut *conn).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))").bind(project_id.to_string()).execute(&mut *tx).await?;
+    let held_back: Option<bool> = sqlx::query_scalar(
+        "SELECT (s.leased_until IS NOT NULL AND s.leased_until > now()) OR s.synced_version < p.files_version \
+         FROM project_sandboxes s JOIN projects p ON p.id = s.project_id WHERE s.project_id = $1 FOR UPDATE OF s",
+    )
+    .bind(project_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if held_back == Some(true) {
+        tx.commit().await?;
+        return Ok(None);
+    }
     let row: Option<(Uuid, String, serde_json::Value)> = sqlx::query_as(
         "UPDATE project_runs SET status = 'running', started_at = now() WHERE id = ( \
              SELECT id FROM project_runs WHERE project_id = $1 AND status = 'pending' \

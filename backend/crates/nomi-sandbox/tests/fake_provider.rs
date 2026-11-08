@@ -9,7 +9,7 @@ use nomi_sandbox::{
 fn spec() -> CreateSpec {
     CreateSpec {
         size: Size::Default,
-        ttl_seconds: None,
+        ttl: nomi_sandbox::Ttl::ProviderDefault,
         from_snapshot: None,
         idempotency_key: "k1".into(),
         labels: BTreeMap::from([("nomi-project".to_string(), "p1".to_string())]),
@@ -26,7 +26,7 @@ async fn create_then_stop_then_resume_keeps_files() {
     p.stop(&info.id, false).await.unwrap();
     assert_eq!(p.get(&info.id).await.unwrap().state, SandboxState::Stopped);
     let resumed = p
-        .resume(&info.id, ResumeSpec { ttl_seconds: None })
+        .resume(&info.id, ResumeSpec::default())
         .await
         .unwrap();
     assert_eq!(resumed.state, SandboxState::Running);
@@ -43,7 +43,7 @@ async fn detached_process_does_not_survive_resume() {
     let h = p.exec_detached(&info.id, "sleep 99").await.unwrap();
     assert!(p.process_status(&info.id, &h, 0, 0).await.unwrap().running);
     p.stop(&info.id, true).await.unwrap();
-    p.resume(&info.id, ResumeSpec { ttl_seconds: None })
+    p.resume(&info.id, ResumeSpec::default())
         .await
         .unwrap();
     assert!(!p.process_status(&info.id, &h, 0, 0).await.unwrap().running);

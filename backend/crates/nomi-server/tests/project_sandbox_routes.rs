@@ -161,11 +161,14 @@ async fn logs_endpoint_pages_by_offset(pool: PgPool) {
     let (status, body) = app.get(&uri, &owner).await;
     assert_eq!((status, body["text"].as_str(), body["next_offset"].as_u64()), (StatusCode::OK, Some(""), Some(0)));
 
-    nomi_server::sandbox_devserver::push_log_for_test(project, "hello ");
+    // The worker (maybe in another process) saves the dev server's output on the row.
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, project, "boat").await.unwrap();
+    store::append_log(&mut conn, project, "hello ", nomi_server::sandbox_devserver::LOG_KEPT).await.unwrap();
     let (_, first) = app.get(&uri, &owner).await;
     assert_eq!((first["text"].as_str(), first["next_offset"].as_u64()), (Some("hello "), Some(6)));
 
-    nomi_server::sandbox_devserver::push_log_for_test(project, "world");
+    store::append_log(&mut conn, project, "world", nomi_server::sandbox_devserver::LOG_KEPT).await.unwrap();
     let (_, rest) = app.get(&format!("{uri}?offset=6"), &owner).await;
     assert_eq!((rest["text"].as_str(), rest["next_offset"].as_u64()), (Some("world"), Some(11)));
 }
@@ -189,4 +192,26 @@ async fn new_project_gets_sandbox_runtime_only_when_switch_on_and_rollout_includ
     assert_eq!(create().await, "browser");
     switch(&pool, owner.id, true, "all").await;
     assert_eq!(create().await, "sandbox");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_running_sandbox_whose_preview_failed_shows_why_and_can_retry(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    let app = App::new(pool.clone());
+    let owner = app.person("owner@acme.test").await;
+    let project = sandbox_project(&app, &owner, "sandbox").await;
+    switch(&pool, owner.id, true, "all").await;
+    let uri = format!("/api/projects/{project}/sandbox");
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, project, "boat").await.unwrap();
+    store::set_state(&mut conn, project, State::Running, Some("installing dependencies failed: ERESOLVE")).await.unwrap();
+    let (_, body) = app.get(&uri, &owner).await;
+    assert_eq!(body["phase"], "running");
+    assert_eq!(body["preview_url"], json!(null));
+    assert!(body["error"].as_str().is_some_and(|e| e.contains("ERESOLVE")), "{body}");
+
+    let (status, _) = app.send("POST", &format!("{uri}/start"), &owner, json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    let error: Option<String> = sqlx::query_scalar("SELECT last_error FROM project_sandboxes WHERE project_id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    assert_eq!(error, None, "retrying clears the failure, so the worker tries the preview again");
 }

@@ -147,7 +147,7 @@ impl ProjectSteps for NoSteps {
     async fn sync(&self, _: Uuid, _: &SandboxId) -> Result<i64, String> {
         Ok(1)
     }
-    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<nomi_sandbox::PreviewUrl, String> {
+    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<nomi_sandbox::PreviewUrl, nomi_server::sandbox_manager::StepError> {
         Ok(nomi_sandbox::PreviewUrl { url: PREVIEW.into() })
     }
 }
@@ -184,7 +184,7 @@ async fn over_allowance_makes_sandbox_unavailable_but_running_sandbox_is_not_kil
     assert_eq!(status, axum::http::StatusCode::CONFLICT);
 
     // The worker leaves it running (the page is still open), and its session stays open.
-    sqlx::query("UPDATE projects SET runner_seen_at = now() WHERE id = $1").bind(p).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE project_sandboxes SET last_active_at = now() WHERE project_id = $1").bind(p).execute(&pool).await.unwrap();
     let provider = Arc::new(FakeProvider::new());
     let manager = Arc::new(SandboxManager::new(provider, Arc::new(NoSteps), pool.clone(), cfg(1)));
     let worker = SandboxWorker::new(pool.clone(), manager, 600);
@@ -239,7 +239,7 @@ async fn drift_is_reported_for_sandboxes_that_disagree_with_the_provider(pool: P
     for (project, provider_minutes) in [(agree, 10u64), (differ, 50)] {
         let id = nomi_sandbox::SandboxProvider::create(
             provider.as_ref(),
-            nomi_sandbox::CreateSpec { size: nomi_sandbox::Size::Small, ttl_seconds: None, from_snapshot: None, idempotency_key: project.to_string(), labels: Default::default() },
+            nomi_sandbox::CreateSpec { size: nomi_sandbox::Size::Small, ttl: nomi_sandbox::Ttl::ProviderDefault, from_snapshot: None, idempotency_key: project.to_string(), labels: Default::default() },
         )
         .await
         .unwrap()

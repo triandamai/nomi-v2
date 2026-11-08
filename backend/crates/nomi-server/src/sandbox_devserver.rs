@@ -2,18 +2,19 @@
 //! runs the dev command in the background, waits until it answers, and exposes its port.
 //!
 //! The reconciler runs this after every resume, so the dev server (which does not survive a
-//! stop) is started fresh each time. The handle of the one started last is kept in memory so
-//! it can be killed first; the port is also freed by command, so a server left over from before
-//! a Nomi restart (when the handles were lost) never blocks the new one.
+//! stop) is started fresh each time. The process id of the one started last, and the end of its
+//! output, are saved on the project's sandbox row, so any Nomi process can kill it before the
+//! next start and serve its log; the port is also freed by command, so a server nobody recorded
+//! never blocks the new one.
 
-use std::collections::{BTreeMap, HashMap};
-use std::sync::{Mutex, OnceLock};
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use nomi_sandbox::{PreviewUrl, ProcessHandle, SandboxError, SandboxId};
 use uuid::Uuid;
 
 use crate::sandbox_steps::ServerSteps;
+use crate::sandbox_store as store;
 use crate::sandbox_sync::{shell_quote, PROJECT_DIR};
 
 /// The port every dev server listens on inside the sandbox.
@@ -28,7 +29,7 @@ const READY_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 /// How long a quick check or cleanup command may take.
 const QUICK_TIMEOUT: Duration = Duration::from_secs(15);
-/// Most bytes of the dev server's output kept in memory per project.
+/// Most characters of the dev server's output kept per project (on its sandbox row).
 pub const LOG_KEPT: usize = 8 * 1024;
 /// The first HTTP status code that means the server answered (2xx to 4xx).
 const FIRST_ANSWER_CODE: u16 = 200;
@@ -80,44 +81,15 @@ impl Default for DevServerTiming {
     }
 }
 
-/// What is known about the dev server last started for one project.
-#[derive(Default)]
-struct Running {
-    process: Option<(SandboxId, ProcessHandle)>,
-    log: String,
-    stdout_next: u64,
-    stderr_next: u64,
-}
-
-fn registry() -> &'static Mutex<HashMap<Uuid, Running>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<Uuid, Running>>> = OnceLock::new();
-    REGISTRY.get_or_init(Default::default)
-}
-
-fn with_running<T>(project_id: Uuid, f: impl FnOnce(&mut Running) -> T) -> T {
-    let mut all = registry().lock().unwrap_or_else(|e| e.into_inner());
-    f(all.entry(project_id).or_default())
-}
-
-/// The end of the dev server's output so far (at most `LOG_KEPT` bytes); empty when none was started.
-pub fn log_tail(project_id: Uuid) -> String {
-    with_running(project_id, |r| r.log.clone())
-}
-
-/// Adds to a project's dev server output as if the server had printed it. For tests of what reads the log.
-#[doc(hidden)]
-pub fn push_log_for_test(project_id: Uuid, text: &str) {
-    with_running(project_id, |r| append_log(r, text));
-}
-
-fn append_log(running: &mut Running, text: &str) {
-    running.log.push_str(text);
-    if running.log.len() > LOG_KEPT {
-        let mut cut = running.log.len() - LOG_KEPT;
-        while !running.log.is_char_boundary(cut) {
+/// Add `text` to a log kept in memory, keeping only its last `LOG_KEPT` bytes.
+fn append_log(log: &mut String, text: &str) {
+    log.push_str(text);
+    if log.len() > LOG_KEPT {
+        let mut cut = log.len() - LOG_KEPT;
+        while !log.is_char_boundary(cut) {
             cut += 1;
         }
-        running.log.drain(..cut);
+        log.drain(..cut);
     }
 }
 
@@ -163,11 +135,12 @@ impl ServerSteps {
         if stack != STATIC_STACK {
             self.install_if_needed(project_id, sandbox).await?;
         }
-        self.stop_previous(project_id, sandbox).await;
+        self.stop_previous(project_id, sandbox).await?;
         let handle = self.provider.exec_detached(sandbox, &start_command(&preview_env(access.as_ref()), &stack)).await?;
-        with_running(project_id, |r| {
-            *r = Running { process: Some((sandbox.clone(), handle.clone())), ..Default::default() };
-        });
+        {
+            let mut conn = self.pool.acquire().await?;
+            store::record_dev_server(&mut conn, project_id, &sandbox.0, Some(&handle.process_id)).await?;
+        }
         self.wait_until_ready(project_id, sandbox, &handle).await?;
         Ok(self.provider.expose_port(sandbox, DEV_PORT).await?)
     }
@@ -206,6 +179,17 @@ impl ServerSteps {
         Ok(found.iter().map(|(path, at)| format!("{path}={at}")).collect::<Vec<_>>().join(";"))
     }
 
+    /// Install again when the dependency files changed since the last install (or the modules
+    /// are missing); nothing for a stack with no build step. For a sandbox that is already
+    /// running, after its files were synced.
+    pub(crate) async fn reinstall_if_changed(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<(), DevServerError> {
+        let stack: String = sqlx::query_scalar("SELECT stack FROM projects WHERE id = $1").bind(project_id).fetch_one(&self.pool).await?;
+        if stack == STATIC_STACK {
+            return Ok(());
+        }
+        self.install_if_needed(project_id, sandbox).await
+    }
+
     async fn install_if_needed(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<(), DevServerError> {
         let stamp = self.dependency_stamp(project_id).await?;
         let stored: Option<String> =
@@ -226,11 +210,15 @@ impl ServerSteps {
         Ok(())
     }
 
-    /// Kill the dev server started earlier, and free the port for any this process lost track of.
-    async fn stop_previous(&self, project_id: Uuid, sandbox: &SandboxId) {
-        let previous = with_running(project_id, |r| r.process.take());
-        if let Some((id, handle)) = previous {
-            if let Err(e) = self.provider.kill_process(&id, &handle).await {
+    /// Kill the dev server started earlier (whichever Nomi process started it), and free the
+    /// port for any that was never recorded.
+    async fn stop_previous(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<(), DevServerError> {
+        let previous = {
+            let mut conn = self.pool.acquire().await?;
+            store::dev_server_process(&mut conn, project_id, &sandbox.0).await?
+        };
+        if let Some(process_id) = previous {
+            if let Err(e) = self.provider.kill_process(sandbox, &ProcessHandle { process_id }).await {
                 tracing::debug!(error = %e, "sandbox dev server: the previous process was already gone");
             }
         }
@@ -238,31 +226,35 @@ impl ServerSteps {
         if let Err(e) = self.provider.exec(sandbox, &free, QUICK_TIMEOUT).await {
             tracing::debug!(error = %e, "sandbox dev server: couldn't free the dev port");
         }
+        Ok(())
     }
 
     /// Poll until the dev server answers on its port; on failure the error carries its output.
     async fn wait_until_ready(&self, project_id: Uuid, sandbox: &SandboxId, handle: &ProcessHandle) -> Result<(), DevServerError> {
         let check = format!("curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{DEV_PORT}/");
         let started = Instant::now();
+        let (mut stdout_next, mut stderr_next) = (0, 0);
+        let mut log = String::new();
         loop {
-            let (stdout_from, stderr_from) = with_running(project_id, |r| (r.stdout_next, r.stderr_next));
-            let status = self.provider.process_status(sandbox, handle, stdout_from, stderr_from).await?;
-            with_running(project_id, |r| {
-                append_log(r, &status.stdout);
-                append_log(r, &status.stderr);
-                r.stdout_next = status.stdout_next;
-                r.stderr_next = status.stderr_next;
-            });
+            let status = self.provider.process_status(sandbox, handle, stdout_next, stderr_next).await?;
+            stdout_next = status.stdout_next;
+            stderr_next = status.stderr_next;
+            let printed = format!("{}{}", status.stdout, status.stderr);
+            append_log(&mut log, &printed);
+            {
+                let mut conn = self.pool.acquire().await?;
+                store::append_log(&mut conn, project_id, &printed, LOG_KEPT).await?;
+            }
             if let Ok(out) = self.provider.exec(sandbox, &check, READY_CHECK_TIMEOUT).await {
                 if answered(&out.stdout) {
                     return Ok(());
                 }
             }
             if !status.running {
-                return Err(DevServerError::NotReady(format!("it exited with {:?}. {}", status.exit_code, log_tail(project_id))));
+                return Err(DevServerError::NotReady(format!("it exited with {:?}. {log}", status.exit_code)));
             }
             if started.elapsed() >= self.devserver_timing.ready_timeout {
-                return Err(DevServerError::NotReady(format!("no answer on port {DEV_PORT} after {}s. {}", self.devserver_timing.ready_timeout.as_secs(), log_tail(project_id))));
+                return Err(DevServerError::NotReady(format!("no answer on port {DEV_PORT} after {}s. {log}", self.devserver_timing.ready_timeout.as_secs())));
             }
             tokio::time::sleep(self.devserver_timing.poll_interval).await;
         }
@@ -271,9 +263,9 @@ impl ServerSteps {
 
 /// The end of some command output, bounded by `LOG_KEPT`.
 fn tail(text: &str) -> String {
-    let mut running = Running::default();
-    append_log(&mut running, text);
-    running.log
+    let mut log = String::new();
+    append_log(&mut log, text);
+    log
 }
 
 #[cfg(test)]

@@ -52,6 +52,32 @@ fn cooling_down(status: &Status) -> bool {
     status.state == SandboxState::Error && status.retry_at.is_some_and(|at| at > Utc::now())
 }
 
+/// Whether a project's sandbox may be used by someone right now, and what was read to decide.
+pub struct Availability {
+    pub runtime: String,
+    pub owner: Uuid,
+    pub status: Option<Status>,
+    /// `sandbox_available` for this project and person.
+    pub available: bool,
+}
+
+/// Read what `sandbox_available` needs for this project and person (the switch and rollout from
+/// `config`, the row's cooldown, the owner's allowance) and decide. `None` for a project that
+/// doesn't exist. Every place that starts a sandbox, or gives it Koda's commands, asks this: the
+/// page's `/sandbox` status and start, its heartbeat, and Koda's wake.
+pub async fn availability(conn: &mut sqlx::PgConnection, project_id: Uuid, user_id: Option<Uuid>, config: Option<&SandboxConfig>) -> Result<Option<Availability>, sqlx::Error> {
+    let found: Option<(String, Uuid)> = sqlx::query_as("SELECT runtime, user_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(&mut *conn).await?;
+    let Some((runtime, owner)) = found else { return Ok(None) };
+    let user_id = user_id.unwrap_or(owner);
+    let status = store::status(&mut *conn, project_id).await?;
+    let within_allowance = match config {
+        Some(cfg) => crate::sandbox_usage::within_allowance(&mut *conn, owner, cfg).await?,
+        None => false,
+    };
+    let available = sandbox_available(config, &runtime, owner == user_id, user_id, status.as_ref(), within_allowance);
+    Ok(Some(Availability { runtime, owner, status, available }))
+}
+
 #[derive(Serialize)]
 pub struct SandboxResponse {
     pub runtime: String,
@@ -63,44 +89,40 @@ pub struct SandboxResponse {
     pub error: Option<String>,
 }
 
-async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid, runtime: String, owner: Uuid) -> Result<SandboxResponse, ApiError> {
-    let status = {
-        let mut conn = state.pool.acquire().await.map_err(internal)?;
-        store::status(&mut conn, project_id).await.map_err(internal)?
-    };
+async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<SandboxResponse, ApiError> {
     let config = sandbox_config().await;
-    let within_allowance = match &config {
-        Some(cfg) => {
-            let mut conn = state.pool.acquire().await.map_err(internal)?;
-            crate::sandbox_usage::within_allowance(&mut conn, owner, cfg).await.map_err(internal)?
-        }
-        None => false,
+    let found = {
+        let mut conn = state.pool.acquire().await.map_err(internal)?;
+        availability(&mut conn, project_id, Some(user_id), config.as_ref()).await.map_err(internal)?
     };
-    let available = sandbox_available(config.as_ref(), &runtime, owner == user_id, user_id, status.as_ref(), within_allowance);
+    let Availability { runtime, status, available, .. } = found.ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
     let sandbox_state = status.as_ref().map_or(SandboxState::None, |s| s.state);
     let running = sandbox_state == SandboxState::Running;
+    let preview_url = status.as_ref().filter(|_| running).and_then(|s| s.preview_url.clone());
+    // An error, or a running sandbox whose preview failed (it still runs Koda's commands).
+    let failed = sandbox_state == SandboxState::Error || running && preview_url.is_none();
     Ok(SandboxResponse {
         runtime,
         available,
         state: sandbox_state.as_str(),
         phase: status.as_ref().map_or(PHASE_IDLE, |s| s.state.phase()),
-        preview_url: status.as_ref().filter(|_| running).and_then(|s| s.preview_url.clone()),
-        error: status.filter(|s| s.state == SandboxState::Error).and_then(|s| s.last_error),
+        preview_url,
+        error: status.filter(|_| failed).and_then(|s| s.last_error),
     })
 }
 
 /// `GET /api/projects/:id/sandbox`
 pub async fn get_sandbox(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<Json<SandboxResponse>, ApiError> {
-    let (runtime, owner) = load_project(&state, project_id, claims.sub).await?;
-    Ok(Json(describe(&state, project_id, claims.sub, runtime, owner).await?))
+    load_project(&state, project_id, claims.sub).await?;
+    Ok(Json(describe(&state, project_id, claims.sub).await?))
 }
 
 /// `POST /api/projects/:id/sandbox/start`: asks for the sandbox to be running. Answers 409 when
 /// the project doesn't use a sandbox or the sandbox can't be used now (switch off, not in the
 /// rollout, cooling down); nothing is started then.
 pub async fn start_sandbox(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<Json<SandboxResponse>, ApiError> {
-    let (runtime, owner) = load_project(&state, project_id, claims.sub).await?;
-    let current = describe(&state, project_id, claims.sub, runtime.clone(), owner).await?;
+    let (runtime, _) = load_project(&state, project_id, claims.sub).await?;
+    let current = describe(&state, project_id, claims.sub).await?;
     if runtime != RUNTIME_SANDBOX {
         return Err((StatusCode::CONFLICT, "this project runs in the browser".to_string()));
     }
@@ -109,18 +131,20 @@ pub async fn start_sandbox(State(state): State<AppState>, AuthClaims(claims): Au
     }
     let mut conn = state.pool.acquire().await.map_err(internal)?;
     store::want_running(&mut conn, project_id, PROVIDER_NAME).await.map_err(internal)?;
+    // A running sandbox whose preview failed: try the preview again.
+    store::retry_preview(&mut conn, project_id).await.map_err(internal)?;
     drop(conn);
-    Ok(Json(describe(&state, project_id, claims.sub, runtime, owner).await?))
+    Ok(Json(describe(&state, project_id, claims.sub).await?))
 }
 
 /// `POST /api/projects/:id/sandbox/stop`: asks for the sandbox to be stopped. Allowed with the
 /// switch off too: stopping never starts anything.
 pub async fn stop_sandbox(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<Json<SandboxResponse>, ApiError> {
-    let (runtime, owner) = load_project(&state, project_id, claims.sub).await?;
+    load_project(&state, project_id, claims.sub).await?;
     let mut conn = state.pool.acquire().await.map_err(internal)?;
     store::want_stopped(&mut conn, project_id).await.map_err(internal)?;
     drop(conn);
-    Ok(Json(describe(&state, project_id, claims.sub, runtime, owner).await?))
+    Ok(Json(describe(&state, project_id, claims.sub).await?))
 }
 
 #[derive(Deserialize)]
@@ -137,7 +161,8 @@ pub struct LogsResponse {
 }
 
 /// `GET /api/projects/:id/sandbox/logs?offset=N`: the dev server's output from byte `offset` on.
-/// An offset past the end (the log was trimmed or restarted) starts over from the beginning.
+/// An offset past the end (the log was trimmed or restarted) starts over from the beginning. The
+/// output is read from the project's sandbox row, which the worker (in whichever process) writes.
 pub async fn sandbox_logs(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -145,7 +170,10 @@ pub async fn sandbox_logs(
     Query(query): Query<LogsQuery>,
 ) -> Result<Json<LogsResponse>, ApiError> {
     load_project(&state, project_id, claims.sub).await?;
-    let log = crate::sandbox_devserver::log_tail(project_id);
+    let log = {
+        let mut conn = state.pool.acquire().await.map_err(internal)?;
+        store::log_tail(&mut conn, project_id).await.map_err(internal)?
+    };
     let mut from = query.offset.unwrap_or(0);
     if from > log.len() {
         from = 0;

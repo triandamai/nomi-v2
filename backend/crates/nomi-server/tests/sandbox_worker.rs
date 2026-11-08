@@ -26,7 +26,7 @@ impl ProjectSteps for OkSteps {
     async fn sync(&self, _: Uuid, _: &SandboxId) -> Result<i64, String> {
         Ok(1)
     }
-    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, String> {
+    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, nomi_server::sandbox_manager::StepError> {
         Ok(PreviewUrl { url: "https://preview.example.test".into() })
     }
 }
@@ -57,6 +57,13 @@ async fn project(pool: &PgPool, name: &str) -> Uuid {
     app.project(&owner, name).await.0
 }
 
+async fn owner_of(pool: &PgPool, p: Uuid) -> Uuid {
+    sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(p).fetch_one(pool).await.unwrap()
+}
+
+/// What the sandbox page sends on its heartbeat.
+const SANDBOX_PAGE: Option<&str> = Some("sandbox");
+
 async fn want_running(pool: &PgPool, p: Uuid) {
     let mut conn = pool.acquire().await.unwrap();
     store::want_running(&mut conn, p, PROVIDER_NAME).await.unwrap();
@@ -80,8 +87,9 @@ async fn check_in_for_a_sandbox_project_never_claims_runs(pool: PgPool) {
     let p = project(&pool, "claims").await;
     make_sandbox_project(&pool, p).await;
     add_pending_run(&pool, p).await;
+    let owner = owner_of(&pool, p).await;
     let mut conn = pool.acquire().await.unwrap();
-    let version = sandbox_check_in(&mut conn, p, true).await.unwrap();
+    let version = sandbox_check_in(&mut conn, p, owner, SANDBOX_PAGE, Some(&config())).await.unwrap();
     assert!(version.is_some());
     let status: String = sqlx::query_scalar("SELECT status FROM project_runs WHERE project_id = $1").bind(p).fetch_one(&pool).await.unwrap();
     assert_eq!(status, "pending");
@@ -91,11 +99,18 @@ async fn check_in_for_a_sandbox_project_never_claims_runs(pool: PgPool) {
 async fn check_in_marks_desired_running(pool: PgPool) {
     let p = project(&pool, "desired").await;
     make_sandbox_project(&pool, p).await;
+    let owner = owner_of(&pool, p).await;
     let mut conn = pool.acquire().await.unwrap();
-    sandbox_check_in(&mut conn, p, true).await.unwrap();
+    sandbox_check_in(&mut conn, p, owner, SANDBOX_PAGE, Some(&config())).await.unwrap();
     assert_eq!(row(&pool, p).await.desired, Desired::Running);
-    let seen: bool = sqlx::query_scalar("SELECT runner_seen_at IS NOT NULL FROM projects WHERE id = $1").bind(p).fetch_one(&pool).await.unwrap();
-    assert!(seen);
+    let (active, browser_online): (bool, bool) =
+        sqlx::query_as("SELECT s.last_active_at IS NOT NULL, p.runner_seen_at IS NOT NULL FROM project_sandboxes s JOIN projects p ON p.id = s.project_id WHERE s.project_id = $1")
+            .bind(p)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(active, "the heartbeat keeps the sandbox from the idle sweep");
+    assert!(!browser_online, "the sandbox page never marks the browser runner online");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -104,10 +119,60 @@ async fn check_in_leaves_browser_projects_and_a_disabled_runtime_alone(pool: PgP
     let sandboxed = project(&pool, "off").await;
     make_sandbox_project(&pool, sandboxed).await;
     let mut conn = pool.acquire().await.unwrap();
-    assert!(sandbox_check_in(&mut conn, browser, true).await.unwrap().is_none());
-    assert!(sandbox_check_in(&mut conn, sandboxed, false).await.unwrap().is_none());
+    assert!(sandbox_check_in(&mut conn, browser, owner_of(&pool, browser).await, None, Some(&config())).await.unwrap().is_none());
+    // The sandbox page of a sandbox project with the switch off: nothing is started.
+    assert!(sandbox_check_in(&mut conn, sandboxed, owner_of(&pool, sandboxed).await, SANDBOX_PAGE, None).await.unwrap().is_some());
     assert!(store::get(&mut conn, browser).await.unwrap().is_none());
     assert!(store::get(&mut conn, sandboxed).await.unwrap().is_none());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_browser_runtime_on_a_sandbox_project_checks_in_as_before(pool: PgPool) {
+    // The WebContainer fallback (or "run in my browser") on a sandbox project with the switch on.
+    let p = project(&pool, "fallback").await;
+    make_sandbox_project(&pool, p).await;
+    add_pending_run(&pool, p).await;
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(sandbox_check_in(&mut conn, p, owner_of(&pool, p).await, None, Some(&config())).await.unwrap().is_none(), "the caller claims the runs");
+    assert!(store::get(&mut conn, p).await.unwrap().is_none(), "the sandbox is not woken");
+    let (_, runs) = nomi_agent_coding::runtime::check_in(&mut conn, p).await.unwrap();
+    assert_eq!(runs.len(), 1, "the browser gets Koda's command");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_sandbox_page_over_allowance_or_cooling_down_wakes_nothing(pool: PgPool) {
+    let p = project(&pool, "quota").await;
+    make_sandbox_project(&pool, p).await;
+    let owner = owner_of(&pool, p).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let spent = SandboxConfig { monthly_minutes_per_user: 0, ..config() };
+    sandbox_check_in(&mut conn, p, owner, SANDBOX_PAGE, Some(&spent)).await.unwrap();
+    assert!(store::get(&mut conn, p).await.unwrap().is_none(), "over the allowance: not started");
+
+    store::want_running(&mut conn, p, PROVIDER_NAME).await.unwrap();
+    store::want_stopped(&mut conn, p).await.unwrap();
+    store::enter_cooldown(&mut conn, p, chrono::Utc::now() + chrono::Duration::minutes(30), "boom").await.unwrap();
+    sandbox_check_in(&mut conn, p, owner, SANDBOX_PAGE, Some(&config())).await.unwrap();
+    assert_eq!(row(&pool, p).await.desired, Desired::Stopped, "cooling down: not started");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn koda_never_wakes_a_sandbox_over_its_allowance_or_one_the_person_runs_in_the_browser(pool: PgPool) {
+    use nomi_agent_core::sandbox_ops::{SandboxOps, WakeOutcome};
+    let p = project(&pool, "koda-quota").await;
+    make_sandbox_project(&pool, p).await;
+    let spent = SandboxConfig { monthly_minutes_per_user: 0, ..config() };
+    let ops = nomi_server::sandbox_ops::ServerSandboxOps::new(pool.clone()).for_tests(std::time::Duration::from_millis(5), std::time::Duration::from_millis(50)).with_config(spent);
+    assert!(!ops.uses_sandbox(p).await);
+    assert!(matches!(ops.wake_and_wait(p, std::time::Duration::from_millis(50)).await, WakeOutcome::Failed(_)));
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(store::get(&mut conn, p).await.unwrap().is_none());
+
+    // Within the allowance it would use the sandbox, unless the browser runtime is open on it.
+    let ops = nomi_server::sandbox_ops::ServerSandboxOps::new(pool.clone()).for_tests(std::time::Duration::from_millis(5), std::time::Duration::from_millis(50));
+    assert!(ops.uses_sandbox(p).await);
+    nomi_agent_coding::runtime::touch_runner(&mut conn, p).await.unwrap();
+    assert!(!ops.uses_sandbox(p).await, "the person runs it in the browser: Koda's commands go there");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -117,8 +182,8 @@ async fn sweep_stops_only_idle_projects(pool: PgPool) {
     for p in [idle, busy] {
         want_running(&pool, p).await;
     }
-    sqlx::query("UPDATE projects SET runner_seen_at = now() - make_interval(secs => $2) WHERE id = $1").bind(idle).bind(STALE_AGE_SECS as f64).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE projects SET runner_seen_at = now() WHERE id = $1").bind(busy).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE project_sandboxes SET last_active_at = now() - make_interval(secs => $2) WHERE project_id = $1").bind(idle).bind(STALE_AGE_SECS as f64).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE project_sandboxes SET last_active_at = now() WHERE project_id = $1").bind(busy).execute(&pool).await.unwrap();
     let (worker, _) = worker(&pool);
     worker.sweep_idle().await;
     assert_eq!(row(&pool, idle).await.desired, Desired::Stopped);
@@ -250,6 +315,34 @@ async fn stop_only_never_creates_even_if_a_row_wants_running(pool: PgPool) {
     assert_eq!(row(&pool, p).await.attempts, 0);
     // The next pass flips it to stopped.
     assert_eq!(worker.wind_down().await, 1);
+}
+
+/// Steps whose sync panics, standing in for any bug in one walk.
+struct PanicSteps;
+
+#[async_trait]
+impl ProjectSteps for PanicSteps {
+    async fn sync(&self, _: Uuid, _: &SandboxId) -> Result<i64, String> {
+        panic!("a bug in one walk")
+    }
+    async fn start_preview(&self, _: Uuid, _: &SandboxId) -> Result<PreviewUrl, nomi_server::sandbox_manager::StepError> {
+        Ok(PreviewUrl { url: "https://preview.example.test".into() })
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_panic_in_one_walk_does_not_stop_the_others(pool: PgPool) {
+    let bad = project(&pool, "bad").await;
+    want_running(&pool, bad).await;
+    let provider = Arc::new(FakeProvider::new());
+    let panicking = SandboxWorker::new(pool.clone(), Arc::new(SandboxManager::new(provider.clone(), Arc::new(PanicSteps), pool.clone(), config())), IDLE_STOP_SECS);
+    assert_eq!(panicking.tick().await, 1, "the panic was caught inside the tick");
+    // The worker is still usable, and other projects still come up.
+    let good = project(&pool, "good").await;
+    want_running(&pool, good).await;
+    let (worker, _) = worker(&pool);
+    assert_eq!(worker.tick().await, 1);
+    assert_eq!(row(&pool, good).await.state, State::Running);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

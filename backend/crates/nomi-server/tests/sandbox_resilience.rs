@@ -40,7 +40,7 @@ impl ProjectSteps for Steps {
         self.calls.lock().unwrap().push(format!("sync {}", sandbox.0));
         Ok(SYNCED_VERSION)
     }
-    async fn start_preview(&self, _p: Uuid, _s: &SandboxId) -> Result<PreviewUrl, String> {
+    async fn start_preview(&self, _p: Uuid, _s: &SandboxId) -> Result<PreviewUrl, nomi_server::sandbox_manager::StepError> {
         Ok(PreviewUrl { url: "https://preview.example.test".into() })
     }
 }

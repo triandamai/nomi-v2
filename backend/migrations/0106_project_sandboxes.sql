@@ -31,7 +31,15 @@ CREATE TABLE project_sandboxes (
     leased_until   TIMESTAMPTZ,
     attempts       INT NOT NULL DEFAULT 0,
     last_error     TEXT,
+    -- The last sign anyone uses the sandbox: the sandbox page's heartbeat or Koda waking it. The
+    -- idle sweep stops a sandbox once this (and the project's last command) is old enough.
     last_active_at TIMESTAMPTZ,
+    -- When the worker last asked the provider whether this running sandbox is still up.
+    alive_checked_at TIMESTAMPTZ,
+    -- The provider's id of the dev server process started last, so the next start can kill it.
+    devserver_process TEXT,
+    -- The end of the dev server's output (bounded by the worker), readable from any process.
+    log_tail       TEXT NOT NULL DEFAULT '',
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
