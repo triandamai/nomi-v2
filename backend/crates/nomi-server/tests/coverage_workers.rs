@@ -106,7 +106,13 @@ async fn learning_and_sweeping_settle_what_was_queued(pool: PgPool) {
     let attempts: Option<i32> = sqlx::query_scalar("SELECT attempts FROM memory_jobs").fetch_optional(&pool).await.unwrap();
     assert!(attempts.is_none() || attempts == Some(1), "learned and removed, or tried once and kept: {attempts:?}");
 
+    // The chat went quiet half an hour ago: its person's "recently" note is written, or (no model
+    // set up here) the chat waits for the next sweep.
+    assert_eq!(nomi_agent_core::recent_activity::chats_gone_quiet(&pool, 10).await.unwrap(), vec![(session, user)]);
     nomi_server::memory_worker::sweep(&pool, &KEY, &http).await;
+    let noted = nomi_agent_core::recent_activity::for_person(&pool, user).await.unwrap().is_some();
+    let waiting = !nomi_agent_core::recent_activity::chats_gone_quiet(&pool, 10).await.unwrap().is_empty();
+    assert!(noted != waiting, "noted, or left to try again: noted={noted} waiting={waiting}");
     // Nothing queued any more: a quiet pass.
     nomi_server::memory_worker::learn(&pool, &KEY, &http).await;
     let _ = json!({});
