@@ -35,9 +35,28 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-const beats = () => requests.filter((r) => r.path === 'runtime').length;
+const beats = () => requests.filter((r) => r.path.split('?')[0] === 'runtime').length;
 
 describe('sandbox runtime', () => {
+	it('heartbeat_tells_the_backend_it_is_the_sandbox_page', async () => {
+		const runtime = new SandboxRuntime('p1');
+		await runtime.start();
+		const heartbeats = requests.filter((r) => r.path.split('?')[0] === 'runtime');
+		expect(heartbeats.length).toBeGreaterThan(0);
+		// Only the sandbox page says so; the browser runtime's check-in never does, so a fallback page claims Koda's commands.
+		expect(heartbeats.every((r) => new URLSearchParams(r.path.split('?')[1]).get('runtime') === 'sandbox')).toBe(true);
+		await runtime.stop();
+	});
+
+	it('a_running_sandbox_whose_preview_failed_shows_the_failure', async () => {
+		status = { ...status, phase: 'running', preview_url: null, error: 'installing dependencies failed: ERESOLVE' };
+		const runtime = new SandboxRuntime('p1');
+		await runtime.start();
+		expect(runtime.phase).toBe('failed');
+		expect(runtime.error).toContain('ERESOLVE');
+		await runtime.stop();
+	});
+
 	it('picks_sandbox_runtime_when_available', async () => {
 		expect(await createRuntime('p1')).toBeInstanceOf(SandboxRuntime);
 	});

@@ -25,6 +25,12 @@ export interface SandboxStatus {
 const HEARTBEAT_MS = 20_000;
 /** The slow poll behind the live events (and the logs' tail). */
 const POLL_MS = 5_000;
+/**
+ * The heartbeat's check-in. `runtime=sandbox` tells the backend this is the sandbox page, so it
+ * keeps the sandbox awake (when the sandbox may be used) and leaves Koda's commands to it. The
+ * browser runtime (the fallback, or "run in my browser") never sends it, and claims them itself.
+ */
+export const SANDBOX_CHECK_IN = 'runtime?runtime=sandbox';
 
 /** The only scheme a preview address may have: it goes straight into an iframe's `src`. */
 const PREVIEW_PROTOCOL = 'https:';
@@ -158,7 +164,7 @@ export class SandboxRuntime {
 	async #beat() {
 		if (this.#stopped) return;
 		try {
-			await projectApi(this.#projectId, 'runtime');
+			await projectApi(this.#projectId, SANDBOX_CHECK_IN);
 		} catch {
 			// The next beat tries again.
 		}
@@ -179,8 +185,11 @@ export class SandboxRuntime {
 
 	#apply(status: SandboxStatus) {
 		this.previewUrl = status.phase === 'running' ? safePreviewUrl(status.preview_url) : null;
-		this.phase = toRuntimePhase(status.phase, this.previewUrl);
-		this.error = status.phase === 'error' ? (status.error ?? '') : null;
+		// A running sandbox whose install or dev server failed still runs Koda's commands; the page
+		// shows why its preview is missing (and Retry tries the preview again).
+		const previewFailed = status.phase === 'running' && !this.previewUrl && !!status.error;
+		this.phase = previewFailed ? 'failed' : toRuntimePhase(status.phase, this.previewUrl);
+		this.error = status.phase === 'error' || previewFailed ? (status.error ?? '') : null;
 	}
 
 	async #fetchLogs() {
