@@ -253,6 +253,19 @@ impl SandboxManager {
         }
     }
 
+    /// The provider's sandbox is gone. One that never got past starting keeps its attempt count
+    /// and backs off, so a sandbox that keeps dying doesn't loop; one that had been healthy is
+    /// recreated at once with a fresh count.
+    async fn vanished(&self, row: &SandboxRow) -> Result<ReconcileOutcome, Exit> {
+        if matches!(row.state, State::Creating | State::Starting) {
+            self.forget_keeping(row.project_id, row.attempts).await?;
+            let at = Utc::now() + Self::wait_after(row.attempts + 1, None);
+            return Ok(self.retry_at(row.project_id, at, "sandbox went away while starting").await);
+        }
+        self.forget(row.project_id).await?;
+        Ok(self.defer(row.project_id, Utc::now()).await)
+    }
+
     async fn bring_up(&self, row: SandboxRow) -> Result<ReconcileOutcome, Exit> {
         let project_id = row.project_id;
         let mut id = row.sandbox_id.clone().map(SandboxId);
@@ -262,8 +275,7 @@ impl SandboxManager {
                 Ok(info) => match info.state {
                     SandboxState::Running if row.state == State::Running => return Ok(ReconcileOutcome::Settled),
                     SandboxState::Gone | SandboxState::Error => {
-                        self.forget(project_id).await?;
-                        return Ok(self.defer(project_id, Utc::now()).await);
+                        return self.vanished(&row).await;
                     }
                     SandboxState::Stopping => {
                         return Ok(self.defer(project_id, Utc::now() + STOPPING_RECHECK).await);
@@ -279,10 +291,7 @@ impl SandboxManager {
                     }
                     SandboxState::Starting | SandboxState::Running => {}
                 },
-                Err(SandboxError::NotFound) => {
-                    self.forget(project_id).await?;
-                    return Ok(self.defer(project_id, Utc::now()).await);
-                }
+                Err(SandboxError::NotFound) => return self.vanished(&row).await,
                 Err(SandboxError::SnapshotExpired) => id = self.start_over(&existing, &row).await?,
                 Err(e) => return Ok(self.provider_failed(&row, e).await),
             }

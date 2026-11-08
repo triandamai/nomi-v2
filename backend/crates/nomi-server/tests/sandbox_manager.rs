@@ -330,3 +330,36 @@ async fn repeated_deaths_back_off_exponentially(pool: PgPool) {
     }
     assert!(delays[0] < delays[1] && delays[1] < delays[2], "{delays:?}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sandbox_that_times_out_then_vanishes_keeps_backing_off(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    let id = f.run().await;
+    // A start that timed out earlier: still starting, two failed attempts so far, sandbox now gone.
+    sqlx::query("UPDATE project_sandboxes SET state = 'starting', attempts = 2 WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.provider.set_state(&id, SandboxState::Gone);
+    let before = chrono::Utc::now();
+    match f.reconcile().await {
+        ReconcileOutcome::RetryAt(at) => assert!(at >= before + chrono::Duration::seconds(30), "{at}"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(attempts_and_retry(&f).await.0, 3);
+    assert_eq!(f.row().await.sandbox_id, None);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn stopped_sandbox_that_vanished_is_recreated_at_once(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    let id = f.run().await;
+    f.want(Desired::Stopped).await;
+    f.reconcile().await;
+    f.provider.set_state(&id, SandboxState::Gone);
+    f.want(Desired::Running).await;
+    let before = chrono::Utc::now();
+    match f.reconcile().await {
+        ReconcileOutcome::RetryAt(at) => assert!(at <= before + chrono::Duration::seconds(2)),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(attempts_and_retry(&f).await.0, 0);
+    assert_eq!(f.reconcile().await, ReconcileOutcome::Settled);
+}
