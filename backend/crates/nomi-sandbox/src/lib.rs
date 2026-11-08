@@ -11,6 +11,7 @@ use async_trait::async_trait;
 pub mod boat;
 pub mod error;
 pub mod fake;
+pub mod plan;
 
 pub use boat::{BoatConfig, BoatProvider};
 pub use error::SandboxError;
