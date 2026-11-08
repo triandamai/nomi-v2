@@ -1137,7 +1137,13 @@
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
 		<WorkspaceSheet icon={SHEET_ICON[sheet]} title={SHEET_TITLE[sheet]()} meta={project.name} onclose={() => (sheetOpen = false)}>
 			{#if sheet === 'issues'}
-				<IssuesPanel projectId={project.id} onCountChange={(n) => (openIssues = n)} onAskKoda={sendToChat} />
+				<IssuesPanel
+					projectId={project.id}
+					onCountChange={(n) => (openIssues = n)}
+					onAskKoda={sendToChat}
+					canEditColumns={deploy?.isAdmin ?? false}
+					subscribe={deploy ? (listener) => deploy!.onEvent(listener) : undefined}
+				/>
 			{:else if sheet === 'deploy' && deploy}
 				<DeployPanel {deploy} onaskfix={sendToChat} />
 			{:else if sheet === 'domain' && deploy}

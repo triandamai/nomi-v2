@@ -1,6 +1,7 @@
 <script lang="ts">
-	// A project's issues: feature requests, enhancements and bugs. Opened in a sheet over the
-	// project so its chat, code and running preview stay as they are.
+	// A project's issues: tasks, enhancements and bugs. Opened in a sheet over the project so its
+	// chat, code and running preview stay as they are. The board (the default) lays the open ones
+	// out in columns and sends Ready to dev ones to the crew; the list filters every issue.
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import Button from '$lib/components/m3/Button.svelte';
@@ -9,24 +10,42 @@
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import IconChevronDown from '$lib/components/icons/IconChevronDown.svelte';
-	import { ISSUE_KINDS, ISSUE_SEVERITIES, issuesQuery, type IssueFilters } from '$lib/issues';
+	import IssueBoard from '$lib/components/project/IssueBoard.svelte';
+	import {
+		DEFAULT_CREW_AGENT,
+		ISSUE_CREW,
+		ISSUE_KINDS,
+		ISSUE_SEVERITIES,
+		MAX_POINTS,
+		POINT_SUGGESTIONS,
+		datesInOrder,
+		issuesQuery,
+		type IssueFilters,
+	} from '$lib/issues';
+	import { isIssuesEvent } from '$lib/presenceView';
 	import { ago, projectApi } from '$lib/projectApi';
-	import type { IssueKind, IssueList, IssueSeverity, ProjectIssue } from '$lib/types';
+	import type { IssueBoard as Board, IssueKind, IssueList, IssueSeverity, ProjectIssue } from '$lib/types';
 
 	let {
 		projectId,
 		onCountChange,
 		onAskKoda,
+		canEditColumns = false,
+		subscribe,
 	}: {
 		projectId: string;
 		/** The open issue count changed (the toolbar shows it). */
 		onCountChange?: (open: number) => void;
 		/** Sends a message to the project's chat. */
 		onAskKoda: (text: string) => Promise<void>;
+		/** The project's admins add, rename and delete the board's columns. */
+		canEditColumns?: boolean;
+		/** The project's live events (its socket): the board reloads when it changes. */
+		subscribe?: (listener: (raw: string) => void) => () => void;
 	} = $props();
 
 	const KIND: Record<IssueKind, () => string> = {
-		feature: m.issues_kind_feature,
+		task: m.issues_kind_task,
 		enhancement: m.issues_kind_enhancement,
 		bug: m.issues_kind_bug,
 	};
@@ -42,21 +61,38 @@
 	let loadError = $state<string | null>(null);
 	let error = $state<string | null>(null);
 
+	let view = $state<'board' | 'list'>('board');
+	let board = $state<Board | null>(null);
+
 	async function load() {
 		try {
-			list = await projectApi<IssueList>(projectId, `issues?${issuesQuery(filters)}`);
+			if (view === 'board') {
+				board = await projectApi<Board>(projectId, 'board');
+				onCountChange?.(board.columns.reduce((sum, column) => sum + column.issues.length, 0));
+			} else {
+				list = await projectApi<IssueList>(projectId, `issues?${issuesQuery(filters)}`);
+				onCountChange?.(list.counts.open);
+			}
 			loadError = null;
-			onCountChange?.(list.counts.open);
 		} catch {
 			loadError = m.issues_err_load();
 		}
 	}
 
 	$effect(() => {
+		void view;
 		void filters.status;
 		void filters.kind;
 		void filters.severity;
 		void load();
+	});
+
+	// Someone else moved an issue, or the crew picked one up or finished it.
+	$effect(() => {
+		if (!subscribe) return;
+		return subscribe((raw) => {
+			if (isIssuesEvent(raw)) void load();
+		});
 	});
 
 	// The editor: a new issue, or an existing one being edited.
@@ -66,6 +102,10 @@
 	let body = $state('');
 	let kind = $state<IssueKind>('bug');
 	let severity = $state<IssueSeverity>('medium');
+	let points = $state<number | null>(null);
+	let startOn = $state('');
+	let dueOn = $state('');
+	let crewAgent = $state(DEFAULT_CREW_AGENT);
 	let saving = $state(false);
 
 	let expanded = $state<number | null>(null);
@@ -81,6 +121,10 @@
 		body = '';
 		kind = 'bug';
 		severity = 'medium';
+		points = null;
+		startOn = '';
+		dueOn = '';
+		crewAgent = DEFAULT_CREW_AGENT;
 		error = null;
 		editorOpen = true;
 	}
@@ -91,6 +135,10 @@
 		body = issue.body;
 		kind = issue.kind;
 		severity = issue.severity;
+		points = issue.points;
+		startOn = issue.start_on ?? '';
+		dueOn = issue.due_on ?? '';
+		crewAgent = issue.crew_agent;
 		error = null;
 		editorOpen = true;
 	}
@@ -101,9 +149,22 @@
 			error = m.issues_err_title();
 			return;
 		}
+		if (!datesInOrder(startOn, dueOn)) {
+			error = m.issues_err_dates();
+			return;
+		}
 		saving = true;
 		try {
-			const fields = { title: title.trim(), body, kind, severity };
+			const fields = {
+				title: title.trim(),
+				body,
+				kind,
+				severity,
+				points: points && points > 0 ? Math.min(Math.round(points), MAX_POINTS) : null,
+				start_on: startOn || null,
+				due_on: dueOn || null,
+				crew_agent: crewAgent,
+			};
 			if (editing === null) await projectApi(projectId, 'issues', { method: 'POST', body: fields });
 			else await projectApi(projectId, `issues/${editing}`, { method: 'PATCH', body: fields });
 			editorOpen = false;
@@ -171,6 +232,13 @@
 
 <div class="issues">
 	<div class="bar">
+		<div class="tabs" role="tablist" aria-label={m.board_view()}>
+			<button type="button" role="tab" class="tab" aria-selected={view === 'board'} onclick={() => (view = 'board')}>{m.board_view_board()}</button>
+			<button type="button" role="tab" class="tab" aria-selected={view === 'list'} onclick={() => (view = 'list')}>{m.board_view_list()}</button>
+		</div>
+		{#if view === 'board'}
+			<span class="spacer"></span>
+		{:else}
 		<div class="tabs" role="tablist" aria-label={m.issues_filters()}>
 			<button type="button" role="tab" class="tab" aria-selected={filters.status === 'open'} onclick={() => filter({ status: 'open' })}>
 				{m.issues_open()}<span class="tab__count">{list?.counts.open ?? '–'}</span>
@@ -197,13 +265,26 @@
 			</select>
 			<IconChevronDown size={16} />
 		</label>
+		{/if}
 		<Button variant="filled" size="s" onclick={openNew}><IconPlus size={18} />{m.issues_new()}</Button>
 	</div>
 
 	{#if error && !editorOpen}<p class="error" role="alert">{error}</p>{/if}
 	{#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 
-	{#if list && list.issues.length === 0}
+	{#if view === 'board'}
+		{#if board}
+			<IssueBoard
+				{projectId}
+				{board}
+				{canEditColumns}
+				kindLabel={(k) => KIND[k]()}
+				severityLabel={(s) => SEVERITY[s]()}
+				onopen={openEdit}
+				onchange={load}
+			/>
+		{/if}
+	{:else if list && list.issues.length === 0}
 		<p class="empty">{emptyText}</p>
 	{:else if list}
 		<ul class="list">
@@ -263,6 +344,30 @@
 				{/each}
 			</div>
 		</fieldset>
+		<div class="fields">
+			<label class="field">
+				<span class="area__label">{m.issues_field_points()}</span>
+				<input type="number" name="points" min="1" max={MAX_POINTS} step="1" list="issue-points" bind:value={points} />
+				<datalist id="issue-points">
+					{#each POINT_SUGGESTIONS as p (p)}<option value={p}></option>{/each}
+				</datalist>
+			</label>
+			<label class="field">
+				<span class="area__label">{m.issues_field_start()}</span>
+				<input type="date" name="start_on" bind:value={startOn} max={dueOn || undefined} />
+			</label>
+			<label class="field">
+				<span class="area__label">{m.issues_field_due()}</span>
+				<input type="date" name="due_on" bind:value={dueOn} min={startOn || undefined} />
+			</label>
+		</div>
+		<label class="field">
+			<span class="area__label">{m.issues_field_assignee()}</span>
+			<select name="crew_agent" bind:value={crewAgent}>
+				{#each ISSUE_CREW as member (member.agent)}<option value={member.agent}>{member.name}</option>{/each}
+			</select>
+			<span class="field__hint">{m.issues_field_assignee_hint()}</span>
+		</label>
 		<label class="area">
 			<span class="area__label">{m.issues_field_body()}</span>
 			<textarea name="body" rows="6" maxlength="20000" bind:value={body} placeholder={m.issues_field_body_hint()}></textarea>
@@ -302,7 +407,49 @@
 	.tabs {
 		display: flex;
 		gap: 4px;
+	}
+	.tabs + .tabs {
 		margin-right: auto;
+	}
+	.spacer {
+		margin-right: auto;
+	}
+	.fields {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 10px;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+	.field input,
+	.field select {
+		box-sizing: border-box;
+		width: 100%;
+		min-height: 44px;
+		padding: 0 12px;
+		border: 1.5px solid var(--md-sys-color-outline);
+		border-radius: 8px;
+		background: var(--md-sys-color-surface);
+		color: var(--md-sys-color-on-surface);
+		font: inherit;
+	}
+	.field input:focus-visible,
+	.field select:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	.field__hint {
+		margin-top: 4px;
+		font-size: var(--md-sys-typescale-body-small-size);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	@media (max-width: 600px) {
+		.fields {
+			grid-template-columns: 1fr;
+		}
 	}
 	.tab {
 		display: inline-flex;
@@ -433,7 +580,7 @@
 		border-color: color-mix(in srgb, var(--md-sys-color-error) 45%, transparent);
 		color: var(--md-sys-color-error);
 	}
-	.kind--feature {
+	.kind--task {
 		border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
 		color: var(--md-sys-color-primary);
 	}

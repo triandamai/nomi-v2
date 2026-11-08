@@ -48,11 +48,23 @@ export function isBackendEvent(data: string): boolean {
 	}
 }
 
+/** What the backend sends when the project's issue board changed (see project_issues.rs). */
+export const ISSUES_CHANGED = 'issues.changed';
+
 export function isDeployEvent(data: string): boolean {
 	try {
-		const kind = (JSON.parse(data) as { kind?: unknown }).kind;
-		return kind !== 'PresenceChanged' && kind !== 'Typing';
+		const parsed = JSON.parse(data) as { kind?: unknown; event?: unknown };
+		return parsed.kind !== 'PresenceChanged' && parsed.kind !== 'Typing' && parsed.event !== ISSUES_CHANGED;
 	} catch {
 		return true;
+	}
+}
+
+/** Whether the project's issue board changed: someone moved an issue, or the crew took one. */
+export function isIssuesEvent(data: string): boolean {
+	try {
+		return (JSON.parse(data) as { event?: unknown }).event === ISSUES_CHANGED;
+	} catch {
+		return false;
 	}
 }

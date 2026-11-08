@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expireTyping, isBackendEvent, isDeployEvent, shouldSend, typingNames } from './presenceView';
+import { expireTyping, isBackendEvent, isDeployEvent, isIssuesEvent, shouldSend, typingNames } from './presenceView';
 
 describe('typingNames', () => {
 	it('lists who is typing, the first to start first, without the person themself', () => {
@@ -49,5 +49,15 @@ describe('isBackendEvent', () => {
 		expect(isBackendEvent('{"kind":"DeployChanged","event":"backend.changed"}')).toBe(true);
 		expect(isBackendEvent('{"kind":"DeployChanged","event":"publish.succeeded"}')).toBe(false);
 		expect(isBackendEvent('not json')).toBe(false);
+	});
+});
+
+describe('isIssuesEvent', () => {
+	it('is the board changing, which the deploy panel ignores', () => {
+		const changed = '{"kind":"DeployChanged","event":"issues.changed"}';
+		expect(isIssuesEvent(changed)).toBe(true);
+		expect(isDeployEvent(changed)).toBe(false);
+		expect(isIssuesEvent('{"kind":"DeployChanged","event":"publish.succeeded"}')).toBe(false);
+		expect(isIssuesEvent('not json')).toBe(false);
 	});
 });

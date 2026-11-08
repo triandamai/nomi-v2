@@ -65,7 +65,7 @@ pub async fn chat_activity(pool: &PgPool, session_id: Uuid, ended: Ended) -> Res
     }
 
     let (title, project_id): (Option<String>, Option<Uuid>) = sqlx::query_as(
-        "SELECT COALESCE(p.name, s.title), p.id FROM sessions s LEFT JOIN projects p ON p.session_id = s.id WHERE s.id = $1",
+        "SELECT COALESCE(CASE WHEN p.session_id = s.id THEN p.name END, s.title, p.name), p.id FROM sessions s LEFT JOIN projects p ON p.id = chat_project(s.id) WHERE s.id = $1",
     )
     .bind(session_id)
     .fetch_one(pool)

@@ -615,7 +615,7 @@ export interface MessageDeletion {
 	files: RelatedItem[];
 }
 
-export type IssueKind = 'feature' | 'enhancement' | 'bug';
+export type IssueKind = 'task' | 'enhancement' | 'bug';
 export type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export interface ProjectIssue {
@@ -630,6 +630,33 @@ export interface ProjectIssue {
 	closed_at: string | null;
 	created_at: string;
 	updated_at: string;
+	column_id: string | null;
+	position: number;
+	/** Dates as YYYY-MM-DD. */
+	start_on: string | null;
+	due_on: string | null;
+	points: number | null;
+	/** The crew member (agent type, "coding") working it, or who will once it's picked up. */
+	crew_agent: string;
+	/** Who handed it on to `crew_agent`, when it was handed on. */
+	assigned_by_agent: string | null;
+	/** What the crew is doing with it; null until it reaches Ready to dev. */
+	crew_state: 'queued' | 'working' | 'done' | 'failed' | null;
+	/** The issue's own chat, once the crew picked it up. */
+	session_id: string | null;
+}
+
+export interface BoardColumn {
+	id: string;
+	name: string;
+	position: number;
+	/** The two every project has, which can't be renamed, moved or deleted. */
+	fixed: 'backlog' | 'ready' | null;
+	issues: ProjectIssue[];
+}
+
+export interface IssueBoard {
+	columns: BoardColumn[];
 }
 
 export interface IssueList {

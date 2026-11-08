@@ -14,6 +14,8 @@ import RelayPanel from './RelayPanel.svelte';
 import SecretsSection from './SecretsSection.svelte';
 import SettingsPanel from './SettingsPanel.svelte';
 
+const BOARD_ISSUE = { number: 1, title: 'Checkout button broken', body: 'It 500s', kind: 'bug', severity: 'high', status: 'open', created_by: 'Ana', mine: true, closed_at: null, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z', column_id: 'c-ready', position: 1, start_on: null, due_on: '2026-11-20', points: 3, crew_agent: 'money', assigned_by_agent: 'coding', crew_state: 'working', session_id: 's-issue' };
+
 class QuietSocket {
 	addEventListener() {}
 	removeEventListener() {}
@@ -62,6 +64,7 @@ const routes = (): Parameters<typeof fakeBackend>[0] => [
 	['GET', /deploy\/events/, [{ id: 'e1', type: 'deployment.succeeded', created_at: '2026-11-01T00:00:00Z', environment: 'production', service: 'web', data: { message: 'ok' } }]],
 	['GET', /deploy\/publishes\/pub1/, { ...publish(), deployments: [{ service: 'web', deployment_id: 'd1', status: 'succeeded' }] }],
 	['GET', /\/issues\?/, { issues: [{ number: 1, title: 'Checkout button broken', body: 'It 500s', kind: 'bug', severity: 'high', status: 'open', created_by: 'Ana', mine: true, closed_at: null, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }], counts: { open: 1, closed: 3 } }],
+	['GET', /\/board$/, { columns: [{ id: 'c-backlog', name: 'Backlog', position: 0, fixed: 'backlog', issues: [{ ...BOARD_ISSUE, number: 2, title: 'Dark mode', kind: 'enhancement', severity: 'low', column_id: 'c-backlog', crew_state: null, crew_agent: 'coding', assigned_by_agent: null, session_id: null, points: null }] }, { id: 'c-ready', name: 'Ready to dev', position: 1, fixed: 'ready', issues: [BOARD_ISSUE, { ...BOARD_ISSUE, number: 3, title: 'Receipts', crew_state: 'failed', crew_agent: 'coding', assigned_by_agent: null }] }, { id: 'c-review', name: 'In review', position: 2, fixed: null, issues: [] }] }],
 	['GET', /\/members$/, { access: 'members', my_role: 'admin', me: 'u1', people: [{ user_id: 'u1', name: 'Ana', email: 'ana@x.test', avatar_url: null, org_role: 'owner', project_role: 'admin', is_owner: true, added_at: null }, { user_id: 'u2', name: 'Ben', email: 'ben@x.test', avatar_url: null, org_role: 'member', project_role: 'member', is_owner: false, added_at: '2026-10-01T00:00:00Z' }] }],
 	['GET', /database\/tables/, [{ schema: 'public', name: 'orders', rows_estimate: 42 }]],
 	['POST', /database\/query/, { columns: ['id', 'total'], rows: [[1, 45000]], truncated: false, rows_affected: null, took_ms: 3 }],
@@ -121,9 +124,53 @@ describe('project sheets', () => {
 		const onCountChange = vi.fn();
 		const root = render(IssuesPanel as never, { projectId: 'p1', onCountChange, onAskKoda: vi.fn(async () => {}) });
 		await settle(8);
+		[...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent?.trim() === 'List')!.click();
+		await settle(8);
 		expect(text(root)).toContain('Checkout button broken');
 		await tryEverything(root);
 		expect(calls.length).toBeGreaterThan(1);
+	});
+
+	it('issues board shows the columns and who has each issue, and moves one', async () => {
+		const calls = fakeBackend(routes());
+		const listeners: ((raw: string) => void)[] = [];
+		const onCountChange = vi.fn();
+		const root = render(IssuesPanel as never, {
+			projectId: 'p1',
+			onCountChange,
+			onAskKoda: vi.fn(async () => {}),
+			canEditColumns: true,
+			subscribe: (listener: (raw: string) => void) => {
+				listeners.push(listener);
+				return () => {};
+			},
+		});
+		await settle(8);
+		const shown = text(root);
+		for (const piece of ['Backlog', 'Ready to dev', 'In review', 'Dana is working on it (from Koda)', 'Koda couldn’t finish it', '3 pts', 'Open its chat'])
+			expect(shown.replace(/'/g, '’')).toContain(piece);
+		expect(onCountChange).toHaveBeenLastCalledWith(3);
+		// Only the column people added can be edited.
+		expect(root.querySelectorAll('[aria-label^="Edit column"]').length).toBe(1);
+
+		// "Move to" sends the issue to the end of that column.
+		const move = root.querySelector<HTMLSelectElement>('.move select')!;
+		move.value = 'c-ready';
+		move.dispatchEvent(new Event('change', { bubbles: true }));
+		await settle(6);
+		expect(calls.find((c) => c.path.endsWith('/issues/2/move'))?.body).toEqual({ column_id: 'c-ready', index: 2 });
+
+		// The failed one can be tried again.
+		[...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Try again')!.click();
+		await settle(6);
+		expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/issues/3/retry'))).toBe(true);
+
+		// The crew picked something up elsewhere: the board loads again.
+		const before = calls.filter((c) => c.path.endsWith('/board')).length;
+		for (const listener of listeners) listener('{"kind":"DeployChanged","event":"issues.changed"}');
+		await settle(6);
+		expect(calls.filter((c) => c.path.endsWith('/board')).length).toBe(before + 1);
+		await tryEverything(root);
 	});
 
 	it('members panel shows who is in the project', async () => {

@@ -196,7 +196,7 @@ async fn issues_are_filed_numbered_filtered_and_closed(pool: PgPool) {
     assert_eq!(first["number"], 1);
     assert_eq!(first["status"], "open");
     assert_eq!(first["created_by"], "ana");
-    let (_, second) = call(&router, "POST", &issues, json!({"title": "Online ordering", "kind": "feature", "severity": "medium"}), &bob).await;
+    let (_, second) = call(&router, "POST", &issues, json!({"title": "Online ordering", "kind": "task", "severity": "medium"}), &bob).await;
     assert_eq!(second["number"], 2);
     assert_eq!(second["mine"], true);
     assert_eq!(call(&router, "POST", &issues, json!({"title": "x", "kind": "bug", "severity": "urgent"}), &ana).await.0, StatusCode::BAD_REQUEST);

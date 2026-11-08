@@ -10,7 +10,7 @@ use nomi_llm::ToolDefinition;
 /// This chat's project (the newest made in it) when `user_id` can open it: its id and name.
 pub async fn of_chat(conn: &mut sqlx::PgConnection, session_id: Uuid, user_id: Uuid) -> Option<(Uuid, String)> {
     sqlx::query_as(
-        "SELECT id, name FROM projects WHERE session_id = $1 AND can_open_project(id, $2) ORDER BY created_at DESC LIMIT 1",
+        "SELECT id, name FROM projects WHERE id = chat_project($1) AND can_open_project(id, $2)",
     )
     .bind(session_id)
     .bind(user_id)

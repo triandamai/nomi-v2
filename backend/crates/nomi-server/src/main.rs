@@ -116,6 +116,7 @@ async fn main() {
         tokio::spawn(async move {
             nomi_server::memory_worker::run(memory_pool, settings_key, memory_http_client).await;
         });
+        tokio::spawn(nomi_server::issue_worker::run(pool.clone()));
         let attachment_pool = pool.clone();
         let attachment_http_client = http_client.clone();
         tokio::spawn(async move {

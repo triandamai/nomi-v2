@@ -728,6 +728,11 @@ pub async fn run_agent_turn(
         Some((project_id, name)) => format!("{system_prompt}\n\n{}", crate::chat_project::prompt_line(*project_id, name)),
         None => system_prompt,
     };
+    // In an issue's own chat: which issue, who has it, and what else runs beside it.
+    let system_prompt = match crate::issue_chat::prompt_for(&mut **conn, session_id).await {
+        Some(issue) => format!("{system_prompt}\n\n{issue}"),
+        None => system_prompt,
+    };
 
     let system_prompt = if agent.supports_reminders() || agent.wants_current_time() {
         let timezone_name = crate::scheduled_jobs::get_user_timezone(conn, user_id).await;

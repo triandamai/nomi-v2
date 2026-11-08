@@ -455,6 +455,14 @@ pub fn build_router(state: AppState) -> Router {
                 .patch(crate::routes::project_issues::update_issue)
                 .delete(crate::routes::project_issues::delete_issue),
         )
+        .route("/api/projects/:id/issues/:number/move", post(crate::routes::project_issues::move_issue))
+        .route("/api/projects/:id/issues/:number/retry", post(crate::routes::project_issues::retry_issue))
+        .route("/api/projects/:id/board", get(crate::routes::project_issues::get_board))
+        .route("/api/projects/:id/board/columns", post(crate::routes::project_issues::add_column))
+        .route(
+            "/api/projects/:id/board/columns/:column",
+            patch(crate::routes::project_issues::update_column).delete(crate::routes::project_issues::delete_column),
+        )
         .route(
             "/api/projects/:id/files/*path",
             get(projects_routes::get_project_file).put(projects_routes::put_project_file).delete(projects_routes::delete_project_file),

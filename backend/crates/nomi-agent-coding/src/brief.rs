@@ -32,7 +32,7 @@ pub(crate) async fn project_for(conn: &mut PoolConnection<Postgres>, session_id:
         .last();
     let project_id = match named {
         Some(id) => id,
-        None => sqlx::query_scalar("SELECT id FROM projects WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1")
+        None => sqlx::query_scalar("SELECT id FROM projects WHERE id = chat_project($1)")
             .bind(session_id)
             .fetch_optional(&mut **conn)
             .await
