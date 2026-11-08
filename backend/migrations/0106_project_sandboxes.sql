@@ -43,6 +43,10 @@ CREATE TABLE project_sandboxes (
     -- When the provider will stop the sandbox by itself, as last asked on create, resume or an
     -- extension; the liveness pass pushes it out again before it comes.
     auto_stop_at   TIMESTAMPTZ,
+    -- Failed extensions of the auto-stop in a row, and when the next may be tried (a backoff, so
+    -- a provider that refuses doesn't get asked on every liveness pass).
+    auto_stop_failures INT NOT NULL DEFAULT 0,
+    auto_stop_retry_at TIMESTAMPTZ,
     -- When the liveness pass last restarted a dev server that stopped answering, and why; it
     -- restarts one at most once per gap.
     devserver_restarted_at TIMESTAMPTZ,

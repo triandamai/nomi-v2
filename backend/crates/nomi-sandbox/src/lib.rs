@@ -186,9 +186,11 @@ pub trait SandboxProvider: Send + Sync {
         Ok(None)
     }
     /// Push a running sandbox's auto-stop out to `ttl` from now, so it keeps running while it is
-    /// used. A provider that can't do this does nothing; a sandbox it then stops on its own is
-    /// found by the caller's liveness check and started again.
-    async fn extend_auto_stop(&self, _id: &SandboxId, _ttl: Ttl) -> Result<(), SandboxError> {
-        Ok(())
+    /// used. Returns the deadline the provider reports afterwards (RFC 3339), or `None` when it
+    /// reports none; the caller must not assume the clock moved when it did not. A provider that
+    /// can't do this does nothing; a sandbox it then stops on its own is found by the caller's
+    /// liveness check and started again.
+    async fn extend_auto_stop(&self, _id: &SandboxId, _ttl: Ttl) -> Result<Option<String>, SandboxError> {
+        Ok(None)
     }
 }

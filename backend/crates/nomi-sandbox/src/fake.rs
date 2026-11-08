@@ -42,6 +42,10 @@ struct Inner {
     ttls: Vec<Ttl>,
     /// Each `extend_auto_stop` asked for, in order.
     extensions: Vec<(SandboxId, Ttl)>,
+    /// What every extension fails with, when set.
+    extension_failure: Option<SandboxError>,
+    /// The deadline every extension reports, when set.
+    reported_auto_stop: Option<String>,
     queued_failures: Vec<SandboxError>,
     /// (text a command must contain, what it answers); the latest matching rule wins.
     exec_rules: Vec<(String, ExecOutput)>,
@@ -122,7 +126,18 @@ impl FakeProvider {
         self.lock().ttls.clone()
     }
 
-    /// Each auto-stop extension asked for, in order.
+    /// Make every later `extend_auto_stop` fail with `err` (other calls keep working), or work
+    /// again with `None`.
+    pub fn fail_extensions(&self, err: Option<SandboxError>) {
+        self.lock().extension_failure = err;
+    }
+
+    /// Make every later `extend_auto_stop` report `deadline` (RFC 3339) as the new auto-stop.
+    pub fn report_auto_stop(&self, deadline: &str) {
+        self.lock().reported_auto_stop = Some(deadline.to_string());
+    }
+
+    /// Each auto-stop extension asked for, failed ones too, in order.
     pub fn extensions(&self) -> Vec<(SandboxId, Ttl)> {
         self.lock().extensions.clone()
     }
@@ -366,11 +381,14 @@ impl SandboxProvider for FakeProvider {
         })
     }
 
-    async fn extend_auto_stop(&self, id: &SandboxId, ttl: Ttl) -> Result<(), SandboxError> {
+    async fn extend_auto_stop(&self, id: &SandboxId, ttl: Ttl) -> Result<Option<String>, SandboxError> {
         let mut g = self.enter(format!("extend_auto_stop {}", id.0))?;
         g.sandbox(id)?;
         g.extensions.push((id.clone(), ttl));
-        Ok(())
+        if let Some(err) = g.extension_failure.clone() {
+            return Err(err);
+        }
+        Ok(g.reported_auto_stop.clone())
     }
 
     async fn usage(&self, id: &SandboxId) -> Result<Option<Duration>, SandboxError> {

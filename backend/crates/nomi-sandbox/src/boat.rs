@@ -265,6 +265,11 @@ fn map_state(state: &str) -> SandboxState {
     }
 }
 
+/// When the sandbox will stop by itself (`archiveAfter`), as the API wrote it.
+fn auto_stop_field(sandbox: &Value) -> Option<String> {
+    sandbox["archiveAfter"].as_str().map(str::to_string)
+}
+
 fn parse_sandbox(v: &Value) -> Result<SandboxInfo, SandboxError> {
     let id = v["id"]
         .as_str()
@@ -435,13 +440,24 @@ impl SandboxProvider for BoatProvider {
     /// it. UNSPECIFIED by the docs: whether resuming a running sandbox restarts its auto-stop
     /// clock. Should boat refuse or ignore it, the sandbox auto-stops at the old deadline and
     /// Nomi's liveness check resumes it.
-    async fn extend_auto_stop(&self, id: &SandboxId, ttl: Ttl) -> Result<(), SandboxError> {
+    ///
+    /// The deadline returned is the sandbox's `archiveAfter` (the docs' example has it at
+    /// `createdAt + ttlSeconds`), read from the resume reply when it carries the sandbox and from
+    /// a `GET` otherwise. A `GET` that fails after the resume worked reports no deadline.
+    async fn extend_auto_stop(&self, id: &SandboxId, ttl: Ttl) -> Result<Option<String>, SandboxError> {
         let mut body = json!({});
         put_ttl(&mut body, ttl);
         let rb = self
             .req(Method::POST, &sandbox_path(id, "/resume")?)
             .json(&body);
-        self.send(rb).await.map(|_| ())
+        let resp = self.send(rb).await?;
+        if let Some(deadline) = auto_stop_field(&resp["sandbox"]) {
+            return Ok(Some(deadline));
+        }
+        match self.send(self.req(Method::GET, &sandbox_path(id, "")?)).await {
+            Ok(info) => Ok(auto_stop_field(&info["sandbox"])),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn stop(&self, id: &SandboxId, force: bool) -> Result<(), SandboxError> {

@@ -678,7 +678,51 @@ async fn extending_the_auto_stop_resends_the_ttl_through_resume() {
         .expect(1)
         .mount(&server)
         .await;
-    provider(&server).extend_auto_stop(&sid(), Ttl::Seconds(21600)).await.unwrap();
+    // The 202 carries no sandbox and the follow-up GET no deadline: unknown.
+    Mock::given(method("GET"))
+        .and(path("/sandboxes/bx_7k2m9p4q"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true, "sandbox": {"id": "bx_7k2m9p4q", "state": "running"} })))
+        .mount(&server)
+        .await;
+    assert_eq!(provider(&server).extend_auto_stop(&sid(), Ttl::Seconds(21600)).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn extension_records_the_provider_deadline_when_reported() {
+    use nomi_sandbox::Ttl;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/resume"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "ok": true, "sandbox": null })))
+        .mount(&server)
+        .await;
+    // boat's `archiveAfter` is when the auto-stop comes (createdAt + ttlSeconds in the docs' example).
+    Mock::given(method("GET"))
+        .and(path("/sandboxes/bx_7k2m9p4q"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "sandbox": {"id": "bx_7k2m9p4q", "state": "running", "ttlSeconds": 21600, "archiveAfter": "2026-06-01T16:00:00Z"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let deadline = provider(&server).extend_auto_stop(&sid(), Ttl::Seconds(21600)).await.unwrap();
+    assert_eq!(deadline.as_deref(), Some("2026-06-01T16:00:00Z"));
+}
+
+#[tokio::test]
+async fn extension_reads_the_deadline_from_the_resume_reply_when_it_has_one() {
+    use nomi_sandbox::Ttl;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/resume"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+            "ok": true, "sandbox": {"id": "bx_7k2m9p4q", "state": "running", "archiveAfter": "2026-06-01T16:00:00Z"}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET")).respond_with(ResponseTemplate::new(500)).expect(0).mount(&server).await;
+    let deadline = provider(&server).extend_auto_stop(&sid(), Ttl::Seconds(21600)).await.unwrap();
+    assert_eq!(deadline.as_deref(), Some("2026-06-01T16:00:00Z"));
 }
 
 #[tokio::test]

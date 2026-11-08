@@ -265,7 +265,8 @@ pub struct AliveDue {
     pub sandbox_id: String,
     /// It has a preview, so its dev server should answer.
     pub has_preview: bool,
-    /// Its recorded auto-stop deadline is unknown or closer than the extension margin.
+    /// Its recorded auto-stop deadline is unknown or closer than the extension margin, and no
+    /// backoff from a failed extension holds it.
     pub extend_auto_stop: bool,
     /// No dev server restart within the restart gap, so a dead one may be restarted now.
     pub may_restart_dev_server: bool,
@@ -278,7 +279,8 @@ pub struct AliveDue {
 pub async fn alive_due(conn: &mut PgConnection, every_secs: f64, limit: i64, extend_before_secs: f64, restart_gap_secs: f64) -> Result<Vec<AliveDue>, sqlx::Error> {
     let rows: Vec<(Uuid, String, bool, bool, bool)> = sqlx::query_as(
         "SELECT project_id, sandbox_id, preview_url IS NOT NULL,
-                auto_stop_at IS NULL OR auto_stop_at < now() + make_interval(secs => $3),
+                (auto_stop_at IS NULL OR auto_stop_at < now() + make_interval(secs => $3))
+                    AND (auto_stop_retry_at IS NULL OR auto_stop_retry_at <= now()),
                 devserver_restarted_at IS NULL OR devserver_restarted_at < now() - make_interval(secs => $4)
          FROM project_sandboxes
          WHERE state = 'running' AND sandbox_id IS NOT NULL
@@ -299,15 +301,42 @@ pub async fn alive_due(conn: &mut PgConnection, every_secs: f64, limit: i64, ext
         .collect())
 }
 
-/// The provider was just asked to stop this sandbox by itself `ttl_secs` from now (create, resume
-/// or an extension): record the deadline, so the liveness pass extends it before it comes.
-pub async fn note_auto_stop(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str, ttl_secs: f64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE project_sandboxes SET auto_stop_at = now() + make_interval(secs => $3) WHERE project_id = $1 AND sandbox_id = $2")
+/// The provider will stop this sandbox by itself at `deadline` (as it reported, or as asked on
+/// create, resume or an extension): record it and forget any extension backoff, so the liveness
+/// pass extends it before it comes.
+pub async fn note_auto_stop(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str, deadline: DateTime<Utc>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET auto_stop_at = $3, auto_stop_failures = 0, auto_stop_retry_at = NULL WHERE project_id = $1 AND sandbox_id = $2")
         .bind(project_id)
         .bind(sandbox_id)
-        .bind(ttl_secs)
+        .bind(deadline)
         .execute(conn)
         .await?;
+    Ok(())
+}
+
+/// Failed auto-stop extensions in a row for this sandbox.
+pub async fn auto_stop_failures(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str) -> Result<i32, sqlx::Error> {
+    Ok(sqlx::query_scalar("SELECT auto_stop_failures FROM project_sandboxes WHERE project_id = $1 AND sandbox_id = $2")
+        .bind(project_id)
+        .bind(sandbox_id)
+        .fetch_optional(conn)
+        .await?
+        .unwrap_or(0))
+}
+
+/// An auto-stop extension failed (or the provider's deadline didn't move): count it, hold the
+/// next try back until `retry_at`, and save the deadline the provider reported, if it did.
+pub async fn auto_stop_extension_failed(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str, retry_at: DateTime<Utc>, reported: Option<DateTime<Utc>>) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE project_sandboxes SET auto_stop_failures = auto_stop_failures + 1, auto_stop_retry_at = $3, auto_stop_at = COALESCE($4, auto_stop_at)
+         WHERE project_id = $1 AND sandbox_id = $2",
+    )
+    .bind(project_id)
+    .bind(sandbox_id)
+    .bind(retry_at)
+    .bind(reported)
+    .execute(conn)
+    .await?;
     Ok(())
 }
 

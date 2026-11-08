@@ -104,8 +104,14 @@ async fn create_after_delete_with_same_key_makes_a_new_sandbox() {
 async fn extending_the_auto_stop_is_recorded() {
     let p = FakeProvider::new();
     let info = p.create(spec()).await.unwrap();
-    p.extend_auto_stop(&info.id, nomi_sandbox::Ttl::Seconds(60)).await.unwrap();
-    assert_eq!(p.extensions(), vec![(info.id.clone(), nomi_sandbox::Ttl::Seconds(60))]);
+    assert_eq!(p.extend_auto_stop(&info.id, nomi_sandbox::Ttl::Seconds(60)).await.unwrap(), None);
+    p.report_auto_stop("2026-06-01T16:00:00Z");
+    assert_eq!(p.extend_auto_stop(&info.id, nomi_sandbox::Ttl::Seconds(60)).await.unwrap().as_deref(), Some("2026-06-01T16:00:00Z"));
+    p.fail_extensions(Some(SandboxError::Refused("sandbox_running_stop_first".into())));
+    assert!(p.extend_auto_stop(&info.id, nomi_sandbox::Ttl::Seconds(60)).await.is_err());
+    assert!(p.get(&info.id).await.is_ok(), "only extensions fail");
+    p.fail_extensions(None);
+    assert_eq!(p.extensions().len(), 3, "every call is recorded, failed ones too");
     assert!(p.calls().contains(&format!("extend_auto_stop {}", info.id.0)));
     assert!(matches!(p.extend_auto_stop(&SandboxId("missing".into()), nomi_sandbox::Ttl::Never).await, Err(SandboxError::NotFound)));
 }

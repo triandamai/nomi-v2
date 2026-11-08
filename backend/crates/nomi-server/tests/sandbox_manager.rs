@@ -8,7 +8,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxError, SandboxId, SandboxProvider, SandboxState};
 use nomi_server::configuration::{Rollout, SandboxConfig};
-use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, StepError, AUTO_STOP_EXTEND_BEFORE, DEVSERVER_RESTART_GAP, MAX_ATTEMPTS, SANDBOX_TTL};
+use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, StepError, AUTO_STOP_EXTEND_BEFORE, AUTO_STOP_RETRY_BASE, DEVSERVER_RESTART_GAP, MAX_ATTEMPTS, SANDBOX_TTL};
 use nomi_server::sandbox_store::{self as store, Desired, State};
 use sqlx::PgPool;
 use support::App;
@@ -166,6 +166,21 @@ impl Fixture {
     /// Make the row due for the next liveness pass.
     async fn recheck_alive(&self) {
         sqlx::query("UPDATE project_sandboxes SET alive_checked_at = NULL WHERE project_id = $1").bind(self.project).execute(&self.pool).await.unwrap();
+    }
+
+    /// Put the recorded auto-stop within the extension margin.
+    async fn near_auto_stop(&self) {
+        sqlx::query("UPDATE project_sandboxes SET auto_stop_at = now() + interval '30 minutes' WHERE project_id = $1").bind(self.project).execute(&self.pool).await.unwrap();
+    }
+
+    /// End the extension backoff now.
+    async fn extension_due_now(&self) {
+        sqlx::query("UPDATE project_sandboxes SET auto_stop_retry_at = now() - interval '1 second' WHERE project_id = $1").bind(self.project).execute(&self.pool).await.unwrap();
+    }
+
+    /// Failed extensions in a row, and seconds until the next may be tried.
+    async fn extension_backoff(&self) -> (i32, Option<f64>) {
+        sqlx::query_as("SELECT auto_stop_failures, EXTRACT(EPOCH FROM auto_stop_retry_at - now())::float8 FROM project_sandboxes WHERE project_id = $1").bind(self.project).fetch_one(&self.pool).await.unwrap()
     }
 
     /// Seconds until the recorded auto-stop deadline.
@@ -659,6 +674,71 @@ async fn liveness_check_extends_the_auto_stop_deadline(pool: PgPool) {
     assert_eq!(f.provider.extensions(), vec![(id, SANDBOX_TTL)]);
     assert!(f.auto_stop_in().await > AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), "the new deadline is recorded");
     assert_eq!(f.row().await.state, State::Running);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn failed_auto_stop_extension_backs_off(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    f.run().await;
+    f.provider.fail_extensions(Some(SandboxError::Refused("sandbox_running_stop_first".into())));
+    f.near_auto_stop().await;
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert_eq!(f.provider.extensions().len(), 1);
+    let (failures, wait) = f.extension_backoff().await;
+    assert_eq!(failures, 1);
+    assert!(wait.unwrap() >= AUTO_STOP_RETRY_BASE.as_secs_f64() - 5.0, "the next try waits: {wait:?}");
+    assert!(f.auto_stop_in().await < AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), "a failed extension moves no deadline");
+    assert_eq!(f.row().await.state, State::Running, "the sandbox keeps running");
+
+    // Later liveness passes leave it alone until then: no call, no start taken.
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert_eq!(f.provider.extensions().len(), 1, "backed off");
+
+    // Due again and failing again: the wait grows.
+    f.extension_due_now().await;
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert_eq!(f.provider.extensions().len(), 2);
+    let (failures, wait) = f.extension_backoff().await;
+    assert_eq!(failures, 2);
+    assert!(wait.unwrap() >= 2.0 * AUTO_STOP_RETRY_BASE.as_secs_f64() - 5.0, "{wait:?}");
+
+    // Once it works, the deadline moves and the backoff is forgotten.
+    f.provider.fail_extensions(None);
+    f.extension_due_now().await;
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert_eq!(f.provider.extensions().len(), 3);
+    assert_eq!(f.extension_backoff().await, (0, None));
+    assert!(f.auto_stop_in().await > AUTO_STOP_EXTEND_BEFORE.as_secs_f64());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn extension_records_the_provider_deadline_when_reported(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    f.run().await;
+    let reported = chrono::Utc::now() + chrono::Duration::hours(5);
+    f.provider.report_auto_stop(&reported.to_rfc3339());
+    f.near_auto_stop().await;
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    let saved: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT auto_stop_at FROM project_sandboxes WHERE project_id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap();
+    assert!((saved - reported).num_milliseconds().abs() < 1000, "the provider's deadline is saved, not an assumed one: {saved} vs {reported}");
+    assert_eq!(f.extension_backoff().await, (0, None));
+
+    // The provider took the call but its clock didn't move: saved as it is, and backed off like a failure.
+    let unmoved = chrono::Utc::now() + chrono::Duration::minutes(30);
+    f.provider.report_auto_stop(&unmoved.to_rfc3339());
+    f.near_auto_stop().await;
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    let saved: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT auto_stop_at FROM project_sandboxes WHERE project_id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap();
+    assert!((saved - unmoved).num_milliseconds().abs() < 1000);
+    let (failures, wait) = f.extension_backoff().await;
+    assert_eq!(failures, 1);
+    assert!(wait.is_some());
 }
 
 #[sqlx::test(migrations = "../../migrations")]
