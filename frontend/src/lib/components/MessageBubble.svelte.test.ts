@@ -2,6 +2,7 @@
 // A message with each kind of block the crew can send, and the person's own message with its
 // edit, copy and feedback controls.
 import { describe, expect, it, vi } from 'vitest';
+import { flushSync } from 'svelte';
 import { clickEverything, fakeBackend, render, settle, text } from '../../test-stubs/render';
 import MessageBubble from './MessageBubble.svelte';
 import type { ContentBlock, RenderedMessage } from '$lib/types';
@@ -79,5 +80,22 @@ describe('MessageBubble', () => {
 		render(MessageBubble as never, props(reply(null, { deleted: true }), {}) as never);
 		const handed = render(MessageBubble as never, props(reply([{ kind: 'plan', plan_id: 'pl1', agent_session_id: 'as1', title: 'Trip plan', version: 2 }]), { handoffFrom: 'Rena', thread: 'end', answered: true }) as never);
 		expect(handed.textContent).toBeTruthy();
+	});
+	it('keeps a link in the reply when the page reloads the same message', () => {
+		const url = 'https://shop.example.app';
+		const published = reply([{ kind: 'project_event', event: 'deploy', ok: true, text: 'production · published · shop.example.app' }], {
+			content: `Published to production. It's live at ${url}`,
+			content_html: `<p>Published to production. It's live at <a href="${url}">${url}</a></p>`,
+			steps: [],
+			sources: [],
+		});
+		const live = $state(props(published));
+		const root = render(MessageBubble as never, live as never);
+		const link = () => root.querySelector<HTMLAnchorElement>(`.message-markdown a[href="${url}"]`);
+		expect(link()?.textContent).toBe(url);
+		// The page refreshes (a publish does): the same message comes back as a new object.
+		live.message = { ...published };
+		flushSync();
+		expect(link()?.textContent).toBe(url);
 	});
 });
