@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DONE_LINGER_MS, failureMessageId, lingeredOut, minutesLeft, settled, startPinned, todoProgress, waitingOn, withPhase, withSettled } from './pinnedActivity';
+import { DONE_LINGER_MS, HANDOFF_PHASE, failureMessageId, lingeredOut, minutesLeft, settled, startPinned, todoProgress, waitingOn, withHandoff, withPhase, withSettled } from './pinnedActivity';
 import type { ContentBlock, RenderedMessage } from './types';
 
 const SETTLED_AT = 1_000;
@@ -22,6 +22,23 @@ describe('withPhase', () => {
 	it('ignores phases once settled', () => {
 		const card = settled(startPinned(), 'done', '00:10', SETTLED_AT);
 		expect(withPhase(card, { phase: 'calling_tool', detail: 'x' }).steps).toEqual([]);
+	});
+});
+
+describe('withHandoff', () => {
+	it('adds a step for who took the turn, once', () => {
+		let card = withHandoff(startPinned(), 'Dana');
+		card = withHandoff(card, 'Dana');
+		expect(card.steps).toEqual([{ phase: HANDOFF_PHASE, detail: 'Dana' }]);
+	});
+
+	it('leaves it to the delegating tool call when there is one', () => {
+		const card = withPhase(startPinned(), { phase: 'calling_tool', detail: 'delegate_to_agent' });
+		expect(withHandoff(card, 'Dana').steps).toHaveLength(1);
+	});
+
+	it('ignores a hand-over once settled', () => {
+		expect(withHandoff(settled(startPinned(), 'done', '00:10', SETTLED_AT), 'Dana').steps).toEqual([]);
 	});
 });
 

@@ -2888,6 +2888,8 @@
 	"code_edit_mode": "Ubah kodenya",
 	"code_read_mode": "Baca dan tanya Koda",
 	"pinned_who_is": "{who} sedang {activity}",
+	"pinned_handing_over": "{from} menyerahkan ini ke {to}",
+	"pinned_handing_to": "Menyerahkan ke {name}",
 	"pinned_done": "{who} sudah selesai",
 	"pinned_failed": "{who} tidak bisa menyelesaikan",
 	"pinned_question": "{who} butuh jawabanmu",

@@ -1,14 +1,15 @@
 //! Learns from chats and keeps working memory tidy: saves what people tell Nomi from the
 //! exchanges turns queue (nomi_agent_core::memory::queue_learning), folds long chats into their
-//! running summaries (nomi_agent_core::working_memory), and consolidates each person's
-//! memories about once a day.
+//! running summaries (nomi_agent_core::working_memory), rewrites each person's "recently" note
+//! when one of their chats goes quiet (nomi_agent_core::recent_activity), and consolidates each
+//! person's memories about once a day.
 
 use std::time::Duration;
 
 use sqlx::PgPool;
 
 use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
-use nomi_agent_core::{memory, working_memory};
+use nomi_agent_core::{memory, recent_activity, working_memory};
 
 /// How often queued exchanges are checked: soon after a reply, without being on its path.
 const LEARN_INTERVAL: Duration = Duration::from_secs(5);
@@ -20,6 +21,8 @@ const LEARNING_PER_PASS: i64 = 20;
 const LEARNING_TIME_LIMIT: Duration = Duration::from_secs(60);
 /// Chats summarized per sweep (each is one model call, on the chat owner's model and usage).
 const SUMMARIES_PER_SWEEP: i64 = 5;
+/// Quiet chats noted into their person's "recently" note per sweep (one model call each).
+const NOTES_PER_SWEEP: i64 = 10;
 /// People consolidated per sweep (no model calls).
 const CONSOLIDATIONS_PER_SWEEP: i64 = 50;
 
@@ -138,7 +141,7 @@ async fn announce_saved(pool: &PgPool, job: &memory::LearningJob, since: chrono:
     }
 }
 
-/// One pass: summaries first, then consolidation. Every failure is logged and skipped.
+/// One pass: summaries, then "recently" notes, then consolidation. Every failure is logged and skipped.
 pub async fn sweep(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest::Client) {
     match working_memory::sessions_to_summarize(pool, SUMMARIES_PER_SWEEP).await {
         Ok(sessions) => {
@@ -154,6 +157,8 @@ pub async fn sweep(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
         Err(e) => tracing::error!(error = %e, "memory worker: failed to find chats to summarize"),
     }
 
+    note_recent_activity(pool, settings_key, http_client).await;
+
     match working_memory::people_to_consolidate(pool, CONSOLIDATIONS_PER_SWEEP).await {
         Ok(people) => {
             for user_id in people {
@@ -167,5 +172,34 @@ pub async fn sweep(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
             }
         }
         Err(e) => tracing::error!(error = %e, "memory worker: failed to find memories to tidy"),
+    }
+}
+
+/// Folds chats that went quiet into their people's "recently" notes, on each person's own model.
+/// A failed one isn't marked noted, so the next sweep tries it again.
+pub async fn note_recent_activity(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest::Client) {
+    let chats = match recent_activity::chats_gone_quiet(pool, NOTES_PER_SWEEP).await {
+        Ok(chats) => chats,
+        Err(e) => {
+            tracing::error!(error = %e, "memory worker: failed to find quiet chats to note");
+            return;
+        }
+    };
+    if !chats.is_empty() {
+        tracing::info!(count = chats.len(), "memory worker: noting what people did in chats that went quiet");
+    }
+    for (session_id, user_id) in chats {
+        let provider = build_llm_provider_for_user(pool, user_id, settings_key, http_client.clone()).await;
+        match tokio::time::timeout(LEARNING_TIME_LIMIT, recent_activity::note_chat(pool, provider.as_ref(), session_id, user_id)).await {
+            Ok(Ok(recent_activity::Noted::Updated { messages, chars })) => {
+                tracing::info!(%session_id, %user_id, messages, chars, "memory worker: recent activity noted")
+            }
+            Ok(Ok(recent_activity::Noted::Nothing)) => {}
+            Ok(Ok(recent_activity::Noted::ModelFailed(error))) => {
+                tracing::warn!(%session_id, %user_id, %error, "memory worker: noting recent activity failed; trying again next sweep")
+            }
+            Ok(Err(e)) => tracing::warn!(error = %e, %session_id, %user_id, "memory worker: noting recent activity failed"),
+            Err(_) => tracing::warn!(%session_id, %user_id, limit_secs = LEARNING_TIME_LIMIT.as_secs(), "memory worker: noting recent activity timed out"),
+        }
     }
 }

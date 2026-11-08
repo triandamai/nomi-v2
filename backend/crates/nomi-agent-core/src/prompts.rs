@@ -226,6 +226,24 @@ written as a note rather than a sentence about \"the user\": \"Vegetarian\", \"P
 memory already says it, answer none. Something new, even on a known memory's topic (another sibling, a \
 second hobby), is an add, never an update.";
 
+/// System prompt for `recent_activity::note_chat`: rewriting the person's "recently" note from a
+/// chat that just went quiet.
+pub const RECENT_ACTIVITY_SYSTEM_PROMPT: &str = "You keep a short note of what one person did lately with \
+their assistant crew, across all their chats, so any agent in a new chat knows what they were up to. \
+You get the note so far, today's date, and the new messages of one chat. Rewrite the note with what \
+happened there.
+
+One line per thing done or started, newest first, each starting with when (\"Today\", \"Yesterday\", \
+or the date) and naming the agent who worked on it: \"Today: Dana logged lunch, Rp 50k\", \"Yesterday: \
+Koda added dark mode to the Tasks app (still building)\". Say what is unfinished or waiting on the \
+person. Merge a line when the new messages carry on the same thing. Drop small talk, greetings, and \
+lines older than a week. At most 12 lines and 150 words, in the language the person writes in. \
+Reply with the note only.";
+
+/// How every agent's system prompt introduces the person's "recently" note.
+pub const RECENT_ACTIVITY_HEADING: &str =
+    "What this person did lately with the crew, across their chats (use it only where it helps; this chat itself may be part of it):";
+
 /// System prompt for generating a chat session's title from its first message
 /// (`nomi-server::routes::sessions::generate_session_title`).
 pub const SESSION_TITLE_SYSTEM_PROMPT: &str =

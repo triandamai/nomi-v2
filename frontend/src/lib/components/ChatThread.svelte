@@ -50,7 +50,7 @@
 	import ReplyText from './ds/chat/ReplyText.svelte';
 	import Typing from './ds/build/Typing.svelte';
 	import PinnedActivity from './blocks/PinnedActivity.svelte';
-	import { DONE_LINGER_MS, failureMessageId, lingeredOut, minutesLeft, settled, startPinned, todoProgress, waitingOn, withPhase, withSettled, type PinnedActivity as PinnedCard, type PinnedPhase } from '$lib/pinnedActivity';
+	import { DONE_LINGER_MS, HANDOFF_PHASE, HANDOFF_SHOWN_MS, failureMessageId, lingeredOut, minutesLeft, settled, startPinned, todoProgress, waitingOn, withHandoff, withPhase, withSettled, type PinnedActivity as PinnedCard, type PinnedPhase } from '$lib/pinnedActivity';
 	import type { StepState } from './ds/chat/stepState';
 	import { applyStreamEvent, emptyStream, type LiveReply } from '$lib/liveReply';
 	import type { MessageMemory } from '$lib/types';
@@ -803,7 +803,7 @@
 
 	// The crew's work on this turn, pinned above the composer so nothing that lands in the thread
 	// pushes it away (see $lib/pinnedActivity). A new turn starts it over; it settles when the
-	// turn does, and stays until the person's next message (or DONE_LINGER_MS when it's done).
+	// turn does, and stays until the person's next message (or DONE_LINGER_MS, 5s, when it's done).
 	let activityCard = $state<PinnedCard | null>(null);
 	let pinnedWho = $state('Nomi');
 	$effect(() => {
@@ -833,6 +833,23 @@
 		return () => clearTimeout(timer);
 	});
 
+	// Another agent took the turn: "Nomi is handing this to Dana" stays as the headline for
+	// HANDOFF_SHOWN_MS, so the hand-over shows before Dana's own status takes over.
+	let handoff = $state<{ from: string; to: string } | null>(null);
+	$effect(() => {
+		if (!handoff) return;
+		const timer = setTimeout(() => (handoff = null), HANDOFF_SHOWN_MS);
+		return () => clearTimeout(timer);
+	});
+	function handedTo(to: string) {
+		const card = activityCard;
+		if (!card || card.status !== 'working') return;
+		const from = card.who ?? pinnedWho;
+		if (from === to) return;
+		handoff = { from, to };
+		activityCard = withHandoff(card, to);
+	}
+
 	const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 	/** A file tool says the file ("writing src/app.ts"); others add what they work on after. */
 	const FILE_TOOL_LABELS: Record<string, (subject: string) => string> = {
@@ -841,6 +858,7 @@
 		delete_file: (path) => m.pinned_deleting({ path }),
 	};
 	function pinnedStepLabel(step: PinnedPhase, running: boolean): string {
+		if (step.phase === HANDOFF_PHASE) return running ? m.pinned_handing_to({ name: step.detail ?? '' }) : m.step_delegate_to({ name: step.detail ?? '' });
 		if (step.phase === 'running_command') return capitalize(commandActivity(step.detail, now));
 		const fileLabel = step.detail && step.subject ? FILE_TOOL_LABELS[step.detail] : undefined;
 		if (fileLabel && step.subject) return capitalize(fileLabel(step.subject));
@@ -852,10 +870,11 @@
 	const pinnedView = $derived.by(() => {
 		const card = activityCard;
 		if (!card) return null;
-		const who = card.who ?? pinnedWho;
+		const who = handoff && card.status === 'working' ? handoff.from : (card.who ?? pinnedWho);
 		const status: 'working' | 'done' | 'failed' | 'waiting' = pinnedWaiting ? 'waiting' : card.status;
 		const steps = card.steps.map((step, index) => {
-			const running = card.status === 'working' && index === card.steps.length - 1;
+			// A hand-over is done once the new agent has it (the headline says what they're doing).
+			const running = card.status === 'working' && index === card.steps.length - 1 && (step.phase !== HANDOFF_PHASE || handoff !== null);
 			const state: StepState = running ? 'running' : card.status === 'failed' && index === card.steps.length - 1 ? 'failed' : 'done';
 			return { label: pinnedStepLabel(step, running), state };
 		});
@@ -867,6 +886,8 @@
 			headline = m.pinned_done({ who });
 		} else if (card.status === 'failed') {
 			headline = m.pinned_failed({ who });
+		} else if (handoff) {
+			headline = `${m.pinned_handing_over(handoff)}…`;
 		} else if (currentPhase?.phase === 'retrying') {
 			headline = retryActivity(currentPhase.detail, now);
 		} else if (card.steps.length > 0 && currentPhase && (currentPhase.phase === 'calling_tool' || currentPhase.phase === 'running_command')) {
@@ -1039,6 +1060,9 @@
 				// The chat was deleted, on this device or another: leave it, as deleting it here does.
 				link.follow(null);
 				void goto('/chats', { replaceState: true });
+			} else if (envelope.kind === 'AgentSessionStarted') {
+				// Nomi handed the message to a crew member (Dana for money, ...): say so before they start.
+				if (typeof envelope.agent_display_name === 'string' && !stopRequested) handedTo(envelope.agent_display_name);
 			} else if (envelope.kind === 'AgentPhaseChanged') {
 				if (typeof envelope.phase === 'string' && !stopRequested) {
 					currentPhase = envelope.phase === 'waiting' ? null : { phase: envelope.phase, detail: envelope.detail ?? null, subject: envelope.subject ?? null };

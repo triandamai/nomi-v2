@@ -681,6 +681,13 @@ pub async fn run_agent_turn(
         prompt
     };
 
+    // What the person did lately across their chats (recent_activity): every agent sees it, so
+    // whoever picks up a new chat knows what they were up to.
+    let system_prompt = match crate::recent_activity::for_person(&mut **conn, user_id).await? {
+        Some(note) => format!("{system_prompt}\n\n{}\n{note}", crate::prompts::RECENT_ACTIVITY_HEADING),
+        None => system_prompt,
+    };
+
     // Working memory: the older part of this chat, folded into a running summary by the memory
     // worker (only the latest messages are sent in full).
     let summary: Option<String> = sqlx::query_scalar("SELECT summary FROM sessions WHERE id = $1")

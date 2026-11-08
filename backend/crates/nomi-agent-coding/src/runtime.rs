@@ -20,6 +20,9 @@ use crate::CODING_AGENT_TYPE;
 
 /// A page that checked in this recently counts as open.
 pub const RUNNER_FRESH_SECS: i64 = 30;
+/// How often the open page's check-in writes `runner_seen_at` at most; well inside RUNNER_FRESH_SECS,
+/// so a skipped write (the row was busy) still leaves the page online.
+pub const RUNNER_TOUCH_EVERY_SECS: i64 = 10;
 const DEFAULT_TIMEOUT_SECS: u64 = 180;
 const MAX_TIMEOUT_SECS: u64 = 600;
 const POLL_EVERY: Duration = Duration::from_millis(750);
@@ -189,13 +192,19 @@ pub struct ClaimedRun {
 }
 
 /// Updates `runner_seen_at` to mark the project page online.
-/// Throttled so it only writes if `runner_seen_at` is NULL or older than 10 seconds,
-/// avoiding excessive database writes and row lock contention during long polling.
+/// Throttled so it only writes if `runner_seen_at` is NULL or older than RUNNER_TOUCH_EVERY_SECS.
+/// When another transaction holds the project row (saving files, filing an issue) it skips the
+/// write rather than waiting on the lock: the next check-in writes it, well before the page counts
+/// as offline.
 pub async fn touch_runner(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE projects SET runner_seen_at = now() WHERE id = $1 AND (runner_seen_at IS NULL OR runner_seen_at < now() - interval '10 seconds')",
+        "UPDATE projects SET runner_seen_at = now() WHERE id = ( \
+             SELECT id FROM projects WHERE id = $1 \
+             AND (runner_seen_at IS NULL OR runner_seen_at < now() - make_interval(secs => $2)) \
+             FOR UPDATE SKIP LOCKED)",
     )
     .bind(project_id)
+    .bind(RUNNER_TOUCH_EVERY_SECS as f64)
     .execute(conn)
     .await?;
     Ok(())
