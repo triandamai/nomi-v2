@@ -22,6 +22,8 @@ CREATE TABLE project_sandboxes (
     -- What the sandbox holds: path -> updated_at of each file as last copied in. Emptied with synced_version.
     synced_manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
     preview_url    TEXT,
+    -- The dependency files (package.json and the lockfile, with their versions) `npm install` last ran for. Emptied with synced_version.
+    deps_hash      TEXT,
     -- Failed attempts since the last settled state, when to try next, and why the last one failed.
     retry_at       TIMESTAMPTZ,
     -- Held while a worker walks the row, so no second worker takes it; separate from retry_at,

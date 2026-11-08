@@ -118,7 +118,7 @@ async fn main() {
         });
         tokio::spawn(nomi_server::issue_worker::run(pool.clone()));
         // Server-side sandboxes follow what projects want; idle unless the admin switch is on.
-        tokio::spawn(nomi_server::sandbox_worker::run(pool.clone(), http_client.clone(), project_storage.clone()));
+        tokio::spawn(nomi_server::sandbox_worker::run(pool.clone(), http_client.clone(), project_storage.clone(), settings_key));
         let attachment_pool = pool.clone();
         let attachment_http_client = http_client.clone();
         tokio::spawn(async move {

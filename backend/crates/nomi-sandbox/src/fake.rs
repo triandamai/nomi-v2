@@ -35,6 +35,10 @@ struct Inner {
     by_key: BTreeMap<String, SandboxId>,
     calls: Vec<String>,
     queued_failures: Vec<SandboxError>,
+    /// (text a command must contain, what it answers); the latest matching rule wins.
+    exec_rules: Vec<(String, ExecOutput)>,
+    /// What every background process reports as its output so far.
+    process_logs: (String, String),
     next_id: u64,
     next_process: u64,
 }
@@ -57,6 +61,17 @@ impl FakeProvider {
     /// Make the next call (any method) fail with `err`; later calls work again.
     pub fn fail_next(&self, err: SandboxError) {
         self.lock().queued_failures.push(err);
+    }
+
+    /// Answer every later `exec` whose command contains `contains` with `output`. The latest
+    /// matching rule wins; commands no rule matches succeed with no output.
+    pub fn on_exec(&self, contains: &str, output: ExecOutput) {
+        self.lock().exec_rules.push((contains.to_string(), output));
+    }
+
+    /// What background processes report as their output from now on.
+    pub fn set_process_logs(&self, stdout: &str, stderr: &str) {
+        self.lock().process_logs = (stdout.to_string(), stderr.to_string());
     }
 
     pub fn set_state(&self, id: &SandboxId, state: SandboxState) {
@@ -188,11 +203,17 @@ impl SandboxProvider for FakeProvider {
     ) -> Result<ExecOutput, SandboxError> {
         let mut g = self.enter(format!("exec {} {command}", id.0))?;
         g.running(id)?;
-        Ok(ExecOutput {
+        let scripted = g
+            .exec_rules
+            .iter()
+            .rev()
+            .find(|(needle, _)| command.contains(needle.as_str()))
+            .map(|(_, out)| out.clone());
+        Ok(scripted.unwrap_or(ExecOutput {
             exit_code: Some(EXIT_OK),
             stdout: String::new(),
             stderr: String::new(),
-        })
+        }))
     }
 
     async fn exec_detached(
@@ -218,6 +239,9 @@ impl SandboxProvider for FakeProvider {
         stderr_from: u64,
     ) -> Result<ProcessStatus, SandboxError> {
         let mut g = self.enter(format!("process_status {} {}", id.0, handle.process_id))?;
+        let (full_out, full_err) = g.process_logs.clone();
+        let stdout = full_out.get(stdout_from as usize..).unwrap_or_default().to_string();
+        let stderr = full_err.get(stderr_from as usize..).unwrap_or_default().to_string();
         let p = g
             .sandbox(id)?
             .processes
@@ -226,10 +250,10 @@ impl SandboxProvider for FakeProvider {
         Ok(ProcessStatus {
             running: p.running,
             exit_code: if p.running { None } else { Some(EXIT_OK) },
-            stdout: String::new(),
-            stderr: String::new(),
-            stdout_next: stdout_from,
-            stderr_next: stderr_from,
+            stdout_next: full_out.len() as u64,
+            stderr_next: full_err.len() as u64,
+            stdout,
+            stderr,
         })
     }
 

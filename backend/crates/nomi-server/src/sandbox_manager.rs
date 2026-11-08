@@ -177,7 +177,7 @@ impl SandboxManager {
         let result = async {
             let mut tx = self.pool.begin().await?;
             sqlx::query(
-                "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, preview_url = NULL WHERE project_id = $1",
+                "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL WHERE project_id = $1",
             )
             .bind(project_id)
             .execute(&mut *tx)

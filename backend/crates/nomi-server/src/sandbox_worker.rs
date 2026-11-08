@@ -115,7 +115,7 @@ fn signature(cfg: &SandboxConfig) -> Signature {
 
 /// Run until the process ends (like the other background workers). The admin switch is read on
 /// every pass, so turning it off stops new work without a restart.
-pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: ProjectStore) {
+pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: ProjectStore, settings_key: [u8; 32]) {
     let mut current: Option<(Signature, SandboxWorker)> = None;
     let mut last_sweep = Instant::now();
     loop {
@@ -127,7 +127,7 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
         let sig = signature(&cfg);
         if current.as_ref().map(|(s, _)| s) != Some(&sig) {
             let provider = Arc::new(BoatProvider::new(BoatConfig { base_url: cfg.api_base.clone(), api_key: cfg.api_key.clone() }, http_client.clone()));
-            let steps = Arc::new(ServerSteps::new(pool.clone(), project_storage.clone(), provider.clone()));
+            let steps = Arc::new(ServerSteps::new(pool.clone(), project_storage.clone(), provider.clone()).with_relay_access(Some(settings_key), http_client.clone()));
             let manager = Arc::new(SandboxManager::new(provider, steps, pool.clone(), cfg.clone()));
             current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs)));
         }

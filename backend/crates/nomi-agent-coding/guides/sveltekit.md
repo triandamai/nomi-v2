@@ -64,6 +64,8 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+	// The server-side preview is served from a *.on.boat.dev address; Vite refuses other hosts unless they are listed.
+	server: { allowedHosts: ['.on.boat.dev'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit({

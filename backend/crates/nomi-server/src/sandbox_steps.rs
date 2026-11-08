@@ -9,6 +9,7 @@ use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::sandbox_devserver::DevServerTiming;
 use crate::sandbox_manager::ProjectSteps;
 use crate::sandbox_sync::PassHook;
 
@@ -18,17 +19,51 @@ pub struct ServerSteps {
     pub(crate) storage: ProjectStore,
     pub(crate) provider: Arc<dyn SandboxProvider>,
     pub(crate) pass_hook: Option<PassHook>,
+    pub(crate) devserver_timing: DevServerTiming,
+    /// Relay to read a project's dev backend from; the project's own (or the shared one) when unset.
+    pub(crate) relay_config: Option<nomi_relay_client::RelayConfig>,
+    /// Opens the sealed Relay keys of projects that have their own backend.
+    pub(crate) settings_key: Option<[u8; 32]>,
+    pub(crate) http_client: reqwest::Client,
 }
 
 impl ServerSteps {
     pub fn new(pool: PgPool, storage: ProjectStore, provider: Arc<dyn SandboxProvider>) -> Self {
-        Self { pool, storage, provider, pass_hook: None }
+        Self {
+            pool,
+            storage,
+            provider,
+            pass_hook: None,
+            devserver_timing: DevServerTiming::default(),
+            relay_config: None,
+            settings_key: None,
+            http_client: reqwest::Client::new(),
+        }
     }
 
     /// Run `hook` with the pass number after each sync pass has copied its files, before the
     /// check for changes made meanwhile. For tests that change files mid-sync.
     pub fn with_pass_hook(mut self, hook: PassHook) -> Self {
         self.pass_hook = Some(hook);
+        self
+    }
+
+    /// How long to wait for a dev server and how often to check. For tests.
+    pub fn with_devserver_timing(mut self, timing: DevServerTiming) -> Self {
+        self.devserver_timing = timing;
+        self
+    }
+
+    /// Read every project's dev backend through this Relay. For tests.
+    pub fn with_relay_config(mut self, config: nomi_relay_client::RelayConfig) -> Self {
+        self.relay_config = Some(config);
+        self
+    }
+
+    /// The key that opens projects' sealed Relay keys, and the client used to reach Relay.
+    pub fn with_relay_access(mut self, settings_key: Option<[u8; 32]>, http_client: reqwest::Client) -> Self {
+        self.settings_key = settings_key;
+        self.http_client = http_client;
         self
     }
 }
@@ -39,7 +74,7 @@ impl ProjectSteps for ServerSteps {
         self.sync_project(project_id, sandbox).await.map_err(|e| e.to_string())
     }
 
-    async fn start_preview(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<PreviewUrl, String> {
-        Err("dev server not implemented yet".to_string())
+    async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, String> {
+        self.ensure_dev_server(project_id, sandbox).await.map_err(|e| e.to_string())
     }
 }
