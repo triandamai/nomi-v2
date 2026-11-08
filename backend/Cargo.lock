@@ -3155,6 +3155,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-sandbox"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "nomi-server"
 version = "0.1.0"
 dependencies = [
@@ -3189,6 +3198,7 @@ dependencies = [
  "nomi-payment",
  "nomi-realtime",
  "nomi-relay-client",
+ "nomi-sandbox",
  "nomi-settings",
  "nomi-shipyard",
  "nomi-storage",
