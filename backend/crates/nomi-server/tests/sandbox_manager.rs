@@ -8,7 +8,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxError, SandboxId, SandboxProvider, SandboxState};
 use nomi_server::configuration::{Rollout, SandboxConfig};
-use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, StepError, MAX_ATTEMPTS};
+use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, StepError, AUTO_STOP_EXTEND_BEFORE, DEVSERVER_RESTART_GAP, MAX_ATTEMPTS, SANDBOX_TTL};
 use nomi_server::sandbox_store::{self as store, Desired, State};
 use sqlx::PgPool;
 use support::App;
@@ -35,6 +35,12 @@ struct RecordingSteps {
     install_fails: Mutex<Option<StepError>>,
     /// How long each sync takes.
     sync_takes: Mutex<Duration>,
+    /// Whether each dependency update actually runs an install.
+    installs: Mutex<bool>,
+    /// Whether the dev server has stopped answering.
+    dev_server_dead: Mutex<bool>,
+    /// The preview address the next starts hand back; `PREVIEW` until set.
+    preview: Mutex<Option<String>>,
 }
 
 impl RecordingSteps {
@@ -60,16 +66,25 @@ impl ProjectSteps for RecordingSteps {
         self.calls.lock().unwrap().push(format!("preview {}", sandbox.0));
         match self.preview_fails.lock().unwrap().clone() {
             Some(err) => Err(err),
-            None => Ok(PreviewUrl { url: PREVIEW.into() }),
+            None => {
+                // A started dev server answers.
+                *self.dev_server_dead.lock().unwrap() = false;
+                Ok(PreviewUrl { url: self.preview.lock().unwrap().clone().unwrap_or_else(|| PREVIEW.into()) })
+            }
         }
     }
 
-    async fn update_dependencies(&self, _project_id: Uuid, sandbox: &SandboxId) -> Result<(), StepError> {
+    async fn update_dependencies(&self, _project_id: Uuid, sandbox: &SandboxId) -> Result<bool, StepError> {
         self.calls.lock().unwrap().push(format!("deps {}", sandbox.0));
         match self.install_fails.lock().unwrap().clone() {
             Some(err) => Err(err),
-            None => Ok(()),
+            None => Ok(*self.installs.lock().unwrap()),
         }
+    }
+
+    async fn dev_server_answers(&self, _project_id: Uuid, sandbox: &SandboxId) -> Result<bool, String> {
+        self.calls.lock().unwrap().push(format!("probe {}", sandbox.0));
+        Ok(!*self.dev_server_dead.lock().unwrap())
     }
 }
 
@@ -146,6 +161,16 @@ impl Fixture {
 
     async fn set_files_version(&self, version: i64) {
         sqlx::query("UPDATE projects SET files_version = $2 WHERE id = $1").bind(self.project).bind(version).execute(&self.pool).await.unwrap();
+    }
+
+    /// Make the row due for the next liveness pass.
+    async fn recheck_alive(&self) {
+        sqlx::query("UPDATE project_sandboxes SET alive_checked_at = NULL WHERE project_id = $1").bind(self.project).execute(&self.pool).await.unwrap();
+    }
+
+    /// Seconds until the recorded auto-stop deadline.
+    async fn auto_stop_in(&self) -> f64 {
+        sqlx::query_scalar("SELECT EXTRACT(EPOCH FROM auto_stop_at - now())::float8 FROM project_sandboxes WHERE project_id = $1").bind(self.project).fetch_one(&self.pool).await.unwrap()
     }
 
     /// Bring the sandbox up and return its id.
@@ -606,12 +631,99 @@ async fn a_sandbox_that_died_while_running_is_walked_again(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn sandboxes_are_created_and_resumed_without_the_provider_auto_stop(pool: PgPool) {
+async fn sandboxes_are_created_and_resumed_with_a_long_finite_auto_stop(pool: PgPool) {
     let f = fixture(pool, GENEROUS_LIMIT).await;
     f.run().await;
     f.want(Desired::Stopped).await;
     f.reconcile().await;
     f.want(Desired::Running).await;
     f.reconcile().await;
-    assert_eq!(f.provider.ttls(), vec![nomi_sandbox::Ttl::Never, nomi_sandbox::Ttl::Never]);
+    assert_eq!(f.provider.ttls(), vec![SANDBOX_TTL, SANDBOX_TTL]);
+    assert!(matches!(SANDBOX_TTL, nomi_sandbox::Ttl::Seconds(_)), "every sandbox stops by itself in the end, even with Nomi down");
+    assert!(f.auto_stop_in().await > AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), "the deadline of the resume is recorded");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn liveness_check_extends_the_auto_stop_deadline(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    let id = f.run().await;
+    // Far from its deadline: nothing to extend.
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert!(f.provider.extensions().is_empty());
+
+    // Close to the deadline the provider was given: pushed out again, well before it.
+    sqlx::query("UPDATE project_sandboxes SET auto_stop_at = now() + interval '30 minutes' WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert_eq!(f.provider.extensions(), vec![(id, SANDBOX_TTL)]);
+    assert!(f.auto_stop_in().await > AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), "the new deadline is recorded");
+    assert_eq!(f.row().await.state, State::Running);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dead_dev_server_in_a_live_sandbox_is_restarted(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    let id = f.run().await;
+    *f.steps.preview.lock().unwrap() = Some(format!("{PREVIEW}/restarted"));
+
+    // The sandbox is up, but its dev server crashed.
+    *f.steps.dev_server_dead.lock().unwrap() = true;
+    f.recheck_alive().await;
+    assert_eq!(f.manager.check_alive().await, 0, "the sandbox itself is up");
+    assert!(f.steps.calls().contains(&format!("probe {}", id.0)), "the liveness check asked the dev server");
+    let reason: Option<String> = sqlx::query_scalar("SELECT devserver_restart_reason FROM project_sandboxes WHERE project_id = $1").bind(f.project).fetch_one(&f.pool).await.unwrap();
+    assert!(reason.is_some(), "why it was restarted is recorded");
+    assert_eq!(f.due().await, vec![f.project], "the row is walked to restart the dev server");
+    assert_eq!(f.reconcile().await, ReconcileOutcome::Settled);
+    let row = f.row().await;
+    assert_eq!((row.state, row.preview_url.as_deref()), (State::Running, Some(format!("{PREVIEW}/restarted").as_str())));
+    assert_eq!(f.steps.count("preview"), 2, "restarted through the preview start");
+    assert_eq!(f.calls_starting_with("create") + f.calls_starting_with("resume"), 1, "the sandbox itself is left alone");
+    assert_eq!(f.open_sessions().await, 1);
+
+    // It dies again at once: restarts are bounded, so this one waits.
+    *f.steps.dev_server_dead.lock().unwrap() = true;
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert!(f.due().await.is_empty(), "no second restart within the gap");
+    assert!(f.row().await.preview_url.is_some());
+
+    // Past the gap it is restarted again.
+    sqlx::query("UPDATE project_sandboxes SET devserver_restarted_at = now() - make_interval(secs => $2) WHERE project_id = $1")
+        .bind(f.project)
+        .bind(DEVSERVER_RESTART_GAP.as_secs_f64() + 1.0)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    f.recheck_alive().await;
+    f.manager.check_alive().await;
+    assert_eq!(f.due().await, vec![f.project]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn reinstall_in_a_running_sandbox_restarts_the_dev_server(pool: PgPool) {
+    let f = fixture(pool, GENEROUS_LIMIT).await;
+    f.run().await;
+    // An edit that doesn't touch the dependencies: the dev server keeps running.
+    f.set_files_version(SYNCED_VERSION + 1).await;
+    *f.steps.version.lock().unwrap() = Some(SYNCED_VERSION + 1);
+    assert_eq!(f.reconcile().await, ReconcileOutcome::Settled);
+    assert_eq!(f.steps.count("preview"), 1);
+
+    // package.json changed, so the sync ran an install: the dev server is started again.
+    *f.steps.installs.lock().unwrap() = true;
+    *f.steps.preview.lock().unwrap() = Some(format!("{PREVIEW}/after-install"));
+    f.set_files_version(SYNCED_VERSION + 2).await;
+    *f.steps.version.lock().unwrap() = Some(SYNCED_VERSION + 2);
+    assert_eq!(f.reconcile().await, ReconcileOutcome::Settled);
+    assert_eq!(f.steps.count("preview"), 2, "restarted after the install");
+    let calls = f.steps.calls();
+    let deps = calls.iter().rposition(|c| c.starts_with("deps")).unwrap();
+    let preview = calls.iter().rposition(|c| c.starts_with("preview")).unwrap();
+    assert!(deps < preview, "the restart comes after the install: {calls:?}");
+    let row = f.row().await;
+    assert_eq!((row.state, row.synced_version), (State::Running, SYNCED_VERSION + 2));
+    assert_eq!(row.preview_url.as_deref(), Some(format!("{PREVIEW}/after-install").as_str()), "the new address is saved");
+    assert_eq!(row.last_error, None);
 }

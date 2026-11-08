@@ -164,19 +164,22 @@ impl SandboxWorker {
     }
 
     /// Start running the waiting commands of every sandbox project that is up and has some, at
-    /// most `CONCURRENCY` projects at once. Each project runs in its own task, so a long command
+    /// most `CONCURRENCY` projects at once. A project open in the browser runtime is left to that
+    /// page, which claims its commands (see `sandbox_runs::claim_next`). Each project runs in its own task, so a long command
     /// never holds up reconciling. Returns how many projects were started.
     pub async fn dispatch_runs(&self) -> usize {
         let Some(runner) = &self.runner else { return 0 };
         let due: Result<Vec<(Uuid, String)>, sqlx::Error> = sqlx::query_as(
             "SELECT s.project_id, s.sandbox_id FROM project_sandboxes s JOIN projects p ON p.id = s.project_id \
              WHERE s.state = 'running' AND s.sandbox_id IS NOT NULL AND p.runtime = 'sandbox' \
-             AND s.synced_version >= p.files_version AND (s.leased_until IS NULL OR s.leased_until <= now()) AND EXISTS ( \
+             AND s.synced_version >= p.files_version AND (s.leased_until IS NULL OR s.leased_until <= now()) \
+             AND NOT COALESCE(p.runner_seen_at > now() - make_interval(secs => $2), false) AND EXISTS ( \
                  SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id AND (r.status = 'pending' \
                  OR (r.status = 'running' AND r.started_at < now() - make_interval(secs => $1)))) \
              ORDER BY s.project_id",
         )
         .bind(RUN_LEASE.as_secs() as f64)
+        .bind(crate::sandbox_runs::BROWSER_ONLINE_SECS)
         .fetch_all(&self.pool)
         .await;
         let due = match due {

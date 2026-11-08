@@ -40,6 +40,8 @@ struct Inner {
     calls: Vec<String>,
     /// The auto-stop asked for by each create and resume, in order.
     ttls: Vec<Ttl>,
+    /// Each `extend_auto_stop` asked for, in order.
+    extensions: Vec<(SandboxId, Ttl)>,
     queued_failures: Vec<SandboxError>,
     /// (text a command must contain, what it answers); the latest matching rule wins.
     exec_rules: Vec<(String, ExecOutput)>,
@@ -118,6 +120,11 @@ impl FakeProvider {
     /// The auto-stop each create and resume asked for, in order.
     pub fn ttls(&self) -> Vec<Ttl> {
         self.lock().ttls.clone()
+    }
+
+    /// Each auto-stop extension asked for, in order.
+    pub fn extensions(&self) -> Vec<(SandboxId, Ttl)> {
+        self.lock().extensions.clone()
     }
 
     /// Records the call and returns the queued failure, if any.
@@ -357,6 +364,13 @@ impl SandboxProvider for FakeProvider {
                 id.0, sb.generation
             ),
         })
+    }
+
+    async fn extend_auto_stop(&self, id: &SandboxId, ttl: Ttl) -> Result<(), SandboxError> {
+        let mut g = self.enter(format!("extend_auto_stop {}", id.0))?;
+        g.sandbox(id)?;
+        g.extensions.push((id.clone(), ttl));
+        Ok(())
     }
 
     async fn usage(&self, id: &SandboxId) -> Result<Option<Duration>, SandboxError> {

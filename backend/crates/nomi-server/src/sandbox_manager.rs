@@ -42,10 +42,22 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
 pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
 pub(crate) const PROJECT_LABEL: &str = "nomi-project";
-/// The auto-stop asked of the provider on every create and resume: none. Nomi's idle sweep owns
-/// stopping (boat would otherwise stop a sandbox after an hour while its page is still open); the
-/// liveness pass and the orphan reaper are the backstops.
-pub const SANDBOX_TTL: Ttl = Ttl::Never;
+/// How long the provider lets a sandbox run before stopping it by itself, asked on every create,
+/// resume and extension. Nomi's idle sweep stops sandboxes long before; this bounds every leak
+/// that doesn't depend on Nomi being healthy (an outage, a lost deletion, a dry-run reaper).
+pub const SANDBOX_AUTO_STOP: Duration = Duration::from_secs(6 * 60 * 60);
+/// `SANDBOX_AUTO_STOP` as the provider is asked for it.
+pub const SANDBOX_TTL: Ttl = Ttl::Seconds(SANDBOX_AUTO_STOP.as_secs());
+/// How close to its auto-stop a running sandbox gets before the liveness pass pushes the deadline
+/// out again by `SANDBOX_AUTO_STOP`; many liveness intervals, so a few failed tries still land
+/// well before it.
+pub const AUTO_STOP_EXTEND_BEFORE: Duration = Duration::from_secs(2 * 60 * 60);
+const _: () = assert!(SANDBOX_AUTO_STOP.as_secs() > 2 * AUTO_STOP_EXTEND_BEFORE.as_secs());
+/// The shortest time between two restarts of a dev server that stopped answering in a live
+/// sandbox, so one that keeps crashing isn't restarted on every liveness pass.
+pub const DEVSERVER_RESTART_GAP: Duration = Duration::from_secs(10 * 60);
+/// Recorded (`devserver_restart_reason`) when the liveness pass restarts a dev server.
+const DEVSERVER_NOT_ANSWERING: &str = "the dev server stopped answering on its port in a running sandbox";
 /// How often a walk moves its lease ahead. The lease (`sandbox_store::WALK_LEASE`) is more than
 /// twice this, so one missed renewal never lets it run out under a live walk.
 pub const LEASE_RENEW_EVERY: Duration = Duration::from_secs(60);
@@ -57,6 +69,7 @@ pub const MAX_PROVIDER_WAIT: Duration = Duration::from_secs(60 * 60);
 pub const LIVENESS_INTERVAL: Duration = Duration::from_secs(2 * 60);
 /// Most running sandboxes asked about in one liveness pass, which bounds the calls it makes.
 pub const LIVENESS_BATCH: i64 = 25;
+const _: () = assert!(AUTO_STOP_EXTEND_BEFORE.as_secs() > 10 * LIVENESS_INTERVAL.as_secs());
 
 /// What went wrong in a project step.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,9 +163,15 @@ pub trait ProjectSteps: Send + Sync {
     async fn sync(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<i64, String>;
     async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, StepError>;
     /// Install the project's dependencies again if its dependency files changed since the last
-    /// install. Run after a sync into a sandbox that is already running.
-    async fn update_dependencies(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<(), StepError> {
-        Ok(())
+    /// install. Run after a sync into a sandbox that is already running. Returns whether an
+    /// install ran: the dev server is then started again, so it picks up what changed.
+    async fn update_dependencies(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<bool, StepError> {
+        Ok(false)
+    }
+    /// Whether the project's dev server answers on its port (the readiness check, once). The
+    /// liveness pass asks this of running sandboxes that have a preview.
+    async fn dev_server_answers(&self, _project_id: Uuid, _sandbox: &SandboxId) -> Result<bool, String> {
+        Ok(true)
     }
 }
 
@@ -478,7 +497,7 @@ impl SandboxManager {
                     .await?;
             }
             sqlx::query(
-                "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL, devserver_process = NULL WHERE project_id = $1",
+                "UPDATE project_sandboxes SET sandbox_id = NULL, synced_version = 0, synced_manifest = '{}'::jsonb, deps_hash = NULL, preview_url = NULL, devserver_process = NULL, auto_stop_at = NULL WHERE project_id = $1",
             )
             .bind(project_id)
             .execute(&mut *tx)
@@ -524,9 +543,12 @@ impl SandboxManager {
             Err(e) => return Err(self.provider_failed(row, e).await),
         };
         // Another walk may have recorded a sandbox since this one began; theirs stands.
-        let written = db(sqlx::query("UPDATE project_sandboxes SET sandbox_id = $2 WHERE project_id = $1 AND (sandbox_id IS NULL OR sandbox_id = $2)")
+        let written = db(sqlx::query(
+            "UPDATE project_sandboxes SET sandbox_id = $2, auto_stop_at = now() + make_interval(secs => $3) WHERE project_id = $1 AND (sandbox_id IS NULL OR sandbox_id = $2)",
+        )
             .bind(row.project_id)
             .bind(&info.id.0)
+            .bind(SANDBOX_AUTO_STOP.as_secs_f64())
             .execute(&self.pool)
             .await)?;
         if written.rows_affected() == 0 {
@@ -590,7 +612,10 @@ impl SandboxManager {
                         self.take_start(&row).await?;
                         self.set_state(project_id, State::Starting).await?;
                         match self.provider.resume(&existing, ResumeSpec { ttl: SANDBOX_TTL }).await {
-                            Ok(_) => {}
+                            Ok(_) => {
+                                let mut conn = db(self.pool.acquire().await)?;
+                                db(store::note_auto_stop(&mut conn, project_id, &existing.0, SANDBOX_AUTO_STOP.as_secs_f64()).await)?;
+                            }
                             Err(SandboxError::SnapshotExpired) => id = self.start_over(&existing, &row).await?,
                             Err(e) => return Ok(self.provider_failed(&row, e).await),
                         }
@@ -650,8 +675,10 @@ impl SandboxManager {
 
     /// A running sandbox whose project moved on: copy the changed files in, install again if the
     /// dependency files changed, and start the preview if it has none (it failed before, and the
-    /// files that changed may be Koda's fix, or the person asked to retry). Settled when there is
-    /// nothing to do. A failure of the project's own setup is recorded on the row, which stays
+    /// files that changed may be Koda's fix, the person asked to retry, or the liveness pass found
+    /// its dev server dead). When an install ran, the dev server is started again (killed and
+    /// started, and its new address saved): upgraded or removed packages, a plugin or a changed
+    /// dev script need a fresh server. Settled when there is nothing to do. A failure of the project's own setup is recorded on the row, which stays
     /// running; anything else is retried later, still running.
     async fn refresh(&self, row: &SandboxRow, id: &SandboxId) -> Result<ReconcileOutcome, Exit> {
         let project_id = row.project_id;
@@ -662,23 +689,36 @@ impl SandboxManager {
         }
         let mut version = row.synced_version;
         let mut failure = None;
+        let mut restart = false;
         if behind {
             version = match self.steps.sync(project_id, id).await {
                 Ok(version) => version,
                 Err(why) => return Ok(self.retry_running(row, why).await),
             };
             match self.steps.update_dependencies(project_id, id).await {
-                Ok(()) => {}
+                Ok(installed) => restart = installed,
                 Err(StepError::Usable(why)) => failure = Some(why),
                 Err(StepError::Retry(why)) => return Ok(self.retry_running(row, why).await),
             }
         }
         let mut preview = row.preview_url.clone();
-        if preview.is_none() && failure.is_none() {
+        if (preview.is_none() || restart) && failure.is_none() {
             match self.steps.start_preview(project_id, id).await {
                 Ok(url) => preview = Some(url.url),
-                Err(StepError::Usable(why)) => failure = Some(why),
-                Err(StepError::Retry(why)) => return Ok(self.retry_running(row, why).await),
+                // The old server was killed for the start: there is no preview now.
+                Err(StepError::Usable(why)) => {
+                    preview = None;
+                    failure = Some(why);
+                }
+                Err(StepError::Retry(why)) => {
+                    if restart {
+                        // The old server may be gone, and the install that asked for the restart
+                        // won't run again: without a preview the retry starts the server again.
+                        let cleared = sqlx::query("UPDATE project_sandboxes SET preview_url = NULL WHERE project_id = $1 AND sandbox_id = $2").bind(project_id).bind(&id.0).execute(&self.pool).await;
+                        db(cleared)?;
+                    }
+                    return Ok(self.retry_running(row, why).await);
+                }
             }
         }
         let result = async {
@@ -703,11 +743,15 @@ impl SandboxManager {
     /// still up (at most `LIVENESS_BATCH` per pass, oldest first). One that stopped by itself,
     /// crashed or is gone has its row moved back to `stopped` with its metering session closed,
     /// so the next claim walks it again: resumes it, or finds it gone and makes a new one.
-    /// Returns how many were found down.
+    ///
+    /// For one that is up, the pass also pushes its auto-stop out again once it is within
+    /// `AUTO_STOP_EXTEND_BEFORE`, and asks its dev server whether it answers: one that doesn't is
+    /// restarted through the preview start (at most once per `DEVSERVER_RESTART_GAP`, the reason
+    /// recorded). Returns how many sandboxes were found down.
     pub async fn check_alive(&self) -> usize {
         let due = async {
             let mut conn = self.pool.acquire().await?;
-            store::alive_due(&mut conn, LIVENESS_INTERVAL.as_secs_f64(), LIVENESS_BATCH).await
+            store::alive_due(&mut conn, LIVENESS_INTERVAL.as_secs_f64(), LIVENESS_BATCH, AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), DEVSERVER_RESTART_GAP.as_secs_f64()).await
         }
         .await;
         let due = match due {
@@ -718,16 +762,21 @@ impl SandboxManager {
             }
         };
         let mut down = 0;
-        for (project_id, sandbox_id) in due {
-            let alive = match self.provider.get(&SandboxId(sandbox_id.clone())).await {
-                Ok(info) => matches!(info.state, SandboxState::Running | SandboxState::Starting),
-                Err(SandboxError::NotFound) => false,
+        for item in due {
+            let project_id = item.project_id;
+            let sandbox_id = item.sandbox_id.clone();
+            let id = SandboxId(sandbox_id.clone());
+            // `Some(alive)` when the provider answered; `None` when it couldn't say.
+            let known = match self.provider.get(&id).await {
+                Ok(info) => Some(matches!(info.state, SandboxState::Running | SandboxState::Starting)),
+                Err(SandboxError::NotFound) => Some(false),
                 Err(e) => {
                     // Unknown: ask again next interval rather than hammering the provider.
                     tracing::warn!(%project_id, provider_error_kind = error_kind(&e), "sandbox liveness: asking the provider failed");
-                    true
+                    None
                 }
             };
+            let alive = known.unwrap_or(true);
             let result = async {
                 let mut tx = self.pool.begin().await?;
                 let moved = if alive {
@@ -752,8 +801,70 @@ impl SandboxManager {
                 Ok(false) => {}
                 Err(e) => tracing::warn!(%project_id, error = %e, "sandbox liveness: saving the result failed"),
             }
+            if known != Some(true) {
+                continue;
+            }
+            if item.extend_auto_stop {
+                self.extend_auto_stop(project_id, &id).await;
+            }
+            if item.has_preview {
+                self.check_dev_server(&item, &id).await;
+            }
         }
         down
+    }
+
+    /// Push a running sandbox's auto-stop `SANDBOX_AUTO_STOP` out from now and record the new
+    /// deadline. It may count as a start at the provider, so it takes a start from the limiter
+    /// and waits for a later pass when none is free. A failure is logged and tried again on the
+    /// next pass; should the deadline still pass, the sandbox stops and this pass resumes it.
+    async fn extend_auto_stop(&self, project_id: Uuid, id: &SandboxId) {
+        let slot = self.limiter.lock().unwrap_or_else(|e| e.into_inner()).try_acquire(Instant::now());
+        if slot.is_err() {
+            tracing::debug!(%project_id, "sandbox liveness: no start free to extend the auto-stop, trying next pass");
+            return;
+        }
+        if let Err(e) = self.provider.extend_auto_stop(id, SANDBOX_TTL).await {
+            tracing::warn!(%project_id, provider_error_kind = error_kind(&e), "sandbox liveness: extending the auto-stop failed");
+            return;
+        }
+        let noted = async {
+            let mut conn = self.pool.acquire().await?;
+            store::note_auto_stop(&mut conn, project_id, &id.0, SANDBOX_AUTO_STOP.as_secs_f64()).await
+        }
+        .await;
+        if let Err(e) = noted {
+            tracing::warn!(%project_id, error = %e, "sandbox liveness: saving the new auto-stop failed");
+        }
+    }
+
+    /// Ask the dev server of a live sandbox whether it answers. One that doesn't loses its
+    /// preview, with the reason recorded, so the next claim walks the row and starts it again
+    /// (`refresh`, which kills the old process first); not again within `DEVSERVER_RESTART_GAP`.
+    async fn check_dev_server(&self, item: &store::AliveDue, id: &SandboxId) {
+        let project_id = item.project_id;
+        match self.steps.dev_server_answers(project_id, id).await {
+            Ok(true) => {}
+            Ok(false) if !item.may_restart_dev_server => {
+                tracing::warn!(%project_id, "sandbox liveness: the dev server isn't answering; restarted recently, so waiting");
+            }
+            Ok(false) => {
+                let marked = async {
+                    let mut conn = self.pool.acquire().await?;
+                    store::dev_server_down(&mut conn, project_id, &item.sandbox_id, DEVSERVER_NOT_ANSWERING).await
+                }
+                .await;
+                match marked {
+                    Ok(true) => {
+                        tracing::warn!(%project_id, reason = DEVSERVER_NOT_ANSWERING, "sandbox liveness: restarting the dev server");
+                        self.announce(project_id, State::Running, None).await;
+                    }
+                    Ok(false) => {}
+                    Err(e) => tracing::warn!(%project_id, error = %e, "sandbox liveness: saving the dev server restart failed"),
+                }
+            }
+            Err(why) => tracing::warn!(%project_id, why = %self.redact(&why), "sandbox liveness: asking the dev server failed"),
+        }
     }
 
     /// The sandbox can't be started again (its snapshot expired): drop it and make a new one.
@@ -908,8 +1019,8 @@ mod tests {
     }
 
     #[test]
-    fn sandboxes_never_take_the_provider_auto_stop() {
-        assert_eq!(SANDBOX_TTL, Ttl::Never);
+    fn sandboxes_take_a_long_finite_auto_stop() {
+        assert_eq!(SANDBOX_TTL, Ttl::Seconds(6 * 60 * 60));
     }
 
     #[tokio::test]

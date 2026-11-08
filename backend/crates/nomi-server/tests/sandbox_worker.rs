@@ -356,3 +356,19 @@ async fn wake_and_wait_returns_unavailable_when_switch_off(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
     assert!(store::get(&mut conn, p).await.unwrap().is_none());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dispatch_runs_leaves_projects_open_in_a_browser_to_the_browser(pool: PgPool) {
+    let p = project(&pool, "browser-open").await;
+    make_sandbox_project(&pool, p).await;
+    want_running(&pool, p).await;
+    let (worker, provider) = worker(&pool);
+    let steps = Arc::new(nomi_server::sandbox_steps::ServerSteps::new(pool.clone(), nomi_test_support::test_project_storage(), provider.clone()));
+    let worker = worker.with_runs(steps);
+    assert_eq!(worker.tick().await, 1);
+    sqlx::query("INSERT INTO project_runs (project_id, command, args) VALUES ($1, 'npm', '[\"install\"]')").bind(p).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE projects SET runner_seen_at = now() WHERE id = $1").bind(p).execute(&pool).await.unwrap();
+    assert_eq!(worker.dispatch_runs().await, 0, "the browser page claims this project's commands");
+    sqlx::query("UPDATE projects SET runner_seen_at = now() - interval '1 hour' WHERE id = $1").bind(p).execute(&pool).await.unwrap();
+    assert_eq!(worker.dispatch_runs().await, 1);
+}

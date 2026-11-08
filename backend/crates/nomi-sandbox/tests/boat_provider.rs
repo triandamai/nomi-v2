@@ -666,3 +666,30 @@ async fn create_and_resume_can_turn_off_the_auto_stop() {
     p.create(spec).await.unwrap();
     p.resume(&sid(), ResumeSpec { ttl: Ttl::Never }).await.unwrap();
 }
+
+#[tokio::test]
+async fn extending_the_auto_stop_resends_the_ttl_through_resume() {
+    use nomi_sandbox::Ttl;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/resume"))
+        .and(body_json(json!({ "ttlSeconds": 21600 })))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "ok": true, "sandbox": null })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    provider(&server).extend_auto_stop(&sid(), Ttl::Seconds(21600)).await.unwrap();
+}
+
+#[tokio::test]
+async fn extending_the_auto_stop_reports_a_refusal() {
+    use nomi_sandbox::Ttl;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sandboxes/bx_7k2m9p4q/resume"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(error_body(404, "not_found")))
+        .mount(&server)
+        .await;
+    let err = provider(&server).extend_auto_stop(&sid(), Ttl::Seconds(21600)).await.unwrap_err();
+    assert!(matches!(err, SandboxError::NotFound), "{err:?}");
+}

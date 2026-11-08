@@ -23,6 +23,9 @@ pub const RUN_LEASE: Duration = Duration::from_secs(15 * 60);
 pub const MAX_EXEC: Duration = Duration::from_secs(600);
 /// How long a run gets when the request carried no timeout (the same as the tool's own wait).
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(nomi_agent_coding::runtime::DEFAULT_TIMEOUT_SECS);
+/// How recent the browser runtime's check-in must be for its page to count as open: the same
+/// freshness `runtime::runner_online` uses.
+pub const BROWSER_ONLINE_SECS: f64 = nomi_agent_coding::runtime::RUNNER_FRESH_SECS as f64;
 /// Left in the output of a run that was queued again after its worker died.
 pub const REQUEUED_NOTE: &str = "(queued again: the worker running it stopped)";
 /// Left in the output of a run that was abandoned twice.
@@ -66,7 +69,11 @@ fn validate(run: &ClaimedRun) -> Result<Vec<String>, String> {
 ///
 /// A run also waits while its sandbox is behind the project's files or a walk holds its row
 /// (syncing, installing): the reconciler brings it up to date first, so a command never runs on
-/// stale files nor beside an install. The sandbox row is locked for the check, which orders this
+/// stale files nor beside an install. Nothing is claimed while the browser runtime is open on the
+/// project (its check-in keeps `runner_seen_at` fresh; the sandbox page's never touches it): that
+/// page claims Koda's commands, as `ServerSandboxOps::uses_sandbox` decided when queueing them.
+/// A claimed run is marked `ran_in_sandbox`, so only the sandbox's own commands keep it from
+/// idling out. The sandbox row is locked for the check, which orders this
 /// against `sandbox_store::claim_due_in` (that one skips locked rows and won't take a row whose
 /// command is running).
 pub async fn claim_next(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Result<Option<ClaimedRun>, sqlx::Error> {
@@ -74,9 +81,11 @@ pub async fn claim_next(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Resu
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))").bind(project_id.to_string()).execute(&mut *tx).await?;
     let held_back: Option<bool> = sqlx::query_scalar(
         "SELECT (s.leased_until IS NOT NULL AND s.leased_until > now()) OR s.synced_version < p.files_version \
+             OR COALESCE(p.runner_seen_at > now() - make_interval(secs => $2), false) \
          FROM project_sandboxes s JOIN projects p ON p.id = s.project_id WHERE s.project_id = $1 FOR UPDATE OF s",
     )
     .bind(project_id)
+    .bind(BROWSER_ONLINE_SECS)
     .fetch_optional(&mut *tx)
     .await?;
     if held_back == Some(true) {
@@ -84,7 +93,7 @@ pub async fn claim_next(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Resu
         return Ok(None);
     }
     let row: Option<(Uuid, String, serde_json::Value)> = sqlx::query_as(
-        "UPDATE project_runs SET status = 'running', started_at = now() WHERE id = ( \
+        "UPDATE project_runs SET status = 'running', started_at = now(), ran_in_sandbox = true WHERE id = ( \
              SELECT id FROM project_runs WHERE project_id = $1 AND status = 'pending' \
              AND NOT EXISTS (SELECT 1 FROM project_runs WHERE project_id = $1 AND status = 'running' AND started_at >= now() - make_interval(secs => $2)) \
              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) \
@@ -143,7 +152,7 @@ impl ServerSteps {
             .bind(ABANDONED_NOTE)
             .execute(&self.pool)
             .await?;
-        sqlx::query("UPDATE project_runs SET status = 'pending', started_at = NULL, output = $3 WHERE project_id = $1 AND status = 'running' AND output IS NULL AND started_at < now() - make_interval(secs => $2)")
+        sqlx::query("UPDATE project_runs SET status = 'pending', started_at = NULL, output = $3, ran_in_sandbox = false WHERE project_id = $1 AND status = 'running' AND output IS NULL AND started_at < now() - make_interval(secs => $2)")
             .bind(project_id)
             .bind(lease)
             .bind(REQUEUED_NOTE)

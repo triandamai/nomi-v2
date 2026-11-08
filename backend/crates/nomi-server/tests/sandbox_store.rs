@@ -115,7 +115,7 @@ async fn idle_candidates_keep_a_sandbox_koda_woke_or_just_used(pool: PgPool) {
     // Long after the wake, but its last command finished a moment ago: still within the grace.
     sqlx::query("UPDATE project_sandboxes SET last_active_at = now() - make_interval(secs => $2) WHERE project_id = $1")
         .bind(p).bind(STALE_AGE_SECS as f64).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO project_runs (project_id, command, status, finished_at) VALUES ($1, 'npm', 'done', now())").bind(p).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO project_runs (project_id, command, status, finished_at, ran_in_sandbox) VALUES ($1, 'npm', 'done', now(), true)").bind(p).execute(&pool).await.unwrap();
     assert!(store::idle_candidates(&mut conn, IDLE_SECS).await.unwrap().is_empty(), "a command just finished");
     // And once that command is old too, it is idle.
     sqlx::query("UPDATE project_runs SET finished_at = now() - make_interval(secs => $2) WHERE project_id = $1").bind(p).bind(STALE_AGE_SECS as f64).execute(&pool).await.unwrap();
@@ -263,4 +263,22 @@ async fn saved_errors_never_keep_a_url_token_or_signature(pool: PgPool) {
     assert!(!last().await.contains("sigsecret"));
     store::enter_cooldown(&mut conn, p, Utc::now(), leaky).await.unwrap();
     assert!(!last().await.contains("prevsecret"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn browser_runs_do_not_keep_the_sandbox_awake(pool: PgPool) {
+    let p = project(&pool, "browser-runs").await;
+    let mut conn = pool.acquire().await.unwrap();
+    store::want_running(&mut conn, p, PROVIDER).await.unwrap();
+    sqlx::query("UPDATE project_sandboxes SET last_active_at = now() - make_interval(secs => $2) WHERE project_id = $1")
+        .bind(p).bind(STALE_AGE_SECS as f64).execute(&pool).await.unwrap();
+    // The person works in the browser: its page is online and runs Koda's commands.
+    sqlx::query("UPDATE projects SET runner_seen_at = now() WHERE id = $1").bind(p).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO project_runs (project_id, command, status, finished_at) VALUES ($1, 'npm', 'done', now())").bind(p).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO project_runs (project_id, command, status, started_at) VALUES ($1, 'npm', 'running', now())").bind(p).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO project_runs (project_id, command) VALUES ($1, 'npm')").bind(p).execute(&pool).await.unwrap();
+    assert_eq!(store::idle_candidates(&mut conn, IDLE_SECS).await.unwrap(), vec![p], "the browser's commands are not the sandbox's activity");
+    // A command the sandbox itself is running does keep it up.
+    sqlx::query("INSERT INTO project_runs (project_id, command, status, started_at, ran_in_sandbox) VALUES ($1, 'npm', 'running', now(), true)").bind(p).execute(&pool).await.unwrap();
+    assert!(store::idle_candidates(&mut conn, IDLE_SECS).await.unwrap().is_empty());
 }

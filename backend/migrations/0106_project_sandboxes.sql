@@ -40,9 +40,20 @@ CREATE TABLE project_sandboxes (
     devserver_process TEXT,
     -- The end of the dev server's output (bounded by the worker), readable from any process.
     log_tail       TEXT NOT NULL DEFAULT '',
+    -- When the provider will stop the sandbox by itself, as last asked on create, resume or an
+    -- extension; the liveness pass pushes it out again before it comes.
+    auto_stop_at   TIMESTAMPTZ,
+    -- When the liveness pass last restarted a dev server that stopped answering, and why; it
+    -- restarts one at most once per gap.
+    devserver_restarted_at TIMESTAMPTZ,
+    devserver_restart_reason TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Commands the sandbox claimed and ran, as opposed to the browser page: only these count as
+-- the sandbox's activity for the idle sweep.
+ALTER TABLE project_runs ADD COLUMN ran_in_sandbox BOOLEAN NOT NULL DEFAULT false;
 
 -- The worker looks for rows whose state hasn't reached what they want.
 CREATE INDEX project_sandboxes_due_idx ON project_sandboxes (desired, state, retry_at);

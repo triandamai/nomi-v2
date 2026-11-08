@@ -258,11 +258,29 @@ pub async fn retry_preview(conn: &mut PgConnection, project_id: Uuid) -> Result<
     Ok(())
 }
 
+/// A running sandbox the liveness pass looks at, and what else is due for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliveDue {
+    pub project_id: Uuid,
+    pub sandbox_id: String,
+    /// It has a preview, so its dev server should answer.
+    pub has_preview: bool,
+    /// Its recorded auto-stop deadline is unknown or closer than the extension margin.
+    pub extend_auto_stop: bool,
+    /// No dev server restart within the restart gap, so a dead one may be restarted now.
+    pub may_restart_dev_server: bool,
+}
+
 /// Running sandboxes not asked about for `every_secs` (oldest first, at most `limit`) and not
-/// being walked: the liveness pass asks the provider whether they are still up.
-pub async fn alive_due(conn: &mut PgConnection, every_secs: f64, limit: i64) -> Result<Vec<(Uuid, String)>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT project_id, sandbox_id FROM project_sandboxes
+/// being walked: the liveness pass asks the provider whether they are still up. Each says whether
+/// its auto-stop is due within `extend_before_secs` and whether its dev server was restarted
+/// within `restart_gap_secs`.
+pub async fn alive_due(conn: &mut PgConnection, every_secs: f64, limit: i64, extend_before_secs: f64, restart_gap_secs: f64) -> Result<Vec<AliveDue>, sqlx::Error> {
+    let rows: Vec<(Uuid, String, bool, bool, bool)> = sqlx::query_as(
+        "SELECT project_id, sandbox_id, preview_url IS NOT NULL,
+                auto_stop_at IS NULL OR auto_stop_at < now() + make_interval(secs => $3),
+                devserver_restarted_at IS NULL OR devserver_restarted_at < now() - make_interval(secs => $4)
+         FROM project_sandboxes
          WHERE state = 'running' AND sandbox_id IS NOT NULL
            AND (leased_until IS NULL OR leased_until <= now())
            AND (alive_checked_at IS NULL OR alive_checked_at < now() - make_interval(secs => $1))
@@ -271,8 +289,43 @@ pub async fn alive_due(conn: &mut PgConnection, every_secs: f64, limit: i64) -> 
     )
     .bind(every_secs)
     .bind(limit)
+    .bind(extend_before_secs)
+    .bind(restart_gap_secs)
     .fetch_all(conn)
-    .await
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(project_id, sandbox_id, has_preview, extend_auto_stop, may_restart_dev_server)| AliveDue { project_id, sandbox_id, has_preview, extend_auto_stop, may_restart_dev_server })
+        .collect())
+}
+
+/// The provider was just asked to stop this sandbox by itself `ttl_secs` from now (create, resume
+/// or an extension): record the deadline, so the liveness pass extends it before it comes.
+pub async fn note_auto_stop(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str, ttl_secs: f64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET auto_stop_at = now() + make_interval(secs => $3) WHERE project_id = $1 AND sandbox_id = $2")
+        .bind(project_id)
+        .bind(sandbox_id)
+        .bind(ttl_secs)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// The dev server of this running sandbox stopped answering: drop its preview (with no failure
+/// recorded, so `claim_due_in` walks the row and starts the preview again) and record when and
+/// why. Only if the row still records this sandbox running with a preview and no walk holds it.
+/// Returns whether it changed.
+pub async fn dev_server_down(conn: &mut PgConnection, project_id: Uuid, sandbox_id: &str, reason: &str) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE project_sandboxes SET preview_url = NULL, last_error = NULL, retry_at = NULL, devserver_restarted_at = now(), devserver_restart_reason = $3, updated_at = now()
+         WHERE project_id = $1 AND sandbox_id = $2 AND state = 'running' AND preview_url IS NOT NULL AND (leased_until IS NULL OR leased_until <= now())",
+    )
+    .bind(project_id)
+    .bind(sandbox_id)
+    .bind(reason)
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() > 0)
 }
 
 /// The provider says this running sandbox is still up.
@@ -467,16 +520,20 @@ pub async fn defer(conn: &mut PgConnection, project_id: Uuid, retry_at: DateTime
 /// Projects whose sandbox should be running but that nobody has used for `idle_secs`: no
 /// heartbeat from the sandbox page and no wake from Koda (`last_active_at`), no command waiting
 /// or running, and none finished within `idle_secs` either, so a sandbox Koda woke with no page
-/// open stays up while it works and for the same grace after its last command.
+/// open stays up while it works and for the same grace after its last command. Only the
+/// sandbox's own commands count (`ran_in_sandbox`), and a waiting one only while no browser page
+/// is open to claim it: commands the browser runtime runs never keep the sandbox awake.
 pub async fn idle_candidates(conn: &mut PgConnection, idle_secs: u64) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT s.project_id FROM project_sandboxes s
          WHERE s.desired = 'running'
            AND (s.last_active_at IS NULL OR s.last_active_at < now() - make_interval(secs => $1))
-           AND NOT EXISTS (SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id
-                           AND (r.status IN ('pending', 'running') OR r.finished_at >= now() - make_interval(secs => $1)))",
+           AND NOT EXISTS (SELECT 1 FROM project_runs r JOIN projects p ON p.id = r.project_id WHERE r.project_id = s.project_id
+                           AND (r.status = 'pending' AND NOT COALESCE(p.runner_seen_at > now() - make_interval(secs => $2), false)
+                                OR r.ran_in_sandbox AND (r.status = 'running' OR r.finished_at >= now() - make_interval(secs => $1))))",
     )
     .bind(idle_secs as f64)
+    .bind(crate::sandbox_runs::BROWSER_ONLINE_SECS)
     .fetch_all(conn)
     .await
 }

@@ -115,6 +115,11 @@ fn start_command(env: &[(&str, String)], stack: &str) -> String {
     format!("cd {PROJECT_DIR} && exec env {} {}", vars.join(" "), dev_command(stack))
 }
 
+/// The readiness check: prints the HTTP status the dev server answers its root with.
+fn ready_check() -> String {
+    format!("curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{DEV_PORT}/")
+}
+
 /// True when a `curl` status code means the server is answering.
 fn answered(stdout: &str) -> bool {
     stdout.trim().trim_matches('\'').parse::<u16>().map(|c| (FIRST_ANSWER_CODE..=LAST_ANSWER_CODE).contains(&c)).unwrap_or(false)
@@ -182,21 +187,30 @@ impl ServerSteps {
     /// Install again when the dependency files changed since the last install (or the modules
     /// are missing); nothing for a stack with no build step. For a sandbox that is already
     /// running, after its files were synced.
-    pub(crate) async fn reinstall_if_changed(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<(), DevServerError> {
+    /// Returns whether an install ran (the dev server should then be restarted).
+    pub(crate) async fn reinstall_if_changed(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<bool, DevServerError> {
         let stack: String = sqlx::query_scalar("SELECT stack FROM projects WHERE id = $1").bind(project_id).fetch_one(&self.pool).await?;
         if stack == STATIC_STACK {
-            return Ok(());
+            return Ok(false);
         }
         self.install_if_needed(project_id, sandbox).await
     }
 
-    async fn install_if_needed(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<(), DevServerError> {
+    /// Whether the dev server answers on its port right now: the readiness check, run once.
+    pub(crate) async fn dev_server_answers(&self, sandbox: &SandboxId) -> Result<bool, DevServerError> {
+        let out = self.provider.exec(sandbox, &ready_check(), READY_CHECK_TIMEOUT).await?;
+        Ok(answered(&out.stdout))
+    }
+
+    /// Install unless the modules are there for the current dependency files. Returns whether an
+    /// install ran.
+    async fn install_if_needed(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<bool, DevServerError> {
         let stamp = self.dependency_stamp(project_id).await?;
         let stored: Option<String> =
             sqlx::query_scalar("SELECT deps_hash FROM project_sandboxes WHERE project_id = $1 AND sandbox_id = $2").bind(project_id).bind(&sandbox.0).fetch_optional(&self.pool).await?.flatten();
         let has_modules = self.provider.exec(sandbox, &format!("test -d {PROJECT_DIR}/node_modules"), QUICK_TIMEOUT).await?.exit_code == Some(0);
         if has_modules && stored.as_deref() == Some(stamp.as_str()) {
-            return Ok(());
+            return Ok(false);
         }
         let done = self.provider.exec(sandbox, &format!("cd {PROJECT_DIR} && npm install"), INSTALL_TIMEOUT).await?;
         if done.exit_code != Some(0) {
@@ -207,7 +221,7 @@ impl ServerSteps {
             return Err(DevServerError::Install(why));
         }
         sqlx::query("UPDATE project_sandboxes SET deps_hash = $3 WHERE project_id = $1 AND sandbox_id = $2").bind(project_id).bind(&sandbox.0).bind(&stamp).execute(&self.pool).await?;
-        Ok(())
+        Ok(true)
     }
 
     /// Kill the dev server started earlier (whichever Nomi process started it), and free the
@@ -231,7 +245,7 @@ impl ServerSteps {
 
     /// Poll until the dev server answers on its port; on failure the error carries its output.
     async fn wait_until_ready(&self, project_id: Uuid, sandbox: &SandboxId, handle: &ProcessHandle) -> Result<(), DevServerError> {
-        let check = format!("curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{DEV_PORT}/");
+        let check = ready_check();
         let started = Instant::now();
         let (mut stdout_next, mut stderr_next) = (0, 0);
         let mut log = String::new();

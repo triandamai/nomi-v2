@@ -141,15 +141,15 @@ async fn a_changed_package_json_is_installed_again_in_a_running_sandbox(pool: Pg
     let f = fixture(pool, ROOMY_READY).await;
     f.steps.ensure_dev_server(f.project, &f.sandbox).await.unwrap();
     assert_eq!(f.calls("npm install").len(), 1);
-    ProjectSteps::update_dependencies(&f.steps, f.project, &f.sandbox).await.unwrap();
+    assert!(!ProjectSteps::update_dependencies(&f.steps, f.project, &f.sandbox).await.unwrap(), "says no install ran");
     assert_eq!(f.calls("npm install").len(), 1, "nothing changed: no install");
     let storage = nomi_test_support::test_project_storage();
     let mut conn = f.pool.acquire().await.unwrap();
     nomi_agent_coding::files::save_bytes(&mut conn, &storage, f.project, "package.json", br#"{"dependencies":{"zod":"3"}}"#).await.unwrap();
     drop(conn);
-    ProjectSteps::update_dependencies(&f.steps, f.project, &f.sandbox).await.unwrap();
+    assert!(ProjectSteps::update_dependencies(&f.steps, f.project, &f.sandbox).await.unwrap(), "says an install ran, so the dev server is restarted");
     assert_eq!(f.calls("npm install").len(), 2, "package.json changed: installed again");
-    assert_eq!(f.calls("exec_detached").len(), 1, "the dev server keeps running");
+    assert_eq!(f.calls("exec_detached").len(), 1, "the step itself doesn't touch the dev server");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -237,4 +237,17 @@ async fn sleeping_relay_is_woken_before_the_dev_server_starts(pool: PgPool) {
     f.steps.ensure_dev_server(f.project, &f.sandbox).await.unwrap();
     assert_eq!(project_relays::stack(&f.pool, f.project, "dev").await.unwrap().unwrap().state, READY);
     assert!(f.calls("exec_detached").pop().unwrap().contains("PUBLIC_NOMI_URL"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_liveness_probe_asks_the_dev_server_on_its_port(pool: PgPool) {
+    let f = fixture(pool, ROOMY_READY).await;
+    assert!(ProjectSteps::dev_server_answers(&f.steps, f.project, &f.sandbox).await.unwrap());
+    assert!(f.calls("curl").iter().any(|c| c.contains("5173")));
+    // Nothing listens any more: curl reports no status.
+    f.provider.on_exec("curl", out(7, "000"));
+    assert!(!ProjectSteps::dev_server_answers(&f.steps, f.project, &f.sandbox).await.unwrap());
+    // A 5xx is no answer, as for the readiness check.
+    f.provider.on_exec("curl", out(0, "500"));
+    assert!(!ProjectSteps::dev_server_answers(&f.steps, f.project, &f.sandbox).await.unwrap());
 }

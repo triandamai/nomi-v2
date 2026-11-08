@@ -430,6 +430,20 @@ impl SandboxProvider for BoatProvider {
         }
     }
 
+    /// The contract documents no call that changes a running sandbox's auto-stop; the only call
+    /// that takes `ttlSeconds` for an existing sandbox is resume, so this resends the TTL through
+    /// it. UNSPECIFIED by the docs: whether resuming a running sandbox restarts its auto-stop
+    /// clock. Should boat refuse or ignore it, the sandbox auto-stops at the old deadline and
+    /// Nomi's liveness check resumes it.
+    async fn extend_auto_stop(&self, id: &SandboxId, ttl: Ttl) -> Result<(), SandboxError> {
+        let mut body = json!({});
+        put_ttl(&mut body, ttl);
+        let rb = self
+            .req(Method::POST, &sandbox_path(id, "/resume")?)
+            .json(&body);
+        self.send(rb).await.map(|_| ())
+    }
+
     async fn stop(&self, id: &SandboxId, force: bool) -> Result<(), SandboxError> {
         let rb = self
             .req(Method::POST, &sandbox_path(id, "/stop")?)

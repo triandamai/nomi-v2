@@ -185,4 +185,10 @@ pub trait SandboxProvider: Send + Sync {
     async fn usage(&self, _id: &SandboxId) -> Result<Option<Duration>, SandboxError> {
         Ok(None)
     }
+    /// Push a running sandbox's auto-stop out to `ttl` from now, so it keeps running while it is
+    /// used. A provider that can't do this does nothing; a sandbox it then stops on its own is
+    /// found by the caller's liveness check and started again.
+    async fn extend_auto_stop(&self, _id: &SandboxId, _ttl: Ttl) -> Result<(), SandboxError> {
+        Ok(())
+    }
 }

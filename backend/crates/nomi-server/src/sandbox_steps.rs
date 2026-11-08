@@ -103,13 +103,17 @@ impl ProjectSteps for ServerSteps {
         started.map_err(step_error)
     }
 
-    async fn update_dependencies(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<(), StepError> {
+    async fn update_dependencies(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<bool, StepError> {
         let version = self.current_version(project_id).await.map_err(StepError::Retry)?;
         let installed = self.reinstall_if_changed(project_id, sandbox).await;
         if let (Some(version), Err(DevServerError::Install(_))) = (version, &installed) {
             self.record_check(project_id, version, &installed).await;
         }
         installed.map_err(step_error)
+    }
+
+    async fn dev_server_answers(&self, _project_id: Uuid, sandbox: &SandboxId) -> Result<bool, String> {
+        ServerSteps::dev_server_answers(self, sandbox).await.map_err(|e| redact_urls(&e.to_string()))
     }
 }
 

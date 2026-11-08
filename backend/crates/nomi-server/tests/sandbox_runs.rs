@@ -321,3 +321,28 @@ async fn runs_wait_until_the_sandbox_has_the_current_files(pool: PgPool) {
     f.steps().execute_pending(f.project, &f.sandbox).await;
     assert_eq!(f.run(id).await.0, "done");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sandbox_does_not_claim_runs_while_a_browser_page_is_online(pool: PgPool) {
+    let f = fixture(pool).await;
+    let first = f.queue("npm", &["run", "check"], 2).await;
+    // The person runs the project in their browser ("run in my browser", the fallback): its
+    // check-in marks the runner online, and that page claims Koda's commands.
+    sqlx::query("UPDATE projects SET runner_seen_at = now() WHERE id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert!(f.execs().is_empty(), "the sandbox ran nothing beside the browser");
+    assert_eq!(f.run(first).await.0, "pending", "left for the browser page");
+    let mut conn = f.pool.acquire().await.unwrap();
+    let claimed = nomi_agent_coding::runtime::claim_runs(&mut conn, f.project).await.unwrap();
+    assert_eq!(claimed.iter().map(|r| r.id).collect::<Vec<_>>(), vec![first], "the browser claims it as before");
+    sqlx::query("UPDATE project_runs SET status = 'done', finished_at = now() WHERE id = $1").bind(first).execute(&f.pool).await.unwrap();
+    drop(conn);
+
+    // The page has gone quiet: the sandbox takes the queue again, and marks what it ran.
+    sqlx::query("UPDATE projects SET runner_seen_at = now() - interval '1 hour' WHERE id = $1").bind(f.project).execute(&f.pool).await.unwrap();
+    let second = f.queue("npm", &["run", "check"], 1).await;
+    f.steps().execute_pending(f.project, &f.sandbox).await;
+    assert_eq!(f.run(second).await.0, "done");
+    let ran: Vec<(Uuid, bool)> = sqlx::query_as("SELECT id, ran_in_sandbox FROM project_runs WHERE project_id = $1 ORDER BY created_at").bind(f.project).fetch_all(&f.pool).await.unwrap();
+    assert_eq!(ran, vec![(first, false), (second, true)]);
+}
