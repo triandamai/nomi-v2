@@ -78,6 +78,8 @@ pub struct SandboxWorker {
     pool: PgPool,
     manager: Arc<SandboxManager>,
     idle_stop_secs: u64,
+    /// Whether the admin switch is off, so claims take only rows that want to stop.
+    stop_only: std::sync::atomic::AtomicBool,
     /// What the orphan sweep does with sandboxes no project owns.
     reaper_mode: ReaperMode,
     /// Runs Koda's commands in the sandboxes; without it the worker doesn't touch the run queue.
@@ -100,13 +102,20 @@ impl Drop for RunningGuard {
 
 impl SandboxWorker {
     pub fn new(pool: PgPool, manager: Arc<SandboxManager>, idle_stop_secs: u64) -> Self {
-        Self { pool, manager, idle_stop_secs, reaper_mode: ReaperMode::default(), runner: None, running_now: Default::default() }
+        Self { pool, manager, idle_stop_secs, stop_only: Default::default(), reaper_mode: ReaperMode::default(), runner: None, running_now: Default::default() }
     }
 
     /// Set what the orphan sweep does (it only logs by default).
     pub fn with_reaper_mode(mut self, mode: ReaperMode) -> Self {
         self.reaper_mode = mode;
         self
+    }
+
+    /// Set the mode for the next claims: stop-only means nothing is created or resumed.
+    pub fn set_mode(&self, mode: PassMode) {
+        let stop_only = mode == PassMode::StopOnly;
+        self.stop_only.store(stop_only, std::sync::atomic::Ordering::SeqCst);
+        self.manager.set_stop_only(stop_only);
     }
 
     /// Delete the sandboxes of removed projects at the provider (see `sandbox_cleanup`).
@@ -196,7 +205,7 @@ impl SandboxWorker {
 
     async fn claim(&self) -> Result<Vec<store::SandboxRow>, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
-        let rows = store::claim_due(&mut tx, BATCH_SIZE).await?;
+        let rows = store::claim_due_in(&mut tx, BATCH_SIZE, self.stop_only.load(std::sync::atomic::Ordering::SeqCst)).await?;
         tx.commit().await?;
         Ok(rows)
     }
@@ -285,6 +294,7 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
         }
         let mut busy = true;
         if let Some((_, worker)) = &current {
+            worker.set_mode(mode);
             if mode == PassMode::StopOnly {
                 busy = worker.wind_down().await > 0;
             }

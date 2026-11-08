@@ -229,3 +229,37 @@ fn kill_switch_off_without_credentials_does_nothing() {
     let (mode, _) = pass_mode(Some(creds()), Some(creds())).unwrap();
     assert_eq!(mode, PassMode::On);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn stop_only_never_creates_even_if_a_row_wants_running(pool: PgPool) {
+    let p = project(&pool, "racer").await;
+    let (worker, provider) = worker(&pool);
+    worker.set_mode(PassMode::StopOnly);
+    assert_eq!(worker.wind_down().await, 0);
+    // A heartbeat that slipped in after the wind-down.
+    want_running(&pool, p).await;
+    assert_eq!(worker.tick().await, 0);
+    assert!(provider.calls().is_empty(), "{:?}", provider.calls());
+    assert_eq!(row(&pool, p).await.state, State::None);
+    // Even a row claimed some other way is not brought up.
+    let row_now = row(&pool, p).await;
+    let manager = Arc::new(SandboxManager::new(provider.clone(), Arc::new(OkSteps), pool.clone(), config()));
+    manager.set_stop_only(true);
+    manager.reconcile(row_now).await;
+    assert!(provider.calls().is_empty(), "{:?}", provider.calls());
+    assert_eq!(row(&pool, p).await.attempts, 0);
+    // The next pass flips it to stopped.
+    assert_eq!(worker.wind_down().await, 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn wake_and_wait_returns_unavailable_when_switch_off(pool: PgPool) {
+    use nomi_agent_core::sandbox_ops::{SandboxOps, WakeOutcome};
+    let p = project(&pool, "wake").await;
+    make_sandbox_project(&pool, p).await;
+    let ops = nomi_server::sandbox_ops::ServerSandboxOps::new(pool.clone());
+    let outcome = ops.wake_and_wait(p, std::time::Duration::from_millis(50)).await;
+    assert!(matches!(outcome, WakeOutcome::Failed(_)), "{outcome:?}");
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(store::get(&mut conn, p).await.unwrap().is_none());
+}

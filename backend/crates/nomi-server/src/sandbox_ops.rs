@@ -27,6 +27,9 @@ pub struct ServerSandboxOps {
     wait_cap: Option<Duration>,
 }
 
+/// Why a wake is refused while the admin switch is off.
+const SWITCH_OFF: &str = "the sandbox runtime is turned off";
+
 impl ServerSandboxOps {
     pub fn new(pool: PgPool) -> Self {
         Self { pool, poll: WAKE_POLL, switch_on: false, wait_cap: None }
@@ -56,6 +59,10 @@ impl SandboxOps for ServerSandboxOps {
     }
 
     async fn wake_and_wait(&self, project_id: Uuid, timeout: Duration) -> WakeOutcome {
+        // With the switch off nothing is asked for: the worker would only be winding sandboxes down.
+        if !self.switch_on && crate::configuration::sandbox_config().await.is_none() {
+            return WakeOutcome::Failed(SWITCH_OFF.to_string());
+        }
         let timeout = self.wait_cap.map_or(timeout, |cap| cap.min(timeout));
         let asked = async {
             let mut conn = self.pool.acquire().await?;

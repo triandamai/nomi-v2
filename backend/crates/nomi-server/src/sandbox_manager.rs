@@ -4,6 +4,7 @@
 //! crash in the middle picks the walk up again from the row.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -89,6 +90,8 @@ pub struct SandboxManager {
     /// The last state each project in flight was seen in, and when, so a transition can say what
     /// it came from and how long that took. Settled projects are dropped from it.
     seen: Mutex<HashMap<Uuid, (State, Instant)>>,
+    /// The admin switch is off: the walk only brings sandboxes down, never up.
+    stop_only: AtomicBool,
 }
 
 /// An early exit from the walk: the outcome to report.
@@ -106,7 +109,7 @@ impl SandboxManager {
 
     pub fn new(provider: Arc<dyn SandboxProvider>, steps: Arc<dyn ProjectSteps>, pool: PgPool, cfg: SandboxConfig) -> Self {
         let limiter = Mutex::new(StartLimiter::new(cfg.starts_per_minute, cfg.starts_per_hour));
-        Self { provider, limiter, pool, steps, cfg, seen: Mutex::default() }
+        Self { provider, limiter, pool, steps, cfg, seen: Mutex::default(), stop_only: AtomicBool::new(false) }
     }
 
     /// Take the row toward what it wants. The row passed in only says which project to work on;
@@ -133,9 +136,16 @@ impl SandboxManager {
         // Where the walk starts from, for the first transition's `from`.
         self.seen.lock().unwrap_or_else(|e| e.into_inner()).entry(project_id).or_insert((row.state, Instant::now()));
         match row.desired {
+            Desired::Running if self.stop_only.load(Ordering::SeqCst) => Ok(ReconcileOutcome::Settled),
             Desired::Running => self.bring_up(row).await,
             Desired::Stopped => self.bring_down(row).await,
         }
+    }
+
+    /// Turn stop-only mode on or off. While on, a row that wants to run is left as it is: no
+    /// create, no resume, no attempt counted.
+    pub fn set_stop_only(&self, on: bool) {
+        self.stop_only.store(on, Ordering::SeqCst);
     }
 
     /// Text for a log line, with the API key and any URL's secrets removed.

@@ -174,12 +174,19 @@ pub async fn want_all_stopped(conn: &mut PgConnection) -> Result<u64, sqlx::Erro
 /// keep it open while it works the rows. Claimed rows are leased: their `leased_until` moves
 /// `WALK_LEASE_SECS` ahead so a later claim skips them until the walk records its outcome.
 pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<SandboxRow>, sqlx::Error> {
+    claim_due_in(conn, limit, false).await
+}
+
+/// `claim_due`, optionally only the rows that want to be stopped (the admin switch is off): a row
+/// that asks to be running between the switch going off and the claim is left alone.
+pub async fn claim_due_in(conn: &mut PgConnection, limit: i64, stop_only: bool) -> Result<Vec<SandboxRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT project_id, provider, sandbox_id, desired, state, synced_version, preview_url, attempts
          FROM project_sandboxes
          WHERE (desired = 'running' AND state <> 'running'
                 OR desired = 'stopped' AND state NOT IN ('stopped', 'none', 'gone')
                 OR state IN ('creating', 'starting', 'stopping'))
+           AND (NOT $2 OR desired = 'stopped')
            AND (retry_at IS NULL OR retry_at <= now())
            AND (leased_until IS NULL OR leased_until <= now())
          ORDER BY updated_at
@@ -187,6 +194,7 @@ pub async fn claim_due(conn: &mut PgConnection, limit: i64) -> Result<Vec<Sandbo
          FOR UPDATE SKIP LOCKED",
     )
     .bind(limit)
+    .bind(stop_only)
     .fetch_all(&mut *conn)
     .await?;
     let claimed = rows.iter().map(row_from).collect::<Result<Vec<_>, _>>()?;
