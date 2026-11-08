@@ -215,6 +215,12 @@ fn parse_sandbox(v: &Value) -> Result<SandboxInfo, SandboxError> {
     Ok(SandboxInfo {
         id: SandboxId(id.to_string()),
         state: map_state(v["state"].as_str().unwrap_or("")),
+        labels: v["labels"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(k, val)| val.as_str().map(|val| (k.clone(), val.to_string())))
+            .collect(),
     })
 }
 
@@ -300,6 +306,7 @@ impl SandboxProvider for BoatProvider {
             Ok(SandboxInfo {
                 id: id.clone(),
                 state: SandboxState::Starting,
+                labels: Default::default(),
             })
         }
     }

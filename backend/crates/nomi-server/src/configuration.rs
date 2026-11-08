@@ -70,6 +70,16 @@ impl Rollout {
     }
 }
 
+/// What the orphan sweep does with a provider sandbox no project owns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReaperMode {
+    /// Only log what would be deleted.
+    #[default]
+    DryRun,
+    /// Delete it.
+    Delete,
+}
+
 /// The sandbox runtime as saved in Admin -> Configuration -> Sandbox.
 #[derive(Clone)]
 pub struct SandboxConfig {
@@ -81,6 +91,7 @@ pub struct SandboxConfig {
     pub starts_per_minute: u32,
     pub starts_per_hour: u32,
     pub monthly_minutes_per_user: u32,
+    pub reaper_mode: ReaperMode,
 }
 
 // The key never reaches a log.
@@ -120,6 +131,7 @@ pub async fn sandbox_config() -> Option<SandboxConfig> {
         starts_per_minute: count("starts_per_minute", DEFAULT_STARTS_PER_MINUTE),
         starts_per_hour: count("starts_per_hour", DEFAULT_STARTS_PER_HOUR),
         monthly_minutes_per_user: count("monthly_minutes_per_user", DEFAULT_MONTHLY_MINUTES_PER_USER),
+        reaper_mode: if section.get("reaper_mode").as_deref() == Some("delete") { ReaperMode::Delete } else { ReaperMode::DryRun },
     })
 }
 

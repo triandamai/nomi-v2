@@ -38,6 +38,7 @@ fn cfg(minutes: u32) -> SandboxConfig {
         starts_per_minute: 1000,
         starts_per_hour: 1000,
         monthly_minutes_per_user: minutes,
+        reaper_mode: nomi_server::configuration::ReaperMode::DryRun,
     }
 }
 

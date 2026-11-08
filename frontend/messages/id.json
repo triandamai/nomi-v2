@@ -3048,5 +3048,7 @@
 	"config_sandbox_rollout_percent": "Persentase peluncuran",
 	"config_sandbox_starts_per_minute": "Mulai per menit",
 	"config_sandbox_starts_per_hour": "Mulai per jam",
-	"config_sandbox_monthly_minutes_per_user": "Menit per bulan per pengguna"
+	"config_sandbox_monthly_minutes_per_user": "Menit per bulan per pengguna",
+	"config_sandbox_reaper_mode": "Pembersihan sandbox yatim",
+	"config_sandbox_reaper_mode_hint": "Setiap jam, sandbox di penyedia yang tidak dimiliki proyek mana pun dicari. Dry run hanya mencatatnya; delete menghapusnya."
 }

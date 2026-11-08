@@ -58,6 +58,7 @@ fn config(per_minute: u32) -> SandboxConfig {
         starts_per_minute: per_minute,
         starts_per_hour: GENEROUS_LIMIT,
         monthly_minutes_per_user: GENEROUS_LIMIT,
+        reaper_mode: nomi_server::configuration::ReaperMode::DryRun,
     }
 }
 

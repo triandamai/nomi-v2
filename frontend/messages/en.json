@@ -3048,5 +3048,7 @@
 	"config_sandbox_rollout_percent": "Rollout percentage",
 	"config_sandbox_starts_per_minute": "Starts per minute",
 	"config_sandbox_starts_per_hour": "Starts per hour",
-	"config_sandbox_monthly_minutes_per_user": "Monthly minutes per user"
+	"config_sandbox_monthly_minutes_per_user": "Monthly minutes per user",
+	"config_sandbox_reaper_mode": "Orphan sandbox sweep",
+	"config_sandbox_reaper_mode_hint": "Hourly, sandboxes at the provider that no project owns are found. Dry run only logs them; delete removes them."
 }

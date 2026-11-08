@@ -182,6 +182,9 @@ pub const SANDBOX: SectionDef = SectionDef {
         saved_only("starts_per_minute", Kind::Number),
         saved_only("starts_per_hour", Kind::Number),
         saved_only("monthly_minutes_per_user", Kind::Number),
+        // What the hourly sweep does with provider sandboxes no project owns: only log them
+        // (`dry_run`, the default) or delete them (`delete`).
+        saved_only("reaper_mode", Kind::Choice(&["dry_run", "delete"])),
     ],
 };
 

@@ -12,7 +12,8 @@ use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::configuration::{sandbox_config, SandboxConfig};
+use crate::configuration::{sandbox_config, ReaperMode, SandboxConfig};
+use crate::sandbox_cleanup::{self, REAP_INTERVAL};
 use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
 use crate::sandbox_runs::RUN_LEASE;
 use crate::sandbox_steps::ServerSteps;
@@ -55,6 +56,8 @@ pub struct SandboxWorker {
     pool: PgPool,
     manager: Arc<SandboxManager>,
     idle_stop_secs: u64,
+    /// What the orphan sweep does with sandboxes no project owns.
+    reaper_mode: ReaperMode,
     /// Runs Koda's commands in the sandboxes; without it the worker doesn't touch the run queue.
     runner: Option<Arc<ServerSteps>>,
     /// Projects whose commands are being run right now, so a project never runs two at once.
@@ -75,7 +78,23 @@ impl Drop for RunningGuard {
 
 impl SandboxWorker {
     pub fn new(pool: PgPool, manager: Arc<SandboxManager>, idle_stop_secs: u64) -> Self {
-        Self { pool, manager, idle_stop_secs, runner: None, running_now: Default::default() }
+        Self { pool, manager, idle_stop_secs, reaper_mode: ReaperMode::default(), runner: None, running_now: Default::default() }
+    }
+
+    /// Set what the orphan sweep does (it only logs by default).
+    pub fn with_reaper_mode(mut self, mode: ReaperMode) -> Self {
+        self.reaper_mode = mode;
+        self
+    }
+
+    /// Delete the sandboxes of removed projects at the provider (see `sandbox_cleanup`).
+    pub async fn drain_deletions(&self) -> usize {
+        sandbox_cleanup::drain_deletions(&self.pool, self.manager.provider().as_ref()).await
+    }
+
+    /// Find (and, unless dry-run, delete) provider sandboxes no project owns.
+    pub async fn reap_orphans(&self) -> usize {
+        sandbox_cleanup::reap_orphans(&self.pool, self.manager.provider().as_ref(), self.reaper_mode).await
     }
 
     /// Also run the commands Koda queues for sandbox projects, through `steps`.
@@ -193,10 +212,10 @@ impl SandboxWorker {
 }
 
 /// What makes two configs need different managers (the key is compared, never logged).
-type Signature = (String, String, String, u64, u32, u32);
+type Signature = (String, String, String, u64, u32, u32, ReaperMode);
 
 fn signature(cfg: &SandboxConfig) -> Signature {
-    (cfg.api_base.clone(), cfg.api_key.clone(), format!("{:?}", cfg.size), cfg.idle_stop_secs, cfg.starts_per_minute, cfg.starts_per_hour)
+    (cfg.api_base.clone(), cfg.api_key.clone(), format!("{:?}", cfg.size), cfg.idle_stop_secs, cfg.starts_per_minute, cfg.starts_per_hour, cfg.reaper_mode)
 }
 
 /// Run until the process ends (like the other background workers). The admin switch is read on
@@ -208,6 +227,8 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
     let mut last_drift_check = Instant::now();
     // Expiry runs on the first pass after a start, then once a day.
     let mut last_expiry: Option<Instant> = None;
+    // The orphan sweep runs on the first pass after a start, then once an hour.
+    let mut last_reap: Option<Instant> = None;
     loop {
         let Some(cfg) = sandbox_config().await else {
             current = None;
@@ -219,11 +240,12 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
             let provider = Arc::new(BoatProvider::new(BoatConfig { base_url: cfg.api_base.clone(), api_key: cfg.api_key.clone() }, http_client.clone()));
             let steps = Arc::new(ServerSteps::new(pool.clone(), project_storage.clone(), provider.clone()).with_relay_access(Some(settings_key), http_client.clone()).with_shipyard(shipyard.clone()));
             let manager = Arc::new(SandboxManager::new(provider, steps.clone(), pool.clone(), cfg.clone()));
-            current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs).with_runs(steps)));
+            current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs).with_runs(steps).with_reaper_mode(cfg.reaper_mode)));
         }
         if let Some((_, worker)) = &current {
             worker.tick().await;
             worker.dispatch_runs().await;
+            worker.drain_deletions().await;
             if last_sweep.elapsed() >= SWEEP_INTERVAL {
                 worker.sweep_idle().await;
                 worker.run_watchdog().await;
@@ -232,6 +254,10 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
             if last_expiry.is_none_or(|t| t.elapsed() >= EXPIRY_INTERVAL) {
                 worker.expire_old().await;
                 last_expiry = Some(Instant::now());
+            }
+            if last_reap.is_none_or(|t| t.elapsed() >= REAP_INTERVAL) {
+                worker.reap_orphans().await;
+                last_reap = Some(Instant::now());
             }
             if last_drift_check.elapsed() >= DRIFT_INTERVAL {
                 worker.check_usage_drift().await;

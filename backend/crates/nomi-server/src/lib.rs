@@ -22,6 +22,7 @@ pub mod relay_ops;
 pub mod push;
 pub mod quota;
 pub mod reminders_worker;
+pub mod sandbox_cleanup;
 pub mod sandbox_devserver;
 pub mod sandbox_manager;
 pub mod sandbox_ops;

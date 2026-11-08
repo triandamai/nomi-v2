@@ -75,6 +75,8 @@ pub enum SandboxState {
 pub struct SandboxInfo {
     pub id: SandboxId,
     pub state: SandboxState,
+    /// Labels stored on the sandbox; empty when the provider didn't return any.
+    pub labels: BTreeMap<String, String>,
 }
 
 /// The result of a command that ran to the end (or timed out, when `exit_code` is `None`).

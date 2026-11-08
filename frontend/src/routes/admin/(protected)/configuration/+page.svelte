@@ -134,6 +134,7 @@
 				starts_per_minute: { label: m.config_sandbox_starts_per_minute },
 				starts_per_hour: { label: m.config_sandbox_starts_per_hour },
 				monthly_minutes_per_user: { label: m.config_sandbox_monthly_minutes_per_user },
+				reaper_mode: { label: m.config_sandbox_reaper_mode, hint: m.config_sandbox_reaper_mode_hint },
 			},
 		},
 	};

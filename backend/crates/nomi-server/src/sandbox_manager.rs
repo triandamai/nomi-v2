@@ -24,9 +24,9 @@ const READY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// How long to wait before looking again at a sandbox that is still stopping.
 const STOPPING_RECHECK: Duration = Duration::from_secs(5);
 /// The first wait after a failed attempt; it doubles with each further failure.
-const RETRY_BASE: Duration = Duration::from_secs(5);
+pub(crate) const RETRY_BASE: Duration = Duration::from_secs(5);
 /// The longest wait between attempts.
-const RETRY_CAP: Duration = Duration::from_secs(900);
+pub(crate) const RETRY_CAP: Duration = Duration::from_secs(900);
 /// Real failures in a row after which the row goes to `error` and the page falls back to the
 /// browser. Waits and rate limits never count.
 pub const MAX_ATTEMPTS: i32 = 5;
@@ -39,7 +39,7 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
 /// disks for at least 14 days; the next start rebuilds from the project's files.
 pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
-const PROJECT_LABEL: &str = "nomi-project";
+pub(crate) const PROJECT_LABEL: &str = "nomi-project";
 
 /// What reconciling a row came to.
 #[derive(Debug, Clone, PartialEq, Eq)]

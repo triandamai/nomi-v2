@@ -55,6 +55,7 @@ fn config() -> SandboxConfig {
         starts_per_minute: GENEROUS_LIMIT,
         starts_per_hour: GENEROUS_LIMIT,
         monthly_minutes_per_user: GENEROUS_LIMIT,
+        reaper_mode: nomi_server::configuration::ReaperMode::DryRun,
     }
 }
 

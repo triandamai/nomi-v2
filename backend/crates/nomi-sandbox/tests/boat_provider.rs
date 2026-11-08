@@ -458,3 +458,22 @@ async fn usage_of_an_unknown_sandbox_is_not_found() {
         .await;
     assert!(matches!(provider(&server).usage(&sid()).await, Err(SandboxError::NotFound)));
 }
+
+#[tokio::test]
+async fn list_returns_each_sandboxes_labels() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sandboxes"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "sandboxes": [
+                {"id": "bx_aaaaaaaa", "state": "ready", "labels": {"nomi-project": "p1", "n": 3}},
+                {"id": "bx_bbbbbbbb", "state": "ready"}
+            ],
+            "pageInfo": {"nextCursor": null, "hasMore": false, "limit": 100}
+        })))
+        .mount(&server)
+        .await;
+    let all = provider(&server).list().await.unwrap();
+    assert_eq!(all[0].labels, BTreeMap::from([("nomi-project".to_string(), "p1".to_string())]));
+    assert!(all[1].labels.is_empty());
+}

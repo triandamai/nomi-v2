@@ -30,6 +30,7 @@ struct Sandbox {
     processes: BTreeMap<String, Process>,
     /// Bumped on every resume so the preview host changes.
     generation: u64,
+    labels: BTreeMap<String, String>,
 }
 
 #[derive(Default)]
@@ -145,11 +146,12 @@ impl SandboxProvider for FakeProvider {
         let mut g = self.enter(format!("create {}", spec.idempotency_key))?;
         if let Some(id) = g.by_key.get(&spec.idempotency_key).cloned() {
             let state = g.sandbox(&id)?.state;
-            return Ok(SandboxInfo { id, state });
+            let labels = g.sandbox(&id)?.labels.clone();
+            return Ok(SandboxInfo { id, state, labels });
         }
         g.next_id += 1;
         let id = SandboxId(format!("fake-{}", g.next_id));
-        g.by_key.insert(spec.idempotency_key, id.clone());
+        g.by_key.insert(spec.idempotency_key.clone(), id.clone());
         g.sandboxes.insert(
             id.clone(),
             Sandbox {
@@ -157,20 +159,23 @@ impl SandboxProvider for FakeProvider {
                 files: BTreeMap::new(),
                 processes: BTreeMap::new(),
                 generation: 0,
+                labels: spec.labels.clone(),
             },
         );
         Ok(SandboxInfo {
             id,
             state: SandboxState::Running,
+            labels: spec.labels,
         })
     }
 
     async fn get(&self, id: &SandboxId) -> Result<SandboxInfo, SandboxError> {
         let mut g = self.enter(format!("get {}", id.0))?;
-        let state = g.sandbox(id)?.state;
+        let sb = g.sandbox(id)?;
         Ok(SandboxInfo {
             id: id.clone(),
-            state,
+            state: sb.state,
+            labels: sb.labels.clone(),
         })
     }
 
@@ -182,6 +187,7 @@ impl SandboxProvider for FakeProvider {
         Ok(SandboxInfo {
             id: id.clone(),
             state: SandboxState::Running,
+            labels: sb.labels.clone(),
         })
     }
 
@@ -209,6 +215,7 @@ impl SandboxProvider for FakeProvider {
             .map(|(id, s)| SandboxInfo {
                 id: id.clone(),
                 state: s.state,
+                labels: s.labels.clone(),
             })
             .collect())
     }

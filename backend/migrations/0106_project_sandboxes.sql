@@ -55,3 +55,35 @@ CREATE INDEX sandbox_sessions_user_idx ON sandbox_sessions (user_id, started_at)
 
 -- A project has at most one open stretch at a time.
 CREATE UNIQUE INDEX sandbox_sessions_one_open_idx ON sandbox_sessions (project_id) WHERE stopped_at IS NULL;
+
+-- Sandboxes that still have to be deleted at the provider. A project's sandbox row cascades away
+-- with the project (or its owner), so the trigger below copies its sandbox id here in the same
+-- transaction, whichever path deleted it. There is deliberately no foreign key to projects. The
+-- sandbox worker drains this table; rows wait while the sandbox runtime is switched off.
+CREATE TABLE sandbox_deletions (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider   TEXT NOT NULL,
+    sandbox_id TEXT NOT NULL UNIQUE,
+    project_id UUID,
+    attempts   INT NOT NULL DEFAULT 0,
+    retry_at   TIMESTAMPTZ,
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX sandbox_deletions_due_idx ON sandbox_deletions (retry_at);
+
+CREATE FUNCTION enqueue_sandbox_deletion() RETURNS trigger AS $$
+BEGIN
+    IF OLD.sandbox_id IS NOT NULL THEN
+        INSERT INTO sandbox_deletions (provider, sandbox_id, project_id)
+        VALUES (OLD.provider, OLD.sandbox_id, OLD.project_id)
+        ON CONFLICT (sandbox_id) DO NOTHING;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER project_sandboxes_enqueue_deletion
+    BEFORE DELETE ON project_sandboxes
+    FOR EACH ROW EXECUTE FUNCTION enqueue_sandbox_deletion();
