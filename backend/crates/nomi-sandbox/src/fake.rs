@@ -19,6 +19,9 @@ const ARCHIVE_FILE: &str = ".upload.tar.gz";
 
 struct Process {
     running: bool,
+    /// Status checks made so far.
+    polls: u32,
+    exit_code: Option<i32>,
 }
 
 struct Sandbox {
@@ -37,6 +40,8 @@ struct Inner {
     queued_failures: Vec<SandboxError>,
     /// (text a command must contain, what it answers); the latest matching rule wins.
     exec_rules: Vec<(String, ExecOutput)>,
+    /// When set, a background process exits with the code after this many status checks.
+    process_exit: Option<(u32, i32)>,
     /// What every background process reports as its output so far.
     process_logs: (String, String),
     next_id: u64,
@@ -72,6 +77,12 @@ impl FakeProvider {
     /// What background processes report as their output from now on.
     pub fn set_process_logs(&self, stdout: &str, stderr: &str) {
         self.lock().process_logs = (stdout.to_string(), stderr.to_string());
+    }
+
+    /// Make every background process exit with `exit_code` once `polls` status checks have seen
+    /// it running (by default a process runs until it is killed).
+    pub fn exit_processes_after(&self, polls: u32, exit_code: i32) {
+        self.lock().process_exit = Some((polls, exit_code));
     }
 
     pub fn set_state(&self, id: &SandboxId, state: SandboxState) {
@@ -227,7 +238,7 @@ impl SandboxProvider for FakeProvider {
         let process_id = format!("proc-{}", g.next_process);
         g.sandbox(id)?
             .processes
-            .insert(process_id.clone(), Process { running: true });
+            .insert(process_id.clone(), Process { running: true, polls: 0, exit_code: None });
         Ok(ProcessHandle { process_id })
     }
 
@@ -240,16 +251,24 @@ impl SandboxProvider for FakeProvider {
     ) -> Result<ProcessStatus, SandboxError> {
         let mut g = self.enter(format!("process_status {} {}", id.0, handle.process_id))?;
         let (full_out, full_err) = g.process_logs.clone();
+        let process_exit = g.process_exit;
         let stdout = full_out.get(stdout_from as usize..).unwrap_or_default().to_string();
         let stderr = full_err.get(stderr_from as usize..).unwrap_or_default().to_string();
         let p = g
             .sandbox(id)?
             .processes
-            .get(&handle.process_id)
+            .get_mut(&handle.process_id)
             .ok_or(SandboxError::NotFound)?;
+        if let Some((after, code)) = process_exit {
+            if p.running && p.polls >= after {
+                p.running = false;
+                p.exit_code = Some(code);
+            }
+            p.polls += 1;
+        }
         Ok(ProcessStatus {
             running: p.running,
-            exit_code: if p.running { None } else { Some(EXIT_OK) },
+            exit_code: if p.running { None } else { Some(p.exit_code.unwrap_or(EXIT_OK)) },
             stdout_next: full_out.len() as u64,
             stderr_next: full_err.len() as u64,
             stdout,

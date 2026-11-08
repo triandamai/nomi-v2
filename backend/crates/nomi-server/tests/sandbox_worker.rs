@@ -153,3 +153,32 @@ async fn worker_survives_a_provider_error_and_continues(pool: PgPool) {
     // The failed row is backed off; the loop keeps going and has nothing more to do.
     assert_eq!(worker.tick().await, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dispatch_runs_executes_waiting_commands_of_running_sandbox_projects(pool: PgPool) {
+    let up = project(&pool, "up").await;
+    let down = project(&pool, "down").await;
+    for p in [up, down] {
+        make_sandbox_project(&pool, p).await;
+        want_running(&pool, p).await;
+        sqlx::query("INSERT INTO project_runs (project_id, command, args) VALUES ($1, 'npm', '[\"install\"]')").bind(p).execute(&pool).await.unwrap();
+    }
+    let (worker, provider) = worker(&pool);
+    let steps = Arc::new(nomi_server::sandbox_steps::ServerSteps::new(pool.clone(), nomi_test_support::test_project_storage(), provider.clone()));
+    let worker = worker.with_runs(steps);
+    assert_eq!(worker.dispatch_runs().await, 0, "no sandbox is up yet");
+    assert_eq!(worker.tick().await, 2);
+    // Only `up` has its sandbox up: stop the other one's row.
+    sqlx::query("UPDATE project_sandboxes SET state = 'stopped' WHERE project_id = $1").bind(down).execute(&pool).await.unwrap();
+    assert_eq!(worker.dispatch_runs().await, 1);
+    for _ in 0..200 {
+        let status: String = sqlx::query_scalar("SELECT status FROM project_runs WHERE project_id = $1").bind(up).fetch_one(&pool).await.unwrap();
+        if status == "done" {
+            let other: String = sqlx::query_scalar("SELECT status FROM project_runs WHERE project_id = $1").bind(down).fetch_one(&pool).await.unwrap();
+            assert_eq!(other, "pending");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("the run never finished");
+}

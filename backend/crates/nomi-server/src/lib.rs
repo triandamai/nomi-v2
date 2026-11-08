@@ -24,6 +24,7 @@ pub mod quota;
 pub mod reminders_worker;
 pub mod sandbox_devserver;
 pub mod sandbox_manager;
+pub mod sandbox_runs;
 pub mod sandbox_steps;
 pub mod sandbox_store;
 pub mod sandbox_sync;

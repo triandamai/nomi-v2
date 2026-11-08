@@ -23,11 +23,11 @@ pub const RUNNER_FRESH_SECS: i64 = 30;
 /// How often the open page's check-in writes `runner_seen_at` at most; well inside RUNNER_FRESH_SECS,
 /// so a skipped write (the row was busy) still leaves the page online.
 pub const RUNNER_TOUCH_EVERY_SECS: i64 = 10;
-const DEFAULT_TIMEOUT_SECS: u64 = 180;
+pub const DEFAULT_TIMEOUT_SECS: u64 = 180;
 const MAX_TIMEOUT_SECS: u64 = 600;
 const POLL_EVERY: Duration = Duration::from_millis(750);
 /// Most output kept per run, and how much of it Koda sees.
-const OUTPUT_KEPT: usize = 64 * 1024;
+pub const OUTPUT_KEPT: usize = 64 * 1024;
 const OUTPUT_SHOWN: usize = 12 * 1024;
 const PROGRAMS: &[&str] = &["npm", "npx", "node"];
 

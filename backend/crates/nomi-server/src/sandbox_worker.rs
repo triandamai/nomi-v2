@@ -2,17 +2,19 @@
 //! that are due, reconciles each one, and stops the sandboxes whose page has gone quiet. It only
 //! does anything while the admin switch is on; with it off, projects stay on WebContainer.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::stream::{self, StreamExt};
-use nomi_sandbox::{BoatConfig, BoatProvider};
+use nomi_sandbox::{BoatConfig, BoatProvider, SandboxId};
 use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::configuration::{sandbox_config, SandboxConfig};
 use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
+use crate::sandbox_runs::RUN_LEASE;
 use crate::sandbox_steps::ServerSteps;
 use crate::sandbox_store as store;
 
@@ -32,7 +34,7 @@ const CONCURRENCY: usize = 4;
 /// The page checking in for a project that runs in a sandbox: marks the page online, asks for the
 /// sandbox to be running and returns the files version. Returns `None` for a project that runs in
 /// the browser, or when the sandbox runtime is off, so the caller uses the WebContainer check-in.
-/// A sandbox project never claims runs: Koda's commands go to the sandbox, not to the page.
+/// A sandbox project never claims runs here: Koda's commands go to the sandbox, not to the page.
 pub async fn sandbox_check_in(conn: &mut sqlx::PgConnection, project_id: Uuid, sandbox_enabled: bool) -> Result<Option<i64>, sqlx::Error> {
     if !sandbox_enabled {
         return Ok(None);
@@ -50,11 +52,77 @@ pub struct SandboxWorker {
     pool: PgPool,
     manager: Arc<SandboxManager>,
     idle_stop_secs: u64,
+    /// Runs Koda's commands in the sandboxes; without it the worker doesn't touch the run queue.
+    runner: Option<Arc<ServerSteps>>,
+    /// Projects whose commands are being run right now, so a project never runs two at once.
+    running_now: Arc<Mutex<HashSet<Uuid>>>,
+}
+
+/// Removes a project from the set of running ones when its task ends, however it ends.
+struct RunningGuard {
+    set: Arc<Mutex<HashSet<Uuid>>>,
+    project_id: Uuid,
+}
+
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        self.set.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.project_id);
+    }
 }
 
 impl SandboxWorker {
     pub fn new(pool: PgPool, manager: Arc<SandboxManager>, idle_stop_secs: u64) -> Self {
-        Self { pool, manager, idle_stop_secs }
+        Self { pool, manager, idle_stop_secs, runner: None, running_now: Default::default() }
+    }
+
+    /// Also run the commands Koda queues for sandbox projects, through `steps`.
+    pub fn with_runs(mut self, steps: Arc<ServerSteps>) -> Self {
+        self.runner = Some(steps);
+        self
+    }
+
+    /// Start running the waiting commands of every sandbox project that is up and has some, at
+    /// most `CONCURRENCY` projects at once. Each project runs in its own task, so a long command
+    /// never holds up reconciling. Returns how many projects were started.
+    pub async fn dispatch_runs(&self) -> usize {
+        let Some(runner) = &self.runner else { return 0 };
+        let due: Result<Vec<(Uuid, String)>, sqlx::Error> = sqlx::query_as(
+            "SELECT s.project_id, s.sandbox_id FROM project_sandboxes s JOIN projects p ON p.id = s.project_id \
+             WHERE s.state = 'running' AND s.sandbox_id IS NOT NULL AND p.runtime = 'sandbox' AND EXISTS ( \
+                 SELECT 1 FROM project_runs r WHERE r.project_id = s.project_id AND (r.status = 'pending' \
+                 OR (r.status = 'running' AND r.started_at < now() - make_interval(secs => $1)))) \
+             ORDER BY s.project_id",
+        )
+        .bind(RUN_LEASE.as_secs() as f64)
+        .fetch_all(&self.pool)
+        .await;
+        let due = match due {
+            Ok(due) => due,
+            Err(e) => {
+                tracing::warn!(error = %e, "sandbox worker: looking for waiting commands failed");
+                return 0;
+            }
+        };
+        let mut started = 0;
+        for (project_id, sandbox_id) in due {
+            {
+                let mut now = self.running_now.lock().unwrap_or_else(|e| e.into_inner());
+                if now.len() >= CONCURRENCY {
+                    break;
+                }
+                if !now.insert(project_id) {
+                    continue;
+                }
+            }
+            let guard = RunningGuard { set: self.running_now.clone(), project_id };
+            let runner = runner.clone();
+            tokio::spawn(async move {
+                let _guard = guard;
+                runner.execute_pending(project_id, &SandboxId(sandbox_id)).await;
+            });
+            started += 1;
+        }
+        started
     }
 
     /// Claim the rows that are due and reconcile them, a few at a time. Returns how many were
@@ -128,11 +196,12 @@ pub async fn run(pool: PgPool, http_client: reqwest::Client, project_storage: Pr
         if current.as_ref().map(|(s, _)| s) != Some(&sig) {
             let provider = Arc::new(BoatProvider::new(BoatConfig { base_url: cfg.api_base.clone(), api_key: cfg.api_key.clone() }, http_client.clone()));
             let steps = Arc::new(ServerSteps::new(pool.clone(), project_storage.clone(), provider.clone()).with_relay_access(Some(settings_key), http_client.clone()).with_shipyard(shipyard.clone()));
-            let manager = Arc::new(SandboxManager::new(provider, steps, pool.clone(), cfg.clone()));
-            current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs)));
+            let manager = Arc::new(SandboxManager::new(provider, steps.clone(), pool.clone(), cfg.clone()));
+            current = Some((sig, SandboxWorker::new(pool.clone(), manager, cfg.idle_stop_secs).with_runs(steps)));
         }
         if let Some((_, worker)) = &current {
             worker.tick().await;
+            worker.dispatch_runs().await;
             if last_sweep.elapsed() >= SWEEP_INTERVAL {
                 worker.sweep_idle().await;
                 last_sweep = Instant::now();

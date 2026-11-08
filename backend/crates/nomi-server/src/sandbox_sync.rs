@@ -17,6 +17,10 @@ use crate::sandbox_steps::ServerSteps;
 
 /// Where a project's files live inside the sandbox.
 pub const PROJECT_DIR: &str = "/home/user/project";
+/// Quote a value for a POSIX shell.
+pub(crate) fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
 /// More changed files than this are sent as one archive instead of one by one.
 const ARCHIVE_THRESHOLD: usize = 50;
 /// A file larger than this many bytes is sent inside an archive, never by itself.

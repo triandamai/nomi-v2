@@ -14,7 +14,7 @@ use nomi_sandbox::{PreviewUrl, ProcessHandle, SandboxError, SandboxId};
 use uuid::Uuid;
 
 use crate::sandbox_steps::ServerSteps;
-use crate::sandbox_sync::PROJECT_DIR;
+use crate::sandbox_sync::{shell_quote, PROJECT_DIR};
 
 /// The port every dev server listens on inside the sandbox.
 pub const DEV_PORT: u16 = 5173;
@@ -115,14 +115,9 @@ fn append_log(running: &mut Running, text: &str) {
     }
 }
 
-/// Quote a value for a POSIX shell.
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
 /// The environment of the dev server: what the browser runtime passes, plus the Relay variables
 /// when the project has a backend (the same names `previewEnv` builds in the frontend).
-fn preview_env(access: Option<&crate::relay_ops::PreviewAccess>) -> Vec<(&'static str, String)> {
+pub(crate) fn preview_env(access: Option<&crate::relay_ops::PreviewAccess>) -> Vec<(&'static str, String)> {
     let mut env: Vec<(&'static str, String)> = BASE_ENV.iter().map(|(k, v)| (*k, v.to_string())).collect();
     if let Some(access) = access {
         env.push(("PUBLIC_NOMI_URL", access.url.clone()));
@@ -183,7 +178,7 @@ impl ServerSteps {
 
     /// The dev backend's address and keys, as the owner's browser gets them (the service key is
     /// the project's own app key, which the owner already holds).
-    async fn relay_access(&self, project_id: Uuid, owner: Uuid) -> Result<crate::relay_ops::PreviewAccess, DevServerError> {
+    pub(crate) async fn relay_access(&self, project_id: Uuid, owner: Uuid) -> Result<crate::relay_ops::PreviewAccess, DevServerError> {
         let config = match &self.relay_config {
             Some(config) => Some(config.clone()),
             None => crate::project_relays::for_request(&self.pool, self.settings_key.as_ref(), project_id, crate::relay_backend::DEV)

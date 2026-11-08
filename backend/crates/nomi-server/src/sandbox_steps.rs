@@ -27,6 +27,8 @@ pub struct ServerSteps {
     pub(crate) http_client: reqwest::Client,
     /// Wakes a project's sleeping Relay before its dev server starts; not woken when unset.
     pub(crate) shipyard: Option<nomi_shipyard::ShipyardConfig>,
+    /// How long a command from Koda may run in the sandbox.
+    pub(crate) run_timeout: std::time::Duration,
 }
 
 impl ServerSteps {
@@ -41,6 +43,7 @@ impl ServerSteps {
             settings_key: None,
             http_client: reqwest::Client::new(),
             shipyard: None,
+            run_timeout: crate::sandbox_runs::DEFAULT_RUN_TIMEOUT,
         }
     }
 
@@ -54,6 +57,12 @@ impl ServerSteps {
     /// How long to wait for a dev server and how often to check. For tests.
     pub fn with_devserver_timing(mut self, timing: DevServerTiming) -> Self {
         self.devserver_timing = timing;
+        self
+    }
+
+    /// How long a command from Koda may run; longer than one `exec` allows runs it detached.
+    pub fn with_run_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.run_timeout = timeout;
         self
     }
 
