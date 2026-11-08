@@ -687,6 +687,16 @@ export interface ProjectDetail {
 	open_issues: number;
 	/** Where the app keeps its data: Shipyard's Postgres through Drizzle, or Nomi Relay. */
 	backend: 'drizzle' | 'relay';
+	/** Set when the page's chat is one of the project's issue chats, not its own chat. */
+	issue?: IssueChatRef;
+}
+
+/** The issue a project's issue chat works on. */
+export interface IssueChatRef {
+	number: number;
+	title: string;
+	crew_agent: string;
+	crew_state: ProjectIssue['crew_state'];
 }
 
 export type AdminStreamFrame =

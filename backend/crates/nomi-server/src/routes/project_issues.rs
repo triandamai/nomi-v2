@@ -303,6 +303,10 @@ pub struct NewIssue {
     /// The crew member it goes to (agent type); Koda when left out.
     #[serde(default)]
     pub crew_agent: Option<String>,
+    /// "Work immediately": it goes straight to Ready to dev, queued for the crew, starting today
+    /// unless it says otherwise.
+    #[serde(default)]
+    pub start_now: bool,
 }
 
 /// The project's two fixed columns, made the first time its board is used.
@@ -342,9 +346,10 @@ pub async fn create_issue(
     check_kind(&req.kind)?;
     check_severity(&req.severity)?;
     check_points(req.points)?;
-    check_dates(req.start_on, req.due_on)?;
     let crew_agent = req.crew_agent.as_deref().unwrap_or(DEFAULT_CREW_AGENT);
     check_crew(crew_agent)?;
+    let start_on = if req.start_now { req.start_on.or_else(|| Some(Utc::now().date_naive())) } else { req.start_on };
+    check_dates(start_on, req.due_on)?;
 
     let mut tx = state.pool.begin().await.map_err(internal("failed to file issue"))?;
     // Holding the project row makes two people filing at once take turns for the next number.
@@ -353,12 +358,15 @@ pub async fn create_issue(
         .execute(&mut *tx)
         .await
         .map_err(internal("failed to file issue"))?;
-    // Every new issue lands at the bottom of Backlog.
-    let backlog = fixed_column(&mut tx, project_id, BACKLOG).await.map_err(internal("failed to file issue"))?;
+    // A new issue lands at the bottom of Backlog, or of Ready to dev, queued, when it's to start now.
+    let column = fixed_column(&mut tx, project_id, if req.start_now { READY } else { BACKLOG })
+        .await
+        .map_err(internal("failed to file issue"))?;
     let number: i32 = sqlx::query_scalar(
-        "INSERT INTO project_issues (project_id, number, title, body, kind, severity, created_by, column_id, position, start_on, due_on, points, crew_agent) \
+        "INSERT INTO project_issues (project_id, number, title, body, kind, severity, created_by, column_id, position, start_on, due_on, points, crew_agent, crew_state, queued_by) \
          VALUES ($1, (SELECT COALESCE(max(number), 0) + 1 FROM project_issues WHERE project_id = $1), $2, $3, $4, $5, $6, $7, \
-                 (SELECT COALESCE(max(position), 0) + 1 FROM project_issues WHERE column_id = $7), $8, $9, $10, $11) \
+                 (SELECT COALESCE(max(position), 0) + 1 FROM project_issues WHERE column_id = $7), $8, $9, $10, $11, \
+                 CASE WHEN $12 THEN 'queued' END, CASE WHEN $12 THEN $6 END) \
          RETURNING number",
     )
     .bind(project_id)
@@ -367,11 +375,12 @@ pub async fn create_issue(
     .bind(&req.kind)
     .bind(&req.severity)
     .bind(claims.sub)
-    .bind(backlog)
-    .bind(req.start_on)
+    .bind(column)
+    .bind(start_on)
     .bind(req.due_on)
     .bind(req.points)
     .bind(crew_agent)
+    .bind(req.start_now)
     .fetch_one(&mut *tx)
     .await
     .map_err(internal("failed to file issue"))?;

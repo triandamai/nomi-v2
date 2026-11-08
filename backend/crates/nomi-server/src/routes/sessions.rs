@@ -93,7 +93,7 @@ pub async fn list_sessions(
              ORDER BY m.created_at DESC LIMIT 1 \
          ) lm ON true \
          LEFT JOIN LATERAL ( \
-             SELECT id FROM projects pr WHERE pr.session_id = s.id ORDER BY pr.created_at DESC LIMIT 1 \
+             SELECT chat_project(s.id) AS id \
          ) p ON true \
          WHERE s.org_id = $1 AND s.user_id = $2 \
            AND (lm.created_at IS NOT NULL OR p.id IS NOT NULL) \

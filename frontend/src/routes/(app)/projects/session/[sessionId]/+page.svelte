@@ -28,6 +28,7 @@
 	import { applyChanges, choiceFor, type ModelChange, type ModelChoice } from '$lib/modelPicker';
 	import { postAction } from '$lib/providerActions';
 	import IssuesPanel from '$lib/components/project/IssuesPanel.svelte';
+	import IssueWorkStrip from '$lib/components/project/IssueWorkStrip.svelte';
 	import DeployPanel from '$lib/components/project/DeployPanel.svelte';
 	import MonitorPanel from '$lib/components/project/MonitorPanel.svelte';
 	import DatabasePanel from '$lib/components/project/DatabasePanel.svelte';
@@ -866,7 +867,16 @@
 	<header class="topbar" bind:this={topbar}>
 		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face /></a>
 		<div class="topbar__titles">
-			<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
+			{#if project.issue}
+				<!-- An issue's chat: a child of the project's own chat, one tap back to it. -->
+				<h1 class="topbar__name topbar__name--issue">
+					<a class="topbar__parent" href="/projects/session/{project.session_id}" title={m.issue_chat_back()}>{m.issue_chat_parent({ project: project.name })}</a>
+					<span class="topbar__sep" aria-hidden="true">/</span>
+					<span class="topbar__issue">{m.issue_chat_of({ number: project.issue.number, title: project.issue.title })}</span>
+				</h1>
+			{:else}
+				<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
+			{/if}
 			<p class="topbar__meta">
 				{project.org_name}
 				{#if deploy?.overview?.url}
@@ -928,7 +938,7 @@
 	<section class="workspace__chat" aria-label={m.project_chat_label()}>
 		<ChatThread
 			sessionId={page.params.sessionId as string}
-			title={data.project?.name ?? m.project_new()}
+			title={data.project?.issue ? m.issue_chat_of({ number: data.project.issue.number, title: data.project.issue.title }) : (data.project?.name ?? m.project_new())}
 			messages={data.messages}
 			hasOlder={data.hasOlder}
 			agentActivity={data.agentActivity}
@@ -949,6 +959,13 @@
 			ontyping={() => presence?.ping()}
 		>
 			{#snippet aboveComposer()}
+				{#if data.project && !data.project.issue}
+					<IssueWorkStrip
+						projectId={data.project.id}
+						subscribe={deploy ? (listener) => deploy!.onEvent(listener) : undefined}
+						onmore={() => openSheet('issues')}
+					/>
+				{/if}
 				{#if quoted && !viewer}
 					<CodeQuote file={quoted.file} range={quoted.range} snippet={quoted.snippet} onremove={() => (quoted = null)} />
 				{/if}
@@ -1231,6 +1248,40 @@
 		font-weight: 700;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.topbar__name--issue {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		min-width: 0;
+	}
+	.topbar__parent {
+		flex: none;
+		max-width: 45%;
+		overflow: hidden;
+		border-radius: 4px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-weight: 600;
+		text-decoration: none;
+		text-overflow: ellipsis;
+	}
+	.topbar__parent:hover {
+		color: var(--md-sys-color-primary);
+		text-decoration: underline;
+	}
+	.topbar__parent:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.topbar__sep {
+		flex: none;
+		color: var(--md-sys-color-outline);
+		font-weight: 400;
+	}
+	.topbar__issue {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.topbar__meta {
 		margin: 0;

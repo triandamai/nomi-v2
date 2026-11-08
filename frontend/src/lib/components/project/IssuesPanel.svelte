@@ -7,21 +7,12 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import Chip from '$lib/components/m3/Chip.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
-	import TextField from '$lib/components/m3/TextField.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import IconChevronDown from '$lib/components/icons/IconChevronDown.svelte';
 	import IssueBoard from '$lib/components/project/IssueBoard.svelte';
-	import {
-		DEFAULT_CREW_AGENT,
-		ISSUE_CREW,
-		ISSUE_KINDS,
-		ISSUE_SEVERITIES,
-		MAX_POINTS,
-		POINT_SUGGESTIONS,
-		datesInOrder,
-		issuesQuery,
-		type IssueFilters,
-	} from '$lib/issues';
+	import IssueEditorSheet from '$lib/components/project/IssueEditorSheet.svelte';
+	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
+	import { ISSUE_KINDS, ISSUE_SEVERITIES, issuesQuery, type IssueFilters } from '$lib/issues';
 	import { isIssuesEvent } from '$lib/presenceView';
 	import { ago, projectApi } from '$lib/projectApi';
 	import type { IssueBoard as Board, IssueKind, IssueList, IssueSeverity, ProjectIssue } from '$lib/types';
@@ -95,18 +86,9 @@
 		});
 	});
 
-	// The editor: a new issue, or an existing one being edited.
+	// The editor sheet: a new issue (null), or an existing one being edited.
 	let editorOpen = $state(false);
-	let editing = $state<number | null>(null);
-	let title = $state('');
-	let body = $state('');
-	let kind = $state<IssueKind>('bug');
-	let severity = $state<IssueSeverity>('medium');
-	let points = $state<number | null>(null);
-	let startOn = $state('');
-	let dueOn = $state('');
-	let crewAgent = $state(DEFAULT_CREW_AGENT);
-	let saving = $state(false);
+	let editing = $state<ProjectIssue | null>(null);
 
 	let expanded = $state<number | null>(null);
 	let deleting = $state<ProjectIssue | null>(null);
@@ -117,63 +99,12 @@
 
 	function openNew() {
 		editing = null;
-		title = '';
-		body = '';
-		kind = 'bug';
-		severity = 'medium';
-		points = null;
-		startOn = '';
-		dueOn = '';
-		crewAgent = DEFAULT_CREW_AGENT;
-		error = null;
 		editorOpen = true;
 	}
 
 	function openEdit(issue: ProjectIssue) {
-		editing = issue.number;
-		title = issue.title;
-		body = issue.body;
-		kind = issue.kind;
-		severity = issue.severity;
-		points = issue.points;
-		startOn = issue.start_on ?? '';
-		dueOn = issue.due_on ?? '';
-		crewAgent = issue.crew_agent;
-		error = null;
+		editing = issue;
 		editorOpen = true;
-	}
-
-	async function save(event: SubmitEvent) {
-		event.preventDefault();
-		if (!title.trim()) {
-			error = m.issues_err_title();
-			return;
-		}
-		if (!datesInOrder(startOn, dueOn)) {
-			error = m.issues_err_dates();
-			return;
-		}
-		saving = true;
-		try {
-			const fields = {
-				title: title.trim(),
-				body,
-				kind,
-				severity,
-				points: points && points > 0 ? Math.min(Math.round(points), MAX_POINTS) : null,
-				start_on: startOn || null,
-				due_on: dueOn || null,
-				crew_agent: crewAgent,
-			};
-			if (editing === null) await projectApi(projectId, 'issues', { method: 'POST', body: fields });
-			else await projectApi(projectId, `issues/${editing}`, { method: 'PATCH', body: fields });
-			editorOpen = false;
-			await load();
-		} catch {
-			error = m.issues_err_save();
-		} finally {
-			saving = false;
-		}
 	}
 
 	async function setStatus(issue: ProjectIssue) {
@@ -269,7 +200,7 @@
 		<Button variant="filled" size="s" onclick={openNew}><IconPlus size={18} />{m.issues_new()}</Button>
 	</div>
 
-	{#if error && !editorOpen}<p class="error" role="alert">{error}</p>{/if}
+	{#if error}<p class="error" role="alert">{error}</p>{/if}
 	{#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 
 	{#if view === 'board'}
@@ -304,7 +235,7 @@
 					</button>
 					{#if open}
 						<div class="issue__detail">
-							{#if issue.body}<p class="issue__body">{issue.body}</p>{/if}
+							{#if issue.body}<div class="issue__body"><MarkdownEditor value={issue.body} label={m.issues_field_body()} editable={false} /></div>{/if}
 							<div class="issue__actions">
 								{#if issue.status === 'open'}
 									<Button type="button" variant="tonal" size="s" disabled={asking === issue.number} onclick={() => askKoda(issue)}>{m.issues_send_to_koda()}</Button>
@@ -321,66 +252,14 @@
 	{/if}
 </div>
 
-<Dialog bind:open={editorOpen} headline={editing === null ? m.issues_new() : `#${editing}`} class="issue-dialog">
-	<form id="issue-form" class="editor" onsubmit={save}>
-		<TextField name="title" label={m.issues_field_title()} bind:value={title} maxlength={200} required />
-		<fieldset class="choice">
-			<legend class="choice__label">{m.issues_type()}</legend>
-			<div class="choice__options">
-				{#each ISSUE_KINDS as k (k)}
-					<label class="choice__option" class:choice__option--on={kind === k}>
-						<input type="radio" name="kind" value={k} bind:group={kind} />{KIND[k]()}
-					</label>
-				{/each}
-			</div>
-		</fieldset>
-		<fieldset class="choice">
-			<legend class="choice__label">{m.issues_severity()}</legend>
-			<div class="choice__options">
-				{#each ['low', 'medium', 'high', 'critical'] as const as s (s)}
-					<label class="choice__option choice__option--{s}" class:choice__option--on={severity === s}>
-						<input type="radio" name="severity" value={s} bind:group={severity} />{SEVERITY[s]()}
-					</label>
-				{/each}
-			</div>
-		</fieldset>
-		<div class="fields">
-			<label class="field">
-				<span class="area__label">{m.issues_field_points()}</span>
-				<input type="number" name="points" min="1" max={MAX_POINTS} step="1" list="issue-points" bind:value={points} />
-				<datalist id="issue-points">
-					{#each POINT_SUGGESTIONS as p (p)}<option value={p}></option>{/each}
-				</datalist>
-			</label>
-			<label class="field">
-				<span class="area__label">{m.issues_field_start()}</span>
-				<input type="date" name="start_on" bind:value={startOn} max={dueOn || undefined} />
-			</label>
-			<label class="field">
-				<span class="area__label">{m.issues_field_due()}</span>
-				<input type="date" name="due_on" bind:value={dueOn} min={startOn || undefined} />
-			</label>
-		</div>
-		<label class="field">
-			<span class="area__label">{m.issues_field_assignee()}</span>
-			<select name="crew_agent" bind:value={crewAgent}>
-				{#each ISSUE_CREW as member (member.agent)}<option value={member.agent}>{member.name}</option>{/each}
-			</select>
-			<span class="field__hint">{m.issues_field_assignee_hint()}</span>
-		</label>
-		<label class="area">
-			<span class="area__label">{m.issues_field_body()}</span>
-			<textarea name="body" rows="6" maxlength="20000" bind:value={body} placeholder={m.issues_field_body_hint()}></textarea>
-		</label>
-		{#if error && editorOpen}<p class="error" role="alert">{error}</p>{/if}
-	</form>
-	{#snippet actions()}
-		<Button variant="text" type="button" onclick={() => (editorOpen = false)}>{m.issues_cancel()}</Button>
-		<Button variant="filled" type="submit" form="issue-form" disabled={saving || !title.trim()}>
-			{editing === null ? m.issues_create() : m.issues_save()}
-		</Button>
-	{/snippet}
-</Dialog>
+<IssueEditorSheet
+	bind:open={editorOpen}
+	{projectId}
+	issue={editing}
+	kindLabel={(k) => KIND[k]()}
+	severityLabel={(s) => SEVERITY[s]()}
+	onsaved={load}
+/>
 
 <Dialog bind:open={deleteOpen} headline={m.issues_delete()}>
 	{#if deleting}<p>{m.issues_delete_confirm({ number: deleting.number })}</p>{/if}
@@ -413,43 +292,6 @@
 	}
 	.spacer {
 		margin-right: auto;
-	}
-	.fields {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 10px;
-	}
-	.field {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-	.field input,
-	.field select {
-		box-sizing: border-box;
-		width: 100%;
-		min-height: 44px;
-		padding: 0 12px;
-		border: 1.5px solid var(--md-sys-color-outline);
-		border-radius: 8px;
-		background: var(--md-sys-color-surface);
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
-	}
-	.field input:focus-visible,
-	.field select:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 1px;
-	}
-	.field__hint {
-		margin-top: 4px;
-		font-size: var(--md-sys-typescale-body-small-size);
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	@media (max-width: 600px) {
-		.fields {
-			grid-template-columns: 1fr;
-		}
 	}
 	.tab {
 		display: inline-flex;
@@ -608,11 +450,7 @@
 		background: var(--md-sys-color-surface-container);
 	}
 	.issue__body {
-		margin: 0;
 		max-width: 65ch;
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
-		color: var(--md-sys-color-on-surface);
 	}
 	.issue__actions {
 		display: flex;
@@ -638,93 +476,5 @@
 		.tabs {
 			width: 100%;
 		}
-	}
-	.editor {
-		display: flex;
-		flex-direction: column;
-		gap: 14px;
-		min-width: min(520px, 80vw);
-	}
-	.choice {
-		margin: 0;
-		padding: 0;
-		border: none;
-	}
-	.choice__label,
-	.area__label {
-		margin-bottom: 6px;
-		font-size: var(--md-sys-typescale-body-small-size);
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.choice__options {
-		display: flex;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: 8px;
-		overflow: hidden;
-	}
-	.choice__option {
-		display: inline-flex;
-		flex: 1 1 auto;
-		align-items: center;
-		justify-content: center;
-		min-height: 40px;
-		padding: 0 10px;
-		white-space: nowrap;
-		border-left: 1px solid var(--md-sys-color-outline);
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--md-sys-color-on-surface);
-		cursor: pointer;
-	}
-	.choice__option:first-child {
-		border-left: none;
-	}
-	.choice__option:has(input:focus-visible) {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: -2px;
-	}
-	.choice__option input {
-		position: absolute;
-		opacity: 0;
-		pointer-events: none;
-	}
-	.choice__option--on {
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
-	}
-	.choice__option--critical.choice__option--on {
-		background: var(--md-sys-color-error);
-		color: var(--md-sys-color-on-error);
-	}
-	.choice__option--high.choice__option--on {
-		background: var(--md-sys-color-error-container);
-		color: var(--md-sys-color-on-error-container);
-	}
-	@media (max-width: 600px) {
-		.choice__option {
-			padding: 0 6px;
-			font-size: 0.75rem;
-		}
-	}
-	.area {
-		display: flex;
-		flex-direction: column;
-	}
-	.area textarea {
-		box-sizing: border-box;
-		width: 100%;
-		min-height: 140px;
-		padding: 12px 14px;
-		border: 1.5px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-large);
-		background: var(--md-sys-color-surface);
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
-		resize: vertical;
-	}
-	.area textarea:focus {
-		outline: none;
-		border: 2px solid var(--md-sys-color-primary);
-		padding: 11.5px 13.5px;
 	}
 </style>

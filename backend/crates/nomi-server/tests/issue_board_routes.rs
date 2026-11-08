@@ -182,3 +182,32 @@ async fn moving_into_ready_to_dev_queues_it_for_the_crew(pool: PgPool) {
     let (status, retried) = call(&router, "POST", &format!("{issues}/1/retry"), Value::Null, &ana).await;
     assert_eq!((status, retried["crew_state"].as_str()), (StatusCode::OK, Some("queued")));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn work_immediately_files_an_issue_straight_into_ready_to_dev(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let ana = sign_up(&router, "ana@example.com").await;
+    let (_, project_id, _) = studio_with_a_project(&router, &ana).await;
+    let base = format!("/api/projects/{project_id}");
+
+    let (status, later) = call(&router, "POST", &format!("{base}/issues"), json!({"title": "Later", "kind": "task", "severity": "low"}), &ana).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(later["crew_state"].is_null());
+
+    let (status, now) = call(&router, "POST", &format!("{base}/issues"), json!({"title": "Now", "kind": "bug", "severity": "high", "start_now": true, "crew_agent": "money"}), &ana).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(now["crew_state"], "queued");
+    assert_eq!(now["crew_agent"], "money");
+    assert_eq!(now["start_on"].as_str(), Some(chrono::Utc::now().date_naive().to_string().as_str()));
+
+    // A start date given with it is kept, and still checked against the deadline.
+    let (status, _) = call(&router, "POST", &format!("{base}/issues"), json!({"title": "Dated", "kind": "task", "severity": "low", "start_now": true, "start_on": "2026-12-01", "due_on": "2026-11-01"}), &ana).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (_, board) = call(&router, "GET", &format!("{base}/board"), Value::Null, &ana).await;
+    let shown = columns(&board);
+    assert_eq!(shown[0], ("Backlog".to_string(), Some("backlog".to_string()), vec![1]));
+    assert_eq!(shown[1], ("Ready to dev".to_string(), Some("ready".to_string()), vec![2]));
+    let queued_by: Option<uuid::Uuid> = sqlx::query_scalar("SELECT queued_by FROM project_issues WHERE number = 2").fetch_one(&pool).await.unwrap();
+    assert!(queued_by.is_some());
+}

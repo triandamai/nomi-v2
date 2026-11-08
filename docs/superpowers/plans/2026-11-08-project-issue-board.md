@@ -196,3 +196,19 @@ Log each step: `issue board: picked up #12 for Koda`, `issue board: Koda handed 
   Issue #12: …", which routes the turn to them.
 - **No `issue` content block.** The first message carries the issue as text, and the board links
   to the chat ("Open its chat").
+- **The issue form is a full-screen sheet** laid out like a page (`IssueEditorSheet.svelte`): the
+  title, then type and severity dropdowns, points, the crew member (an autocomplete over name and
+  role, `CrewPicker.svelte`), start date and deadline on the calendar picker, then the description.
+- **"Work immediately"** sets the start date to today and files the issue straight into Ready to dev,
+  queued (`start_now` on create). On an existing issue it saves, then moves it to the end of Ready
+  to dev.
+- **Descriptions are edited like Notion and stored as Markdown** (`MarkdownEditor.svelte`, Tiptap
+  with its Markdown extension): Markdown shortcuts as you type ("# ", "- ", "[] ", "> ", "```"), a
+  "/" menu of blocks, and a bold / italic / strikethrough / code bar over a selection. The list view
+  shows them formatted with the same editor, read-only.
+- **The project chat shows the crew's issues** above the composer (`IssueWorkStrip.svelte`): "Koda
+  is working on issue #1", each opening that issue's chat. It follows `issues.changed`.
+- **An issue's chat is the project workspace** (`/projects/session/<issue chat>`): `by-session`
+  resolves the chat with `chat_project()` and adds `issue` (number, title, crew). The page shows
+  the same chat, code, preview and terminal, with "<project> chat / Issue #1 · title" at the top
+  linking back to the project's own chat. The chat list links issue chats there too.

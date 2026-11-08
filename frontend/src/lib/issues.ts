@@ -99,3 +99,31 @@ export function dropIndex(cards: { top: number; height: number }[], y: number): 
 	const at = cards.findIndex((card) => y < card.top + card.height / 2);
 	return at === -1 ? cards.length : at;
 }
+
+/** The crew members whose name or role (`role`) has a word starting with `query`. */
+export function crewMatches(query: string, role: (agent: string) => string): typeof ISSUE_CREW {
+	const q = query.trim().toLowerCase();
+	if (!q) return ISSUE_CREW;
+	return ISSUE_CREW.filter((member) =>
+		[member.name, role(member.agent)].some((text) =>
+			text
+				.toLowerCase()
+				.split(/[\s,/]+/)
+				.some((word) => word.startsWith(q)),
+		),
+	);
+}
+
+/** The longest description an issue can have (the backend refuses more). */
+export const MAX_BODY_CHARS = 20_000;
+
+/** The most crew-work rows the project chat shows; the rest are on the board. */
+export const MAX_WORK_ROWS = 3;
+
+/**
+ * The issues the crew has taken from Ready to dev (waiting, working, done or stuck), in the
+ * board's order, for the project chat to show.
+ */
+export function crewWork(columns: BoardColumn[]): ProjectIssue[] {
+	return columns.flatMap((column) => column.issues).filter((issue) => issue.crew_state !== null);
+}
