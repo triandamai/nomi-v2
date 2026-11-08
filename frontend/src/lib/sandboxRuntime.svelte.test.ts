@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@webcontainer/api', () => ({ WebContainer: { boot: async () => ({}) } }));
 
 const { SandboxRuntime, toRuntimePhase } = await import('./sandboxRuntime.svelte');
-const { createRuntime } = await import('./runtimeChooser');
+const { createRuntime, forceBrowserRuntime, browserRuntimeForced } = await import('./runtimeChooser');
 const { ProjectRuntime } = await import('./projectRuntime.svelte');
 
 const SECRET = 'https://boat.example/p/s3cr3t-token';
@@ -143,5 +143,68 @@ describe('sandbox runtime', () => {
 		expect(runtime.log).toContain('two');
 		expect(requests.map((r) => r.path)).toContain('sandbox/logs?offset=4');
 		await runtime.stop();
+	});
+
+	it('a second start() does not double the heartbeat or the first sandbox start', async () => {
+		status = { ...status, phase: 'idle', preview_url: null };
+		const runtime = new SandboxRuntime('p1');
+		await runtime.start();
+		await runtime.start();
+		expect(requests.filter((r) => r.path === 'sandbox/start')).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(20_000);
+		expect(beats()).toBeLessThanOrEqual(3);
+		await runtime.stop();
+	});
+
+	it('overlapping refreshes do not duplicate the log text', async () => {
+		let release: () => void = () => {};
+		const gate = new Promise<void>((r) => (release = r));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				const path = String(url).replace('/projects/p1/api/', '');
+				if (path === 'sandbox') return json(status);
+				if (path.startsWith('sandbox/logs')) {
+					await gate;
+					return json({ text: 'once\n', next_offset: 5 });
+				}
+				return json({});
+			}),
+		);
+		const runtime = new SandboxRuntime('p1');
+		let emit: (raw: string) => void = () => {};
+		runtime.listen((l) => ((emit = l), () => {}));
+		const starting = runtime.start();
+		emit('{"kind":"SandboxChanged"}');
+		emit('{"kind":"SandboxChanged"}');
+		await vi.advanceTimersByTimeAsync(0);
+		release();
+		await starting;
+		await vi.advanceTimersByTimeAsync(0);
+		expect(runtime.log.split('once').length - 1).toBe(1);
+		await runtime.stop();
+	});
+
+	it('retry asks the backend to start the sandbox again and clears the error', async () => {
+		status = { ...status, phase: 'error', preview_url: null, error: 'boom' };
+		const runtime = new SandboxRuntime('p1');
+		await runtime.start();
+		expect(runtime.phase).toBe('failed');
+		status = { ...status, phase: 'waking', error: null };
+		await runtime.retry();
+		expect(requests.some((r) => r.path === 'sandbox/start' && r.method === 'POST')).toBe(true);
+		expect(runtime.error).toBeNull();
+		expect(runtime.phase).toBe('waking');
+		await runtime.stop();
+	});
+
+	it('forcing the browser runtime skips the sandbox for this page session', async () => {
+		expect(browserRuntimeForced('p1')).toBe(false);
+		forceBrowserRuntime('p1');
+		expect(browserRuntimeForced('p1')).toBe(true);
+		expect(browserRuntimeForced('p2')).toBe(false);
+		requests.length = 0;
+		expect(await createRuntime('p1')).toBeInstanceOf(ProjectRuntime);
+		expect(requests).toEqual([]);
 	});
 });

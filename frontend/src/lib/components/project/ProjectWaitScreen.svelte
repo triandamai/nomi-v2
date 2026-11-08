@@ -15,6 +15,8 @@
 		handedToKoda = false,
 		logText = '',
 		onRestart,
+		onRetry,
+		onUseBrowser,
 	}: {
 		phase: RuntimePhase;
 		phaseLabel: string;
@@ -23,7 +25,22 @@
 		handedToKoda?: boolean;
 		logText?: string;
 		onRestart?: () => void;
+		/** Starts the sandbox again (the sandbox runtime only); wins over `onRestart`. */
+		onRetry?: () => void;
+		/** Runs the project in the browser instead (the sandbox runtime only). */
+		onUseBrowser?: () => void;
 	} = $props();
+
+	const TICK_MS = 1000;
+	const TAIL_LINES = 12;
+	let waitedSeconds = $state(0);
+	$effect(() => {
+		if (phase !== 'waking') return;
+		waitedSeconds = 0;
+		const timer = setInterval(() => (waitedSeconds += 1), TICK_MS);
+		return () => clearInterval(timer);
+	});
+	const logTail = $derived(logText.trimEnd().split('\n').slice(-TAIL_LINES).join('\n'));
 
 	const tips = [
 		{ title: () => m.project_tip_1_title(), body: () => m.project_tip_1_body() },
@@ -98,13 +115,31 @@
 			{#if handedToKoda}
 				<p class="wait-screen__desc">{m.project_check_failed_koda()}</p>
 			{/if}
-			{#if onRestart}
+			{#if onRetry && logTail}
+				<pre class="wait-screen__log wait-screen__log--tail" aria-label={m.project_log_tail_label()}>{logTail}</pre>
+			{/if}
+			{#if onRetry || onRestart || onUseBrowser}
 				<div class="wait-screen__action">
-					<Button variant="filled" size="s" onclick={onRestart}>{m.project_restart()}</Button>
+					{#if onRetry}
+						<Button variant="filled" size="s" onclick={onRetry}>{m.project_sandbox_retry()}</Button>
+					{:else if onRestart}
+						<Button variant="filled" size="s" onclick={onRestart}>{m.project_restart()}</Button>
+					{/if}
+					{#if onUseBrowser}
+						<Button variant="tonal" size="s" onclick={onUseBrowser}>{m.project_run_in_browser()}</Button>
+					{/if}
 				</div>
 			{/if}
 		{:else if runningCommand}
 			<p class="wait-screen__desc wait-screen__desc--mono">{m.project_koda_running({ command: runningCommand })}</p>
+		{/if}
+		{#if phase === 'waking'}
+			<p class="wait-screen__desc">{m.project_sandbox_waking_elapsed({ seconds: waitedSeconds })}</p>
+		{/if}
+		{#if onUseBrowser && phase !== 'failed'}
+			<div class="wait-screen__action">
+				<Button variant="text" size="s" onclick={onUseBrowser}>{m.project_run_in_browser()}</Button>
+			</div>
 		{/if}
 	</div>
 
@@ -296,6 +331,15 @@
 
 	.wait-screen__action {
 		margin-top: 6px;
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+
+	.wait-screen__log--tail {
+		min-height: 0;
+		max-height: 160px;
 	}
 
 	/* Carousel Tips Container */

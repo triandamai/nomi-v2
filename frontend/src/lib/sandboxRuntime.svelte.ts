@@ -62,12 +62,14 @@ export class SandboxRuntime {
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
 	#poll: ReturnType<typeof setInterval> | null = null;
 	#unlisten: (() => void) | null = null;
+	#fetching = false;
 
 	constructor(projectId: string) {
 		this.#projectId = projectId;
 	}
 
 	async start() {
+		if (this.#heartbeat) return;
 		this.#stopped = false;
 		void this.#beat();
 		this.#heartbeat = setInterval(() => void this.#beat(), HEARTBEAT_MS);
@@ -119,6 +121,17 @@ export class SandboxRuntime {
 		}
 	}
 
+	/** Asks the backend to start the sandbox again after it failed. */
+	async retry() {
+		if (this.#stopped) return;
+		this.error = null;
+		try {
+			await this.#command('start');
+		} catch (e) {
+			this.#fail(e instanceof Error ? e.message : String(e));
+		}
+	}
+
 	// The backend already has every file the person saves or deletes.
 	async writeFile(_path: string, _content: string | Uint8Array) {}
 	async removeFile(_path: string) {}
@@ -158,6 +171,9 @@ export class SandboxRuntime {
 	}
 
 	async #fetchLogs() {
+		// A refresh that lands while another is still reading would read the same offset twice.
+		if (this.#fetching) return;
+		this.#fetching = true;
 		try {
 			const logs = await projectApi<{ text: string; next_offset: number }>(this.#projectId, `sandbox/logs?offset=${this.#offset}`);
 			if (this.#stopped || !logs) return;
@@ -165,6 +181,8 @@ export class SandboxRuntime {
 			this.#offset = logs.next_offset;
 		} catch {
 			// Logs are a nicety: the next poll tries again.
+		} finally {
+			this.#fetching = false;
 		}
 	}
 

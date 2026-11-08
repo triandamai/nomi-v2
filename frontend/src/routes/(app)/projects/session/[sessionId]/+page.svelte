@@ -12,7 +12,7 @@
 	import PreviewAddressBar from '$lib/components/project/PreviewAddressBar.svelte';
 	import PreviewDevices from '$lib/components/project/PreviewDevices.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
-	import { createRuntime, type AnyRuntime } from '$lib/runtimeChooser';
+	import { browserRuntimeForced, createRuntime, forceBrowserRuntime, type AnyRuntime } from '$lib/runtimeChooser';
 	import { SandboxRuntime } from '$lib/sandboxRuntime.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
@@ -279,9 +279,17 @@
 	// Projects with a package.json run in the browser (WebContainer); static ones don't.
 	const projectId = $derived(data.project?.id ?? null);
 	const runsLive = $derived(Boolean(data.project && data.project.stack !== 'static'));
+	// Bumped when the person picks the browser over the sandbox, so the runtime is chosen again.
+	let runtimeChoice = $state(0);
+	function useBrowserRuntime() {
+		if (!projectId) return;
+		forceBrowserRuntime(projectId);
+		runtimeChoice += 1;
+	}
 
 	$effect(() => {
 		if (!projectId || !runsLive) return;
+		void runtimeChoice;
 		let live: AnyRuntime | null = null;
 		let cancelled = false;
 		void createRuntime(projectId).then((created) => {
@@ -1084,7 +1092,7 @@
 							status={runtime ? PHASE_LABEL[runtime.phase]() : m.project_phase_stopped()}
 							running={runtime?.phase === 'running'}
 							address={previewAddress}
-							href={runtime?.previewPort ? (runtime.previewUrl ?? null) : (deploy?.overview?.url ?? runtime?.previewUrl ?? null)}
+							href={runtime instanceof SandboxRuntime ? (deploy?.overview?.url ?? null) : runtime?.previewPort ? (runtime.previewUrl ?? null) : (deploy?.overview?.url ?? runtime?.previewUrl ?? null)}
 							onreload={runtime?.previewUrl ? () => preview?.reload() : undefined}
 						/>
 					</div>
@@ -1118,6 +1126,7 @@
 						files={filePaths}
 						liveUrl={deploy?.overview?.url ?? null}
 						onShowCode={() => (view = 'code')}
+						onUseBrowser={runtime instanceof SandboxRuntime ? useBrowserRuntime : undefined}
 					/>
 				{:else if view === 'terminal' && runtime}
 					<!-- What ran in the preview, in order (Build → Terminal); a failed check offers the fix. -->

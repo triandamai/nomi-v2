@@ -70,4 +70,45 @@ describe('more components', () => {
 		const failed = render(ProjectPreview as never, { projectId: 'p1', runtime: { ...runtime, phase: 'failed', error: 'npm install failed', checkFailed: true, handedToKoda: true }, stack: 'sveltekit' });
 		await tryAll(failed);
 	});
+
+	it('the sandbox preview states: waking with seconds, failed with log tail, retry and browser fallback', async () => {
+		{
+			fakeBackend([['*', /.*/, new Response('{}', { status: 200 })]]);
+			const base = { phase: 'waking', previewUrl: null, log: '', files: [], error: null, checkFailed: false, handedToKoda: false, running: null, restart: vi.fn(), retry: vi.fn(), start: vi.fn(), stop: vi.fn() };
+			const onUseBrowser = vi.fn();
+			const waking = render(ProjectPreview as never, { projectId: 'p1', runtime: base, stack: 'sveltekit', onUseBrowser });
+			await settle(2);
+			await new Promise((resolve) => setTimeout(resolve, 1200));
+			await settle(2);
+			expect(text(waking)).toContain('Waking the sandbox');
+			expect(text(waking)).toMatch(/[1-9]\s?s\b/);
+			const fallback = [...waking.querySelectorAll('button')].find((b) => b.textContent?.includes('Run in my browser instead'));
+			expect(fallback).toBeTruthy();
+			fallback!.click();
+			expect(onUseBrowser).toHaveBeenCalledTimes(1);
+
+			const starting = render(ProjectPreview as never, { projectId: 'p1', runtime: { ...base, phase: 'starting' }, stack: 'sveltekit', onUseBrowser });
+			expect(text(starting)).toContain('Starting the app');
+
+			const failedRuntime = { ...base, phase: 'failed', error: 'sandbox crashed', log: 'line one\nnpm ERR! last line' };
+			const failed = render(ProjectPreview as never, { projectId: 'p1', runtime: failedRuntime, stack: 'sveltekit', onUseBrowser });
+			await settle(2);
+			expect(text(failed)).toContain('sandbox crashed');
+			expect(text(failed)).toContain('npm ERR! last line');
+			const retry = [...failed.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Retry');
+			expect(retry).toBeTruthy();
+			retry!.click();
+			expect(failedRuntime.retry).toHaveBeenCalledTimes(1);
+			expect(failedRuntime.restart).not.toHaveBeenCalled();
+			const failedFallback = [...failed.querySelectorAll('button')].find((b) => b.textContent?.includes('Run in my browser instead'));
+			failedFallback!.click();
+			expect(onUseBrowser).toHaveBeenCalledTimes(2);
+
+			// The browser runtime has neither: no Retry-to-sandbox, no fallback button.
+			const { retry: _r, ...browser } = failedRuntime;
+			const plain = render(ProjectPreview as never, { projectId: 'p1', runtime: browser, stack: 'sveltekit' });
+			expect(text(plain)).not.toContain('Run in my browser instead');
+			expect([...plain.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Retry')).toBe(false);
+		}
+	});
 });

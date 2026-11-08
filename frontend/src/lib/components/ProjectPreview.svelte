@@ -18,6 +18,7 @@
 		files = [],
 		liveUrl = null,
 		onShowCode,
+		onUseBrowser,
 		device = $bindable('desktop'),
 	}: {
 		projectId: string;
@@ -29,6 +30,8 @@
 		/** The published app's address: what "Open on your phone" sends. */
 		liveUrl?: string | null;
 		onShowCode?: () => void;
+		/** Runs the project in the browser instead of the sandbox; offered only while the sandbox is the runtime. */
+		onUseBrowser?: () => void;
 		/** Desktop or phone width; the pane's top bar switches it. */
 		device?: 'desktop' | 'phone';
 	} = $props();
@@ -108,6 +111,8 @@
 		handedToKoda={runtime.handedToKoda}
 		{logText}
 		onRestart={() => runtime.restart()}
+		onRetry={'retry' in runtime && typeof runtime.retry === 'function' ? () => (runtime as { retry: () => void }).retry() : undefined}
+		{onUseBrowser}
 	/>
 {/if}
 
