@@ -162,6 +162,7 @@ impl SandboxProvider for FakeProvider {
 
     async fn delete(&self, id: &SandboxId) -> Result<(), SandboxError> {
         let mut g = self.enter(format!("delete {}", id.0))?;
+        g.by_key.retain(|_, v| v != id);
         g.sandboxes
             .remove(id)
             .map(|_| ())

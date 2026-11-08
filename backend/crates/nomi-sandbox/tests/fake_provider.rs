@@ -89,3 +89,13 @@ fn preview_url_debug_is_redacted() {
     assert!(s.contains("[redacted]") && !s.contains("secret"));
     let _ = SandboxId("x".into());
 }
+
+#[tokio::test]
+async fn create_after_delete_with_same_key_makes_a_new_sandbox() {
+    let p = FakeProvider::new();
+    let first = p.create(spec()).await.unwrap();
+    p.delete(&first.id).await.unwrap();
+    let second = p.create(spec()).await.unwrap();
+    assert_ne!(first.id, second.id);
+    assert_eq!(second.state, SandboxState::Running);
+}
