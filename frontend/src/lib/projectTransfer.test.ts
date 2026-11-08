@@ -106,7 +106,7 @@ describe('projectTransfer helpers', () => {
 		});
 
 	it('allows the issue board: moving, retrying and its columns', () => {
-			for (const path of ['board', 'board/columns', 'board/columns/123e4567-e89b-12d3-a456-426614174000', 'issues/12/move', 'issues/12/retry']) {
+			for (const path of ['board', 'board/columns', 'board/columns/123e4567-e89b-12d3-a456-426614174000', 'issues/12/move', 'issues/12/retry', 'issues/12/done']) {
 				expect(ALLOWED_PROJECT_API_PATHS.test(path)).toBe(true);
 			}
 			expect(ALLOWED_PROJECT_API_PATHS.test('board/columns/x/y')).toBe(false);

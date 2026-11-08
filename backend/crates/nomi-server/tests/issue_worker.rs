@@ -200,3 +200,34 @@ async fn a_handed_on_issue_follows_its_new_crew_member_until_they_finish(pool: P
     assert_eq!(sweep(&pool, 1).await.unwrap(), Swept { picked_up: 1, finished: 1, ..Swept::default() });
     assert_eq!(states(&pool).await[0], (1, s("done")));
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_follow_up_in_its_chat_puts_the_crew_back_on_it_until_it_is_marked_done(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let ana = sign_up(&router, "ana@example.com").await;
+    let project_id = three_ready_issues(&router, &ana).await;
+    sweep(&pool, 1).await.unwrap();
+    finish_turn(&pool, 1, "completed").await;
+    sweep(&pool, 1).await.unwrap();
+    assert_eq!(states(&pool).await[0], (1, s("done")));
+    let chat: uuid::Uuid = sqlx::query_scalar("SELECT session_id FROM project_issues WHERE number = 1").fetch_one(&pool).await.unwrap();
+
+    // "Not yet": the person says what's missing in the issue's chat, and the crew is on it again.
+    let (status, _) = call(&router, "POST", &format!("/api/sessions/{chat}/messages"), json!({"text": "Not yet: the toggle doesn't remember the choice"}), &ana).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let swept = sweep(&pool, 1).await.unwrap();
+    assert_eq!(swept.resumed, 1);
+    assert_eq!(states(&pool).await[0], (1, s("working")));
+    finish_turn(&pool, 1, "completed").await;
+    sweep(&pool, 1).await.unwrap();
+    assert_eq!(states(&pool).await[0], (1, s("done")));
+    // Nothing new in the chat: it stays done.
+    assert_eq!(sweep(&pool, 1).await.unwrap().resumed, 0);
+
+    // Marked done: closed in Done, and the chat takes no more messages.
+    let (status, issue) = call(&router, "POST", &format!("/api/projects/{project_id}/issues/1/done"), Value::Null, &ana).await;
+    assert_eq!((status, issue["status"].as_str()), (StatusCode::OK, Some("closed")));
+    let (status, _) = call(&router, "POST", &format!("/api/sessions/{chat}/messages"), json!({"text": "and another"}), &ana).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(sweep(&pool, 1).await.unwrap().resumed, 0);
+}

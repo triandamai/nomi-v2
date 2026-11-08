@@ -12,7 +12,7 @@
 	import IssueBoard from '$lib/components/project/IssueBoard.svelte';
 	import IssueEditorSheet from '$lib/components/project/IssueEditorSheet.svelte';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
-	import { ISSUE_KINDS, ISSUE_SEVERITIES, issuesQuery, type IssueFilters } from '$lib/issues';
+	import { ISSUE_KINDS, ISSUE_SEVERITIES, issuesQuery, openOnBoard, type IssueFilters } from '$lib/issues';
 	import { isIssuesEvent } from '$lib/presenceView';
 	import { ago, projectApi } from '$lib/projectApi';
 	import type { IssueBoard as Board, IssueKind, IssueList, IssueSeverity, ProjectIssue } from '$lib/types';
@@ -59,7 +59,7 @@
 		try {
 			if (view === 'board') {
 				board = await projectApi<Board>(projectId, 'board');
-				onCountChange?.(board.columns.reduce((sum, column) => sum + column.issues.length, 0));
+				onCountChange?.(openOnBoard(board.columns));
 			} else {
 				list = await projectApi<IssueList>(projectId, `issues?${issuesQuery(filters)}`);
 				onCountChange?.(list.counts.open);

@@ -122,25 +122,33 @@ async fn new_issues_land_in_backlog_and_fixed_columns_stay_put(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         columns(&board),
-        [("Backlog".to_string(), Some("backlog".to_string()), vec![1, 2]), ("Ready to dev".to_string(), Some("ready".to_string()), vec![])]
+        [
+            ("Backlog".to_string(), Some("backlog".to_string()), vec![1, 2]),
+            ("Ready to dev".to_string(), Some("ready".to_string()), vec![]),
+            ("Done".to_string(), Some("done".to_string()), vec![]),
+            ("Closed".to_string(), Some("closed".to_string()), vec![]),
+        ]
     );
 
     let (status, _) = call(&router, "POST", &format!("{board_url}/columns"), json!({"name": "In review"}), &ana).await;
     assert_eq!(status, StatusCode::CREATED);
     let (_, board) = call(&router, "POST", &format!("{board_url}/columns"), json!({"name": "Shipped"}), &ana).await;
     let names: Vec<String> = columns(&board).into_iter().map(|c| c.0).collect();
-    assert_eq!(names, ["Backlog", "Ready to dev", "In review", "Shipped"]);
+    // Added columns go between Ready to dev and Done.
+    assert_eq!(names, ["Backlog", "Ready to dev", "In review", "Shipped", "Done", "Closed"]);
 
     // The fixed columns can't be renamed, moved or deleted.
-    let backlog = column_id(&board, "Backlog");
-    assert_eq!(call(&router, "PATCH", &format!("{board_url}/columns/{backlog}"), json!({"name": "Inbox"}), &ana).await.0, StatusCode::CONFLICT);
-    assert_eq!(call(&router, "DELETE", &format!("{board_url}/columns/{backlog}"), Value::Null, &ana).await.0, StatusCode::CONFLICT);
+    for fixed in ["Backlog", "Done", "Closed"] {
+        let id = column_id(&board, fixed);
+        assert_eq!(call(&router, "PATCH", &format!("{board_url}/columns/{id}"), json!({"name": "Inbox"}), &ana).await.0, StatusCode::CONFLICT);
+        assert_eq!(call(&router, "DELETE", &format!("{board_url}/columns/{id}"), Value::Null, &ana).await.0, StatusCode::CONFLICT);
+    }
 
     // Added columns can: renamed, and moved, but never ahead of the fixed ones.
     let shipped = column_id(&board, "Shipped");
     let (_, board) = call(&router, "PATCH", &format!("{board_url}/columns/{shipped}"), json!({"name": "Live", "index": 0}), &ana).await;
     let names: Vec<String> = columns(&board).into_iter().map(|c| c.0).collect();
-    assert_eq!(names, ["Backlog", "Ready to dev", "Live", "In review"]);
+    assert_eq!(names, ["Backlog", "Ready to dev", "Live", "In review", "Done", "Closed"]);
 
     // Deleting a column sends its issues back to Backlog.
     let review = column_id(&board, "In review");
@@ -148,7 +156,7 @@ async fn new_issues_land_in_backlog_and_fixed_columns_stay_put(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     let (_, board) = call(&router, "DELETE", &format!("{board_url}/columns/{review}"), Value::Null, &ana).await;
     assert_eq!(columns(&board)[0].2, vec![1, 2]);
-    assert_eq!(columns(&board).len(), 3);
+    assert_eq!(columns(&board).len(), 5);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -210,4 +218,52 @@ async fn work_immediately_files_an_issue_straight_into_ready_to_dev(pool: PgPool
     assert_eq!(shown[1], ("Ready to dev".to_string(), Some("ready".to_string()), vec![2]));
     let queued_by: Option<uuid::Uuid> = sqlx::query_scalar("SELECT queued_by FROM project_issues WHERE number = 2").fetch_one(&pool).await.unwrap();
     assert!(queued_by.is_some());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn done_and_closed_close_the_issue_and_leave_its_chat_read_only(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let ana = sign_up(&router, "ana@example.com").await;
+    let (_, project_id, _) = studio_with_a_project(&router, &ana).await;
+    let base = format!("/api/projects/{project_id}");
+    for title in ["One", "Two", "Three"] {
+        call(&router, "POST", &format!("{base}/issues"), json!({"title": title, "kind": "task", "severity": "low"}), &ana).await;
+    }
+    let (_, board) = call(&router, "GET", &format!("{base}/board"), Value::Null, &ana).await;
+    let (done, closed) = (column_id(&board, "Done"), column_id(&board, "Closed"));
+
+    // Into Done on the board: closed. Back out of it: open again.
+    let (_, moved) = call(&router, "POST", &format!("{base}/issues/1/move"), json!({"column_id": done, "index": 0}), &ana).await;
+    assert_eq!(moved["status"], "closed");
+    assert!(moved["closed_at"].is_string());
+    let backlog = column_id(&board, "Backlog");
+    let (_, back) = call(&router, "POST", &format!("{base}/issues/1/move"), json!({"column_id": backlog, "index": 0}), &ana).await;
+    assert_eq!((back["status"].as_str(), back["closed_at"].is_null()), (Some("open"), true));
+
+    // "Mark as done" from the issue's chat; closing from the list goes to Closed; reopening it
+    // sends it back to Backlog.
+    let (status, marked) = call(&router, "POST", &format!("{base}/issues/2/done"), Value::Null, &ana).await;
+    assert_eq!((status, marked["status"].as_str(), marked["column_id"].as_str()), (StatusCode::OK, Some("closed"), Some(done.as_str())));
+    let (_, shut) = call(&router, "PATCH", &format!("{base}/issues/3"), json!({"status": "closed"}), &ana).await;
+    assert_eq!(shut["column_id"].as_str(), Some(closed.as_str()));
+    let (_, board) = call(&router, "GET", &format!("{base}/board"), Value::Null, &ana).await;
+    let shown = columns(&board);
+    assert_eq!((shown[0].2.clone(), shown[2].2.clone(), shown[3].2.clone()), (vec![1], vec![2], vec![3]));
+    let (_, reopened) = call(&router, "PATCH", &format!("{base}/issues/3"), json!({"status": "open"}), &ana).await;
+    assert_eq!(reopened["column_id"].as_str(), Some(backlog.as_str()));
+
+    // An issue chat takes no more messages once its issue is done.
+    let chat: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (channel, chat_type, chat_id, org_id, user_id) \
+         SELECT 'web', 'dm', gen_random_uuid()::text, org_id, user_id FROM sessions WHERE id = (SELECT session_id FROM projects WHERE id = $1::uuid) RETURNING id",
+    )
+    .bind(&project_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE project_issues SET session_id = $1 WHERE number = 2").bind(chat).execute(&pool).await.unwrap();
+    let (status, _) = call(&router, "POST", &format!("/api/sessions/{chat}/messages"), json!({"text": "one more thing"}), &ana).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, workspace) = call(&router, "GET", &format!("/api/projects/by-session/{chat}"), Value::Null, &ana).await;
+    assert_eq!((workspace["issue"]["status"].as_str(), workspace["issue"]["column"].as_str()), (Some("closed"), Some("done")));
 }

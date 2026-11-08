@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crewMatches, crewMember, crewWork, datesInOrder, dropIndex, issuesHref, issuesQuery, localToday, moveOnBoard, overdue, readIssueFilters } from './issues';
+import { crewMatches, crewMember, crewWork, openOnBoard, datesInOrder, dropIndex, issuesHref, issuesQuery, localToday, moveOnBoard, overdue, readIssueFilters } from './issues';
 import type { BoardColumn, ProjectIssue } from './types';
 
 describe('issue filters', () => {
@@ -75,5 +75,17 @@ describe('crew search and work', () => {
 			{ issues: [at(2, 'working'), at(3, 'queued'), at(4, 'done')] },
 		] as BoardColumn[];
 		expect(crewWork(columns).map((i) => i.number)).toEqual([2, 3, 4]);
+	});
+
+	it('leaves out Done and Closed: their issues are closed', () => {
+		const at = (number: number, crew_state: ProjectIssue['crew_state']) => ({ number, crew_state }) as ProjectIssue;
+		const columns = [
+			{ fixed: 'ready', issues: [at(1, 'working')] },
+			{ fixed: null, issues: [at(2, null)] },
+			{ fixed: 'done', issues: [at(3, 'done')] },
+			{ fixed: 'closed', issues: [at(4, null)] },
+		] as BoardColumn[];
+		expect(crewWork(columns).map((i) => i.number)).toEqual([1]);
+		expect(openOnBoard(columns)).toBe(2);
 	});
 });
