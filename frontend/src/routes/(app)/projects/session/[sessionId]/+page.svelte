@@ -1630,8 +1630,10 @@
 	.pane-bar__devices {
 		display: contents;
 	}
+	/* Peer cursors near the bottom edge mustn't stick out below the pane. */
 	.pane-body {
 		position: relative;
+		overflow: clip;
 	}
 	.pane-pointer {
 		position: absolute;

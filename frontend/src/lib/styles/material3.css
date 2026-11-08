@@ -1821,7 +1821,10 @@ body {
 	position: relative;
 	height: 100vh;
 	height: 100dvh;
+	/* clip, not hidden: a hidden box can still be scrolled by code, so a scrollIntoView or
+	   focus inside the live preview would slide the whole app up and leave it stuck there. */
 	overflow: hidden;
+	overflow: clip;
 }
 
 /* ---- Scrollbars (M3 Expressive) ----
