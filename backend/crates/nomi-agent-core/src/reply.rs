@@ -19,20 +19,31 @@ pub fn current_reply() -> Option<Uuid> {
 
 /// Runs `work` as one reply. Inside a reply already (a crew member answering within another's
 /// turn), it stays part of that one.
-pub async fn within_reply<F: Future>(work: F) -> F::Output {
-    if current_reply().is_some() {
-        work.await
-    } else {
-        REPLY_ID.scope(Uuid::new_v4(), work).await
+///
+/// `work` is boxed: an agent turn's future is large, and holding it inline in this one (and in
+/// the resume that wraps a turn) overflows the stack in debug builds.
+pub fn within_reply<F: Future>(work: F) -> impl Future<Output = F::Output> {
+    // Boxed here, not inside an async block, which would hold `work` inline until first polled.
+    let work = Box::pin(work);
+    async move {
+        if current_reply().is_some() {
+            work.await
+        } else {
+            REPLY_ID.scope(Uuid::new_v4(), work).await
+        }
     }
 }
 
 /// Runs `work` as part of `reply` — a turn resumed after an approval carries on the reply it
 /// paused in. A new reply when there is none to carry on.
-pub async fn continuing_reply<F: Future>(reply: Option<Uuid>, work: F) -> F::Output {
-    match reply {
-        Some(id) => REPLY_ID.scope(id, work).await,
-        None => within_reply(work).await,
+/// Boxed like `within_reply`.
+pub fn continuing_reply<F: Future>(reply: Option<Uuid>, work: F) -> impl Future<Output = F::Output> {
+    let work = Box::pin(work);
+    async move {
+        match reply {
+            Some(id) => REPLY_ID.scope(id, work).await,
+            None => within_reply(work).await,
+        }
     }
 }
 
@@ -58,6 +69,23 @@ mod tests {
     async fn a_nested_turn_stays_part_of_the_outer_reply() {
         let (outer, inner) = within_reply(async { (current_reply(), within_reply(async { current_reply() }).await) }).await;
         assert_eq!(outer, inner);
+    }
+
+    /// A future holding this much stays on the heap inside the reply wrappers.
+    const LARGE_FUTURE_BYTES: usize = 64 * 1024;
+    /// What the wrappers' own futures may weigh: a box and the task-local, not the work.
+    const WRAPPER_MAX_BYTES: usize = 1024;
+
+    #[test]
+    fn the_wrappers_keep_a_large_turn_off_the_stack() {
+        let large = || async {
+            let buffer = [0u8; LARGE_FUTURE_BYTES];
+            tokio::task::yield_now().await;
+            buffer.len()
+        };
+        assert!(std::mem::size_of_val(&large()) >= LARGE_FUTURE_BYTES);
+        assert!(std::mem::size_of_val(&within_reply(large())) < WRAPPER_MAX_BYTES);
+        assert!(std::mem::size_of_val(&continuing_reply(Some(Uuid::new_v4()), large())) < WRAPPER_MAX_BYTES);
     }
 
     #[tokio::test]
