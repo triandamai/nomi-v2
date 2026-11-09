@@ -567,8 +567,41 @@ async fn learn_from_turn(conn: &mut PoolConnection<Postgres>, user_id: Uuid, ses
 /// then drives the tool-calling loop with every LLM call streamed (deltas published over
 /// `mqtt` when provided — this now happens for every agent, not just a hardcoded chitchat
 /// case), then extracts+stores memory after a `Reply` outcome if `agent.uses_memory()`.
+/// The whole turn is one reply (`crate::reply`): what its tools change is grouped by it.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_turn(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
+    agent: &dyn SubAgent,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    user_id: Uuid,
+    messages: Vec<LlmMessage>,
+    max_tokens: u32,
+) -> Result<LoopOutcome, TurnError> {
+    crate::reply::within_reply(run_agent_turn_in_reply(
+        conn,
+        mqtt,
+        s3,
+        provider,
+        embedding_provider,
+        registry,
+        agent,
+        session_id,
+        agent_session_id,
+        user_id,
+        messages,
+        max_tokens,
+    ))
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_agent_turn_in_reply(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
     s3: Option<&nomi_storage::S3Config>,
@@ -1039,7 +1072,7 @@ pub async fn run_agent_turn(
             }
         }
 
-        match resolve_tool_batch(conn, mqtt, s3, Some(provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
+        match resolve_tool_batch_in_reply(conn, mqtt, s3, Some(provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => {
                 tracing::info!(%session_id, %agent_session_id, %message_id, "agent turn paused awaiting approval");
                 return Ok(LoopOutcome::AwaitingApproval { message_id });
@@ -1157,7 +1190,42 @@ async fn with_chat_project(
     changed.then_some(filled)
 }
 
+/// Runs inside the turn's reply (`crate::reply`), or a new one when called on its own.
+#[allow(clippy::too_many_arguments)]
 pub async fn resolve_tool_batch(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    s3: Option<&nomi_storage::S3Config>,
+    // For asking another crew member (ask_agent).
+    provider: Option<&dyn LlmProvider>,
+    registry: &AgentRegistry,
+    agent: &dyn SubAgent,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    user_id: Uuid,
+    tool_use_blocks: &[ContentBlock],
+    conversation_so_far: &[LlmMessage],
+    already_decided: &[(String, bool)],
+) -> Result<ToolBatchOutcome, TurnError> {
+    crate::reply::within_reply(resolve_tool_batch_in_reply(
+        conn,
+        mqtt,
+        s3,
+        provider,
+        registry,
+        agent,
+        session_id,
+        agent_session_id,
+        user_id,
+        tool_use_blocks,
+        conversation_so_far,
+        already_decided,
+    ))
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_tool_batch_in_reply(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<(&MqttPublisher, Uuid)>,
     s3: Option<&nomi_storage::S3Config>,
@@ -1233,6 +1301,8 @@ pub async fn resolve_tool_batch(
                 "tool_use_blocks": tool_use_blocks,
                 "messages": conversation_so_far,
                 "decided_tool_use_ids": already_decided,
+                // The resumed turn carries on this reply (crate::reply).
+                "reply_id": crate::reply::current_reply(),
             });
             let patched = sqlx::query("UPDATE agent_sessions SET state = state || $1 WHERE id = $2")
                 .bind(&state_patch)

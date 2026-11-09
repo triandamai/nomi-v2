@@ -146,6 +146,17 @@ describe('ChatThread', () => {
 		}
 	});
 
+	it('floats the working status above the composer instead of inside it', () => {
+		const root = thread();
+		FakeSocket.all[0].send({ kind: 'Delta', turn_job_id: 't1', event: { type: 'thinking' } });
+		const pinned = root.querySelector('.dock__pinned');
+		expect(pinned).not.toBeNull();
+		expect(pinned?.closest('.composer')).toBeNull();
+		expect(pinned?.parentElement?.classList.contains('dock')).toBe(true);
+		// The thread keeps room for it at the bottom, so it never covers the latest message.
+		expect((root.querySelector('.thread') as HTMLElement).style.getPropertyValue('--pinned-space')).toMatch(/px$/);
+	});
+
 	it('drops deleted messages and renames from the feed', () => {
 		const root = thread();
 		const socket = FakeSocket.all[0];

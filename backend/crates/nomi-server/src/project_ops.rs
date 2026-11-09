@@ -143,9 +143,9 @@ impl ProjectOps for ServerProjectOps {
         // Accepted isn't live: the address only works once Shipyard says the publish succeeded,
         // and Nomi posts it in the chat then (or why it failed).
         Ok(format!(
-            "Publishing files version {} to {} started. It takes a few minutes. Don't give the person a link yet: \
+            "Publishing version {} to {} started. It takes a few minutes. Don't give the person a link yet: \
              Nomi posts the live address in this chat when it's up, or why it failed. The Deployment sheet shows the progress.",
-            row.files_version, row.environment
+            row.version, row.environment
         ))
     }
 

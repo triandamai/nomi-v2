@@ -21,6 +21,8 @@ pub struct ProjectTarget {
     pub name: String,
     pub stack: String,
     pub files_version: i64,
+    /// The version people see (one per crew reply that changed the files).
+    pub version: i64,
     pub org_id: Uuid,
     pub org_name: String,
     pub shipyard_app: Option<String>,
@@ -36,7 +38,7 @@ impl ProjectTarget {
 
 pub async fn load_target(pool: &PgPool, project_id: Uuid) -> Result<Option<ProjectTarget>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT p.id, p.name, p.stack, p.files_version, p.org_id, o.name AS org_name, p.shipyard_app, p.user_id \
+        "SELECT p.id, p.name, p.stack, p.files_version, p.version, p.org_id, o.name AS org_name, p.shipyard_app, p.user_id \
          FROM projects p JOIN organizations o ON o.id = p.org_id WHERE p.id = $1",
     )
     .bind(project_id)

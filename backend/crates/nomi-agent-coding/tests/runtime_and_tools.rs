@@ -226,3 +226,44 @@ async fn binary_files_are_kept_byte_for_byte_and_never_handled_as_text(pool: PgP
     let err = save_bytes(&mut conn, &store, project_id, "../escape.png", &PNG_HEADER).await.unwrap_err();
     assert!(err.contains("invalid path"), "{err}");
 }
+
+async fn version(pool: &PgPool, project_id: Uuid) -> i64 {
+    sqlx::query_scalar("SELECT version FROM projects WHERE id = $1").bind(project_id).fetch_one(pool).await.unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reply_that_changes_many_files_is_one_version(pool: PgPool) {
+    use nomi_agent_core::reply::within_reply;
+
+    let (user_id, _, project_id) = seed(&pool).await;
+    let store = storage();
+    let mut conn = pool.acquire().await.unwrap();
+    let pid = project_id.to_string();
+
+    // The first reply writes the app: version 1.
+    within_reply(async {
+        execute(&mut conn, &store, user_id, "write_file", json!({ "project_id": pid, "path": "src/a.ts", "content": "a" })).await.unwrap();
+    })
+    .await;
+    assert_eq!(version(&pool, project_id).await, 1);
+
+    // The next reply changes five files: version 2, though the preview saw five changes.
+    within_reply(async {
+        for name in ["b", "c", "d"] {
+            execute(&mut conn, &store, user_id, "write_file", json!({ "project_id": pid, "path": format!("src/{name}.ts"), "content": name }))
+                .await
+                .unwrap();
+        }
+        execute(&mut conn, &store, user_id, "edit_file", json!({ "project_id": pid, "path": "src/a.ts", "old_string": "a", "new_string": "A" }))
+            .await
+            .unwrap();
+        execute(&mut conn, &store, user_id, "delete_file", json!({ "project_id": pid, "path": "src/b.ts" })).await.unwrap();
+    })
+    .await;
+    assert_eq!(version(&pool, project_id).await, 2);
+    assert_eq!(files_version(&pool, project_id).await, 6);
+
+    // A change outside a reply (the code editor) is a version of its own.
+    execute(&mut conn, &store, user_id, "write_file", json!({ "project_id": pid, "path": "src/e.ts", "content": "e" })).await.unwrap();
+    assert_eq!(version(&pool, project_id).await, 3);
+}

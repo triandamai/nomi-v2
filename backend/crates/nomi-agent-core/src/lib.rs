@@ -26,6 +26,7 @@ pub mod issue_chat;
 pub mod recent_activity;
 pub mod relay_ops;
 pub mod registry;
+pub mod reply;
 pub mod scheduled_jobs;
 pub mod stop;
 pub mod subagent;

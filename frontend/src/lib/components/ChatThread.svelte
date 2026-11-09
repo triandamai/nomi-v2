@@ -805,6 +805,9 @@
 	// pushes it away (see $lib/pinnedActivity). A new turn starts it over; it settles when the
 	// turn does, and stays until the person's next message (or DONE_LINGER_MS, 5s, when it's done).
 	let activityCard = $state<PinnedCard | null>(null);
+	// The pinned card floats over the thread, just above the composer: the thread keeps this much
+	// room at its bottom so it never covers the latest message, and the composer never grows.
+	let pinnedHeight = $state(0);
 	let pinnedWho = $state('Nomi');
 	$effect(() => {
 		if (!isWorking) return;
@@ -917,6 +920,22 @@
 			eta: left === null ? null : m.pinned_minutes_left({ count: left }),
 		};
 	});
+
+	// The floating pinned card's room at the thread's bottom (see `pinnedHeight`). When it grows
+	// or shrinks while the person is at the latest message, they stay there.
+	const pinnedSpace = $derived(pinnedView ? pinnedHeight : 0);
+	$effect.pre(() => {
+		void pinnedSpace;
+		const container = untrack(() => messagesContainer);
+		if (!container) return;
+		const { scrollHeight, scrollTop, clientHeight } = container;
+		if (scrollHeight - scrollTop - clientHeight >= LATEST_WITHIN_PX) return;
+		void tick().then(() => {
+			container.scrollTo({ top: container.scrollHeight });
+			atLatest = true;
+		});
+	});
+
 
 	/** Brings a message into view (what the crew is waiting on, or why it failed). */
 	function revealMessage(id: string | null) {
@@ -1206,7 +1225,12 @@
 					<CrewWorking crew={[...new Set(workingCrew.map((member) => crewId(member.key)))]} onstop={unsaved ? undefined : stopCrew} />
 				</div>
 			{/if}
-			<div bind:this={messagesContainer} class="thread" onscroll={onThreadScroll}>
+			<div
+				bind:this={messagesContainer}
+				class="thread"
+				style:--pinned-space="{pinnedSpace}px"
+				onscroll={onThreadScroll}
+			>
 				<div class="thread__column">
 					{#if olderAvailable && threadItems.length > 0}
 						<div class="thread__older">
@@ -1302,7 +1326,7 @@
 				{#if pinnedView}
 					<!-- The step the crew is on, pinned here until the turn settles (PinnedActivity):
 					     stop it here or with Escape, or go to what it's waiting on. -->
-					<div class="dock__pinned">
+					<div class="dock__pinned" bind:clientHeight={pinnedHeight}>
 						<PinnedActivity
 							status={pinnedView.status}
 							who={pinnedView.who}
@@ -1767,7 +1791,7 @@
 	.thread {
 		flex: 1;
 		overflow-y: auto;
-		padding: 12px clamp(14px, 3vw, 32px) 8px;
+		padding: 12px clamp(14px, 3vw, 32px) calc(8px + var(--pinned-space, 0px));
 	}
 	.thread__column {
 		max-width: 780px;
@@ -1795,7 +1819,7 @@
 	/* Sticks to the bottom of the thread while scrolled up, just above the composer. */
 	.thread__jump {
 		position: sticky;
-		bottom: 8px;
+		bottom: calc(8px + var(--pinned-space, 0px));
 		display: flex;
 		justify-content: center;
 		margin-top: 8px;
@@ -1820,9 +1844,16 @@
 		margin: 14px 0 0 48px;
 	}
 
+	/* Floats over the thread's bottom edge, on top of the composer (and whatever sits above it):
+	   it stays put while the thread scrolls and never changes the dock's height. */
 	.dock__pinned {
+		position: absolute;
+		bottom: 100%;
+		inset-inline: clamp(12px, 3vw, 32px);
+		z-index: 2;
 		max-width: 760px;
-		margin: 0 auto 8px;
+		margin: 0 auto;
+		padding-bottom: 8px;
 	}
 	.dock__above {
 		display: flex;
@@ -1841,6 +1872,7 @@
 		font-size: 0.875rem;
 	}
 	.dock {
+		position: relative;
 		padding: 8px clamp(12px, 3vw, 32px) 14px;
 	}
 	/* On the glass stage the chat sits above it, and the message bar frosts itself (see
