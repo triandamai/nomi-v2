@@ -151,3 +151,105 @@ async fn only_people_given_configuration_see_it_and_only_managers_change_it(pool
     let change = Some(json!({ "values": { "max_files": "20" } }));
     assert_eq!(request(router.clone(), "PUT", "/api/admin/configuration/attachments", &viewer, change).await.0, StatusCode::FORBIDDEN);
 }
+
+/// `sandbox_config()` reads through the process-wide settings cache and pool, so the tests that
+/// call it take turns.
+static SANDBOX_GLOBALS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// `current()` decrypts secrets with the key from the environment; give it the one the state saves with.
+fn use_test_settings_key() {
+    std::env::set_var("SETTINGS_ENCRYPTION_KEY", hex::encode(nomi_test_support::TEST_SETTINGS_KEY));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sandbox_section_saves_encrypts_key_and_hides_it_on_read(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = login(router.clone(), &pool, "root@nomi.test", true).await;
+
+    let (status, saved) = request(
+        router.clone(),
+        "PUT",
+        "/api/admin/configuration/sandbox",
+        &token,
+        Some(json!({ "values": { "enabled": "on", "api_key": "boat-key-123", "size": "large", "rollout": "percent", "rollout_percent": "25" } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+
+    let (_, body) = request(router.clone(), "GET", "/api/admin/configuration", &token, None).await;
+    let sandbox = section(&body, "sandbox");
+    assert_eq!(field(sandbox, "api_key")["value"], Value::Null);
+    assert_eq!(field(sandbox, "api_key")["set"], true);
+    assert_eq!(field(sandbox, "api_key")["env"], "BOAT_API_KEY");
+    assert_eq!(field(sandbox, "size")["value"], "large");
+    assert!(!body.to_string().contains("boat-key-123"));
+
+    let (plain, sealed): (Option<String>, Option<Vec<u8>>) =
+        sqlx::query_as("SELECT value, value_encrypted FROM app_config WHERE section = 'sandbox' AND field = 'api_key'").fetch_one(&pool).await.unwrap();
+    assert!(plain.is_none());
+    let sealed = sealed.expect("the key is stored encrypted");
+    assert!(!String::from_utf8_lossy(&sealed).contains("boat-key-123"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn enabled_defaults_to_false(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = login(router.clone(), &pool, "root@nomi.test", true).await;
+    let (_, body) = request(router.clone(), "GET", "/api/admin/configuration", &token, None).await;
+    let enabled = field(section(&body, "sandbox"), "enabled");
+    assert_eq!(enabled["kind"], "choice");
+    assert_eq!(enabled["choices"], json!(["off", "on"]));
+    // Nothing saved: the switch is off.
+    assert_eq!(enabled["set"], false);
+    assert_eq!(enabled["value"], Value::Null);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn disabled_config_returns_none(pool: PgPool) {
+    let _guard = SANDBOX_GLOBALS.lock().await;
+    use_test_settings_key();
+    nomi_settings::config::install(pool.clone());
+    nomi_settings::config::forget();
+    let router = build_router(test_state(pool.clone()));
+    let token = login(router.clone(), &pool, "root@nomi.test", true).await;
+
+    // A key but no switch: off.
+    let (status, _) = request(router.clone(), "PUT", "/api/admin/configuration/sandbox", &token, Some(json!({ "values": { "api_key": "boat-key-123" } }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(nomi_server::configuration::sandbox_config().await.is_none());
+
+    // Switched off explicitly: off.
+    request(router.clone(), "PUT", "/api/admin/configuration/sandbox", &token, Some(json!({ "values": { "enabled": "off" } }))).await;
+    assert!(nomi_server::configuration::sandbox_config().await.is_none());
+
+    // Switched on but no key: off.
+    sqlx::query("DELETE FROM app_config WHERE section = 'sandbox' AND field = 'api_key'").execute(&pool).await.unwrap();
+    request(router.clone(), "PUT", "/api/admin/configuration/sandbox", &token, Some(json!({ "values": { "enabled": "on" } }))).await;
+    if std::env::var("BOAT_API_KEY").is_err() {
+        assert!(nomi_server::configuration::sandbox_config().await.is_none());
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_can_toggle_enabled_and_the_next_read_sees_it(pool: PgPool) {
+    let _guard = SANDBOX_GLOBALS.lock().await;
+    use_test_settings_key();
+    nomi_settings::config::install(pool.clone());
+    nomi_settings::config::forget();
+    let router = build_router(test_state(pool.clone()));
+    let token = login(router.clone(), &pool, "root@nomi.test", true).await;
+
+    let on = json!({ "values": { "enabled": "on", "api_key": "boat-key-123" } });
+    assert_eq!(request(router.clone(), "PUT", "/api/admin/configuration/sandbox", &token, Some(on)).await.0, StatusCode::OK);
+    let config = nomi_server::configuration::sandbox_config().await.expect("enabled with a key");
+    assert_eq!(config.api_key, "boat-key-123");
+    assert_eq!(config.api_base, "https://boat.dev/api/v1");
+    assert_eq!(config.size, nomi_sandbox::Size::Small);
+    assert_eq!(config.idle_stop_secs, 600);
+    assert_eq!((config.starts_per_minute, config.starts_per_hour), (10, 50));
+    assert_eq!(config.rollout, nomi_server::configuration::Rollout::Off);
+
+    let off = json!({ "values": { "enabled": "off" } });
+    assert_eq!(request(router.clone(), "PUT", "/api/admin/configuration/sandbox", &token, Some(off)).await.0, StatusCode::OK);
+    assert!(nomi_server::configuration::sandbox_config().await.is_none());
+}

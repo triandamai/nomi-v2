@@ -38,6 +38,7 @@ nomi-payment = { path = "../nomi-payment" }
 nomi-storage = { path = "../nomi-storage" }
 nomi-shipyard = { path = "../nomi-shipyard" }
 nomi-relay-client = { path = "../nomi-relay-client" }
+nomi-sandbox = { path = "../nomi-sandbox" }
 nomi-attachments = { path = "../nomi-attachments" }
 base64 = "0.22"
 futures-util = "0.3.33"
@@ -67,3 +68,5 @@ wiremock = "0.6"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3.33"
+flate2 = "1"
+tar = "0.4"

@@ -307,6 +307,38 @@ pub const BACKEND_STARTING_GUIDANCE: &str = "This is normal for a new project an
      Keep building what doesn't need the backend (pages, components, migrations in nomi/migrations), then call \
      this tool again. Don't ask the person about it, don't wait for them, and never suggest Drizzle.";
 
+/// What Koda reads when a command waited for the project's sandbox to start and it still wasn't
+/// up. The files are saved and Nomi installs and checks the project when the sandbox is up.
+pub const SANDBOX_STARTING: &str = "The project's sandbox is still starting, so the command didn't run. Your files are \
+     saved. Finish the work and complete the task: Nomi installs and checks the project as soon as the sandbox is \
+     up, and any errors come back to you as a new task.";
+
+/// What Koda reads when the project's sandbox can't start. `{why}` is the reason.
+pub const SANDBOX_FAILED: &str = "The project's sandbox couldn't start ({why}), so the command didn't run. Your files are \
+     saved. Finish the work and complete the task: Nomi tries the sandbox again on its own, and any errors come back \
+     to you as a new task.";
+
+/// What Koda reads when the sandbox stopped while its command was still waiting or running.
+pub const SANDBOX_STOPPED_MID_RUN: &str = "The project's sandbox stopped before the command finished. Your files are saved. \
+     Finish the work and complete the task: Nomi starts the sandbox again when the project is opened.";
+
+/// Why a project's sandbox won't be woken for Koda: the sandbox runtime is off, the owner's monthly
+/// allowance is used up, or the sandbox is cooling down after repeated failures. Read inside
+/// `SANDBOX_FAILED`'s `{why}`.
+pub const SANDBOX_UNAVAILABLE_NOW: &str = "the project's sandbox can't be used right now (it is turned off, this \
+     month's sandbox time is used up, or it is recovering from errors); the project runs in the user's browser when \
+     they open it";
+
+/// What `NoSandboxOps` answers when asked to start a sandbox this Nomi doesn't have.
+pub const SANDBOX_NOT_AVAILABLE: &str = "Sandboxes aren't set up on this Nomi.";
+
+/// Koda's `run_command` tool: it runs in the project's runtime, the user's browser or a server
+/// sandbox, so the text names neither.
+pub const RUN_COMMAND_DESCRIPTION: &str = "Run one command in the project's preview (Node, in the user's browser or the \
+     project's server sandbox) and get its output: 'npm install', 'npm install zod', 'npm run db:generate', 'npx ...', \
+     'node ...'. One command at a time, no shell operators. Don't start the dev server; Nomi runs it. Do not run 'npm \
+     run build' during development.";
+
 /// Added after the person's message when they ask for a reply again in another shape (the
 /// regenerate menu). The person's message itself stays as they wrote it.
 pub const REGENERATE_SHORTER: &str = "(Answer this again, shorter: the same substance in fewer words.)";

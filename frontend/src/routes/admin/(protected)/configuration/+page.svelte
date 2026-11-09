@@ -118,8 +118,27 @@
 				apps_base_domain: { label: m.config_domains_apps_base_domain, hint: m.config_domains_apps_base_domain_hint },
 			},
 		},
+		sandbox: {
+			title: m.config_sandbox,
+			lede: m.config_sandbox_lede,
+			note: m.config_sandbox_note,
+			fields: {
+				enabled: { label: m.config_sandbox_enabled, hint: m.config_sandbox_enabled_hint },
+				api_base: { label: m.config_sandbox_api_base },
+				api_key: { label: m.config_sandbox_api_key },
+				size: { label: m.config_sandbox_size },
+				idle_stop_secs: { label: m.config_sandbox_idle_stop_secs },
+				rollout: { label: m.config_sandbox_rollout, hint: m.config_sandbox_rollout_hint },
+				rollout_allowlist: { label: m.config_sandbox_rollout_allowlist, hint: m.config_sandbox_rollout_allowlist_hint },
+				rollout_percent: { label: m.config_sandbox_rollout_percent },
+				starts_per_minute: { label: m.config_sandbox_starts_per_minute },
+				starts_per_hour: { label: m.config_sandbox_starts_per_hour },
+				monthly_minutes_per_user: { label: m.config_sandbox_monthly_minutes_per_user },
+				reaper_mode: { label: m.config_sandbox_reaper_mode, hint: m.config_sandbox_reaper_mode_hint },
+			},
+		},
 	};
-	const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains'];
+	const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains', 'sandbox'];
 
 	let sections = $state<Section[] | null>(null);
 	let tab = $state('attachments');

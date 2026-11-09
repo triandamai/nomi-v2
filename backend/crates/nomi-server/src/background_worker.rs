@@ -90,18 +90,42 @@ async fn resolve_sender_identity(pool: &PgPool, session_id: Uuid, user_id: Uuid)
         .map_err(|e| e.to_string())
 }
 
+/// Where a background task's command runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskRoute {
+    /// Through the project's runtime: its sandbox (woken if need be), or the open browser page.
+    Project,
+    /// On the Nomi host's shell.
+    HostShell,
+}
+
+/// Where a task's command runs. A project that runs in a sandbox always goes through the project
+/// runtime and never falls back to the host shell, whether or not a page is open: the sandbox
+/// executor runs it, or Koda is told why it couldn't. A browser project goes through its open
+/// page, and to the host shell only when no page is open (the existing behaviour).
+pub fn task_route(project_runtime: Option<&str>, runner_online: bool) -> TaskRoute {
+    match project_runtime {
+        Some(crate::routes::project_sandbox::RUNTIME_SANDBOX) => TaskRoute::Project,
+        Some(_) if runner_online => TaskRoute::Project,
+        _ => TaskRoute::HostShell,
+    }
+}
+
 async fn run_task_command(pool: &PgPool, claimed: &ClaimedBackgroundTask) -> BackgroundCommandOutcome {
     let timeout = Duration::from_secs(claimed.timeout_seconds.max(1) as u64);
 
     if let Some(project_id) = claimed.project_id {
         if let Ok(mut conn) = pool.acquire().await {
-            if nomi_agent_coding::runtime::runner_online(&mut conn, project_id).await.unwrap_or(false) {
+            let runtime: Option<String> = sqlx::query_scalar("SELECT runtime FROM projects WHERE id = $1").bind(project_id).fetch_optional(&mut *conn).await.ok().flatten();
+            let online = nomi_agent_coding::runtime::runner_online(&mut conn, project_id).await.unwrap_or(false);
+            if task_route(runtime.as_deref(), online) == TaskRoute::Project {
                 let input = json!({
                     "project_id": project_id.to_string(),
                     "command": claimed.command,
                     "timeout_seconds": claimed.timeout_seconds,
                 });
-                match nomi_agent_coding::runtime::run_command(&mut conn, claimed.user_id, input).await {
+                let sandbox = crate::sandbox_ops::ServerSandboxOps::new(pool.clone());
+                match nomi_agent_coding::runtime::run_command_with(&mut conn, &sandbox, claimed.user_id, input).await {
                     Ok(output) => return parse_project_runner_output(output),
                     Err(err) => {
                         return BackgroundCommandOutcome {
@@ -119,14 +143,15 @@ async fn run_task_command(pool: &PgPool, claimed: &ClaimedBackgroundTask) -> Bac
     execute_shell_command(&claimed.command, timeout).await
 }
 
+/// A project command's output as a task outcome. Anything without `exit code 0` failed: a
+/// non-zero exit, a timeout, or a command that never ran (the sandbox couldn't start, no page).
 pub fn parse_project_runner_output(output: String) -> BackgroundCommandOutcome {
     let exit_code = output
         .lines()
         .nth(1)
         .and_then(|line| line.strip_prefix("exit code "))
         .and_then(|c| c.trim().parse::<i32>().ok());
-    let failed = exit_code.is_some_and(|c| c != 0)
-        || output.lines().nth(1).is_some_and(|l| l.starts_with("stopped waiting after"));
+    let failed = exit_code != Some(0);
     BackgroundCommandOutcome {
         status: if failed { "failed" } else { "completed" },
         exit_code,
@@ -296,6 +321,23 @@ mod tests {
         assert_eq!(timed_out.status, "failed");
         assert_eq!(timed_out.exit_code, None);
         assert!(timed_out.error.is_some());
+    }
+
+    #[test]
+    fn sandbox_project_tasks_never_fall_back_to_the_host_shell() {
+        assert_eq!(task_route(Some("sandbox"), false), TaskRoute::Project);
+        assert_eq!(task_route(Some("sandbox"), true), TaskRoute::Project);
+        // Browser projects keep their existing behaviour.
+        assert_eq!(task_route(Some("browser"), true), TaskRoute::Project);
+        assert_eq!(task_route(Some("browser"), false), TaskRoute::HostShell);
+        assert_eq!(task_route(None, false), TaskRoute::HostShell);
+    }
+
+    #[test]
+    fn a_project_command_that_never_ran_is_a_failed_task() {
+        let never_ran = parse_project_runner_output(nomi_agent_core::prompts::SANDBOX_STARTING.to_string());
+        assert_eq!(never_ran.status, "failed");
+        assert_eq!(never_ran.exit_code, None);
     }
 
     #[test]

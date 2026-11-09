@@ -4,7 +4,7 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import ProjectWaitScreen from '$lib/components/project/ProjectWaitScreen.svelte';
-	import type { ProjectRuntime } from '$lib/projectRuntime.svelte';
+	import type { AnyRuntime } from '$lib/runtimeChooser';
 	import PhoneFrame from '$lib/components/ds/build/PhoneFrame.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
 
@@ -18,10 +18,11 @@
 		files = [],
 		liveUrl = null,
 		onShowCode,
+		onUseBrowser,
 		device = $bindable('desktop'),
 	}: {
 		projectId: string;
-		runtime: ProjectRuntime | null;
+		runtime: AnyRuntime | null;
 		/** What the project is built with; only a static one is shown straight from its files. */
 		stack?: string;
 		/** The project's file paths. */
@@ -29,6 +30,8 @@
 		/** The published app's address: what "Open on your phone" sends. */
 		liveUrl?: string | null;
 		onShowCode?: () => void;
+		/** Runs the project in the browser instead of the sandbox; offered only while the sandbox is the runtime. */
+		onUseBrowser?: () => void;
 		/** Desktop or phone width; the pane's top bar switches it. */
 		device?: 'desktop' | 'phone';
 	} = $props();
@@ -108,6 +111,8 @@
 		handedToKoda={runtime.handedToKoda}
 		{logText}
 		onRestart={() => runtime.restart()}
+		onRetry={'retry' in runtime && typeof runtime.retry === 'function' ? () => (runtime as { retry: () => void }).retry() : undefined}
+		{onUseBrowser}
 	/>
 {/if}
 

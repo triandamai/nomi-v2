@@ -298,6 +298,15 @@ export interface DashboardStats {
 	tokens_today: number;
 	tokens_all_time: number;
 	running_agents: number;
+	sandbox: SandboxStats;
+}
+
+export interface SandboxStats {
+	running: number;
+	/** Being created or started. */
+	starting: number;
+	error: number;
+	minutes_this_month: number;
 }
 
 export interface RunningAgentItem {
@@ -936,6 +945,8 @@ export interface AdminUsage {
 		spend_usd: number;
 	}[];
 	embedding_models: { provider: string; model_id: string; tokens: number; calls: number; estimated_calls: number; people: number; current: boolean }[];
+	/** Minutes each person's projects ran in the server-side sandbox this month, most first. */
+	sandbox_minutes: { user_id: string; email: string | null; minutes: number }[];
 }
 
 /** A connected health or fitness app (Connections → Hevy). */

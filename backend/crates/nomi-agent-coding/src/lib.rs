@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use nomi_agent_core::project_ops::{publish_from_tool, publish_tool_definition, NoProjectOps, SharedProjectOps, PUBLISH_TOOL_NAME};
 use nomi_agent_core::relay_ops::{NoRelayOps, SharedRelayOps, RELAY_TOOL_NAMES};
+use nomi_agent_core::sandbox_ops::{NoSandboxOps, SharedSandboxOps};
 use nomi_agent_core::prompts::CODING_SYSTEM_PROMPT;
 use nomi_agent_core::{SubAgent, ToolOutcome};
 use nomi_llm::ToolDefinition;
@@ -85,16 +86,23 @@ pub struct CodingAgent {
     storage: ProjectStore,
     project_ops: SharedProjectOps,
     relay_ops: SharedRelayOps,
+    sandbox_ops: SharedSandboxOps,
 }
 
 impl CodingAgent {
     pub fn new(storage: ProjectStore) -> Self {
-        Self { storage, project_ops: std::sync::Arc::new(NoProjectOps), relay_ops: std::sync::Arc::new(NoRelayOps) }
+        Self { storage, project_ops: std::sync::Arc::new(NoProjectOps), relay_ops: std::sync::Arc::new(NoRelayOps), sandbox_ops: std::sync::Arc::new(NoSandboxOps) }
     }
 
     /// Migrations and the backend's schema for projects on Relay (see `relay`).
     pub fn with_relay_ops(mut self, relay_ops: SharedRelayOps) -> Self {
         self.relay_ops = relay_ops;
+        self
+    }
+
+    /// Commands for projects that run in a server sandbox (see `runtime::run_command_with`).
+    pub fn with_sandbox_ops(mut self, sandbox_ops: SharedSandboxOps) -> Self {
+        self.sandbox_ops = sandbox_ops;
         self
     }
 
@@ -151,7 +159,11 @@ impl SubAgent for CodingAgent {
         if RELAY_TOOL_NAMES.contains(&name) {
             return relay::execute(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input).await.map(ToolOutcome::text);
         }
-        let outcome = execute(conn, &self.storage, user_id, name, input.clone()).await?;
+        let outcome = if name == "run_command" {
+            runtime::run_command_with(conn, self.sandbox_ops.as_ref(), user_id, input.clone()).await.map(ToolOutcome::text)?
+        } else {
+            execute(conn, &self.storage, user_id, name, input.clone()).await?
+        };
         Ok(relay::after_write(conn, &self.storage, self.relay_ops.as_ref(), user_id, name, &input, outcome).await)
     }
 

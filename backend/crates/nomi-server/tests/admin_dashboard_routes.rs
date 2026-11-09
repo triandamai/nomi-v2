@@ -1,3 +1,5 @@
+mod support;
+
 use axum::{body::Body, http::{Request, StatusCode}};
 use http_body_util::BodyExt;
 use nomi_server::app::{build_router, AppState};
@@ -330,4 +332,51 @@ async fn agents_endpoint_resolves_a_dynamic_agents_configured_name(pool: PgPool)
     let group = users.iter().find(|g| g["user_id"] == user_id.to_string()).unwrap();
     assert_eq!(group["agents"][0]["agent_type"], dynamic_agent_id.to_string());
     assert_eq!(group["agents"][0]["agent_display_name"], "Weather Bot");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dashboard_reports_sandbox_counts(pool: PgPool) {
+    let app = support::App::new(pool.clone());
+    let owner = app.person("owner@sandbox.test").await;
+    let mut ids = Vec::new();
+    for (i, state) in ["running", "running", "creating", "starting", "starting", "error", "stopped", "none"].into_iter().enumerate() {
+        let project = app.project(&owner, &format!("p{i}")).await.0;
+        sqlx::query("INSERT INTO project_sandboxes (project_id, provider, desired, state) VALUES ($1, 'boat', 'running', $2)")
+            .bind(project)
+            .bind(state)
+            .execute(&pool)
+            .await
+            .unwrap();
+        ids.push(project);
+    }
+    // 90 minutes this month, plus a session from a previous month that must not count.
+    sqlx::query("INSERT INTO sandbox_sessions (project_id, user_id, started_at, stopped_at) VALUES ($1, $2, date_trunc('month', now()), date_trunc('month', now()) + interval '90 minutes')")
+        .bind(ids[0])
+        .bind(owner.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO sandbox_sessions (project_id, user_id, started_at, stopped_at) VALUES ($1, $2, date_trunc('month', now()) - interval '40 days', date_trunc('month', now()) - interval '39 days')")
+        .bind(ids[1])
+        .bind(owner.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    let (status, body) = json_request(router, "GET", "/api/admin/dashboard", Value::Null, Some(&admin_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["sandbox"]["running"], 2);
+    assert_eq!(body["sandbox"]["starting"], 3);
+    assert_eq!(body["sandbox"]["error"], 1);
+    assert_eq!(body["sandbox"]["minutes_this_month"], 90);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dashboard_sandbox_counts_are_zero_without_sandboxes(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let admin_token = register_admin_and_login(router.clone(), &pool, "admin@example.com").await;
+    let (_, body) = json_request(router, "GET", "/api/admin/dashboard", Value::Null, Some(&admin_token)).await;
+    assert_eq!(body["sandbox"], json!({ "running": 0, "starting": 0, "error": 0, "minutes_this_month": 0 }));
 }

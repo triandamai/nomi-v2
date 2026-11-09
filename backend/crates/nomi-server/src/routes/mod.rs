@@ -43,6 +43,7 @@ pub mod turn_queue;
 pub mod project_export;
 pub mod project_presence;
 pub mod project_runtime;
+pub mod project_sandbox;
 pub mod project_relay;
 pub mod project_secrets;
 pub mod realtime;

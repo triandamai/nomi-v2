@@ -12,7 +12,8 @@
 	import PreviewAddressBar from '$lib/components/project/PreviewAddressBar.svelte';
 	import PreviewDevices from '$lib/components/project/PreviewDevices.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
-	import { ProjectRuntime } from '$lib/projectRuntime.svelte';
+	import { browserRuntimeForced, createRuntime, forceBrowserRuntime, type AnyRuntime } from '$lib/runtimeChooser';
+	import { SandboxRuntime } from '$lib/sandboxRuntime.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
 	import IconSidePanel from '$lib/components/icons/IconSidePanel.svelte';
@@ -273,25 +274,47 @@
 		settings: m.pj_tab_settings,
 	};
 	const published = $derived(Boolean(deploy?.overview?.app && deploy.overview.publishes.some((p) => p.status === 'succeeded')));
-	let runtime = $state<ProjectRuntime | null>(null);
+	let runtime = $state<AnyRuntime | null>(null);
 
 	// Projects with a package.json run in the browser (WebContainer); static ones don't.
 	const projectId = $derived(data.project?.id ?? null);
 	const runsLive = $derived(Boolean(data.project && data.project.stack !== 'static'));
+	// Bumped when the person picks the browser over the sandbox, so the runtime is chosen again.
+	let runtimeChoice = $state(0);
+	function useBrowserRuntime() {
+		if (!projectId) return;
+		forceBrowserRuntime(projectId);
+		runtimeChoice += 1;
+	}
 
 	$effect(() => {
 		if (!projectId || !runsLive) return;
-		const live = new ProjectRuntime(projectId);
-		runtime = live;
-		void live.start();
+		void runtimeChoice;
+		let live: AnyRuntime | null = null;
+		let cancelled = false;
+		void createRuntime(projectId).then((created) => {
+			if (cancelled) return;
+			live = created;
+			runtime = created;
+			void created.start();
+		});
 		return () => {
+			cancelled = true;
 			runtime = null;
-			void live.stop();
+			void live?.stop();
 		};
 	});
 
+	// A sandbox's phase changes arrive on the project's live topic, which the deploy connection already holds.
+	$effect(() => {
+		const live = runtime;
+		const d = deploy;
+		if (!(live instanceof SandboxRuntime) || !d) return;
+		return live.listen((listener) => d.onEvent(listener));
+	});
+
 	const isSettingUp = $derived(
-		Boolean(runtime && ['booting', 'loading', 'waiting', 'installing', 'checking', 'starting'].includes(runtime.phase))
+		Boolean(runtime && ['booting', 'loading', 'waking', 'syncing', 'waiting', 'installing', 'checking', 'starting'].includes(runtime.phase))
 	);
 
 	// The page needs its cross-origin isolation headers, which only a full load brings. Arriving
@@ -1069,7 +1092,7 @@
 							status={runtime ? PHASE_LABEL[runtime.phase]() : m.project_phase_stopped()}
 							running={runtime?.phase === 'running'}
 							address={previewAddress}
-							href={runtime?.previewPort ? (runtime.previewUrl ?? null) : (deploy?.overview?.url ?? runtime?.previewUrl ?? null)}
+							href={runtime instanceof SandboxRuntime ? (deploy?.overview?.url ?? null) : runtime?.previewPort ? (runtime.previewUrl ?? null) : (deploy?.overview?.url ?? runtime?.previewUrl ?? null)}
 							onreload={runtime?.previewUrl ? () => preview?.reload() : undefined}
 						/>
 					</div>
@@ -1103,6 +1126,7 @@
 						files={filePaths}
 						liveUrl={deploy?.overview?.url ?? null}
 						onShowCode={() => (view = 'code')}
+						onUseBrowser={runtime instanceof SandboxRuntime ? useBrowserRuntime : undefined}
 					/>
 				{:else if view === 'terminal' && runtime}
 					<!-- What ran in the preview, in order (Build → Terminal); a failed check offers the fix. -->

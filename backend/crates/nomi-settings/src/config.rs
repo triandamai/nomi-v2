@@ -164,7 +164,31 @@ pub const XENDIT: SectionDef = SectionDef {
     ],
 };
 
-pub const SECTIONS: [&SectionDef; 9] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT];
+/// The server-side sandbox runtime (boat.dev). `enabled` is the kill switch: anything but "on"
+/// (including nothing saved) keeps every project on the in-browser WebContainer runtime.
+pub const SANDBOX: SectionDef = SectionDef {
+    name: "sandbox",
+    fields: &[
+        saved_only("enabled", Kind::Choice(&["off", "on"])),
+        field("api_base", "BOAT_API_BASE", Kind::Text),
+        field("api_key", "BOAT_API_KEY", Kind::Secret),
+        saved_only("size", Kind::Choice(&["small", "default", "large"])),
+        saved_only("idle_stop_secs", Kind::Number),
+        saved_only("rollout", Kind::Choice(&["off", "allowlist", "percent", "all"])),
+        // Comma-separated user ids, for the `allowlist` rollout.
+        saved_only("rollout_allowlist", Kind::Text),
+        // 1 to 100, for the `percent` rollout.
+        saved_only("rollout_percent", Kind::Number),
+        saved_only("starts_per_minute", Kind::Number),
+        saved_only("starts_per_hour", Kind::Number),
+        saved_only("monthly_minutes_per_user", Kind::Number),
+        // What the hourly sweep does with provider sandboxes no project owns: only log them
+        // (`dry_run`, the default) or delete them (`delete`).
+        saved_only("reaper_mode", Kind::Choice(&["dry_run", "delete"])),
+    ],
+};
+
+pub const SECTIONS: [&SectionDef; 10] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &SANDBOX];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)

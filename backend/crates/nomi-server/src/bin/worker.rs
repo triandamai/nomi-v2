@@ -48,6 +48,8 @@ async fn main() {
     // Memory learning, chat summaries and tidying run beside the turn worker, as they do inline.
     tokio::spawn(nomi_server::memory_worker::run(pool.clone(), settings_key, http_client.clone()));
     tokio::spawn(nomi_server::issue_worker::run(pool.clone()));
+    // Server-side sandboxes follow what projects want; idle unless the admin switch is on.
+    tokio::spawn(nomi_server::sandbox_worker::run(pool.clone(), http_client.clone(), project_storage.clone(), settings_key, nomi_shipyard::ShipyardConfig::from_env()));
     // Attached images, audio and video are read by a model in the background.
     tokio::spawn(nomi_server::attachment_worker::run(pool.clone(), settings_key, http_client.clone()));
     // Background tasks run alongside turns and wake Nomi when they finish.

@@ -44,6 +44,9 @@ pub struct CheckInQuery {
     pub since: Option<i64>,
     /// Seconds to wait for a change or a command (0 = answer straight away).
     pub wait: Option<u64>,
+    /// The runtime the page runs: `sandbox` from the sandbox page only; the browser runtime
+    /// sends nothing (see `sandbox_worker::sandbox_check_in`).
+    pub runtime: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -52,8 +55,9 @@ pub struct CheckInResponse {
     pub runs: Vec<ClaimedRun>,
 }
 
-/// `GET /api/projects/:id/runtime?since=&wait=`: marks the page online and returns the files
-/// version and any commands to run, waiting up to `wait` seconds for either to change.
+/// `GET /api/projects/:id/runtime?since=&wait=&runtime=`: marks the page online and returns the
+/// files version and any commands to run, waiting up to `wait` seconds for either to change. The
+/// sandbox page (`runtime=sandbox`) keeps its sandbox awake instead and gets no commands.
 pub async fn check_in(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -63,10 +67,21 @@ pub async fn check_in(
     ensure_owner(&state, project_id, claims.sub).await?;
     let deadline = Instant::now() + Duration::from_secs(query.wait.unwrap_or(0).min(MAX_WAIT_SECS));
 
-    // First round: mark runner online and check for changes/commands immediately.
-    let (mut files_version, mut runs) = {
+    // First round: mark runner online and check for changes/commands immediately. The sandbox
+    // page asks for its sandbox to be running instead and never claims commands.
+    let config = match query.runtime.as_deref() {
+        Some(_) => crate::configuration::sandbox_config().await,
+        None => None,
+    };
+    let (mut files_version, mut runs, in_sandbox) = {
         let mut conn = state.pool.acquire().await.map_err(internal)?;
-        runtime::check_in(&mut conn, project_id).await.map_err(internal)?
+        match crate::sandbox_worker::sandbox_check_in(&mut conn, project_id, claims.sub, query.runtime.as_deref(), config.as_ref()).await.map_err(internal)? {
+            Some(version) => (version, Vec::new(), true),
+            None => {
+                let (version, runs) = runtime::check_in(&mut conn, project_id).await.map_err(internal)?;
+                (version, runs, false)
+            }
+        }
     };
 
     if !runs.is_empty() || query.since != Some(files_version) || Instant::now() >= deadline {
@@ -80,11 +95,16 @@ pub async fn check_in(
 
         let (current_version, current_runs) = {
             let mut conn = state.pool.acquire().await.map_err(internal)?;
-            if last_touched.elapsed() >= Duration::from_secs(runtime::RUNNER_TOUCH_EVERY_SECS as u64) {
+            // The sandbox page never marks the browser runner online.
+            if !in_sandbox && last_touched.elapsed() >= Duration::from_secs(runtime::RUNNER_TOUCH_EVERY_SECS as u64) {
                 runtime::touch_runner(&mut conn, project_id).await.map_err(internal)?;
                 last_touched = Instant::now();
             }
-            runtime::poll(&mut conn, project_id).await.map_err(internal)?
+            if in_sandbox {
+                (runtime::files_version(&mut conn, project_id).await.map_err(internal)?, Vec::new())
+            } else {
+                runtime::poll(&mut conn, project_id).await.map_err(internal)?
+            }
         };
         files_version = current_version;
         runs = current_runs;
@@ -140,12 +160,25 @@ pub async fn record_check(
 ) -> Result<Json<CheckResponse>, ApiError> {
     ensure_owner(&state, project_id, claims.sub).await?;
     let mut conn = state.pool.acquire().await.map_err(internal)?;
-    let fix = runtime::record_check(&mut conn, project_id, result.files_version, result.ok, &result.output).await.map_err(internal)?;
-    let Some(fix) = fix else { return Ok(Json(CheckResponse { handed_to_koda: false })) };
-    nomi_agent_core::delegation::create_delegation(&mut conn, None, fix.session_id, REQUESTED_BY, CODING_AGENT_TYPE, &fix.task, claims.sub)
-        .await
-        .map_err(internal)?;
-    Ok(Json(CheckResponse { handed_to_koda: true }))
+    let handed_to_koda = record_check_for_koda(&mut conn, project_id, claims.sub, result.files_version, result.ok, &result.output).await.map_err(internal)?;
+    Ok(Json(CheckResponse { handed_to_koda }))
+}
+
+/// Records a check of the project's install and, when it failed and this version wasn't handed
+/// over before, gives Koda the failure as a task. True when it went to Koda. The page's check
+/// route and the sandbox's first start both end here.
+pub async fn record_check_for_koda(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+    project_id: Uuid,
+    user_id: Uuid,
+    files_version: i64,
+    ok: bool,
+    output: &str,
+) -> Result<bool, String> {
+    let fix = runtime::record_check(conn, project_id, files_version, ok, output).await.map_err(|e| e.to_string())?;
+    let Some(fix) = fix else { return Ok(false) };
+    nomi_agent_core::delegation::create_delegation(conn, None, fix.session_id, REQUESTED_BY, CODING_AGENT_TYPE, &fix.task, user_id).await?;
+    Ok(true)
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -161,20 +194,22 @@ pub struct Manifest {
     pub files: Vec<ManifestEntry>,
 }
 
-async fn manifest_of(state: &AppState, project_id: Uuid) -> Result<Manifest, ApiError> {
-    let mut tx = state.pool.begin().await.map_err(internal)?;
-    let files_version: i64 = sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1")
-        .bind(project_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(internal)?;
+/// Reads the files version and every file's row in one consistent look, so the version always
+/// describes the list beside it.
+pub async fn load_manifest(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Manifest, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ").execute(&mut *tx).await?;
+    let files_version: i64 = sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1").bind(project_id).fetch_one(&mut *tx).await?;
     let files: Vec<ManifestEntry> = sqlx::query_as("SELECT path, size_bytes, updated_at FROM project_files WHERE project_id = $1 ORDER BY path")
         .bind(project_id)
         .fetch_all(&mut *tx)
-        .await
-        .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
+        .await?;
+    tx.commit().await?;
     Ok(Manifest { files_version, files })
+}
+
+async fn manifest_of(state: &AppState, project_id: Uuid) -> Result<Manifest, ApiError> {
+    load_manifest(&state.pool, project_id).await.map_err(internal)
 }
 
 /// `GET /api/projects/:id/manifest`: every file's path, size and last change.

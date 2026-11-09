@@ -32,3 +32,41 @@ pub fn changed(project_id: Uuid, what: &str) {
         tracing::debug!(error = %e, %project_id, "couldn't tell the project's pages about a change");
     }
 }
+
+/// What the page hears when the sandbox moves to a new phase. It carries the phase only: the
+/// preview address is fetched from the API by someone allowed to see it.
+pub fn sandbox_changed_envelope(phase: &str) -> serde_json::Value {
+    json!({ "kind": "SandboxChanged", "phase": phase })
+}
+
+type SandboxObserver = Box<dyn Fn(Uuid, &str) + Send + Sync>;
+
+static SANDBOX_OBSERVER: OnceLock<SandboxObserver> = OnceLock::new();
+
+/// Has `observer` called with every sandbox change, at the moment it is announced. For tests
+/// that check what is saved by then; set once per process.
+#[doc(hidden)]
+pub fn observe_sandbox_changes_for_test(observer: impl Fn(Uuid, &str) + Send + Sync + 'static) {
+    let _ = SANDBOX_OBSERVER.set(Box::new(observer));
+}
+
+/// Tells the project's open pages the sandbox moved to `phase`.
+pub fn sandbox_changed(project_id: Uuid, phase: &str) {
+    if let Some(observer) = SANDBOX_OBSERVER.get() {
+        observer(project_id, phase);
+    }
+    let Some(publisher) = PUBLISHER.get() else { return };
+    if let Err(e) = publisher.try_publish_to(&topic(project_id), &sandbox_changed_envelope(phase)) {
+        tracing::debug!(error = %e, %project_id, "couldn't tell the project's pages the sandbox changed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sandbox_changed_carries_the_phase_and_nothing_else() {
+        assert_eq!(sandbox_changed_envelope("running"), json!({ "kind": "SandboxChanged", "phase": "running" }));
+    }
+}

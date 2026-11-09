@@ -188,12 +188,18 @@ pub async fn create_project_session(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to create project")
     })?;
 
+    // Where the project runs is chosen once, here: projects that already exist keep theirs.
+    let runtime = match crate::configuration::sandbox_config().await {
+        Some(config) if config.rollout.includes(claims.sub) => crate::routes::project_sandbox::RUNTIME_SANDBOX,
+        _ => crate::routes::project_sandbox::RUNTIME_BROWSER,
+    };
     let project_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO projects (user_id, session_id, org_id, name) VALUES ($1, $2, $3, 'New project') RETURNING id",
+        "INSERT INTO projects (user_id, session_id, org_id, name, runtime) VALUES ($1, $2, $3, 'New project', $4) RETURNING id",
     )
     .bind(claims.sub)
     .bind(bootstrap_result.session_id)
     .bind(org_id)
+    .bind(runtime)
     .fetch_one(&state.pool)
     .await
     .map_err(internal("failed to create project"))?;
