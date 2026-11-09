@@ -113,18 +113,24 @@ where
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // The claim that handed the walk over has just written a lease.
     let mut held_until = Instant::now() + lease;
+    // A renewal runs beside the walk, never instead of it: it may be waiting for something the
+    // walk holds (a pool connection, the row lock of its transaction), which only the walk
+    // running on can free.
+    let mut renewing: Option<(Instant, std::pin::Pin<Box<tokio::time::Timeout<RF>>>)> = None;
     loop {
         tokio::select! {
             biased;
             out = &mut walk => return Some(out),
-            _ = ticker.tick() => {
-                let asked = Instant::now();
-                let renewed = tokio::time::timeout(every, renew()).await.unwrap_or(false);
-                if renewed {
+            renewed = async { renewing.as_mut().expect("guarded by the branch condition").1.as_mut().await }, if renewing.is_some() => {
+                let asked = renewing.take().map_or_else(Instant::now, |(asked, _)| asked);
+                if renewed.unwrap_or(false) {
                     held_until = asked + lease;
                 } else if Instant::now() + every >= held_until {
                     return None;
                 }
+            }
+            _ = ticker.tick(), if renewing.is_none() => {
+                renewing = Some((Instant::now(), Box::pin(tokio::time::timeout(every, renew()))));
             }
         }
     }
@@ -1088,6 +1094,33 @@ mod tests {
         .await;
         assert_eq!(out, Some("done"));
         assert!(renewals.load(Ordering::SeqCst) >= 3, "the lease was renewed while the walk ran");
+    }
+
+    /// A renewal that has to wait for something the walk holds (a pool connection, the row lock
+    /// of its transaction) must not stop the walk from running: the walk ends, frees what it
+    /// held, and the renewal goes through.
+    #[tokio::test]
+    async fn the_walk_keeps_running_while_a_renewal_waits_on_it() {
+        let held = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
+        let walk = {
+            let held = held.clone();
+            async move {
+                let _held = held.acquire().await.unwrap();
+                tokio::time::sleep(LEASE * 2 / 3).await;
+                "done"
+            }
+        };
+        let out = hold_lease(
+            walk,
+            || {
+                let held = held.clone();
+                async move { held.acquire().await.is_ok() }
+            },
+            EVERY,
+            LEASE,
+        )
+        .await;
+        assert_eq!(out, Some("done"));
     }
 
     #[tokio::test]
