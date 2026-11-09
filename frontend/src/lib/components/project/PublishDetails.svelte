@@ -118,7 +118,7 @@
 	function askFix() {
 		onaskfix?.(
 			m.pj_dep_fix_request({
-				version: publish.files_version,
+				version: publish.version,
 				env: environmentName(publish.environment),
 				phase: failure ? phaseTitle(failure.phase) : '—',
 				step: failure?.step ?? '—',
@@ -131,7 +131,7 @@
 <div class="head">
 	<IconButton onclick={onback} aria-label={m.pj_dep_back()} title={m.pj_dep_back()}><IconArrowBack size={20} /></IconButton>
 	<div class="head__text">
-		<h3 class="head__title">{m.pj_publish_title({ version: publish.files_version })}</h3>
+		<h3 class="head__title">{m.pj_publish_title({ version: publish.version })}</h3>
 		<p class="head__meta">{m.pj_dep_status_line({ status, when: ago(publish.created_at, locale), env: environmentName(publish.environment) })}</p>
 	</div>
 </div>

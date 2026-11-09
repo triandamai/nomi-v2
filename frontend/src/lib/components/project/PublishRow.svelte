@@ -45,7 +45,7 @@
 		<StatusSquare status={publish.status} />
 		<span class="row__text">
 			<span class="row__title">
-				{m.pj_publish_title({ version: publish.files_version })}
+				{m.pj_publish_title({ version: publish.version })}
 				{#if tag}<span class="tag" class:tag--live={publish.is_live && publish.status === 'succeeded'}>{tag}</span>{/if}
 				{#if publish.rollback_of_version !== null}<span class="tag">{m.pj_dep_tag_rollback({ version: publish.rollback_of_version })}</span>{/if}
 			</span>

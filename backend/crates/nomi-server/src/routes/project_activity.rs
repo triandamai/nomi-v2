@@ -128,7 +128,8 @@ events AS (
                 WHEN pp.status = 'failed' THEN 'publish_failed'
                 ELSE 'published' END,
            COALESCE(pp.finished_at, pp.created_at), pe.name, pe.avatar_url, pp.started_by_agent, NULL,
-           pp.files_version, pp.environment, pp.status, pp.failure->>'phase', pp.failure->>'step', NULL, rb.files_version
+           COALESCE(pp.version, pp.files_version), pp.environment, pp.status, pp.failure->>'phase', pp.failure->>'step', NULL,
+           COALESCE(rb.version, rb.files_version)
     FROM project_publishes pp JOIN p ON pp.project_id = p.id
     LEFT JOIN people pe ON pe.id = pp.created_by
     LEFT JOIN project_publishes rb ON rb.id = pp.rollback_of

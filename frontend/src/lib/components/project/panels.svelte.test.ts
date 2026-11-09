@@ -30,6 +30,7 @@ const publish = (over: Record<string, unknown> = {}) => ({
 	url: 'https://bakery.apps.test',
 	error: null,
 	files_version: 4,
+	version: 4,
 	rollback_of: null,
 	can_roll_back: true,
 	rollback_of_version: null,

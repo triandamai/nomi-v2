@@ -138,6 +138,8 @@ pub struct PublishRow {
     pub url: Option<String>,
     pub error: Option<String>,
     pub files_version: i64,
+    /// The version people see; a publish from before versions were per reply shows its files_version.
+    pub version: i64,
     pub rollback_of: Option<Uuid>,
     /// Whether its source was kept, so it can be rolled back to.
     pub can_roll_back: bool,
@@ -146,7 +148,7 @@ pub struct PublishRow {
     pub finished_at: Option<DateTime<Utc>>,
     /// Where a failed publish broke (`shipyard::PublishFailure`), when Shipyard said.
     pub failure: Option<Value>,
-    /// The `files_version` of the publish this one rolled back to.
+    /// The `version` of the publish this one rolled back to.
     pub rollback_of_version: Option<i64>,
     /// The crew member who started it through `publish_project`, when it wasn't the person.
     pub started_by_agent: Option<String>,
@@ -156,10 +158,10 @@ pub struct PublishRow {
     pub is_live: bool,
 }
 
-const PUBLISH_COLUMNS: &str = "pp.id, pp.environment, pp.status, pp.url, pp.error, pp.files_version, pp.rollback_of, \
+const PUBLISH_COLUMNS: &str = "pp.id, pp.environment, pp.status, pp.url, pp.error, pp.files_version, COALESCE(pp.version, pp.files_version) AS version, pp.rollback_of, \
      (pp.source_key IS NOT NULL) AS can_roll_back, \
      COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
-     pp.created_at, pp.finished_at, pp.failure, rb.files_version AS rollback_of_version, pp.started_by_agent \
+     pp.created_at, pp.finished_at, pp.failure, COALESCE(rb.version, rb.files_version) AS rollback_of_version, pp.started_by_agent \
      FROM project_publishes pp \
      LEFT JOIN project_publishes rb ON rb.id = pp.rollback_of \
      LEFT JOIN user_profiles up ON up.user_id = pp.created_by \
@@ -352,8 +354,8 @@ async fn send_publish(
         .await
         .map_err(internal("failed to keep the published source"))?;
     sqlx::query(
-        "INSERT INTO project_publishes (id, project_id, environment, manifest, source_key, files_version, rollback_of, created_by, started_by_agent) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "INSERT INTO project_publishes (id, project_id, environment, manifest, source_key, files_version, version, rollback_of, created_by, started_by_agent) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(id)
     .bind(target.id)
@@ -361,6 +363,7 @@ async fn send_publish(
     .bind(&manifest)
     .bind(&source_key)
     .bind(target.files_version)
+    .bind(target.version)
     .bind(rollback_of)
     .bind(user_id)
     .bind(agent)

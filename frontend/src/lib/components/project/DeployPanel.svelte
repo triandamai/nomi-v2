@@ -49,7 +49,7 @@
 	<PublishDetails
 		{deploy}
 		publish={opened}
-		liveVersion={opened.environment === environment ? (live?.files_version ?? null) : null}
+		liveVersion={opened.environment === environment ? (live?.version ?? null) : null}
 		{canPublish}
 		canRollBack={canRollBack(opened, role)}
 		onback={() => (openId = null)}
@@ -94,7 +94,7 @@
 				{#if live.url}
 					<a class="live__url" href={live.url} target="_blank" rel="noopener">{live.url.replace(/^https?:\/\//, '')}<IconOpenInNew size={14} /></a>
 				{/if}
-				<p class="live__meta">{m.pj_dep_version_by({ version: live.files_version, name: live.started_by_agent ?? live.created_by ?? '—' })}</p>
+				<p class="live__meta">{m.pj_dep_version_by({ version: live.version, name: live.started_by_agent ?? live.created_by ?? '—' })}</p>
 			</div>
 			{#if live.url}<Button variant="tonal" size="m" href={live.url} target="_blank" rel="noopener">{m.pj_dep_open()}</Button>{/if}
 		{:else}
@@ -125,7 +125,7 @@
 {/if}
 
 <Dialog bind:open={rollbackOpen} headline={m.pj_roll_back()}>
-	{#if rollbackTarget}<p>{m.pj_dep_roll_back_confirm({ version: rollbackTarget.files_version })}</p>{/if}
+	{#if rollbackTarget}<p>{m.pj_dep_roll_back_confirm({ version: rollbackTarget.version })}</p>{/if}
 	{#snippet actions()}
 		<Button variant="text" type="button" onclick={() => (rollbackOpen = false)}>{m.issues_cancel()}</Button>
 		<Button

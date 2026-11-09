@@ -140,13 +140,22 @@ pub(crate) async fn owned_project_id(conn: &mut PgConnection, user_id: Uuid, inp
     Ok(project_id)
 }
 
-/// Marks the project's files as changed (the open preview picks it up).
+/// Marks the project's files as changed (the open preview picks it up). The version people see
+/// moves once per crew reply: a reply's later changes stay in the version its first one made.
+/// A change outside a reply (the code editor, an import) is a version of its own.
 pub async fn bump_files_version(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    bump_files_version_in(conn, project_id, nomi_agent_core::reply::current_reply()).await
+}
+
+async fn bump_files_version_in(conn: &mut PgConnection, project_id: Uuid, reply: Option<Uuid>) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE projects SET files_version = files_version + 1, updated_at = now(), \
+         version = CASE WHEN $2::uuid IS NOT NULL AND version_reply_id = $2 THEN version ELSE version + 1 END, \
+         version_reply_id = $2, \
          status = CASE WHEN status = 'planning' THEN 'building' ELSE status END WHERE id = $1",
     )
     .bind(project_id)
+    .bind(reply)
     .execute(&mut *conn)
     .await?;
     Ok(())

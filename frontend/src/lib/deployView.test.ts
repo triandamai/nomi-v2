@@ -10,6 +10,7 @@ function publish(over: Partial<ProjectPublish> = {}): ProjectPublish {
 		url: null,
 		error: null,
 		files_version: 1,
+		version: 1,
 		rollback_of: null,
 		rollback_of_version: null,
 		started_by_agent: null,

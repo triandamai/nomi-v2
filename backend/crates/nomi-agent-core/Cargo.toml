@@ -24,7 +24,7 @@ tracing = "0.1.44"
 nomi-settings = { path = "../nomi-settings" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 regex = "1"
-tokio = { version = "1", features = ["net", "time"] }
+tokio = { version = "1", features = ["net", "time", "rt"] }
 
 [features]
 # Model-call retries don't wait between attempts. For other crates' tests only (they enable it

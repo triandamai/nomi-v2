@@ -971,6 +971,8 @@ export interface ProjectPublish {
 	url: string | null;
 	error: string | null;
 	files_version: number;
+	/** The version people see: one per crew reply that changed the files. */
+	version: number;
 	/** The publish this one rolled back to. */
 	rollback_of: string | null;
 	can_roll_back: boolean;

@@ -711,7 +711,20 @@ pub async fn resume_paused_turn(
 
     let mut conn = lock::acquire_session_lock(pool, session_id).await?;
 
-    let result = resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, catalog, session_id, message_id, decision, remember).await;
+    // The resumed turn carries on the reply it paused in, so its file changes stay one version.
+    let reply_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT (state->>'reply_id')::uuid FROM agent_sessions \
+         WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true",
+    )
+    .bind(message_id.to_string())
+    .fetch_optional(&mut *conn)
+    .await?
+    .flatten();
+    let result = nomi_agent_core::reply::continuing_reply(
+        reply_id,
+        resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, catalog, session_id, message_id, decision, remember),
+    )
+    .await;
 
     match result {
         Ok((reply, resumed_message_id)) => {
@@ -806,7 +819,7 @@ async fn resume_locked(
     // Clear the paused-state keys before resolving — resolving may pause again on a different
     // block in the same batch, in which case it writes fresh paused keys right back.
     let _ = sqlx::query(
-        "UPDATE agent_sessions SET state = state - 'paused_for_approval' - 'pending_approval_message_id' - 'pending_tool_use_id' - 'tool_use_blocks' - 'messages' - 'decided_tool_use_ids' WHERE id = $1",
+        "UPDATE agent_sessions SET state = state - 'paused_for_approval' - 'pending_approval_message_id' - 'pending_tool_use_id' - 'tool_use_blocks' - 'messages' - 'decided_tool_use_ids' - 'reply_id' WHERE id = $1",
     )
     .bind(agent_session_id)
     .execute(&mut **conn)
