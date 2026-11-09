@@ -304,8 +304,9 @@ async fn provider_gone_marks_row_none_and_recreates_next_time(pool: PgPool) {
     let first = f.run().await;
     f.provider.set_state(&first, SandboxState::Gone);
     sqlx::query("UPDATE project_sandboxes SET state = 'starting' WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
-    assert!(matches!(f.reconcile().await, ReconcileOutcome::RetryAt(_)));
+    let outcome = f.reconcile().await;
     let row = f.row().await;
+    assert!(matches!(outcome, ReconcileOutcome::RetryAt(_)), "got {outcome:?}, row state {:?}, last_error {:?}", row.state, row.last_error);
     assert_eq!((row.state, row.sandbox_id.clone()), (State::None, None));
     assert_eq!(f.open_sessions().await, 0);
 
