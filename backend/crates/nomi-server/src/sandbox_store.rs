@@ -237,9 +237,11 @@ pub async fn release(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sq
     Ok(())
 }
 
-/// Move a walk's lease another `WALK_LEASE` ahead; the walk is still going.
+/// Move a walk's lease another `WALK_LEASE` ahead; the walk is still going. Only a lease that is
+/// still held is moved: a renewal still in flight when the walk ends must not bring back a lease
+/// that `release` has already let go of.
 pub async fn renew_lease(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE project_sandboxes SET leased_until = now() + make_interval(secs => $2) WHERE project_id = $1")
+    sqlx::query("UPDATE project_sandboxes SET leased_until = now() + make_interval(secs => $2) WHERE project_id = $1 AND leased_until IS NOT NULL")
         .bind(project_id)
         .bind(WALK_LEASE.as_secs_f64())
         .execute(conn)

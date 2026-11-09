@@ -109,7 +109,9 @@ where
     RF: Future<Output = bool>,
 {
     tokio::pin!(walk);
-    let mut ticker = tokio::time::interval(every);
+    // The claim has just written a lease, so the first renewal is due one period from now, not at
+    // once: a renewal started with every walk could land after a quick walk's release.
+    let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // The claim that handed the walk over has just written a lease.
     let mut held_until = Instant::now() + lease;
