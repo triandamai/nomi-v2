@@ -101,11 +101,6 @@ async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<S
     let preview_url = status.as_ref().filter(|_| running).and_then(|s| s.preview_url.clone());
     // An error, or a running sandbox whose preview failed (it still runs Koda's commands).
     let failed = sandbox_state == SandboxState::Error || running && preview_url.is_none();
-    let phase = match status.as_ref() {
-        None => PHASE_IDLE,
-        Some(s) if s.desired == store::Desired::Running && matches!(s.state, SandboxState::None | SandboxState::Stopped) => store::PHASE_WAKING,
-        Some(s) => s.state.phase(),
-    };
     let error = status.as_ref().and_then(|s| {
         if failed || !running {
             s.last_error.clone()
@@ -117,7 +112,7 @@ async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<S
         runtime,
         available,
         state: sandbox_state.as_str(),
-        phase,
+        phase: status.as_ref().map_or(PHASE_IDLE, |s| s.state.phase()),
         preview_url,
         error,
     })
