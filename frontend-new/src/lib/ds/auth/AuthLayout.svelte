@@ -98,9 +98,9 @@
 			<div class="min-h-6 flex-1" aria-hidden="true"></div>
 			<footer class="flex w-95 max-w-full flex-col items-center gap-2.5">
 				<p class="w-full text-center text-caption text-text-3">{m.auth_terms()}</p>
-				<p class="flex items-center gap-2">
+				<p class="flex max-w-full items-center justify-center gap-2">
 					<span class={['size-1.5 shrink-0 rounded-full', healthy ? 'bg-accent' : 'bg-warning']} aria-hidden="true"></span>
-					<span class="font-mono text-label text-text-3"
+					<span class="min-w-0 text-center font-mono text-label text-text-3"
 						>{m.auth_status_line({ status: healthy ? m.auth_status_ok() : m.auth_status_maintenance(), version: shownVersion, year: String(year) })}</span
 					>
 				</p>
