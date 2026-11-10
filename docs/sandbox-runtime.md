@@ -49,7 +49,7 @@ Admin -> Configuration -> Sandbox (section `sandbox`). Values are saved in setti
 | `api_key` (env `BOAT_API_KEY`) | boat API key, stored encrypted, never returned. Without it the runtime is unavailable. | none |
 | `size` | `small`, `default` or `large`. | `small` |
 | `idle_stop_secs` | Idle time before a sandbox is stopped. | 600 |
-| `rollout` | Who gets sandboxes for new projects: `off`, `allowlist`, `percent`, `all`. | `off` |
+| `rollout` | Who gets sandboxes for new projects: `off`, `allowlist`, `percent`, `all`. | `all` |
 | `rollout_allowlist` | Comma-separated user ids for `allowlist`. | empty |
 | `rollout_percent` | 1 to 100 for `percent`; a user stays in as it is raised. | 0 |
 | `starts_per_minute` | Create/resume starts per minute (boat allows 12). | 10 |

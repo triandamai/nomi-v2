@@ -217,26 +217,33 @@ pub async fn create_project(
     .await
     .map_err(|e| e.to_string())?;
 
+    let runtime = nomi_settings::config::new_project_runtime(user_id).await;
     let project_id = match existing_id {
         Some(id) => {
-            sqlx::query("UPDATE projects SET name = $1, description = $2, stack = $4, updated_at = now() WHERE id = $3")
-                .bind(name)
-                .bind(description)
-                .bind(id)
-                .bind(stack)
-                .execute(&mut **conn)
-                .await
-                .map_err(|e| e.to_string())?;
+            sqlx::query(
+                "UPDATE projects SET name = $1, description = $2, stack = $4, \
+                 runtime = CASE WHEN runtime = 'browser' AND files_version = 0 THEN $5 ELSE runtime END, \
+                 updated_at = now() WHERE id = $3",
+            )
+            .bind(name)
+            .bind(description)
+            .bind(id)
+            .bind(stack)
+            .bind(runtime)
+            .execute(&mut **conn)
+            .await
+            .map_err(|e| e.to_string())?;
             id
         }
         None => sqlx::query_scalar(
-            "INSERT INTO projects (user_id, session_id, name, description, stack) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO projects (user_id, session_id, name, description, stack, runtime) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
         )
         .bind(user_id)
         .bind(session_id)
         .bind(name)
         .bind(description)
         .bind(stack)
+        .bind(runtime)
         .fetch_one(&mut **conn)
         .await
         .map_err(|e| e.to_string())?,
