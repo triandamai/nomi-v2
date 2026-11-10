@@ -21,12 +21,28 @@ function openActivityFeed(page: Page): Promise<{ opened: boolean; message?: stri
 }
 
 test('serves the app in the person’s language and theme from the first byte', async ({ page, context }) => {
-	await context.addCookies([{ name: 'nm_theme', value: 'dark', url: 'http://localhost:4175' }]);
+	await context.addCookies([
+		{ name: 'nm_theme', value: 'dark', url: 'http://localhost:4175' },
+		{ name: 'access_token', value: 'e2e-token', url: 'http://localhost:4175' },
+	]);
 	const response = await page.goto('/');
 	expect(response?.headers()['cache-control']).toBe('no-cache');
 	const html = await response!.text();
 	expect(html).toMatch(/<html lang="en" data-theme="dark">/);
 	await expect(page).toHaveTitle('Nomi');
+});
+
+test('opens the app shell even when the backend answers nothing it asks for', async ({ page, context }) => {
+	await context.addCookies([{ name: 'access_token', value: 'e2e-token', url: 'http://localhost:4175' }]);
+	await page.goto('/');
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(/, You\.$/);
+});
+
+test('sends someone signed out to sign in, and back where they were going after', async ({ request }) => {
+	const response = await request.get('/?from=email', { maxRedirects: 0 });
+	expect(response.status()).toBe(303);
+	expect(response.headers().location).toBe('/sign-in?redirect_to=%2F%3Ffrom%3Demail');
 });
 
 test('refuses live updates to someone signed out', async ({ page }) => {

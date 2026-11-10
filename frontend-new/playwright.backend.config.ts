@@ -29,7 +29,8 @@ export default defineConfig({
 		},
 		{
 			command: `node -e "fetch('${MAILPIT_URL}/api/v1/info').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && npm run build && node server.js`,
-			url: 'http://localhost:4176',
+			// /health: `/` sends a signed-out visitor to sign in.
+			url: 'http://localhost:4176/health',
 			reuseExistingServer: !process.env.CI,
 			timeout: 240_000,
 			env: { PORT: '4176', HOST: '127.0.0.1', API_URL: BACKEND_URL, ORIGIN: 'http://localhost:4176' },

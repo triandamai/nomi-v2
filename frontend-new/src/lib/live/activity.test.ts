@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectActivity, routeActivity, type ActivityHandlers } from './activity';
+import { connectActivity, routeActivity, type ActivityHandlers, type Notification } from './activity';
 import { FakeSocket } from './fakeSocket';
 
 // The person's own live feed (backend: nomi_realtime::UserEnvelope, relayed at /activity/ws),
 // ported from the old app's userActivity (frontend/src/lib/userActivity.ts).
 
-function handlers(): ActivityHandlers & { [K in keyof ActivityHandlers]: ReturnType<typeof vi.fn> } {
-	return { chatsChanged: vi.fn(), notification: vi.fn(), signedOutHere: vi.fn(), resumed: vi.fn(), lost: vi.fn() };
+function handlers() {
+	return {
+		chatsChanged: vi.fn<(sessionId: string) => void>(),
+		notification: vi.fn<(notification: Notification) => void>(),
+		signedOutHere: vi.fn<() => void>(),
+		resumed: vi.fn<() => void>(),
+		lost: vi.fn<(code: number) => void>(),
+	} satisfies ActivityHandlers;
 }
 
 describe('routeActivity', () => {
