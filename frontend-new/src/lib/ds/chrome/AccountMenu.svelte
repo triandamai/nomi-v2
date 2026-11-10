@@ -220,8 +220,8 @@
 			{#if onshortcuts}<MenuRow item={{ label: m.account_shortcuts(), icon: Keyboard, shortcut: '?', onselect: onshortcuts }} onpick={pick} />{/if}
 			<div role="none" class="flex h-7.5 items-center gap-2 px-2">
 				<span class="inline-flex text-text-2"><Icon icon={Sparkle} size={14} /></span>
-				<span class="min-w-0 flex-1 text-ui text-text">{m.account_whats_new()}</span>
-				<span class="font-mono text-label text-text-3">{version}</span>
+				<span class="flex-1 text-ui whitespace-nowrap text-text">{m.account_whats_new()}</span>
+				<span class="min-w-0 truncate font-mono text-label text-text-3">{version}</span>
 			</div>
 			{@render divider()}
 			<MenuRow item={{ label: m.settings_logout(), icon: LogOut, onselect: onlogout }} onpick={pick} />

@@ -3,7 +3,8 @@
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 </script>
 
-<div class="w-80 outline -outline-offset-1 outline-border">
+<!-- As in AppShell's panel: 320 wide, its stroke on the left. -->
+<div class="w-80 border-l border-border">
 	<CrewPanel
 		summary={{ kind: 'live', label: '1 working · 3 idle' }}
 		members={[

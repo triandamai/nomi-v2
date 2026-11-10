@@ -44,7 +44,8 @@ describe('CrewPanel', () => {
 		await expect.element(panel).toBeVisible();
 		const head = page.getByRole('heading', { name: 'Your crew' }).element().parentElement!;
 		expect(box(head).height).toBe(52);
-		expect(getComputedStyle(head).paddingLeft).toBe('20px');
+		// 20 in, less the 1px AppShell's panel stroke takes on the left.
+		expect([getComputedStyle(head).paddingLeft, getComputedStyle(head).paddingRight]).toEqual(['19px', '20px']);
 		expect(getComputedStyle(head).borderBottomColor).toBe(tokenColor('nm-border'));
 		expect(getComputedStyle(page.getByText('10 idle').element()).fontFamily).toContain('Geist Mono');
 		const rows = page.getByRole('listitem').elements();
@@ -53,6 +54,13 @@ describe('CrewPanel', () => {
 		expect(Math.round(box(rows[1]).top - box(rows[0]).bottom)).toBe(2);
 		expect(getComputedStyle(rows[0].parentElement!).paddingTop).toBe('8px');
 		await expect.element(page.getByText('working')).toBeVisible();
+	});
+
+	it('keeps the head in mono while some work, with the accent dot', async () => {
+		await render(CrewPanel, { summary: { kind: 'live', label: '1 working · 9 idle' }, members: crew });
+		const label = page.getByText('1 working · 9 idle').element();
+		expect(getComputedStyle(label).fontFamily).toContain('Geist Mono');
+		expect(getComputedStyle(label.parentElement!.querySelector('[data-dot]')!).backgroundColor).toBe(tokenBackground('nm-accent'));
 	});
 
 	it('gives a member the design has no mascot for their initial instead', async () => {
