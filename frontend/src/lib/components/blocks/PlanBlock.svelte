@@ -213,9 +213,16 @@
 	// lists it in the showcase, unlisted is the link only) and its blurb is the preview's text.
 	type Showcase = { showcase: boolean; blurb: string | null; url: string | null; can_edit: boolean };
 	let showcase = $state<Showcase | null>(null);
+	let showcaseLoaded = false;
 	$effect(() => {
-		if (!done || !project) return;
-		void projectApi<Showcase>(project.id, 'showcase').then((found) => (showcase = found)).catch(() => (showcase = null));
+		if (!done || !project || showcaseLoaded) return;
+		showcaseLoaded = true;
+		void projectApi<Showcase>(project.id, 'showcase')
+			.then((found) => (showcase = found))
+			.catch(() => {
+				showcase = null;
+				showcaseLoaded = false;
+			});
 	});
 	const liveUrl = $derived(showcase?.url ?? (project ? `${page.url.origin}/projects/${project.id}/app` : ''));
 	let shareOpen = $state(false);
