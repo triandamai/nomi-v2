@@ -1,10 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // End-to-end tests run the production server (server.js) on 4175 (the old frontend's e2e keeps
-// 4173). The smoke tests talk to a stub backend; flow tests will add the real one.
+// 4173) against a stub backend. The flows run against the real one: playwright.backend.config.ts.
 export default defineConfig({
 	testDir: 'e2e',
 	testMatch: '**/*.e2e.ts',
+	testIgnore: 'backend/**',
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	reporter: process.env.CI ? 'github' : 'list',

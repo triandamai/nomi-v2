@@ -19,6 +19,7 @@ export const CATEGORIES = [
 	{ key: 'chat', title: 'Chat responses', blurb: 'Everything a reply can hold, and the controls around it.' },
 	{ key: 'build', title: 'Build', blurb: 'From describing an app to a live URL.' },
 	{ key: 'mobile', title: 'Mobile', blurb: 'The phone versions, drawn at 390 pt.' },
+	{ key: 'auth', title: 'Sign in', blurb: 'The sign-in, sign-up and code screens, and the parts their forms are made of.' },
 ] as const;
 
 export type CategoryKey = (typeof CATEGORIES)[number]['key'];
