@@ -106,13 +106,20 @@ async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<S
         Some(s) if s.desired == store::Desired::Running && matches!(s.state, SandboxState::None | SandboxState::Stopped) => store::PHASE_WAKING,
         Some(s) => s.state.phase(),
     };
+    let error = status.as_ref().and_then(|s| {
+        if failed || !running {
+            s.last_error.clone()
+        } else {
+            None
+        }
+    });
     Ok(SandboxResponse {
         runtime,
         available,
         state: sandbox_state.as_str(),
         phase,
         preview_url,
-        error: status.filter(|_| failed).and_then(|s| s.last_error),
+        error,
     })
 }
 
