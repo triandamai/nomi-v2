@@ -11,10 +11,13 @@
 
 	let {
 		projectId,
+		openIssues = 1,
 		subscribe,
 		onmore,
 	}: {
 		projectId: string;
+		/** How many open issues the project has; when zero, nothing on the board can be in crew work. */
+		openIssues?: number;
 		/** The project's live events: the strip reloads when the board changes. */
 		subscribe?: (listener: (raw: string) => void) => () => void;
 		/** Opens the board, for the ones that don't fit. */
@@ -33,6 +36,10 @@
 
 	$effect(() => {
 		void projectId;
+		if (openIssues <= 0) {
+			work = [];
+			return;
+		}
 		void load();
 	});
 
