@@ -45,6 +45,24 @@ test('sends someone signed out to sign in, and back where they were going after'
 	expect(response.headers().location).toBe('/sign-in?redirect_to=%2F%3Ffrom%3Demail');
 });
 
+test('keeps everyone on the maintenance page while Nomi is down, and lets them back after', async ({ page, context }) => {
+	// The stub is down for this device only (e2e/stub-api.mjs).
+	await context.addCookies([
+		{ name: 'device_id', value: '00000000-0000-4000-8000-00000000d0e5', url: 'http://localhost:4175' },
+		{ name: 'access_token', value: 'e2e-token', url: 'http://localhost:4175' },
+	]);
+	await page.goto('/');
+	await expect(page).toHaveURL(/\/maintenance$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Nomi is down for maintenance');
+	await expect(page.getByText('Moving to a bigger database.')).toBeVisible();
+	await expect(page.getByText(/^Back by /)).toBeVisible();
+
+	await context.clearCookies();
+	const response = await page.request.get('/maintenance', { maxRedirects: 0 });
+	expect(response.status()).toBe(307);
+	expect(response.headers().location).toBe('/');
+});
+
 test('refuses live updates to someone signed out', async ({ page }) => {
 	await page.goto('/');
 	expect(await openActivityFeed(page)).toEqual({ opened: true, code: 4401 });
