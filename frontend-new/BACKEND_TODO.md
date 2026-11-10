@@ -109,3 +109,39 @@ The old `frontend/` will use the same endpoints.
 - **Needed by:** *Chat / Share*: SharePanel's footer says links can be revoked "any time in Settings › Data".
 - **Built:** `GET /api/shares` returns `{ shares: [{ id, session_id, title, scope, message_id, mask, anyone, expires_at, created_at }] }`: the person's links that still work, newest first. Revoke one with `DELETE /api/sessions/:session_id/shares/:id`.
 - **Still open:** the Settings › Data page itself, in both apps.
+
+Found while planning the working v2 (sign in, chat and build against the real API, 2026-11-10).
+
+### Sign in or create with an email code, no password
+- **Needed by:** *Sign in or create* (`vDaAQ`) and *Enter code* (`pUDXz`): "One step for both. We'll email a 6-digit code. No password to remember."
+- **Why:** the design signs people in and creates accounts from an email alone. The API asks for a password on both.
+- **What exists today:**
+  - `POST /api/auth/login {email, password}` and `POST /api/auth/register {email, password, org, language?}`, which then send the code (`/api/auth/verify`, `/resend`, `/challenge/:id`).
+  - Register also needs a workspace (`org: {mode: "create", name}` or an invite code).
+- **Proposed contract:** `POST /api/auth/start {email, language?, invite_code?}` → `{verification}` for an existing or a new address alike. `POST /api/auth/verify` then signs in, or creates the account with a personal workspace and returns `is_new: true` so first run can ask for a name.
+- **Until then:** v2 follows the API. Sign in asks for email and password, create account asks for email, password and workspace name, and both continue to the code. The design's "No password to remember" line is left out.
+
+### Change the password while signed in
+- **Needed by:** *Settings / General*: "Password · Not set. Add one to sign in without Google".
+- **Why:** someone signed in (often with Google) can't set or change a password from Settings.
+- **What exists today:** only the emailed reset: `POST /api/auth/forgot` → `/reset-password?token=` → `POST /api/auth/reset`, which also signs every device out.
+- **Proposed contract:** `PUT /api/auth/password {current_password?, new_password}` → 204. `current_password` is required when one is set. Other devices stay signed in.
+- **Until then:** Settings › General offers "Send me a link to set a password", which uses the reset email.
+
+### Switch the active workspace
+- **Needed by:** *Workspace switcher* (`pKiO2`) and the account menu.
+- **Why:** the JWT's `active_org_id` is always the person's first membership (`backend/crates/nomi-auth/src/login.rs:73-78`), and no endpoint changes it.
+- **What exists today:**
+  - `GET /api/orgs` lists them.
+  - `PUT /api/preferences/project-org` chooses only the workspace for new projects.
+- **Proposed contract:** `PUT /api/auth/active-org {org_id}` → a new `{access_token}` carrying that org.
+- **Until then:** the switcher lists workspaces and picks the one for new projects (`project-org`). It doesn't claim to change anything else.
+
+### A project's versions, listed and restorable
+- **Needed by:** the Build flows' version line ("version N by Koda"), and restoring a version that was never published.
+- **Why:** `projects.version` moves once per Koda reply (migration `0107`), but it's only exposed on publishes (`PublishRow.version`) and activity items.
+- **What exists today:**
+  - `GET /api/projects/:id/activity` shows versions as they happened.
+  - `POST .../deploy/publishes/:pid/rollback` restores a published one.
+- **Proposed contract:** `GET /api/projects/:id/versions` → `{versions: [{version, by, at, summary}]}`. `POST /api/projects/:id/versions/:v/restore` → 202.
+- **Until then:** versions appear in the activity and on publishes. Rollback is offered for publishes only.

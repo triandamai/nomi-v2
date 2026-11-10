@@ -1,9 +1,13 @@
 import { sequence } from '@sveltejs/kit/hooks';
-import type { Handle, HandleFetch } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleFetch } from '@sveltejs/kit';
+import { building } from '$app/environment';
 import { paraglideMiddleware } from '$lib/paraglide/server';
+import { DEVICE_COOKIE } from '$lib/device';
 import { authenticate, isApiRequest } from '$lib/server/api';
+import { clientHeaders } from '$lib/server/clientHeaders';
+import { legacyPath } from '$lib/server/compat';
+import { ensureDeviceId } from '$lib/server/device';
 import { THEME_COOKIE, parseTheme, withTheme } from '$lib/theme';
-import { APP_VERSION, CLIENT_VERSION_HEADER } from '$lib/version';
 
 /** Renders each request in the person's language and theme, so the first frame is already right. */
 const languageAndTheme: Handle = ({ event, resolve }) =>
@@ -14,6 +18,19 @@ const languageAndTheme: Handle = ({ event, resolve }) =>
 				withTheme(html.replace('%paraglide.lang%', locale), parseTheme(event.cookies.get(THEME_COOKIE))),
 		});
 	});
+
+/** The backend links to the old app's addresses in emails and notifications: each has a v2 page. */
+const legacyAddresses: Handle = ({ event, resolve }) => {
+	const to = legacyPath(event.url);
+	if (to) redirect(307, to);
+	return resolve(event);
+};
+
+/** Every browser is a device with an id of its own, from its first visit (before it signs in). */
+const device: Handle = ({ event, resolve }) => {
+	if (!building) ensureDeviceId(event.cookies);
+	return resolve(event);
+};
 
 /** The person's sign-in for this request, renewed first when it's about to expire. */
 const auth: Handle = async ({ event, resolve }) => {
@@ -33,14 +50,10 @@ const noStalePages: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(languageAndTheme, auth, noStalePages);
+export const handle = sequence(legacyAddresses, languageAndTheme, device, auth, noStalePages);
 
-/** Every call to the backend says which version of the frontend made it. */
-export const handleFetch: HandleFetch = ({ request, fetch }) => {
-	if (isApiRequest(request.url)) {
-		const headers = new Headers(request.headers);
-		headers.set(CLIENT_VERSION_HEADER, APP_VERSION);
-		request = new Request(request, { headers });
-	}
+/** Every call to the backend says which version of the frontend made it, and from which browser. */
+export const handleFetch: HandleFetch = ({ event, request, fetch }) => {
+	if (isApiRequest(request.url)) request = new Request(request, { headers: clientHeaders(request.headers, event.cookies.get(DEVICE_COOKIE)) });
 	return fetch(request);
 };

@@ -113,15 +113,38 @@ function toUpstreamUrl(upstreamPath, options) {
 }
 
 /**
+ * Which browser and tab a socket is: the `device_id` cookie and the page's `?tab=`. The backend
+ * names the socket's broker connection after them.
+ */
+const TAB_ID = /^[A-Za-z0-9-]{1,32}$/;
+
+/**
+ * @param {import('node:http').IncomingMessage} request
+ * @param {URL} url
+ * @returns {RelaySession}
+ */
+export function callerOf(request, url) {
+	const tab = url.searchParams.get('tab');
+	return {
+		accessToken: readCookie(request.headers.cookie, 'access_token'),
+		refreshToken: readCookie(request.headers.cookie, 'refresh_token'),
+		deviceId: readCookie(request.headers.cookie, 'device_id'),
+		tabId: tab && TAB_ID.test(tab) ? tab : undefined,
+	};
+}
+
+/**
  * @param {string} upstreamPath
- * @param {string | undefined} accessToken
+ * @param {RelaySession} session
  * @param {ProxyOptions} options
  * @returns {WebSocket}
  */
-function connectUpstream(upstreamPath, accessToken, options) {
+function connectUpstream(upstreamPath, session, options) {
 	/** @type {Record<string, string>} */
 	const headers = { 'x-client-version': resolveClientVersion(options) };
-	if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+	if (session.accessToken) headers.authorization = `Bearer ${session.accessToken}`;
+	if (session.deviceId) headers['x-device-id'] = session.deviceId;
+	if (session.tabId) headers['x-tab-id'] = session.tabId;
 	return new WebSocket(toUpstreamUrl(upstreamPath, options), { headers });
 }
 
@@ -138,7 +161,7 @@ export function resolveClientVersion(options) {
  * when the backend refuses it, so a connection outlives the access token (minutes) as long as the
  * refresh token (weeks) is good. The browser's cookies aren't touched: its next page load
  * refreshes them the same way.
- * @typedef {{ accessToken?: string, refreshToken?: string }} RelaySession
+ * @typedef {{ accessToken?: string, refreshToken?: string, deviceId?: string, tabId?: string }} RelaySession
  */
 
 /**
@@ -179,7 +202,7 @@ function openUpstream(upstreamPath, session, options, done) {
 		const resolve = done;
 		/** @param {boolean} mayRefresh */
 		const attempt = (mayRefresh) => {
-			const ws = connectUpstream(upstreamPath, session.accessToken, options);
+			const ws = connectUpstream(upstreamPath, session, options);
 			let handled = false;
 			ws.on('error', () => {}); // 'close' always follows
 			ws.once('open', () => {
@@ -231,11 +254,7 @@ export function attachWsProxy(server, options = {}) {
 		}
 
 		const upstreamPath = route.upstreamPath(route.match);
-		/** @type {RelaySession} */
-		const session = {
-			accessToken: readCookie(request.headers.cookie, 'access_token'),
-			refreshToken: readCookie(request.headers.cookie, 'refresh_token'),
-		};
+		const session = callerOf(request, url);
 		openUpstream(upstreamPath, session, options, (opened) => {
 			if (opened.ws) {
 				const upstream = opened.ws;
