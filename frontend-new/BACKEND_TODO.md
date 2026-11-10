@@ -145,3 +145,32 @@ Found while planning the working v2 (sign in, chat and build against the real AP
   - `POST .../deploy/publishes/:pid/rollback` restores a published one.
 - **Proposed contract:** `GET /api/projects/:id/versions` → `{versions: [{version, by, at, summary}]}`. `POST /api/projects/:id/versions/:v/restore` → 202.
 - **Until then:** versions appear in the activity and on publishes. Rollback is offered for publishes only.
+
+Found while building the app shell (App / Home, the account menu and the workspace switcher, 2026-11-10).
+
+### Search chats, memory and files
+- **Needed by:** *App / Home* (`Vr4nn`), the top bar's Search (`u8pcLQ`): "Search chats, memory, files ⌘K".
+- **Why:** people can't find an old chat, a remembered fact or a file without scrolling through each list.
+- **What exists today:**
+  - Only the lists themselves: `GET /api/sessions` (every chat, no query), `GET /api/memory`, and a project's files.
+  - The only search routes are an admin one (`/api/admin/tools/web_search/test`) and `GET /api/projects/:id/transfer/orgs`.
+- **Proposed contract:** `GET /api/search?q=&kinds=chat,memory,file&limit=20` → `{ results: [{ kind: "chat"|"memory"|"file", id, title, snippet, session_id?, project_id?, updated_at }] }`: the person's own things (and their projects' files) only, best match first.
+- **Until then:** the top bar has no search box. ⌘K opens a new chat, as the sidebar shows.
+
+### A person's pending workspace invites
+- **Needed by:** the workspace switcher (`t24cE`): an invited workspace ("Kopi Kita · invited by Andi · 2 projects") with **Join**.
+- **Why:** someone invited to a workspace only finds out from the email or the inbox item; the switcher can't offer it.
+- **What exists today:**
+  - `GET /api/invites/:code` and `POST /api/invites/:code/accept` work by code only.
+  - `GET /api/orgs/:id` lists a workspace's open invites to its owners and admins, not to the person invited.
+- **Proposed contract:** `GET /api/invites` → `{ invites: [{ code, org_id, org_name, inviter, role, projects, expires_at, project: { id, name } | null }] }`: the open invites to the signed-in person's address.
+- **Until then:** the switcher lists only the workspaces the person is in. An invite opens from its email or inbox link (`/invite/:code`).
+
+### Say which workspace is personal
+- **Needed by:** the workspace switcher (`t24cE`): the "PERSONAL" tag after a workspace's name.
+- **Why:** the switcher can't tell someone's own space from a shared one.
+- **What exists today:**
+  - `organizations.is_personal` exists: channel sign-ups get a personal "Personal", web sign-ups a named, non-personal one.
+  - `GET /api/orgs` doesn't return it (`OrgSummary` is `id, name, role, members, projects`).
+- **Proposed contract:** add `is_personal: bool` to each workspace in `GET /api/orgs` and `POST /api/orgs`.
+- **Until then:** no tag; the meta line says "only you" for a workspace of one.
