@@ -2,19 +2,22 @@ name: Frontend (new)
 
 # The new SvelteKit frontend under frontend-new/ (rebuilt from the pen.dev design system): type
 # check, unit tests and component tests in a real Chromium (with a coverage summary on the run
-# page), a production build, end-to-end smoke tests and the Docker image build. Runs on pull
-# requests and merges to main only when frontend-new/ or this file changed, like the other per-area
-# workflows. Also called by release.yml, so a tagged build never publishes without a green run;
-# release.yml also publishes the design-system docs to Shipyard as a static site.
+# page), a production build, end-to-end smoke tests, the flows end to end against the real backend,
+# and the Docker image build. Runs on pull requests and merges to main when frontend-new/, the
+# backend it talks to or this file changed. Also called by release.yml, so a tagged build never
+# publishes without a green run; release.yml also publishes the design-system docs to Shipyard as a
+# static site.
 on:
   pull_request:
     paths:
       - 'frontend-new/**'
+      - 'backend/**'
       - '.github/workflows/frontend-new.yml'
   push:
     branches: [main]
     paths:
       - 'frontend-new/**'
+      - 'backend/**'
       - '.github/workflows/frontend-new.yml'
   workflow_call:
   workflow_dispatch:
@@ -92,6 +95,112 @@ jobs:
       # stub backend (e2e/stub-api.mjs).
       - name: End-to-end smoke tests
         run: npm run test:e2e
+
+  # The flows end to end against the real backend (its fake model, so replies are known), with
+  # its real dependencies: Postgres, the EMQX broker, and Mailpit catching the emails that carry
+  # sign-in codes (playwright.backend.config.ts).
+  e2e-backend:
+    name: Frontend new (e2e against the real backend)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nomi
+          POSTGRES_PASSWORD: nomi
+          POSTGRES_DB: nomi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nomi"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      emqx:
+        image: emqx/emqx:5.8.9
+        ports:
+          - 1883:1883
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      CARGO_TERM_COLOR: always
+      # As in backend.yml: debug info outgrows the runner's disk, and a crash still names its line.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      E2E_DATABASE_URL: postgres://nomi:nomi@localhost:5432/nomi
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          shared-key: frontend-new-e2e
+
+      - name: Build the backend
+        working-directory: backend
+        run: cargo build --bin nomi-orchestrator
+
+      - name: Wait for EMQX
+        run: |
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/localhost/1883) >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "EMQX did not become ready on localhost:1883" && exit 1
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: npm ci
+        working-directory: frontend-new
+        run: npm ci
+
+      - name: Playwright version
+        id: playwright
+        working-directory: frontend-new
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        id: chromium-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.chromium-cache.outputs.cache-hit != 'true'
+        working-directory: frontend-new
+        run: npx playwright install --with-deps chromium
+
+      - name: Chromium system libraries
+        if: steps.chromium-cache.outputs.cache-hit == 'true'
+        working-directory: frontend-new
+        run: npx playwright install-deps chromium
+
+      - name: End-to-end against the real backend
+        working-directory: frontend-new
+        run: npm run test:e2e:backend
+
+      - name: Traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-new-e2e-backend-traces
+          path: frontend-new/test-results
+          retention-days: 7
 
   docker:
     name: Frontend new (Docker image builds)
