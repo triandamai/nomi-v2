@@ -54,7 +54,11 @@ test('the sidebar shows the person, their workspace, their counts and recents, a
 
 	const { agents } = await json<{ agents: { name: string }[] }>(api(account, '/api/agents'));
 	const crew = page.getByRole('complementary', { name: 'Your crew' });
-	await expect(crew.getByText(`${agents.length} idle`)).toBeVisible();
+	// The chat this test sent may still have Nomi at work: "10 idle", or "1 working · 9 idle".
+	const head = crew.getByText(/^(\d+ working · )?\d+ idle$/);
+	await expect(head).toBeVisible();
+	const [, working = '0', idle] = (await head.textContent())!.match(/^(?:(\d+) working · )?(\d+) idle$/)!;
+	expect(Number(working) + Number(idle)).toBe(agents.length);
 	await expect(crew.getByRole('listitem')).toHaveCount(agents.length);
 	for (const name of ['Nomi', 'Dana', 'Kala', 'Maya', 'Rena', 'Koda', 'Tara', 'Raga', 'Personality', 'Supervisor']) {
 		await expect(crew.getByText(name, { exact: true })).toHaveCount(1);
