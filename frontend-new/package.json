@@ -21,6 +21,7 @@
 		"test:coverage": "npm run i18n && vitest run --coverage",
 		"test:e2e": "playwright test",
 		"test:e2e:backend": "playwright test --config playwright.backend.config.ts",
+		"test:twins": "vitest run --config scripts/twins.vitest.config.mjs",
 		"start": "node server.js",
 		"pen:report": "node scripts/pen/report.mjs",
 		"pen:compare": "node scripts/pen/compare.mjs",

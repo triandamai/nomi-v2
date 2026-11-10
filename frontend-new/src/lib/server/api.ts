@@ -70,9 +70,12 @@ function withAuth(init: RequestInit | undefined, accessToken: string | undefined
 	};
 }
 
-/** Calls the backend as the person. A 401 renews the sign-in once and retries; when that fails
- * too, they're signed out and sent to sign in. */
-export async function apiFetch(event: ApiEvent, path: string, init?: RequestInit): Promise<Response> {
+/**
+ * Calls the backend as the person. A 401 renews the sign-in once and retries; when that fails
+ * too, they're signed out and sent to sign in. `signedOut: 'return'` hands that 401 back instead,
+ * for what a signed-out visitor may load too (an avatar on a shared page).
+ */
+export async function apiFetch(event: ApiEvent, path: string, init?: RequestInit, options: { signedOut?: 'redirect' | 'return' } = {}): Promise<Response> {
 	const sentWith = event.locals.accessToken;
 	const response = await event.fetch(apiUrl(path), withAuth(init, sentWith));
 	if (response.status !== 401) return response;
@@ -80,6 +83,7 @@ export async function apiFetch(event: ApiEvent, path: string, init?: RequestInit
 	// Another call in this request may have renewed it already.
 	const renewed = event.locals.accessToken !== sentWith && event.locals.accessToken ? event.locals.accessToken : await refreshOnce(event);
 	if (!renewed) {
+		if (options.signedOut === 'return') return response;
 		clearSession(event.cookies);
 		redirect(303, SIGN_IN_PATH);
 	}

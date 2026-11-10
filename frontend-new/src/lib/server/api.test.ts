@@ -90,6 +90,16 @@ describe('apiFetch', () => {
 	});
 });
 
+describe('apiFetch for things a signed-out visitor may load too', () => {
+	it('hands the 401 back instead of sending them to sign in', async () => {
+		const api = backend({ validToken: 'never', refreshTo: null });
+		const { jar, cookies } = cookieJar({});
+		const response = await apiFetch({ fetch: api.fetch, cookies, locals: {} }, '/api/avatars/u1/a.png', undefined, { signedOut: 'return' });
+		expect(response.status).toBe(401);
+		expect(jar.size).toBe(0);
+	});
+});
+
 describe('authenticate', () => {
 	it('uses a token that is still good, without asking the backend', async () => {
 		const api = backend({ validToken: 'x', refreshTo: 'unused' });

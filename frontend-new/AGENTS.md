@@ -343,8 +343,10 @@ hard. Add to this list instead of deviating silently.
   5173). `npm run preview`: 4175.
 - `npm run build:gallery`: the docs and sheets alone as static files in `build-gallery/`, working
   from any path on any static host (`e2e/gallery-static.e2e.ts` serves it under a nested path).
-- The docs site on Cloudflare Pages (project `nomi-design-system`, the team's subdomain attached to
-  it) publishes itself: the `docs` job in `.github/workflows/frontend-new.yml` deploys main as the
-  live site and each pull request's branch as a preview, once the checks pass. By hand:
-  `npm run docs:deploy` (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, or
-  `npx wrangler login`).
+- The docs site ships with each release: `release.yml` (`build-and-push-docs`) builds the static
+  copy and pushes it to the Shipyard registry as a static bundle, which the docs site on Shipyard
+  serves. `npm run docs:deploy` can still publish the same copy to Cloudflare Pages by hand (needs
+  `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, or `npx wrangler login`).
+- `npm run test:twins`: the old app's twin-parity test (`frontend/src/lib/dsParity.test.ts`) run on
+  this app's Vitest. The old frontend keeps copies of `src/lib/ds/{build,chat,conversation,mobile}`
+  and a few shared modules, so those files aren't edited in flow work; CI runs this on every PR.

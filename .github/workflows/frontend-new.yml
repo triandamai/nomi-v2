@@ -76,6 +76,11 @@ jobs:
       - name: Unit + component tests with coverage
         run: npm run test:coverage
 
+      # The old frontend keeps copies of this design system (frontend/src/lib/dsParity.test.ts):
+      # a change here that would break them fails this PR, not the next one in frontend/.
+      - name: Old frontend's design-system twins
+        run: npm run test:twins
+
       - name: Coverage summary
         if: ${{ !cancelled() && hashFiles('frontend-new/coverage/coverage-summary.json') != '' }}
         run: node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
