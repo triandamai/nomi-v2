@@ -174,3 +174,12 @@ Found while building the app shell (App / Home, the account menu and the workspa
   - `GET /api/orgs` doesn't return it (`OrgSummary` is `id, name, role, members, projects`).
 - **Proposed contract:** add `is_personal: bool` to each workspace in `GET /api/orgs` and `POST /api/orgs`.
 - **Until then:** no tag; the meta line says "only you" for a workspace of one.
+
+Found while building sign in and create account (Phase 1, 2026-11-10).
+
+### Sign up from a project invite puts the person on the project too
+- **Needed by:** *Build / Together → Invite* and `/invite/:code`: someone without an account opens a project invite, signs up from its email (`/register?redirect_to=/invite/:code&email=`) and lands on the invite.
+- **Why:** signing up with the invite (`org: {mode: "join", invite_code}`) joins the workspace and uses the invite up, but `place_in_org` (`backend/crates/nomi-auth/src/registration.rs`) never reads the invite's `project_id`/`project_role`. The invite page then says "member", and `POST /api/invites/:code/accept` returns early for members, so the project role is never given. On a project limited to the people added to it, they can't open it.
+- **What exists today:** `POST /api/invites/:code/accept` adds the `project_members` row, but only while the invite is `open`. Google sign-up with an invite code has the same gap (`create_account` → `place_in_org`).
+- **Proposed contract:** `place_in_org` (Join) also inserts `project_members (project_id, user_id, role, added_by)` when the invite has a project, as `accept_invite` does, and announces the join.
+- **Until then:** sign-up from an invite joins the workspace (every project open to the workspace works); the invite page shows "You’re already in …" with "Open {project}" for a project invite.

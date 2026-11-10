@@ -204,7 +204,7 @@ app's heading) go in that file's scoped `<style>` with a comment.
 
 - **Where**: `src/lib/ds/<section>/` (`actions`, `inputs`, `navigation`, `identity`, `status`,
   `conversation`, `lists`, `overlays`, `shells`, `chrome`, `agents`, `foundations`, `chat`,
-  `build`, `mobile`). Each file starts with a comment naming the pen frame it implements
+  `build`, `mobile`, `auth`). Each file starts with a comment naming the pen frame it implements
   (`// Design System / Nomi → Overlays / Menu: …`) and anything it does differently on purpose.
 - **Presentational only**: no `$app/*`, no API types, no fetching. Links, active state, data and
   actions come in as props and callbacks; pages and flows adapt API data to those props.
@@ -336,6 +336,12 @@ hard. Add to this list instead of deviating silently.
   max width, not its longest line).
 - Copied although it may be a slip: the standard menu keeps its items 220 wide inside the 236
   panel, as drawn.
+- Sign-in screens' crew feed (Auth / Sign in or create, Enter code, First run): each bubble wears
+  its own member's mascot. The pen's Kala bubble wears Rena's and its Dana bubble Maya's.
+- First run on a desktop (jPO7K) is drawn from the Enter code frame with its copy left in ("We sent
+  a 6-digit code…" under the title, a "Name Field" label with a mail icon): the page uses the
+  design system's FirstRun (Build → First run) in the sign-in layout's form column instead,
+  without the greeting above it (FirstRun has its own mascot).
 
 The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switcher `t24cE`)
 leaves out what v2 or the backend can't do yet, rather than draw it dead:
