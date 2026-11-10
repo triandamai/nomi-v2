@@ -300,6 +300,13 @@ inline runs (code tokens, inline prose), mis-sizes negative gaps and a few fill 
   messages, tokens, the class lint.
 - `e2e/*.e2e.ts` (Playwright): the production server on 4175 against the stub backend in
   `e2e/stub-api.mjs`, including the pen-parity guard.
+- `e2e/backend/*.e2e.ts` (`npm run test:e2e:backend`, `playwright.backend.config.ts`): the flows
+  against the **real backend** on 8080 (its fake model, `LLM_PROVIDER=fake`), Postgres, EMQX and
+  Mailpit, with the production server on 4176. Every flow step and case the backend can reach is
+  tested here. Accounts are made as people make them: `createAccount()` registers and reads the
+  code from Mailpit (`e2e/backend/support`). Locally: the backend's docker compose, Mailpit
+  (`docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`) and an e2e database
+  (`nomi_e2e_v2`, or `E2E_DATABASE_URL`). CI runs it in its own job.
 - Gates, chained so a failure stops the chain (CI runs the same):
   `npm run check && npm run test:unit && npm run test:components && npm run build && npm run test:e2e`.
   Never report a gate as passing without having run it.
