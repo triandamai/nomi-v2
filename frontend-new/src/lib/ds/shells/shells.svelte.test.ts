@@ -23,6 +23,23 @@ describe('AppShell', () => {
 		expect(page.getByRole('button', { name: 'Open navigation' }).elements()).toHaveLength(0);
 	});
 
+	it('pads the top bar 24 across, as the app screens draw it', async () => {
+		await page.viewport(1512, 862);
+		await render(AppShellFixture);
+		const header = page.getByText('Morning, Mario.').element().closest('header')!;
+		expect([getComputedStyle(header).paddingLeft, getComputedStyle(header).paddingRight]).toEqual(['24px', '24px']);
+	});
+
+	it('runs the top bar over the panel where Home puts its crew column under it', async () => {
+		await page.viewport(1512, 862);
+		await render(AppShellFixture, { panelUnderTopbar: true });
+		const header = page.getByText('Morning, Mario.').element().closest('header')!.getBoundingClientRect();
+		const panel = page.getByText('Crew panel').element().parentElement!.getBoundingClientRect();
+		expect([header.left, header.width]).toEqual([248, 1264]);
+		expect([panel.left, panel.top, panel.width, panel.height]).toEqual([1192, 52, 320, 810]);
+		await expect.element(page.getByRole('main')).toHaveTextContent('Page content');
+	});
+
 	it('puts the sidebar in a drawer and the panel away on a phone', async () => {
 		await page.viewport(390, 844);
 		await render(AppShellFixture);

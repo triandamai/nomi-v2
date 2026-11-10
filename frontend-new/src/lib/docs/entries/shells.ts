@@ -11,6 +11,7 @@ export default [
 			'Pick the shell before designing the screen.',
 			'Keep the columns fixed and let the content fill.',
 			'Put the crew panel in panel; it shows only where there is room.',
+			'Call setPanelPlacement({ underTopbar: true }) (shells/panelPlacement.ts) where the pen runs the top bar across the panel (Home\'s crew column); leave it beside, full height, where the panel runs past the top bar (a chat\'s crew panel).',
 		],
 		donts: ['Change the column widths for one screen.'],
 		accessibility: [

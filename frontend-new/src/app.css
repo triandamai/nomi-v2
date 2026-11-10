@@ -85,6 +85,11 @@
 	--color-bezel: #1b1b1e;
 	/* A wash of black on a coloured bar (the follow bar's stop button), as the pen draws it. */
 	--color-shade: rgb(0 0 0 / 0.08);
+	/* A workspace's tile in the workspace switcher (Project / Workspace Switcher HF1zn): the pen
+	   draws them in these two fills with dark ink, the same in both themes. */
+	--color-tile-teal: #5cc9c9;
+	--color-tile-amber: #e8b04a;
+	--color-tile-ink: #06140c;
 
 	--font-*: initial;
 	--font-sans: var(--nm-sans);
@@ -167,6 +172,9 @@
 	/* Borders over shadows: one shadow, for things that truly float (menus, toasts, dialogs). */
 	--shadow-*: initial;
 	--shadow-float: 0 8px 24px var(--nm-shadow);
+	/* The larger panels that float off the sidebar, as the pen draws them: the account menu
+	   (LkJLt) and the workspace switcher (HF1zn), 0 12 32. */
+	--shadow-float-lg: 0 12px 32px var(--nm-shadow);
 	/* Not elevation: the soft glow around a focused field, as the pen draws it. */
 	--shadow-focus: 0 0 8px var(--nm-focus);
 	--inset-shadow-*: initial;

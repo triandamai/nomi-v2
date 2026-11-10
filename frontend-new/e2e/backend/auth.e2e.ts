@@ -206,6 +206,8 @@ test.describe('forgot password', () => {
 		const account = await createAccount();
 		await page.goto('/sign-in');
 		await page.getByRole('link', { name: 'Forgot password?' }).click();
+		// The sign-in page has an Email field too: wait for the new page before typing.
+		await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
 		await page.getByLabel('Email').fill(account.email);
 		await page.getByRole('button', { name: 'Send reset link' }).click();
 		await expect(page.getByText(`If there’s an account for ${account.email}, a link to choose a new password is on its way.`, { exact: false })).toBeVisible();
@@ -217,10 +219,13 @@ test.describe('forgot password', () => {
 		await page.getByLabel('Confirm new password').fill('brand-new-hors');
 		await page.getByRole('button', { name: 'Save new password' }).click();
 		await expect(page.getByText('The two passwords don’t match.')).toBeVisible();
+		// Until the page has refreshed after that answer, the button stays busy.
+		await expect(page.getByRole('button', { name: 'Save new password' })).toBeEnabled();
 		await page.getByLabel('New password', { exact: true }).fill('short');
 		await page.getByLabel('Confirm new password').fill('short');
 		await page.getByRole('button', { name: 'Save new password' }).click();
 		await expect(page.getByText('Use at least 8 characters.')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Save new password' })).toBeEnabled();
 		await page.getByLabel('New password', { exact: true }).fill('brand-new-horse');
 		await page.getByLabel('Confirm new password').fill('brand-new-horse');
 		await page.getByRole('button', { name: 'Save new password' }).click();

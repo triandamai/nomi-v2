@@ -343,6 +343,25 @@ hard. Add to this list instead of deviating silently.
   design system's FirstRun (Build → First run) in the sign-in layout's form column instead,
   without the greeting above it (FirstRun has its own mascot).
 
+The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switcher `t24cE`)
+leaves out what v2 or the backend can't do yet, rather than draw it dead:
+
+- The sidebar's LIFE › Money group: Money isn't part of v2 yet.
+- The top bar's search ("Search chats, memory, files ⌘K"): the backend has no search to call
+  (BACKEND_TODO.md). ⌘K stays New chat's, as the sidebar shows.
+- The sidebar's collapse button: the shell has no collapsed layout yet.
+- The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
+  (there are no release notes to be new); What's new shows the version, as drawn.
+- The workspace switcher's invited workspace with "Join" (the API doesn't list a person's pending
+  invites) and its PERSONAL tag (the API doesn't say which workspace is personal; web sign-ups
+  make a named one): both in BACKEND_TODO.md. The tiles take the pen's plain, teal and amber in
+  turn, since workspaces have no colour of their own.
+- The switcher's note says "Projects and their chats" are shared; the pen adds "shared crew
+  templates", which Nomi doesn't have. Choosing a workspace there picks where projects come from,
+  and nothing else (the active workspace can't be switched: BACKEND_TODO.md).
+- The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
+  doesn't draw, shows her initial in place of a mascot.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

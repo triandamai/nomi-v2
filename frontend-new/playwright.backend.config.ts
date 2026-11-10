@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
-import { BACKEND_URL, MAILPIT_URL, backendEnv } from './e2e/backend/support/env';
+import { APP_PORT, APP_URL, BACKEND_URL, MAILPIT_URL, backendEnv } from './e2e/backend/support/env';
 
 // The flows end to end against the real backend (backend/, with its fake model so replies are
 // known) and its real dependencies: Postgres, the EMQX broker, and Mailpit catching the emails
-// that carry sign-in codes. The production server (server.js) runs on 4176.
+// that carry sign-in codes. The production server (server.js) runs on 4176 (E2E_APP_PORT).
 //
 // Locally: the backend's docker compose (Postgres + EMQX), Mailpit
 // (`docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`), an e2e database
@@ -15,7 +15,10 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	reporter: process.env.CI ? 'github' : 'list',
 	timeout: 60_000,
-	use: { baseURL: 'http://localhost:4176', trace: 'retain-on-failure' },
+	// A real backend under a parallel run (it emails a code on every password sign-in) can take
+	// longer than Playwright's 5 s to move a page on.
+	expect: { timeout: 15_000 },
+	use: { baseURL: APP_URL, trace: 'retain-on-failure' },
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--font-render-hinting=none'] } } }],
 	webServer: [
 		{
@@ -29,10 +32,11 @@ export default defineConfig({
 		},
 		{
 			command: `node -e "fetch('${MAILPIT_URL}/api/v1/info').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && npm run build && node server.js`,
-			url: 'http://localhost:4176',
+			// /health: `/` sends a signed-out visitor to sign in.
+			url: `${APP_URL}/health`,
 			reuseExistingServer: !process.env.CI,
 			timeout: 240_000,
-			env: { PORT: '4176', HOST: '127.0.0.1', API_URL: BACKEND_URL, ORIGIN: 'http://localhost:4176' },
+			env: { PORT: APP_PORT, HOST: '127.0.0.1', API_URL: BACKEND_URL, ORIGIN: APP_URL },
 		},
 	],
 });
