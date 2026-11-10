@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 
 	// Auth / Enter code → Code: six boxes sharing the 380 row 8 apart, three and three with an 8 × 2
@@ -32,9 +32,13 @@
 	let boxes = $state(split(initial().replace(/\D/g, '')));
 	const inputs: HTMLInputElement[] = [];
 
-	// Set from outside (cleared after a wrong code): the boxes follow.
+	// Set from outside (cleared after a wrong code): the boxes follow, and an emptied code is typed
+	// again from the first box.
 	$effect(() => {
-		if (value !== boxes.join('')) boxes = split(value.replace(/\D/g, ''));
+		if (value === boxes.join('')) return;
+		const typing = inputs.some((input) => input === document.activeElement);
+		commit(split(value.replace(/\D/g, '')));
+		if (!value && typing) focusAt(0);
 	});
 
 	function commit(next: string[]) {
@@ -56,7 +60,8 @@
 		for (let offset = 0; offset < incoming.length; offset++) next[from + offset] = incoming[offset];
 		commit(next);
 		focusAt(from + incoming.length);
-		if (next.every((digit) => digit !== '')) oncomplete?.(next.join(''));
+		// Once the hidden input holds all six, so a form submitted from oncomplete sends them all.
+		if (next.every((digit) => digit !== '')) void tick().then(() => oncomplete?.(next.join('')));
 	}
 
 	function oninput(index: number, event: Event & { currentTarget: HTMLInputElement }) {

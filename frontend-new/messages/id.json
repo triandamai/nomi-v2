@@ -485,5 +485,8 @@
 	"invite_load_failed": "Gagal memuat undangan ini. Coba lagi sebentar lagi.",
 	"role_owner": "pemilik",
 	"role_admin": "admin",
-	"role_member": "anggota"
+	"role_member": "anggota",
+	"firstrun_name_required": "Masukkan nama yang ingin kamu pakai.",
+	"verify_sub_short": "Kami mengirim kode 6 digit ke {email}.",
+	"verify_incomplete": "Masukkan keenam digit kodenya."
 }

@@ -485,5 +485,8 @@
 	"invite_load_failed": "Couldn’t load this invite. Try again in a minute.",
 	"role_owner": "owner",
 	"role_admin": "admin",
-	"role_member": "member"
+	"role_member": "member",
+	"firstrun_name_required": "Enter the name you’d like to go by.",
+	"verify_sub_short": "We sent a 6-digit code to {email}.",
+	"verify_incomplete": "Enter all six digits of the code."
 }

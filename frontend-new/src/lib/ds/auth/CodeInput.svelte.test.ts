@@ -38,6 +38,14 @@ describe('CodeInput', () => {
 		expect(oncomplete).toHaveBeenCalledWith('481597');
 	});
 
+	it('hands the code over only once the form would submit all six digits', async () => {
+		let inForm = '';
+		await render(CodeInput, { name: 'code', oncomplete: () => (inForm = submitted()) });
+		await userEvent.click(digit(1));
+		await userEvent.keyboard('123456');
+		await expect.poll(() => inForm).toBe('123456');
+	});
+
 	it('fills every box from a pasted code, whatever its spacing', async () => {
 		const oncomplete = vi.fn();
 		await render(CodeInput, { name: 'code', oncomplete });
@@ -81,6 +89,16 @@ describe('CodeInput', () => {
 		expect(getComputedStyle(digit(5).element()).borderTopColor).toBe(tokenColor('nm-border'));
 		const caret = digit(4).element().parentElement!.querySelector('[data-part="caret"]')!;
 		expect(caret.getBoundingClientRect()).toMatchObject({ width: 2, height: 24 });
+	});
+
+	it('empties and goes back to the first box when the page clears a wrong code', async () => {
+		const { rerender } = await render(CodeInput, { name: 'code', value: '' });
+		await userEvent.click(digit(1));
+		await userEvent.keyboard('123456');
+		await expect.element(digit(6)).toHaveFocus();
+		await rerender({ name: 'code', value: '' });
+		for (const input of digits().elements()) expect((input as HTMLInputElement).value).toBe('');
+		await expect.element(digit(1)).toHaveFocus();
 	});
 
 	it('marks every box when the code was wrong', async () => {
