@@ -10,6 +10,9 @@ const vitest = fileURLToPath(new URL('../node_modules/vitest/dist/index.js', imp
 export default defineConfig({
 	root: frontend,
 	resolve: { alias: { vitest } },
+	// The old app's tsconfig extends one `svelte-kit sync` writes, which isn't there without its
+	// install; a test that only reads files needs none of it.
+	oxc: { tsconfig: false },
 	server: { fs: { allow: [frontend, fileURLToPath(new URL('..', import.meta.url))] } },
 	test: { include: ['src/lib/dsParity.test.ts'], environment: 'node' },
 });
