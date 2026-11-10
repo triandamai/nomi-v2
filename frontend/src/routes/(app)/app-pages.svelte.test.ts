@@ -106,8 +106,23 @@ describe('account', () => {
 	it('shows email, sign-in methods, and devices', async () => {
 		const root = page(Account, {
 			profile: { email: 'ana@example.com' },
-			methods: { password: true, google: false },
-			devices: [{ id: 'd1', label: 'MacBook', last_seen: '2026-11-01', current: true }],
+			methods: { password: true, google: false, configured: true, google_email: null },
+			devices: [
+				{
+					id: 'd1',
+					platform: 'web',
+					name: 'MacBook',
+					brand: 'Apple',
+					model: 'MacBook Pro',
+					os_name: 'macOS',
+					os_version: '15.0',
+					app_version: '1.0.0',
+					presence: 'online',
+					last_seen_at: '2026-11-01T00:00:00Z',
+					created_at: '2026-01-01T00:00:00Z',
+					current: true,
+				},
+			],
 		});
 		expect(text(root)).toContain('ana@example.com');
 		await tryAll(root);
