@@ -51,12 +51,30 @@ export function isBackendEvent(data: string): boolean {
 /** What the backend sends when the project's issue board changed (see project_issues.rs). */
 export const ISSUES_CHANGED = 'issues.changed';
 
+/** What the backend sends when the project's publish request queue changed (see publish_requests.rs). */
+export const REQUESTS_CHANGED = 'publish_request.changed';
+
 export function isDeployEvent(data: string): boolean {
 	try {
 		const parsed = JSON.parse(data) as { kind?: unknown; event?: unknown };
-		return parsed.kind !== 'PresenceChanged' && parsed.kind !== 'Typing' && parsed.event !== ISSUES_CHANGED;
+		return (
+			(parsed.kind === 'DeployChanged' || parsed.kind === undefined) &&
+			parsed.event !== ISSUES_CHANGED &&
+			parsed.event !== BACKEND_CHANGED &&
+			parsed.event !== REQUESTS_CHANGED
+		);
 	} catch {
 		return true;
+	}
+}
+
+/** Whether a project event should refresh the project activity feed (ignoring cursor and typing noise). */
+export function isActivityEvent(data: string): boolean {
+	try {
+		const parsed = JSON.parse(data) as { kind?: unknown };
+		return parsed.kind !== 'Cursor' && parsed.kind !== 'Typing' && parsed.kind !== 'SandboxChanged';
+	} catch {
+		return false;
 	}
 }
 

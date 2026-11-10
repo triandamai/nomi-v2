@@ -11,6 +11,9 @@ import Preferences from './(app)/preferences/+page.svelte';
 import Chat from './(app)/chat/[sessionId]/+page.svelte';
 import Notifications from './(app)/notifications/+page.svelte';
 import Hevy from './(app)/connections/hevy/+page.svelte';
+import Showcase from './showcase/+page.svelte';
+import Login from './login/+page.svelte';
+import Register from './register/+page.svelte';
 
 const page = (component: unknown, data: Record<string, unknown>, form: unknown = null) =>
 	render(component as never, { data: data as never, form: form as never, params: { sessionId: 's1', username: 'ana' } as never });
@@ -114,5 +117,23 @@ describe('app pages', () => {
 		expect(text(connected)).toContain('ana_lifts');
 		await tryAll(connected);
 		expect(page(Hevy, { loaded: false, connection: null, resume: null, keyRejected: false }).textContent).toBeTruthy();
+	});
+
+	it('showcase displays showcase apps', async () => {
+		const apps = [{ id: 'a1', name: 'Bakery', description: 'Orders', url: 'https://bakery.test', author: 'Ana', remixes: 3, thumbnail_url: null, stack: 'sveltekit' }];
+		const root = page(Showcase, { apps, signedIn: true });
+		expect(text(root)).toContain('Bakery');
+		await tryAll(root);
+		expect(page(Showcase, { apps: [], signedIn: false }).textContent).toBeTruthy();
+	});
+
+	it('login and register auth pages render correctly', async () => {
+		const loginRoot = page(Login, { google: true, googleError: null, passwordChanged: false }, { error: 'Invalid' });
+		expect(text(loginRoot)).toBeTruthy();
+		await tryAll(loginRoot);
+
+		const registerRoot = page(Register, { google: true, googleError: null }, { error: 'Failed', field: 'email' });
+		expect(text(registerRoot)).toBeTruthy();
+		await tryAll(registerRoot);
 	});
 });

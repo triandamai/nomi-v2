@@ -8,12 +8,12 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import StatusSquare from '$lib/components/project/StatusSquare.svelte';
 	import { environmentName, phaseTitle } from '$lib/components/project/deployLabels';
+	import { isActivityEvent } from '$lib/presenceView';
 	import { ago, projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import type { ProjectPresence } from '$lib/projectPresence.svelte';
 
 	const PAGE_SIZE = 50;
-	const REFRESH_MS = 15_000;
 
 	interface ActivityItem {
 		kind: string;
@@ -66,13 +66,12 @@
 	}
 
 	$effect(() => {
+		void projectId;
 		void refresh();
-		const timer = setInterval(() => !document.hidden && void refresh(), REFRESH_MS);
 		const unlisten = deploy?.onEvent((data) => {
-			if (!data.includes('"Typing"')) void refresh();
+			if (isActivityEvent(data)) void refresh();
 		});
 		return () => {
-			clearInterval(timer);
 			unlisten?.();
 		};
 	});

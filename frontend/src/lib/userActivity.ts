@@ -61,7 +61,15 @@ export interface NotificationCreated {
 	link: string | null;
 }
 
-type UserEvent = ChatActivity | ChatUpdated | ChatDeleted | NotificationCreated | DevicePresence | DeviceSignedOut;
+/** Maintenance mode was switched on or off by an admin (backend: routes::maintenance). */
+export interface MaintenanceChanged {
+	kind: 'MaintenanceChanged';
+	enabled: boolean;
+	message?: string;
+	until?: string | null;
+}
+
+type UserEvent = ChatActivity | ChatUpdated | ChatDeleted | NotificationCreated | DevicePresence | DeviceSignedOut | MaintenanceChanged;
 
 const chatsChanged = new Set<(sessionId: string) => void>();
 
@@ -106,6 +114,10 @@ function outcomeOf(event: ChatActivity): ChatOutcome {
 
 /** What to do with one event from the feed; `deviceId` is this browser's. */
 export function handleActivity(event: UserEvent, deviceId: string | null = null) {
+	if (event.kind === 'MaintenanceChanged') {
+		if (event.enabled && location.pathname !== '/maintenance') location.assign('/maintenance');
+		return;
+	}
 	if (event.kind === 'DevicePresence') {
 		for (const listener of devicesChanged) listener(event);
 		return;

@@ -68,6 +68,8 @@ pub enum StreamEnvelope {
     /// An `agent_sessions` row was closed. `reason` is one of "completed" | "cancelled" |
     /// "expired", matching `agent_sessions.status`'s possible non-active values exactly.
     AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
+    /// The chat's turn queue changed (an ask started running or was moved to the front).
+    QueueChanged,
 }
 
 /// Events on `user/{id}/stream`: what a person's apps hear about that isn't tied to a chat they
