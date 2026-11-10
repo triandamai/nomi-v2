@@ -151,6 +151,14 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('domain/other')).toBe(false);
 		});
 
+		it('allows the sandbox runtime routes and nothing else under sandbox', () => {
+			for (const path of ['sandbox', 'sandbox/start', 'sandbox/stop', 'sandbox/logs']) {
+				expect(ALLOWED_PROJECT_API_PATHS.test(path)).toBe(true);
+			}
+			expect(ALLOWED_PROJECT_API_PATHS.test('sandbox/other')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('sandbox/../deploy')).toBe(false);
+		});
+
 		it('still allows all standard project endpoints', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('')).toBe(true);
 			expect(ALLOWED_PROJECT_API_PATHS.test('runtime')).toBe(true);

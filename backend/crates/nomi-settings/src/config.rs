@@ -446,6 +446,66 @@ pub async fn current(def: &'static SectionDef) -> Section {
     section
 }
 
+/// The project runs in the user's browser (WebContainer).
+pub const RUNTIME_BROWSER: &str = "browser";
+/// The project runs in a server-side sandbox.
+pub const RUNTIME_SANDBOX: &str = "sandbox";
+
+/// The percentage that means everyone.
+const PERCENT_MAX: u8 = 100;
+/// The share of users a percentage rollout is spread over.
+const PERCENT_BUCKETS: u32 = 100;
+
+/// Who gets the sandbox runtime instead of WebContainer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Rollout {
+    Off,
+    Allowlist(Vec<Uuid>),
+    Percent(u8),
+    All,
+}
+
+impl Rollout {
+    /// Parses `rollout` from the `sandbox` section (`All` when left at the default while the
+    /// sandbox switch is on).
+    pub fn from_section(section: &Section) -> Self {
+        match section.get("rollout").as_deref() {
+            Some("all") | None => Rollout::All,
+            Some("allowlist") => Rollout::Allowlist(
+                section.get("rollout_allowlist").unwrap_or_default().split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+            ),
+            Some("percent") => Rollout::Percent(section.number("rollout_percent").map_or(0, |p| p.min(u64::from(PERCENT_MAX)) as u8)),
+            _ => Rollout::Off,
+        }
+    }
+
+    /// Whether `user_id` is in. A percentage uses the first bytes of the id, so a user stays in
+    /// (or out) as the percentage is raised or lowered.
+    pub fn includes(&self, user_id: Uuid) -> bool {
+        match self {
+            Rollout::Off => false,
+            Rollout::All => true,
+            Rollout::Allowlist(ids) => ids.contains(&user_id),
+            Rollout::Percent(percent) => {
+                let bytes = user_id.as_bytes();
+                let bucket = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % PERCENT_BUCKETS;
+                bucket < u32::from(*percent)
+            }
+        }
+    }
+}
+
+/// Where a new project for `user_id` runs (`"sandbox"` when the sandbox switch is on, a key is
+/// configured, and the rollout includes them; `"browser"` otherwise).
+pub async fn new_project_runtime(user_id: Uuid) -> &'static str {
+    let section = current(&SANDBOX).await;
+    if section.get("enabled").as_deref() == Some("on") && section.get("api_key").is_some() && Rollout::from_section(&section).includes(user_id) {
+        RUNTIME_SANDBOX
+    } else {
+        RUNTIME_BROWSER
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,5 +539,18 @@ mod tests {
         for bad in ["nomi", "https://nomi.app", "nomi.app/x", "-nomi.app", "nomi..app", "*.nomi.app", "10.0.0.1", "no mi.app"] {
             assert!(check(field, bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn sandbox_rollout_defaults_to_all_when_unset_and_respects_explicit_off() {
+        let unset = Saved { def: &SANDBOX, values: BTreeMap::new() }.with_env(|_| None);
+        assert_eq!(Rollout::from_section(&unset), Rollout::All);
+
+        let off = Saved {
+            def: &SANDBOX,
+            values: BTreeMap::from([("rollout", "off".to_string())]),
+        }
+        .with_env(|_| None);
+        assert_eq!(Rollout::from_section(&off), Rollout::Off);
     }
 }
