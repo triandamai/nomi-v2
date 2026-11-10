@@ -48,3 +48,18 @@ test('renews an expired sign-in to keep live updates going', async ({ page, cont
 	await page.goto('/');
 	expect(await openActivityFeed(page)).toEqual({ opened: true, message: '{"kind":"Hello"}' });
 });
+
+test('gives each browser a device id on its first visit, kept from then on', async ({ page, context }) => {
+	await page.goto('/');
+	const [device] = (await context.cookies()).filter((cookie) => cookie.name === 'device_id');
+	expect(device?.value).toMatch(/^[0-9a-f-]{36}$/);
+	expect(device?.httpOnly).toBe(true);
+	await page.goto('/');
+	expect((await context.cookies()).find((cookie) => cookie.name === 'device_id')?.value).toBe(device.value);
+});
+
+test('sends the old addresses the backend links to on to their v2 pages', async ({ request }) => {
+	const response = await request.get('/login?redirect_to=%2Fchat', { maxRedirects: 0 });
+	expect(response.status()).toBe(307);
+	expect(response.headers().location).toBe('/sign-in?redirect_to=%2Fchat');
+});
