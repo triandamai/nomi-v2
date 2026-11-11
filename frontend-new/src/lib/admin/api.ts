@@ -2,6 +2,9 @@
 // admin_*.rs, plans.rs, notifications.rs, maintenance.rs, llm_models.rs, provider_connections.rs,
 // settings.rs, tools.rs, dynamic_agents.rs, support.rs, deploy.rs). Dates are RFC 3339 strings.
 
+/** What went wrong with a call: the status, the backend's own words, its code when it gave one. */
+export type Problem = { status: number; message: string; code?: string; models?: string[] };
+
 // Overview, usage and live agents (admin_dashboard.rs, admin_usage.rs) ------------------------------
 
 export type Dashboard = {

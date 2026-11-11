@@ -1,13 +1,13 @@
 import { error, fail, isRedirect } from '@sveltejs/kit';
 import { apiFetch, type ApiEvent } from './api';
 import { readApiError } from './apiError';
+import type { Problem } from '$lib/admin/api';
+
+export type { Problem };
 
 // The admin console's calls to the backend's /api/admin/*: every load and action goes through
 // apiFetch (the person's own sign-in) and reads a refusal with readApiError, keeping the backend's
 // own reason to show. A sign-in that can't be renewed still goes to sign in (apiFetch's redirect).
-
-/** What went wrong: the status, the backend's own words, its code when it gave one. */
-export type Problem = { status: number; message: string; code?: string; models?: string[] };
 
 export type Loaded<T> = { ok: true; data: T } | { ok: false; problem: Problem };
 

@@ -14,6 +14,9 @@ export type Area = (typeof AREAS)[number];
 
 export type Access = Partial<Record<Area, Level>>;
 
+/** The error message of the console's own "no admin access" page (a 403 from the gate). */
+export const NO_ADMIN_ACCESS = 'no_admin_access';
+
 const PERMISSION = /^nomi:admin:([a-z0-9_]+):\[(.*)\]$/;
 
 export const rank = (level: string | null | undefined): number => (level ? LEVELS.indexOf(level as Level) : -1);
