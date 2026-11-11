@@ -16,6 +16,9 @@ use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
 
+/// The provider-side auto-stop used in these tests, in seconds.
+const AUTO_STOP_SECS: u64 = 6 * 60 * 60;
+
 const PROVIDER: &str = "boat";
 /// Start limits that never get in the way.
 const GENEROUS_LIMIT: u32 = 1000;
@@ -40,6 +43,7 @@ fn config(mode: ReaperMode) -> SandboxConfig {
         api_key: String::new(),
         size: Size::Small,
         idle_stop_secs: IDLE_STOP_SECS,
+        auto_stop_secs: AUTO_STOP_SECS,
         rollout: Rollout::All,
         starts_per_minute: GENEROUS_LIMIT,
         starts_per_hour: GENEROUS_LIMIT,
