@@ -84,8 +84,8 @@ describe('sandbox runtime', () => {
 	});
 
 	it('maps_backend_phases_to_runtime_phases', () => {
-		expect(toRuntimePhase('idle', null)).toBe('waiting');
-		expect(toRuntimePhase('stopped', null)).toBe('waiting');
+		expect(toRuntimePhase('idle', null)).toBe('waking');
+		expect(toRuntimePhase('stopped', null)).toBe('stopped');
 		expect(toRuntimePhase('waking', null)).toBe('waking');
 		expect(toRuntimePhase('running', SECRET)).toBe('running');
 		expect(toRuntimePhase('running', null)).toBe('starting');
@@ -100,14 +100,15 @@ describe('sandbox runtime', () => {
 		runtime.listen((l) => ((emit = l), () => {}));
 		await runtime.start();
 		expect(requests.some((r) => r.path === 'sandbox/start' && r.method === 'POST')).toBe(true);
-		expect(runtime.phase).toBe('waiting');
+		expect(runtime.phase).toBe('waking');
 		status = { ...status, phase: 'running', preview_url: SECRET };
 		emit('{"kind":"SandboxChanged","phase":"running"}');
 		await vi.advanceTimersByTimeAsync(0);
 		expect(runtime.phase).toBe('running');
 		expect(runtime.previewUrl).toBe(SECRET);
 		status = { ...status, phase: 'error', error: 'boom' };
-		await vi.advanceTimersByTimeAsync(5000);
+		emit('{"kind":"SandboxChanged","phase":"error"}');
+		await vi.advanceTimersByTimeAsync(0);
 		expect(runtime.phase).toBe('failed');
 		expect(runtime.error).toBe('boom');
 		await runtime.stop();
@@ -118,8 +119,6 @@ describe('sandbox runtime', () => {
 		await runtime.start();
 		const first = beats();
 		expect(first).toBeGreaterThanOrEqual(1);
-		await vi.advanceTimersByTimeAsync(60_000);
-		expect(beats()).toBeGreaterThan(first);
 		await runtime.stop();
 		const after = requests.length;
 		await vi.advanceTimersByTimeAsync(120_000);
@@ -139,9 +138,12 @@ describe('sandbox runtime', () => {
 		status.phase = 'error';
 		status.error = null;
 		const runtime = new SandboxRuntime('p1');
+		let emit: (raw: string) => void = () => {};
+		runtime.listen((l) => ((emit = l), () => {}));
 		await runtime.start();
 		status = { ...status, phase: 'running', error: null };
-		await vi.advanceTimersByTimeAsync(5000);
+		emit('{"kind":"SandboxChanged","phase":"running"}');
+		await vi.advanceTimersByTimeAsync(0);
 		expect(runtime.previewUrl).toBe(SECRET);
 		expect(runtime.log).not.toContain('s3cr3t');
 		expect(runtime.error ?? '').not.toContain('s3cr3t');
@@ -167,8 +169,11 @@ describe('sandbox runtime', () => {
 			}),
 		);
 		const runtime = new SandboxRuntime('p1');
+		let emit: (raw: string) => void = () => {};
+		runtime.listen((l) => ((emit = l), () => {}));
 		await runtime.start();
-		await vi.advanceTimersByTimeAsync(5000);
+		emit('{"kind":"SandboxChanged","phase":"running"}');
+		await vi.advanceTimersByTimeAsync(0);
 		expect(runtime.log).toContain('one');
 		expect(runtime.log).toContain('two');
 		expect(requests.map((r) => r.path)).toContain('sandbox/logs?offset=4');

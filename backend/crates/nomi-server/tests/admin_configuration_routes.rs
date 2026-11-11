@@ -247,7 +247,7 @@ async fn admin_can_toggle_enabled_and_the_next_read_sees_it(pool: PgPool) {
     assert_eq!(config.size, nomi_sandbox::Size::Small);
     assert_eq!(config.idle_stop_secs, 600);
     assert_eq!((config.starts_per_minute, config.starts_per_hour), (10, 50));
-    assert_eq!(config.rollout, nomi_server::configuration::Rollout::Off);
+    assert_eq!(config.rollout, nomi_server::configuration::Rollout::All);
 
     let off = json!({ "values": { "enabled": "off" } });
     assert_eq!(request(router.clone(), "PUT", "/api/admin/configuration/sandbox", &token, Some(off)).await.0, StatusCode::OK);

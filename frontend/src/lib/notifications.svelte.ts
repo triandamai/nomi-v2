@@ -1,7 +1,5 @@
-// The unread count on the bell (sidebar and mobile header). The app layout seeds it; it then
-// refreshes every minute while the tab is visible, and right after the inbox marks things read.
-
-const POLL_MS = 60_000;
+// The unread count on the bell (sidebar and mobile header). The app layout seeds it; new items
+// arrive live over /activity/ws, and the inbox refreshes it right after marking things read.
 
 export interface LatestNotification {
 	id: string;
@@ -44,16 +42,11 @@ export function notificationArrived(notification: LatestNotification): void {
 	inbox.arrived = notification;
 }
 
-/** Starts polling; returns the function that stops it. */
+/** Syncs unread count when a hidden tab becomes visible again; live notifications arrive over MQTT. */
 export function pollUnread(): () => void {
-	void refreshUnread();
-	const timer = setInterval(() => {
-		if (document.visibilityState === 'visible') void refreshUnread();
-	}, POLL_MS);
 	const onVisible = () => document.visibilityState === 'visible' && void refreshUnread();
 	document.addEventListener('visibilitychange', onVisible);
 	return () => {
-		clearInterval(timer);
 		document.removeEventListener('visibilitychange', onVisible);
 	};
 }

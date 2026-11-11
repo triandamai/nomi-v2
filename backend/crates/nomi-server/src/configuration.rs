@@ -39,36 +39,8 @@ const DEFAULT_STARTS_PER_MINUTE: u32 = 10;
 const DEFAULT_STARTS_PER_HOUR: u32 = 50;
 /// Sandbox minutes a user may use per month.
 const DEFAULT_MONTHLY_MINUTES_PER_USER: u32 = 600;
-/// The percentage that means everyone.
-const PERCENT_MAX: u8 = 100;
-/// The share of users a percentage rollout is spread over.
-const PERCENT_BUCKETS: u32 = 100;
 
-/// Who gets the sandbox runtime instead of WebContainer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Rollout {
-    Off,
-    Allowlist(Vec<uuid::Uuid>),
-    Percent(u8),
-    All,
-}
-
-impl Rollout {
-    /// Whether `user_id` is in. A percentage uses the first bytes of the id, so a user stays in
-    /// (or out) as the percentage is raised or lowered.
-    pub fn includes(&self, user_id: uuid::Uuid) -> bool {
-        match self {
-            Rollout::Off => false,
-            Rollout::All => true,
-            Rollout::Allowlist(ids) => ids.contains(&user_id),
-            Rollout::Percent(percent) => {
-                let bytes = user_id.as_bytes();
-                let bucket = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % PERCENT_BUCKETS;
-                bucket < u32::from(*percent)
-            }
-        }
-    }
-}
+pub use config::Rollout;
 
 /// What the orphan sweep does with a provider sandbox no project owns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -124,14 +96,7 @@ fn parse_sandbox(section: &config::Section) -> Option<SandboxConfig> {
         Some("large") => nomi_sandbox::Size::Large,
         _ => nomi_sandbox::Size::Small,
     };
-    let rollout = match section.get("rollout").as_deref() {
-        Some("all") => Rollout::All,
-        Some("allowlist") => Rollout::Allowlist(
-            section.get("rollout_allowlist").unwrap_or_default().split(',').filter_map(|id| id.trim().parse().ok()).collect(),
-        ),
-        Some("percent") => Rollout::Percent(section.number("rollout_percent").map_or(0, |p| p.min(u64::from(PERCENT_MAX)) as u8)),
-        _ => Rollout::Off,
-    };
+    let rollout = Rollout::from_section(section);
     let count = |field: &str, default: u32| section.number(field).map_or(default, |n| u32::try_from(n).unwrap_or(u32::MAX));
     Some(SandboxConfig {
         api_base: section.get("api_base").unwrap_or_else(|| DEFAULT_API_BASE.to_string()),

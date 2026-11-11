@@ -1,14 +1,11 @@
-// Who else has the project open and who's typing in its chat. While the project page is open it
-// sends a heartbeat (the server counts someone as here until their last one is 45 s old), asks
-// who's here when someone arrives or leaves, and keeps typing names up for a few seconds after
-// each ping. Everything comes over the project's live topic, through the page's ProjectDeploy.
+// Who else has the project open and who's typing in its chat. While the project page is open its
+// live socket (`/projects/{id}/ws`, owned by ProjectDeploy) keeps the person counted as here,
+// carries their whereabouts, cursor and typing pings, and hears when someone arrives or leaves.
 
 import { expireTyping, shouldSend, typingNames, withPing, type TypingMap } from '$lib/presenceView';
 import { projectApi } from '$lib/projectApi';
 import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 
-/** Comfortably inside the server's 45 s expiry, so a short network hiccup doesn't drop anyone. */
-const HEARTBEAT_MS = 20_000;
 /** A typing name stays up this long after its last ping. */
 const TYPING_TTL_MS = 6_000;
 /** The person's own pings go out at most this often while they type. */
@@ -50,10 +47,11 @@ export class ProjectPresence {
 	me = $state<string | null>(null);
 	#typing = $state<TypingMap>({});
 	readonly projectId: string;
+	#deploy: ProjectDeploy | null = null;
+	#refreshing: Promise<void> | null = null;
 	#timers: ReturnType<typeof setInterval>[] = [];
 	#unlisten: (() => void) | null = null;
 	#lastPing: number | null = null;
-	#onPageHide = () => this.#leave();
 
 	constructor(projectId: string) {
 		this.projectId = projectId;
@@ -65,8 +63,11 @@ export class ProjectPresence {
 	}
 
 	start(deploy: ProjectDeploy) {
-		void this.#beat().then(() => this.refresh());
-		this.#timers.push(setInterval(() => void this.#beat(), HEARTBEAT_MS));
+		this.#deploy = deploy;
+		if (this.#where) {
+			deploy.send({ op: 'where', view: this.#where.view, path: this.#where.path ?? null });
+		}
+		void this.refresh();
 		this.#timers.push(
 			setInterval(() => {
 				const fresh = expireTyping(this.#typing, Date.now(), TYPING_TTL_MS);
@@ -74,33 +75,47 @@ export class ProjectPresence {
 			}, EXPIRY_CHECK_MS),
 		);
 		this.#unlisten = deploy.onEvent((data) => this.#handle(data));
-		window.addEventListener('pagehide', this.#onPageHide);
 	}
 
 	async refresh() {
-		try {
-			const presence = await projectApi<{ me: string; people: PresentPerson[] }>(this.projectId, 'presence');
-			this.me = presence.me;
-			this.people = presence.people;
-		} catch {
-			// Who's here is a nicety: the next arrival or heartbeat tries again.
-		}
+		if (this.#refreshing) return this.#refreshing;
+		this.#refreshing = (async () => {
+			try {
+				const presence = await projectApi<{ me: string; people: PresentPerson[] }>(this.projectId, 'presence');
+				this.me = presence.me;
+				this.people = presence.people;
+			} catch {
+				// Who's here is a nicety: the next arrival tries again.
+			} finally {
+				this.#refreshing = null;
+			}
+		})();
+		return this.#refreshing;
 	}
 
-	/** Where the person is now: told to the others straight away, then with every heartbeat. */
+	/** Where the person is now: told to the others straight away over the project socket. */
 	moveTo(where: Whereabouts) {
 		if (this.#where && this.#where.view === where.view && (this.#where.path ?? null) === (where.path ?? null)) return;
 		this.#where = where;
-		void this.#beat();
+		if (this.#deploy) {
+			this.#deploy.send({ op: 'where', view: where.view, path: where.path ?? null });
+		} else {
+			void projectApi(this.projectId, 'presence', { method: 'POST', body: where }).catch(() => null);
+		}
 	}
 
-	/** The person's pointer over a view, as fractions of it (sent a few times a second at most). */
+	/** The person's pointer over a view, as fractions of it (sent a few times a second at most when others are here). */
 	point(view: string, x: number, y: number) {
+		if (this.people.length === 0) return;
 		const now = Date.now();
 		if (now - this.#lastPointer < POINTER_MS) return;
 		this.#lastPointer = now;
 		const at = { view, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
-		void projectApi(this.projectId, 'cursor', { method: 'POST', body: at }).catch(() => null);
+		if (this.#deploy) {
+			this.#deploy.send({ op: 'cursor', ...at });
+		} else {
+			void projectApi(this.projectId, 'cursor', { method: 'POST', body: at }).catch(() => null);
+		}
 	}
 
 	/** Pointers still moving, in one view. */
@@ -115,7 +130,11 @@ export class ProjectPresence {
 		const now = Date.now();
 		if (!shouldSend(this.#lastPing, now, TYPING_PING_MS)) return;
 		this.#lastPing = now;
-		void projectApi(this.projectId, 'typing', { method: 'POST' }).catch(() => null);
+		if (this.#deploy) {
+			this.#deploy.send({ op: 'typing' });
+		} else {
+			void projectApi(this.projectId, 'typing', { method: 'POST' }).catch(() => null);
+		}
 	}
 
 	stop() {
@@ -123,17 +142,7 @@ export class ProjectPresence {
 		this.#timers = [];
 		this.#unlisten?.();
 		this.#unlisten = null;
-		window.removeEventListener('pagehide', this.#onPageHide);
-		this.#leave();
-	}
-
-	async #beat() {
-		await projectApi(this.projectId, 'presence', { method: 'POST', body: this.#where ?? undefined }).catch(() => null);
-	}
-
-	/** Says goodbye even while the page is unloading (keepalive); the expiry covers it when it can't. */
-	#leave() {
-		void fetch(`/projects/${this.projectId}/api/presence`, { method: 'DELETE', keepalive: true }).catch(() => null);
+		this.#deploy = null;
 	}
 
 	#handle(data: string) {
@@ -143,7 +152,7 @@ export class ProjectPresence {
 		} catch {
 			return;
 		}
-		if (event.kind === 'PresenceChanged') void this.refresh();
+		if (event.kind === 'PresenceChanged' && (!this.me || event.user_id !== this.me)) void this.refresh();
 		if (event.kind === 'Cursor' && event.user_id && event.user_id !== this.me && typeof event.x === 'number' && typeof event.y === 'number') {
 			this.pointers = { ...this.pointers, [event.user_id]: { name: event.name ?? '', x: event.x, y: event.y, view: event.view ?? 'preview', at: Date.now() } };
 		}

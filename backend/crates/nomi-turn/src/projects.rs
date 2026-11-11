@@ -66,10 +66,12 @@ pub async fn move_to_new_project(
     .bind(&name)
     .fetch_one(&mut *tx)
     .await?;
-    let project_id: Uuid = sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name) VALUES ($1, $2, $3) RETURNING id")
+    let runtime = nomi_settings::config::new_project_runtime(user_id).await;
+    let project_id: Uuid = sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name, runtime) VALUES ($1, $2, $3, $4) RETURNING id")
         .bind(user_id)
         .bind(project_session_id)
         .bind(&name)
+        .bind(runtime)
         .fetch_one(&mut *tx)
         .await?;
     sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content) VALUES ($1, $2, $3)")
