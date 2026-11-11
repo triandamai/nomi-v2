@@ -146,4 +146,13 @@ export default [
 		accessibility: ['A button with aria-haspopup="menu"; the initial and the chevron are hidden from screen readers.'],
 		related: ['navigation/NavGroupLabel.svelte', 'chrome/Sidebar.svelte', 'chrome/WorkspaceSwitcher.svelte'],
 	},
+	{
+		file: 'chrome/SettingsTopBar.svelte',
+		summary: 'The top bar of a settings page: where the person is ("Settings › Profile") and the page’s actions.',
+		use: ['Every page under Settings, in the app shell’s top bar.'],
+		avoid: ['The app’s other pages: use TopBar.'],
+		content: ['The page’s name as the settings nav says it.'],
+		accessibility: ['The page’s name is marked as the current page; the › is hidden from screen readers.'],
+		related: ['chrome/TopBar.svelte', 'chrome/SettingsNav.svelte'],
+	},
 ] satisfies ComponentDoc[];

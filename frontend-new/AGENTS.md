@@ -381,6 +381,23 @@ reminders, with the work agents will do later beside them.
   pages loaded so far reach, with "Show older" for the next page of notifications.
 - The quick reminder's hint ("↵ add") runs 9px into the field's right padding, as the pen's does.
 
+Settings (App / Settings / *) are built as their pages land; the settings nav lists only those
+that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
+
+- The heatmap shows days only: the pen's Daily / Weekly / Cumulative switch draws no Weekly or
+  Cumulative view. "Most active" names the busiest weekday without the hours (the backend counts
+  tokens by day: BACKEND_TODO.md).
+- The Insights panel ("Save ~18% on Nomi", "You work late") is left out: nothing works them out
+  (BACKEND_TODO.md). Models and crew share the row.
+- The top bar's Preview public profile and Copy link wait for a public profile page in v2.
+- The username's helper follows the backend's rules ("Letters, numbers, underscores and
+  periods"); the pen's "Lowercase, numbers and dashes" sits under Display name, where it spills
+  out of the field, and the backend refuses dashes.
+- Discard has no icon and Save no arrow: the pen's (a users icon on Discard, an arrow outside Save's
+  box) are pasted-in slips. Change photo shows an upload icon before its label.
+- A featured project's tile is its initial: the pen draws a screenshot of the app, which Nomi
+  doesn't keep. The grip opens Move up, Move down and Remove (there's no drag to reorder).
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps
