@@ -5,16 +5,14 @@
 
 	// Design System / Nomi → Search: a quiet 30px box (nm-border, not -strong) with its shortcut.
 	// `plain` is the settings nav's: 10px in, the shortcut as plain mono text instead of a key.
-	// `name` sends it with a form (a search the page reloads with, ?query=…).
-	type Props = { placeholder: string; value?: string; shortcut?: string; label?: string; plain?: boolean; name?: string; oninput?: (value: string) => void };
-	let { placeholder, value = $bindable(''), shortcut, label, plain = false, name, oninput }: Props = $props();
+	type Props = { placeholder: string; value?: string; shortcut?: string; label?: string; plain?: boolean; oninput?: (value: string) => void };
+	let { placeholder, value = $bindable(''), shortcut, label, plain = false, oninput }: Props = $props();
 </script>
 
 <label class={['flex h-7.5 w-full items-center gap-2 rounded-sm border border-border text-text-3 focus-within:border-accent focus-within:shadow-focus', plain ? 'px-2.25' : 'px-2.75']}>
 	<Icon icon={SearchIcon} size={14} />
 	<input
 		type="search"
-		{name}
 		{placeholder}
 		aria-label={label ?? placeholder}
 		bind:value

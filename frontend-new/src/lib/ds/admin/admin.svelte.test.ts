@@ -182,6 +182,8 @@ describe('FilterBar', () => {
 		const form = page.getByRole('search', { name: 'Search people' }).element() as HTMLFormElement;
 		expect(form.method).toBe('get');
 		expect(Object.fromEntries(new FormData(form))).toEqual({ size: '50', query: 'ana' });
+		await page.getByRole('searchbox', { name: 'Search people' }).fill('budi@kopikita.id');
+		expect(Object.fromEntries(new FormData(form))).toEqual({ size: '50', query: 'budi@kopikita.id' });
 	});
 });
 
