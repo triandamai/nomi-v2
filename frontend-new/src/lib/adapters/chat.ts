@@ -4,7 +4,7 @@ import type { MentionOption } from '$lib/ds/chat/mention';
 import { clock, dayKey, dayLabel } from '$lib/chat/dates';
 import type { FailureKind } from '$lib/chat/failure';
 import { pinnedFirst, searchChats } from '$lib/chat/sessionOrder';
-import type { CrewMember, HomeSummary, ModelOptions, SessionSummary } from './api';
+import type { HomeSummary, ModelOptions, SessionSummary } from './api';
 import { chatHref } from './shell';
 
 // The chat's data, turned from the API's shapes into the design system's props: who a message is
@@ -30,7 +30,7 @@ const STARTERS: { owner: string; label: () => string }[] = [
 ];
 
 /** The starters whose owner is on the crew. Picking one asks it of them (an @mention). */
-export function starters(crew: CrewMember[]): Starter[] {
+export function starters(crew: { name: string }[]): Starter[] {
 	const names = new Set(crew.map((member) => member.name));
 	return STARTERS.filter((starter) => names.has(starter.owner)).map((starter) => {
 		const agent = crewIdOf(starter.owner);
@@ -38,11 +38,19 @@ export function starters(crew: CrewMember[]): Starter[] {
 	});
 }
 
-/** The crew to "@" in the composer, by the names the server routes on (nomi_agent_core::mention). */
-export function mentionOptions(crew: CrewMember[]): MentionOption[] {
-	return crew
-		.filter((member) => !member.is_dynamic && CREW.some((known) => known.name === member.name))
-		.map((member) => ({ kind: 'crew', agent: crewIdOf(member.name), name: member.name, role: member.role }));
+/** The crew to "@" in the composer (those the design has a mascot for), by the names the server
+ * routes on (nomi_agent_core::mention). */
+export function mentionOptions(crew: { agent?: CrewId; name: string; role: string }[]): MentionOption[] {
+	return crew.flatMap((member) => (member.agent ? [{ kind: 'crew' as const, agent: member.agent, name: member.name, role: member.role }] : []));
+}
+
+/** The crew panel beside a chat: who replied in it says so, and who's answering now says working. */
+export function chatCrewRows<T extends { name: string; role: string; state?: string }>(rows: T[], inChat: { replied: string[]; working: string | null }): T[] {
+	return rows.map((row) => ({
+		...row,
+		...(inChat.replied.includes(row.name) && { role: m.crew_replied_here() }),
+		...(inChat.working === row.name && { state: m.crew_state_working() }),
+	}));
 }
 
 /** A message addressed to a crew member (the composer's To chip): "@Dana …", unless it already is. */

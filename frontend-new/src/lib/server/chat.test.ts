@@ -118,6 +118,21 @@ describe('the chat on the server', () => {
 		expect(await chat.moveTargets(event)).toEqual([{ id: 'p1', name: 'budget-keluarga', workspace: 'Keluarga' }]);
 	});
 
+	it('lists the chats for the Chats page, and tells a list it could not read from an empty one', async () => {
+		const sessions = [{ id: 's1', title: 'Rent', pinned: false, in_project_id: null, project_id: null, last_message: null, updated_at: '' }];
+		expect(await chat.chatList(eventWith(() => json({ sessions })).event)).toEqual(sessions);
+		expect(await chat.chatList(eventWith(() => json({ sessions: [] })).event)).toEqual([]);
+		expect(await chat.chatList(eventWith(() => new Response('', { status: 502 })).event)).toBeNull();
+	});
+
+	it("reads what Home's Today strip sums up, and has nothing to show when it can't", async () => {
+		const summary = { since: '', timezone: 'Asia/Jakarta', while_you_were_out: [], today: [], plans: [], while_you_were_out_total: 0, today_total: 0, plans_total: 0 };
+		const { backend, event } = eventWith(() => json(summary));
+		expect(await chat.homeSummary(event)).toEqual(summary);
+		expect(backend.calls[0].url).toBe('http://api.test/api/home');
+		expect(await chat.homeSummary(eventWith(() => new Response('', { status: 500 })).event)).toBeNull();
+	});
+
 	it('lets a sign-in that ran out through as the redirect it is', async () => {
 		const { event } = eventWith(() => new Response('', { status: 401 }));
 		expect(await thrown(() => chat.sendMessage(event, 's1', 'x'))).toMatchObject({ status: 303, location: '/sign-in' });

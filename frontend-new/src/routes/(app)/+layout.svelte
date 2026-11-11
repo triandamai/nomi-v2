@@ -6,6 +6,9 @@
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { stamp } from '$lib/adapters/time';
+	import { chatCrewRows } from '$lib/adapters/chat';
+	import { ChatHeader, setChatHeader } from '$lib/chat/header.svelte';
+	import { later } from '$lib/chat/later';
 	import { setClock } from '$lib/clock';
 	import { tabId } from '$lib/device';
 	import { connectActivity } from '$lib/live/activity';
@@ -14,6 +17,7 @@
 	import type { Theme } from '$lib/theme';
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
+	import { setMainLayout } from '$lib/ds/shells/mainLayout';
 	import Sidebar from '$lib/ds/chrome/Sidebar.svelte';
 	import NavItem from '$lib/ds/navigation/NavItem.svelte';
 	import NavGroupLabel from '$lib/ds/navigation/NavGroupLabel.svelte';
@@ -22,6 +26,7 @@
 	import AccountMenu from '$lib/ds/chrome/AccountMenu.svelte';
 	import WorkspaceSwitcher from '$lib/ds/chrome/WorkspaceSwitcher.svelte';
 	import TopBar from '$lib/ds/chrome/TopBar.svelte';
+	import ChatTopBar from '$lib/ds/thread/ChatTopBar.svelte';
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
@@ -35,18 +40,37 @@
 	// The signed-in app around every page, as App / Home (Vr4nn) draws it: the sidebar (Vp4Ax) with
 	// its counts, recents, usage and the person's account menu (LkJLt); the top bar (u8pcLQ); and
 	// on Home, the crew column (EXxti) under the top bar. The person's live feed keeps the recents
-	// and the inbox current, and signs this device out when another one says so.
+	// and the inbox current, and signs this device out when another one says so. A chat (Flow / Chat
+	// — Ask → think → answer, ENb07) takes the content edge to edge, puts its own name, Share and
+	// menu in the top bar, and keeps the crew column beside it, full height.
 	// Left out on purpose (AGENTS.md §9): the LIFE › Money group (Money isn't part of v2 yet), the
 	// top bar's search (the backend has no search to call: BACKEND_TODO.md), and the sidebar's
 	// collapse button (the shell has no collapsed layout yet).
 	let { data, children } = $props();
 
 	const HOME = '/(app)';
+	const CHAT = '/(app)/chat/[id]';
+	const NEW_CHAT = '/(app)/chat/new';
 	const isHome = $derived(page.route.id === HOME);
+	// A chat that couldn't open shows the error page, laid out as a page.
+	const isChat = $derived(page.route.id === CHAT && !page.error);
+	const inThread = $derived(isChat || page.route.id === NEW_CHAT);
 	const path = $derived(page.url.pathname);
 
-	// Only Home has a panel, and the pen runs its top bar across it.
-	setPanelPlacement({ underTopbar: true });
+	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
+	setPanelPlacement({
+		get underTopbar() {
+			return isHome;
+		},
+	});
+	setMainLayout({
+		get bleed() {
+			return inThread;
+		},
+	});
+	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
+	const header = new ChatHeader();
+	setChatHeader(header);
 
 	// The clock: from the minute the page was loaded, ticking; the browser's zone when none is saved.
 	const loadedAt = () => new Date(data.now);
@@ -82,7 +106,9 @@
 	];
 
 	const pageTitle = $derived(page.data as { title?: string; meta?: string });
-	const recentItems = $derived(data.recents.map((recent) => ({ ...recent, active: recent.href === path })));
+	const leaving = $derived(new Set(header.leaving.map((id) => `/chat/${id}`)));
+	const recentItems = $derived(data.recents.filter((recent) => !leaving.has(recent.href)).map((recent) => ({ ...recent, active: recent.href === path })));
+	const chatData = $derived(page.data as { chat?: { id: string; pinned: boolean } });
 	const projectsWorkspace = $derived(data.projectsWorkspace);
 	const workspaceSettings = $derived(projectsWorkspace ? `/settings/workspaces/${projectsWorkspace.id}` : undefined);
 	const signInAgain = $derived(`/sign-in?redirect_to=${encodeURIComponent(page.url.pathname + page.url.search)}`);
@@ -176,6 +202,9 @@
 		browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 		now = new Date();
 		const tick = setInterval(() => (now = new Date()), 15_000);
+		// A chat deleted with time to undo goes at once when the app is left.
+		const away = () => later.flush();
+		window.addEventListener('pagehide', away);
 
 		// Bursts of chat events (a turn finishing in several chats) reload the shell once.
 		let pending: ReturnType<typeof setTimeout> | undefined;
@@ -210,6 +239,7 @@
 		});
 		return () => {
 			clearInterval(tick);
+			window.removeEventListener('pagehide', away);
 			clearTimeout(pending);
 			stop();
 		};
@@ -260,6 +290,20 @@
 {#snippet topbar()}
 	{#if isHome}
 		<TopBar title={m.home_title()} meta={stamp(now, language, timeZone)} />
+	{:else if isChat && chatData.chat}
+		{@const id = chatData.chat.id}
+		<ChatTopBar
+			title={header.shown(id, 'title', pageTitle.title ?? '')}
+			meta={header.shown(id, 'meta', pageTitle.meta) ?? undefined}
+			pinned={header.shown(id, 'pinned', chatData.chat.pinned)}
+			renaming={header.renaming}
+			onrename={(name) => header.handlers?.rename(name)}
+			oncancelrename={() => (header.renaming = false)}
+			onpick={(action) => header.handlers?.pick(action)}
+			onshare={() => header.handlers?.share()}
+		/>
+	{:else if page.error}
+		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()} />
 	{:else}
 		<!-- Other pages name themselves in their load: { title, meta }. -->
 		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta} />
@@ -267,10 +311,10 @@
 {/snippet}
 
 {#snippet crew()}
-	<CrewPanel summary={data.crew.summary} members={data.crew.rows} />
+	<CrewPanel summary={data.crew.summary} members={isChat ? chatCrewRows(data.crew.rows, header.crew) : data.crew.rows} />
 {/snippet}
 
-<AppShell {sidebar} {topbar} panel={isHome ? crew : undefined}>
+<AppShell {sidebar} {topbar} panel={isHome || inThread ? crew : undefined}>
 	{@render children()}
 </AppShell>
 
@@ -293,10 +337,11 @@
 	{/snippet}
 </Dialog>
 
-<Modal open={sessionOver} labelledby="session-over-title">
-	<!-- SessionExpired's heading has no id to point at (its props are the old app twin's). -->
+<Modal open={sessionOver || header.signedOutDraft !== null} labelledby="session-over-title">
+	<!-- SessionExpired's heading has no id to point at (its props are the old app twin's). A message
+	     sent as the sign-in ran out shows here; it waits on this device and goes after signing in. -->
 	<span id="session-over-title" hidden>{m.session_title()}</span>
-	<SessionExpired signInHref={signInAgain} />
+	<SessionExpired draft={header.signedOutDraft || undefined} signInHref={signInAgain} />
 </Modal>
 
 <ToastRegion />

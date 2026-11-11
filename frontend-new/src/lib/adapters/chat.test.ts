@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CrewMember, HomeSummary, ModelOptions, SessionSummary } from './api';
-import { chatListGroups, crewIdOf, failureView, modelMenu, starters, todayColumns, withMention, mentionOptions } from './chat';
+import { chatCrewRows, chatListGroups, crewIdOf, failureView, modelMenu, starters, todayColumns, withMention, mentionOptions } from './chat';
 
 const member = (agent_type: string, name: string, role = ''): CrewMember => ({ agent_type, name, role, is_dynamic: false, state: 'idle', status: '' });
 const crew = [member('chitchat', 'Nomi', 'Talks with you'), member('money', 'Dana', 'Transactions'), member('planning', 'Rena', 'Plans'), member('coding', 'Koda', 'Builds'), member('reminders', 'Kala', 'Reminds you')];
@@ -27,8 +27,17 @@ describe('starters', () => {
 });
 
 describe('mentions', () => {
-	it('offers the crew to mention, Nomi first', () => {
-		expect(mentionOptions(crew)[0]).toEqual({ kind: 'crew', agent: 'nomi', name: 'Nomi', role: 'Talks with you' });
+	it('offers the crew the design draws to mention, Nomi first', () => {
+		const rows = [{ agent: 'nomi' as const, name: 'Nomi', role: 'Talks with you' }, { name: 'Iris', role: 'Inspects' }];
+		expect(mentionOptions(rows)).toEqual([{ kind: 'crew', agent: 'nomi', name: 'Nomi', role: 'Talks with you' }]);
+	});
+
+	it('says in the crew panel who replied in this chat and who is answering', () => {
+		const rows = [{ agent: 'nomi' as const, name: 'Nomi', role: 'Talks with you' }, { agent: 'dana' as const, name: 'Dana', role: 'Transactions' }];
+		expect(chatCrewRows(rows, { replied: ['Nomi'], working: 'Dana' })).toEqual([
+			{ agent: 'nomi', name: 'Nomi', role: 'Replied in this chat' },
+			{ agent: 'dana', name: 'Dana', role: 'Transactions', state: 'working' },
+		]);
 	});
 
 	it('addresses a message to a crew member unless it already is, or it is for Nomi', () => {

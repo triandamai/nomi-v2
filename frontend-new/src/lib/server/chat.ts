@@ -1,5 +1,6 @@
 import { isRedirect } from '@sveltejs/kit';
 import type {
+	HomeSummary,
 	MessageItem,
 	MessageVersion,
 	ModelChoice,
@@ -81,10 +82,24 @@ export async function message(event: ApiEvent, sessionId: string, messageId: str
 }
 
 /** The person's chats, latest first; [] when they can't be read. */
+/** What Home's Today strip sums up; null when it can't be read (the strip isn't drawn). */
+export async function homeSummary(event: ApiEvent): Promise<HomeSummary | null> {
+	const response = await call(event, '/api/home');
+	if (!response.ok) return null;
+	return (await response.json().catch(() => null)) as HomeSummary | null;
+}
+
 export async function listSessions(event: ApiEvent): Promise<SessionSummary[]> {
 	const response = await call(event, '/api/sessions');
 	if (!response.ok) return [];
 	return ((await response.json()) as { sessions: SessionSummary[] }).sessions;
+}
+
+/** The Chats page's list; null when the backend couldn't give it (not the same as no chats). */
+export async function chatList(event: ApiEvent): Promise<SessionSummary[] | null> {
+	const response = await call(event, '/api/sessions');
+	if (!response.ok) return null;
+	return ((await response.json().catch(() => null)) as { sessions?: SessionSummary[] } | null)?.sessions ?? null;
 }
 
 /** A chat's name, pin and project: there's no single-chat endpoint, so from the list. */
