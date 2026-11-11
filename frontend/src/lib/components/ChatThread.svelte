@@ -1035,7 +1035,6 @@
 			if (envelope.kind === 'Delta') {
 				if (!stopRequested && !openTurns.includes(turnId)) {
 					openTurns = [...openTurns, turnId];
-					onqueuechange?.();
 				}
 				if (!stopRequested && envelope.event) {
 					live = applyStreamEvent(live, envelope.event);
@@ -1050,7 +1049,6 @@
 				if (envelope.message_id && envelope.message_id !== NIL_UUID) {
 					fetchAndUpsertMessage(envelope.message_id);
 				}
-				onqueuechange?.();
 			} else if (envelope.kind === 'TurnFailed') {
 				// Cut off part-way: what was written stays, with the provider's own reason.
 				if (live.text.trim() && envelope.error && !stopRequested) liveEnd = { status: 'interrupted', elapsed: untrack(() => elapsed), reason: envelope.error };
@@ -1060,7 +1058,6 @@
 				// The server posts why (out of credits, a rejected key, ...) as a message in the
 				// chat; the generic notice is only for a failure that came with no explanation.
 				turnError = !envelope.error;
-				onqueuechange?.();
 			} else if (envelope.kind === 'QueueChanged') {
 				onqueuechange?.();
 			} else if (envelope.kind === 'SessionRenamed') {
@@ -1076,19 +1073,16 @@
 				if (typeof envelope.outcome === 'string' && !stopRequested && !isWorking) {
 					activityCard = withSettled(activityCard, { outcome: envelope.outcome, waiting: envelope.waiting ?? null, agent: envelope.agent ?? null }, null, Date.now());
 				}
-				onqueuechange?.();
 			} else if (envelope.kind === 'MessageCreated' || envelope.kind === 'MessageUpdated') {
 				// A card changed (an approval decided, a question answered): the thread says what's still waiting.
 				if (envelope.kind === 'MessageUpdated' && activityCard?.waiting) activityCard = { ...activityCard, waiting: null };
 				// A posted message is what was streaming (or comes after it): the real one takes over.
 				if (envelope.kind === 'MessageCreated' && !liveEnd) live = emptyStream();
 				if (envelope.message_id) fetchAndUpsertMessage(envelope.message_id);
-				if (envelope.kind === 'MessageCreated') onqueuechange?.();
 			} else if (envelope.kind === 'MessagesDeleted') {
 				// Deleted here or on another device, or replaced when a turn ran again.
 				const gone = new Set(envelope.message_ids ?? []);
 				localMessages = localMessages.filter((message) => !gone.has(message.id));
-				onqueuechange?.();
 			} else if (envelope.kind === 'SessionDeleted') {
 				// The chat was deleted, on this device or another: leave it, as deleting it here does.
 				link.follow(null);

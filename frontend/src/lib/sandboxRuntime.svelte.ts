@@ -49,15 +49,17 @@ export function safePreviewUrl(url: string | null): string | null {
 export function toRuntimePhase(phase: SandboxPhase, previewUrl: string | null): RuntimePhase {
 	switch (phase) {
 		case 'waking':
+		case 'idle':
 			return 'waking';
 		case 'running':
 			return previewUrl ? 'running' : 'starting';
 		case 'stopping':
+		case 'stopped':
 			return 'stopped';
 		case 'error':
 			return 'failed';
 		default:
-			return 'waiting';
+			return 'waking';
 	}
 }
 
@@ -88,16 +90,15 @@ export class SandboxRuntime {
 	}
 
 	async start() {
-		if (this.#heartbeat) return;
+		if (this.#started) return;
 		this.#stopped = false;
+		this.#started = true;
 		void this.#beat();
-		this.#heartbeat = setInterval(() => void this.#beat(), HEARTBEAT_MS);
-		this.#poll = setInterval(() => void this.#refresh(), POLL_MS);
 		try {
 			const status = await this.#refresh();
-			// Opening the project wakes its sandbox if it is asleep.
-			if (status && (status.phase === 'idle' || status.phase === 'stopped') && !this.#started) {
-				this.#started = true;
+			// Opening the project wakes its sandbox if it is asleep or not yet created.
+			if (status && (status.phase === 'idle' || status.phase === 'stopped' || status.state === 'none')) {
+				this.phase = 'waking';
 				await this.#command('start');
 			}
 		} catch (e) {
@@ -107,6 +108,7 @@ export class SandboxRuntime {
 
 	async stop() {
 		this.#stopped = true;
+		this.#started = false;
 		if (this.#heartbeat) clearInterval(this.#heartbeat);
 		if (this.#poll) clearInterval(this.#poll);
 		this.#heartbeat = this.#poll = null;

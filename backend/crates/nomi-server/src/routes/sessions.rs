@@ -1631,6 +1631,9 @@ pub(crate) async fn relay_project_topic(
     }
     let name = crate::routes::project_presence::person_name(&pool, user_id).await.unwrap_or_default();
     let _ = crate::routes::project_presence::record_heartbeat(&pool, project_id, user_id, Default::default()).await;
+    if let Ok(mut conn) = pool.acquire().await {
+        let _ = crate::sandbox_store::touch_active(&mut conn, project_id).await;
+    }
     let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(20));
     keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     keepalive.tick().await; // first tick is immediate
@@ -1639,6 +1642,9 @@ pub(crate) async fn relay_project_topic(
         tokio::select! {
             _ = keepalive.tick() => {
                 let _ = crate::routes::project_presence::record_heartbeat(&pool, project_id, user_id, Default::default()).await;
+                if let Ok(mut conn) = pool.acquire().await {
+                    let _ = crate::sandbox_store::touch_active(&mut conn, project_id).await;
+                }
             }
             event = eventloop.poll() => {
                 match event {
