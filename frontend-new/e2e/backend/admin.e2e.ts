@@ -542,3 +542,43 @@ test.describe('support', () => {
 		expect(((await (await api(admin, '/api/admin/support/keys')).json()) as Keys).find((one) => one.name === name)?.revoked_at).not.toBeNull();
 	});
 });
+
+test.describe('configuration', () => {
+	type View = { sections: { name: string; fields: { name: string; value: string | null; source: string }[] }[] };
+	const field = async (admin: Account, section: string, name: string) =>
+		((await (await api(admin, '/api/admin/configuration')).json()) as View).sections.find((one) => one.name === section)!.fields.find((one) => one.name === name)!;
+
+	test('a value is saved here, then emptied back to the environment’s', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/configuration');
+		// The relay CLI's version: read only when a project's backend is built, which no test here does.
+		const relay = page.getByRole('region', { name: 'Relay' });
+		try {
+			await relay.getByLabel('CLI version').fill('9.9.9-e2e');
+			await relay.getByRole('button', { name: 'Save' }).click();
+			await expect(relay.getByText('Saved', { exact: true })).toBeVisible();
+			expect(await field(admin, 'relay', 'cli_version')).toMatchObject({ value: '9.9.9-e2e', source: 'saved' });
+
+			await relay.getByLabel('CLI version').fill('');
+			await relay.getByRole('button', { name: 'Save' }).click();
+			await expect(relay.getByText('Saved', { exact: true })).toBeVisible();
+			expect((await field(admin, 'relay', 'cli_version')).source).not.toBe('saved');
+		} finally {
+			await api(admin, '/api/admin/configuration/relay', { method: 'PUT', body: JSON.stringify({ values: { cli_version: '' } }) });
+		}
+	});
+
+	test('storage is tested with what’s typed, and says when it doesn’t work', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/configuration');
+		const storage = page.getByRole('region', { name: 'File storage' });
+		await storage.getByLabel('Bucket').fill('nomi-e2e-no-such-bucket');
+		await storage.getByLabel('Endpoint').fill('https://s3.e2e.invalid');
+		await storage.getByRole('button', { name: 'Test connection' }).click();
+		await expect(storage.getByText('It doesn’t work')).toBeVisible();
+		// Nothing was saved by testing.
+		expect((await field(admin, 'storage', 'bucket')).value).not.toBe('nomi-e2e-no-such-bucket');
+	});
+});
