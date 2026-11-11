@@ -331,6 +331,10 @@ hard. Add to this list instead of deviating silently.
   memory, files ⌘K".
 - Sidebar recents: a long title is truncated on one line; in the pen it wraps out of its 30px row.
 - Apostrophes are typographic (’) in messages; the pen's are straight.
+- Shared link (b8Flw8): an expired and a turned-off link show one screen ("This link isn't
+  available", the pen's layout), since the backend answers both alike so links can't be probed. The
+  screens' "What is Nomi?" is left out (there's no page to open), and so are the owner's banner,
+  "Shared by…" and "Report this page" (BACKEND_TODO.md).
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
   max width, not its longest line).

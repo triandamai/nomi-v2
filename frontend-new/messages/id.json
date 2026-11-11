@@ -699,5 +699,20 @@
 	"connect_key_rejected": "{service} menolak key yang tersimpan.",
 	"connect_not_allowed": "{service} bukan layanan yang kamu izinkan.",
 	"connect_reads": "Hanya yang dibutuhkan permintaan ini. Tidak ada yang diubah tanpa bertanya, dan bisa diputus kapan saja.",
-	"stopped_resume_message": "Lanjutkan dari yang terakhir"
+	"stopped_resume_message": "Lanjutkan dari yang terakhir",
+	"shared_untitled": "Chat yang dibagikan",
+	"shared_sign_in": "Masuk",
+	"shared_try": "Coba Nomi",
+	"shared_read_only": "Hanya baca",
+	"shared_expires": "berakhir dalam {days} hari",
+	"shared_no_expiry": "tidak berakhir",
+	"shared_masked": "jumlah dan nama disembunyikan",
+	"shared_gone_title": "Tautan ini tidak tersedia",
+	"shared_gone_body": "Mungkin sudah berakhir, atau orang yang membagikannya berhenti membagikan. Minta tautan baru kepadanya.",
+	"shared_signin_title": "Masuk untuk membuka tautan ini",
+	"shared_signin_body": "Orang yang membagikannya membuatnya untuk pemilik akun Nomi.",
+	"shared_made_with": "Dibuat dengan Nomi · kru AI untuk sehari-hari",
+	"share_expiry_days": "Berakhir dalam {days} hari",
+	"share_expiry_day": "Berakhir dalam 1 hari",
+	"share_expiry_never": "Tidak berakhir"
 }

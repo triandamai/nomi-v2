@@ -14,6 +14,21 @@ const request = (method: string, body?: unknown, url = 'http://localhost/chat/s1
 	new Request(url, { method, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) });
 
 describe('the chat page’s own endpoints', () => {
+	it('makes a share link with its settings, changes them, and turns it off', async () => {
+		const { backend, event } = eventWith(() => json({ id: 'sh1', token: 't1' }));
+		const settings = { scope: 'reply', message_id: 'm1', mask: true, anyone: false, expires_in_days: 30 };
+		await chatRequest(event, 's1', ['share'], request('POST', settings));
+		await chatRequest(event, 's1', ['share', 'sh1'], request('PUT', { ...settings, expires_in_days: null }));
+		await chatRequest(event, 's1', ['share', 'sh1'], request('DELETE'));
+		expect(backend.calls.map((call) => [call.method, call.url, call.body])).toEqual([
+			['POST', 'http://api.test/api/sessions/s1/shares', settings],
+			['PUT', 'http://api.test/api/sessions/s1/shares/sh1', { ...settings, expires_in_days: null }],
+			['DELETE', 'http://api.test/api/sessions/s1/shares/sh1', undefined],
+		]);
+		expect((await chatRequest(event, 's1', ['share'], request('POST', { scope: 'all' }))).status).toBe(400);
+		expect((await chatRequest(event, 's1', ['share'], request('POST', { scope: 'chat', expires_in_days: 3 }))).status).toBe(400);
+	});
+
 	it('records a decision on an approval, remembered or not', async () => {
 		const { backend, event } = eventWith(() => json({}));
 		await chatRequest(event, 's1', ['messages', 'm1', 'approval'], request('PUT', { decision: 'approve', remember: true }));

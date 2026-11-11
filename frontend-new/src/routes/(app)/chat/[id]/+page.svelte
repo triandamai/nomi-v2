@@ -32,6 +32,7 @@
 	import LoadingOlder from '$lib/ds/chat/LoadingOlder.svelte';
 	import Banner from '$lib/ds/chat/Banner.svelte';
 	import MoveDialog from '$lib/ds/chat/MoveDialog.svelte';
+	import ShareDialog from '$lib/ds/chat/ShareDialog.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
 	import AgentReply from '$lib/ds/thread/AgentReply.svelte';
@@ -486,18 +487,35 @@
 		URL.revokeObjectURL(url);
 	}
 
-	/** A link to the whole chat (masked, 7 days), copied. The share dialog comes with share links. */
-	async function share() {
-		const result = await callJson<{ id: string; token: string }>(`${api}/share`, { method: 'POST' });
+	// Share & delete (TnscX): a link to the whole chat (the top bar's Share) or one reply (the reply's
+	// Share), masked and open to anyone for 7 days at first; the dialog changes what it shares, who
+	// may open it and for how long, on the same link.
+	type ShareLink = { id: string; token: string; scope: 'chat' | 'reply'; message_id: string | null; mask: boolean; anyone: boolean; expires_at: string | null; preview: string; preview_by: string | null; chat_messages: number };
+	const EXPIRY = [7, 30, null, 1] as const;
+	let shareOpen = $state(false);
+	let shareLink = $state<ShareLink | null>(null);
+	let shareDays = $state<(typeof EXPIRY)[number]>(7);
+	let shareReply = $state<string | null>(null);
+	const shareUrl = $derived(shareLink ? `${page.url.origin}/shared/${shareLink.token}` : '');
+
+	async function saveShare(settings: { scope: 'chat' | 'reply'; mask: boolean; anyone: boolean }, days: (typeof EXPIRY)[number]) {
+		const body = { ...settings, message_id: settings.scope === 'reply' ? shareReply : null, expires_in_days: days };
+		const result = shareLink ? await callJson<ShareLink>(`${api}/share/${shareLink.id}`, { method: 'PUT', body }) : await callJson<ShareLink>(`${api}/share`, { method: 'POST', body });
 		if (!result.ok) return void toasts.show({ kind: 'error', title: m.link_failed(), detail: result.message || undefined });
-		const url = `${location.origin}/shared/${result.data.token}`;
-		await navigator.clipboard?.writeText(url).catch(() => undefined);
-		toasts.show({
-			kind: 'success',
-			title: m.link_copied(),
-			detail: `${url.replace(/^https?:\/\//, '')} · ${m.link_expires()}`,
-			action: { label: m.link_revoke(), onclick: () => void callJson(`${api}/share/${result.data.id}`, { method: 'DELETE' }) },
-		});
+		shareLink = result.data;
+		shareDays = days;
+	}
+
+	async function share(replyId?: string) {
+		shareLink = null;
+		shareReply = replyId ?? null;
+		await saveShare({ scope: replyId ? 'reply' : 'chat', mask: true, anyone: true }, 7);
+		if (shareLink) shareOpen = true;
+	}
+
+	async function copyShare() {
+		await navigator.clipboard?.writeText(shareUrl).catch(() => undefined);
+		toasts.show({ kind: 'success', title: m.link_copied(), detail: shareUrl.replace(/^https?:\/\//, '') });
 	}
 
 	/** Deleted after ten seconds to undo, from Home; leaving the page deletes it at once. */
@@ -753,7 +771,7 @@
 										onfeedback={(rating) => rate(message, rating)}
 										ondislike={(feedback) => dislike(message, feedback)}
 										onregenerate={entry.latest && !working ? (style) => regenerate(message.id, style) : undefined}
-										onshare={share}
+										onshare={() => share(message.id)}
 									/>
 									{#if entry.followUps.length > 0 && !working}<FollowUps items={entry.followUps} onpick={(item) => send(item)} />{/if}
 								{/if}
@@ -821,6 +839,21 @@
 		</div>
 	</div>
 </div>
+
+{#if shareLink}
+	<ShareDialog
+		bind:open={shareOpen}
+		preview={{ agent: crewIdOf(shareLink.preview_by), name: shareLink.preview_by ?? m.export_you(), time: clock(new Date(), time.timeZone), excerpt: shareLink.preview }}
+		chatMessages={shareLink.chat_messages}
+		url={shareUrl}
+		expiry={shareDays === null ? m.share_expiry_never() : shareDays === 1 ? m.share_expiry_day() : m.share_expiry_days({ days: String(shareDays) })}
+		settings={{ scope: shareLink.scope, mask: shareLink.mask, anyone: shareLink.anyone }}
+		onchange={(settings) => void saveShare(settings, shareDays)}
+		onexpiry={() => shareLink && void saveShare({ scope: shareLink.scope, mask: shareLink.mask, anyone: shareLink.anyone }, EXPIRY[(EXPIRY.indexOf(shareDays) + 1) % EXPIRY.length])}
+		oncopy={copyShare}
+		onclose={() => (shareOpen = false)}
+	/>
+{/if}
 
 <MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
 
