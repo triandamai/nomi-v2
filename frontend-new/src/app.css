@@ -161,6 +161,8 @@
 	--radius-xs: 4px;
 	/* A segment or button sitting inside a 10–12px container on a phone (Workspace Switch, copy). */
 	--radius-inner: 8px;
+	/* The 26px icon tiles of Home's Today strip (App / Home → Today Strip, BgqD6). */
+	--radius-tile: 7px;
 	/* Phones only, as the Mobile sheet draws them: buttons 12, options 14, toasts 16, bubbles 18. */
 	--radius-lg: 12px;
 	--radius-xl: 14px;

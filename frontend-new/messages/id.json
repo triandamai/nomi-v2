@@ -598,5 +598,11 @@
 	"failure_quota": "Kredit Nomi habis",
 	"failure_other": "Tidak bisa membalas",
 	"models_your_keys": "Key milikmu",
-	"models_nomi_credits": "Kredit Nomi"
+	"models_nomi_credits": "Kredit Nomi",
+	"chats_working": "bekerja",
+	"thinking_title": "Berpikir",
+	"thinking_low": "Cepat",
+	"thinking_medium": "Bawaan",
+	"thinking_high": "Mendalam",
+	"thinking_max": "Paling mendalam"
 }

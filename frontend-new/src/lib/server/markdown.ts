@@ -78,7 +78,8 @@ export async function renderMarkdown(source: string): Promise<string> {
 					const language = lang?.trim().split(/\s+/)[0];
 					if (language && loaded.has(language)) {
 						try {
-							return withLangAttribute(highlighter.codeToHtml(text, { lang: language, themes: SHIKI_THEMES }), language);
+							// No default colour: each token carries both, and the page's theme picks one.
+							return withLangAttribute(highlighter.codeToHtml(text, { lang: language, themes: SHIKI_THEMES, defaultColor: false }), language);
 						} catch {
 							// A grammar edge case falls through to the plain block below.
 						}

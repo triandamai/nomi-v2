@@ -74,13 +74,15 @@ export type RetryTarget = { target: 'turn'; turn_job_id: string } | { target: 'd
  * (with a retry when trying again can help); `quota_notice` the month's allowance used up;
  * `suggestions` follow-ups to ask; `stopped` what a stop ended.
  */
-export type ContentBlock =
+export type ContentBlock = { kind: string; [field: string]: unknown };
+
+/** The blocks the chat core reads, by their fields. */
+export type KnownBlock =
 	| { kind: 'reasoning'; text: string }
 	| { kind: 'run_failed'; retry?: RetryTarget }
 	| { kind: 'quota_notice'; reason: string }
 	| { kind: 'suggestions'; items: string[] }
-	| { kind: 'stopped'; tasks: unknown[] }
-	| { kind: string; [field: string]: unknown };
+	| { kind: 'stopped'; tasks: unknown[] };
 
 export type MessageMemory = { id: string; content: string; kind: string };
 

@@ -13,6 +13,7 @@ import type {
 	ThinkingLevel,
 } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
+import { readApiError } from './apiError';
 import { renderMarkdown } from './markdown';
 
 // The chat's calls to the backend, as the person: a page of messages (rendered), one message,
@@ -43,8 +44,9 @@ async function call(event: ApiEvent, path: string, init?: RequestInit): Promise<
 	}
 }
 
+/** What the backend said, a plain sentence or problem details alike. */
 async function failed(response: Response): Promise<{ ok: false; status: number; message: string }> {
-	return { ok: false, status: response.status, message: (await response.text().catch(() => '')).trim() };
+	return { ok: false, status: response.status, message: (await readApiError(response)).message };
 }
 
 async function outcome<T>(response: Response, read: (response: Response) => Promise<T>): Promise<Outcome<T>> {

@@ -30,7 +30,10 @@ type Options = { locale: string; now: Date; timeZone?: string; newFromId: string
 const suggestionsOf = (message: RenderedMessage): string[] | null => {
 	const blocks = message.content_blocks ?? [];
 	if (blocks.length === 0 || !blocks.every((block) => block.kind === 'suggestions')) return null;
-	return blocks.flatMap((block) => (Array.isArray(block.items) ? block.items.filter((item): item is string => typeof item === 'string') : []));
+	return blocks.flatMap((block) => {
+		const items: unknown = (block as { items?: unknown }).items;
+		return Array.isArray(items) ? items.filter((item): item is string => typeof item === 'string') : [];
+	});
 };
 
 export function threadEntries(messages: RenderedMessage[], { locale, now, timeZone, newFromId }: Options): ThreadEntry[] {

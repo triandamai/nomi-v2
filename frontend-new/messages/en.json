@@ -598,5 +598,11 @@
 	"failure_quota": "Out of Nomi credits",
 	"failure_other": "Couldn’t reply",
 	"models_your_keys": "Your keys",
-	"models_nomi_credits": "Nomi credits"
+	"models_nomi_credits": "Nomi credits",
+	"chats_working": "working",
+	"thinking_title": "Thinking",
+	"thinking_low": "Quick",
+	"thinking_medium": "Default",
+	"thinking_high": "Deep",
+	"thinking_max": "Deepest"
 }

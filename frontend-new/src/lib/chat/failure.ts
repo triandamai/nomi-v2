@@ -46,5 +46,5 @@ export function failureOf(message: { content: string; content_blocks: ContentBlo
 	if (blocks.some((block) => block.kind === 'quota_notice')) return { kind: 'quota', text: message.content, retry: false };
 	const failed = blocks.find((block) => block.kind === 'run_failed');
 	if (!failed) return null;
-	return { kind: failureKind(message.content), text: message.content, retry: Boolean(failed.retry) };
+	return { kind: failureKind(message.content), text: message.content, retry: Boolean((failed as { retry?: unknown }).retry) };
 }
