@@ -155,3 +155,96 @@ test.describe('users & access', () => {
 		await expect(page.getByLabel('Display name')).toHaveCount(0);
 	});
 });
+
+/** A plan only this test uses, so tests side by side never share one. */
+const uniquePlan = () => {
+	const tag = Math.random().toString(36).slice(2, 8);
+	return { name: `E2E ${tag}`, slug: `e2e-${tag}` };
+};
+
+test.describe('plans', () => {
+	test('a plan is added, hidden, and deleted while nobody is on it', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const plan = uniquePlan();
+		await signInAs(context, admin);
+		await open(page, '/admin/plans');
+
+		await page.getByRole('link', { name: 'Add a plan' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'New plan' })).toBeVisible();
+		await page.getByLabel('Name', { exact: true }).fill(plan.name);
+		await expect(page.getByLabel('Slug')).toHaveValue(plan.slug);
+		await page.getByLabel('Tokens a month').fill('3 000 000');
+		await page.getByLabel('Price label').fill('Rp 49.000 / month');
+		await page.getByLabel('What it includes').fill('Everything in Free\nPriority answers');
+		await page.getByRole('button', { name: 'Create plan' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: plan.name })).toBeVisible();
+		await expect(page).toHaveURL(/\/admin\/plans\/[0-9a-f-]{36}$/);
+
+		await page.getByRole('switch', { name: 'Offered to people' }).click();
+		await page.getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Plan saved')).toBeVisible();
+		type Listed = { slug: string; is_active: boolean; monthly_tokens: number; features: string[] };
+		const listed = ((await (await api(admin, '/api/admin/plans')).json()) as Listed[]).find((one) => one.slug === plan.slug);
+		expect(listed).toMatchObject({ is_active: false, monthly_tokens: 3_000_000, features: ['Everything in Free', 'Priority answers'] });
+
+		await page.getByRole('button', { name: 'Delete plan' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Delete plan' }).click();
+		await expect(page).toHaveURL(/\/admin\/plans$/);
+		await expect(page.getByRole('link', { name: plan.name })).toHaveCount(0);
+	});
+
+	test('a plan someone is on can’t be deleted, and the page says why', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const plan = uniquePlan();
+		const created = (await (await api(admin, '/api/admin/plans', { method: 'POST', body: JSON.stringify({ ...plan, monthly_tokens: 1000 }) })).json()) as { id: string };
+		const person = await createAccount();
+		const { users } = (await (await api(admin, `/api/admin/users?query=${encodeURIComponent(person.email)}`)).json()) as { users: { id: string }[] };
+		expect((await api(admin, `/api/admin/users/${users[0].id}/subscription`, { method: 'PUT', body: JSON.stringify({ plan_id: created.id }) })).ok).toBe(true);
+		await signInAs(context, admin);
+		await open(page, `/admin/plans/${created.id}`);
+
+		await page.getByRole('button', { name: 'Delete plan' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Delete plan' }).click();
+		await expect(page.getByText('The plan couldn’t be deleted')).toBeVisible();
+		await expect(page.getByText('people are or were on this plan; hide it instead')).toBeVisible();
+	});
+});
+
+test.describe('notifications', () => {
+	test('a notification goes to the people on one plan, after a confirm, and shows as sent', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const plan = uniquePlan();
+		const created = (await (await api(admin, '/api/admin/plans', { method: 'POST', body: JSON.stringify({ ...plan, monthly_tokens: 1000 }) })).json()) as { id: string };
+		const person = await createAccount();
+		const { users } = (await (await api(admin, `/api/admin/users?query=${encodeURIComponent(person.email)}`)).json()) as { users: { id: string }[] };
+		expect((await api(admin, `/api/admin/users/${users[0].id}/subscription`, { method: 'PUT', body: JSON.stringify({ plan_id: created.id }) })).ok).toBe(true);
+		await signInAs(context, admin);
+		await open(page, '/admin/notifications');
+
+		const title = `Kala reads reminders aloud ${plan.slug}`;
+		await page.getByLabel('Title').fill(title);
+		await page.getByLabel('Message').fill('Turn it on in Settings › Voice.');
+		await page.getByLabel('Link (optional)').fill('/settings');
+		await page.getByLabel('Send to').selectOption({ label: `People on ${plan.name}` });
+		await page.getByRole('button', { name: 'Send' }).click();
+		await expect(page.getByRole('dialog')).toContainText(`Send to People on ${plan.name}?`);
+		await page.getByRole('dialog').getByRole('button', { name: 'Send' }).click();
+		await expect(page.getByText('Sent to 1 person')).toBeVisible();
+		await expect(page.getByRole('table', { name: 'Sent' }).getByText(title)).toBeVisible();
+
+		const inbox = (await (await api(person, '/api/notifications')).json()) as { items: { title: string; link: string | null }[] };
+		expect(inbox.items).toContainEqual(expect.objectContaining({ title, link: '/settings' }));
+	});
+
+	test('a link outside the app is refused on the page', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/notifications');
+		await page.getByLabel('Title').fill('Read this');
+		await page.getByLabel('Message').fill('Somewhere else');
+		await page.getByLabel('Link (optional)').fill('https://example.com');
+		await page.getByRole('button', { name: 'Send' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Send' }).click();
+		await expect(page.getByText('The link is a page in Nomi, starting with /.')).toBeVisible();
+	});
+});
