@@ -29,3 +29,20 @@ export async function deleteAdminModel(id: string): Promise<void> {
 export async function deleteDynamicAgent(id: string): Promise<void> {
 	await withDb((sql) => sql`DELETE FROM dynamic_agents WHERE id = ${id}`);
 }
+
+/**
+ * A provider connected for everyone at its own address, as Admin → Providers keeps one. Connecting
+ * one through the API checks it live, which needs a real https endpoint the e2e backend can't
+ * reach; the row is what that check would have saved.
+ */
+export async function seedSharedEndpoint(label: string): Promise<string> {
+	const [row] = await withDb(
+		(sql) => sql`INSERT INTO llm_provider_connections (user_id, provider_id, label, kind, auth_type, base_url) VALUES (NULL, 'custom', ${label}, 'openai_compatible', 'custom_endpoint', 'https://llm.e2e.invalid/v1') RETURNING id`,
+	);
+	return row.id as string;
+}
+
+/** Removes a connection a test seeded, if it's still there. */
+export async function deleteConnection(id: string): Promise<void> {
+	await withDb((sql) => sql`DELETE FROM llm_provider_connections WHERE id = ${id}`);
+}
