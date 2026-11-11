@@ -17,8 +17,13 @@
 		mono?: boolean;
 		disabled?: boolean;
 		required?: boolean;
-		type?: 'text' | 'email' | 'url' | 'password';
+		/** number, date and time for the admin console's forms (a token allowance, a promo's end). */
+		type?: 'text' | 'email' | 'url' | 'password' | 'number' | 'date' | 'time';
 		name?: string;
+		min?: number | string;
+		max?: number | string;
+		step?: number | string;
+		maxlength?: number;
 		autocomplete?: HTMLInputElement['autocomplete'];
 		oninput?: (value: string) => void;
 		/** Shows the focus state without focus (the gallery). */
@@ -36,6 +41,10 @@
 		required = false,
 		type = 'text',
 		name,
+		min,
+		max,
+		step,
+		maxlength,
 		autocomplete,
 		oninput,
 		'data-focus': showFocus = false,
@@ -61,6 +70,10 @@
 			{placeholder}
 			{disabled}
 			{required}
+			{min}
+			{max}
+			{step}
+			{maxlength}
 			{autocomplete}
 			bind:value
 			oninput={() => oninput?.(value)}

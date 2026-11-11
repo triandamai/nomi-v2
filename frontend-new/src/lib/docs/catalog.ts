@@ -20,6 +20,7 @@ export const CATEGORIES = [
 	{ key: 'build', title: 'Build', blurb: 'From describing an app to a live URL.' },
 	{ key: 'mobile', title: 'Mobile', blurb: 'The phone versions, drawn at 390 pt.' },
 	{ key: 'auth', title: 'Sign in', blurb: 'The sign-in, sign-up and code screens, and the parts their forms are made of.' },
+	{ key: 'admin', title: 'Admin', blurb: 'The admin console’s pieces: its navigation, tables, forms, access levels and usage.' },
 ] as const;
 
 export type CategoryKey = (typeof CATEGORIES)[number]['key'];
