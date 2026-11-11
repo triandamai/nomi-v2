@@ -67,7 +67,7 @@ export function chatsCount(sessions: SessionSummary[]): number {
 }
 
 /** Which mascot each built-in agent wears (backend: nomi_agent_core::crew::crew_name). */
-const MASCOT: Record<string, CrewId> = {
+export const MASCOT: Record<string, CrewId> = {
 	chitchat: 'nomi',
 	money: 'dana',
 	reminders: 'kala',
