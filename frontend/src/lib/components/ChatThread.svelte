@@ -95,6 +95,7 @@
 		quote = null,
 		onquotesent,
 		ontyping,
+		onqueuechange,
 		chatMenu = null,
 	}: {
 		sessionId: string;
@@ -145,6 +146,8 @@
 		onquotesent?: () => void;
 		/** Called while the person writes, so others in the chat can see it. */
 		ontyping?: () => void;
+		/** Called when the chat's turn queue may have changed (a message queued, started, reordered or finished). */
+		onqueuechange?: () => void;
 		/** The chat's own menu (rename, pin, move, export, share, delete): a chat's page has it, a
 		 * project's doesn't. The page must have pinSession, moveSession and deleteSession actions. */
 		chatMenu?: { pinned: boolean; inProjectId: string | null; projects: { id: string; name: string; workspace: string }[] } | null;
@@ -999,6 +1002,7 @@
 				// gap would otherwise stay "working"; one still running streams again.
 				openTurns = [];
 				invalidateAll();
+				onqueuechange?.();
 			} else {
 				// Whatever landed between loading the page and connecting (a quick reply, or a
 				// request moved to a new project) came with no event to show it: sync once.
@@ -1029,7 +1033,9 @@
 			}
 			const turnId = envelope.turn_job_id ?? NIL_UUID;
 			if (envelope.kind === 'Delta') {
-				if (!stopRequested && !openTurns.includes(turnId)) openTurns = [...openTurns, turnId];
+				if (!stopRequested && !openTurns.includes(turnId)) {
+					openTurns = [...openTurns, turnId];
+				}
 				if (!stopRequested && envelope.event) {
 					live = applyStreamEvent(live, envelope.event);
 					liveEnd = null;
@@ -1052,6 +1058,8 @@
 				// The server posts why (out of credits, a rejected key, ...) as a message in the
 				// chat; the generic notice is only for a failure that came with no explanation.
 				turnError = !envelope.error;
+			} else if (envelope.kind === 'QueueChanged') {
+				onqueuechange?.();
 			} else if (envelope.kind === 'SessionRenamed') {
 				if (typeof envelope.title === 'string') shownTitle = envelope.title;
 				invalidateAll(); // the sidebar and chat list show the new name too
@@ -1404,6 +1412,7 @@
 								draft = '';
 								clearAttachments();
 								if (result.data?.stopped) settleAfterStop();
+								onqueuechange?.();
 							}
 							if (!touchScreen()) messageInput?.focus();
 						};

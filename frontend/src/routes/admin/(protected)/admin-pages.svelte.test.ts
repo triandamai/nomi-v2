@@ -11,6 +11,7 @@ import Plans from './plans/+page.svelte';
 import Support from './support/+page.svelte';
 import Usage from './usage/+page.svelte';
 import Xendit from './payment/xendit/+page.svelte';
+import Maintenance from './maintenance/+page.svelte';
 
 const manage = { dashboard: 'manage', user: 'manage', plans: 'manage', notifications: 'manage', models: 'manage', tools: 'manage', agents: 'manage', support: 'manage', configuration: 'manage', integrations: 'manage' };
 const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects'], card_tone: 'violet', promo_label: null, promo_price_label: null, promo_ends_at: null, is_default: false, is_active: true, sort_order: 2 };
@@ -100,7 +101,7 @@ describe('admin pages', () => {
 			],
 			{ strip: '/admin/api/' },
 		);
-		for (const component of [Support, Configuration, Xendit]) {
+		for (const component of [Support, Configuration, Xendit, Maintenance]) {
 			const root = page(component, {});
 			await tryAll(root);
 			expect(root.textContent).toBeTruthy();

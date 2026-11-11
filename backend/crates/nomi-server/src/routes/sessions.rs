@@ -1520,29 +1520,36 @@ pub async fn user_activity_stream(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let (broker_host, broker_port) = (state.mqtt_broker_host.clone(), state.mqtt_broker_port);
-    // Both of the person's topics: `activity` (chats the crew is done with) and `stream` (new inbox
-    // items, so a failed publish pops up straight away rather than on the next unread poll).
-    let topic = format!("user/{}/+", claims.sub);
+    // Both of the person's topics (`activity` and `stream`) plus `system/maintenance` so open
+    // tabs react immediately when an admin toggles maintenance mode.
+    let topics = vec![format!("user/{}/+", claims.sub), crate::routes::maintenance::MAINTENANCE_TOPIC.to_string()];
     let identity = crate::presence::RelayIdentity::presence_with_tab(&headers, query.tab.as_deref(), claims.sub, ACTIVITY_RELAY);
-    ws.on_upgrade(move |socket| relay_topic(socket, topic, broker_host, broker_port, identity))
+    ws.on_upgrade(move |socket| relay_topics(socket, topics, broker_host, broker_port, identity))
 }
 
 /// Forwards everything published on `topic` to the socket until either side goes away. A presence
 /// connection says `online` once subscribed and passes on the app's `presence` frames; when the
 /// socket goes, dropping the broker connection sends its `offline` last will.
-pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
+pub(crate) async fn relay_topic(socket: WebSocket, topic: String, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
+    relay_topics(socket, vec![topic], broker_host, broker_port, identity).await;
+}
+
+pub(crate) async fn relay_topics(mut socket: WebSocket, topics: Vec<String>, broker_host: String, broker_port: u16, identity: crate::presence::RelayIdentity) {
     let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host.clone(), broker_port), 16);
-    if let Err(e) = client.subscribe(&topic, QoS::AtMostOnce).await {
-        tracing::warn!(
-            %topic,
-            client_id = %identity.client_id,
-            broker = %broker_host,
-            port = broker_port,
-            error = %e,
-            "relay_topic: failed to subscribe to MQTT broker; closing WebSocket"
-        );
-        return; // socket closes on drop
+    for topic in &topics {
+        if let Err(e) = client.subscribe(topic, QoS::AtMostOnce).await {
+            tracing::warn!(
+                %topic,
+                client_id = %identity.client_id,
+                broker = %broker_host,
+                port = broker_port,
+                error = %e,
+                "relay_topic: failed to subscribe to MQTT broker; closing WebSocket"
+            );
+            return; // socket closes on drop
+        }
     }
+    let topic = topics.first().cloned().unwrap_or_default();
     if let Some(speaker) = &identity.presence {
         speaker.say(&client, nomi_realtime::PresenceState::Online).await;
     }
@@ -1594,6 +1601,73 @@ pub(crate) async fn relay_topic(mut socket: WebSocket, topic: String, broker_hos
             }
         }
     }
+    let _ = client.disconnect().await;
+}
+
+/// Relays a project's live topic (`project/{id}/stream`) and keeps the person's project presence,
+/// whereabouts, cursor and typing updated over the same WebSocket.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn relay_project_topic(
+    mut socket: WebSocket,
+    pool: sqlx::PgPool,
+    project_id: Uuid,
+    user_id: Uuid,
+    topic: String,
+    broker_host: String,
+    broker_port: u16,
+    identity: crate::presence::RelayIdentity,
+) {
+    let (client, mut eventloop) = AsyncClient::new(identity.options(broker_host.clone(), broker_port), 16);
+    if let Err(e) = client.subscribe(&topic, QoS::AtMostOnce).await {
+        tracing::warn!(
+            %topic,
+            client_id = %identity.client_id,
+            broker = %broker_host,
+            port = broker_port,
+            error = %e,
+            "relay_project_topic: failed to subscribe to MQTT broker; closing WebSocket"
+        );
+        return;
+    }
+    let name = crate::routes::project_presence::person_name(&pool, user_id).await.unwrap_or_default();
+    let _ = crate::routes::project_presence::record_heartbeat(&pool, project_id, user_id, Default::default()).await;
+    if let Ok(mut conn) = pool.acquire().await {
+        let _ = crate::sandbox_store::touch_active(&mut conn, project_id).await;
+    }
+    let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(20));
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    keepalive.tick().await; // first tick is immediate
+
+    loop {
+        tokio::select! {
+            _ = keepalive.tick() => {
+                let _ = crate::routes::project_presence::record_heartbeat(&pool, project_id, user_id, Default::default()).await;
+                if let Ok(mut conn) = pool.acquire().await {
+                    let _ = crate::sandbox_store::touch_active(&mut conn, project_id).await;
+                }
+            }
+            event = eventloop.poll() => {
+                match event {
+                    Ok(Event::Incoming(Packet::Publish(publish))) => {
+                        if socket.send(Message::Text(String::from_utf8_lossy(&publish.payload).into_owned())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(_) => continue,
+                    Err(_) => break,
+                }
+            }
+            incoming = socket.recv() => {
+                let Some(Ok(message)) = incoming else {
+                    break;
+                };
+                if let Message::Text(text) = message {
+                    crate::routes::project_presence::handle_ws_frame(&pool, project_id, user_id, &name, &text).await;
+                }
+            }
+        }
+    }
+    let _ = crate::routes::project_presence::record_leave(&pool, project_id, user_id).await;
     let _ = client.disconnect().await;
 }
 

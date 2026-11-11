@@ -63,6 +63,64 @@ fn tell_project(project_id: Uuid, event: &serde_json::Value) {
     }
 }
 
+pub async fn person_name(pool: &sqlx::PgPool, user_id: Uuid) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(&format!(
+        "SELECT {PERSON_NAME} FROM users u \
+         LEFT JOIN user_profiles up ON up.user_id = u.id \
+         LEFT JOIN web_credentials w ON w.user_id = u.id \
+         LEFT JOIN google_identities g ON g.user_id = u.id WHERE u.id = $1"
+    ))
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn record_heartbeat(
+    pool: &sqlx::PgPool,
+    project_id: Uuid,
+    user_id: Uuid,
+    whereabouts: Whereabouts,
+) -> Result<(), sqlx::Error> {
+    let (view, path) = clean(whereabouts);
+    // Whether they'd already counted as here, and where they were, so only an arrival or a move
+    // tells the others.
+    let before: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT view, path FROM project_presence WHERE project_id = $1 AND user_id = $2 \
+         AND last_seen > now() - make_interval(secs => $3)",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(PRESENCE_TTL_SECONDS as f64)
+    .fetch_optional(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO project_presence (project_id, user_id, last_seen, view, path) VALUES ($1, $2, now(), $3, $4) \
+         ON CONFLICT (project_id, user_id) DO UPDATE SET last_seen = now(), view = COALESCE($3, project_presence.view), \
+         path = CASE WHEN $3 IS NULL THEN project_presence.path ELSE $4 END",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(&view)
+    .bind(&path)
+    .execute(pool)
+    .await?;
+    let moved = matches!(&before, Some((was_view, was_path)) if view.is_some() && (was_view != &view || was_path != &path));
+    if before.is_none() || moved {
+        tell_project(project_id, &json!({ "kind": "PresenceChanged", "user_id": user_id }));
+    }
+    Ok(())
+}
+
+pub async fn record_leave(pool: &sqlx::PgPool, project_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM project_presence WHERE project_id = $1 AND user_id = $2")
+        .bind(project_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    tell_project(project_id, &json!({ "kind": "PresenceChanged", "user_id": user_id }));
+    Ok(())
+}
+
 /// `POST /api/projects/:id/presence`: this person has the project open.
 pub async fn heartbeat(
     State(state): State<AppState>,
@@ -71,48 +129,18 @@ pub async fn heartbeat(
     body: Option<Json<Whereabouts>>,
 ) -> Result<StatusCode, ApiError> {
     project_role(&state.pool, project_id, claims.sub).await?;
-    let (view, path) = clean(body.map(|Json(b)| b).unwrap_or_default());
-    // Whether they'd already counted as here, and where they were, so only an arrival or a move
-    // tells the others.
-    let before: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT view, path FROM project_presence WHERE project_id = $1 AND user_id = $2 \
-         AND last_seen > now() - make_interval(secs => $3)",
-    )
-    .bind(project_id)
-    .bind(claims.sub)
-    .bind(PRESENCE_TTL_SECONDS as f64)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal("failed to check presence"))?;
-    sqlx::query(
-        "INSERT INTO project_presence (project_id, user_id, last_seen, view, path) VALUES ($1, $2, now(), $3, $4) \
-         ON CONFLICT (project_id, user_id) DO UPDATE SET last_seen = now(), view = COALESCE($3, project_presence.view), \
-         path = CASE WHEN $3 IS NULL THEN project_presence.path ELSE $4 END",
-    )
-    .bind(project_id)
-    .bind(claims.sub)
-    .bind(&view)
-    .bind(&path)
-    .execute(&state.pool)
-    .await
-    .map_err(internal("failed to record presence"))?;
-    let moved = matches!(&before, Some((was_view, was_path)) if view.is_some() && (was_view != &view || was_path != &path));
-    if before.is_none() || moved {
-        tell_project(project_id, &json!({ "kind": "PresenceChanged" }));
-    }
+    record_heartbeat(&state.pool, project_id, claims.sub, body.map(|Json(b)| b).unwrap_or_default())
+        .await
+        .map_err(internal("failed to record presence"))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// `DELETE /api/projects/:id/presence`: this person closed the project.
 pub async fn leave(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<StatusCode, ApiError> {
     project_role(&state.pool, project_id, claims.sub).await?;
-    sqlx::query("DELETE FROM project_presence WHERE project_id = $1 AND user_id = $2")
-        .bind(project_id)
-        .bind(claims.sub)
-        .execute(&state.pool)
+    record_leave(&state.pool, project_id, claims.sub)
         .await
         .map_err(internal("failed to clear presence"))?;
-    tell_project(project_id, &json!({ "kind": "PresenceChanged" }));
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -142,16 +170,7 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
 /// show it for a few seconds; the next ping keeps it up.
 pub async fn typing(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<StatusCode, ApiError> {
     project_role(&state.pool, project_id, claims.sub).await?;
-    let name: String = sqlx::query_scalar(&format!(
-        "SELECT {PERSON_NAME} FROM users u \
-         LEFT JOIN user_profiles up ON up.user_id = u.id \
-         LEFT JOIN web_credentials w ON w.user_id = u.id \
-         LEFT JOIN google_identities g ON g.user_id = u.id WHERE u.id = $1"
-    ))
-    .bind(claims.sub)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(internal("failed to look up who's typing"))?;
+    let name = person_name(&state.pool, claims.sub).await.map_err(internal("failed to look up who's typing"))?;
     tell_project(project_id, &json!({ "kind": "Typing", "user_id": claims.sub, "name": name }));
     Ok(StatusCode::NO_CONTENT)
 }
@@ -164,6 +183,10 @@ pub struct CursorAt {
     pub view: String,
 }
 
+fn valid_cursor(at: &CursorAt) -> bool {
+    (0.0..=1.0).contains(&at.x) && (0.0..=1.0).contains(&at.y) && matches!(at.view.as_str(), "preview" | "code" | "terminal")
+}
+
 /// `POST /api/projects/:id/cursor` with `{ x, y, view }`: where this person's pointer is, passed
 /// straight to the others' pages (nothing is stored). Pages send it a few times a second at most.
 pub async fn cursor(
@@ -173,19 +196,36 @@ pub async fn cursor(
     Json(at): Json<CursorAt>,
 ) -> Result<StatusCode, ApiError> {
     project_role(&state.pool, project_id, claims.sub).await?;
-    if !(0.0..=1.0).contains(&at.x) || !(0.0..=1.0).contains(&at.y) || !matches!(at.view.as_str(), "preview" | "code" | "terminal") {
+    if !valid_cursor(&at) {
         return Err((StatusCode::BAD_REQUEST, "x and y are fractions of the view, and view is preview, code or terminal".to_string()));
     }
-    let name: String = sqlx::query_scalar(&format!(
-        "SELECT {PERSON_NAME} FROM users u \
-         LEFT JOIN user_profiles up ON up.user_id = u.id \
-         LEFT JOIN web_credentials w ON w.user_id = u.id \
-         LEFT JOIN google_identities g ON g.user_id = u.id WHERE u.id = $1"
-    ))
-    .bind(claims.sub)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(internal("failed to look up whose pointer it is"))?;
+    let name = person_name(&state.pool, claims.sub).await.map_err(internal("failed to look up whose pointer it is"))?;
     tell_project(project_id, &json!({ "kind": "Cursor", "user_id": claims.sub, "name": name, "x": at.x, "y": at.y, "view": at.view }));
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum ProjectClientFrame {
+    Where(Whereabouts),
+    Typing,
+    Cursor(CursorAt),
+}
+
+/// Handles a presence, typing or cursor frame sent over `/api/projects/:id/ws`.
+pub async fn handle_ws_frame(pool: &sqlx::PgPool, project_id: Uuid, user_id: Uuid, name: &str, text: &str) {
+    let Ok(frame) = serde_json::from_str::<ProjectClientFrame>(text) else { return };
+    match frame {
+        ProjectClientFrame::Where(whereabouts) => {
+            let _ = record_heartbeat(pool, project_id, user_id, whereabouts).await;
+        }
+        ProjectClientFrame::Typing => {
+            tell_project(project_id, &json!({ "kind": "Typing", "user_id": user_id, "name": name }));
+        }
+        ProjectClientFrame::Cursor(at) => {
+            if valid_cursor(&at) {
+                tell_project(project_id, &json!({ "kind": "Cursor", "user_id": user_id, "name": name, "x": at.x, "y": at.y, "view": at.view }));
+            }
+        }
+    }
 }

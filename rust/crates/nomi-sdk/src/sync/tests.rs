@@ -608,10 +608,11 @@ async fn a_message_that_may_have_landed_is_claimed_instead_of_sent_twice() {
 
     let messages = eventually("the claim", || async {
         let messages = h.messages().await;
-        (h.outbox().await.is_empty() && !messages.is_empty()).then_some(messages)
+        (messages.len() == 1 && messages[0].id == "m1").then_some(messages)
     })
     .await;
     assert_eq!(messages, vec![stored_message("m1", "user", "Hello", 20)]);
+    assert!(h.outbox().await.is_empty());
     assert_eq!(h.requests("POST", MESSAGES_PATH).await.len(), 1);
 }
 
