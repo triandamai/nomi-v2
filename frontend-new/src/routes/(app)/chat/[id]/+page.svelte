@@ -40,6 +40,8 @@
 	import FailedReply from '$lib/ds/thread/FailedReply.svelte';
 	import TurnNote from '$lib/ds/thread/TurnNote.svelte';
 	import ChatComposer from '$lib/ds/thread/ChatComposer.svelte';
+	import { replyBlocks } from '$lib/adapters/blocks';
+	import ReplyBlocks from '$lib/chat/ReplyBlocks.svelte';
 
 	// Flow / Chat — Ask → think → answer (ENb07), Message controls (Cf6GO), Like & dislike (HKYo1),
 	// Manage chat & long threads (J3ks0) and Errors & recovery (TpuRc): a chat, live. The thread
@@ -732,6 +734,18 @@
 									<FailedReply text={entry.failure.text} title={view.title} actions={view.actions} />
 								{:else}
 									<Prose html={message.content_html} />
+									<ReplyBlocks
+										blocks={replyBlocks(message, { language })}
+										{api}
+										messageId={message.id}
+										agentName={nameOf(message)}
+										{language}
+										timeZone={time.timeZone}
+										now={time.now}
+										{working}
+										latest={entry.latest}
+										onsend={(text) => send(text)}
+									/>
 									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={m.continued_note({ elapsed: continued.elapsed })} />{/if}
 									<ReplyBar
 										text={message.content}
