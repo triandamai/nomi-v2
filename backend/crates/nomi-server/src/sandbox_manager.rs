@@ -428,6 +428,9 @@ impl SandboxManager {
     async fn provider_failed(&self, row: &SandboxRow, err: SandboxError) -> Exit {
         let at = retry_time(Self::wait_after(row.attempts, Some(&err)));
         let why = err.to_string();
+        if matches!(err, SandboxError::RateLimited { .. } | SandboxError::OutOfCapacity { .. }) {
+            return self.defer(row.project_id, at).await;
+        }
         let project_id = row.project_id;
         let saved = async {
             let mut tx = self.pool.begin().await?;
