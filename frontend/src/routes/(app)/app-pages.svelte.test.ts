@@ -7,6 +7,9 @@ import Billing from './billing/+page.svelte';
 import Chats from './chats/+page.svelte';
 import Google from './connections/google/+page.svelte';
 import Organization from './organizations/[orgId]/+page.svelte';
+import Account from './account/+page.svelte';
+import Connections from './connections/+page.svelte';
+import More from './more/+page.svelte';
 
 const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_ends_at: '2026-12-31T00:00:00Z', is_default: false, is_active: true, sort_order: 2 };
 const free = { ...plan, id: 'free', slug: 'free', name: 'Free', monthly_tokens: 100_000, price_label: 'Free', features: [], promo_label: null, promo_price_label: null, promo_ends_at: null, is_default: true, sort_order: 1 };
@@ -98,3 +101,55 @@ describe('organization', () => {
 		expect(text(member)).toContain('Ana');
 	});
 });
+
+describe('account', () => {
+	it('shows email, sign-in methods, and devices', async () => {
+		const root = page(Account, {
+			profile: { email: 'ana@example.com' },
+			methods: { password: true, google: false, configured: true, google_email: null },
+			devices: [
+				{
+					id: 'd1',
+					platform: 'web',
+					name: 'MacBook',
+					brand: 'Apple',
+					model: 'MacBook Pro',
+					os_name: 'macOS',
+					os_version: '15.0',
+					app_version: '1.0.0',
+					presence: 'online',
+					last_seen_at: '2026-11-01T00:00:00Z',
+					created_at: '2026-01-01T00:00:00Z',
+					current: true,
+				},
+			],
+		});
+		expect(text(root)).toContain('ana@example.com');
+		await tryAll(root);
+	});
+});
+
+describe('connections', () => {
+	it('lists connectors and search results', async () => {
+		const root = page(Connections, {
+			query: '',
+			overview: {
+				google: { email: 'ana@gmail.com' },
+				hevy: { account_name: 'Ana', connected_at: '2026-01-01' },
+			},
+		});
+		expect(text(root)).toBeTruthy();
+		await tryAll(root);
+	});
+});
+
+describe('more', () => {
+	it('shows all features and allows toggling pins', async () => {
+		const root = page(More, {
+			preferences: { drawer_pins: ['money', 'projects'] },
+		});
+		expect(text(root)).toBeTruthy();
+		await tryAll(root);
+	});
+});
+

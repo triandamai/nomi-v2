@@ -361,10 +361,11 @@
 		location.href = to.url.href;
 	});
 	// The file list follows Koda's work without a reload: from the in-browser runtime when it's
-	// running, otherwise by checking the project's file list every few seconds while it's on screen.
+	// running, otherwise by refreshing when the sandbox or project changes.
 	let polledFiles = $state<{ path: string; updated_at: string }[] | null>(null);
 	$effect(() => {
-		if (!projectId || runtime) return;
+		const d = deploy;
+		if (!projectId || runtime || !d) return;
 		const id = projectId;
 		let stopped = false;
 		const refresh = async () => {
@@ -372,10 +373,16 @@
 			const response = await fetch(`/projects/${id}/api/manifest`).catch(() => null);
 			if (!stopped && response?.ok) polledFiles = ((await response.json()) as { files: { path: string; updated_at: string }[] }).files;
 		};
-		const timer = setInterval(refresh, 5000);
+		const off = d.onEvent((raw) => {
+			try {
+				if (JSON.parse(raw).kind === 'SandboxChanged') void refresh();
+			} catch {
+				// Not ours.
+			}
+		});
 		return () => {
 			stopped = true;
-			clearInterval(timer);
+			off();
 			polledFiles = null;
 		};
 	});
@@ -689,8 +696,10 @@
 	// publishes or reviews it right there. They change live over the project's stream.
 	type PendingRequest = { id: string; requested_by_name: string; note: string | null; environment: string; created_at: string; status: string };
 	let requests = $state<PendingRequest[]>([]);
+	const isAdmin = $derived(deploy?.isAdmin ?? false);
+	const subscribeDeploy = $derived(deploy ? (listener: (raw: string) => void) => deploy!.onEvent(listener) : undefined);
 	async function loadRequests() {
-		if (!projectId || !deploy?.isAdmin) return;
+		if (!projectId || !isAdmin) return;
 		try {
 			const list = await projectApi<{ requests: PendingRequest[] }>(projectId, 'deploy/requests');
 			requests = list.requests.filter((request) => request.status === 'pending');
@@ -699,9 +708,10 @@
 		}
 	}
 	$effect(() => {
-		if (!deploy?.isAdmin) return;
+		const d = deploy;
+		if (!d || !isAdmin) return;
 		void loadRequests();
-		return deploy.onEvent((raw) => {
+		return d.onEvent((raw) => {
 			try {
 				if (JSON.parse(raw).event === 'publish_request.changed') void loadRequests();
 			} catch {
@@ -720,20 +730,19 @@
 	}
 
 	// The asks waiting for Koda (Build together → Asks in line): one change at a time, who asked
-	// what, and the next one moved up. Looked at again every few seconds while the chat is open.
+	// what, and the next one moved up. Refreshed when the chat's turn queue changes over MQTT.
 	type QueuedAsk = { id: string; text: string; who: string; mine: boolean; state: 'running' | 'next' | 'queued' };
 	let asks = $state<QueuedAsk[]>([]);
+	const hasProject = $derived(Boolean(data.project));
 	async function loadQueue() {
+		if (!hasProject) return;
 		const response = await fetch(`${page.url.pathname}/queue`).catch(() => null);
 		if (response?.ok) asks = ((await response.json()) as { asks: QueuedAsk[] }).asks;
 	}
 	$effect(() => {
-		if (!data.project) return;
+		void page.params.sessionId;
+		if (!hasProject) return;
 		void loadQueue();
-		const timer = setInterval(() => {
-			if (document.visibilityState === 'visible') void loadQueue();
-		}, 4000);
-		return () => clearInterval(timer);
 	});
 	async function moveFirst(index: number) {
 		const ask = asks[index];
@@ -1026,6 +1035,7 @@
 			onquotesent={() => (quoted = null)}
 			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
+			onqueuechange={loadQueue}
 		>
 			{#snippet aboveComposer()}
 				{#if issueNow && issueNow.status === 'open' && issueNow.crew_state === 'done' && !viewer}
@@ -1034,7 +1044,8 @@
 				{#if data.project && !data.project.issue}
 					<IssueWorkStrip
 						projectId={data.project.id}
-						subscribe={deploy ? (listener) => deploy!.onEvent(listener) : undefined}
+						{openIssues}
+						subscribe={subscribeDeploy}
 						onmore={() => openSheet('issues')}
 					/>
 				{/if}

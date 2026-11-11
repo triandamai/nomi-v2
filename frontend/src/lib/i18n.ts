@@ -15,8 +15,11 @@ export { locales };
 export type { Locale };
 
 /** "just now", "45m ago", "yesterday", "4mo ago", in the person's language. */
-export function timeAgo(iso: string, now: number = Date.now()): string {
-	const minutes = Math.floor((now - new Date(iso).getTime()) / 60000);
+export function timeAgo(iso: string | null | undefined, now: number = Date.now()): string {
+	if (!iso) return m.time_just_now();
+	const time = new Date(iso).getTime();
+	if (Number.isNaN(time)) return m.time_just_now();
+	const minutes = Math.floor((now - time) / 60000);
 	if (minutes < 1) return m.time_just_now();
 	const format = new Intl.RelativeTimeFormat(getLocale(), { style: 'narrow', numeric: 'auto' });
 	if (minutes < 60) return format.format(-minutes, 'minute');

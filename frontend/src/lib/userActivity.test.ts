@@ -192,4 +192,16 @@ describe("the person's activity feed", () => {
 		expect(posted).toEqual(['/logout']);
 		expect(assigned).toEqual(['/login']);
 	});
+
+	it('redirects to the maintenance page when maintenance mode is enabled over the feed', async () => {
+		const assigned: string[] = [];
+		vi.stubGlobal('location', { pathname: '/chat/other', assign: (to: string) => assigned.push(to) });
+		const { connectUserActivity } = await import('./userActivity');
+		connectUserActivity('d1');
+		const socket = FakeSocket.all[0];
+		socket.emit('message', { data: JSON.stringify({ kind: 'MaintenanceChanged', enabled: false }) });
+		expect(assigned).toEqual([]);
+		socket.emit('message', { data: JSON.stringify({ kind: 'MaintenanceChanged', enabled: true }) });
+		expect(assigned).toEqual(['/maintenance']);
+	});
 });

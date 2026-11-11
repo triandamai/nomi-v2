@@ -7,10 +7,14 @@ use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
+
+/// Shared MQTT topic where maintenance mode changes are announced to all open browser tabs.
+pub const MAINTENANCE_TOPIC: &str = "system/maintenance";
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct Maintenance {
@@ -70,5 +74,17 @@ pub async fn put(
             tracing::error!(error = %e, "failed to save maintenance mode");
             (StatusCode::INTERNAL_SERVER_ERROR, "failed to save maintenance mode")
         })?;
-    Ok(Json(load(&state.pool).await?))
+    let row = load(&state.pool).await?;
+    if let Some(publisher) = crate::project_events::publisher() {
+        let _ = publisher.try_publish_to(
+            MAINTENANCE_TOPIC,
+            &json!({
+                "kind": "MaintenanceChanged",
+                "enabled": row.enabled,
+                "message": row.message,
+                "until": row.until,
+            }),
+        );
+    }
+    Ok(Json(row))
 }

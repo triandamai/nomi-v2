@@ -93,6 +93,9 @@ pub async fn move_first(
     if moved.rows_affected() == 0 {
         return Err((StatusCode::CONFLICT, "that ask isn't waiting any more"));
     }
+    if let Some(publisher) = crate::project_events::publisher() {
+        let _ = publisher.try_publish_to(&format!("chat/{session_id}/stream"), &nomi_realtime::StreamEnvelope::QueueChanged);
+    }
     let asks = queue_of(&state.pool, claims.sub, session_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load the queue"))?;
     Ok(Json(Queue { asks }))
 }

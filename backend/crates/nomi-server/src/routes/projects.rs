@@ -189,10 +189,7 @@ pub async fn create_project_session(
     })?;
 
     // Where the project runs is chosen once, here: projects that already exist keep theirs.
-    let runtime = match crate::configuration::sandbox_config().await {
-        Some(config) if config.rollout.includes(claims.sub) => crate::routes::project_sandbox::RUNTIME_SANDBOX,
-        _ => crate::routes::project_sandbox::RUNTIME_BROWSER,
-    };
+    let runtime = nomi_settings::config::new_project_runtime(claims.sub).await;
     let project_id: Uuid = sqlx::query_scalar(
         "INSERT INTO projects (user_id, session_id, org_id, name, runtime) VALUES ($1, $2, $3, 'New project', $4) RETURNING id",
     )
