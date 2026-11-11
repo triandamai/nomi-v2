@@ -876,8 +876,10 @@ pub async fn project_stream(
     project_role(&state.pool, project_id, claims.sub).await?;
     let topic = crate::project_events::topic(project_id);
     let (host, port) = (state.mqtt_broker_host.clone(), state.mqtt_broker_port);
+    let pool = state.pool.clone();
+    let user_id = claims.sub;
     let identity = crate::presence::RelayIdentity::relay(&headers, PROJECT_RELAY);
-    Ok(ws.on_upgrade(move |socket| crate::routes::sessions::relay_topic(socket, topic, host, port, identity)))
+    Ok(ws.on_upgrade(move |socket| crate::routes::sessions::relay_project_topic(socket, pool, project_id, user_id, topic, host, port, identity)))
 }
 
 /// `POST /api/hooks/shipyard`: Shipyard's events. Signature first, then stored once and applied.

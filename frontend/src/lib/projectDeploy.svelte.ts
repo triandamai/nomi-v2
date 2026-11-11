@@ -21,6 +21,7 @@ export class ProjectDeploy {
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#stopped = false;
 	#socket: WebSocket | null = null;
+	#lastWhere: Record<string, unknown> | null = null;
 	#retry: ReturnType<typeof setTimeout> | null = null;
 	#retryMs = 1000;
 	#listeners = new Set<(data: string) => void>();
@@ -72,6 +73,9 @@ export class ProjectDeploy {
 			// Whatever happened while it was closed came with no message.
 			if (this.#retryMs > 1000) void this.refresh();
 			this.#retryMs = 1000;
+			if (this.#lastWhere && socket.readyState === WebSocket.OPEN) {
+				socket.send(JSON.stringify(this.#lastWhere));
+			}
 		});
 		socket.addEventListener('message', (event: MessageEvent<string>) => {
 			// The same topic carries presence and typing (see projectPresence): only publishing
@@ -126,6 +130,14 @@ export class ProjectDeploy {
 			this.busy = false;
 			await this.refresh();
 		}
+	}
+
+	/** Sends a frame (presence whereabouts, cursor or typing) over the project's socket. */
+	send(frame: Record<string, unknown>): boolean {
+		if (frame.op === 'where') this.#lastWhere = frame;
+		if (this.#socket?.readyState !== WebSocket.OPEN) return false;
+		this.#socket.send(JSON.stringify(frame));
+		return true;
 	}
 
 	/** Calls `listener` with every message on the project's live topic; returns the function that stops it. */

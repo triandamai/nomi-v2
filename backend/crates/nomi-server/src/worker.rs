@@ -234,6 +234,8 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
         }
     };
 
+    let _ = turns.mqtt.publish(claimed.session_id, &StreamEnvelope::QueueChanged).await;
+
     // The chat's own model when someone picked one in the chat, else the person's.
     let provider = crate::bootstrap::build_llm_provider_in_session(
         &turns.pool,

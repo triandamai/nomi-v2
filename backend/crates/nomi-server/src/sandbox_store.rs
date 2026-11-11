@@ -572,6 +572,7 @@ pub async fn idle_candidates(conn: &mut PgConnection, idle_secs: u64) -> Result<
 /// What the project page shows about a project's sandbox.
 #[derive(Debug, Clone)]
 pub struct Status {
+    pub desired: Desired,
     pub state: State,
     pub preview_url: Option<String>,
     pub last_error: Option<String>,
@@ -579,15 +580,26 @@ pub struct Status {
     pub retry_at: Option<DateTime<Utc>>,
 }
 
+/// Touch the last_active_at timestamp while the user is actively viewing/connected.
+pub async fn touch_active(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE project_sandboxes SET last_active_at = now() WHERE project_id = $1 AND desired = 'running'")
+        .bind(project_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 /// The project's sandbox as the page should see it, or `None` if it has no sandbox.
 pub async fn status(conn: &mut PgConnection, project_id: Uuid) -> Result<Option<Status>, sqlx::Error> {
-    let row = sqlx::query("SELECT state, preview_url, last_error, retry_at FROM project_sandboxes WHERE project_id = $1")
+    let row = sqlx::query("SELECT desired, state, preview_url, last_error, retry_at FROM project_sandboxes WHERE project_id = $1")
         .bind(project_id)
         .fetch_optional(conn)
         .await?;
     row.map(|r| {
+        let desired: String = r.try_get("desired")?;
         let state: String = r.try_get("state")?;
         Ok(Status {
+            desired: decode("desired", &desired, Desired::parse(&desired))?,
             state: decode("state", &state, State::parse(&state))?,
             preview_url: r.try_get("preview_url")?,
             last_error: r.try_get("last_error")?,

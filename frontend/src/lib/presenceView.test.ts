@@ -35,10 +35,14 @@ describe('shouldSend', () => {
 });
 
 describe('isDeployEvent', () => {
-	it('tells publishing changes apart from presence and typing', () => {
+	it('tells publishing changes apart from presence, typing, cursor and sandbox events', () => {
 		expect(isDeployEvent('{"kind":"DeployChanged","event":"publish.succeeded"}')).toBe(true);
 		expect(isDeployEvent('{"kind":"PresenceChanged"}')).toBe(false);
 		expect(isDeployEvent('{"kind":"Typing","user_id":"u2","name":"Ben"}')).toBe(false);
+		expect(isDeployEvent('{"kind":"Cursor","user_id":"u2","name":"Ben","x":0.5,"y":0.5,"view":"preview"}')).toBe(false);
+		expect(isDeployEvent('{"kind":"SandboxChanged","phase":"running"}')).toBe(false);
+		expect(isDeployEvent('{"kind":"DeployChanged","event":"publish_request.changed"}')).toBe(false);
+		expect(isDeployEvent('{"kind":"DeployChanged","event":"backend.changed"}')).toBe(false);
 		// Anything this build can't read is treated as a change to be safe.
 		expect(isDeployEvent('not json')).toBe(true);
 	});
