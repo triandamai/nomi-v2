@@ -3025,7 +3025,6 @@
 	"issue_work_more": "{count} more on the board",
 	"issue_work_label": "The crew's issues",
 	"issue_chat_back": "Back to the project chat",
-	"issue_chat_parent": "{project} chat",
 	"issue_chat_of": "Issue #{number} · {title}",
 	"board_done_by": "Done by {name}",
 	"board_done_column": "Done",

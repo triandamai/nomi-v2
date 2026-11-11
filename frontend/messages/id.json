@@ -3025,7 +3025,6 @@
 	"issue_work_more": "{count} lagi di papan",
 	"issue_work_label": "Isu yang dikerjakan kru",
 	"issue_chat_back": "Kembali ke obrolan proyek",
-	"issue_chat_parent": "Obrolan {project}",
 	"issue_chat_of": "Isu #{number} · {title}",
 	"board_done_by": "Diselesaikan {name}",
 	"board_done_column": "Done",
