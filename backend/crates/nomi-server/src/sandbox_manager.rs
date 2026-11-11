@@ -428,16 +428,17 @@ impl SandboxManager {
     async fn provider_failed(&self, row: &SandboxRow, err: SandboxError) -> Exit {
         let at = retry_time(Self::wait_after(row.attempts, Some(&err)));
         let why = err.to_string();
-        if matches!(err, SandboxError::RateLimited { .. } | SandboxError::OutOfCapacity { .. }) {
+        if err.is_retryable() {
             return self.defer(row.project_id, at).await;
         }
+        // The state, the reason and the retry time are saved together, and the pages told only
+        // after: a page that reloads on the event must see the error message too.
         let project_id = row.project_id;
         let saved = async {
             let mut tx = self.pool.begin().await?;
-            let attempts = store::record_attempt_failure(&mut tx, project_id, at, &why).await?;
-            let cooled = !err.is_retryable() || attempts >= MAX_ATTEMPTS;
+            store::set_state(&mut tx, project_id, State::Error, Some(&why)).await?;
+            let cooled = store::record_attempt_failure(&mut tx, project_id, at, &why).await? >= MAX_ATTEMPTS;
             if cooled {
-                store::set_state(&mut tx, project_id, State::Error, Some(&why)).await?;
                 store::enter_cooldown(&mut tx, project_id, Self::cooldown_end(), &why).await?;
             }
             tx.commit().await?;
@@ -448,11 +449,9 @@ impl SandboxManager {
             Ok(cooled) => {
                 if cooled {
                     self.stop_after_cooldown(project_id).await;
-                    self.announce(project_id, State::Error, Some(error_kind(&err))).await;
-                    ReconcileOutcome::Failed(why)
-                } else {
-                    ReconcileOutcome::RetryAt(at)
                 }
+                self.announce(project_id, State::Error, Some(error_kind(&err))).await;
+                ReconcileOutcome::Failed(why)
             }
             Err(e) => ReconcileOutcome::Failed(format!("database: {e}")),
         }
