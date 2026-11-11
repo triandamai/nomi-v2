@@ -65,6 +65,8 @@ export function fakeEvent(options: {
 		locals: { ...options.locals } as App.Locals,
 		params: options.params ?? {},
 		fetch: fetchFn,
+		/** What the load said it depends on. */
+		depends: (...keys: string[]) => void keys,
 	};
 }
 

@@ -197,3 +197,13 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
 - **What exists today:** nothing.
 - **Proposed contract:** `POST /api/shared/:token/report` with `{ reason, note? }`, open without a sign-in, rate-limited.
 - **Until then:** the footer has no report link.
+
+### Push for reminders, and quiet hours
+- **Needed by:** *App / Inbox* (BFoiZ) → How it reaches you: "Push for reminders — On your phone and desktop, at the exact time." and "Quiet hours 22:00–06:00 — Learned from your routines. Reminders wait until morning.", each with a switch.
+- **Why:** a person can't turn reminder pushes off without turning off notifications for the whole app on the phone, and there's no way to hold reminders back overnight.
+- **What exists today:** `GET|PUT /api/notifications/preferences` holds only `email_account` and `email_promos`; phones get pushes for every inbox item and reply (`crate::push`), with no preference.
+- **Proposed contract:** add `push_reminders: bool` and `quiet_hours: { start: "22:00", end: "06:00" } | null` (in the person's zone) to the preferences; the reminders worker holds a reminder due inside quiet hours until they end.
+- **Until then:** the Inbox shows the two email settings only.
+
+Found while building the Inbox (2026-11-12).
+

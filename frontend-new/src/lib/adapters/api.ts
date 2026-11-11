@@ -163,3 +163,42 @@ export type HomeSummary = {
 	today_total: number;
 	plans_total: number;
 };
+
+/** One notification in `GET /api/notifications` (kind: account, subscription, quota, promo, deploy, project). */
+export type NotificationItem = { id: string; kind: string; title: string; body: string; link: string | null; read: boolean; created_at: string };
+
+/** `GET /api/notifications?filter=&page=`: a page (20) of the inbox, newest first, with each filter's count. */
+export type NotificationPage = {
+	items: NotificationItem[];
+	unread: number;
+	page: number;
+	pages: number;
+	page_size: number;
+	total: number;
+	counts: { all: number; unread: number; read: number; promo: number };
+};
+
+/** A reminder Kala keeps (status: active, fired, done or cancelled; recurrence: daily, weekly or monthly). */
+export type ReminderItem = {
+	id: string;
+	session_id: string;
+	title: string;
+	notes: string | null;
+	due_at: string;
+	recurrence: string | null;
+	recurrence_weekday: number | null;
+	recurrence_day_of_month: number | null;
+	status: string;
+	created_by: string;
+	last_fired_at: string | null;
+	created_at: string;
+};
+
+/** Work an agent will do later (the core scheduler), listed beside the reminders. */
+export type ScheduledTask = { id: string; label: string; run_at: string; recurrence: string | null; agent: string; session_id: string };
+
+/** `GET /api/reminders`: the person's zone, active reminders, the last 20 finished, and scheduled work. */
+export type RemindersList = { timezone: string; upcoming: ReminderItem[]; past: ReminderItem[]; scheduled_tasks: ScheduledTask[] };
+
+/** `GET|PUT /api/notifications/preferences`: which emails the person gets. */
+export type EmailPreferences = { email_account: boolean; email_promos: boolean };
