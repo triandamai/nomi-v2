@@ -27,6 +27,12 @@
 			path: '/design-system/build',
 			holds: 'Everything between describing an app and a live URL: the estimate, building, share and export, first run, the workspace, code, terminal and phone, building together, building on mobile, the story sheet, build types.',
 		},
+		{
+			id: 'URIB6',
+			name: 'Design System / Projects',
+			path: '/design-system/projects',
+			holds: 'Every project, its state and its next action: the page’s parts and grid, the card in every state, its menus and confirms, the workspace dialogs, the toolbar with its empty and error states, importing from GitHub, and the selected project’s panel.',
+		},
 	];
 
 	const translations: [title: string, body: string][] = [
@@ -58,7 +64,7 @@
 >
 	<DocSection title="Nomi.pen">
 		<p>
-			The whole design lives in one file, <strong>Nomi.pen</strong>, opened in the Pencil app from pen.dev. It holds three design sheets,
+			The whole design lives in one file, <strong>Nomi.pen</strong>, opened in the Pencil app from pen.dev. It holds four design sheets,
 			40 flows (each with a light twin) and the app screens. Where the pen is silent about behaviour, timings or copy, the prototype
 			<code>marioprasetyo/nomi-prototype</code> is the reference.
 		</p>
@@ -69,8 +75,8 @@
 		</p>
 	</DocSection>
 
-	<DocSection title="The three design sheets" lede="Each is rebuilt in these docs from the real components, section by section, and must land on your bounds to the pixel.">
-		<div class="grid gap-3 md:grid-cols-3">
+	<DocSection title="The four design sheets" lede="Each is rebuilt in these docs from the real components, section by section, and must land on your bounds to the pixel.">
+		<div class="grid gap-3 md:grid-cols-2">
 			{#each sheets as sheet (sheet.id)}
 				<LinkCard href={docHref(sheet.path)} eyebrow={sheet.id} title={sheet.name} blurb={sheet.holds} />
 			{/each}

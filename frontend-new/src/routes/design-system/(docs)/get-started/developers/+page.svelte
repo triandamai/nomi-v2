@@ -80,7 +80,7 @@ Get("<frame id>", (n, c) => { if (c.depth <= 3) Print("  ".repeat(c.depth) + n.n
 	<DocSection title="Run it" lede="Node 22.12 or newer, inside frontend-new/.">
 		<CodeBlock code={run} language="sh" />
 		<ul>
-			<li>The docs and the three sheets are at <code>/design-system</code>. They are on in <code>npm run dev</code> and wherever <code>PUBLIC_DS_GALLERY=1</code> is set (CI, e2e, review builds), and off in production.</li>
+			<li>The docs and the four sheets are at <code>/design-system</code>. They are on in <code>npm run dev</code> and wherever <code>PUBLIC_DS_GALLERY=1</code> is set (CI, e2e, review builds), and off in production.</li>
 			<li><code>?theme=dark</code> or <code>?theme=light</code> forces a theme on a sheet.</li>
 			<li>The old frontend keeps port 5173. <code>npm run preview</code> serves a production build on 4175.</li>
 		</ul>
@@ -186,7 +186,7 @@ Get("<frame id>", (n, c) => { if (c.depth <= 3) Print("  ".repeat(c.depth) + n.n
 			<li><strong>Read the frame</strong> through the Pencil tools, never the <code>.pen</code> file: its padding, gap, alignment, stroke, fill, radius and text style, and <code>ctx.bounds</code> for exact positions.</li>
 			<li><strong>Write the test first</strong>, asserting the geometry the pen gives you: heights, insets, computed styles.</li>
 			<li><strong>Compare</strong> the gallery against the pen’s snapshots with the pen tools.</li>
-			<li><strong>Keep CI green</strong>: <code>e2e/pen-parity.e2e.ts</code> asserts every section’s offset and height and every board’s box on all three sheets. If the pen itself changed, re-export <code>pen/bounds.json</code> and <code>pen/export/</code> in the same PR.</li>
+			<li><strong>Keep CI green</strong>: <code>e2e/pen-parity.e2e.ts</code> asserts every section’s offset and height and every board’s box on all four sheets. If the pen itself changed, re-export <code>pen/bounds.json</code> and <code>pen/export/</code> in the same PR.</li>
 			<li><strong>Look at it</strong> in both themes, at 1512 and 390.</li>
 		</ol>
 		<CodeBlock code={pen} language="sh" />

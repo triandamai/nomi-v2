@@ -13,6 +13,7 @@ describe('relations', () => {
 		['gallery/chat/Demo.svelte', `<script lang="ts">\n\timport Thought from '$lib/ds/chat/Thought.svelte';\n</script>`],
 		['gallery/CrewColourSection.svelte', `<script lang="ts">\n\timport Button from '$lib/ds/actions/Button.svelte';\n</script>\n\n<section class="flex" aria-label="Crew colour">\n\t<p aria-label="not a section"></p>`],
 		['gallery/build/CodeSection.svelte', `<script lang="ts">\n\timport Thought from '$lib/ds/chat/Thought.svelte';\n</script>\n<GallerySection title="Code, terminal & phone" description="x">`],
+		['gallery/projects/CardsSection.svelte', `<script lang="ts">\n\timport Step from '$lib/ds/chat/Step.svelte';\n</script>\n<GallerySection\n\ttitle="Cards & overlays"\n\tlabel="Projects"\n\tdescription="x">`],
 	]);
 	const result = relations(files);
 
@@ -26,6 +27,10 @@ describe('relations', () => {
 			{ sheet: 'build', title: 'Code, terminal & phone', id: 'code-terminal-phone' },
 		]);
 		expect(result['foundations/Icon.svelte'].sections).toEqual([]);
+	});
+
+	it("files the Projects sheet's sections under it, by the title they show", () => {
+		expect(result['chat/Step.svelte'].sections).toEqual([{ sheet: 'projects', title: 'Cards & overlays', id: 'cards-overlays' }]);
 	});
 
 	it('lists what each component is built from and what is built from it, leaving fixtures out', () => {
