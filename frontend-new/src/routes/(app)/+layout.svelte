@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Bell, CheckCheck, Folder, House, Inbox, MessageSquare, Plus } from '@lucide/svelte';
+	import { Bell, CheckCheck, Download, Folder, House, Inbox, MessageSquare, Plus } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -116,7 +116,7 @@
 		{ label: m.shortcut_close(), keys: 'esc' },
 	];
 
-	const pageTitle = $derived(page.data as { title?: string; meta?: string; autosave?: boolean });
+	const pageTitle = $derived(page.data as { title?: string; meta?: string; autosave?: boolean; csv?: string });
 	const leaving = $derived(new Set(header.leaving.map((id) => `/chat/${id}`)));
 	const recentItems = $derived(data.recents.filter((recent) => !leaving.has(recent.href)).map((recent) => ({ ...recent, active: recent.href === path })));
 	const chatData = $derived(page.data as { chat?: { id: string; pinned: boolean } });
@@ -222,6 +222,7 @@
 				items: [
 					{ href: '/settings/profile', icon: 'user' as const, label: m.settings_profile() },
 					{ href: '/settings/general', icon: 'settings-2' as const, label: m.settings_general() },
+					{ href: '/settings/plan', icon: 'credit-card' as const, label: m.settings_plan(), count: data.usage?.card.plan },
 				],
 			},
 		]
@@ -366,6 +367,7 @@
 		<SettingsTopBar section={m.settings_nav()} page={pageTitle.title ?? ''}>
 			{#snippet actions()}
 				{#if pageTitle.autosave}<AutosaveNote text={m.general_autosave()} />{/if}
+				{#if pageTitle.csv}<Button label={m.plan_export()} variant="ghost" iconStart={Download} href={pageTitle.csv} data-sveltekit-reload />{/if}
 			{/snippet}
 		</SettingsTopBar>
 	{:else if isInbox}

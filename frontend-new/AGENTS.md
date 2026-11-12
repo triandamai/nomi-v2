@@ -414,6 +414,18 @@ drawn dead:
 - Related links only Inbox, and the tip says "Changes save as you go." without the pen's "Press ⌘Z
   to undo the last one" (there's no undo).
 
+On Plan & usage (`C0og49`):
+
+- No way to join a plan or its waitlist ("Join Pro waitlist", "Join the waitlist"): there's no
+  checkout or waitlist to call (BACKEND_TODO.md); Compare plans says plans are changed by Nomi's
+  team for now. Billing leaves out the payment method, which the backend doesn't know.
+- Spend is in dollars at list price, as the backend keeps it; the pen's "Rp 1.800 ≈ $0.11 · you
+  paid Rp 0" needs an exchange rate and what was paid.
+- An own key's row shows its masked key only: the pen's "Balance empty" and "Use Nomi allowance"
+  have nothing behind them, and "Add a key" waits for Models & providers in v2.
+- The plan tag reads "Free plan" and the plan's name "Free" from the backend; a price without a
+  figure ("Free") isn't followed by "/ month".
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

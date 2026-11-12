@@ -43,3 +43,16 @@ export async function fireReminder(id: string): Promise<void> {
 		await sql.end();
 	}
 }
+
+/** Usage the crew's turns would have recorded: tokens on a model, now (the fake model records none). */
+export async function seedUsage(email: string, usage: { model: string; input: number; output: number; source?: 'nomi' | 'own_key'; costUsd?: number }): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`
+			INSERT INTO llm_usage (user_id, source, model_label, provider, model_id, input_tokens, output_tokens, cost_usd)
+			SELECT user_id, ${usage.source ?? 'nomi'}, ${usage.model}, 'fake', ${usage.model}, ${usage.input}, ${usage.output}, ${usage.costUsd ?? 0}
+			FROM web_credentials WHERE email = ${email}`;
+	} finally {
+		await sql.end();
+	}
+}

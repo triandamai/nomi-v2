@@ -253,3 +253,45 @@ export type DeviceItem = {
 	created_at: string;
 	current: boolean;
 };
+
+/** `GET /api/usage?month=YYYY-MM`: one month of the person's usage, days in their zone. */
+export type UsageMonth = {
+	plan: { id: string; name: string; card_tone: string; monthly_tokens: number; custom_quota: boolean };
+	month: string;
+	current_month: string;
+	timezone: string;
+	/** What the allowance counts: Nomi's own models, cached input at a tenth. */
+	tokens_used: number;
+	input_tokens: number;
+	output_tokens: number;
+	cached_input_tokens: number;
+	own_key_tokens: number;
+	calls: number;
+	spend_usd: number;
+	by_day: { date: string; tokens: number; spend_usd: number }[];
+	/** source: "nomi" or "own_key". */
+	by_model: { admin_model_id: string | null; label: string; provider: string; model_id: string; source: string; tokens: number; calls: number; spend_usd: number }[];
+};
+
+/** A plan people can be on (`GET /api/plans`). */
+export type PlanOffer = {
+	id: string;
+	slug: string;
+	name: string;
+	description: string;
+	monthly_tokens: number;
+	price_label: string;
+	features: string[];
+	card_tone: string;
+	promo_label: string | null;
+	promo_price_label: string | null;
+	promo_ends_at: string | null;
+	is_default: boolean;
+	is_active: boolean;
+	sort_order: number;
+};
+
+export type PlansForUser = { plans: PlanOffer[]; current_plan_id: string; monthly_tokens: number; custom_quota: boolean; override_until: string | null };
+
+/** One of the person's own provider keys (`GET /api/llm/connections`). */
+export type OwnConnection = { id: string; provider_id: string; label: string; auth_type: string; kind: string; base_url: string | null; api_key_masked: string | null; created_at: string };
