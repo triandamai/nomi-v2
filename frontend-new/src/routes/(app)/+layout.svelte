@@ -30,6 +30,7 @@
 	import ChatTopBar from '$lib/ds/thread/ChatTopBar.svelte';
 	import SettingsNav from '$lib/ds/chrome/SettingsNav.svelte';
 	import SettingsTopBar from '$lib/ds/chrome/SettingsTopBar.svelte';
+	import AutosaveNote from '$lib/ds/settings/AutosaveNote.svelte';
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
@@ -115,7 +116,7 @@
 		{ label: m.shortcut_close(), keys: 'esc' },
 	];
 
-	const pageTitle = $derived(page.data as { title?: string; meta?: string });
+	const pageTitle = $derived(page.data as { title?: string; meta?: string; autosave?: boolean });
 	const leaving = $derived(new Set(header.leaving.map((id) => `/chat/${id}`)));
 	const recentItems = $derived(data.recents.filter((recent) => !leaving.has(recent.href)).map((recent) => ({ ...recent, active: recent.href === path })));
 	const chatData = $derived(page.data as { chat?: { id: string; pinned: boolean } });
@@ -215,7 +216,15 @@
 	// The settings nav: its pages in their groups, narrowed by its search.
 	let settingsQuery = $state('');
 	const settingsGroups = $derived(
-		[{ label: m.settings_account(), items: [{ href: '/settings/profile', icon: 'user' as const, label: m.settings_profile() }] }]
+		[
+			{
+				label: m.settings_account(),
+				items: [
+					{ href: '/settings/profile', icon: 'user' as const, label: m.settings_profile() },
+					{ href: '/settings/general', icon: 'settings-2' as const, label: m.settings_general() },
+				],
+			},
+		]
 			.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLowerCase().includes(settingsQuery.trim().toLowerCase())) }))
 			.filter((group) => group.items.length > 0),
 	);
@@ -354,7 +363,11 @@
 			onshare={() => header.handlers?.share()}
 		/>
 	{:else if isSettings}
-		<SettingsTopBar section={m.settings_nav()} page={pageTitle.title ?? ''} />
+		<SettingsTopBar section={m.settings_nav()} page={pageTitle.title ?? ''}>
+			{#snippet actions()}
+				{#if pageTitle.autosave}<AutosaveNote text={m.general_autosave()} />{/if}
+			{/snippet}
+		</SettingsTopBar>
 	{:else if isInbox}
 		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
 			{#snippet actions()}

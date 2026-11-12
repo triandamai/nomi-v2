@@ -216,3 +216,12 @@ Found while building the Inbox (2026-11-12).
 
 Found while building Settings › Profile (2026-11-12).
 
+### Account settings General can't keep yet
+- **Needed by:** *App / Settings / General* (m7lvY1): Email "Change", Formats (region), the Chat group ("New chats start with", "Enter sends", "Show tokens under replies") and Sessions' "Delete account".
+- **Why:** a person can't move their account to a new address, pick number and date formats apart from the language, keep how chats start and send, or close their account.
+- **What exists today:** `GET|PUT /api/preferences` keeps theme, time zone, language and drawer/home settings; the email can only be set at sign-up; nothing deletes an account.
+- **Proposed contract:** `POST /api/account/email` (sends a code to the new address, then `POST /api/account/email/verify`); `formats`, `default_agent`, `enter_sends` and `show_reply_tokens` in the preferences; `DELETE /api/account` with the password or a fresh code, after which every device is signed out.
+- **Until then:** General leaves those rows out.
+
+Found while building Settings › General (2026-11-12).
+

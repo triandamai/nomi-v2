@@ -68,6 +68,15 @@ describe('savePreferences', () => {
 		expect(jar.get('nm_theme')).toBe('light');
 	});
 
+	it('saves the time zone, one Intl knows', async () => {
+		const api = backend(() => Response.json({ timezone: 'Asia/Makassar' }));
+		const { cookies } = cookieJar();
+		expect(await savePreferences({ fetch: api.fetch, cookies, locals: { accessToken: 'a1' } }, { timezone: 'Asia/Makassar' })).toEqual({ ok: true });
+		expect(api.calls[0].body).toEqual({ timezone: 'Asia/Makassar' });
+		expect(await savePreferences({ fetch: api.fetch, cookies, locals: { accessToken: 'a1' } }, { timezone: 'Mars/Olympus' })).toEqual({ ok: false, status: 400 });
+		expect(api.calls).toHaveLength(1);
+	});
+
 	it('saves the language and makes the next page use it', async () => {
 		const api = backend(() => Response.json({ language: 'id' }));
 		const { jar, cookies } = cookieJar();

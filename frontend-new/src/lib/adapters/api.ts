@@ -234,3 +234,22 @@ export type ProfileDetails = {
 	/** kind: "chats" or "projects". */
 	crew_usage: { agent_id: string; name: string; count: number; kind: string }[];
 };
+
+/** `GET /api/auth/google`: how the person signs in (configured: whether this Nomi offers Google). */
+export type SignInMethods = { configured: boolean; password: boolean; google_email: string | null };
+
+/** One of the person's signed-in devices (`GET /api/devices`); `current` is the one asking. */
+export type DeviceItem = {
+	id: string;
+	platform: string;
+	name: string | null;
+	brand: string | null;
+	model: string | null;
+	os_name: string | null;
+	os_version: string | null;
+	app_version: string;
+	presence: string;
+	last_seen_at: string;
+	created_at: string;
+	current: boolean;
+};
