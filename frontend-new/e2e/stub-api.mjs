@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 
 const port = Number(process.env.STUB_API_PORT ?? 4180);
+/** The device id that sees Nomi down for maintenance (smoke.e2e.ts). */
+const MAINTENANCE_DEVICE = '00000000-0000-4000-8000-00000000d0e5';
 
 const server = createServer((req, res) => {
 	if (req.method === 'POST' && req.url === '/api/auth/refresh') {
@@ -17,6 +19,13 @@ const server = createServer((req, res) => {
 		return;
 	}
 	if (req.url === '/health') return res.writeHead(200).end('ok');
+	// Down for maintenance, but only for the browser whose device id says so (the frontend sends
+	// X-Device-Id on every call), so the other tests run as usual.
+	if (req.url === '/api/maintenance') {
+		const down = req.headers['x-device-id'] === MAINTENANCE_DEVICE;
+		const state = down ? { enabled: true, message: 'Moving to a bigger database.', until: '2026-11-10T14:00:00Z' } : { enabled: false, message: null, until: null };
+		return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state));
+	}
 	res.writeHead(404).end();
 });
 
