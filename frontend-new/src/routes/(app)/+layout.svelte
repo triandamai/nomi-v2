@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Bell, Folder, House, Inbox, MessageSquare } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { stamp } from '$lib/adapters/time';
@@ -12,6 +12,7 @@
 	import { setClock } from '$lib/clock';
 	import { tabId } from '$lib/device';
 	import { connectActivity } from '$lib/live/activity';
+	import { settledRefresh } from '$lib/live/settle';
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
 	import { VERSION_LABEL } from '$lib/version';
 	import type { Theme } from '$lib/theme';
@@ -206,12 +207,10 @@
 		const away = () => later.flush();
 		window.addEventListener('pagehide', away);
 
-		// Bursts of chat events (a turn finishing in several chats) reload the shell once.
-		let pending: ReturnType<typeof setTimeout> | undefined;
-		const refresh = () => {
-			clearTimeout(pending);
-			pending = setTimeout(() => invalidate('app:shell'), 400);
-		};
+		// Bursts of chat events (a turn finishing in several chats) reload the shell once, after any
+		// navigation under way (a new chat's own event would otherwise keep Home from opening it).
+		const shell = settledRefresh(() => void invalidate('app:shell'), () => !!navigating.to);
+		const refresh = shell.schedule;
 		const stop = connectActivity({
 			deviceId: data.deviceId,
 			tab: tabId(),
@@ -240,7 +239,7 @@
 		return () => {
 			clearInterval(tick);
 			window.removeEventListener('pagehide', away);
-			clearTimeout(pending);
+			shell.cancel();
 			stop();
 		};
 	});
