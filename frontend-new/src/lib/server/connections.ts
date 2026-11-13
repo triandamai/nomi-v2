@@ -8,10 +8,10 @@ import type { Outcome } from './chat';
 // GitHub token or a Hevy key, and disconnecting. Logic and API use from the old app
 // (frontend/src/routes/(app)/connections).
 
-/** `code` is the backend's reason ("key_rejected"), `message` its words. */
 /** Where GitHub sends the person back to (a chat that asked for it), kept while they're away. */
 export const GITHUB_BACK_COOKIE = 'nm_github_back';
 
+/** `code` is the backend's reason ("key_rejected"), `message` its words. */
 export type Sent<T> = { ok: true; data: T } | { ok: false; status: number; code?: string; message: string };
 
 async function call(event: ApiEvent, path: string, init?: RequestInit): Promise<Response> {
