@@ -33,6 +33,13 @@ pub async fn xendit_config() -> Option<nomi_payment::xendit::XenditConfig> {
 const DEFAULT_API_BASE: &str = "https://boat.dev/api/v1";
 /// How long a sandbox may sit idle before it is stopped, in seconds.
 pub(crate) const DEFAULT_IDLE_STOP_SECS: u64 = 600;
+/// How long the provider lets a sandbox run before stopping it by itself, in seconds, when the
+/// admin sets none: two hours, the most boat.dev allows on its free trial. A running sandbox
+/// has it pushed out again, so a longer one only bounds leaks more loosely.
+pub const DEFAULT_AUTO_STOP_SECS: u64 = 2 * 60 * 60;
+/// The shortest auto-stop accepted; a smaller saved value is raised to it, so the extension
+/// margin stays many liveness passes long.
+pub const MIN_AUTO_STOP_SECS: u64 = 60 * 60;
 /// Sandbox starts allowed per minute, under boat.dev's own limit of 12.
 const DEFAULT_STARTS_PER_MINUTE: u32 = 10;
 /// Sandbox starts allowed per hour, under boat.dev's own limit of 60.
@@ -59,6 +66,8 @@ pub struct SandboxConfig {
     pub api_key: String,
     pub size: nomi_sandbox::Size,
     pub idle_stop_secs: u64,
+    /// The provider-side auto-stop asked on every create, resume and extension, in seconds.
+    pub auto_stop_secs: u64,
     pub rollout: Rollout,
     pub starts_per_minute: u32,
     pub starts_per_hour: u32,
@@ -103,6 +112,7 @@ fn parse_sandbox(section: &config::Section) -> Option<SandboxConfig> {
         api_key,
         size,
         idle_stop_secs: section.number("idle_stop_secs").unwrap_or(DEFAULT_IDLE_STOP_SECS),
+        auto_stop_secs: section.number("auto_stop_secs").unwrap_or(DEFAULT_AUTO_STOP_SECS).max(MIN_AUTO_STOP_SECS),
         rollout,
         starts_per_minute: count("starts_per_minute", DEFAULT_STARTS_PER_MINUTE),
         starts_per_hour: count("starts_per_hour", DEFAULT_STARTS_PER_HOUR),
