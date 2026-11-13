@@ -29,9 +29,12 @@ test('finds a component by name and shows its props as the code declares them', 
 	await page.keyboard.type('segmented');
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/\/design-system\/components\/segmented\.html$/);
-	await page.getByRole('tab', { name: 'Code' }).click();
+	// The URL changes before the new page has rendered; a click that early is lost, so click again.
 	const props = page.getByRole('table');
-	await expect(props.getByRole('rowheader', { name: /^surface/ })).toBeVisible();
+	await expect(async () => {
+		await page.getByRole('tab', { name: 'Code' }).click();
+		await expect(props.getByRole('rowheader', { name: /^surface/ })).toBeVisible({ timeout: 1_000 });
+	}).toPass();
 	await expect(props.getByRole('row', { name: /surface/ })).toContainText("'filled' | 'bg' | 'surface'");
 	await expect(props.getByRole('row', { name: /surface/ })).toContainText("'filled'");
 });
