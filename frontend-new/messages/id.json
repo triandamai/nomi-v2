@@ -678,7 +678,7 @@
 	"chat_opening": "Membuka obrolan…",
 	"chat_load_older": "Muat pesan sebelumnya",
 	"chat_older_failed": "Pesan sebelumnya belum bisa dimuat. Coba lagi",
-	"version_earlier": "Versi {current} dari {total}"
+	"version_earlier": "Versi {current} dari {total}",
 	"projects_title": "Proyek",
 	"projects_lede": "Aplikasi yang dibangun dan dirilis Koda untukmu. Masing-masing punya kode, URL live, dan datanya sendiri, dan bisa kamu ekspor kapan saja. Untuk pertanyaan dan perencanaan, pakai Chat.",
 	"projects_workspace": "Workspace: {name}",

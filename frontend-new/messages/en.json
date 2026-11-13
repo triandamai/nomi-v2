@@ -678,7 +678,7 @@
 	"chat_opening": "Opening the chat…",
 	"chat_load_older": "Load earlier messages",
 	"chat_older_failed": "Couldn’t load earlier messages. Try again",
-	"version_earlier": "Version {current} of {total}"
+	"version_earlier": "Version {current} of {total}",
 	"projects_title": "Projects",
 	"projects_lede": "Apps Koda builds and ships for you. Each one has its own code, live URL and data, and you can export it any time. For questions and planning, use Chats.",
 	"projects_workspace": "Workspace: {name}",
