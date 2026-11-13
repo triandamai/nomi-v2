@@ -5,7 +5,6 @@
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import ProjectWaitScreen from '$lib/components/project/ProjectWaitScreen.svelte';
 	import type { AnyRuntime } from '$lib/runtimeChooser';
-	import PhoneFrame from '$lib/components/ds/build/PhoneFrame.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
 
 	// The project's live preview, from its dev server running in the browser (WebContainer),
@@ -78,7 +77,7 @@
 			{#if runtime}<p class="preview__note">{m.project_unsupported_body()}</p>{/if}
 
 			{#if device === 'phone'}
-				<div class="preview__phone"><PhoneFrame src={`/projects/${projectId}/preview/`} title={m.project_preview_title()} /></div>
+				<div class="preview__phone"><iframe title={m.project_preview_title()} src={`/projects/${projectId}/preview/`} sandbox="allow-scripts" class="preview__device"></iframe></div>
 			{:else}
 				<iframe title={m.project_preview_title()} src={`/projects/${projectId}/preview/`} sandbox="allow-scripts" class="preview__frame"></iframe>
 			{/if}
@@ -97,7 +96,7 @@
 {:else if runtime.previewUrl}
 	<div class="preview">
 		{#if device === 'phone'}
-			<div class="preview__phone"><PhoneFrame src={runtime.previewUrl} title={m.project_preview_title()} /></div>
+			<div class="preview__phone"><iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__device" allow="cross-origin-isolated; clipboard-write"></iframe></div>
 		{:else}
 			<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write"></iframe>
 		{/if}
@@ -117,14 +116,26 @@
 {/if}
 
 <style>
+	/* The phone view: the app at a real phone's width (390 × 844), as tall as the pane allows,
+	   with a plain edge rather than a drawn handset, so the app gets the room. */
 	.preview__phone {
+		--phone-width: 390px;
+		--phone-height: 844px;
 		display: flex;
 		flex: 1;
 		min-height: 0;
-		align-items: flex-start;
 		justify-content: center;
-		overflow: auto;
-		padding: 24px 16px;
+		padding: 12px;
+	}
+	.preview__device {
+		flex: none;
+		width: min(100%, var(--phone-width));
+		height: 100%;
+		max-height: var(--phone-height);
+		margin-block: auto;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-surface-container-lowest);
 	}
 	.preview {
 		display: flex;

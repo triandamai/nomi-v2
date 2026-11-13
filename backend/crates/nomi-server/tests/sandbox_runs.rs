@@ -227,8 +227,11 @@ async fn sandbox_project_wakes_a_stopped_sandbox_and_runs_the_command(pool: PgPo
         sqlx::query("UPDATE project_sandboxes SET state = 'running' WHERE project_id = $1").bind(project).execute(&pool).await.unwrap();
         loop {
             steps.execute_pending(project, &sandbox).await;
-            let waiting: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_runs WHERE status IN ('pending', 'running')").fetch_one(&pool).await.unwrap();
-            let any: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_runs").fetch_one(&pool).await.unwrap();
+            // One snapshot: counted apart, a run queued between the two counts reads as "all done".
+            let (any, waiting): (i64, i64) = sqlx::query_as("SELECT COUNT(*), COUNT(*) FILTER (WHERE status IN ('pending', 'running')) FROM project_runs")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
             if any > 0 && waiting == 0 {
                 return;
             }

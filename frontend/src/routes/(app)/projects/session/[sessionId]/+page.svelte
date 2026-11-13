@@ -64,7 +64,7 @@
 	import { highlight } from '$lib/codeTokens';
 	import DsTextField from '$lib/components/ds/inputs/TextField.svelte';
 	import DsButton from '$lib/components/ds/actions/Button.svelte';
-	import { Download } from '@lucide/svelte';
+	import { ArrowLeft, Download } from '@lucide/svelte';
 	import { projectApi } from '$lib/projectApi';
 	import { Activity, Bug, Database, History, Link2, Settings, Share2, Users } from '@lucide/svelte';
 	import SplitButton from '$lib/components/project/SplitButton.svelte';
@@ -167,6 +167,16 @@
 		if (sheetOpen) return;
 		if (!page.url.searchParams.has('sheet')) return;
 		keepSheetInAddress(null);
+	});
+
+	// Opening an issue's chat (from the board, or the work strip) swaps the chat column only: an
+	// open sheet would hide it, so it closes when the chat shown changes.
+	let shownSession = page.params.sessionId;
+	$effect(() => {
+		const now = page.params.sessionId;
+		if (now === shownSession) return;
+		shownSession = now;
+		sheetOpen = false;
 	});
 
 	let deploy = $state<ProjectDeploy | null>(null);
@@ -945,16 +955,7 @@
 	<header class="topbar" bind:this={topbar}>
 		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face /></a>
 		<div class="topbar__titles">
-			{#if project.issue}
-				<!-- An issue's chat: a child of the project's own chat, one tap back to it. -->
-				<h1 class="topbar__name topbar__name--issue">
-					<a class="topbar__parent" href="/projects/session/{project.session_id}" title={m.issue_chat_back()}>{m.issue_chat_parent({ project: project.name })}</a>
-					<span class="topbar__sep" aria-hidden="true">/</span>
-					<span class="topbar__issue">{m.issue_chat_of({ number: project.issue.number, title: project.issue.title })}</span>
-				</h1>
-			{:else}
-				<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
-			{/if}
+			<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
 			<p class="topbar__meta">
 				{project.org_name}
 				{#if deploy?.overview?.url}
@@ -1014,6 +1015,15 @@
 	style="--chat-width: {chatWidth}px"
 >
 	<section class="workspace__chat" aria-label={m.project_chat_label()}>
+		{#if data.project?.issue}
+			<!-- An issue's chat takes the chat column only: the project around it stays as it was,
+			     and one tap brings the project's own chat back. -->
+			<div class="issue-bar">
+				<a class="issue-bar__back" href="/projects/session/{data.project.session_id}" data-sveltekit-noscroll aria-label={m.issue_chat_back()} title={m.issue_chat_back()}><ArrowLeft size={18} /></a>
+				<span class="issue-bar__title">{m.issue_chat_of({ number: data.project.issue.number, title: data.project.issue.title })}</span>
+			</div>
+		{/if}
+		<div class="workspace__thread">
 		<ChatThread
 			sessionId={page.params.sessionId as string}
 			title={data.project?.issue ? m.issue_chat_of({ number: data.project.issue.number, title: data.project.issue.title }) : (data.project?.name ?? m.project_new())}
@@ -1073,6 +1083,7 @@
 				{/if}
 			{/snippet}
 		</ChatThread>
+		</div>
 	</section>
 
 	{#if paneOpen && !narrow}
@@ -1150,20 +1161,41 @@
 					</div>
 				{:else}
 					{#if data.project && codeReadOnly}
-						<CodeView
-							tree={tree}
-							path={activePath ?? ''}
-							meta={m.code_readonly({ name: 'Koda' })}
-							lines={codeLines}
-							onopen={(index) => {
-								const entry = tree[index];
-								if (entry && entry.kind !== 'folder' && data.project) void openFile(data.project.id, entry.path);
-							}}
-							onask={quoteFile}
-							onasklines={(from, to) => {
-								if (activePath) quoted = { file: activePath, ...quoteLines(activePath, activeContent, from, to) };
-							}}
-						/>
+						<!-- The read-only view fills the pane. Where the pane is too narrow for the file
+						     list beside the code, the list becomes a picker above it. -->
+						<div class="code-read">
+							<label class="code-read__pick">
+								<span class="code-read__label">{m.files_title()}</span>
+								<select
+									value={activePath ?? ''}
+									onchange={(event) => {
+										const picked = event.currentTarget.value;
+										if (picked && data.project) void openFile(data.project.id, picked);
+									}}
+								>
+									{#if !activePath}<option value="" disabled>{m.files_title()}</option>{/if}
+									{#each tree as entry (entry.path)}
+										{#if entry.kind !== 'folder'}<option value={entry.path}>{entry.path}</option>{/if}
+									{/each}
+								</select>
+							</label>
+							<div class="code-read__view">
+								<CodeView
+									tree={tree}
+									path={activePath ?? ''}
+									meta={m.code_readonly({ name: 'Koda' })}
+									lines={codeLines}
+									onopen={(index) => {
+										const entry = tree[index];
+										if (entry && entry.kind !== 'folder' && data.project) void openFile(data.project.id, entry.path);
+									}}
+									onask={quoteFile}
+									onasklines={(from, to) => {
+										if (activePath) quoted = { file: activePath, ...quoteLines(activePath, activeContent, from, to) };
+									}}
+								/>
+							</div>
+						</div>
 						{#if deploy?.isAdmin}<button type="button" class="code-mode" onclick={() => (reading = false)}>{m.code_edit_mode()}</button>{/if}
 					{:else}
 					{#if deploy?.isAdmin}<button type="button" class="code-mode" onclick={() => (reading = true)}>{m.code_read_mode()}</button>{/if}
@@ -1333,40 +1365,6 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.topbar__name--issue {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		min-width: 0;
-	}
-	.topbar__parent {
-		flex: none;
-		max-width: 45%;
-		overflow: hidden;
-		border-radius: 4px;
-		color: var(--md-sys-color-on-surface-variant);
-		font-weight: 600;
-		text-decoration: none;
-		text-overflow: ellipsis;
-	}
-	.topbar__parent:hover {
-		color: var(--md-sys-color-primary);
-		text-decoration: underline;
-	}
-	.topbar__parent:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 2px;
-	}
-	.topbar__sep {
-		flex: none;
-		color: var(--md-sys-color-outline);
-		font-weight: 400;
-	}
-	.topbar__issue {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
 	.topbar__meta {
 		margin: 0;
 		overflow: hidden;
@@ -1467,7 +1465,9 @@
 		position: relative;
 	}
 	.workspace__chat {
+		display: flex;
 		flex: 0 0 var(--chat-width);
+		flex-direction: column;
 		min-width: 0;
 		height: 100%;
 		transition: flex-basis var(--nomi-motion-spatial-default, 350ms cubic-bezier(0.27, 1.06, 0.18, 1));
@@ -1475,6 +1475,44 @@
 	.workspace--pane-hidden .workspace__chat,
 	.workspace--narrow .workspace__chat {
 		flex: 1 1 auto;
+	}
+	.workspace__thread {
+		flex: 1 1 0;
+		min-height: 0;
+	}
+	.issue-bar {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 4px;
+		min-height: 44px;
+		padding: 0 8px;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.issue-bar__back {
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.issue-bar__back:hover {
+		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+		color: var(--md-sys-color-on-surface);
+	}
+	.issue-bar__back:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: -2px;
+	}
+	.issue-bar__title {
+		min-width: 0;
+		overflow: hidden;
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.workspace__pane {
 		container: pane / inline-size;
@@ -1709,6 +1747,67 @@
 	.github-step__note {
 		overflow-wrap: anywhere;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	/* The pane's width decides the layout, not the window's: the pane can be narrow on a wide
+	   screen (the chat beside it) and the whole screen on a phone. */
+	.code-read {
+		container: code-read / inline-size;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		min-height: 0;
+	}
+	.code-read__view {
+		flex: 1 1 0;
+		min-height: 0;
+	}
+	.code-read__view > :global(div) {
+		height: 100%;
+	}
+	.code-read__view > :global(div > div:first-child) {
+		display: none;
+		overflow-y: auto;
+	}
+	.code-read__pick {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.code-read__label {
+		flex: none;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+		font-weight: 600;
+	}
+	.code-read__pick select {
+		flex: 1;
+		min-width: 0;
+		min-height: 44px;
+		padding: 0 10px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface-container-lowest);
+		color: var(--md-sys-color-on-surface);
+		font: inherit;
+		font-size: 0.875rem;
+	}
+	.code-read__pick select:hover {
+		border-color: var(--md-sys-color-outline);
+	}
+	.code-read__pick select:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 1px;
+	}
+	@container code-read (min-width: 640px) {
+		.code-read__pick {
+			display: none;
+		}
+		.code-read__view > :global(div > div:first-child) {
+			display: flex;
+		}
 	}
 	.code-mode {
 		position: absolute;

@@ -8,11 +8,17 @@ use std::time::Duration;
 use async_trait::async_trait;
 use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxError, SandboxId, SandboxProvider, SandboxState};
 use nomi_server::configuration::{Rollout, SandboxConfig};
-use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, StepError, AUTO_STOP_EXTEND_BEFORE, AUTO_STOP_RETRY_BASE, DEVSERVER_RESTART_GAP, MAX_ATTEMPTS, SANDBOX_TTL};
+use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, StepError, AUTO_STOP_EXTEND_BEFORE, AUTO_STOP_RETRY_BASE, DEVSERVER_RESTART_GAP, MAX_ATTEMPTS};
+
 use nomi_server::sandbox_store::{self as store, Desired, State};
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
+
+/// The provider-side auto-stop used in these tests, in seconds.
+const AUTO_STOP_SECS: u64 = 6 * 60 * 60;
+/// The same, as the provider is asked for it.
+const TTL: nomi_sandbox::Ttl = nomi_sandbox::Ttl::Seconds(AUTO_STOP_SECS);
 
 const PROVIDER: &str = "boat";
 /// The files version the recording steps report after a sync.
@@ -94,6 +100,7 @@ fn config(per_minute: u32) -> SandboxConfig {
         api_key: String::new(),
         size: nomi_sandbox::Size::Small,
         idle_stop_secs: IDLE_STOP_SECS,
+        auto_stop_secs: AUTO_STOP_SECS,
         rollout: Rollout::All,
         starts_per_minute: per_minute,
         starts_per_hour: GENEROUS_LIMIT,
@@ -654,8 +661,7 @@ async fn sandboxes_are_created_and_resumed_with_a_long_finite_auto_stop(pool: Pg
     f.reconcile().await;
     f.want(Desired::Running).await;
     f.reconcile().await;
-    assert_eq!(f.provider.ttls(), vec![SANDBOX_TTL, SANDBOX_TTL]);
-    assert!(matches!(SANDBOX_TTL, nomi_sandbox::Ttl::Seconds(_)), "every sandbox stops by itself in the end, even with Nomi down");
+    assert_eq!(f.provider.ttls(), vec![TTL, TTL]);
     assert!(f.auto_stop_in().await > AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), "the deadline of the resume is recorded");
 }
 
@@ -672,7 +678,7 @@ async fn liveness_check_extends_the_auto_stop_deadline(pool: PgPool) {
     sqlx::query("UPDATE project_sandboxes SET auto_stop_at = now() + interval '30 minutes' WHERE project_id = $1").bind(f.project).execute(&f.pool).await.unwrap();
     f.recheck_alive().await;
     f.manager.check_alive().await;
-    assert_eq!(f.provider.extensions(), vec![(id, SANDBOX_TTL)]);
+    assert_eq!(f.provider.extensions(), vec![(id, TTL)]);
     assert!(f.auto_stop_in().await > AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), "the new deadline is recorded");
     assert_eq!(f.row().await.state, State::Running);
 }
