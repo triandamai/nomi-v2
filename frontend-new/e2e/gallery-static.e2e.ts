@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // The static gallery (`npm run build:gallery`) works from any path on any static host: the pages
-// render with their styles and fonts, hydrate, switch theme and move between the three sheets.
+// render with their styles and fonts, hydrate, switch theme and move between the sheets.
 // e2e/static-gallery-server.mjs serves it under /shared/nomi-ds/.
 const at = (path: string) => `http://127.0.0.1:4181/shared/nomi-ds/${path}`;
 
@@ -10,6 +10,7 @@ test('renders each sheet from a nested path, styled and with the fonts', async (
 		['nomi', 'An instrument, not a toy.'],
 		['chat', 'Everything Nomi can put in a reply'],
 		['build', 'Everything between describe and a live URL'],
+		['projects', 'Every project, its state and its next action'],
 	]) {
 		await page.goto(at(`design-system/${sheet}.html`));
 		await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
@@ -33,7 +34,7 @@ test('loads nothing from other hosts, so it works where only its own files are a
 	page.on('request', (request) => {
 		if (!request.url().startsWith('http://127.0.0.1:4181/') && !request.url().startsWith('data:')) elsewhere.push(request.url());
 	});
-	for (const sheet of ['nomi', 'chat', 'build']) {
+	for (const sheet of ['nomi', 'chat', 'build', 'projects']) {
 		await page.goto(at(`design-system/${sheet}.html`), { waitUntil: 'networkidle' });
 	}
 	expect(elsewhere).toEqual([]);

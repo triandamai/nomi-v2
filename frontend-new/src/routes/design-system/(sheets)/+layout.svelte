@@ -15,6 +15,7 @@
 		{ key: 'nomi', label: 'Nomi' },
 		{ key: 'chat', label: 'Chat responses' },
 		{ key: 'build', label: 'Build' },
+		{ key: 'projects', label: 'Projects' },
 	].map((sheet) => ({ ...sheet, href: docHref(`/design-system/${sheet.key}`) }));
 </script>
 
