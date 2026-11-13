@@ -90,6 +90,9 @@
 	--color-tile-teal: #5cc9c9;
 	--color-tile-amber: #e8b04a;
 	--color-tile-ink: #06140c;
+	/* A member's avatar in the projects top bar (Project / Top Bar FRyfm): the pen draws the third
+	   one in this orange, with the tiles' dark ink, the same in both themes. */
+	--color-tile-orange: #f4a261;
 
 	--font-*: initial;
 	--font-sans: var(--nm-sans);
