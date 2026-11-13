@@ -82,6 +82,9 @@ export const MASCOT: Record<string, CrewId> = {
 	supervisor: 'supervisor',
 };
 
+/** The mascot a built-in agent wears; none for a custom one. */
+export const crewOf = (agentType: string): CrewId | undefined => MASCOT[agentType];
+
 export type CrewRowProps = { agent?: CrewId; name: string; role: string; state?: string };
 
 const isBusy = (member: CrewMember) => member.state === 'working' || member.state === 'waiting';

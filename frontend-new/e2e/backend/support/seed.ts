@@ -18,3 +18,28 @@ export async function seedReply(sessionId: string, reply: { content: string; age
 		await sql.end();
 	}
 }
+
+/** A notification for the person with this email, as the backend's own would land in their inbox. */
+export async function seedNotification(email: string, notification: { kind?: string; title: string; body: string; link?: string; read?: boolean }): Promise<string> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		const [row] = await sql`
+			INSERT INTO notifications (user_id, kind, title, body, link, read_at)
+			SELECT user_id, ${notification.kind ?? 'account'}, ${notification.title}, ${notification.body}, ${notification.link ?? null}, ${notification.read ? sql`now()` : null}
+			FROM web_credentials WHERE email = ${email}
+			RETURNING id`;
+		return row.id as string;
+	} finally {
+		await sql.end();
+	}
+}
+
+/** A reminder that has gone off (the reminders worker's job, which takes until its time). */
+export async function fireReminder(id: string): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`UPDATE reminders SET status = 'fired', due_at = now() - interval '5 minutes', last_fired_at = now() - interval '5 minutes' WHERE id = ${id}`;
+	} finally {
+		await sql.end();
+	}
+}

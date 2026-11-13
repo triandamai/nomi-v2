@@ -369,6 +369,21 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 
+The Inbox (App / Inbox `BFoiZ`) is built on what the backend has: notifications and Kala's
+reminders, with the work agents will do later beside them.
+
+- Its cards' actions are the backend's: a notification opens where it points ("Open") or is marked
+  read; a reminder that went off is done or snoozed for an hour. The pen's per-kind actions
+  (Accept/Decline an invite, "Ask Koda to fix", "Open log") have nothing to call.
+- No snooze on a reminder that's still ahead (the pen's alarm-clock tool): the backend's snooze
+  moves a reminder to N minutes from now, which would bring an upcoming one forward.
+- How it reaches you: "Push for reminders" and "Quiet hours" are left out (the backend has neither:
+  BACKEND_TODO.md), and so is "All notification settings" (there's no such page). The two email
+  settings the backend has are shown instead: account changes, and news and offers.
+- "Earlier this week · 5 read" is "Earlier" with its count: it holds everything before today the
+  pages loaded so far reach, with "Show older" for the next page of notifications.
+- The quick reminder's hint ("↵ add") runs 9px into the field's right padding, as the pen's does.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

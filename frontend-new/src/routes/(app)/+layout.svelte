@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Bell, Folder, House, Inbox, MessageSquare } from '@lucide/svelte';
+	import { Bell, CheckCheck, Folder, House, Inbox, MessageSquare, Plus } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -9,6 +9,7 @@
 	import { chatCrewRows } from '$lib/adapters/chat';
 	import { ChatHeader, setChatHeader } from '$lib/chat/header.svelte';
 	import { later } from '$lib/chat/later';
+	import { QUICK_REMINDER, inboxAction } from '$lib/inbox/actions';
 	import { setClock } from '$lib/clock';
 	import { tabId } from '$lib/device';
 	import { connectActivity } from '$lib/live/activity';
@@ -36,6 +37,7 @@
 	import ToastRegion from '$lib/ds/overlays/ToastRegion.svelte';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
+	import IconButton from '$lib/ds/actions/IconButton.svelte';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
 
 	// The signed-in app around every page, as App / Home (Vr4nn) draws it: the sidebar (Vp4Ax) with
@@ -43,7 +45,9 @@
 	// on Home, the crew column (EXxti) under the top bar. The person's live feed keeps the recents
 	// and the inbox current, and signs this device out when another one says so. A chat (Flow / Chat
 	// — Ask → think → answer, ENb07) takes the content edge to edge, puts its own name, Share and
-	// menu in the top bar, and keeps the crew column beside it, full height.
+	// menu in the top bar, and keeps the crew column beside it, full height. The Inbox (App / Inbox,
+	// BFoiZ) also takes the content edge to edge, for its Coming up column, and puts Mark all read
+	// and New reminder in the top bar.
 	// Left out on purpose (AGENTS.md §9): the LIFE › Money group (Money isn't part of v2 yet), the
 	// top bar's search (the backend has no search to call: BACKEND_TODO.md), and the sidebar's
 	// collapse button (the shell has no collapsed layout yet).
@@ -52,10 +56,12 @@
 	const HOME = '/(app)';
 	const CHAT = '/(app)/chat/[id]';
 	const NEW_CHAT = '/(app)/chat/new';
+	const INBOX = '/(app)/inbox';
 	const isHome = $derived(page.route.id === HOME);
 	// A chat that couldn't open shows the error page, laid out as a page.
 	const isChat = $derived(page.route.id === CHAT && !page.error);
 	const inThread = $derived(isChat || page.route.id === NEW_CHAT);
+	const isInbox = $derived(page.route.id === INBOX && !page.error);
 	const path = $derived(page.url.pathname);
 
 	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
@@ -66,7 +72,7 @@
 	});
 	setMainLayout({
 		get bleed() {
-			return inThread;
+			return inThread || isInbox;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
@@ -188,6 +194,21 @@
 		else nameError = said.message ? `${m.workspace_create_failed()}: ${said.message}` : m.workspace_create_failed();
 	}
 
+	// The Inbox's Mark all read, in the top bar: the sidebar's count and the page reload with it.
+	let markingRead = $state(false);
+
+	async function markAllRead() {
+		markingRead = true;
+		const result = await inboxAction('readAll');
+		markingRead = false;
+		if (!result.ok) {
+			if (result.message) toasts.show({ kind: 'error', title: m.inbox_action_failed(), detail: result.message });
+			return;
+		}
+		await invalidate('app:shell');
+		toasts.show({ kind: 'success', title: m.inbox_all_read() });
+	}
+
 	function onkeydown(event: KeyboardEvent) {
 		const { key, code, metaKey, ctrlKey, shiftKey, altKey } = event;
 		const shortcut = shortcutFor({ key, code, metaKey, ctrlKey, shiftKey, altKey, typing: isTyping(event.target) });
@@ -219,6 +240,7 @@
 				resumed: refresh,
 				notification(notification) {
 					unread += 1;
+					if (isInbox) void invalidate('app:inbox');
 					const link = notification.link;
 					toasts.show({
 						kind: 'info',
@@ -301,6 +323,15 @@
 			onpick={(action) => header.handlers?.pick(action)}
 			onshare={() => header.handlers?.share()}
 		/>
+	{:else if isInbox}
+		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
+			{#snippet actions()}
+				<!-- On a phone it's the icon alone, so the bar keeps room for the page's name. -->
+				<span class="max-sm:hidden"><Button label={m.inbox_mark_all_read()} variant="ghost" iconStart={CheckCheck} disabled={unread === 0} loading={markingRead} onclick={markAllRead} /></span>
+				<span class="sm:hidden"><IconButton icon={CheckCheck} label={m.inbox_mark_all_read()} variant="ghost" disabled={unread === 0 || markingRead} onclick={markAllRead} /></span>
+				<Button label={m.inbox_new_reminder()} variant="inverse" iconEnd={Plus} onclick={() => document.getElementById(QUICK_REMINDER)?.focus()} />
+			{/snippet}
+		</TopBar>
 	{:else if page.error}
 		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()} />
 	{:else}
