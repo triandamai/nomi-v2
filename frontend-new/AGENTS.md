@@ -486,6 +486,14 @@ initial as a custom member does.
 - The roster's search has no ⌘K (that's New chat's). The tabs' line runs under the tabs' 28 inset,
   not the pane's whole width.
 
+On Workspaces (`l222Mz`), "You're here now" / "Switch to" mean where projects come from, the one
+choice of workspace the backend keeps: the card says "Projects come from here" or offers "Use for
+projects", and Defaults › New projects go to sets the same thing.
+
+- Left out (BACKEND_TODO.md): Invitations, each card's faces and last activity, the templates count,
+  PERSONAL, the card's menu, "Open Nomi in", and the top bar's Create workspace (the create card
+  does it).
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

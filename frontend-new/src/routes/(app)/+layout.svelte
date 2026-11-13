@@ -236,7 +236,10 @@
 			},
 			{
 				label: m.settings_workspace(),
-				items: [{ href: '/settings/connections', icon: 'plug' as const, label: m.settings_connections() }],
+				items: [
+					{ href: '/settings/workspaces', icon: 'building-2' as const, label: m.settings_workspaces() },
+					{ href: '/settings/connections', icon: 'plug' as const, label: m.settings_connections() },
+				],
 			},
 		]
 			.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLowerCase().includes(settingsQuery.trim().toLowerCase())) }))
