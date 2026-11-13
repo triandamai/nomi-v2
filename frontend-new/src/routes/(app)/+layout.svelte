@@ -29,6 +29,8 @@
 	import WorkspaceSwitcher from '$lib/ds/chrome/WorkspaceSwitcher.svelte';
 	import TopBar from '$lib/ds/chrome/TopBar.svelte';
 	import ChatTopBar from '$lib/ds/thread/ChatTopBar.svelte';
+	import SettingsNav from '$lib/ds/chrome/SettingsNav.svelte';
+	import SettingsTopBar from '$lib/ds/chrome/SettingsTopBar.svelte';
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
@@ -47,7 +49,8 @@
 	// — Ask → think → answer, ENb07) takes the content edge to edge, puts its own name, Share and
 	// menu in the top bar, and keeps the crew column beside it, full height. The Inbox (App / Inbox,
 	// BFoiZ) also takes the content edge to edge, for its Coming up column, and puts Mark all read
-	// and New reminder in the top bar.
+	// and New reminder in the top bar. Settings (App / Settings / *) swap the sidebar for the
+	// settings nav (Back to Nomi, or esc), name the page in the top bar, and lay out their own columns.
 	// Left out on purpose (AGENTS.md §9): the LIFE › Money group (Money isn't part of v2 yet), the
 	// top bar's search (the backend has no search to call: BACKEND_TODO.md), and the sidebar's
 	// collapse button (the shell has no collapsed layout yet).
@@ -62,6 +65,7 @@
 	const isChat = $derived(page.route.id === CHAT && !page.error);
 	const inThread = $derived(isChat || page.route.id === NEW_CHAT);
 	const isInbox = $derived(page.route.id === INBOX && !page.error);
+	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
 	const path = $derived(page.url.pathname);
 
 	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
@@ -72,7 +76,7 @@
 	});
 	setMainLayout({
 		get bleed() {
-			return inThread || isInbox;
+			return inThread || isInbox || isSettings;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
@@ -209,8 +213,21 @@
 		toasts.show({ kind: 'success', title: m.inbox_all_read() });
 	}
 
+	// The settings nav: its pages in their groups, narrowed by its search.
+	let settingsQuery = $state('');
+	const settingsGroups = $derived(
+		[{ label: m.settings_account(), items: [{ href: '/settings/profile', icon: 'user' as const, label: m.settings_profile() }] }]
+			.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLowerCase().includes(settingsQuery.trim().toLowerCase())) }))
+			.filter((group) => group.items.length > 0),
+	);
+
 	function onkeydown(event: KeyboardEvent) {
 		const { key, code, metaKey, ctrlKey, shiftKey, altKey } = event;
+		// Esc leaves settings for the app, unless something open (a menu, a dialog) took it first.
+		if (isSettings && key === 'Escape' && !event.defaultPrevented && !isTyping(event.target) && !document.querySelector('dialog[open]')) {
+			void goto('/');
+			return;
+		}
 		const shortcut = shortcutFor({ key, code, metaKey, ctrlKey, shiftKey, altKey, typing: isTyping(event.target) });
 		if (!shortcut) return;
 		event.preventDefault();
@@ -270,42 +287,54 @@
 <svelte:window {onkeydown} />
 
 {#snippet sidebar()}
-	<Sidebar newChatHref="/chat/new">
-		<NavItem href="/" icon={House} label={m.nav_home()} active={path === '/'} />
-		<NavItem href="/inbox" icon={Inbox} label={m.nav_inbox()} count={unread > 0 ? unread : undefined} active={path.startsWith('/inbox')} />
-		<NavGroupLabel label={m.nav_talk()} />
-		<NavItem href="/chats" icon={MessageSquare} label={m.nav_chats()} count={data.chats} active={path.startsWith('/chats')} />
-		{#if projectsWorkspace}
-			<NavGroupLabel label={m.nav_build()}>
-				<WorkspaceSwitcher current={projectsWorkspace.name} workspaces={data.workspaces} settingsHref={workspaceSettings} onchoose={chooseWorkspace} oncreate={startCreating} />
-			</NavGroupLabel>
-		{:else}
-			<NavGroupLabel label={m.nav_build()} />
-		{/if}
-		<NavItem href="/projects" icon={Folder} label={m.nav_projects()} count={projectsWorkspace?.projects} active={path.startsWith('/projects')} />
-		<!-- LIFE › Money: left out until Money is part of v2 (AGENTS.md §9). -->
-		{#snippet recents()}<RecentsList allHref="/chats" items={recentItems} />{/snippet}
-		{#snippet footer()}
-			{#if data.usage}<UsageCard plan={data.usage.card.plan} used={data.usage.card.used} caption={data.usage.card.caption} href="/settings/plan" />{/if}
-			<AccountMenu
-				name={data.person.name}
-				avatar={data.person.avatar ?? undefined}
-				plan={data.usage?.account}
-				upgradeHref={data.usage?.canUpgrade ? '/settings/plan' : undefined}
-				settingsHref="/settings"
-				profileHref="/settings/profile"
-				planHref="/settings/plan"
-				{theme}
-				ontheme={changeTheme}
-				{language}
-				{languages}
-				onlanguage={changeLanguage}
-				version={VERSION_LABEL}
-				onshortcuts={() => (shortcutsOpen = true)}
-				onlogout={() => logout?.requestSubmit()}
-			/>
-		{/snippet}
-	</Sidebar>
+	{#if isSettings}
+		<SettingsNav
+			backHref="/"
+			groups={settingsGroups}
+			active={path}
+			user={{ name: data.person.name, detail: data.usage?.account, avatar: data.person.avatar ?? undefined }}
+			version={VERSION_LABEL}
+			bind:query={settingsQuery}
+			onlogout={() => logout?.requestSubmit()}
+		/>
+	{:else}
+		<Sidebar newChatHref="/chat/new">
+			<NavItem href="/" icon={House} label={m.nav_home()} active={path === '/'} />
+			<NavItem href="/inbox" icon={Inbox} label={m.nav_inbox()} count={unread > 0 ? unread : undefined} active={path.startsWith('/inbox')} />
+			<NavGroupLabel label={m.nav_talk()} />
+			<NavItem href="/chats" icon={MessageSquare} label={m.nav_chats()} count={data.chats} active={path.startsWith('/chats')} />
+			{#if projectsWorkspace}
+				<NavGroupLabel label={m.nav_build()}>
+					<WorkspaceSwitcher current={projectsWorkspace.name} workspaces={data.workspaces} settingsHref={workspaceSettings} onchoose={chooseWorkspace} oncreate={startCreating} />
+				</NavGroupLabel>
+			{:else}
+				<NavGroupLabel label={m.nav_build()} />
+			{/if}
+			<NavItem href="/projects" icon={Folder} label={m.nav_projects()} count={projectsWorkspace?.projects} active={path.startsWith('/projects')} />
+			<!-- LIFE › Money: left out until Money is part of v2 (AGENTS.md §9). -->
+			{#snippet recents()}<RecentsList allHref="/chats" items={recentItems} />{/snippet}
+			{#snippet footer()}
+				{#if data.usage}<UsageCard plan={data.usage.card.plan} used={data.usage.card.used} caption={data.usage.card.caption} href="/settings/plan" />{/if}
+				<AccountMenu
+					name={data.person.name}
+					avatar={data.person.avatar ?? undefined}
+					plan={data.usage?.account}
+					upgradeHref={data.usage?.canUpgrade ? '/settings/plan' : undefined}
+					settingsHref="/settings"
+					profileHref="/settings/profile"
+					planHref="/settings/plan"
+					{theme}
+					ontheme={changeTheme}
+					{language}
+					{languages}
+					onlanguage={changeLanguage}
+					version={VERSION_LABEL}
+					onshortcuts={() => (shortcutsOpen = true)}
+					onlogout={() => logout?.requestSubmit()}
+				/>
+			{/snippet}
+		</Sidebar>
+	{/if}
 {/snippet}
 
 {#snippet topbar()}
@@ -323,6 +352,8 @@
 			onpick={(action) => header.handlers?.pick(action)}
 			onshare={() => header.handlers?.share()}
 		/>
+	{:else if isSettings}
+		<SettingsTopBar section={m.settings_nav()} page={pageTitle.title ?? ''} />
 	{:else if isInbox}
 		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
 			{#snippet actions()}

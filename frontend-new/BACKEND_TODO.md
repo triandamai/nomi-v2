@@ -207,3 +207,12 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
 
 Found while building the Inbox (2026-11-12).
 
+### Profile insights and when the person is active
+- **Needed by:** *App / Settings / Profile* (U9Gnrg): the Insights panel ("Save ~18% on Nomi — gemini-flash answered 9 of your last 10 quick questions just as well", "You work late — 68% of your tokens land after 21:00") and the heatmap's note "Most active Tue · 21:00–23:00".
+- **Why:** nothing works out a cheaper model that would have done, or the hours someone uses Nomi; the profile can only say which weekday is busiest.
+- **What exists today:** `GET /api/profile` gives tokens per day (`activity`), the top models of the last 30 days, and the crew's chat counts.
+- **Proposed contract:** add `active_hours: { from: "21:00", to: "23:00" } | null` (in the person's zone) and `insights: [{ kind: "cheaper_model" | "late_hours", title, body, action?: { label, href } }]`.
+- **Until then:** no Insights panel; the note names the weekday only.
+
+Found while building Settings › Profile (2026-11-12).
+

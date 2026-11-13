@@ -202,3 +202,35 @@ export type RemindersList = { timezone: string; upcoming: ReminderItem[]; past: 
 
 /** `GET|PUT /api/notifications/preferences`: which emails the person gets. */
 export type EmailPreferences = { email_account: boolean; email_promos: boolean };
+
+/** `GET|PUT /api/profile`: the person's profile with what they've done (activity days are in their zone). */
+export type ProfileDetails = {
+	display_name: string | null;
+	username: string | null;
+	email: string;
+	avatar_url: string | null;
+	location: string | null;
+	joined_at: string;
+	plan_name: string;
+	show_stats_publicly: boolean;
+	show_crew_publicly: boolean;
+	showcase_project_ids: string[];
+	showcase_projects: { id: string; name: string; description: string | null; status: string; deploy_url: string | null; build_duration_secs: number | null }[];
+	stats: {
+		lifetime_tokens: number;
+		peak_day_tokens: number;
+		peak_day_date: string | null;
+		longest_task_secs: number | null;
+		longest_task_name: string | null;
+		longest_streak_days: number;
+		/** "1-9 Aug". */
+		longest_streak_range: string | null;
+		current_streak_days: number;
+		best_streak_target: number;
+	};
+	activity: { date: string; tokens: number }[];
+	/** The last 30 days. */
+	top_models: { label: string; tokens: number; percentage: number }[];
+	/** kind: "chats" or "projects". */
+	crew_usage: { agent_id: string; name: string; count: number; kind: string }[];
+};

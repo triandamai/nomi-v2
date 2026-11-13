@@ -1,0 +1,92 @@
+import type { ComponentDoc } from '../types';
+
+// Settings › Profile's pieces (App / Settings / Profile U9Gnrg): the person's numbers, their year
+// of activity, what they use, and what they feature.
+
+export default [
+	{
+		file: 'profile/ProfileHeader.svelte',
+		summary: 'The top of a profile: the picture, the name as the page’s title, and a mono line with the username, place, when they joined and their plan.',
+		use: ['Settings › Profile, and a public profile.'],
+		dos: ['Leave out a part they haven’t given (no place, no username) rather than a placeholder.'],
+		accessibility: ['The name is the page’s level-1 heading.'],
+		related: ['profile/ProfileAvatar.svelte'],
+	},
+	{
+		file: 'profile/ProfileAvatar.svelte',
+		summary: 'A person’s picture or initials at profile sizes: 56 at the top of the page, 40 by the photo controls.',
+		use: ['The profile’s header and its photo row.'],
+		avoid: ['Rows and the sidebar: use Avatar (28).'],
+		accessibility: ['Decorative: the name beside it says who it is.'],
+		related: ['identity/Avatar.svelte', 'profile/ProfileHeader.svelte'],
+	},
+	{
+		file: 'profile/StatStrip.svelte',
+		summary: 'The person’s numbers side by side: each figure in big mono over what it is and a note. The current streak stands out on the surface with the flame.',
+		use: ['The top of Settings › Profile: lifetime tokens, the peak day, the longest task, the longest and current streaks.'],
+		dos: ['Write figures as the rest of Nomi does ("186.4K", "4m 12s").', 'Say "no streak yet" rather than a zero with nothing under it.'],
+		donts: ['Show cost here: the profile can be public.'],
+		accessibility: ['A description list: each name is read before its figure.'],
+		related: ['profile/ActivityHeatmap.svelte'],
+	},
+	{
+		file: 'profile/ActivityHeatmap.svelte',
+		summary: 'A year of tokens, a cell a day in Monday-first weeks, shaded in four steps of the busiest day, with the months over them and a Less–More key.',
+		use: ['Token activity on Settings › Profile.'],
+		dos: ['End on today; leave the days after it blank.', 'Say the total in the heading and the busiest weekday in the note.'],
+		donts: ['Colour it with crew colours: the heat tokens are for this.'],
+		accessibility: ['One image named with the total; each day’s figure is in its tooltip.'],
+		related: ['profile/StatStrip.svelte'],
+	},
+	{
+		file: 'profile/StatPanel.svelte',
+		summary: 'An outlined panel for one breakdown, with its name and a mono note across the top.',
+		use: ['Models you use most and Your crew, under the heatmap.'],
+		avoid: ['A settings group with fields: lay it out in the page’s column.'],
+		accessibility: ['A section named by its heading.'],
+		related: ['profile/UsageBars.svelte', 'profile/CrewUsage.svelte'],
+	},
+	{
+		file: 'profile/UsageBars.svelte',
+		summary: 'Each model’s name, tokens and share in mono, with a 4px bar against the most used.',
+		use: ['Models you use most (the last 30 days).'],
+		dos: ['Write the share as the backend counts it: "13.5K · 62%".'],
+		accessibility: ['A list; the bars are decorative beside the figures.'],
+		related: ['status/Meter.svelte', 'profile/CrewUsage.svelte'],
+	},
+	{
+		file: 'profile/CrewUsage.svelte',
+		summary: 'The crew members a person works with: each one’s mascot, name, a bar in their colour against the busiest, and how much.',
+		use: ['Your crew on Settings › Profile.'],
+		dos: ['Leave out members they haven’t worked with.'],
+		content: ['Chats as a number; Koda’s work as projects ("2 projects").'],
+		accessibility: ['A list; the bars and mascots are decorative.'],
+		related: ['agents/Mascot.svelte', 'profile/UsageBars.svelte'],
+	},
+	{
+		file: 'profile/ShowcaseCard.svelte',
+		summary: 'A live project the person features on their profile: its tile, name, Live, how it was built, and its tools.',
+		use: ['The Showcase on Settings › Profile, and the public profile.'],
+		avoid: ['The Projects list: use ProjectRow.'],
+		dos: ['Feature only live projects: visitors see the live address, never the code.'],
+		accessibility: ['An article named for the project; its tools are named buttons.'],
+		related: ['profile/ShowcaseAdd.svelte', 'lists/ProjectRow.svelte'],
+	},
+	{
+		file: 'profile/ShowcaseAdd.svelte',
+		summary: 'Room for one more featured project: an outlined button that opens the list of live projects.',
+		use: ['Under the showcase while it holds fewer than three.'],
+		dos: ['Disable it, with the reason under it, when there’s no live project to add.'],
+		accessibility: ['It passes on its menu’s aria-haspopup and aria-expanded.'],
+		related: ['profile/ShowcaseCard.svelte'],
+	},
+	{
+		file: 'profile/SaveBar.svelte',
+		summary: 'How many changes aren’t saved yet, with Discard and Save, at the foot of a settings form.',
+		use: ['Settings forms saved as a whole, like the public profile.'],
+		avoid: ['A switch that saves on its own: no bar.'],
+		content: ['"1 unsaved change", "3 unsaved changes".'],
+		accessibility: ['The count is a status, so screen readers hear it change.'],
+		related: ['actions/Button.svelte'],
+	},
+] satisfies ComponentDoc[];
