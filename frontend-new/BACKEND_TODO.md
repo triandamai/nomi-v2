@@ -286,3 +286,12 @@ Found while building Settings › Crew (2026-11-13).
 - **Until then:** each card shows its role, people and projects, and where projects come from.
 
 Found while building Settings › Workspaces (2026-11-13).
+
+### A workspace's own page: who made it, each member's work, resending, deleting
+- **Needed by:** *App / Settings / Workspace* (wZm9B): "created by Trian · 14 Jul 2026" under the name, the shared templates stat, each member's "4 projects · active now", Resend on an open invite, "Copy invite link" without an address, and deleting the workspace (the Ownership row says only an owner can).
+- **Why:** owners can't tell who's active or resend a lost invite, and a workspace can't be closed.
+- **What exists today:** `GET /api/orgs/:id` (name, my_role, members with name, email, avatar, role, joined_at; open invites for owners and admins), rename, invite, revoke, set role, remove/leave.
+- **Proposed contract:** on the org `created_by`, `created_at`; on each member `projects`, `last_active_at`; `POST /api/orgs/:id/invites/:code/resend`; `POST /api/orgs/:id/invite-links` (a link anyone can join with, for a role); `DELETE /api/orgs/:id` (owners, with its projects' fate stated).
+- **Until then:** the page shows the role, people with when they joined, invites with Copy link and Revoke, and leaving.
+
+Found while building Settings › Workspace (2026-11-13).

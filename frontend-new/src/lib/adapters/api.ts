@@ -343,3 +343,9 @@ export type GithubStatus = { oauth: boolean; connection: { login: string; kind: 
 
 /** One version of the personality Nomi speaks with (`GET /api/personality/history`), newest first. */
 export type PersonalityVersion = { version: number; description: string; created_at: string; is_current: boolean };
+
+/** One member of a workspace (`GET /api/orgs/:id`), owners first. */
+export type OrgMember = { user_id: string; name: string; email: string | null; avatar_url: string | null; role: OrgRole; joined_at: string };
+/** An invite still open; only owners and admins see these. */
+export type OrgInvite = { code: string; email: string | null; role: OrgRole; created_at: string; expires_at: string };
+export type OrgDetail = { id: string; name: string; my_role: OrgRole; me: string; members: OrgMember[]; invites: OrgInvite[] };
