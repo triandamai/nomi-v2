@@ -22,6 +22,7 @@ export const CATEGORIES = [
 	{ key: 'projects', title: 'Projects', blurb: 'The projects page: its cards in every state, the menus and dialogs around them, and importing from GitHub.' },
 	{ key: 'mobile', title: 'Mobile', blurb: 'The phone versions, drawn at 390 pt.' },
 	{ key: 'auth', title: 'Sign in', blurb: 'The sign-in, sign-up and code screens, and the parts their forms are made of.' },
+	{ key: 'admin', title: 'Admin', blurb: 'The admin console’s pieces: its navigation, tables, forms, access levels and usage.' },
 ] as const;
 
 export type CategoryKey = (typeof CATEGORIES)[number]['key'];
