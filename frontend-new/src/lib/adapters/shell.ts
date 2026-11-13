@@ -2,6 +2,7 @@ import { m } from '$lib/paraglide/messages';
 import type { CrewId } from '$lib/ds/agents/crew';
 import type { CrewMember, OrgList, OrgRole, OrgSummary, Profile, SessionSummary, UsageBrief } from './api';
 import { ago } from './time';
+import { pinnedFirst } from '$lib/chat/sessionOrder';
 
 // The app shell's data, turned from the API's shapes into the design system's props: the sidebar's
 // recents and counts, the usage card, the crew panel and the workspace switcher. Pure: the layout
@@ -47,9 +48,10 @@ export function chatHref(session: Pick<SessionSummary, 'id' | 'project_id'>): st
 	return session.project_id ? `/projects/${session.project_id}` : `/chat/${session.id}`;
 }
 
-/** The sidebar's recents: the latest chats and projects (the API lists them latest first). */
+/** The sidebar's recents: the latest chats and projects (the API lists them latest first), the
+ * pinned ones on top. */
 export function recents(sessions: SessionSummary[], now: Date, current?: string, limit = 4, timeZone?: string): Recent[] {
-	return sessions.slice(0, limit).map((session) => {
+	return pinnedFirst(sessions).slice(0, limit).map((session) => {
 		const href = chatHref(session);
 		return {
 			href,

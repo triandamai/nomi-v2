@@ -4,6 +4,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import IconButton from '../actions/IconButton.svelte';
 	import { panelPlacement } from './panelPlacement';
+	import { mainLayout } from './mainLayout';
 
 	// Layout shells → App shell (Home, Chats, Projects, Money…): sidebar 248, top bar 52 (24 across,
 	// as App / Home Vr4nn and the other app screens draw it), content padded 32–56, an optional
@@ -14,6 +15,8 @@
 	let { sidebar, topbar, panel, children }: Props = $props();
 
 	const placement = panelPlacement();
+	// A screen that scrolls its own parts (a chat) takes the content area edge to edge (mainLayout).
+	const layout = mainLayout();
 	let drawerOpen = $state(false);
 
 	function drawer(dialog: HTMLDialogElement) {
@@ -37,7 +40,7 @@
 			<div class="min-w-0 flex-1">{@render topbar?.()}</div>
 		</header>
 		<div class="flex min-h-0 flex-1">
-			<main class="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 lg:px-14 lg:py-8">{@render children()}</main>
+			<main class={['min-h-0 min-w-0 flex-1', layout.bleed ? 'overflow-hidden' : 'overflow-y-auto px-4 py-6 lg:px-14 lg:py-8']}>{@render children()}</main>
 			{#if panel && placement.underTopbar}{@render side()}{/if}
 		</div>
 	</div>
