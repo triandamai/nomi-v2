@@ -5,11 +5,12 @@ Snapshots taken from `Nomi.pen` (pen.dev), the source of truth for how frontend-
 
 | File | What | Used by |
 |---|---|---|
-| `bounds.json` | Every section of the three design sheets (offset from the sheet's DS Header, height) and every board inside them (x, y, width, height relative to its section), at the sheet's 1600 width. | `e2e/pen-parity.e2e.ts` (CI), `npm run pen:report` |
+| `bounds.json` | Every section of the four design sheets (offset from the sheet's DS Header, height) and every board inside them (x, y, width, height relative to its section), at the sheet's 1600 width. | `e2e/pen-parity.e2e.ts` (CI), `npm run pen:report` |
 | `export/<sheet>--<section>.html` | The pen's own HTML export of each section. | `npm run pen:compare`, as the text-by-text reference |
 
 The sheets: `nomi` = *Design System / Nomi* (`YOYH1`), `chat` = *Design System / Chat responses*
-(`Ljvtr`), `build` = *Design System / Build* (`DcG0H`).
+(`Ljvtr`), `build` = *Design System / Build* (`DcG0H`), `projects` = *Design System / Projects*
+(`URIB6`).
 
 ## Comparing
 
@@ -36,7 +37,7 @@ Open `Nomi.pen` in the Pencil app and run these through the Pencil MCP `execute`
 `"exported"`:
 
 ```js
-const sheets={nomi:"YOYH1",chat:"Ljvtr",build:"DcG0H"}, out={};
+const sheets={nomi:"YOYH1",chat:"Ljvtr",build:"DcG0H",projects:"URIB6"}, out={};
 for (const [key,id] of Object.entries(sheets)) { const sections=[], boards={}; let top=null;
   Get(id,(n,c)=>{ if(c.depth!==1) return; if(top===null) top=c.bounds.y; const name=n.name.replace(/^Section \/ /,""); sections.push([name, Math.round(c.bounds.y-top), Math.round(c.bounds.height)]); const list=[];
     Get(n.id,(b,bc)=>{ if(bc.depth>=1 && b.type==="frame" && /^Board/.test(b.name) && !/Head/.test(b.name)){ let x=0,y=0,cc=bc; while(cc && cc.depth>=1){ x+=cc.bounds.x; y+=cc.bounds.y; cc=cc.parentCtx; } let t=""; Get(b.id,(k)=>{ if(!t && k.type==="text") t=String(k.content); }); list.push([t.slice(0,40),Math.round(x),Math.round(y),Math.round(bc.bounds.width),Math.round(bc.bounds.height)]); bc.skipChildren(); } });
@@ -49,7 +50,7 @@ Print(JSON.stringify(out));
 
 ```js
 const dir="/absolute/path/to/frontend-new/pen/export/", list=[];
-for (const [key,s] of [["nomi","YOYH1"],["chat","Ljvtr"],["build","DcG0H"]]) {
+for (const [key,s] of [["nomi","YOYH1"],["chat","Ljvtr"],["build","DcG0H"],["projects","URIB6"]]) {
   Get(s,(n,c)=>{ if(c.depth===1){ const slug=n.name.replace(/^Section \/ /,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); list.push([n.id, key+"--"+slug]); c.skipChildren(); } }); }
 for (const [id,name] of list) Export([id],"html-css",dir+name+".html",{includeLayerIds:true});
 ```

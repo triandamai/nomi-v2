@@ -6,17 +6,18 @@
 	import { patternDocs } from '$lib/docs/pattern-docs';
 	import { docHref } from '$lib/docs/href';
 
-	const sheets = ['chat', 'build'] as const;
+	const sheets = ['chat', 'build', 'projects'] as const;
 	const ledes = {
 		chat: 'What a reply can hold, and the controls around a conversation: thinking, rich content, approvals, feedback, errors, long threads, the crew, and chat on a phone.',
 		build: 'From describing an app to a live URL: the estimate, the build, sharing, the workspace and its tools, building together, and building from a phone.',
+		projects: 'Every project, its state and its next action: the page’s parts, the card in every state, its menus and dialogs, importing from GitHub, and the selected project’s panel.',
 	};
 </script>
 
 <DocPage
 	eyebrow="Patterns"
 	title="Patterns"
-	lede="How components combine for one job. Each pattern is a section of the Chat responses or Build sheet, shown with the real components exactly as the pen draws it, with the rules that go with it."
+	lede="How components combine for one job. Each pattern is a section of the Chat responses, Build or Projects sheet, shown with the real components exactly as the pen draws it, with the rules that go with it."
 	wide
 >
 	{#each sheets as sheet (sheet)}
