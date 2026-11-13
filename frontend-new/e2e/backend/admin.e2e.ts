@@ -74,3 +74,84 @@ test('usage shows a month and moves between months', async ({ page, context }) =
 	await expect(page).toHaveURL(/\/admin\/usage\?month=\d{4}-\d{2}$/);
 	await expect(page.getByRole('heading', { level: 1, name: 'Usage' })).toBeVisible();
 });
+
+test.describe('users & access', () => {
+	test('a platform admin finds someone and changes their profile, admin role, workspaces and allowance', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const person = await createAccount({ workspace: 'Warung Bu Siti' });
+		await signInAs(context, admin);
+		await open(page, '/admin/users');
+
+		await page.getByRole('searchbox', { name: 'Search people' }).fill(person.email);
+		await page.getByRole('searchbox', { name: 'Search people' }).press('Enter');
+		await expect(page).toHaveURL(/\/admin\/users\?query=/);
+		const people = page.getByRole('table', { name: 'People' });
+		await expect(people.getByRole('row')).toHaveCount(2);
+		await people.getByRole('link', { name: person.email }).click();
+		await expect(page.getByRole('heading', { level: 1, name: person.email })).toBeVisible();
+
+		// Profile.
+		await page.getByLabel('Display name').fill('Siti Rahayu');
+		await page.getByRole('region', { name: 'Profile' }).getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Profile saved')).toBeVisible();
+
+		// Admin access: view on Users & access, within the admin's own.
+		const role = page.getByRole('group', { name: `Admin access for ${person.email}` });
+		await role.getByRole('radiogroup', { name: 'Users & access' }).getByRole('radio', { name: 'View' }).click();
+		await page.getByRole('region', { name: 'Admin access' }).getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Admin access saved. It applies from their next sign-in.')).toBeVisible();
+
+		// A workspace: the admin's own, as a member.
+		await page.getByLabel('Workspace', { exact: true }).selectOption({ label: 'Admin HQ' });
+		await page.getByRole('button', { name: 'Add to workspace' }).click();
+		await expect(page.getByText('Added to the workspace')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Remove from Admin HQ' })).toBeVisible();
+
+		// An allowance of their own until the end of the year, with a note.
+		await page.getByLabel('Own allowance (tokens a month)').fill('2 000 000');
+		await page.getByLabel('Until (YYYY-MM-DD, UTC)').fill('2099-12-31');
+		await page.getByLabel('Note').fill('Pilot for the warung');
+		await page.getByRole('region', { name: 'Plan & allowance' }).getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Plan saved')).toBeVisible();
+		await expect(page.getByText('Pilot for the warung')).toBeVisible();
+
+		// What the backend now holds.
+		type Detail = { display_name: string | null; permissions: { scope_type: string; resource: string; actions: string[] }[]; memberships: { org_name: string; role: string }[] };
+		const id = page.url().split('/').pop()!;
+		const saved = (await (await api(admin, `/api/admin/users/${id}`)).json()) as Detail;
+		expect(saved.display_name).toBe('Siti Rahayu');
+		expect(saved.permissions.filter((grant) => grant.scope_type === 'admin').map((grant) => grant.resource)).toEqual(['user']);
+		expect(saved.memberships).toContainEqual({ org_id: expect.any(String), org_name: 'Admin HQ', role: 'member' });
+		const subscription = (await (await api(admin, `/api/admin/users/${id}/subscription`)).json()) as { quota_override: number; override_until: string };
+		expect(subscription).toMatchObject({ quota_override: 2_000_000, override_until: '2099-12-31T23:59:59Z' });
+	});
+
+	test('a wrong allowance is refused on the page, and nothing is sent', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const person = await createAccount();
+		await signInAs(context, admin);
+		const { users } = (await (await api(admin, `/api/admin/users?query=${encodeURIComponent(person.email)}`)).json()) as { users: { id: string }[] };
+		await open(page, `/admin/users/${users[0].id}`);
+
+		await page.getByLabel('Until (YYYY-MM-DD, UTC)').fill('31/12/2099');
+		await page.getByRole('region', { name: 'Plan & allowance' }).getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Write the day as YYYY-MM-DD.')).toBeVisible();
+	});
+
+	test('someone given view on Users sees only that, and can’t change anyone', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const viewer = await createAccount();
+		const { users } = (await (await api(admin, `/api/admin/users?query=${encodeURIComponent(viewer.email)}`)).json()) as { users: { id: string }[] };
+		expect((await api(admin, `/api/admin/users/${users[0].id}/admin-access`, { method: 'PUT', body: JSON.stringify({ access: [{ resource: 'user', level: 'view' }] }) })).ok).toBe(true);
+		await signInAs(context, await signInAgain(viewer));
+		await open(page, '/admin');
+
+		await expect(page).toHaveURL(/\/admin\/users$/);
+		await expect(nav(page).getByRole('link', { name: 'Users & access', exact: true })).toBeVisible();
+		await expect(nav(page).getByRole('link', { name: 'Overview', exact: true })).toHaveCount(0);
+		await page.getByRole('table', { name: 'People' }).getByRole('link').first().click();
+		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
+		await expect(page.getByLabel('Display name')).toHaveCount(0);
+	});
+});
