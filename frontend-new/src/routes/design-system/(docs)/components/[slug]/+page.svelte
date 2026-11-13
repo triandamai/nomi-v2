@@ -25,7 +25,7 @@
 	const importLine = $derived(`import ${data.item.name} from '$lib/ds/${data.item.file}';`);
 	const notes = $derived(data.api.notes.split('\n\n').filter(Boolean));
 	const lede = $derived(data.doc?.summary ?? notes[0] ?? '');
-	const sheetNames = { nomi: 'Nomi', chat: 'Chat responses', build: 'Build' };
+	const sheetNames = { nomi: 'Nomi', chat: 'Chat responses', build: 'Build', projects: 'Projects' };
 	const sectionHref = (section: SectionRef) =>
 		section.sheet === 'nomi' ? docHref('/design-system/nomi', section.id) : docHref(`/design-system/patterns/${section.sheet}/${section.id}`);
 	const linked = (files: string[]) => files.map((file) => components.find((item) => item.file === file)).filter((item) => !!item);

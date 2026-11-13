@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-// The design-system gallery has to sit on the pen: every section of the three sheets starts and
+// The design-system gallery has to sit on the pen: every section of the four sheets starts and
 // ends where the pen's does, and every board is where the pen draws it, at its size. The numbers
 // in pen/bounds.json come from the pen file itself (see pen/README.md for the snippet that
 // exports them). A change that moves the gallery off the pen fails here; when the pen changes,

@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const args = process.argv.slice(2);
 const [sheet, slug] = args;
 if (!sheet || !slug) {
-	console.log('usage: node scripts/pen/compare.mjs <nomi|chat|build> <section slug> [--all] [--theme light] [--url http://localhost:5175]');
+	console.log('usage: node scripts/pen/compare.mjs <nomi|chat|build|projects> <section slug> [--all] [--theme light] [--url http://localhost:5175]');
 	process.exit(1);
 }
 const all = args.includes('--all');
@@ -115,21 +115,23 @@ const ours = await page.evaluate(`(() => {
 await browser.close();
 if (!ours) { console.log(`no gallery section for "${title}"`); process.exit(1); }
 console.log(`${sheet} / ${title}: pen ${pen.w}×${pen.h}  ours ${ours.w}×${ours.h}${pen.h === ours.h && pen.w === ours.w ? '  ✓' : ''}`);
-let at = 0;
 let last = null;
 let missing = 0;
 let shown = 0;
 const used = new Set();
+// Each pen text pairs with the nearest unused text of ours that starts the same way, so a text that
+// isn't one in ours (an input's value, a placeholder) is reported missing without throwing off the
+// pairing of everything after it.
+const distance = (row, x, y) => Math.abs(row[1] - x) + Math.abs(row[2] - y);
 for (const [text, x, y, line] of pen.rows) {
 	const key = text.slice(0, 22).toLowerCase();
-	const i = ours.rows.findIndex((row, index) => index >= at && !used.has(index) && row[0].toLowerCase().startsWith(key));
+	const i = ours.rows.reduce((best, row, index) => (used.has(index) || !row[0].toLowerCase().startsWith(key) || (best >= 0 && distance(ours.rows[best], x, y) <= distance(row, x, y)) ? best : index), -1);
 	if (i < 0) {
 		missing++;
 		if (all || missing <= 12) console.log(`  ?? ${text.padEnd(44)} pen ${x},${y}`);
 		continue;
 	}
 	used.add(i);
-	at = i + 1;
 	const [, ox, oy, oline] = ours.rows[i];
 	const d = `${ox - x},${oy - y}`;
 	const jump = d !== last;
