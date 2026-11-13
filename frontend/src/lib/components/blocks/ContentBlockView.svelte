@@ -21,7 +21,7 @@
 	import ViewBlock from '../views/ViewBlock.svelte';
 	import type { ContentBlock } from '$lib/types';
 	import ActivityBlock from '$lib/components/ds/conversation/ActivityBlock.svelte';
-	import FileList from '$lib/components/ds/build/FileList.svelte';
+	import FileRow from '$lib/components/ds/conversation/FileRow.svelte';
 	import { page } from '$app/state';
 	import { changeLabel, lineChange } from '$lib/fileChanges';
 
@@ -84,23 +84,34 @@
 		<FileChangeBlock {block} {fresh} />
 	{/await}
 {:else if block.kind === 'file_writes'}
-	<!-- What was written, summed up with each file's change (ActivityBlock); then every file of the
-	     batch, each its own tab; only a short batch opens by itself. -->
+	<!-- What was written. In a project: how many files, then each file's line (its check and its
+	     change) with its code right under it, opening on a tap. In a chat: the batch summed up
+	     (ActivityBlock), then every file's tab. Only a short batch opens by itself. -->
 	{@const changes = block.files.map((file) => lineChange(file.content, file.previous_content))}
+	{@const inProject = page.url.pathname.startsWith('/projects/')}
 	<div class="file-batch">
-		{#if page.url.pathname.startsWith('/projects/')}
-			<!-- In a project, Koda's files as the Build sheet lists them (Build → File list). -->
-			<FileList files={block.files.map((file, index) => ({ path: file.path, change: changeLabel(changes[index]), state: 'done' as const }))} total={block.files.length} />
+		{#if inProject}
+			<header class="file-batch__head">
+				<span class="file-batch__label">{m.files_title()}</span>
+				<span>{m.files_written({ done: String(block.files.length), total: String(block.files.length) })}</span>
+			</header>
 		{:else}
-		<ActivityBlock
-			title={m.activity_wrote_files({ count: block.files.length })}
-			total={changeLabel({ added: changes.reduce((sum, c) => sum + c.added, 0), removed: changes.reduce((sum, c) => sum + c.removed, 0) })}
-			files={block.files.map((file, index) => ({ path: file.path, change: changeLabel(changes[index]) }))}
-		/>
+			<ActivityBlock
+				title={m.activity_wrote_files({ count: block.files.length })}
+				total={changeLabel({ added: changes.reduce((sum, c) => sum + c.added, 0), removed: changes.reduce((sum, c) => sum + c.removed, 0) })}
+				files={block.files.map((file, index) => ({ path: file.path, change: changeLabel(changes[index]) }))}
+			/>
 		{/if}
 		{#await fileChangeBlock() then { default: FileChangeBlock }}
-			{#each block.files as file (file.path)}
-				<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
+			{#each block.files as file, index (file.path)}
+				{#if inProject}
+					<div class="file-batch__file">
+						<FileRow path={file.path} change={changeLabel(changes[index])} state="done" />
+						<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
+					</div>
+				{:else}
+					<FileChangeBlock block={{ kind: 'file_write', project_id: block.project_id, ...file }} fresh={fresh && block.files.length <= 2} />
+				{/if}
 			{/each}
 		{/await}
 	</div>
@@ -115,5 +126,22 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+	.file-batch__head {
+		display: flex;
+		justify-content: space-between;
+		padding: 0 12px;
+		color: var(--md-sys-color-on-surface-variant);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.75rem;
+	}
+	.file-batch__label {
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.file-batch__file {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
 	}
 </style>

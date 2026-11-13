@@ -91,4 +91,31 @@ describe('project session page', () => {
 		await settle(6);
 		expect(root.textContent).toBeTruthy();
 	});
+
+	it('an issue’s chat takes the chat column only: the project’s toolbar stays, with a way back', async () => {
+		backend();
+		const issue = { number: 7, title: 'Add dark mode', crew_agent: 'koda', crew_state: 'working', status: 'open', column: 'ready' };
+		const root = render(Page as never, { data: data({ project: { ...project, issue } }) as never, form: null as never, params: { sessionId: 's7' } as never });
+		await settle(8);
+		expect(root.querySelector('.topbar__name')?.textContent).toContain('Bakery');
+		expect(root.querySelector('.topbar__name')?.textContent).not.toContain('Add dark mode');
+		expect(root.querySelector('.issue-bar__back')?.getAttribute('href')).toBe('/projects/session/s1');
+		expect(root.querySelector('.issue-bar__title')?.textContent).toContain('#7');
+	});
+
+	it('someone who can only read gets the code filling the pane, with a file picker for a narrow one', async () => {
+		fakeBackend([
+			['GET', /\/api\/deploy$/, { available: true, role: 'viewer', app: 'bakery', database: 'none', url: null, publishes: [], live: null, backend_setup: null, unpublished_changes: 0 }],
+			['GET', /\/presence/, { people: [] }],
+			['GET', /\/queue/, { asks: [] }],
+			['*', /.*/, {}],
+		]);
+		const root = render(Page as never, { data: data() as never, form: null as never, params: { sessionId: 's1' } as never });
+		await settle(8);
+		for (const tab of controls(/code/i, root).slice(0, 2)) tab.click();
+		await settle(6);
+		const options = [...root.querySelectorAll('.code-read__pick option')].map((o) => (o as HTMLOptionElement).value);
+		expect(options).toEqual(expect.arrayContaining(['index.html', 'src/app.js', 'styles/site.css']));
+		expect(root.querySelector('.code-read__view [role="tree"]')).not.toBeNull();
+	});
 });
