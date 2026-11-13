@@ -1,11 +1,11 @@
 import { slugify } from '../slug.ts';
 
 // How the components relate, read from their imports: what each is built from, what is built
-// from it, and which sections of the three design sheets show it (the gallery's section files,
+// from it, and which sections of the design sheets show it (the gallery's section files,
 // through any helper components they use). Takes sources keyed by their path in src/lib; answers
 // with paths in src/lib/ds, as the docs name components (actions/Button.svelte).
 
-export type SheetKey = 'nomi' | 'chat' | 'build';
+export type SheetKey = 'nomi' | 'chat' | 'build' | 'projects';
 export type SectionRef = { sheet: SheetKey; title: string; id: string };
 export type Relations = { uses: string[]; usedBy: string[]; sections: SectionRef[] };
 
@@ -25,7 +25,7 @@ function resolve(from: string, specifier: string): string | undefined {
 const imports = (path: string, source: string) =>
 	[...source.matchAll(/^\s*import\s+[\w{},\s*]+\s+from\s+['"]([^'"]+\.svelte)['"]/gm)].map(([, specifier]) => resolve(path, specifier)).filter((target): target is string => !!target);
 
-const sheetOf = (path: string): SheetKey => (path.startsWith('gallery/chat/') ? 'chat' : path.startsWith('gallery/build/') ? 'build' : 'nomi');
+const sheetOf = (path: string): SheetKey => (['chat', 'build', 'projects'] as const).find((sheet) => path.startsWith(`gallery/${sheet}/`)) ?? 'nomi';
 
 export function relations(files: Map<string, string>): Record<string, Relations> {
 	const result: Record<string, Relations> = {};

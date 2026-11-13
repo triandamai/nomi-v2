@@ -77,7 +77,7 @@
 
 	<DocSection title="Held to the pen">
 		<p class="max-w-170 text-body leading-relaxed text-text-2">
-			Nomi.pen is the source of truth. The three design sheets are rebuilt here from the real components, and a check on every pull request
+			Nomi.pen is the source of truth. The four design sheets are rebuilt here from the real components, and a check on every pull request
 			fails if any section or board moves off the pen by a single pixel. Props tables are read from the code when the docs are built, so
 			they can't fall behind it.
 		</p>
