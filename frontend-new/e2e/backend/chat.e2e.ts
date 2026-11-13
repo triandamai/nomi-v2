@@ -34,6 +34,15 @@ async function open(page: Page, path: string) {
 }
 
 const composer = (page: Page) => page.getByRole('textbox', { name: 'Message' });
+
+/** Sends a message. Send wakes once the page is live and has the text; typed any sooner, it's typed again. */
+async function send(page: Page, text: string) {
+	await expect(async () => {
+		await composer(page).fill(text);
+		await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 1_000 });
+	}).toPass();
+	await page.getByRole('button', { name: 'Send' }).click();
+}
 const thread = (page: Page) => page.getByRole('main');
 
 test('a message from Home starts a chat, and the answer comes in', async ({ page, context }) => {
@@ -47,8 +56,7 @@ test('a message from Home starts a chat, and the answer comes in', async ({ page
 	await expect(page.getByText('All quiet. Nothing new from the crew since you last looked.')).toBeVisible();
 	await expect(page.getByText(/^updated \d{2}:\d{2}$/)).toBeVisible();
 
-	await composer(page).fill('Budget belanja Oktober, tolong rangkum');
-	await composer(page).press('Enter');
+	await send(page, 'Budget belanja Oktober, tolong rangkum');
 
 	await expect(page).toHaveURL(CHAT_URL);
 	await expect(thread(page).getByText('Budget belanja Oktober, tolong rangkum')).toBeVisible();
@@ -75,12 +83,7 @@ test('a blank chat asks what to pick up, and its first message makes the chat', 
 	await open(page, '/chat/new');
 
 	await expect(page.getByRole('heading', { name: 'What should the crew pick up?' })).toBeVisible();
-	// Send wakes once the page is live and has the text; typed any sooner, it's typed again.
-	await expect(async () => {
-		await composer(page).fill('Ingatkan aku bayar listrik');
-		await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 1_000 });
-	}).toPass();
-	await page.getByRole('button', { name: 'Send' }).click();
+	await send(page, 'Ingatkan aku bayar listrik');
 	await expect(page).toHaveURL(CHAT_URL);
 	await expect(thread(page).getByText(REPLY)).toBeVisible();
 });
@@ -92,8 +95,7 @@ test('in a chat, a follow-up is answered and a reply can be liked', async ({ pag
 	await open(page, `/chat/${id}`);
 
 	await expect(thread(page).getByText(REPLY)).toHaveCount(1);
-	await composer(page).fill('Satu lagi, ya');
-	await composer(page).press('Enter');
+	await send(page, 'Satu lagi, ya');
 	await expect(thread(page).getByText('Satu lagi, ya')).toBeVisible();
 	await expect(thread(page).getByText(REPLY)).toHaveCount(2);
 
@@ -114,8 +116,7 @@ test('a turn that fails says what happened', async ({ page, context }) => {
 	await open(page, `/chat/${id}`);
 	await expect(thread(page).getByText(REPLY)).toBeVisible();
 
-	await composer(page).fill(`Coba ini ${FAIL}`);
-	await composer(page).press('Enter');
+	await send(page, `Coba ini ${FAIL}`);
 	await expect(thread(page).getByText('Couldn’t reply')).toBeVisible();
 	await expect(thread(page).getByText(/Something went wrong talking to the AI provider/)).toBeVisible();
 });
