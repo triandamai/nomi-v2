@@ -98,6 +98,8 @@ test('in a chat, a follow-up is answered and a reply can be liked', async ({ pag
 	await send(page, 'Satu lagi, ya');
 	await expect(thread(page).getByText('Satu lagi, ya')).toBeVisible();
 	await expect(thread(page).getByText(REPLY)).toHaveCount(2);
+	// The second answer's text shows while it streams; its controls come once it's done.
+	await expect(thread(page).getByRole('button', { name: 'Good reply' })).toHaveCount(2);
 
 	const like = thread(page).getByRole('button', { name: 'Good reply' }).last();
 	// Shown at once; saved by the call it makes, which the reload below must not overtake.
