@@ -183,3 +183,17 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
 - **What exists today:** `POST /api/invites/:code/accept` adds the `project_members` row, but only while the invite is `open`. Google sign-up with an invite code has the same gap (`create_account` → `place_in_org`).
 - **Proposed contract:** `place_in_org` (Join) also inserts `project_members (project_id, user_id, role, added_by)` when the invite has a project, as `accept_invite` does, and announces the join.
 - **Until then:** sign-up from an invite joins the workspace (every project open to the workspace works); the invite page shows "You’re already in …" with "Open {project}" for a project invite.
+
+### Who shared a link, when, and whether the viewer is its owner
+- **Needed by:** *Flow / Chat — Shared link* (b8Flw8), steps 1–2: the meta line "Shared by M. · 22 Oct 2026" and the owner's banner ("This is how others see your link. 3 views so far.", Copy link, Stop sharing).
+- **Why:** a viewer can't see who shared it or when; the owner can't tell their own preview apart, see how many opened it, or stop sharing from the page.
+- **What exists today:** `GET /api/shared/:token` answers `{ title, scope, masked, messages, expires_at }`.
+- **Proposed contract:** add `shared_by` (initials when masked), `shared_at`, and, when the bearer is the owner, `own: true`, `share_id` and `views`.
+- **Until then:** the meta line shows the chat's title and expiry; no owner banner.
+
+### Reporting a shared page
+- **Needed by:** *Flow / Chat — Shared link* (b8Flw8): "Report this page" in the footer.
+- **Why:** a viewer has no way to flag a shared page.
+- **What exists today:** nothing.
+- **Proposed contract:** `POST /api/shared/:token/report` with `{ reason, note? }`, open without a sign-in, rate-limited.
+- **Until then:** the footer has no report link.

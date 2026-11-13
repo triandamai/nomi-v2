@@ -334,6 +334,10 @@ hard. Add to this list instead of deviating silently.
 - Project cards: a description or the rename keys longer than the 262 column end in an ellipsis;
   the pen lets them run past it (warung-kopi-menu's line by 7px, the keys by 2px).
 - Apostrophes are typographic (’) in messages; the pen's are straight.
+- Shared link (b8Flw8): an expired and a turned-off link show one screen ("This link isn't
+  available", the pen's layout), since the backend answers both alike so links can't be probed. The
+  screens' "What is Nomi?" is left out (there's no page to open), and so are the owner's banner,
+  "Shared by…" and "Report this page" (BACKEND_TODO.md).
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
   max width, not its longest line).

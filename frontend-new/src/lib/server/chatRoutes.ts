@@ -110,8 +110,14 @@ export function chatRequest(event: ApiEvent, sessionId: string, path: string[], 
 				if (what !== 'done' && what !== 'snooze') return bad();
 				return answer(await chat.reminderAction(event, messageId, what, typeof minutes === 'number' ? minutes : undefined));
 			}
-			case 'POST share':
-				return answer(await chat.shareChat(event, sessionId));
+			case 'POST share': {
+				const settings = chat.shareSettings(await read(request));
+				return settings ? answer(await chat.shareChat(event, sessionId, settings)) : bad();
+			}
+			case 'PUT share/:id': {
+				const settings = chat.shareSettings(await read(request));
+				return settings ? answer(await chat.updateShare(event, sessionId, messageId, settings)) : bad();
+			}
 			case 'DELETE share/:id':
 				return answer(await chat.revokeShare(event, sessionId, messageId));
 			default:

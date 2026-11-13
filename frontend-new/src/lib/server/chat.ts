@@ -233,8 +233,43 @@ export async function moveTargets(event: ApiEvent): Promise<MoveTarget[]> {
 }
 
 /** A link to the whole chat (a seam until the share dialog lands): masked, open to anyone, 7 days. */
-export async function shareChat(event: ApiEvent, sessionId: string): Promise<Outcome<{ id: string; token: string; expires_at: string | null }>> {
-	return outcome(await call(event, `/api/sessions/${sessionId}/shares`, { method: 'POST', body: body({ scope: 'chat', mask: true, anyone: true, expires_in_days: 7 }) }), (response) => response.json());
+/** How a link shares: the whole chat or one reply, masked or not, for anyone or signed-in people, for 1, 7 or 30 days or for good. */
+export type ShareSettings = { scope: 'chat' | 'reply'; message_id: string | null; mask: boolean; anyone: boolean; expires_in_days: 1 | 7 | 30 | null };
+
+/** What a share link is and what it opens with (`POST`/`PUT …/shares`). */
+export type ShareLink = {
+	id: string;
+	token: string;
+	scope: 'chat' | 'reply';
+	message_id: string | null;
+	mask: boolean;
+	anyone: boolean;
+	expires_at: string | null;
+	preview: string;
+	preview_by: string | null;
+	chat_messages: number;
+};
+
+/** The settings from a request body, or null when they aren't ones the backend takes. */
+export function shareSettings(input: Record<string, unknown>): ShareSettings | null {
+	if (input.scope !== 'chat' && input.scope !== 'reply') return null;
+	const days = input.expires_in_days ?? null;
+	if (days !== null && days !== 1 && days !== 7 && days !== 30) return null;
+	return {
+		scope: input.scope,
+		message_id: typeof input.message_id === 'string' ? input.message_id : null,
+		mask: input.mask !== false,
+		anyone: input.anyone !== false,
+		expires_in_days: days as ShareSettings['expires_in_days'],
+	};
+}
+
+export async function shareChat(event: ApiEvent, sessionId: string, settings: ShareSettings): Promise<Outcome<ShareLink>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/shares`, { method: 'POST', body: body(settings) }), (response) => response.json());
+}
+
+export async function updateShare(event: ApiEvent, sessionId: string, shareId: string, settings: ShareSettings): Promise<Outcome<ShareLink>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/shares/${shareId}`, { method: 'PUT', body: body(settings) }), (response) => response.json());
 }
 
 export async function revokeShare(event: ApiEvent, sessionId: string, shareId: string): Promise<Outcome<void>> {
