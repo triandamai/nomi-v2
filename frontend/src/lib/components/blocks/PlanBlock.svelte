@@ -3,7 +3,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
 	import { onDestroy, onMount, untrack } from 'svelte';
-	import SideSheet from '$lib/components/m3/SideSheet.svelte';
+	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import { buildAgentPlansFetchUrl } from '$lib/buildAgentPlansFetchUrl';
 	import type { ChecklistItem } from '$lib/planChecklist';
 	import { planRefresh } from '$lib/planRefresh.svelte';
@@ -369,7 +369,8 @@
 	</button>
 </div>
 
-<SideSheet bind:open={sheetOpen} wide title={m.plan_draft({ agent: agent ?? 'Nomi' })}>
+<!-- The whole plan, as a page to read: a sheet from the bottom, one column, document type. -->
+<BottomSheet bind:open={sheetOpen} full label={m.plan_draft({ agent: agent ?? 'Nomi' })}>
 	{#if loading && !active}
 		<!-- The same width and shape as the plan, so it doesn't jump when the plan arrives. -->
 		<div class="plan-sheet plan-sheet--loading" aria-busy="true">
@@ -444,7 +445,7 @@
 			{/if}
 		</article>
 	{/if}
-</SideSheet>
+</BottomSheet>
 
 <style>
 	.plan-edit {
@@ -541,16 +542,16 @@
 	   plan at a reading width. */
 	.plan-sheet {
 		width: 100%;
-		max-width: 68ch;
+		max-width: 720px;
 		margin: 4px auto 0;
-		padding: 0 4px 32px;
+		padding: 8px clamp(4px, 3vw, 24px) 64px;
 		animation: plan-sheet-in var(--md-sys-motion-duration-medium2, 300ms) var(--md-sys-motion-easing-standard) both;
 	}
-	/* The words arrive with the sheet sliding in from the right, not ahead of it. */
+	/* The words arrive with the sheet rising, not ahead of it. */
 	@keyframes plan-sheet-in {
 		from {
 			opacity: 0;
-			transform: translateX(16px);
+			transform: translateY(12px);
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
@@ -597,7 +598,7 @@
 		margin: 0;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
-		font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+		font-size: clamp(1.75rem, 1.3rem + 1.8vw, 2.5rem);
 		font-weight: 700;
 		line-height: 1.15;
 		letter-spacing: -0.015em;
@@ -676,39 +677,47 @@
 		transition: width var(--nomi-motion-spatial-fast);
 	}
 
+	/* The plan as a document: body text at full strength on a wide measure, headings that carry
+	   the outline by size and space alone, quiet rules, and blocks (quotes, code, tables) set on
+	   a tinted surface. */
 	.plan-sheet__doc {
+		margin-top: 20px;
 		color: var(--md-sys-color-on-surface);
-		font-size: 0.9375rem;
-		line-height: 1.65;
+		font-size: 1rem;
+		line-height: 1.7;
 	}
 	.plan-sheet__doc > :global(:first-child) {
-		margin-top: 0.75em;
+		margin-top: 0;
 	}
 	.plan-sheet__doc :global(h1),
 	.plan-sheet__doc :global(h2),
 	.plan-sheet__doc :global(h3),
 	.plan-sheet__doc :global(h4) {
-		margin: 1.75em 0 0.5em;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
-		font-weight: 650;
-		line-height: 1.3;
+		font-weight: 700;
+		line-height: 1.25;
 		letter-spacing: -0.01em;
 		text-wrap: balance;
 	}
 	.plan-sheet__doc :global(h1) {
-		font-size: 1.25rem;
+		margin: 2em 0 0.4em;
+		font-size: 1.75rem;
 	}
 	.plan-sheet__doc :global(h2) {
-		font-size: 1.125rem;
+		margin: 1.8em 0 0.4em;
+		padding-bottom: 0.3em;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		font-size: 1.375rem;
 	}
 	.plan-sheet__doc :global(h3),
 	.plan-sheet__doc :global(h4) {
-		font-size: 1rem;
+		margin: 1.5em 0 0.3em;
+		font-size: 1.125rem;
 	}
 	.plan-sheet__doc :global(hr) {
 		height: 0;
-		margin: 1.75em 0;
+		margin: 2em 0;
 		border: 0;
 		border-top: 1px solid var(--md-sys-color-outline-variant);
 	}
@@ -718,62 +727,101 @@
 		margin-top: 0;
 	}
 	.plan-sheet__doc :global(p) {
-		margin: 0.6em 0;
-		color: var(--md-sys-color-on-surface-variant);
+		margin: 0.5em 0;
 	}
 	.plan-sheet__doc :global(ul),
 	.plan-sheet__doc :global(ol) {
-		margin: 0.5em 0;
-		padding-left: 1.25em;
+		margin: 0.4em 0;
+		padding-left: 1.5em;
 	}
 	/* Nested lists step in a little, not a whole column, so deep plans keep their width. */
 	.plan-sheet__doc :global(li ul),
 	.plan-sheet__doc :global(li ol) {
-		margin: 0.35em 0 0.5em;
-		padding-left: 1em;
+		margin: 0.2em 0 0.3em;
+		padding-left: 1.25em;
 	}
 	.plan-sheet__doc :global(li) {
-		margin: 0.35em 0;
+		margin: 0.25em 0;
 		padding-left: 0.15em;
-		color: var(--md-sys-color-on-surface-variant);
 	}
 	.plan-sheet__doc :global(li::marker) {
-		color: var(--md-sys-color-outline);
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.plan-sheet__doc :global(li > p) {
 		margin: 0.2em 0;
 	}
-	/* A list item that leads with a bold name ("Palette: …") reads as a term and its note. */
-	.plan-sheet__doc :global(li > strong:first-child),
-	.plan-sheet__doc :global(li > p:first-child > strong:first-child) {
-		color: var(--md-sys-color-on-surface);
-	}
+	/* A quote reads as a callout: a tinted block, not a hairline. */
 	.plan-sheet__doc :global(blockquote) {
 		margin: 1em 0;
-		padding: 2px 0 2px 14px;
-		border-left: 2px solid var(--md-sys-color-outline-variant);
-		color: var(--md-sys-color-on-surface-variant);
+		padding: 12px 16px;
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface-container-low);
 	}
-	.plan-sheet__doc :global(li:has(> input[type='checkbox'])) {
-		margin-left: -1.3em;
+	.plan-sheet__doc :global(blockquote > :first-child) {
+		margin-top: 0;
+	}
+	.plan-sheet__doc :global(blockquote > :last-child) {
+		margin-bottom: 0;
+	}
+	/* To-dos: the box in the margin where the bullet was. */
+	.plan-sheet__doc :global(li:has(> input[type='checkbox'])),
+	.plan-sheet__doc :global(li:has(> p > input[type='checkbox'])) {
+		margin-left: -1.5em;
 		list-style: none;
 	}
 	.plan-sheet__doc :global(input[type='checkbox']) {
-		margin: 0 0.5em 0 0;
+		width: 16px;
+		height: 16px;
+		margin: 0 0.6em 0 0;
 		accent-color: var(--md-sys-color-primary);
 		vertical-align: -2px;
 	}
 	.plan-sheet__doc :global(code) {
-		padding: 1px 5px;
+		padding: 2px 6px;
 		border-radius: var(--md-sys-shape-corner-extra-small);
 		background: var(--md-sys-color-surface-container-highest);
-		font-size: 0.875em;
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.85em;
+	}
+	.plan-sheet__doc :global(pre) {
+		margin: 1em 0;
+		padding: 14px 16px;
+		overflow-x: auto;
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface-container-low);
+		font-size: 0.875rem;
+		line-height: 1.55;
+	}
+	.plan-sheet__doc :global(pre code) {
+		padding: 0;
+		background: none;
+		font-size: inherit;
+	}
+	.plan-sheet__doc :global(table) {
+		display: block;
+		width: 100%;
+		margin: 1em 0;
+		overflow-x: auto;
+		border-collapse: collapse;
+		font-size: 0.9375rem;
+	}
+	.plan-sheet__doc :global(th),
+	.plan-sheet__doc :global(td) {
+		padding: 8px 12px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		text-align: left;
+		vertical-align: top;
+	}
+	.plan-sheet__doc :global(th) {
+		background: var(--md-sys-color-surface-container-low);
+		font-weight: 600;
 	}
 	.plan-sheet__doc :global(strong) {
 		font-weight: 650;
 	}
 	.plan-sheet__doc :global(a) {
 		color: var(--md-sys-color-primary);
+		text-underline-offset: 3px;
 	}
 
 	.plan-sheet__build {
