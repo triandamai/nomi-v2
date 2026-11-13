@@ -401,6 +401,22 @@ that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
 - A featured project's tile is its initial: the pen draws a screenshot of the app, which Nomi
   doesn't keep. The grip opens Move up, Move down and Remove (there's no drag to reorder).
 
+On General (`m7lvY1`), every row is one the backend can keep; the rest are left out rather than
+drawn dead:
+
+- Changing the email, Formats, the Chat group (who new chats start with, Enter sends, tokens under
+  replies), the Reminders push, Crew updates and Quiet hours rows, and Delete account: the backend
+  has none of them (BACKEND_TODO.md). Reduce motion is left out too: the app follows the device's
+  own setting.
+- The password row leads to the emailed reset (changing it while signed in has no endpoint), so
+  its button is "Change" or "Set password" with the arrow out.
+- The Google row shows "connected" with Disconnect beside it (the pen shows no way to remove it);
+  it's hidden when this Nomi doesn't offer Google.
+- Group names are sentence case ("Account & sign-in"): the pen writes most in capitals in sans,
+  which the type rules keep for mono labels, and its Notifications group is already sentence case.
+- Related links only Inbox, and the tip says "Changes save as you go." without the pen's "Press ⌘Z
+  to undo the last one" (there's no undo).
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

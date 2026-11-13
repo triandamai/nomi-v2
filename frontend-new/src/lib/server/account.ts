@@ -39,14 +39,30 @@ async function outcome(response: Response): Promise<Outcome> {
 
 const THEMES = new Set(['light', 'dark', 'system']);
 
-/** Saves the theme or the language with the person's preferences, then keeps it on this device. */
-export async function savePreferences(event: ApiEvent, change: { theme?: unknown; language?: unknown }): Promise<Outcome> {
+/** A zone this runtime's Intl knows ("Asia/Jakarta"), the same list the time zone picker offers. */
+function knownZone(zone: unknown): zone is string {
+	if (typeof zone !== 'string' || !zone) return false;
+	try {
+		new Intl.DateTimeFormat('en', { timeZone: zone });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Saves the theme, the language or the time zone with the person's preferences; the theme and the
+ * language are kept on this device too. */
+export async function savePreferences(event: ApiEvent, change: { theme?: unknown; language?: unknown; timezone?: unknown }): Promise<Outcome> {
 	const theme = typeof change.theme === 'string' && THEMES.has(change.theme) ? (change.theme as 'light' | 'dark' | 'system') : undefined;
 	const language = typeof change.language === 'string' && isLocale(change.language) ? change.language : undefined;
-	const unknown = (change.theme !== undefined && !theme) || (change.language !== undefined && !language);
-	if (unknown || (!theme && !language)) return { ok: false, status: 400 };
+	const timezone = knownZone(change.timezone) ? change.timezone : undefined;
+	const unknown = (change.theme !== undefined && !theme) || (change.language !== undefined && !language) || (change.timezone !== undefined && !timezone);
+	if (unknown || (!theme && !language && !timezone)) return { ok: false, status: 400 };
 
-	const response = await apiFetch(event, '/api/preferences', { method: 'PUT', body: JSON.stringify({ ...(theme && { theme }), ...(language && { language }) }) });
+	const response = await apiFetch(event, '/api/preferences', {
+		method: 'PUT',
+		body: JSON.stringify({ ...(theme && { theme }), ...(language && { language }), ...(timezone && { timezone }) }),
+	});
 	if (!response.ok) return { ok: false, status: response.status };
 	if (theme) setThemeCookie(event.cookies, theme);
 	if (language) setLanguageCookie(event.cookies, language);
