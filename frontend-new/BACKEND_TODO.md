@@ -225,3 +225,19 @@ Found while building Settings › Profile (2026-11-12).
 
 Found while building Settings › General (2026-11-12).
 
+### Changing plan, and what was paid
+- **Needed by:** *App / Settings / Plan & usage* (C0og49): "Join Pro waitlist" / "Join the waitlist", Billing's payment method, and spend shown as "Rp 1.800 ≈ $0.11 · you paid Rp 0".
+- **Why:** a person can see the plans but can't move to one or ask to; nothing says how they pay or what they paid; spend is only in dollars.
+- **What exists today:** `GET /api/plans` lists the plans with the person's current one; an admin sets a subscription (`PUT /api/admin/users/:id/subscription`); Xendit is configured in the admin, but nothing starts a payment for the person.
+- **Proposed contract:** `POST /api/plans/:id/checkout` → `{ url }` (Xendit), or `POST /api/plans/:id/waitlist`; `payment_method` and `paid_idr` on `GET /api/usage`; a `usd_to_idr` rate with the usage.
+- **Until then:** Compare plans has no buttons and says plans are changed by Nomi's team; spend is in dollars.
+
+### A provider key's balance
+- **Needed by:** *App / Settings / Plan & usage* (C0og49) → Your own API keys: "Balance empty" and "Use Nomi allowance".
+- **Why:** when a key runs dry, the person learns of it from a failed reply instead of here.
+- **What exists today:** `GET /api/llm/connections` gives each key's provider, label and masked key.
+- **Proposed contract:** `status: "ok" | "balance_empty" | "rejected"` and `checked_at` on each connection, from the last call made with it.
+- **Until then:** the row shows the key only.
+
+Found while building Settings › Plan & usage (2026-11-12).
+
