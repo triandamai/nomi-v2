@@ -1,5 +1,5 @@
 import type { BrowserContext } from '@playwright/test';
-import { BACKEND_URL } from './env';
+import { APP_URL, BACKEND_URL } from './env';
 import { codeFor } from './mailpit';
 
 export type Account = { email: string; password: string; workspace: string; tokens: { access_token: string; refresh_token: string } };
@@ -38,7 +38,7 @@ export async function createAccount(options: { email?: string; password?: string
 }
 
 /** Signs the browser in as `account`, the way the app keeps a sign-in (httpOnly cookies). */
-export async function signInAs(context: BrowserContext, account: Account, baseURL = 'http://localhost:4176'): Promise<void> {
+export async function signInAs(context: BrowserContext, account: Account, baseURL = APP_URL): Promise<void> {
 	await context.addCookies([
 		{ name: 'access_token', value: account.tokens.access_token, url: baseURL, httpOnly: true, sameSite: 'Lax' },
 		{ name: 'refresh_token', value: account.tokens.refresh_token, url: baseURL, httpOnly: true, sameSite: 'Lax' },

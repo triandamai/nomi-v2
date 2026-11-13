@@ -2,6 +2,10 @@
 
 export const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://127.0.0.1:8080';
 export const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://localhost:8025';
+/** Where this run's production server listens. Two runs side by side (a backend is shared on
+ * 8080) each take their own: `E2E_APP_PORT=4177 npm run test:e2e:backend`. */
+export const APP_PORT = process.env.E2E_APP_PORT ?? '4176';
+export const APP_URL = `http://localhost:${APP_PORT}`;
 
 /** The backend's environment for e2e: its fake model, codes on, every email to Mailpit. */
 export function backendEnv(): Record<string, string> {
@@ -17,7 +21,7 @@ export function backendEnv(): Record<string, string> {
 		SMTP_PORT: process.env.E2E_SMTP_PORT ?? '1025',
 		SMTP_SECURITY: 'none',
 		MAIL_FROM: 'Nomi <no-reply@nomi.test>',
-		APP_URL: 'http://localhost:4176',
+		APP_URL,
 		MQTT_BROKER_HOST: process.env.E2E_MQTT_HOST ?? '127.0.0.1',
 		MQTT_BROKER_PORT: process.env.E2E_MQTT_PORT ?? '1883',
 		RUST_LOG: process.env.RUST_LOG ?? 'warn',

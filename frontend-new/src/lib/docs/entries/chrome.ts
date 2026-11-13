@@ -2,6 +2,64 @@ import type { ComponentDoc } from '../types';
 
 export default [
 	{
+		file: 'chrome/AccountMenu.svelte',
+		summary:
+			'The person\'s menu, opened from the user row at the foot of the sidebar: their plan and Upgrade, Settings, Profile, Plan & usage, the theme\'s three-way switch, the language, keyboard shortcuts, the version and Log out.',
+		use: ['The Sidebar\'s footer on every app-shell screen: it draws the UserRow as its own button.'],
+		avoid: ['Actions on one thing (a chat, a project): use Menu.', 'Settings pages: SettingsNav has Log out at its foot.'],
+		dos: [
+			'Show Upgrade only when a bigger plan is offered (upgradeHref).',
+			'Apply a theme the moment it is picked; the menu stays open so the change can be seen.',
+			'Pass onshortcuts only when there is a shortcuts dialog to open.',
+		],
+		donts: ['Add a row for something that has nowhere to go (the pen\'s "Help & docs" waits for a help site).'],
+		content: ['The plan line in mono: "Free · 21.8K / 1M tokens".', 'Languages in their own names: "English", "Bahasa Indonesia".'],
+		accessibility: [
+			'The user row is a button with aria-haspopup="menu"; the menu is labelled "Account".',
+			'Arrows, Home and End move through every item, the theme\'s three choices included (menuitemradio, named System, Light, Dark).',
+			'Language opens its own list in the same menu; Escape goes back to the rest, then closes.',
+			'Links are real links; Escape, Tab or a click elsewhere closes it.',
+		],
+		related: ['chrome/UserRow.svelte', 'overlays/Menu.svelte', 'chrome/ShortcutsDialog.svelte', 'chrome/Sidebar.svelte'],
+	},
+	{
+		file: 'chrome/CrewPanel.svelte',
+		summary: 'The crew column beside Home: "Your crew" and how many are idle or working in a 52px head, then each member with what they look after.',
+		use: ['AppShell\'s panel on Home (with panelUnderTopbar).'],
+		avoid: ['The crew working in one chat: use the chat\'s crew panel.'],
+		dos: ['Say how many are idle, or how many are working while some are.', 'Show a member\'s state only when it is not idle.'],
+		content: ['The head\'s count in mono: "10 idle", "2 working · 8 idle".'],
+		accessibility: ['A complementary landmark named by its heading, "Your crew"; the members are a list.'],
+		related: ['identity/CrewRow.svelte', 'status/Status.svelte', 'shells/AppShell.svelte'],
+	},
+	{
+		file: 'chrome/Greeting.svelte',
+		summary: 'Home\'s greeting: Nomi\'s 32px mascot beside the page\'s heading in the display size ("Morning, Mario.") and one line on what to do.',
+		use: ['The top of Home.'],
+		avoid: ['Any other page title: use a heading in the display size on its own.'],
+		dos: ['Greet by the time of day where the person is, and by their first name.'],
+		content: ['A short greeting with a full stop: "Morning, Mario."', 'One sentence after it on what Nomi can do.'],
+		accessibility: ['The greeting is the page\'s h1; the mascot is decorative.'],
+		related: ['agents/Mascot.svelte', 'chrome/TopBar.svelte'],
+	},
+	{
+		file: 'chrome/ShortcutsDialog.svelte',
+		summary: 'The keyboard shortcuts the app answers to, each beside what it does, in a Dialog opened from the account menu (or by pressing ?).',
+		use: ['The account menu\'s "Keyboard shortcuts" and the ? key.'],
+		dos: ['List only keys that work.', 'Write ⌘ as the design does; the description tells Windows and Linux to use Ctrl.'],
+		accessibility: ['A native modal dialog: focus stays inside and Escape closes it. The keys are a description list.'],
+		related: ['chrome/AccountMenu.svelte', 'overlays/Dialog.svelte', 'actions/Kbd.svelte'],
+	},
+	{
+		file: 'chrome/TopBar.svelte',
+		summary: 'What goes in an app-shell screen\'s top bar: the page\'s name, then what it\'s about in mono after a slash ("Home / Wed, 21 Oct 2026 · 08:14"), and actions at the end.',
+		use: ['AppShell\'s topbar slot.'],
+		avoid: ['Inside a project: WorkspaceShell has its own project bar.'],
+		content: ['The page\'s name as the sidebar names it: "Home".', 'The meta is something a machine knows, in mono: a date, a count.'],
+		accessibility: ['The slash is decorative; the page\'s heading is in the page, not here.'],
+		related: ['shells/AppShell.svelte', 'chrome/Greeting.svelte'],
+	},
+	{
 		file: 'chrome/RecentsList.svelte',
 		summary: 'The sidebar\'s recent chats and projects under a foldable Recents header, always ending in a link to all chats.',
 		use: ['In the Sidebar\'s recents slot.'],
@@ -58,9 +116,26 @@ export default [
 	{
 		file: 'chrome/UserRow.svelte',
 		summary: 'The person at the foot of the sidebar: their avatar, their name and the way into settings.',
-		use: ['The Sidebar\'s footer, under UsageCard.'],
+		use: ['The Sidebar\'s footer, under UsageCard, where settings are one link away.'],
+		avoid: ['The app shell, where the row opens the account menu: use AccountMenu, which draws the same row as its button.'],
 		accessibility: ['The settings link is an icon labelled "Settings"; on touch screens it is 44px.'],
-		related: ['identity/Avatar.svelte', 'chrome/Sidebar.svelte'],
+		related: ['identity/Avatar.svelte', 'chrome/Sidebar.svelte', 'chrome/AccountMenu.svelte'],
+	},
+	{
+		file: 'chrome/WorkspaceSwitcher.svelte',
+		summary:
+			'Picks the workspace projects are listed from, off the Build group\'s chip: every workspace with its role, people and projects, what a workspace shares and what stays personal, Create workspace and its settings.',
+		use: ['Beside the Build label in the Sidebar: it draws the WorkspaceChip as its own button.'],
+		avoid: ['Moving one project to another workspace: use the project\'s move dialog.'],
+		dos: ['Check the workspace projects come from.', 'Say only what choosing one changes: where projects are listed and started.'],
+		donts: ['Promise a switch of everything: chats, memory and the inbox stay personal.'],
+		content: ['The meta line in mono: role · people · projects ("Admin · 3 members · 4 projects", "only you").'],
+		accessibility: [
+			'The chip is a button with aria-haspopup="menu" named "Projects from <workspace>".',
+			'Workspaces are menuitemradio, the chosen one checked; the note on what is shared describes the menu.',
+			'Arrows, Home and End move; Escape, Tab or a click elsewhere closes.',
+		],
+		related: ['chrome/WorkspaceChip.svelte', 'chrome/Sidebar.svelte', 'overlays/Menu.svelte'],
 	},
 	{
 		file: 'chrome/WorkspaceChip.svelte',
@@ -69,6 +144,6 @@ export default [
 		avoid: ['Picking a model or agent: use Chip.'],
 		content: ['The workspace\'s name as people gave it: "Trian\'s space".'],
 		accessibility: ['A button with aria-haspopup="menu"; the initial and the chevron are hidden from screen readers.'],
-		related: ['navigation/NavGroupLabel.svelte', 'chrome/Sidebar.svelte', 'overlays/Menu.svelte'],
+		related: ['navigation/NavGroupLabel.svelte', 'chrome/Sidebar.svelte', 'chrome/WorkspaceSwitcher.svelte'],
 	},
 ] satisfies ComponentDoc[];

@@ -3,13 +3,17 @@
 	import { Menu } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import IconButton from '../actions/IconButton.svelte';
+	import { panelPlacement } from './panelPlacement';
 
-	// Layout shells → App shell (Home, Chats, Projects, Money…): sidebar 248, top bar 52, content
-	// padded 32–56, an optional panel 300–380. Below 1024px the sidebar moves into a drawer; the
-	// panel shows only where there's room for it (1280px and up).
+	// Layout shells → App shell (Home, Chats, Projects, Money…): sidebar 248, top bar 52 (24 across,
+	// as App / Home Vr4nn and the other app screens draw it), content padded 32–56, an optional
+	// panel 300–380. The panel sits beside everything, full height, unless whoever renders the shell
+	// puts it under the top bar (setPanelPlacement: Home's crew column, EXxti). Below 1024px the
+	// sidebar moves into a drawer; the panel shows only where there's room for it (1280px and up).
 	type Props = { sidebar: Snippet; topbar?: Snippet; panel?: Snippet; children: Snippet };
 	let { sidebar, topbar, panel, children }: Props = $props();
 
+	const placement = panelPlacement();
 	let drawerOpen = $state(false);
 
 	function drawer(dialog: HTMLDialogElement) {
@@ -21,18 +25,23 @@
 	}
 </script>
 
+{#snippet side()}
+	<div class="h-full w-80 shrink-0 overflow-y-auto border-l border-border max-xl:hidden">{@render panel?.()}</div>
+{/snippet}
+
 <div class="flex h-dvh w-full overflow-hidden bg-bg text-text">
 	<div class="h-full max-lg:hidden">{@render sidebar()}</div>
 	<div class="flex min-w-0 flex-1 flex-col">
-		<header class="flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-8">
+		<header class="flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
 			<span class="lg:hidden"><IconButton icon={Menu} label={m.shell_open_nav()} variant="ghost" onclick={() => (drawerOpen = true)} /></span>
 			<div class="min-w-0 flex-1">{@render topbar?.()}</div>
 		</header>
-		<main class="min-h-0 flex-1 overflow-y-auto px-4 py-6 lg:px-14 lg:py-8">{@render children()}</main>
+		<div class="flex min-h-0 flex-1">
+			<main class="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 lg:px-14 lg:py-8">{@render children()}</main>
+			{#if panel && placement.underTopbar}{@render side()}{/if}
+		</div>
 	</div>
-	{#if panel}
-		<div class="h-full w-80 shrink-0 overflow-y-auto border-l border-border max-xl:hidden">{@render panel()}</div>
-	{/if}
+	{#if panel && !placement.underTopbar}{@render side()}{/if}
 </div>
 
 {#if drawerOpen}

@@ -37,6 +37,6 @@ export default [
 		donts: ['Tint the row in the crew colour: the mascot carries the identity.'],
 		content: ['The role is a short phrase with no full stop: "Reminders on time", "Reads attachments".', 'The state is one lower-case word in mono: "idle".'],
 		accessibility: ['The mascot is decorative; the name says who it is.', 'With an href it is a single link, so the whole row is one stop for the keyboard.'],
-		related: ['identity/AgentByline.svelte', 'agents/Mascot.svelte', 'status/Status.svelte'],
+		related: ['identity/AgentByline.svelte', 'agents/Mascot.svelte', 'status/Status.svelte', 'chrome/CrewPanel.svelte'],
 	},
 ] satisfies ComponentDoc[];

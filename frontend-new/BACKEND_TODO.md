@@ -145,3 +145,41 @@ Found while planning the working v2 (sign in, chat and build against the real AP
   - `POST .../deploy/publishes/:pid/rollback` restores a published one.
 - **Proposed contract:** `GET /api/projects/:id/versions` → `{versions: [{version, by, at, summary}]}`. `POST /api/projects/:id/versions/:v/restore` → 202.
 - **Until then:** versions appear in the activity and on publishes. Rollback is offered for publishes only.
+
+Found while building the app shell (App / Home, the account menu and the workspace switcher, 2026-11-10).
+
+### Search chats, memory and files
+- **Needed by:** *App / Home* (`Vr4nn`), the top bar's Search (`u8pcLQ`): "Search chats, memory, files ⌘K".
+- **Why:** people can't find an old chat, a remembered fact or a file without scrolling through each list.
+- **What exists today:**
+  - Only the lists themselves: `GET /api/sessions` (every chat, no query), `GET /api/memory`, and a project's files.
+  - The only search routes are an admin one (`/api/admin/tools/web_search/test`) and `GET /api/projects/:id/transfer/orgs`.
+- **Proposed contract:** `GET /api/search?q=&kinds=chat,memory,file&limit=20` → `{ results: [{ kind: "chat"|"memory"|"file", id, title, snippet, session_id?, project_id?, updated_at }] }`: the person's own things (and their projects' files) only, best match first.
+- **Until then:** the top bar has no search box. ⌘K opens a new chat, as the sidebar shows.
+
+### A person's pending workspace invites
+- **Needed by:** the workspace switcher (`t24cE`): an invited workspace ("Kopi Kita · invited by Andi · 2 projects") with **Join**.
+- **Why:** someone invited to a workspace only finds out from the email or the inbox item; the switcher can't offer it.
+- **What exists today:**
+  - `GET /api/invites/:code` and `POST /api/invites/:code/accept` work by code only.
+  - `GET /api/orgs/:id` lists a workspace's open invites to its owners and admins, not to the person invited.
+- **Proposed contract:** `GET /api/invites` → `{ invites: [{ code, org_id, org_name, inviter, role, projects, expires_at, project: { id, name } | null }] }`: the open invites to the signed-in person's address.
+- **Until then:** the switcher lists only the workspaces the person is in. An invite opens from its email or inbox link (`/invite/:code`).
+
+### Say which workspace is personal
+- **Needed by:** the workspace switcher (`t24cE`): the "PERSONAL" tag after a workspace's name.
+- **Why:** the switcher can't tell someone's own space from a shared one.
+- **What exists today:**
+  - `organizations.is_personal` exists: channel sign-ups get a personal "Personal", web sign-ups a named, non-personal one.
+  - `GET /api/orgs` doesn't return it (`OrgSummary` is `id, name, role, members, projects`).
+- **Proposed contract:** add `is_personal: bool` to each workspace in `GET /api/orgs` and `POST /api/orgs`.
+- **Until then:** no tag; the meta line says "only you" for a workspace of one.
+
+Found while building sign in and create account (Phase 1, 2026-11-10).
+
+### Sign up from a project invite puts the person on the project too
+- **Needed by:** *Build / Together → Invite* and `/invite/:code`: someone without an account opens a project invite, signs up from its email (`/register?redirect_to=/invite/:code&email=`) and lands on the invite.
+- **Why:** signing up with the invite (`org: {mode: "join", invite_code}`) joins the workspace and uses the invite up, but `place_in_org` (`backend/crates/nomi-auth/src/registration.rs`) never reads the invite's `project_id`/`project_role`. The invite page then says "member", and `POST /api/invites/:code/accept` returns early for members, so the project role is never given. On a project limited to the people added to it, they can't open it.
+- **What exists today:** `POST /api/invites/:code/accept` adds the `project_members` row, but only while the invite is `open`. Google sign-up with an invite code has the same gap (`create_account` → `place_in_org`).
+- **Proposed contract:** `place_in_org` (Join) also inserts `project_members (project_id, user_id, role, added_by)` when the invite has a project, as `accept_invite` does, and announces the join.
+- **Until then:** sign-up from an invite joins the workspace (every project open to the workspace works); the invite page shows "You’re already in …" with "Open {project}" for a project invite.

@@ -12,7 +12,7 @@ edit it. The two run side by side against the same backend until the cutover.
 ## 0. The one rule: the pen, 1:1
 
 The pen file is the source of truth for how everything looks. The gallery at `/design-system`
-rebuilds its three design sheets from the real components, and CI holds it there.
+rebuilds its four design sheets from the real components, and CI holds it there.
 
 - **Match the pen exactly**: sizes, paddings, gaps, alignment, colours, strokes, radii, type,
   icons and copy as drawn. Read the frame before you write the component; measure, don't guess.
@@ -25,9 +25,10 @@ rebuilds its three design sheets from the real components, and CI holds it there
 - **Prove it**: `e2e/pen-parity.e2e.ts` fails when any section or board of the gallery moves off
   the pen's bounds by a single pixel. `scripts/pen/` shows you where (see [§6](#6-proving-11)).
 - The design sheets: *Design System / Nomi* (`YOYH1`, foundations and core components),
-  *Design System / Chat responses* (`Ljvtr`), *Design System / Build* (`DcG0H`); plus 40 flows,
-  each with a light twin, and the app screens. The prototype `marioprasetyo/nomi-prototype` is the
-  reference for behaviour, timings and copy where the pen is silent.
+  *Design System / Chat responses* (`Ljvtr`), *Design System / Build* (`DcG0H`), *Design System /
+  Projects* (`URIB6`); plus 40 flows, each with a light twin, and the app screens. The prototype
+  `marioprasetyo/nomi-prototype` is the reference for behaviour, timings and copy where the pen is
+  silent.
 
 ## 1. Boundaries
 
@@ -204,7 +205,7 @@ app's heading) go in that file's scoped `<style>` with a comment.
 
 - **Where**: `src/lib/ds/<section>/` (`actions`, `inputs`, `navigation`, `identity`, `status`,
   `conversation`, `lists`, `overlays`, `shells`, `chrome`, `agents`, `foundations`, `chat`,
-  `build`, `mobile`). Each file starts with a comment naming the pen frame it implements
+  `build`, `mobile`, `auth`). Each file starts with a comment naming the pen frame it implements
   (`// Design System / Nomi → Overlays / Menu: …`) and anything it does differently on purpose.
 - **Presentational only**: no `$app/*`, no API types, no fetching. Links, active state, data and
   actions come in as props and callbacks; pages and flows adapt API data to those props.
@@ -236,7 +237,7 @@ app's heading) go in that file's scoped `<style>` with a comment.
 
 `/design-system` is the design system's documentation for every team (Get started per role,
 Foundations, Content, Components, Patterns, Tokens, Resources), built from the real components in
-`src/routes/design-system/(docs)` and `src/lib/docs`. The three pen sheets sit beside it in
+`src/routes/design-system/(docs)` and `src/lib/docs`. The four pen sheets sit beside it in
 `(sheets)`.
 
 - **Every component has a docs entry.** Adding or changing a component in `src/lib/ds` means
@@ -252,7 +253,7 @@ Foundations, Content, Components, Patterns, Tokens, Resources), built from the r
 
 ### The sheets
 
-- `/design-system/nomi`, `/chat`, `/build` rebuild the three sheets section by section with the
+- `/design-system/nomi`, `/chat`, `/build`, `/projects` rebuild the four sheets section by section with the
   real components, laid out like the pen: 64 around the sheet and between sections, the pen's DS
   header (`SheetHeader`, `NomiHeader`), each section a `GallerySection` (28px title, the line
   beside it).
@@ -264,7 +265,7 @@ Foundations, Content, Components, Patterns, Tokens, Resources), built from the r
   production. `?theme=dark|light` forces a theme.
 - Adding a section: read the pen section's structure, build or reuse the components (tests first),
   add the section in the pen's order, add its bounds to `pen/bounds.json` (pen/README.md), and run
-  the guard. A new Chat or Build section is also a pattern: add it to `src/lib/docs/patterns.ts`
+  the guard. A new Chat, Build or Projects section is also a pattern: add it to `src/lib/docs/patterns.ts`
   with its guidance.
 
 ## 6. Proving 1:1
@@ -281,7 +282,7 @@ Foundations, Content, Components, Patterns, Tokens, Resources), built from the r
    - `npm run pen:boxes -- <sheet> '<css selector>'` — an element's boxes, to set next to the pen's
      frame bounds.
 4. **CI**: `e2e/pen-parity.e2e.ts` asserts every section's offset and height and every board's
-   box on all three sheets. It must stay green; if the pen itself changed, re-export
+   box on all four sheets. It must stay green; if the pen itself changed, re-export
    `pen/bounds.json` and `pen/export/` in the same PR. The e2e browser and the `pen:*` tools run
    Chromium with `--font-render-hinting=none`, so Linux measures text as the Mac the pen is drawn
    on does (hinted, Linux rounds every glyph to whole pixels and lines wrap early). Keep it.
@@ -330,12 +331,39 @@ hard. Add to this list instead of deviating silently.
 - Move to a project: the search says "Search projects"; the pen reuses the generic "Search chats,
   memory, files ⌘K".
 - Sidebar recents: a long title is truncated on one line; in the pen it wraps out of its 30px row.
+- Project cards: a description or the rename keys longer than the 262 column end in an ellipsis;
+  the pen lets them run past it (warung-kopi-menu's line by 7px, the keys by 2px).
 - Apostrophes are typographic (’) in messages; the pen's are straight.
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
   max width, not its longest line).
 - Copied although it may be a slip: the standard menu keeps its items 220 wide inside the 236
   panel, as drawn.
+- Sign-in screens' crew feed (Auth / Sign in or create, Enter code, First run): each bubble wears
+  its own member's mascot. The pen's Kala bubble wears Rena's and its Dana bubble Maya's.
+- First run on a desktop (jPO7K) is drawn from the Enter code frame with its copy left in ("We sent
+  a 6-digit code…" under the title, a "Name Field" label with a mail icon): the page uses the
+  design system's FirstRun (Build → First run) in the sign-in layout's form column instead,
+  without the greeting above it (FirstRun has its own mascot).
+
+The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switcher `t24cE`)
+leaves out what v2 or the backend can't do yet, rather than draw it dead:
+
+- The sidebar's LIFE › Money group: Money isn't part of v2 yet.
+- The top bar's search ("Search chats, memory, files ⌘K"): the backend has no search to call
+  (BACKEND_TODO.md). ⌘K stays New chat's, as the sidebar shows.
+- The sidebar's collapse button: the shell has no collapsed layout yet.
+- The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
+  (there are no release notes to be new); What's new shows the version, as drawn.
+- The workspace switcher's invited workspace with "Join" (the API doesn't list a person's pending
+  invites) and its PERSONAL tag (the API doesn't say which workspace is personal; web sign-ups
+  make a named one): both in BACKEND_TODO.md. The tiles take the pen's plain, teal and amber in
+  turn, since workspaces have no colour of their own.
+- The switcher's note says "Projects and their chats" are shared; the pen adds "shared crew
+  templates", which Nomi doesn't have. Choosing a workspace there picks where projects come from,
+  and nothing else (the active workspace can't be switched: BACKEND_TODO.md).
+- The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
+  doesn't draw, shows her initial in place of a mascot.
 
 ## 10. Running
 

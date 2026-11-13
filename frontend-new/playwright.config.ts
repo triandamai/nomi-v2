@@ -27,7 +27,8 @@ export default defineConfig({
 		{
 			// One build after the other (they share the Vite cache), then the server.
 			command: 'npm run build && npm run build:gallery && node server.js',
-			url: 'http://localhost:4175',
+			// /health: `/` sends a signed-out visitor to sign in.
+			url: 'http://localhost:4175/health',
 			reuseExistingServer: !process.env.CI,
 			timeout: 180_000,
 			// The gallery is on so pen-parity.e2e.ts can hold it to the pen.
