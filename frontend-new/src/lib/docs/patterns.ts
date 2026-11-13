@@ -1,14 +1,14 @@
 import type { Component } from 'svelte';
 import { slugify } from './slug';
 
-// The Chat responses and Build sheets, section by section, are the docs' patterns: how components
+// The Chat responses, Build and Projects sheets, section by section, are the docs' patterns: how components
 // combine for one job. Each page shows the section itself, exactly as the sheet draws it.
 
-export type Pattern = { sheet: 'chat' | 'build'; title: string; id: string; load: () => Promise<{ default: Component }> };
+export type Pattern = { sheet: 'chat' | 'build' | 'projects'; title: string; id: string; load: () => Promise<{ default: Component }> };
 
 const define = (sheet: Pattern['sheet'], title: string, load: Pattern['load']): Pattern => ({ sheet, title, id: slugify(title), load });
 
-export const SHEETS = { chat: 'Chat responses', build: 'Build' } as const;
+export const SHEETS = { chat: 'Chat responses', build: 'Build', projects: 'Projects' } as const;
 
 export const PATTERNS: Pattern[] = [
 	define('chat', 'Thinking & planning', () => import('$lib/gallery/chat/ThinkingSection.svelte')),
@@ -30,4 +30,6 @@ export const PATTERNS: Pattern[] = [
 	define('build', 'Build on mobile', () => import('$lib/gallery/build/MobileBuildSection.svelte')),
 	define('build', 'Story sheet', () => import('$lib/gallery/build/StorySection.svelte')),
 	define('build', 'Build types', () => import('$lib/gallery/build/TypesSection.svelte')),
+	define('projects', 'Page parts & grid', () => import('$lib/gallery/projects/PagePartsSection.svelte')),
+	define('projects', 'Cards & overlays', () => import('$lib/gallery/projects/CardsSection.svelte')),
 ];

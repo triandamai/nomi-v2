@@ -6,9 +6,9 @@
 
 	// A section of a design sheet, shown in the docs at the sheet's own size (1472 wide, as the pen
 	// draws it, inside its 64 margins), so it scrolls sideways on narrower screens rather than reflowing.
-	type Props = { sheet: 'nomi' | 'chat' | 'build'; id: string; label: string; children: Snippet };
+	type Props = { sheet: 'nomi' | 'chat' | 'build' | 'projects'; id: string; label: string; children: Snippet };
 	let { sheet, id, label, children }: Props = $props();
-	const names = { nomi: 'Nomi', chat: 'Chat responses', build: 'Build' };
+	const names = { nomi: 'Nomi', chat: 'Chat responses', build: 'Build', projects: 'Projects' };
 </script>
 
 <figure class="flex flex-col overflow-hidden rounded-md outline -outline-offset-1 outline-border">
