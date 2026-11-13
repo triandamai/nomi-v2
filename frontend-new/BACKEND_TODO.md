@@ -268,3 +268,12 @@ Found while building Settings › Memory & context (2026-11-13).
 - **Until then:** Connections shows Google Workspace, GitHub and Hevy, connected or to add; who uses each is the crew member it's for.
 
 Found while building Settings › Connections (2026-11-13).
+
+### A person's own crew: members, switching one off, permissions, soul.md, activity
+- **Needed by:** *App / Settings / Crew* (vVUeh, New member u377E4, Templates u2auTN): "Add crew member" and New member, Templates, the On switch on each member (and "paused" in the roster), Permissions per member (Allow / Ask first / Never), soul.md with its versions and Edit, and Activity · N.
+- **Why:** people can see who's on the crew and set Nomi's and Koda's models, but can't shape the crew: make a member of their own, turn one off, or limit what one may do without asking.
+- **What exists today:** `GET /api/agents` (name, role, state, status, custom or not); custom members are made by admins (`/api/admin/dynamic-agents`); Nomi's chat model and Koda's coding model; the personality's versions (`GET /api/personality/history`, `POST /api/personality/rollback`).
+- **Proposed contract:** `PUT /api/agents/:type` `{ enabled }`; `GET|PUT /api/agents/:type/permissions` `[{ key, label, level: "allow" | "ask" | "never" }]`; `GET|PUT /api/agents/:type/soul` `{ text, version }` with `/versions`; `GET /api/agents/:type/activity`; `POST /api/agents` (a person's own member, from scratch or a template) and `GET /api/agents/templates`.
+- **Until then:** Crew lists the members, Nomi's and Koda's models, what each is doing, and the personality's versions with Restore.
+
+Found while building Settings › Crew (2026-11-13).

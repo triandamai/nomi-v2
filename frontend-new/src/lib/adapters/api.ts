@@ -340,3 +340,6 @@ export type ConnectionsOverview = {
 
 /** `GET /api/connections/github`: oauth says whether "Connect GitHub" can sign in on GitHub. */
 export type GithubStatus = { oauth: boolean; connection: { login: string; kind: string; created_at: string; last_used_at: string | null } | null };
+
+/** One version of the personality Nomi speaks with (`GET /api/personality/history`), newest first. */
+export type PersonalityVersion = { version: number; description: string; created_at: string; is_current: boolean };

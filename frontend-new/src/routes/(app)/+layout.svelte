@@ -229,6 +229,7 @@
 			{
 				label: m.settings_ai(),
 				items: [
+					{ href: '/settings/crew', icon: 'users' as const, label: m.settings_crew() },
 					{ href: '/settings/models', icon: 'cpu' as const, label: m.settings_models() },
 					{ href: '/settings/memory', icon: 'brain' as const, label: m.settings_memory() },
 				],
