@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { api, createAccount, signInAgain, signInAs, type Account } from './support/accounts';
-import { deleteAdminModel, deleteConnection, makePlatformAdmin, seedSharedEndpoint } from './support/db';
+import { deleteAdminModel, deleteConnection, deleteDynamicAgent, makePlatformAdmin, seedSharedEndpoint } from './support/db';
 import { APP_URL } from './support/env';
 
 // The v2 admin console at /admin against the real backend: who may open it (signed out, no admin
@@ -448,5 +448,97 @@ test.describe('tools', () => {
 		await expect(page.getByText('The voices couldn’t be listed with the saved key, so write the voice id.')).toBeVisible();
 		await page.getByRole('button', { name: 'Hear it' }).click();
 		await expect(page.getByText('The voice couldn’t be heard')).toBeVisible();
+	});
+});
+
+test.describe('custom agents', () => {
+	test('an agent is made with its tools and look, switched off, and changed', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const name = `Juru Mudi ${Math.random().toString(36).slice(2, 7)}`;
+		type Agent = { id: string; name: string; is_active: boolean; granted_tools: string[]; supports_todos: boolean; tone: string };
+		const agents = async () => (await (await api(admin, '/api/admin/dynamic-agents')).json()) as Agent[];
+		await signInAs(context, admin);
+		await open(page, '/admin/dynamic-agents/new');
+		try {
+			await page.getByLabel('Name', { exact: true }).fill(name);
+			// Something no other test asks about, so nothing is handed to it meanwhile.
+			await page.getByLabel('What it’s for, in a few words').fill('Tide tables for fishing boats');
+			await page.getByLabel('When Nomi should hand it a question').fill('Questions about tide tables for fishing boats at sea');
+			await page.getByLabel('How it works').fill('Answer with the tide times for the harbour asked about.');
+			await page.getByRole('checkbox', { name: 'list_transactions' }).click();
+			await page.getByRole('checkbox', { name: 'Keep to-dos' }).click();
+			await page.getByLabel('Colour').selectOption('tide');
+			await page.getByRole('button', { name: 'Make agent' }).click();
+			await expect(page).toHaveURL(/\/admin\/dynamic-agents$/);
+			const made = (await agents()).find((one) => one.name === name)!;
+			expect(made).toMatchObject({ granted_tools: ['list_transactions'], supports_todos: true, tone: 'tide' });
+
+			const row = page.getByRole('row', { name: new RegExp(name) });
+			if (made.is_active) {
+				await row.getByRole('button', { name: `Turn off ${name}` }).click();
+				await expect(row.getByRole('button', { name: `Turn on ${name}` })).toBeVisible();
+			}
+			expect((await agents()).find((one) => one.id === made.id)?.is_active).toBe(false);
+
+			await row.getByRole('link', { name }).click();
+			await page.getByRole('checkbox', { name: 'Make plans' }).click();
+			await page.getByRole('button', { name: 'Save' }).click();
+			await expect(page.getByText('Agent saved')).toBeVisible();
+		} finally {
+			const left = (await agents()).find((one) => one.name === name);
+			if (left) await deleteDynamicAgent(left.id);
+		}
+	});
+});
+
+test.describe('support', () => {
+	test('an article is written, found, unpublished and deleted', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const title = `Ongkir gratis ${Math.random().toString(36).slice(2, 7)}`;
+		await signInAs(context, admin);
+		await open(page, '/admin/support');
+
+		await page.getByRole('link', { name: 'Write an article' }).click();
+		await page.getByLabel('Title').fill(title);
+		await page.getByLabel('Answer').fill('Gratis untuk belanja di atas Rp 100.000.');
+		await page.getByLabel('Tags').fill('ongkir, pengiriman');
+		await page.getByRole('button', { name: 'Save article' }).click();
+		await expect(page).toHaveURL(/\/admin\/support$/);
+
+		await page.getByRole('searchbox', { name: 'Search articles' }).fill(title);
+		await page.getByRole('searchbox', { name: 'Search articles' }).press('Enter');
+		await expect(page).toHaveURL(/\?q=/);
+		await page.getByRole('link', { name: title }).click();
+		await page.getByRole('switch', { name: 'Published' }).click();
+		await page.getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Article saved')).toBeVisible();
+		type Listed = { title: string; published: boolean; tags: string[] }[];
+		expect(((await (await api(admin, '/api/admin/support/articles')).json()) as Listed).find((one) => one.title === title)).toMatchObject({ published: false, tags: ['ongkir', 'pengiriman'] });
+
+		await page.getByRole('button', { name: 'Delete article' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Delete article' }).click();
+		await expect(page).toHaveURL(/\/admin\/support$/);
+		expect(((await (await api(admin, '/api/admin/support/articles')).json()) as Listed).some((one) => one.title === title)).toBe(false);
+	});
+
+	test('a key’s secret is shown once when it’s made, and the key is revoked', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const name = `Toko ${Math.random().toString(36).slice(2, 7)}`;
+		await signInAs(context, admin);
+		await open(page, '/admin/support');
+
+		await page.getByLabel('Who uses it').fill(name);
+		await page.getByLabel('Product (optional)').fill('Kasir');
+		await page.getByRole('button', { name: 'Make a key' }).click();
+		await expect(page.getByText('Key made. Copy the secret now: it isn’t shown again.')).toBeVisible();
+		await expect(page.getByText(/^nsk_[0-9a-f]+$/)).toBeVisible();
+
+		await open(page, '/admin/support');
+		await expect(page.getByText(/^nsk_[0-9a-f]+$/)).toHaveCount(0);
+		await page.getByRole('button', { name: `Revoke ${name}` }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Revoke' }).click();
+		await expect(page.getByText('Key revoked')).toBeVisible();
+		type Keys = { name: string; revoked_at: string | null }[];
+		expect(((await (await api(admin, '/api/admin/support/keys')).json()) as Keys).find((one) => one.name === name)?.revoked_at).not.toBeNull();
 	});
 });
