@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { api, createAccount, signInAgain, signInAs, type Account } from './support/accounts';
-import { makePlatformAdmin } from './support/db';
+import { deleteAdminModel, deleteConnection, makePlatformAdmin, seedSharedEndpoint } from './support/db';
+import { APP_URL } from './support/env';
 
 // The v2 admin console at /admin against the real backend: who may open it (signed out, no admin
 // area, a platform admin), its navigation, the overview, the crew at work live, and usage by
@@ -247,4 +248,150 @@ test.describe('notifications', () => {
 		await page.getByRole('dialog').getByRole('button', { name: 'Send' }).click();
 		await expect(page.getByText('The link is a page in Nomi, starting with /.')).toBeVisible();
 	});
+});
+
+test.describe('models, providers and embedding', () => {
+	type Model = { id: string; label: string; model_id: string; enabled: boolean; input_usd_per_mtok: number | null; media_inputs: string[] | null; connection_id: string | null };
+	const models = async (admin: Account) => (await (await api(admin, '/api/admin/settings/llm/models')).json()) as Model[];
+	/**
+	 * The backend makes the first model the default for everyone's chats. A default on the fake
+	 * provider is made first, so a model a test adds (on an endpoint that doesn't answer) never
+	 * becomes the one other tests' chats run on.
+	 */
+	async function fakeDefault(admin: Account) {
+		const listed = (await models(admin)) as (Model & { is_default: boolean })[];
+		if (listed.some((one) => one.is_default)) return;
+		const made = await api(admin, '/api/admin/settings/llm/models', { method: 'POST', body: JSON.stringify({ label: 'E2E default (fake)', provider: 'fake', model_id: 'fake', api_key: '' }) });
+		expect(made.ok).toBe(true);
+	}
+
+	test('a model with its own key is added, switched off and deleted', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const tag = Math.random().toString(36).slice(2, 8);
+		const label = `E2E model ${tag}`;
+		await fakeDefault(admin);
+		await signInAs(context, admin);
+		await open(page, '/admin/models/new');
+		try {
+			await page.getByLabel('Name people see').fill(label);
+			await page.getByRole('radio', { name: 'Its own key' }).click();
+			await page.getByLabel('Provider', { exact: true }).selectOption('fake');
+			await page.getByLabel('API key').fill('sk-e2e-not-real');
+			await page.getByLabel('Model id').fill(`e2e-${tag}`);
+			await page.getByLabel('Input', { exact: true }).fill('0.5');
+			await page.getByLabel('Output', { exact: true }).fill('1.5');
+			await page.getByRole('radio', { name: 'These' }).click();
+			await page.getByRole('checkbox', { name: 'Images' }).click();
+			await page.getByRole('button', { name: 'Add model' }).click();
+			await expect(page).toHaveURL(/\/admin\/models$/);
+			const row = page.getByRole('row', { name: new RegExp(label) });
+			await expect(row).toBeVisible();
+			const added = (await models(admin)).find((one) => one.label === label)!;
+			expect(added).toMatchObject({ model_id: `e2e-${tag}`, input_usd_per_mtok: 0.5, media_inputs: ['image'], connection_id: null, enabled: true });
+
+			await row.getByRole('button', { name: `Turn off ${label}` }).click();
+			await expect(row.getByRole('button', { name: `Turn on ${label}` })).toBeVisible();
+			expect((await models(admin)).find((one) => one.id === added.id)?.enabled).toBe(false);
+
+			await row.getByRole('link', { name: label }).click();
+			await page.getByRole('button', { name: 'Delete model' }).click();
+			await page.getByRole('dialog').getByRole('button', { name: 'Delete model' }).click();
+			await expect(page).toHaveURL(/\/admin\/models$/);
+			expect((await models(admin)).some((one) => one.id === added.id)).toBe(false);
+		} finally {
+			const left = (await models(admin)).find((one) => one.label === label);
+			if (left) await deleteAdminModel(left.id);
+		}
+	});
+
+	test('a wrong price is refused on the page', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/models/new');
+		await page.getByLabel('Name people see').fill('Cheap');
+		await page.getByRole('radio', { name: 'Its own key' }).click();
+		await page.getByLabel('Model id').fill('cheap-1');
+		await page.getByLabel('Input', { exact: true }).fill('free');
+		await page.getByRole('button', { name: 'Add model' }).click();
+		await expect(page.getByText('Prices are dollars per million tokens, zero or more.')).toBeVisible();
+	});
+
+	test('connecting a provider says what the backend refused', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/models/providers');
+		const connect = page.getByRole('region', { name: 'Connect a provider' });
+		await connect.getByLabel('Provider', { exact: true }).selectOption('custom');
+		await connect.getByLabel('Name').fill('Plain http');
+		await connect.getByLabel('Address').fill('http://llm.e2e.invalid/v1');
+		await connect.getByRole('button', { name: 'Connect', exact: true }).click();
+		await expect(page.getByText('The provider couldn’t be connected')).toBeVisible();
+		await expect(page.getByText('use an https:// address')).toBeVisible();
+	});
+
+	test('a connected provider is renamed, runs a model, can’t go while it does, then is disconnected', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const tag = Math.random().toString(36).slice(2, 8);
+		const label = `E2E endpoint ${tag}`;
+		const renamed = `E2E lab ${tag}`;
+		await fakeDefault(admin);
+		const connection = await seedSharedEndpoint(label);
+		await signInAs(context, admin);
+		try {
+			await open(page, '/admin/models/providers');
+			const section = page.getByRole('region', { name: label });
+			await expect(section.getByText('No model uses it yet.')).toBeVisible();
+			await section.getByLabel('Name').fill(renamed);
+			await section.getByRole('button', { name: 'Save' }).click();
+			await expect(page.getByRole('region', { name: renamed })).toBeVisible();
+
+			// A model on it, made in the console.
+			await open(page, '/admin/models/new');
+			await page.getByLabel('Name people see').fill(`${renamed} model`);
+			await page.getByLabel('Provider', { exact: true }).selectOption({ label: `${renamed} · custom` });
+			await page.getByLabel('Model id').fill('e2e-endpoint');
+			await page.getByRole('button', { name: 'Add model' }).click();
+			await expect(page).toHaveURL(/\/admin\/models$/);
+			const model = (await models(admin)).find((one) => one.label === `${renamed} model`)!;
+			expect(model.connection_id).toBe(connection);
+
+			await open(page, '/admin/models/providers');
+			await expect(page.getByRole('region', { name: renamed }).getByText(`Used by ${renamed} model`)).toBeVisible();
+			await page.getByRole('region', { name: renamed }).getByRole('button', { name: 'Disconnect' }).click();
+			await page.getByRole('dialog').getByRole('button', { name: 'Disconnect' }).click();
+			await expect(page.getByText(`Still used by ${renamed} model. Move or delete those models first.`)).toBeVisible();
+
+			await deleteAdminModel(model.id);
+			await open(page, '/admin/models/providers');
+			await page.getByRole('region', { name: renamed }).getByRole('button', { name: 'Disconnect' }).click();
+			await page.getByRole('dialog').getByRole('button', { name: 'Disconnect' }).click();
+			await expect(page.getByText('Disconnected', { exact: true })).toBeVisible();
+			await expect(page.getByRole('region', { name: renamed })).toHaveCount(0);
+		} finally {
+			const left = (await models(admin)).find((one) => one.label === `${renamed} model`);
+			if (left) await deleteAdminModel(left.id);
+			await deleteConnection(connection);
+		}
+	});
+
+	test('the embedding model shows, or that none is saved here, and saves as it is', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const response = await api(admin, '/api/admin/settings/embedding');
+		await signInAs(context, admin);
+		await open(page, '/admin/models/embedding');
+
+		if (response.status === 404) {
+			// Nothing saved: the page says the environment's model is used, and saving would change that
+			// for every test on this backend, so it isn't.
+			await expect(page.getByText('No embedding model is saved here yet, so Nomi uses the one its environment sets. Save one to choose it here.')).toBeVisible();
+			await expect(page.getByLabel('Model id')).toHaveValue('');
+			return;
+		}
+		const before = (await response.json()) as { provider: string; model_id: string };
+		await expect(page.getByLabel('Provider')).toHaveValue(before.provider);
+		await expect(page.getByLabel('Model id')).toHaveValue(before.model_id);
+		await page.getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Embedding model saved')).toBeVisible();
+		expect(await (await api(admin, '/api/admin/settings/embedding')).json()).toMatchObject(before);
+});
 });
