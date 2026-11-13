@@ -42,17 +42,17 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
 pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
 pub(crate) const PROJECT_LABEL: &str = "nomi-project";
-/// How long the provider lets a sandbox run before stopping it by itself, asked on every create,
-/// resume and extension. Nomi's idle sweep stops sandboxes long before; this bounds every leak
-/// that doesn't depend on Nomi being healthy (an outage, a lost deletion, a dry-run reaper).
-pub const SANDBOX_AUTO_STOP: Duration = Duration::from_secs(6 * 60 * 60);
-/// `SANDBOX_AUTO_STOP` as the provider is asked for it.
-pub const SANDBOX_TTL: Ttl = Ttl::Seconds(SANDBOX_AUTO_STOP.as_secs());
-/// How close to its auto-stop a running sandbox gets before the liveness pass pushes the deadline
-/// out again by `SANDBOX_AUTO_STOP`; many liveness intervals, so a few failed tries still land
-/// well before it.
+/// The longest time before its auto-stop at which the liveness pass pushes a running sandbox's
+/// deadline out again. The auto-stop itself is the admin's `auto_stop_secs`; a short one (a
+/// provider's free trial allows two hours at most) is extended from its halfway point instead,
+/// see `extend_before`. Many liveness intervals, so a few failed tries still land well before it.
 pub const AUTO_STOP_EXTEND_BEFORE: Duration = Duration::from_secs(2 * 60 * 60);
-const _: () = assert!(SANDBOX_AUTO_STOP.as_secs() > 2 * AUTO_STOP_EXTEND_BEFORE.as_secs());
+/// The share of a short auto-stop left when it is extended: one half.
+const EXTEND_BEFORE_DIVISOR: u32 = 2;
+/// The share of the extension margin the longest retry wait may take: one half, so at least two
+/// tries land before the deadline.
+const RETRY_CAP_DIVISOR: u32 = 2;
+const _: () = assert!(crate::configuration::MIN_AUTO_STOP_SECS / (EXTEND_BEFORE_DIVISOR as u64) > 10 * LIVENESS_INTERVAL.as_secs());
 /// The wait after a failed auto-stop extension (or one whose deadline didn't move) before the
 /// next try; it doubles with each further failure.
 pub const AUTO_STOP_RETRY_BASE: Duration = Duration::from_secs(10 * 60);
@@ -65,6 +65,11 @@ const _: () = assert!(AUTO_STOP_RETRY_CAP.as_secs() < AUTO_STOP_EXTEND_BEFORE.as
 pub const DEVSERVER_RESTART_GAP: Duration = Duration::from_secs(10 * 60);
 /// Recorded (`devserver_restart_reason`) when the liveness pass restarts a dev server.
 const DEVSERVER_NOT_ANSWERING: &str = "the dev server stopped answering on its port in a running sandbox";
+/// How long before its auto-stop a sandbox that stops by itself after `auto_stop` is extended.
+pub fn extend_before(auto_stop: Duration) -> Duration {
+    AUTO_STOP_EXTEND_BEFORE.min(auto_stop / EXTEND_BEFORE_DIVISOR)
+}
+
 /// How often a walk moves its lease ahead. The lease (`sandbox_store::WALK_LEASE`) is more than
 /// twice this, so one missed renewal never lets it run out under a live walk.
 pub const LEASE_RENEW_EVERY: Duration = Duration::from_secs(60);
@@ -548,7 +553,7 @@ impl SandboxManager {
         let n = self.generation(row.project_id).await?;
         let spec = CreateSpec {
             size: self.cfg.size,
-            ttl: SANDBOX_TTL,
+            ttl: self.ttl(),
             from_snapshot: None,
             idempotency_key: format!("nomi-project-{}-{n}", row.project_id),
             labels: BTreeMap::from([(PROJECT_LABEL.to_string(), row.project_id.to_string())]),
@@ -563,7 +568,7 @@ impl SandboxManager {
         )
             .bind(row.project_id)
             .bind(&info.id.0)
-            .bind(SANDBOX_AUTO_STOP.as_secs_f64())
+            .bind(self.auto_stop().as_secs_f64())
             .execute(&self.pool)
             .await)?;
         if written.rows_affected() == 0 {
@@ -626,10 +631,10 @@ impl SandboxManager {
                     SandboxState::Stopped => {
                         self.take_start(&row).await?;
                         self.set_state(project_id, State::Starting).await?;
-                        match self.provider.resume(&existing, ResumeSpec { ttl: SANDBOX_TTL }).await {
+                        match self.provider.resume(&existing, ResumeSpec { ttl: self.ttl() }).await {
                             Ok(_) => {
                                 let mut conn = db(self.pool.acquire().await)?;
-                                db(store::note_auto_stop(&mut conn, project_id, &existing.0, Self::assumed_auto_stop()).await)?;
+                                db(store::note_auto_stop(&mut conn, project_id, &existing.0, self.assumed_auto_stop()).await)?;
                             }
                             Err(SandboxError::SnapshotExpired) => id = self.start_over(&existing, &row).await?,
                             Err(e) => return Ok(self.provider_failed(&row, e).await),
@@ -766,7 +771,7 @@ impl SandboxManager {
     pub async fn check_alive(&self) -> usize {
         let due = async {
             let mut conn = self.pool.acquire().await?;
-            store::alive_due(&mut conn, LIVENESS_INTERVAL.as_secs_f64(), LIVENESS_BATCH, AUTO_STOP_EXTEND_BEFORE.as_secs_f64(), DEVSERVER_RESTART_GAP.as_secs_f64()).await
+            store::alive_due(&mut conn, LIVENESS_INTERVAL.as_secs_f64(), LIVENESS_BATCH, extend_before(self.auto_stop()).as_secs_f64(), DEVSERVER_RESTART_GAP.as_secs_f64()).await
         }
         .await;
         let due = match due {
@@ -829,12 +834,25 @@ impl SandboxManager {
         down
     }
 
-    /// The auto-stop deadline assumed when the provider reports none: `SANDBOX_AUTO_STOP` from now.
-    fn assumed_auto_stop() -> DateTime<Utc> {
-        Utc::now() + chrono::Duration::from_std(SANDBOX_AUTO_STOP).expect("the auto-stop fits a chrono duration")
+    /// How long the provider lets a sandbox run before stopping it by itself, asked on every
+    /// create, resume and extension. Nomi's idle sweep stops sandboxes long before; this bounds
+    /// every leak that doesn't depend on Nomi being healthy (an outage, a lost deletion, a
+    /// dry-run reaper).
+    fn auto_stop(&self) -> Duration {
+        Duration::from_secs(self.cfg.auto_stop_secs)
     }
 
-    /// Push a running sandbox's auto-stop `SANDBOX_AUTO_STOP` out from now and record the
+    /// `auto_stop` as the provider is asked for it.
+    fn ttl(&self) -> Ttl {
+        Ttl::Seconds(self.cfg.auto_stop_secs)
+    }
+
+    /// The auto-stop deadline assumed when the provider reports none: `auto_stop` from now.
+    fn assumed_auto_stop(&self) -> DateTime<Utc> {
+        Utc::now() + chrono::Duration::from_std(self.auto_stop()).unwrap_or(chrono::Duration::MAX)
+    }
+
+    /// Push a running sandbox's auto-stop out by `auto_stop` from now and record the
     /// deadline the provider then reports (assumed only when it reports none). An extension
     /// through boat's resume may count as a start (the contract counts every resume and doesn't
     /// say whether resuming a running sandbox is one), so it takes a start from the limiter and
@@ -849,7 +867,7 @@ impl SandboxManager {
             tracing::debug!(%project_id, "sandbox liveness: no start free to extend the auto-stop, trying next pass");
             return;
         }
-        let reported = match self.provider.extend_auto_stop(id, SANDBOX_TTL).await {
+        let reported = match self.provider.extend_auto_stop(id, self.ttl()).await {
             Ok(reported) => reported.and_then(|raw| DateTime::parse_from_rfc3339(&raw).ok()).map(|d| d.with_timezone(&Utc)),
             Err(e) => {
                 tracing::warn!(%project_id, provider_error_kind = error_kind(&e), "sandbox liveness: extending the auto-stop failed; backing off");
@@ -857,14 +875,14 @@ impl SandboxManager {
                 return;
             }
         };
-        let margin = chrono::Duration::from_std(AUTO_STOP_EXTEND_BEFORE).expect("the margin fits a chrono duration");
+        let margin = chrono::Duration::from_std(extend_before(self.auto_stop())).expect("the margin fits a chrono duration");
         match reported {
             Some(deadline) if deadline <= Utc::now() + margin => {
                 tracing::warn!(%project_id, "sandbox liveness: the provider took the extension but its auto-stop didn't move; backing off");
                 self.extension_failed(project_id, id, Some(deadline)).await;
             }
             _ => {
-                let deadline = reported.unwrap_or_else(Self::assumed_auto_stop);
+                let deadline = reported.unwrap_or_else(|| self.assumed_auto_stop());
                 let noted = async {
                     let mut conn = self.pool.acquire().await?;
                     store::note_auto_stop(&mut conn, project_id, &id.0, deadline).await
@@ -883,7 +901,8 @@ impl SandboxManager {
         let saved = async {
             let mut conn = self.pool.acquire().await?;
             let failures = store::auto_stop_failures(&mut conn, project_id, &id.0).await?;
-            let wait = backoff(failures.max(0) as u32, AUTO_STOP_RETRY_BASE, AUTO_STOP_RETRY_CAP);
+            let cap = AUTO_STOP_RETRY_CAP.min(extend_before(self.auto_stop()) / RETRY_CAP_DIVISOR);
+            let wait = backoff(failures.max(0) as u32, AUTO_STOP_RETRY_BASE.min(cap), cap);
             store::auto_stop_extension_failed(&mut conn, project_id, &id.0, retry_time(wait), reported).await
         }
         .await;
@@ -1073,8 +1092,10 @@ mod tests {
     }
 
     #[test]
-    fn sandboxes_take_a_long_finite_auto_stop() {
-        assert_eq!(SANDBOX_TTL, Ttl::Seconds(6 * 60 * 60));
+    fn a_short_auto_stop_is_extended_from_halfway() {
+        let hour = Duration::from_secs(60 * 60);
+        assert_eq!(extend_before(6 * hour), AUTO_STOP_EXTEND_BEFORE);
+        assert_eq!(extend_before(2 * hour), hour);
     }
 
     #[tokio::test]

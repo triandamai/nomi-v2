@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # Nomi Relay's server (relay-server). Build context: relay/.
 
-FROM rust:1-bookworm AS builder
+# Pinned: sqlx-postgres 0.7.4 doesn't compile on Rust 1.100 (rust-lang/rust#148922).
+FROM rust:1.99-bookworm AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
