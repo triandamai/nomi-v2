@@ -232,6 +232,10 @@
 					{ href: '/settings/memory', icon: 'brain' as const, label: m.settings_memory() },
 				],
 			},
+			{
+				label: m.settings_workspace(),
+				items: [{ href: '/settings/connections', icon: 'plug' as const, label: m.settings_connections() }],
+			},
 		]
 			.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLowerCase().includes(settingsQuery.trim().toLowerCase())) }))
 			.filter((group) => group.items.length > 0),

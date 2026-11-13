@@ -259,3 +259,12 @@ Found while building Settings › Models & providers (2026-11-13).
 
 Found while building Settings › Memory & context (2026-11-13).
 
+
+### More apps to connect, MCP servers, and a connection's health
+- **Needed by:** *App / Settings / Connections* (OBmgS): "Search 120+ apps" and the Add more catalog with its categories (For your crew, Work, Building, Health, Money, Home & media) and SUGGESTED FOR YOUR CREW; "Add MCP server" (top bar and the custom row); access per service on each chip ("Gmail · read", "Docs · write · ask"); "Needs you" with Reconnect when a sign-in has lapsed; who used a connection and when, for Google; and Manage's own page.
+- **Why:** the crew can work in three apps; everything else the pen offers (Notion, Slack, Strava…) and any MCP server has nothing to connect to, and a lapsed Google or Hevy sign-in is only found when a reply fails.
+- **What exists today:** `GET /api/connections` (Google: configured, email, services; Hevy: account, connected, last used), `GET|PUT|DELETE /api/connections/github`, Google and GitHub start/callback, `PUT|DELETE /api/connections/hevy`.
+- **Proposed contract:** `GET /api/connections/catalog` → `[{ id, name, category, for_agent, access: ["read" | "write" | "ask"], available }]`; `GET|POST|DELETE /api/connections/mcp` with `{ url | command, name }`; on each connection `status: "ok" | "expired"`, `expired_at`, `last_used_at` and `used_by: [agent]`, and per Google service an access level.
+- **Until then:** Connections shows Google Workspace, GitHub and Hevy, connected or to add; who uses each is the crew member it's for.
+
+Found while building Settings › Connections (2026-11-13).
