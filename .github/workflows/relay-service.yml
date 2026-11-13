@@ -58,7 +58,8 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        # Pinned with the backend: sqlx-postgres 0.7.4 doesn't compile on Rust 1.100.
+        uses: dtolnay/rust-toolchain@1.99.1
 
       - name: Cache cargo registry and build output
         uses: Swatinem/rust-cache@v2
