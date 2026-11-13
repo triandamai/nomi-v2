@@ -432,14 +432,19 @@ async fn post_to_project_chat(pool: &PgPool, project_id: Uuid, text: &str, sugge
     nomi_agent_core::suggestions::post_suggestions(&mut conn, mqtt, session_id, "Nomi", suggestions).await;
 }
 
-/// A publish as one logged line in the chat ("production · published · shop.example.app"): the
-/// frontend draws it as an event row, in mono, with the message's time.
-pub fn publish_event(environment: &str, ok: bool, detail: Option<&str>) -> serde_json::Value {
+/// A publish as the chat shows it: `text` is the logged line ("production · published ·
+/// shop.example.app") a failed publish is drawn as, and a publish that went live also carries
+/// its address (`url`) and `environment`, which the frontend draws as the live card.
+pub fn publish_event(environment: &str, ok: bool, detail: Option<&str>, url: Option<&str>) -> serde_json::Value {
     let mut parts = vec![environment.to_string(), if ok { "published" } else { "failed" }.to_string()];
     if let Some(detail) = detail.filter(|d| !d.is_empty()) {
         parts.push(detail.to_string());
     }
-    serde_json::json!({ "kind": "project_event", "event": "deploy", "ok": ok, "text": parts.join(" · ") })
+    let mut block = serde_json::json!({ "kind": "project_event", "event": "deploy", "ok": ok, "environment": environment, "text": parts.join(" · ") });
+    if let Some(url) = url.filter(|u| !u.is_empty()) {
+        block["url"] = serde_json::Value::String(url.to_string());
+    }
+    block
 }
 
 /// The project owner's language, for what Nomi says in the project's chat.
@@ -505,11 +510,11 @@ pub async fn apply_event(pool: &PgPool, client: Option<&Shipyard<'_>>, project_i
                     crate::project_events::changed(project_id, "publish.failure");
                 }
                 let text = failure_chat_text(locale, environment, &why, failure.as_ref());
-                let line = publish_event(environment, false, failure.as_ref().map(|f| f.step.as_str()));
+                let line = publish_event(environment, false, failure.as_ref().map(|f| f.step.as_str()), None);
                 post_to_project_chat(pool, project_id, &text, vec![locale.t("deploy.suggest_fix")], Some(line)).await;
                 notify_admins(pool, project_id, "publish_failed", &why).await;
             } else if let Some(url) = url {
-                let line = publish_event(environment, true, Some(url.trim_start_matches("https://").trim_start_matches("http://")));
+                let line = publish_event(environment, true, Some(url.trim_start_matches("https://").trim_start_matches("http://")), Some(url));
                 post_to_project_chat(pool, project_id, &locale.tf("deploy.chat_published", &[("env", environment), ("url", url)]), Vec::new(), Some(line)).await;
                 notify_admins(pool, project_id, "published", url).await;
             }
@@ -704,10 +709,12 @@ mod tests {
 
     #[test]
     fn a_publish_is_one_logged_line_in_the_chat() {
-        let ok = super::publish_event("production", true, Some("shop.example.app"));
+        let ok = super::publish_event("production", true, Some("shop.example.app"), Some("https://shop.example.app"));
+        assert_eq!((ok["url"].as_str(), ok["environment"].as_str()), (Some("https://shop.example.app"), Some("production")));
         assert_eq!(ok["kind"], "project_event");
         assert_eq!(ok["text"], "production · published · shop.example.app");
-        let failed = super::publish_event("dev", false, None);
+        let failed = super::publish_event("dev", false, None, None);
+        assert!(failed.get("url").is_none());
         assert_eq!((failed["ok"].as_bool(), failed["text"].as_str()), (Some(false), Some("dev · failed")));
     }
 

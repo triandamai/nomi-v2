@@ -334,6 +334,10 @@ hard. Add to this list instead of deviating silently.
 - Project cards: a description or the rename keys longer than the 262 column end in an ellipsis;
   the pen lets them run past it (warung-kopi-menu's line by 7px, the keys by 2px).
 - Apostrophes are typographic (’) in messages; the pen's are straight.
+- Shared link (b8Flw8): an expired and a turned-off link show one screen ("This link isn't
+  available", the pen's layout), since the backend answers both alike so links can't be probed. The
+  screens' "What is Nomi?" is left out (there's no page to open), and so are the owner's banner,
+  "Shared by…" and "Report this page" (BACKEND_TODO.md).
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
   max width, not its longest line).
@@ -364,6 +368,146 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   and nothing else (the active workspace can't be switched: BACKEND_TODO.md).
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
+
+The Inbox (App / Inbox `BFoiZ`) is built on what the backend has: notifications and Kala's
+reminders, with the work agents will do later beside them.
+
+- Its cards' actions are the backend's: a notification opens where it points ("Open") or is marked
+  read; a reminder that went off is done or snoozed for an hour. The pen's per-kind actions
+  (Accept/Decline an invite, "Ask Koda to fix", "Open log") have nothing to call.
+- No snooze on a reminder that's still ahead (the pen's alarm-clock tool): the backend's snooze
+  moves a reminder to N minutes from now, which would bring an upcoming one forward.
+- How it reaches you: "Push for reminders" and "Quiet hours" are left out (the backend has neither:
+  BACKEND_TODO.md), and so is "All notification settings" (there's no such page). The two email
+  settings the backend has are shown instead: account changes, and news and offers.
+- "Earlier this week · 5 read" is "Earlier" with its count: it holds everything before today the
+  pages loaded so far reach, with "Show older" for the next page of notifications.
+- The quick reminder's hint ("↵ add") runs 9px into the field's right padding, as the pen's does.
+
+Settings (App / Settings / *) are built as their pages land; the settings nav lists only those
+that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
+
+- The heatmap shows days only: the pen's Daily / Weekly / Cumulative switch draws no Weekly or
+  Cumulative view. "Most active" names the busiest weekday without the hours (the backend counts
+  tokens by day: BACKEND_TODO.md).
+- The Insights panel ("Save ~18% on Nomi", "You work late") is left out: nothing works them out
+  (BACKEND_TODO.md). Models and crew share the row.
+- The top bar's Preview public profile and Copy link wait for a public profile page in v2.
+- The username's helper follows the backend's rules ("Letters, numbers, underscores and
+  periods"); the pen's "Lowercase, numbers and dashes" sits under Display name, where it spills
+  out of the field, and the backend refuses dashes.
+- Discard has no icon and Save no arrow: the pen's (a users icon on Discard, an arrow outside Save's
+  box) are pasted-in slips. Change photo shows an upload icon before its label.
+- A featured project's tile is its initial: the pen draws a screenshot of the app, which Nomi
+  doesn't keep. The grip opens Move up, Move down and Remove (there's no drag to reorder).
+
+On General (`m7lvY1`), every row is one the backend can keep; the rest are left out rather than
+drawn dead:
+
+- Changing the email, Formats, the Chat group (who new chats start with, Enter sends, tokens under
+  replies), the Reminders push, Crew updates and Quiet hours rows, and Delete account: the backend
+  has none of them (BACKEND_TODO.md). Reduce motion is left out too: the app follows the device's
+  own setting.
+- The password row leads to the emailed reset (changing it while signed in has no endpoint), so
+  its button is "Change" or "Set password" with the arrow out.
+- The Google row shows "connected" with Disconnect beside it (the pen shows no way to remove it);
+  it's hidden when this Nomi doesn't offer Google.
+- Group names are sentence case ("Account & sign-in"): the pen writes most in capitals in sans,
+  which the type rules keep for mono labels, and its Notifications group is already sentence case.
+- Related links only Inbox, and the tip says "Changes save as you go." without the pen's "Press ⌘Z
+  to undo the last one" (there's no undo).
+
+On Plan & usage (`C0og49`):
+
+- No way to join a plan or its waitlist ("Join Pro waitlist", "Join the waitlist"): there's no
+  checkout or waitlist to call (BACKEND_TODO.md); Compare plans says plans are changed by Nomi's
+  team for now. Billing leaves out the payment method, which the backend doesn't know.
+- Spend is in dollars at list price, as the backend keeps it; the pen's "Rp 1.800 ≈ $0.11 · you
+  paid Rp 0" needs an exchange rate and what was paid.
+- An own key's row shows its masked key only: the pen's "Balance empty" and "Use Nomi allowance"
+  have nothing behind them, and "Add a key" waits for Models & providers in v2.
+- The plan tag reads "Free plan" and the plan's name "Free" from the backend; a price without a
+  figure ("Free") isn't followed by "/ month".
+
+On Models & providers (`RbTgo`, Connect `voUxB`):
+
+- Providers show their initial (Nomi's own models, Nomi's mascot): v2 doesn't carry the providers'
+  logos yet.
+- The models table has no Context column and no Fast / Reasoning / Vision / Code tags: the
+  backend's model options don't say them (BACKEND_TODO.md). This month's tokens come from usage.
+- "Each crew member" (per-agent models) waits for Crew settings in v2.
+- The Connect list has no Gateways / Direct / Local filters: the catalog's `kind` is the API a
+  provider speaks, not those. Search, the groups and the letters stay.
+- The backend checks a key with its provider as it connects, so the pane's one action is "Check
+  and connect"; its models then start switched off (nothing says which are "recommended"), and
+  Cancel after a check disconnects it again. Signing in to a provider (OAuth) isn't offered.
+
+On Memory & context (`hANTE`):
+
+- Topics are the backend's kinds of memory (Preferences, People, Routines, Goals, Facts), not the
+  pen's subjects (Communication, Money, Work); each opens to its memories, to correct, confirm or
+  forget. Strength is five steps of a memory's weight.
+- Left out, with nothing to keep them (BACKEND_TODO.md): the "You" profile row, the Learned by
+  column, and the whole settings column (Learn from chats, Keep a profile, Search past chats, the
+  Memory and Profile budgets, Storage). The page is one column.
+- The search sits in the page's header, not the top bar. Export downloads the memories as JSON.
+- Telling Nomi to remember or forget starts a chat with it, where the crew keeps or drops it.
+
+On Connections (`OBmgS`), the apps are the three the backend connects: Google Workspace, GitHub
+and Hevy.
+
+- Left out, with nothing behind them (BACKEND_TODO.md): "Search 120+ apps", the category pills,
+  the catalog's groups (SUGGESTED FOR YOUR CREW, HEALTH & FITNESS…) and the apps in them, "Add MCP
+  server" (top bar and the custom row), "Needs you" with Reconnect, and access per service on the
+  chips: a chip names what the crew may use ("Gmail", "Repos · import").
+- The top bar says "N connected" without "used by N crew members"; who uses each app is the crew
+  member it's for (Tara for Google, Koda for GitHub, Raga for Hevy), and Google shows no time,
+  since the backend doesn't record when it was last used.
+- Manage opens a dialog with the account, what it can do and Disconnect (Google also changes what
+  Tara may use); there's no page of its own. Adding Google or GitHub goes off to sign in; a GitHub
+  token or a Hevy key is checked as it connects. Google says "not set up" where this Nomi has no
+  Google client.
+- GitHub wears the GitHub mark the design system already draws (`GithubMark`), Google the pen's
+  mail icon and Hevy its dumbbell.
+
+On Crew (`vVUeh`), the roster is the backend's crew in the pen's groups (Core: Nomi and the
+Supervisor; Specialists; Custom: members an admin made). Iris, whom the pen doesn't draw, wears her
+initial as a custom member does.
+
+- Left out, with nothing behind them (BACKEND_TODO.md): "Add crew member", New member (`u377E4`)
+  and Templates (`u2auTN`), the On switch and the more button in the header, "paused" and "draft",
+  Permissions, soul.md (its file, versions and Edit) and Activity.
+- A member's state is the backend's: "on" when idle, "working", "waiting on you" (warning) or "done".
+- How a member works: Model (a picker for Nomi, the chat model, and Koda, the coding one, saved
+  through Models & providers' actions; the others work on the chat's model), Steps in, and Now (what
+  they're doing). The pen's "Default is deepseek-flash · Rp 410 this month" needs per-member spend.
+- Personality has a Versions tab: the versions of how Nomi speaks, from the backend's history, any of
+  which can be restored, drawn in the pen's soul.md block.
+- The roster's search has no ⌘K (that's New chat's). The tabs' line runs under the tabs' 28 inset,
+  not the pane's whole width.
+
+On Workspaces (`l222Mz`), "You're here now" / "Switch to" mean where projects come from, the one
+choice of workspace the backend keeps: the card says "Projects come from here" or offers "Use for
+projects", and Defaults › New projects go to sets the same thing.
+
+- Left out (BACKEND_TODO.md): Invitations, each card's faces and last activity, the templates count,
+  PERSONAL, the card's menu, "Open Nomi in", and the top bar's Create workspace (the create card
+  does it).
+
+On a workspace's page (`wZm9B`), everything follows the backend's rules: owners and admins rename,
+invite and take invites back; admins move people between member and admin; only owners make or
+change owners; nobody changes or removes themselves (they leave); the last owner can't leave.
+
+- Left out (BACKEND_TODO.md): "created by … · date", the shared template stat, each member's
+  projects and activity, Resend, and deleting the workspace. Hand-over is making someone an owner
+  from their role.
+- "Copy invite link" sits on each open invite (a link needs an address), not in the invite box.
+- Each member's role is a picker only where the person may change it, with Remove (asked first);
+  the pen's more button on each row is that Remove.
+- The top bar's "Switch workspace" is left out: the backend has no active workspace; the side tip
+  says where projects' workspace is chosen.
+- The invite box keeps what's typed as text when it loses focus: turning it into chips then moved
+  the role cards under a click (a person picking Admin got Member).
 
 ## 10. Running
 

@@ -17,7 +17,7 @@ export const GET: RequestHandler = async (event) => {
 	const returnTo = safeRedirect(cookies.get(GOOGLE_RETURN_COOKIE));
 	cookies.delete(GOOGLE_RETURN_COOKIE, { path: '/' });
 	const linking = Boolean(locals.accessToken);
-	const back = (reason: GoogleError) => (linking ? `/settings?google_error=${reason}` : withRedirect('/sign-in', returnTo, { google_error: reason }));
+	const back = (reason: GoogleError) => (linking ? `/settings/general?google_error=${reason}` : withRedirect('/sign-in', returnTo, { google_error: reason }));
 
 	const code = url.searchParams.get('code');
 	const state = url.searchParams.get('state');
@@ -28,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 	if (!response.ok) redirect(303, back(await googleErrorFor(response)));
 
 	const result = (await response.json()) as Finished;
-	if (result.linked || !result.access_token || !result.refresh_token) redirect(303, '/settings?google=linked');
+	if (result.linked || !result.access_token || !result.refresh_token) redirect(303, '/settings/general?google=linked');
 	await completeSignIn(event, { access_token: result.access_token, refresh_token: result.refresh_token }, result.is_new);
 	rememberMethod(cookies, 'google');
 	redirect(303, result.is_new ? withRedirect('/first-run', returnTo) : returnTo);

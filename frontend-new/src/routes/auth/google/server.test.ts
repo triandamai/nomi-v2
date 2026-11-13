@@ -71,10 +71,10 @@ describe('back from Google', () => {
 		expect(await thrown(back('?code=c&state=s', () => 'unreachable').run)).toMatchObject({ location: '/sign-in?redirect_to=%2Fchat%2F7&google_error=failed' });
 	});
 
-	it('goes back to settings when Google was being added to a signed-in account', async () => {
+	it('goes back to Settings › General when Google was being added to a signed-in account', async () => {
 		const linked = back('?code=c&state=s', () => json({ email: 'ana@gmail.com', is_new: false, linked: true, access_token: null, refresh_token: null }), { locals: { accessToken: 'a0' } });
-		expect(await thrown(linked.run)).toMatchObject({ status: 303, location: '/settings?google=linked' });
+		expect(await thrown(linked.run)).toMatchObject({ status: 303, location: '/settings/general?google=linked' });
 		const refused = back('?code=c&state=s', () => new Response('That Google account already signs in to a different Nomi account.', { status: 409 }), { locals: { accessToken: 'a0' } });
-		expect(await thrown(refused.run)).toMatchObject({ status: 303, location: '/settings?google_error=conflict' });
+		expect(await thrown(refused.run)).toMatchObject({ status: 303, location: '/settings/general?google_error=conflict' });
 	});
 });

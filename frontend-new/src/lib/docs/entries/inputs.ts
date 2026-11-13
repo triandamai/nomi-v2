@@ -221,4 +221,14 @@ export default [
 		],
 		related: ['inputs/Checkbox.svelte', 'inputs/Segmented.svelte', 'chat/SharePanel.svelte'],
 	},
+	{
+		file: 'inputs/Select.svelte',
+		summary: 'One choice from a long list, as a 30px field with the value and a chevron. The platform’s own select is underneath.',
+		use: ['A setting with many fixed options: a time zone, a region.'],
+		avoid: ['Two to four options: use Segmented.', 'A list that needs search or rich rows: use a Menu.'],
+		dos: ['Show a placeholder while nothing is chosen, instead of picking for the person.'],
+		content: ['Options name the thing as people know it: "Asia/Jakarta · WIB".'],
+		accessibility: ['A native select with its own label: the list, the keyboard and screen readers work as on the platform.'],
+		related: ['inputs/Segmented.svelte', 'overlays/Menu.svelte'],
+	},
 ] satisfies ComponentDoc[];

@@ -155,6 +155,8 @@
 	/* The sign-in screens' brand panel (Auth / Sign in or create): its 28px wordmark and headline. */
 	--tracking-logo: -0.6px;
 	--tracking-hero: -1.2px;
+	/* The big mono figures of Settings › Profile's stats strip (App / Settings / Profile U9Gnrg). */
+	--tracking-stat: -0.6px;
 
 	--radius-*: initial;
 	--radius-sm: var(--nm-radius-sm);
@@ -164,6 +166,14 @@
 	--radius-xs: 4px;
 	/* A segment or button sitting inside a 10–12px container on a phone (Workspace Switch, copy). */
 	--radius-inner: 8px;
+	/* The 26px icon tiles of Home's Today strip (App / Home → Today Strip, BgqD6). */
+	--radius-tile: 7px;
+	/* The memory strength bars' segments (App / Settings / Memory hANTE → Strength). */
+	--radius-hair: 1px;
+	/* The token heatmap's days and the usage bars' tracks (App / Settings / Profile U9Gnrg). */
+	--radius-cell: 2px;
+	/* The 26px crew tiles in the Inbox's Coming up (App / Inbox BFoiZ → Agenda). */
+	--radius-agenda: 6.5px;
 	/* Phones only, as the Mobile sheet draws them: buttons 12, options 14, toasts 16, bubbles 18. */
 	--radius-lg: 12px;
 	--radius-xl: 14px;

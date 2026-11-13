@@ -58,6 +58,11 @@ describe('recents', () => {
 		session({ id: 'e', title: 'Too old to show', updated_at: '2026-10-01T08:00:00Z' }),
 	];
 
+	it('keeps a pinned chat on top, even an older one', () => {
+		const pinned = [...sessions.slice(0, 4), session({ id: 'e', title: 'Pinned rent', updated_at: '2026-10-01T08:00:00Z', pinned: true, pinned_at: '2026-10-20T08:00:00Z' })];
+		expect(recents(pinned, now).map((recent) => recent.href)).toEqual(['/chat/e', '/chat/a', '/projects/p1', '/chat/c']);
+	});
+
 	it('lists the latest four chats and projects, with how long ago', () => {
 		expect(recents(sessions, now)).toEqual([
 			{ href: '/chat/a', kind: 'chat', title: 'Starting a new conversation', when: 'now' },

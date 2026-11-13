@@ -17,10 +17,15 @@ export const CATEGORIES = [
 	{ key: 'agents', title: 'Agents', blurb: "The crew's mascots." },
 	{ key: 'foundations', title: 'Foundations', blurb: 'Icons and the helpers everything else uses.' },
 	{ key: 'chat', title: 'Chat responses', blurb: 'Everything a reply can hold, and the controls around it.' },
+	{ key: 'thread', title: 'Chat thread', blurb: 'The chat itself, put together: the composer, a reply and its bar, failures, Home’s starters and the chats list.' },
+	{ key: 'inbox', title: 'Inbox', blurb: 'Notifications and reminders together: what needs the person, today around now, and what’s coming up.' },
+	{ key: 'profile', title: 'Profile', blurb: 'What a person has done with Nomi, and what they show of it: their numbers, a year of activity, their crew and their showcase.' },
+	{ key: 'settings', title: 'Settings', blurb: 'The parts settings pages are made of: groups of rows, each with its control, and the page’s own column.' },
 	{ key: 'build', title: 'Build', blurb: 'From describing an app to a live URL.' },
 	{ key: 'projects', title: 'Projects', blurb: 'The projects page: its cards in every state, the menus and dialogs around them, and importing from GitHub.' },
 	{ key: 'mobile', title: 'Mobile', blurb: 'The phone versions, drawn at 390 pt.' },
 	{ key: 'auth', title: 'Sign in', blurb: 'The sign-in, sign-up and code screens, and the parts their forms are made of.' },
+	{ key: 'admin', title: 'Admin', blurb: 'The admin console’s pieces: its navigation, tables, forms, access levels and usage.' },
 ] as const;
 
 export type CategoryKey = (typeof CATEGORIES)[number]['key'];
