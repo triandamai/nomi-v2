@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compact, dateTime, dayOfMonth, everyDay, full, isoFromLocal, localParts, monthLabel, niceMax, shiftMonth, slugify, usd } from './format';
+import { compact, dateTime, dayOfMonth, everyDay, full, isoFromLocal, localParts, monthLabel, niceMax, shiftMonth, slugify, usd, endOfDayUtc, utcInstant } from './format';
 
 describe('numbers', () => {
 	it('shortens big numbers, keeping one decimal, in the person’s language', () => {
@@ -77,5 +77,19 @@ describe('slugify', () => {
 		expect(slugify('Pro Plus!')).toBe('pro-plus');
 		expect(slugify('  Bisnis — 2026  ')).toBe('bisnis-2026');
 		expect(slugify('')).toBe('');
+	});
+
+	it('reads a date and time typed in UTC, only when they read back the same', () => {
+		expect(utcInstant('2026-11-12', '03:30')).toBe('2026-11-12T03:30:00.000Z');
+		expect(utcInstant('2026-11-12', '')).toBe('2026-11-12T00:00:00.000Z');
+		expect(utcInstant('2026-11-12', '25:00')).toBeNull();
+		expect(utcInstant('2026-02-31', '10:00')).toBeNull();
+		expect(utcInstant('12/11/2026', '10:00')).toBeNull();
+	});
+
+	it('ends a day at its last second in UTC, as allowances and promotions do', () => {
+		expect(endOfDayUtc('2026-12-31')).toBe('2026-12-31T23:59:59.000Z');
+		expect(endOfDayUtc('2026-13-01')).toBeNull();
+		expect(endOfDayUtc('soon')).toBeNull();
 	});
 });

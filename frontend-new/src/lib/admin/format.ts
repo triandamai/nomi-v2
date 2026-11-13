@@ -123,6 +123,20 @@ export function localParts(iso: string | null | undefined, timeZone?: string): {
 	return Number.isNaN(at.getTime()) ? { date: '', time: '' } : wallClock(at, zone(timeZone));
 }
 
+/** A date and time typed in UTC, as an instant: null unless they read back the same (no 25:00, no 31 February). */
+export function utcInstant(date: string, time: string): string | null {
+	const iso = isoFromLocal(date, time, 'UTC');
+	if (!iso) return null;
+	const back = localParts(iso, 'UTC');
+	return back.date === date && back.time === (time || '00:00') ? iso : null;
+}
+
+/** The last second of a day in UTC: when an allowance or a promotion ends. */
+export function endOfDayUtc(date: string): string | null {
+	const lastMinute = utcInstant(date, '23:59');
+	return lastMinute ? new Date(Date.parse(lastMinute) + 59_000).toISOString() : null;
+}
+
 /** A plan's id from its name: lower case, a dash for anything else, none at the ends. */
 export function slugify(text: string): string {
 	return text

@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages';
 import { AREAS, LEVELS, accessPayload, can, type Area, type Level } from '$lib/admin/access';
 import type { AdminOrg, AdminPlan, Subscription, UserDetail } from '$lib/admin/api';
+import { endOfDayUtc } from '$lib/admin/format';
 import { act, field, getJson, mustLoad, refuse } from '$lib/server/admin';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -24,13 +25,6 @@ export const load: PageServerLoad = async (event) => {
 };
 
 const ROLES = ['owner', 'admin', 'member'];
-
-/** The allowance's last day, in UTC, as the backend keeps it: the end of that day. */
-function endOfDay(date: string): string | null {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-	const at = new Date(`${date}T23:59:59.000Z`);
-	return Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== date ? null : at.toISOString();
-}
 
 /** An admin role from the access editor's JSON: each known area at a known level, or null. */
 function readRole(text: string): Partial<Record<Area, Level | null>> | null {
@@ -85,7 +79,7 @@ export const actions: Actions = {
 		const note = field(form, 'note');
 		if (!planId) return refuse('subscription', m.admin_user_plan_required());
 		if (quota && !/^\d+$/.test(quota)) return refuse('subscription', m.admin_user_quota_invalid());
-		const overrideUntil = until ? endOfDay(until) : null;
+		const overrideUntil = until ? endOfDayUtc(until) : null;
 		if (until && !overrideUntil) return refuse('subscription', m.admin_user_until_invalid());
 		return act(event, 'subscription', `/api/admin/users/${event.params.id}/subscription`, 'PUT', {
 			plan_id: planId,
