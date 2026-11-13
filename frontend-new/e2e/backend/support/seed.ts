@@ -67,6 +67,10 @@ export async function seedMemory(email: string, memory: { content: string; kind:
 			FROM web_credentials WHERE email = ${email}
 			RETURNING id`;
 		return row.id as string;
+	} finally {
+		await sql.end();
+	}
+}
 
 /**
  * One of Nomi's own models (the fake one), as an admin would add it, unless there's one already:
