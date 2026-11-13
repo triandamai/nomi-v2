@@ -470,6 +470,22 @@ and Hevy.
 - GitHub wears the GitHub mark the design system already draws (`GithubMark`), Google the pen's
   mail icon and Hevy its dumbbell.
 
+On Crew (`vVUeh`), the roster is the backend's crew in the pen's groups (Core: Nomi and the
+Supervisor; Specialists; Custom: members an admin made). Iris, whom the pen doesn't draw, wears her
+initial as a custom member does.
+
+- Left out, with nothing behind them (BACKEND_TODO.md): "Add crew member", New member (`u377E4`)
+  and Templates (`u2auTN`), the On switch and the more button in the header, "paused" and "draft",
+  Permissions, soul.md (its file, versions and Edit) and Activity.
+- A member's state is the backend's: "on" when idle, "working", "waiting on you" (warning) or "done".
+- How a member works: Model (a picker for Nomi, the chat model, and Koda, the coding one, saved
+  through Models & providers' actions; the others work on the chat's model), Steps in, and Now (what
+  they're doing). The pen's "Default is deepseek-flash · Rp 410 this month" needs per-member spend.
+- Personality has a Versions tab: the versions of how Nomi speaks, from the backend's history, any of
+  which can be restored, drawn in the pen's soul.md block.
+- The roster's search has no ⌘K (that's New chat's). The tabs' line runs under the tabs' 28 inset,
+  not the pane's whole width.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

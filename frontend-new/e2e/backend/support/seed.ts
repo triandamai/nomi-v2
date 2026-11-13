@@ -88,3 +88,20 @@ export async function seedNomiModel(email: string): Promise<void> {
 		await sql.end();
 	}
 }
+
+/** Versions of how Nomi speaks, oldest first, the last one in use, as its personality changes would leave them. */
+export async function seedPersonality(email: string, descriptions: string[]): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		const [person] = await sql`SELECT user_id FROM web_credentials WHERE email = ${email}`;
+		const current = descriptions.length;
+		await sql`
+			INSERT INTO user_personality (user_id, description, current_version) VALUES (${person.user_id}, ${descriptions[current - 1]}, ${current})
+			ON CONFLICT (user_id) DO UPDATE SET description = EXCLUDED.description, current_version = EXCLUDED.current_version`;
+		for (const [index, description] of descriptions.entries()) {
+			await sql`INSERT INTO user_personality_versions (user_id, version, description) VALUES (${person.user_id}, ${index + 1}, ${description})`;
+		}
+	} finally {
+		await sql.end();
+	}
+}
