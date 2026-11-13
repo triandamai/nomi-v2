@@ -69,13 +69,16 @@ describe('SavedMemoriesTwin', () => {
 });
 
 describe('ProjectEventBlock', () => {
-	it('logs a publish as one line with its time', () => {
+	it('shows a publish that went live as the live card, and a failed one as a logged line', () => {
 		const root = render(ProjectEventBlock, {
 			block: { kind: 'project_event', event: 'deploy', ok: true, text: 'production · published · shop.example.app' },
 			time: '15:38',
 		});
-		expect(root.textContent).toContain('production · published · shop.example.app');
+		expect(root.querySelector('a[href="https://shop.example.app"]')).not.toBeNull();
+		expect(root.textContent).toContain('Published to production');
 		expect(root.textContent).toContain('15:38');
+		const failed = render(ProjectEventBlock as never, { block: { kind: 'project_event', event: 'deploy', ok: false, text: 'production · failed · build_image' }, time: '15:40' } as never);
+		expect(failed.textContent).toContain('production · failed · build_image');
 	});
 });
 

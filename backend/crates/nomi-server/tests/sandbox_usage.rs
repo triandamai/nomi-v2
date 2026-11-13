@@ -18,6 +18,9 @@ use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
 
+/// The provider-side auto-stop used in these tests, in seconds.
+const AUTO_STOP_SECS: u64 = 6 * 60 * 60;
+
 /// `sandbox_config()` reads through the process-wide settings cache and pool, so the tests that
 /// set it take turns.
 static GLOBALS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -34,6 +37,7 @@ fn cfg(minutes: u32) -> SandboxConfig {
         api_key: String::new(),
         size: nomi_sandbox::Size::Small,
         idle_stop_secs: 600,
+        auto_stop_secs: AUTO_STOP_SECS,
         rollout: Rollout::All,
         starts_per_minute: 1000,
         starts_per_hour: 1000,
