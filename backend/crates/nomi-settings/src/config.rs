@@ -174,6 +174,8 @@ pub const SANDBOX: SectionDef = SectionDef {
         field("api_key", "BOAT_API_KEY", Kind::Secret),
         saved_only("size", Kind::Choice(&["small", "default", "large"])),
         saved_only("idle_stop_secs", Kind::Number),
+        // The provider-side auto-stop; boat.dev's free trial takes 7200 (two hours) at most.
+        saved_only("auto_stop_secs", Kind::Number),
         saved_only("rollout", Kind::Choice(&["off", "allowlist", "percent", "all"])),
         // Comma-separated user ids, for the `allowlist` rollout.
         saved_only("rollout_allowlist", Kind::Text),

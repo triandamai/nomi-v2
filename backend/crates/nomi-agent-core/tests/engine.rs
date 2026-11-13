@@ -1893,20 +1893,16 @@ async fn ask_user_posts_a_questions_card_and_waits_for_the_answer(pool: PgPool) 
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn ask_user_takes_one_question_at_a_time(pool: PgPool) {
+async fn ask_user_takes_several_questions_in_one_card(pool: PgPool) {
     let session_id = seed_session(&pool).await;
     let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
     let mut conn = pool.acquire().await.unwrap();
-    // Asked two at once, the agent is told to ask one, and asks the most important one.
+    let question = |text: &str| serde_json::json!({"question": text, "options": [{"label": "A"}, {"label": "B"}]});
+    // More than a card holds is refused once, with the limit; two go out together, numbered.
+    let too_many: Vec<_> = (0..=nomi_agent_core::engine::MAX_QUESTIONS_PER_CARD).map(|i| question(&format!("Question {i}?"))).collect();
     let provider = FakeLlmProvider::sequence(vec![
-        ask_user_call(
-            "q1",
-            serde_json::json!([
-                {"question": "Just once, or repeating?", "options": [{"label": "Just once"}, {"label": "Every day"}]},
-                {"question": "What time?", "options": [{"label": "Morning"}, {"label": "Evening"}]}
-            ]),
-        ),
-        ask_user_call("q2", serde_json::json!([{"question": "Just once, or repeating?", "options": [{"label": "Just once"}, {"label": "Every day"}]}])),
+        ask_user_call("q1", serde_json::Value::Array(too_many)),
+        ask_user_call("q2", serde_json::json!([question("Just once, or repeating?"), question("What time?")])),
     ]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
     let registry = AgentRegistry::new(vec![Box::new(AskingAgent)]);
@@ -1916,11 +1912,11 @@ async fn ask_user_takes_one_question_at_a_time(pool: PgPool) {
         .unwrap();
 
     let LoopOutcome::AwaitingAnswer { text, .. } = outcome else { panic!("expected to wait for an answer, got {outcome:?}") };
-    assert!(text.contains("Just once, or repeating?") && !text.contains("What time?"), "{text}");
+    assert!(text.contains("1. Just once, or repeating?") && text.contains("2. What time?"), "{text}");
     let requests = provider.received_requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
     let told = serde_json::to_string(&requests[1].messages).unwrap();
-    assert!(told.contains("ask one question at a time"), "{told}");
+    assert!(told.contains("ask at most 5 questions in one card"), "{told}");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
