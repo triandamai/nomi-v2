@@ -40,6 +40,13 @@ describe('AppShell', () => {
 		await expect.element(page.getByRole('main')).toHaveTextContent('Page content');
 	});
 
+	it('takes the content area edge to edge for a screen that scrolls its own parts (a chat)', async () => {
+		await page.viewport(1512, 862);
+		await render(AppShellFixture, { bleed: true });
+		const main = getComputedStyle(page.getByRole('main').element());
+		expect([main.paddingTop, main.paddingLeft, main.overflowY]).toEqual(['0px', '0px', 'hidden']);
+	});
+
 	it('puts the sidebar in a drawer and the panel away on a phone', async () => {
 		await page.viewport(390, 844);
 		await render(AppShellFixture);

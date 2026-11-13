@@ -1,11 +1,17 @@
 <script lang="ts">
 	import AppShell from './AppShell.svelte';
 	import { setPanelPlacement } from './panelPlacement';
+	import { setMainLayout } from './mainLayout';
 
-	let { panelUnderTopbar = false }: { panelUnderTopbar?: boolean } = $props();
+	let { panelUnderTopbar = false, bleed = false }: { panelUnderTopbar?: boolean; bleed?: boolean } = $props();
 	setPanelPlacement({
 		get underTopbar() {
 			return panelUnderTopbar;
+		},
+	});
+	setMainLayout({
+		get bleed() {
+			return bleed;
 		},
 	});
 </script>

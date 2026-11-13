@@ -6,7 +6,8 @@ import { codeFor, linkFor } from './support/mailpit';
 // Sign in and create an account against the real backend: codes and links come from Mailpit, as
 // the person would read them. Cases the backend can't be made to reach here (a code expiring after
 // 10 minutes, resend running out of codes, Google's own callback) are covered by the pages' unit
-// tests with the backend's answers.
+// tests with the backend's answers. Each page is opened once it has hydrated: typed in before then,
+// hydration can clear the fields.
 
 /** A code that isn't `code`. */
 const wrong = (code: string) => String((Number(code) + 1) % 1_000_000).padStart(6, '0');
@@ -20,7 +21,7 @@ async function signedInAs(context: BrowserContext): Promise<string | null> {
 }
 
 async function signInWithPassword(page: Page, account: Account, path = '/sign-in') {
-	await page.goto(path);
+	await page.goto(path, { waitUntil: 'networkidle' });
 	await page.getByLabel('Email').fill(account.email);
 	await page.getByLabel('Password').fill(account.password);
 	await page.getByRole('button', { name: 'Sign in' }).click();
@@ -38,7 +39,7 @@ async function typeCode(page: Page, email: string, subject: RegExp, after: numbe
 test.describe('create an account', () => {
 	test('register, the emailed code, a name, and in', async ({ page, context }) => {
 		const email = newEmail('register');
-		await page.goto('/register');
+		await page.goto('/register', { waitUntil: 'networkidle' });
 		await expect(page.getByRole('button', { name: 'Continue with Google' })).toHaveCount(0);
 		await page.getByLabel('Email').fill(email);
 		await page.getByLabel('Password').fill('correct-horse-9');
@@ -68,7 +69,7 @@ test.describe('create an account', () => {
 
 	test('an address that already has an account is turned away on its field', async ({ page }) => {
 		const account = await createAccount();
-		await page.goto('/register');
+		await page.goto('/register', { waitUntil: 'networkidle' });
 		await page.getByLabel('Email').fill(account.email);
 		await page.getByLabel('Password').fill('another-horse-9');
 		await page.getByLabel('Workspace name').fill('Second');
@@ -79,7 +80,7 @@ test.describe('create an account', () => {
 	});
 
 	test('a short password and a missing workspace are caught before anything is sent', async ({ page }) => {
-		await page.goto('/register');
+		await page.goto('/register', { waitUntil: 'networkidle' });
 		await page.getByLabel('Email').fill(newEmail('short'));
 		await page.getByLabel('Password').fill('short');
 		await page.getByRole('button', { name: 'Create account' }).click();
@@ -100,7 +101,7 @@ test.describe('sign in', () => {
 	});
 
 	test('an empty or mistyped email, and an empty password, are said on their fields', async ({ page }) => {
-		await page.goto('/sign-in');
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
 		await page.getByRole('button', { name: 'Sign in' }).click();
 		await expect(page.getByText('Enter your email address.')).toBeVisible();
 		await expect(page.getByText('Enter your password.')).toBeVisible();
@@ -111,7 +112,7 @@ test.describe('sign in', () => {
 
 	test('a wrong password says so on the password, keeping the email', async ({ page }) => {
 		const account = await createAccount();
-		await page.goto('/sign-in');
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
 		await page.getByLabel('Email').fill(account.email);
 		await page.getByLabel('Password').fill('not-the-password');
 		await page.getByRole('button', { name: 'Sign in' }).click();
@@ -170,7 +171,7 @@ test.describe('sign in', () => {
 			});
 			expect(response.status).toBe(200);
 		}
-		await page.goto('/sign-in');
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
 		await page.getByLabel('Email').fill(account.email);
 		await page.getByLabel('Password').fill(account.password);
 		await page.getByRole('button', { name: 'Sign in' }).click();
@@ -187,14 +188,14 @@ test.describe('sign in', () => {
 
 	test('Google is left out when the server has no Google sign-in', async ({ page }) => {
 		for (const path of ['/sign-in', '/register']) {
-			await page.goto(path);
+			await page.goto(path, { waitUntil: 'networkidle' });
 			await expect(page.getByRole('button', { name: 'Continue with Google' })).toHaveCount(0);
 			await expect(page.getByText('or', { exact: true })).toHaveCount(0);
 		}
 	});
 
 	test('the language switch shows the screens in Indonesian', async ({ page }) => {
-		await page.goto('/sign-in');
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
 		await page.getByRole('combobox', { name: 'Language' }).selectOption('id');
 		await expect(page.getByRole('heading', { name: 'Masuk ke Nomi' })).toBeVisible();
 		await expect(page.locator('html')).toHaveAttribute('lang', 'id');
@@ -204,7 +205,7 @@ test.describe('sign in', () => {
 test.describe('forgot password', () => {
 	test('the emailed link, a new password, and signing in with it', async ({ page, context }) => {
 		const account = await createAccount();
-		await page.goto('/sign-in');
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
 		await page.getByRole('link', { name: 'Forgot password?' }).click();
 		// The sign-in page has an Email field too: wait for the new page before typing.
 		await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
@@ -213,7 +214,7 @@ test.describe('forgot password', () => {
 		await expect(page.getByText(`If there’s an account for ${account.email}, a link to choose a new password is on its way.`, { exact: false })).toBeVisible();
 
 		// From the path on: the backend's APP_URL may name another port.
-		await page.goto(await linkFor(account.email, '/reset-password?token='));
+		await page.goto(await linkFor(account.email, '/reset-password?token='), { waitUntil: 'networkidle' });
 		await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
 		await page.getByLabel('New password', { exact: true }).fill('brand-new-horse');
 		await page.getByLabel('Confirm new password').fill('brand-new-hors');
@@ -240,7 +241,7 @@ test.describe('forgot password', () => {
 	});
 
 	test('a link that is unknown or already used says it has expired', async ({ page }) => {
-		await page.goto('/reset-password?token=not-a-real-token');
+		await page.goto('/reset-password?token=not-a-real-token', { waitUntil: 'networkidle' });
 		await expect(page.getByRole('heading', { name: 'This link has expired' })).toBeVisible();
 		await page.getByRole('link', { name: 'Send a new link' }).click();
 		await expect(page).toHaveURL(/\/forgot-password$/);
@@ -261,12 +262,12 @@ test.describe('invites', () => {
 		const email = newEmail('invitee');
 		const code = await inviteFrom(owner, email);
 
-		await page.goto(`/invite/${code}`);
+		await page.goto(`/invite/${code}`, { waitUntil: 'networkidle' });
 		await expect(page.getByRole('heading', { name: 'You’re invited to Nomi' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', `/register?redirect_to=%2Finvite%2F${code}`);
 
 		// The invite email links to sign-up with the address filled in.
-		await page.goto(await linkFor(email, '/register?redirect_to='));
+		await page.goto(await linkFor(email, '/register?redirect_to='), { waitUntil: 'networkidle' });
 		await expect(page.getByLabel('Email')).toHaveValue(email);
 		await expect(page.getByLabel('Invite code')).toHaveValue(code);
 		await expect(page.getByLabel('Workspace name')).toHaveCount(0);
@@ -287,7 +288,7 @@ test.describe('invites', () => {
 		const guest = await createAccount();
 		const code = await inviteFrom(owner, guest.email);
 
-		await page.goto(`/invite/${code}`);
+		await page.goto(`/invite/${code}`, { waitUntil: 'networkidle' });
 		await page.getByRole('link', { name: 'I have an account' }).click();
 		const started = Date.now();
 		await page.getByLabel('Email').fill(guest.email);
@@ -302,13 +303,13 @@ test.describe('invites', () => {
 		await expect(page).toHaveURL(/\/$/);
 		expect(await signedInAs(context)).not.toBeNull();
 
-		await page.goto(`/invite/${code}`);
+		await page.goto(`/invite/${code}`, { waitUntil: 'networkidle' });
 		await expect(page.getByRole('heading', { name: 'You’re already in Kopi Kenangan Kita' })).toBeVisible();
 	});
 
 	test('an invite that does not exist says so', async ({ page, context }) => {
 		await signInAs(context, await createAccount(), test.info().project.use.baseURL);
-		await page.goto('/invite/NoSuchInviteCode123');
+		await page.goto('/invite/NoSuchInviteCode123', { waitUntil: 'networkidle' });
 		await expect(page.getByRole('heading', { name: 'We can’t find this invite' })).toBeVisible();
 	});
 });
