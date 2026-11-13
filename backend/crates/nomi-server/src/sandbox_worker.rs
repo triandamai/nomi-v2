@@ -299,10 +299,10 @@ impl SandboxWorker {
 }
 
 /// What makes two configs need different managers (the key is compared, never logged).
-type Signature = (String, String, String, u64, u32, u32, ReaperMode);
+type Signature = (String, String, String, u64, u64, u32, u32, ReaperMode);
 
 fn signature(cfg: &SandboxConfig) -> Signature {
-    (cfg.api_base.clone(), cfg.api_key.clone(), format!("{:?}", cfg.size), cfg.idle_stop_secs, cfg.starts_per_minute, cfg.starts_per_hour, cfg.reaper_mode)
+    (cfg.api_base.clone(), cfg.api_key.clone(), format!("{:?}", cfg.size), cfg.idle_stop_secs, cfg.auto_stop_secs, cfg.starts_per_minute, cfg.starts_per_hour, cfg.reaper_mode)
 }
 
 /// Run until the process ends (like the other background workers). The admin switch is read on
