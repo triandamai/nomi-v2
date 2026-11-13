@@ -14,6 +14,32 @@ const request = (method: string, body?: unknown, url = 'http://localhost/chat/s1
 	new Request(url, { method, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) });
 
 describe('the chat page’s own endpoints', () => {
+	it('records a decision on an approval, remembered or not', async () => {
+		const { backend, event } = eventWith(() => json({}));
+		await chatRequest(event, 's1', ['messages', 'm1', 'approval'], request('PUT', { decision: 'approve', remember: true }));
+		expect(backend.calls[0]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/sessions/s1/messages/m1/approval', body: { decision: 'approve', remember: true } });
+		expect((await chatRequest(event, 's1', ['messages', 'm1', 'approval'], request('PUT', { decision: 'maybe' }))).status).toBe(400);
+	});
+
+	it('reads a crew member’s plans, and ticks a step off', async () => {
+		const { backend, event } = eventWith(() => json({ plans: [], build: null }));
+		const listed = await chatRequest(event, 's1', ['agent-plans', 'a1'], request('GET'));
+		expect(await listed.json()).toEqual({ plans: [], build: null });
+		await chatRequest(event, 's1', ['agent-plans', 'a1', 'p1', 'items', '2'], request('PUT', { done: true }));
+		expect(backend.calls.map((call) => [call.method, call.url, call.body])).toEqual([
+			['GET', 'http://api.test/api/sessions/s1/agent-plans/a1', undefined],
+			['PUT', 'http://api.test/api/sessions/s1/agent-plans/a1/p1/items/2', { done: true }],
+		]);
+		expect((await chatRequest(event, 's1', ['agent-plans', 'a1', 'p1', 'items', 'x'], request('PUT', { done: true }))).status).toBe(400);
+	});
+
+	it('marks a reminder done or snoozes it', async () => {
+		const { backend, event } = eventWith(() => json({}));
+		await chatRequest(event, 's1', ['reminders', 'r1'], request('POST', { action: 'snooze', minutes: 30 }));
+		expect(backend.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/reminders/r1', body: { action: 'snooze', minutes: 30 } });
+		expect((await chatRequest(event, 's1', ['reminders', 'r1'], request('POST', { action: 'later' }))).status).toBe(400);
+	});
+
 	it('sends, and answers what was sent', async () => {
 		const { backend, event } = eventWith(() => json({ user_message: { id: 'u' } }, 202));
 		const response = await chatRequest(event, 's1', ['messages'], request('POST', { text: 'hi' }));

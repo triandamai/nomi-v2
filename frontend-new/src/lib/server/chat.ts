@@ -240,3 +240,24 @@ export async function shareChat(event: ApiEvent, sessionId: string): Promise<Out
 export async function revokeShare(event: ApiEvent, sessionId: string, shareId: string): Promise<Outcome<void>> {
 	return outcome(await call(event, `/api/sessions/${sessionId}/shares/${shareId}`, { method: 'DELETE' }), nothing);
 }
+
+/** A decision on an approval card: approve (and maybe remember it for next time) or deny. */
+export async function resolveApproval(event: ApiEvent, sessionId: string, messageId: string, decision: 'approve' | 'deny', remember: boolean): Promise<Outcome<void>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/messages/${messageId}/approval`, { method: 'PUT', body: body({ decision, remember }) }), nothing);
+}
+
+/** A crew member's plan in this chat, each version newest last, and its build when it has one. */
+export async function agentPlans(event: ApiEvent, sessionId: string, agentSessionId: string): Promise<Outcome<unknown>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}`), (response) => response.json());
+}
+
+/** A step of a plan ticked off, or back on. */
+export async function setPlanItem(event: ApiEvent, sessionId: string, agentSessionId: string, planId: string, index: number, done: boolean): Promise<Outcome<void>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}/${planId}/items/${index}`, { method: 'PUT', body: body({ done }) }), nothing);
+}
+
+/** A reminder that went off: done, or snoozed for some minutes. */
+export async function reminderAction(event: ApiEvent, reminderId: string, action: 'done' | 'snooze', minutes?: number): Promise<Outcome<void>> {
+	return outcome(await call(event, `/api/reminders/${reminderId}`, { method: 'POST', body: body({ action, ...(minutes && { minutes }) }) }), nothing);
+}
+

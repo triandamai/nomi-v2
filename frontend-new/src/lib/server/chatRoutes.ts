@@ -43,6 +43,17 @@ function sessionChange(body: Body): chat.SessionChange | null {
 export function chatRequest(event: ApiEvent, sessionId: string, path: string[], request: Request): Promise<Response> {
 	return signedIn(async () => {
 		const method = request.method;
+		// A crew member's plans: agent-plans/:agentSession, and a step: …/:plan/items/:index.
+		if (path[0] === 'agent-plans' && path[1]) {
+			if (method === 'GET' && path.length === 2) return answer(await chat.agentPlans(event, sessionId, path[1]));
+			if (method === 'PUT' && path.length === 5 && path[3] === 'items') {
+				const index = Number(path[4]);
+				const { done } = await read(request);
+				if (!Number.isInteger(index) || index < 0 || typeof done !== 'boolean') return bad();
+				return answer(await chat.setPlanItem(event, sessionId, path[1], path[2], index, done));
+			}
+			return json({ error: 'not_found' }, { status: 404 });
+		}
 		const [first, messageId, action] = path;
 		const route = `${method} ${first ?? ''}${messageId ? '/:id' : ''}${action ? `/${action}` : ''}`;
 		switch (route) {
@@ -89,6 +100,15 @@ export function chatRequest(event: ApiEvent, sessionId: string, path: string[], 
 			case 'PUT model': {
 				const { key } = await read(request);
 				return text(key) && /^(admin|conn):/.test(key) ? answer(await chat.setSessionModel(event, sessionId, key)) : bad();
+			}
+			case 'PUT messages/:id/approval': {
+				const { decision, remember } = await read(request);
+				return decision === 'approve' || decision === 'deny' ? answer(await chat.resolveApproval(event, sessionId, messageId, decision, remember === true)) : bad();
+			}
+			case 'POST reminders/:id': {
+				const { action: what, minutes } = await read(request);
+				if (what !== 'done' && what !== 'snooze') return bad();
+				return answer(await chat.reminderAction(event, messageId, what, typeof minutes === 'number' ? minutes : undefined));
 			}
 			case 'POST share':
 				return answer(await chat.shareChat(event, sessionId));
