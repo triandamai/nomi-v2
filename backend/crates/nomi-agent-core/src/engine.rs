@@ -42,6 +42,8 @@ const VIEW_SHOWN: &str = "Shown in the chat. Don't repeat what it shows; add onl
 pub const UPDATE_TODOS_TOOL_NAME: &str = "update_todos";
 pub const WRITE_PLAN_TOOL_NAME: &str = "write_plan";
 pub const ASK_USER_TOOL_NAME: &str = "ask_user";
+/// Most questions one `ask_user` card holds; the person steps through them with Next.
+pub const MAX_QUESTIONS_PER_CARD: usize = 5;
 pub const READ_PLAN_TOOL_NAME: &str = "read_plan";
 pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
 pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
@@ -272,21 +274,24 @@ fn ask_user_tool_definition() -> ToolDefinition {
         description: "Ask the person something you need to know before you act, as a card in the chat with \
                       answers they can tap (and room for their own). Use it whenever the request is missing \
                       a detail you can't sensibly assume (when, how much, which one, one-time or repeating), \
-                      instead of guessing. One question per card, with 2-5 short options (add a one-line \
-                      detail where a label alone isn't clear, e.g. what a design direction looks like): ask \
-                      the most important one first, and the next one only after they answer, one step at a \
-                      time, until you have what you need. Skip what they already told you. Your turn ends \
-                      here; their answer arrives as their next message. Call it on its own, not alongside \
-                      other tools, and don't repeat the question in your reply.".to_string(),
+                      instead of guessing. Put everything you need to know into this one call, the most \
+                      important question first: the card shows the questions one at a time with Next, and \
+                      the person sends all the answers together. Never ask again in a later turn for \
+                      something you could have asked here; only a question that depends on these answers \
+                      waits for them. Each question has 2-5 short options (add a one-line detail where a \
+                      label alone isn't clear, e.g. what a design direction looks like). Skip what they \
+                      already told you, and never ask the same thing twice. Your turn ends here; their \
+                      answers arrive as their next message. Call it on its own, not alongside other tools, \
+                      and don't repeat the questions in your reply.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "intro": {"type": "string", "description": "One short line before the questions, optional"},
                 "questions": {
                     "type": "array",
-                    "description": "Exactly one question; ask the next after they answer",
+                    "description": "Every question you need answered now, the most important first",
                     "minItems": 1,
-                    "maxItems": 1,
+                    "maxItems": MAX_QUESTIONS_PER_CARD,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -335,13 +340,17 @@ fn parse_questions(input: &serde_json::Value) -> Result<(crate::content_block::C
     let crate::content_block::ContentBlock::Questions { intro, questions } = &block else { unreachable!() };
     match questions.len() {
         0 => return Err("ask a question".to_string()),
-        1 => {}
-        _ => return Err("ask one question at a time: the most important one now, the next after they answer".to_string()),
+        n if n > MAX_QUESTIONS_PER_CARD => return Err(format!("ask at most {MAX_QUESTIONS_PER_CARD} questions in one card: the ones that matter most")),
+        _ => {}
     }
     let mut text = intro.clone().map(|i| format!("{i}\n\n")).unwrap_or_default();
-    for q in questions {
+    let numbered = questions.len() > 1;
+    for (index, q) in questions.iter().enumerate() {
         if q.question.trim().is_empty() {
             return Err("the question needs its text".to_string());
+        }
+        if numbered {
+            text.push_str(&format!("{}. ", index + 1));
         }
         text.push_str(&format!("{}\n", q.question.trim()));
         for option in &q.options {
@@ -404,7 +413,7 @@ fn create_reminder_tool_definition(targets: &[String]) -> ToolDefinition {
                        absolute ISO 8601 datetime yourself, using the current date/time and the \
                        user's timezone given in your system prompt. Before you set it, make sure you \
                        know what it's for, when, and whether it's one-time or repeating (and how \
-                       often): ask with ask_user for whatever they didn't say, one question at a time.".to_string(),
+                       often): ask with ask_user for whatever they didn't say, all of it in one card.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
