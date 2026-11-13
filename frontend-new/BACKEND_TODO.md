@@ -250,3 +250,12 @@ Found while building Settings › Plan & usage (2026-11-12).
 
 Found while building Settings › Models & providers (2026-11-13).
 
+### Memory settings, the profile and who learned what
+- **Needed by:** *App / Settings / Memory* (hANTE): the "You" profile row (the summary Nomi keeps of the person, its size), Learned by on each topic, and the settings column (Learn from chats, Keep a profile, Search past chats, the Memory and Profile budgets with their use, Storage).
+- **Why:** people can see and correct single memories, but not the profile the crew works from, which agent learned something, or switch learning off.
+- **What exists today:** `GET /api/memory` lists memories (content, weight, kind, uses, last used, needs_check); `PUT`/`DELETE /api/memory/:id`, `POST /api/memory/:id/confirm`.
+- **Proposed contract:** `GET|PUT /api/memory/settings` with `learn_from_chats`, `keep_profile`, `search_past_chats`, `memory_budget`, `profile_budget`; `GET|PUT /api/memory/profile` with `{ text, tokens, updated_at }`; `learned_by` (the agent type) on each memory.
+- **Until then:** Memory & context lists and edits memories only.
+
+Found while building Settings › Memory & context (2026-11-13).
+

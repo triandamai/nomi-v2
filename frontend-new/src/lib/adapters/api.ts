@@ -317,3 +317,17 @@ export type UserModels = {
 	coding: { kind: 'default' } | { kind: 'same_as_chat' } | { kind: 'admin'; admin_model_id: string };
 	default_coding_model_id: string | null;
 };
+
+/** One thing the crew remembers (`GET /api/memory`); weight 0.1–5, starting at 1. */
+export type MemoryItem = {
+	id: string;
+	content: string;
+	weight: number;
+	/** preference, person, routine, goal or fact. */
+	kind: string;
+	created_at: string;
+	updated_at: string;
+	uses: number;
+	last_used_at: string | null;
+	needs_check: boolean;
+};

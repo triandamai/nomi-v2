@@ -442,6 +442,17 @@ On Models & providers (`RbTgo`, Connect `voUxB`):
   and connect"; its models then start switched off (nothing says which are "recommended"), and
   Cancel after a check disconnects it again. Signing in to a provider (OAuth) isn't offered.
 
+On Memory & context (`hANTE`):
+
+- Topics are the backend's kinds of memory (Preferences, People, Routines, Goals, Facts), not the
+  pen's subjects (Communication, Money, Work); each opens to its memories, to correct, confirm or
+  forget. Strength is five steps of a memory's weight.
+- Left out, with nothing to keep them (BACKEND_TODO.md): the "You" profile row, the Learned by
+  column, and the whole settings column (Learn from chats, Keep a profile, Search past chats, the
+  Memory and Profile budgets, Storage). The page is one column.
+- The search sits in the page's header, not the top bar. Export downloads the memories as JSON.
+- Telling Nomi to remember or forget starts a chat with it, where the crew keeps or drops it.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

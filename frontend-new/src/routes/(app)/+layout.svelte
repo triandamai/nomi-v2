@@ -117,7 +117,7 @@
 		{ label: m.shortcut_close(), keys: 'esc' },
 	];
 
-	const pageTitle = $derived(page.data as { title?: string; meta?: string; autosave?: boolean; csv?: string; connect?: string });
+	const pageTitle = $derived(page.data as { title?: string; meta?: string; autosave?: boolean; csv?: string; connect?: string; exportLink?: { href: string; label: string } });
 	const leaving = $derived(new Set(header.leaving.map((id) => `/chat/${id}`)));
 	const recentItems = $derived(data.recents.filter((recent) => !leaving.has(recent.href)).map((recent) => ({ ...recent, active: recent.href === path })));
 	const chatData = $derived(page.data as { chat?: { id: string; pinned: boolean } });
@@ -226,7 +226,13 @@
 					{ href: '/settings/plan', icon: 'credit-card' as const, label: m.settings_plan(), count: data.usage?.card.plan },
 				],
 			},
-			{ label: m.settings_ai(), items: [{ href: '/settings/models', icon: 'cpu' as const, label: m.settings_models() }] },
+			{
+				label: m.settings_ai(),
+				items: [
+					{ href: '/settings/models', icon: 'cpu' as const, label: m.settings_models() },
+					{ href: '/settings/memory', icon: 'brain' as const, label: m.settings_memory() },
+				],
+			},
 		]
 			.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLowerCase().includes(settingsQuery.trim().toLowerCase())) }))
 			.filter((group) => group.items.length > 0),
@@ -368,6 +374,7 @@
 			{#snippet actions()}
 				{#if pageTitle.autosave}<AutosaveNote text={m.general_autosave()} />{/if}
 				{#if pageTitle.csv}<Button label={m.plan_export()} variant="ghost" iconStart={Download} href={pageTitle.csv} data-sveltekit-reload />{/if}
+				{#if pageTitle.exportLink}<Button label={pageTitle.exportLink.label} variant="secondary" iconEnd={Download} href={pageTitle.exportLink.href} data-sveltekit-reload />{/if}
 				{#if pageTitle.connect}<Button label={m.models_connect()} variant="inverse" iconEnd={Plus} href={pageTitle.connect} data-sveltekit-noscroll />{/if}
 			{/snippet}
 		</SettingsTopBar>
