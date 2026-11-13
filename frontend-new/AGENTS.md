@@ -429,6 +429,19 @@ On Plan & usage (`C0og49`):
 - The plan tag reads "Free plan" and the plan's name "Free" from the backend; a price without a
   figure ("Free") isn't followed by "/ month".
 
+On Models & providers (`RbTgo`, Connect `voUxB`):
+
+- Providers show their initial (Nomi's own models, Nomi's mascot): v2 doesn't carry the providers'
+  logos yet.
+- The models table has no Context column and no Fast / Reasoning / Vision / Code tags: the
+  backend's model options don't say them (BACKEND_TODO.md). This month's tokens come from usage.
+- "Each crew member" (per-agent models) waits for Crew settings in v2.
+- The Connect list has no Gateways / Direct / Local filters: the catalog's `kind` is the API a
+  provider speaks, not those. Search, the groups and the letters stay.
+- The backend checks a key with its provider as it connects, so the pane's one action is "Check
+  and connect"; its models then start switched off (nothing says which are "recommended"), and
+  Cancel after a check disconnects it again. Signing in to a provider (OAuth) isn't offered.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps
