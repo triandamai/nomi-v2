@@ -582,3 +582,34 @@ test.describe('configuration', () => {
 		expect((await field(admin, 'storage', 'bucket')).value).not.toBe('nomi-e2e-no-such-bucket');
 	});
 });
+
+test.describe('integrations', () => {
+	test('Shipyard says when it isn’t configured, and the rest of the page still works', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const status = (await (await api(admin, '/api/admin/shipyard')).json()) as { configured: boolean };
+		await signInAs(context, admin);
+		await open(page, '/admin/integrations');
+		await expect(page.getByRole('heading', { level: 1, name: 'Integrations' })).toBeVisible();
+		if (!status.configured) await expect(page.getByText('Shipyard’s address and key aren’t set, so nothing can be published. They’re set in the environment.')).toBeVisible();
+		await expect(page.getByRole('region', { name: 'Endpoints' })).toBeVisible();
+		await page.getByRole('link', { name: 'Events received' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Events received' })).toBeVisible();
+	});
+
+	test('without Shipyard, endpoints say why they can’t load or be added', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const listed = await api(admin, '/api/admin/shipyard/webhooks');
+		test.skip(listed.ok, 'Shipyard is set up here: the endpoint flow is covered by the unit tests and staging');
+		const reason = (await listed.text()).trim();
+		await signInAs(context, admin);
+		await open(page, '/admin/integrations');
+		const section = page.getByRole('region', { name: 'Endpoints' });
+		await expect(section.getByText('The endpoints couldn’t load')).toBeVisible();
+		await expect(section.getByText(reason)).toBeVisible();
+
+		await section.getByLabel('Address').fill(`${APP_URL}/e2e-hooks/nomi`);
+		await section.getByLabel('Events').fill('publish.succeeded');
+		await section.getByRole('button', { name: 'Add endpoint' }).click();
+		await expect(section.getByText('The endpoint couldn’t be added')).toBeVisible();
+	});
+});
