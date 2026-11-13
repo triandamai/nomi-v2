@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { Check, ChevronsUpDown, Lock, Plus, Settings2, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
@@ -31,7 +31,9 @@
 	// Left out on purpose: the pen's invited workspace with "Join" (the API doesn't list a person's
 	// pending invites), and "shared crew templates" in the note (Nomi has none).
 	// Its button is the WorkspaceChip's look, drawn here with the menu's state (the chip keeps the
-	// old app's twin's props). `inline` shows the panel open in place (the gallery).
+	// old app's twin's props), or the caller's own `trigger` (the projects top bar's workspace
+	// crumb, Project / Top Bar FRyfm). `inline` shows the panel open in place (the gallery).
+	type TriggerProps = { 'aria-haspopup': 'menu'; 'aria-expanded': boolean; 'aria-controls': string; onclick: () => void };
 	type Props = {
 		/** The chip's workspace. */
 		current: string;
@@ -41,8 +43,10 @@
 		/** The chosen workspace's settings and members. */
 		settingsHref?: string;
 		inline?: boolean;
+		/** A button of the caller's own that opens the switcher, in place of the chip. */
+		trigger?: Snippet<[TriggerProps]>;
 	};
-	let { current, workspaces, onchoose, oncreate, settingsHref, inline = false }: Props = $props();
+	let { current, workspaces, onchoose, oncreate, settingsHref, inline = false, trigger }: Props = $props();
 
 	const id = $props.id();
 	let open = $state(false);
@@ -194,6 +198,9 @@
 	{@render panel()}
 {:else}
 	<span bind:this={anchor} class="inline-flex">
+		{#if trigger}
+			{@render trigger({ 'aria-haspopup': 'menu', 'aria-expanded': open, 'aria-controls': `${id}-menu`, onclick: () => (open ? hide(true) : show()) })}
+		{:else}
 		<button
 			type="button"
 			aria-label={m.workspace_chip({ name: current })}
@@ -207,6 +214,7 @@
 			<span class="font-mono text-label text-text-2">{current}</span>
 			<ChevronsUpDown size={10} strokeWidth={1.5} aria-hidden="true" class="text-text-3" />
 		</button>
+		{/if}
 	</span>
 	{#if open}{@render panel()}{/if}
 {/if}

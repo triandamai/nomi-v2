@@ -36,13 +36,13 @@
 		{
 			title: 'Patterns',
 			links: [link('Overview', '/design-system/patterns')],
-			folders: (['chat', 'build'] as const).map((sheet) => ({
+			folders: (['chat', 'build', 'projects'] as const).map((sheet) => ({
 				title: SHEETS[sheet],
 				links: PATTERNS.filter((pattern) => pattern.sheet === sheet).map((pattern) => link(pattern.title, `/design-system/patterns/${sheet}/${pattern.id}`)),
 			})),
 		},
 		...guides.slice(3).map((group) => ({ title: group.title, links: group.links.map((item) => link(item.title, item.path)) })),
-		{ title: 'Pen sheets', links: [link('Nomi', '/design-system/nomi'), link('Chat responses', '/design-system/chat'), link('Build', '/design-system/build')] },
+		{ title: 'Pen sheets', links: [link('Nomi', '/design-system/nomi'), link('Chat responses', '/design-system/chat'), link('Build', '/design-system/build'), link('Projects', '/design-system/projects')] },
 	]);
 
 	const entries: SearchEntry[] = [
@@ -54,7 +54,7 @@
 			blurb: summary(item.file),
 		})),
 		...PATTERNS.map((pattern) => ({ title: pattern.title, group: `Pattern · ${SHEETS[pattern.sheet]}`, href: docHref(`/design-system/patterns/${pattern.sheet}/${pattern.id}`) })),
-		...(['nomi', 'chat', 'build'] as const).map((sheet) => ({ title: `${sheet === 'nomi' ? 'Nomi' : SHEETS[sheet]} sheet`, group: 'Pen sheets', href: docHref(`/design-system/${sheet}`) })),
+		...(['nomi', 'chat', 'build', 'projects'] as const).map((sheet) => ({ title: `${sheet === 'nomi' ? 'Nomi' : SHEETS[sheet]} sheet`, group: 'Pen sheets', href: docHref(`/design-system/${sheet}`) })),
 	];
 
 	const top = [

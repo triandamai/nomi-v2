@@ -12,7 +12,7 @@ edit it. The two run side by side against the same backend until the cutover.
 ## 0. The one rule: the pen, 1:1
 
 The pen file is the source of truth for how everything looks. The gallery at `/design-system`
-rebuilds its three design sheets from the real components, and CI holds it there.
+rebuilds its four design sheets from the real components, and CI holds it there.
 
 - **Match the pen exactly**: sizes, paddings, gaps, alignment, colours, strokes, radii, type,
   icons and copy as drawn. Read the frame before you write the component; measure, don't guess.
@@ -25,9 +25,10 @@ rebuilds its three design sheets from the real components, and CI holds it there
 - **Prove it**: `e2e/pen-parity.e2e.ts` fails when any section or board of the gallery moves off
   the pen's bounds by a single pixel. `scripts/pen/` shows you where (see [§6](#6-proving-11)).
 - The design sheets: *Design System / Nomi* (`YOYH1`, foundations and core components),
-  *Design System / Chat responses* (`Ljvtr`), *Design System / Build* (`DcG0H`); plus 40 flows,
-  each with a light twin, and the app screens. The prototype `marioprasetyo/nomi-prototype` is the
-  reference for behaviour, timings and copy where the pen is silent.
+  *Design System / Chat responses* (`Ljvtr`), *Design System / Build* (`DcG0H`), *Design System /
+  Projects* (`URIB6`); plus 40 flows, each with a light twin, and the app screens. The prototype
+  `marioprasetyo/nomi-prototype` is the reference for behaviour, timings and copy where the pen is
+  silent.
 
 ## 1. Boundaries
 
@@ -236,7 +237,7 @@ app's heading) go in that file's scoped `<style>` with a comment.
 
 `/design-system` is the design system's documentation for every team (Get started per role,
 Foundations, Content, Components, Patterns, Tokens, Resources), built from the real components in
-`src/routes/design-system/(docs)` and `src/lib/docs`. The three pen sheets sit beside it in
+`src/routes/design-system/(docs)` and `src/lib/docs`. The four pen sheets sit beside it in
 `(sheets)`.
 
 - **Every component has a docs entry.** Adding or changing a component in `src/lib/ds` means
@@ -252,7 +253,7 @@ Foundations, Content, Components, Patterns, Tokens, Resources), built from the r
 
 ### The sheets
 
-- `/design-system/nomi`, `/chat`, `/build` rebuild the three sheets section by section with the
+- `/design-system/nomi`, `/chat`, `/build`, `/projects` rebuild the four sheets section by section with the
   real components, laid out like the pen: 64 around the sheet and between sections, the pen's DS
   header (`SheetHeader`, `NomiHeader`), each section a `GallerySection` (28px title, the line
   beside it).
@@ -264,7 +265,7 @@ Foundations, Content, Components, Patterns, Tokens, Resources), built from the r
   production. `?theme=dark|light` forces a theme.
 - Adding a section: read the pen section's structure, build or reuse the components (tests first),
   add the section in the pen's order, add its bounds to `pen/bounds.json` (pen/README.md), and run
-  the guard. A new Chat or Build section is also a pattern: add it to `src/lib/docs/patterns.ts`
+  the guard. A new Chat, Build or Projects section is also a pattern: add it to `src/lib/docs/patterns.ts`
   with its guidance.
 
 ## 6. Proving 1:1
@@ -281,7 +282,7 @@ Foundations, Content, Components, Patterns, Tokens, Resources), built from the r
    - `npm run pen:boxes -- <sheet> '<css selector>'` — an element's boxes, to set next to the pen's
      frame bounds.
 4. **CI**: `e2e/pen-parity.e2e.ts` asserts every section's offset and height and every board's
-   box on all three sheets. It must stay green; if the pen itself changed, re-export
+   box on all four sheets. It must stay green; if the pen itself changed, re-export
    `pen/bounds.json` and `pen/export/` in the same PR. The e2e browser and the `pen:*` tools run
    Chromium with `--font-render-hinting=none`, so Linux measures text as the Mac the pen is drawn
    on does (hinted, Linux rounds every glyph to whole pixels and lines wrap early). Keep it.
@@ -330,6 +331,8 @@ hard. Add to this list instead of deviating silently.
 - Move to a project: the search says "Search projects"; the pen reuses the generic "Search chats,
   memory, files ⌘K".
 - Sidebar recents: a long title is truncated on one line; in the pen it wraps out of its 30px row.
+- Project cards: a description or the rename keys longer than the 262 column end in an ellipsis;
+  the pen lets them run past it (warung-kopi-menu's line by 7px, the keys by 2px).
 - Apostrophes are typographic (’) in messages; the pen's are straight.
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
