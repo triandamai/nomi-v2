@@ -137,7 +137,7 @@ pub trait SubAgent: Send + Sync {
     }
 
     /// When true (the default: every crew member checks before acting on a request that's
-    /// missing something), run_agent_turn gives this agent `ask_user`: one question with options
+    /// missing something), run_agent_turn gives this agent `ask_user`: a card of questions with options
     /// to tap, after which the turn pauses until the person answers. The next question, if any,
     /// comes after that answer, so a conversation goes one step at a time.
     fn asks_questions(&self) -> bool {

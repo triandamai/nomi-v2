@@ -14,6 +14,9 @@ use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
 
+/// The provider-side auto-stop used in these tests, in seconds.
+const AUTO_STOP_SECS: u64 = 6 * 60 * 60;
+
 /// Projects that ask for a sandbox at the same moment.
 const BURST: usize = 200;
 /// Starts allowed per minute window in this test.
@@ -49,6 +52,7 @@ fn config() -> SandboxConfig {
         api_key: String::new(),
         size: nomi_sandbox::Size::Small,
         idle_stop_secs: IDLE_STOP_SECS,
+        auto_stop_secs: AUTO_STOP_SECS,
         rollout: Rollout::All,
         starts_per_minute: STARTS_PER_MINUTE,
         starts_per_hour: GENEROUS_HOURLY,
