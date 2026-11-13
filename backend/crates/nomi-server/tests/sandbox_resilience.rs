@@ -17,6 +17,9 @@ use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;
 
+/// The provider-side auto-stop used in these tests, in seconds.
+const AUTO_STOP_SECS: u64 = 6 * 60 * 60;
+
 const PROVIDER: &str = "boat";
 /// The files version the steps report after a sync.
 const SYNCED_VERSION: i64 = 3;
@@ -51,6 +54,7 @@ fn config() -> SandboxConfig {
         api_key: String::new(),
         size: nomi_sandbox::Size::Small,
         idle_stop_secs: IDLE_STOP_SECS,
+        auto_stop_secs: AUTO_STOP_SECS,
         rollout: Rollout::All,
         starts_per_minute: GENEROUS_LIMIT,
         starts_per_hour: GENEROUS_LIMIT,
