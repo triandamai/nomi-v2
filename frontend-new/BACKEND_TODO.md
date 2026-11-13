@@ -241,3 +241,12 @@ Found while building Settings › General (2026-11-12).
 
 Found while building Settings › Plan & usage (2026-11-12).
 
+### What each model can do
+- **Needed by:** *App / Settings / Models & providers* (RbTgo): the Context column and the Fast / Reasoning / Vision / Code tags on each model, and "2 recommended selected" in Connect (voUxB).
+- **Why:** people pick models blind: nothing in the picker's list says how much a model reads or what it's good at, or which of a new provider's models to start with.
+- **What exists today:** `GET /api/llm/model-options` gives each model's key, label, id, whether it's free and whether it's shown; `GET /api/llm/providers/:id/models` has catalog metadata (context, inputs, cost) for catalog providers only.
+- **Proposed contract:** `context`, `capabilities: ["fast" | "reasoning" | "vision" | "code"]` and `recommended: bool` on each model in model-options and in `POST /api/llm/connections/:id/models`.
+- **Until then:** no Context column or tags; a new connection's models start switched off.
+
+Found while building Settings › Models & providers (2026-11-13).
+

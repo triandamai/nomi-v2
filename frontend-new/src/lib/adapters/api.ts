@@ -295,3 +295,25 @@ export type PlansForUser = { plans: PlanOffer[]; current_plan_id: string; monthl
 
 /** One of the person's own provider keys (`GET /api/llm/connections`). */
 export type OwnConnection = { id: string; provider_id: string; label: string; auth_type: string; kind: string; base_url: string | null; api_key_masked: string | null; created_at: string };
+
+/** A provider Nomi can connect to (`GET /api/llm/providers`). */
+export type ProviderDefinition = {
+	id: string;
+	name: string;
+	description: string;
+	has_logo: boolean;
+	category: 'popular' | 'other' | 'custom';
+	recommended: boolean;
+	auth_type: 'api_key' | 'oauth' | 'custom_endpoint';
+	kind: string;
+	default_base_url: string | null;
+	doc_url: string | null;
+	model_count: number;
+};
+
+/** `GET /api/llm/models`: Nomi's models, and which one Koda builds with. */
+export type UserModels = {
+	admin_models: { id: string; label: string; provider: string; provider_label: string; model_id: string }[];
+	coding: { kind: 'default' } | { kind: 'same_as_chat' } | { kind: 'admin'; admin_model_id: string };
+	default_coding_model_id: string | null;
+};
