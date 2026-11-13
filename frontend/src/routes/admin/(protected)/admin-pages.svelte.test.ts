@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { clickEverything, fakeBackend, render, settle, text } from '../../../test-stubs/render';
 import Agents from './agents/+page.svelte';
 import Configuration from './configuration/+page.svelte';
+import ConfigurationSection from './configuration/[section]/+page.svelte';
 import DynamicAgents from './dynamic-agents/+page.svelte';
 import Embedding from './settings/embedding/+page.svelte';
 import Notifications from './notifications/+page.svelte';
@@ -108,5 +109,27 @@ describe('admin pages', () => {
 		}
 		expect(calls.some((c) => c.path.startsWith('support/'))).toBe(true);
 		expect(calls.some((c) => c.path === 'configuration')).toBe(true);
+	});
+
+	it('configuration: the index links to a page per section, which saves only what changed', async () => {
+		const sections = [{ name: 'storage', fields: [{ name: 'bucket', env: 'S3_BUCKET', kind: 'text', value: 'files', set: true, source: 'saved' }, { name: 'region', env: 'AWS_REGION', kind: 'text', value: null, set: false, source: 'none' }] }];
+		const calls = fakeBackend([['GET', /^configuration$/, { sections }], ['*', /.*/, sections[0]]], { strip: '/admin/api/' });
+		const index = page(Configuration, {});
+		await settle(6);
+		expect([...index.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toContain('/admin/configuration/sandbox');
+		expect(text(index)).toContain('1 of 2 set');
+		expect(index.querySelector('[role="tab"]')).toBeNull();
+
+		const section = render(ConfigurationSection as never, { data: { access: manage } as never, params: { section: 'storage' } as never });
+		await settle(6);
+		expect(section.querySelector('a.back')?.getAttribute('href')).toBe('/admin/configuration');
+		expect(section.querySelectorAll('input').length).toBe(2);
+		await tryAll(section);
+		expect(calls.every((c) => c.method !== 'PUT')).toBe(true);
+
+		const unknown = render(ConfigurationSection as never, { data: { access: manage } as never, params: { section: 'nope' } as never });
+		await settle(6);
+		expect(unknown.querySelector('form')).toBeNull();
+		expect(unknown.querySelector('[role="alert"]')).not.toBeNull();
 	});
 });
