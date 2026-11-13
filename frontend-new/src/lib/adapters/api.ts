@@ -331,3 +331,12 @@ export type MemoryItem = {
 	last_used_at: string | null;
 	needs_check: boolean;
 };
+
+/** `GET /api/connections`: Google (the services granted) and Hevy, as connected now. */
+export type ConnectionsOverview = {
+	google: { configured: boolean; email: string | null; services: string[] };
+	hevy: { provider: string; account_name: string | null; connected_at: string; last_used_at: string | null } | null;
+};
+
+/** `GET /api/connections/github`: oauth says whether "Connect GitHub" can sign in on GitHub. */
+export type GithubStatus = { oauth: boolean; connection: { login: string; kind: string; created_at: string; last_used_at: string | null } | null };

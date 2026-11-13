@@ -453,6 +453,23 @@ On Memory & context (`hANTE`):
 - The search sits in the page's header, not the top bar. Export downloads the memories as JSON.
 - Telling Nomi to remember or forget starts a chat with it, where the crew keeps or drops it.
 
+On Connections (`OBmgS`), the apps are the three the backend connects: Google Workspace, GitHub
+and Hevy.
+
+- Left out, with nothing behind them (BACKEND_TODO.md): "Search 120+ apps", the category pills,
+  the catalog's groups (SUGGESTED FOR YOUR CREW, HEALTH & FITNESS…) and the apps in them, "Add MCP
+  server" (top bar and the custom row), "Needs you" with Reconnect, and access per service on the
+  chips: a chip names what the crew may use ("Gmail", "Repos · import").
+- The top bar says "N connected" without "used by N crew members"; who uses each app is the crew
+  member it's for (Tara for Google, Koda for GitHub, Raga for Hevy), and Google shows no time,
+  since the backend doesn't record when it was last used.
+- Manage opens a dialog with the account, what it can do and Disconnect (Google also changes what
+  Tara may use); there's no page of its own. Adding Google or GitHub goes off to sign in; a GitHub
+  token or a Hevy key is checked as it connects. Google says "not set up" where this Nomi has no
+  Google client.
+- GitHub wears the GitHub mark the design system already draws (`GithubMark`), Google the pen's
+  mail icon and Hevy its dumbbell.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

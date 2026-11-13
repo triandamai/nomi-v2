@@ -189,4 +189,21 @@ export default [
 		accessibility: ['The field is labelled and takes focus; Enter saves, Escape puts it back.'],
 		related: ['settings/MemoryTopicRow.svelte'],
 	},
+	{
+		file: 'settings/ConnectionCard.svelte',
+		summary: 'One connected app: its account, what it holds and may do, who in the crew uses it and when, and Manage.',
+		use: ['Connected, on Settings › Connections.'],
+		dos: ['Name the account in mono and mask an address (“ko••@gmail.com”).', 'Leave the time out when the app hasn’t been used yet.'],
+		donts: ['Draw “Needs you” without the backend saying a connection lapsed.'],
+		accessibility: ['An article named by the app; Manage is a real button.'],
+		related: ['settings/AppCard.svelte'],
+	},
+	{
+		file: 'settings/AppCard.svelte',
+		summary: 'One app to connect: what it does, the member it’s for, the access it asks for, and the plus to add it.',
+		use: ['Add more, on Settings › Connections.'],
+		dos: ['Say why an app can’t be added here (“not set up”) in place of the plus.'],
+		accessibility: ['The plus is named “Add <app>”.'],
+		related: ['settings/ConnectionCard.svelte'],
+	},
 ] satisfies ComponentDoc[];
