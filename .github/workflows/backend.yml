@@ -76,8 +76,10 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
+      # Pinned: sqlx-postgres 0.7.4 doesn't compile on Rust 1.100 (the never-type inference
+      # change, rust-lang/rust#148922). Back to stable once sqlx is on 0.8.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: llvm-tools-preview
 

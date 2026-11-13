@@ -55,6 +55,7 @@ impl ServerSandboxOps {
             api_key: String::new(),
             size: nomi_sandbox::Size::Small,
             idle_stop_secs: crate::configuration::DEFAULT_IDLE_STOP_SECS,
+            auto_stop_secs: crate::configuration::DEFAULT_AUTO_STOP_SECS,
             rollout: Rollout::All,
             starts_per_minute: TEST_STARTS,
             starts_per_hour: TEST_STARTS,
