@@ -56,3 +56,20 @@ export async function seedUsage(email: string, usage: { model: string; input: nu
 		await sql.end();
 	}
 }
+
+/**
+ * One of Nomi's own models (the fake one), as an admin would add it, unless there's one already:
+ * the Included group on Models & providers lists them. A fresh database has none.
+ */
+export async function seedNomiModel(email: string): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`
+			INSERT INTO admin_llm_models (label, provider, model_id, api_key_encrypted, is_default, updated_by)
+			SELECT 'E2E default (fake)', 'fake', 'fake', ''::bytea, NOT EXISTS (SELECT 1 FROM admin_llm_models), user_id
+			FROM web_credentials WHERE email = ${email}
+			AND NOT EXISTS (SELECT 1 FROM admin_llm_models WHERE enabled)`;
+	} finally {
+		await sql.end();
+	}
+}

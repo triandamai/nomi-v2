@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { api, createAccount, signInAs } from './support/accounts';
+import { seedNomiModel } from './support/seed';
 
 // Settings › Models & providers against the real backend (App / Settings / Models & providers
 // RbTgo, Connect voUxB): the defaults and Nomi's own models, the Connect dialog's list and search,
@@ -7,6 +8,7 @@ import { api, createAccount, signInAs } from './support/accounts';
 
 test('models and providers, and connecting one that can’t be reached', async ({ page, context }) => {
 	const account = await createAccount();
+	await seedNomiModel(account.email);
 	await signInAs(context, account);
 	await page.goto('/settings/plan', { waitUntil: 'networkidle' });
 	await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Models & providers' }).click();
