@@ -18,6 +18,7 @@ export const CATEGORIES = [
 	{ key: 'foundations', title: 'Foundations', blurb: 'Icons and the helpers everything else uses.' },
 	{ key: 'chat', title: 'Chat responses', blurb: 'Everything a reply can hold, and the controls around it.' },
 	{ key: 'build', title: 'Build', blurb: 'From describing an app to a live URL.' },
+	{ key: 'projects', title: 'Projects', blurb: 'The projects page: its cards in every state, the menus and dialogs around them, and importing from GitHub.' },
 	{ key: 'mobile', title: 'Mobile', blurb: 'The phone versions, drawn at 390 pt.' },
 	{ key: 'auth', title: 'Sign in', blurb: 'The sign-in, sign-up and code screens, and the parts their forms are made of.' },
 	{ key: 'admin', title: 'Admin', blurb: 'The admin console’s pieces: its navigation, tables, forms, access levels and usage.' },
