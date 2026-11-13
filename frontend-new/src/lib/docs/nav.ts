@@ -1,5 +1,5 @@
 // The docs' written pages, as the sidebar groups them. Components and patterns are listed from
-// their own registries (components.ts, patterns.ts); the three pen sheets sit at the end.
+// their own registries (components.ts, patterns.ts); the four pen sheets sit at the end.
 
 export type NavLink = { title: string; path: string; blurb: string };
 export type NavGroup = { title: string; links: NavLink[] };

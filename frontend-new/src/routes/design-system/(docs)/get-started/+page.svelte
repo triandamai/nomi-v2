@@ -15,9 +15,9 @@
 
 	const chain: [title: string, body: string][] = [
 		['Nomi.pen', 'The design file in pen.dev. Every colour, size, component, flow and line of copy is drawn here first. When anything below disagrees with it, the pen wins.'],
-		['Snapshots of the pen', 'Its variables are exported to `tokens.json`; the position and size of every section and board on the three design sheets to `pen/bounds.json`; each section’s own HTML to `pen/export/`.'],
+		['Snapshots of the pen', 'Its variables are exported to `tokens.json`; the position and size of every section and board on the four design sheets to `pen/bounds.json`; each section’s own HTML to `pen/export/`.'],
 		['Tokens and components', 'The tokens become CSS variables and the only Tailwind classes there are. The components in `src/lib/ds` are built from them, one per pen component, each naming the frame it implements.'],
-		['The sheets and these docs', 'The three design sheets are rebuilt from those components, section by section. These docs show the same components, with their props read from the source.'],
+		['The sheets and these docs', 'The four design sheets are rebuilt from those components, section by section. These docs show the same components, with their props read from the source.'],
 		['Held in CI', '`tokens.test.ts` fails when the CSS drifts from the exported tokens. `e2e/pen-parity.e2e.ts` fails when any section or board of a sheet moves off the pen by a single pixel.'],
 	];
 

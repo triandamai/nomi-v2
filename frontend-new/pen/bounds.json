@@ -3,9 +3,10 @@
 	"sheets_in_pen": {
 		"nomi": "YOYH1 Design System / Nomi",
 		"chat": "Ljvtr Design System / Chat responses",
-		"build": "DcG0H Design System / Build"
+		"build": "DcG0H Design System / Build",
+		"projects": "URIB6 Design System / Projects"
 	},
-	"exported": "2026-10-30",
+	"exported": "2026-10-30; projects 2026-11-11",
 	"viewport": "1600 wide; sections relative to the sheet's DS Header, boards relative to their section",
 	"sheets": {
 		"nomi": {
@@ -183,6 +184,27 @@
 					["Domain record", 0, 1402, 430, 183],
 					["Teammate in chat", 462, 1402, 430, 181],
 					["Together on a phone", 0, 1609, 430, 574]
+				]
+			}
+		},
+		"projects": {
+			"sections": [
+				["DS Header", 0, 112],
+				["Page parts", 176, 811],
+				["Projects", 1051, 3994]
+			],
+			"boards": {
+				"Page parts": [
+					["Top bar & header", 0, 60, 1472, 363],
+					["Toolbar & sections", 0, 447, 1472, 364]
+				],
+				"Projects": [
+					["Project cards", 0, 60, 1472, 913],
+					["Menus & confirms", 0, 997, 1472, 446],
+					["Workspace dialogs", 0, 1467, 1472, 444],
+					["Toolbar, empty & error", 0, 1935, 1472, 631],
+					["Import from GitHub", 0, 2590, 1472, 654],
+					["Project detail", 0, 3268, 1472, 726]
 				]
 			}
 		}

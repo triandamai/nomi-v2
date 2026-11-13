@@ -14,6 +14,7 @@
 		{ id: 'YOYH1', title: 'Nomi', path: '/design-system/nomi', blurb: 'Design System / Nomi: foundations and core components.' },
 		{ id: 'Ljvtr', title: 'Chat responses', path: '/design-system/chat', blurb: 'Design System / Chat responses: everything Nomi can put in a reply.' },
 		{ id: 'DcG0H', title: 'Build', path: '/design-system/build', blurb: 'Design System / Build: from describing an app to a live URL.' },
+		{ id: 'URIB6', title: 'Projects', path: '/design-system/projects', blurb: 'Design System / Projects: every project, its state and its next action.' },
 	];
 	const sections = Object.values(bounds.sheets).reduce((sum, sheet) => sum + sheet.sections.length, 0);
 
@@ -33,7 +34,7 @@
 
 	const snapshots: [file: string, what: string, usedBy: string][] = [
 		['src/lib/ds/tokens/tokens.json', `The pen’s variables: ${Object.keys(exported.tokens).length} tokens, exported ${exported.exported}.`, '`tokens.test.ts` keeps `tokens.css` identical to it.'],
-		['pen/bounds.json', `Every section (${sections}) and board of the three sheets, at the sheet’s 1600 width; exported ${bounds.exported}.`, '`e2e/pen-parity.e2e.ts` in CI and `npm run pen:report`.'],
+		['pen/bounds.json', `Every section (${sections}) and board of the four sheets, at the sheet’s 1600 width; exported ${bounds.exported}.`, '`e2e/pen-parity.e2e.ts` in CI and `npm run pen:report`.'],
 		['pen/export/<sheet>--<section>.html', 'The pen’s own HTML export of each section.', '`npm run pen:compare`, as the text-by-text reference.'],
 	];
 
@@ -50,10 +51,10 @@ Get("<frame id>", (n, c) => { if (c.depth <= 3) Print("  ".repeat(c.depth) + n.n
 
 {#snippet rich(text: string)}{#each text.split('`') as part, index (index)}{#if index % 2}<code class="rounded-xs bg-surface-2 px-1 font-mono text-label text-text">{part}</code>{:else}{part}{/if}{/each}{/snippet}
 
-<DocPage eyebrow="Resources" title="Pen file & tools" lede="Nomi.pen and its three sheets, the rules every person and agent follows, the snapshots the code is held to, the tools that compare them, and the copy of these docs the team shares." wide>
+<DocPage eyebrow="Resources" title="Pen file & tools" lede="Nomi.pen and its four sheets, the rules every person and agent follows, the snapshots the code is held to, the tools that compare them, and the copy of these docs the team shares." wide>
 	<DocSection title="Nomi.pen">
 		<p>
-			The design file, made in pen.dev and opened in the Pencil app. It is the source of truth for how Nomi looks: three design sheets, 40
+			The design file, made in pen.dev and opened in the Pencil app. It is the source of truth for how Nomi looks: four design sheets, 40
 			flows each with a light twin, and the app screens. The code repository doesn’t keep the file; it keeps snapshots of it (below).
 		</p>
 		<ul>
@@ -64,7 +65,7 @@ Get("<frame id>", (n, c) => { if (c.depth <= 3) Print("  ".repeat(c.depth) + n.n
 	</DocSection>
 
 	<DocSection title="The sheets" lede="Rebuilt from the real components and held to the pen by CI. Add ?theme=dark or ?theme=light to force a theme.">
-		<div class="grid gap-3 md:grid-cols-3">
+		<div class="grid gap-3 md:grid-cols-2">
 			{#each sheets as sheet (sheet.id)}
 				<LinkCard href={docHref(sheet.path)} eyebrow={sheet.id} title={sheet.title} blurb={sheet.blurb} />
 			{/each}
@@ -145,7 +146,7 @@ Get("<frame id>", (n, c) => { if (c.depth <= 3) Print("  ".repeat(c.depth) + n.n
 	<DocSection title="The shared static copy" lede="The link the team opens.">
 		<CodeBlock code={share} language="sh" />
 		<ul>
-			<li>Builds the docs and the three sheets, alone, as static files in <code>build-gallery/</code>. They work from any path on any static host; <code>e2e/gallery-static.e2e.ts</code> and <code>e2e/docs.e2e.ts</code> serve them under a nested path to prove it.</li>
+			<li>Builds the docs and the four sheets, alone, as static files in <code>build-gallery/</code>. They work from any path on any static host; <code>e2e/gallery-static.e2e.ts</code> and <code>e2e/docs.e2e.ts</code> serve them under a nested path to prove it.</li>
 			<li>Internal links end in <code>.html</code> there (every docs link goes through <code>docHref</code>), and assets sit in <code>app/</code> because share hosts can reserve names starting with <code>_</code>.</li>
 			<li>Rebuild and republish it after the design system changes.</li>
 		</ul>
