@@ -246,6 +246,11 @@
 			.filter((group) => group.items.length > 0),
 	);
 
+	// The page's own item, or its parent's (a workspace's page lights Workspaces).
+	const settingsActive = $derived(
+		settingsGroups.flatMap((group) => group.items).find((item) => path === item.href || path.startsWith(`${item.href}/`))?.href ?? path,
+	);
+
 	function onkeydown(event: KeyboardEvent) {
 		const { key, code, metaKey, ctrlKey, shiftKey, altKey } = event;
 		// Esc leaves settings for the app, unless something open (a menu, a dialog) took it first.
@@ -316,7 +321,7 @@
 		<SettingsNav
 			backHref="/"
 			groups={settingsGroups}
-			active={path}
+			active={settingsActive}
 			user={{ name: data.person.name, detail: data.usage?.account, avatar: data.person.avatar ?? undefined }}
 			version={VERSION_LABEL}
 			bind:query={settingsQuery}

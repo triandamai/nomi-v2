@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { invalidate, invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { goto, invalidate, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { workspaceCards } from '$lib/settings/workspaces';
@@ -35,6 +37,14 @@
 		toasts.show({ kind: 'success', title: m.workspace_chosen({ name }) });
 		await invalidateAll();
 	}
+
+	// Back from leaving a workspace: say so, then take the word off the address.
+	onMount(() => {
+		const left = page.url.searchParams.get('left');
+		if (!left) return;
+		toasts.show({ kind: 'success', title: m.workspace_left({ name: left }) });
+		void goto(PATH, { replaceState: true, noScroll: true, keepFocus: true });
+	});
 
 	let creating = $state(false);
 	let name = $state('');

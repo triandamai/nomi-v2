@@ -494,6 +494,21 @@ projects", and Defaults › New projects go to sets the same thing.
   PERSONAL, the card's menu, "Open Nomi in", and the top bar's Create workspace (the create card
   does it).
 
+On a workspace's page (`wZm9B`), everything follows the backend's rules: owners and admins rename,
+invite and take invites back; admins move people between member and admin; only owners make or
+change owners; nobody changes or removes themselves (they leave); the last owner can't leave.
+
+- Left out (BACKEND_TODO.md): "created by … · date", the shared template stat, each member's
+  projects and activity, Resend, and deleting the workspace. Hand-over is making someone an owner
+  from their role.
+- "Copy invite link" sits on each open invite (a link needs an address), not in the invite box.
+- Each member's role is a picker only where the person may change it, with Remove (asked first);
+  the pen's more button on each row is that Remove.
+- The top bar's "Switch workspace" is left out: the backend has no active workspace; the side tip
+  says where projects' workspace is chosen.
+- The invite box keeps what's typed as text when it loses focus: turning it into chips then moved
+  the role cards under a click (a person picking Admin got Member).
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps
