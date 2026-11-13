@@ -277,3 +277,12 @@ Found while building Settings › Connections (2026-11-13).
 - **Until then:** Crew lists the members, Nomi's and Koda's models, what each is doing, and the personality's versions with Restore.
 
 Found while building Settings › Crew (2026-11-13).
+
+### Workspaces: declining an invitation, activity, templates, where Nomi opens
+- **Needed by:** *App / Settings / Workspaces* (l222Mz): Invitations ("Andi invited you to Kopi Kita" with Decline and Join), each card's members' faces and last activity ("Koda deployed 07:02", "active 3w ago"), the templates count, the PERSONAL tag, and Defaults › "Open Nomi in" (Last used or a workspace).
+- **Why:** people only find an invitation through its email link, and can't tell at a glance which workspaces are alive.
+- **What exists today:** `GET /api/orgs` (name, role, members, projects, project_org_id), `POST /api/orgs`, `PUT /api/preferences/project-org`, `GET /api/invites/:code` and `/accept` for a link.
+- **Proposed contract:** Invitations need `GET /api/invites` (see “A person's pending workspace invites” above) and `POST /api/invites/:code/decline`; on each org `member_avatars` (up to 3), `last_activity: { text, at }`, `templates`, `personal`; `PUT /api/preferences/open-org` (`last_used` or an org id).
+- **Until then:** each card shows its role, people and projects, and where projects come from.
+
+Found while building Settings › Workspaces (2026-11-13).

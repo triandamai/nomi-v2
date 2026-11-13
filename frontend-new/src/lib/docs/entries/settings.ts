@@ -250,4 +250,27 @@ export default [
 		accessibility: ['Each Restore names its version (“Restore v2”).'],
 		related: ['settings/CrewMemberHeader.svelte'],
 	},
+	{
+		file: 'settings/WorkspaceTile.svelte',
+		summary: 'A workspace’s initial on its tone, as the switcher shows it: 40 on a card, 56 on its own page.',
+		use: ['Workspace cards and the workspace page.'],
+		accessibility: ['Decorative: the name always sits beside it.'],
+		related: ['settings/WorkspaceCard.svelte'],
+	},
+	{
+		file: 'settings/WorkspaceCard.svelte',
+		summary: 'One workspace: its tile, name and the person’s role, its numbers, and where projects come from or the button to choose it, with Settings.',
+		use: ['Your workspaces, on Settings › Workspaces.'],
+		dos: ['Tag only the workspace projects come from as Current.'],
+		donts: ['Call it switching workspace: the backend only chooses where projects come from.'],
+		accessibility: ['An article named by the workspace; Settings is a link.'],
+		related: ['settings/CreateWorkspaceCard.svelte', 'settings/WorkspaceTile.svelte'],
+	},
+	{
+		file: 'settings/CreateWorkspaceCard.svelte',
+		summary: 'Room for another workspace, as tall as a workspace card.',
+		use: ['The end of Your workspaces.'],
+		accessibility: ['One button, named by its title and what it’s for.'],
+		related: ['settings/WorkspaceCard.svelte'],
+	},
 ] satisfies ComponentDoc[];
