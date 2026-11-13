@@ -86,6 +86,7 @@ describe('PlanOption and FitNote', () => {
 	});
 
 	it('says whether the plan fits on the accent tint, 40 tall', async () => {
+		await page.viewport(1512, 862);
 		await render(FitNote, { text: 'At your pace you’ll use about 31K this month. Free covers it.' });
 		const note = page.getByRole('status').element();
 		expect([box(note).height, getComputedStyle(note).backgroundColor]).toEqual([40, tokenBackground('nm-accent-bg')]);

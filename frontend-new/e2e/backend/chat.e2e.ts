@@ -75,7 +75,11 @@ test('a blank chat asks what to pick up, and its first message makes the chat', 
 	await open(page, '/chat/new');
 
 	await expect(page.getByRole('heading', { name: 'What should the crew pick up?' })).toBeVisible();
-	await composer(page).fill('Ingatkan aku bayar listrik');
+	// Send wakes once the page is live and has the text; typed any sooner, it's typed again.
+	await expect(async () => {
+		await composer(page).fill('Ingatkan aku bayar listrik');
+		await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 1_000 });
+	}).toPass();
 	await page.getByRole('button', { name: 'Send' }).click();
 	await expect(page).toHaveURL(CHAT_URL);
 	await expect(thread(page).getByText(REPLY)).toBeVisible();
