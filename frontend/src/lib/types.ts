@@ -82,7 +82,7 @@ export type ContentBlock =
 	| { kind: 'member_joined'; name: string; role: 'build' | 'prompt' | 'view'; publisher?: string | null }
 	/** What a stop ended, task by task (the Supervisor's reply to "stop"). */
 	/** Something that happened to a project (a publish), as one logged line above the message's text. */
-	| { kind: 'project_event'; event: 'deploy' | 'rollback' | 'domain' | 'database'; ok?: boolean; text: string }
+	| { kind: 'project_event'; event: 'deploy' | 'rollback' | 'domain' | 'database'; ok?: boolean; text: string; url?: string; environment?: string }
 	| { kind: 'stopped'; tasks: { agent: string; title: string; detail?: string | null; state: 'stopped' | 'waiting' | 'done' }[] };
 
 export interface MessageItem {
