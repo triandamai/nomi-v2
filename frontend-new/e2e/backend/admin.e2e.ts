@@ -395,3 +395,58 @@ test.describe('models, providers and embedding', () => {
 		expect(await (await api(admin, '/api/admin/settings/embedding')).json()).toMatchObject(before);
 });
 });
+
+test.describe('tools', () => {
+	type Tools = { groups: { tools: { name: string; enabled: boolean; settings: Record<string, unknown> | null }[] }[] };
+	const tools = async (admin: Account) => ((await (await api(admin, '/api/admin/tools')).json()) as Tools).groups.flatMap((group) => group.tools);
+
+	test('a tool is switched off and on again', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/tools');
+		const switchable = page.getByRole('button', { name: /^Turn off \S+$/ }).first();
+		const name = (await switchable.getAttribute('aria-label'))!.replace('Turn off ', '');
+		try {
+			await switchable.click();
+			await expect(page.getByRole('button', { name: `Turn on ${name}` })).toBeVisible();
+			expect((await tools(admin)).find((tool) => tool.name === name)?.enabled).toBe(false);
+			await page.getByRole('button', { name: `Turn on ${name}` }).click();
+			await expect(page.getByRole('button', { name: `Turn off ${name}` })).toBeVisible();
+		} finally {
+			await api(admin, `/api/admin/tools/${name}`, { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+		}
+	});
+
+	test('how much of a page is read is saved, and a number that isn’t one is refused', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		const before = (await tools(admin)).find((tool) => tool.name === 'read_web_page')!.settings as { max_chars: number };
+		await signInAs(context, admin);
+		await open(page, '/admin/tools');
+		const section = page.getByRole('region', { name: 'Reading a page' });
+		try {
+			await section.getByLabel('Characters').fill('lots');
+			await section.getByRole('button', { name: 'Save' }).click();
+			await expect(page.getByText('Write the numbers as numbers.')).toBeVisible();
+			await section.getByLabel('Characters').fill('15 000');
+			await section.getByRole('button', { name: 'Save' }).click();
+			await expect(section.getByText('Saved', { exact: true })).toBeVisible();
+			expect((await tools(admin)).find((tool) => tool.name === 'read_web_page')!.settings).toMatchObject({ max_chars: 15000 });
+		} finally {
+			await api(admin, '/api/admin/tools/read_web_page/settings', { method: 'PUT', body: JSON.stringify({ max_chars: before.max_chars }) });
+		}
+	});
+
+	test('trying web search and hearing the voice say plainly what went wrong without a key', async ({ page, context }) => {
+		const admin = await platformAdmin();
+		await signInAs(context, admin);
+		await open(page, '/admin/tools');
+
+		await page.getByLabel('Question').fill('harga cabai hari ini');
+		await page.getByRole('button', { name: 'Try it' }).click();
+		await expect(page.getByText('The search didn’t work')).toBeVisible();
+
+		await expect(page.getByText('The voices couldn’t be listed with the saved key, so write the voice id.')).toBeVisible();
+		await page.getByRole('button', { name: 'Hear it' }).click();
+		await expect(page.getByText('The voice couldn’t be heard')).toBeVisible();
+	});
+});
