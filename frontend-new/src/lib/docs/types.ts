@@ -22,7 +22,7 @@ export type ComponentDoc = {
 };
 
 export type PatternDoc = {
-	sheet: 'chat' | 'build';
+	sheet: 'chat' | 'build' | 'projects';
 	/** The section's id on its sheet (slugify of its title). */
 	id: string;
 	summary: string;
