@@ -72,7 +72,7 @@ test('a project that isn’t theirs says so', async ({ page, context }) => {
 	await expect(page).toHaveURL(/\/projects$/);
 });
 
-test('Deployments and Domain say what can’t be done yet, and nothing offers to', async ({ page, context }) => {
+test('Deployments, Domain and Monitor say what can’t be done yet, and nothing offers to', async ({ page, context }) => {
 	const account = await createAccount();
 	await signInAs(context, account);
 	const org = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
@@ -92,5 +92,11 @@ test('Deployments and Domain say what can’t be done yet, and nothing offers to
 	await expect(page.getByRole('button', { name: 'Change address' })).toHaveCount(0);
 	await tools.getByRole('button', { name: 'Domain' }).click();
 	await expect(page.getByText('No address yet')).toHaveCount(0);
+
+	// Monitor: nothing running to measure yet.
+	await tools.getByRole('button', { name: 'Monitor' }).click();
+	await expect(page.getByText('Nothing running yet')).toBeVisible();
+	await page.getByRole('button', { name: 'Close' }).click();
+	await expect(page.getByText('Nothing running yet')).toHaveCount(0);
 });
 

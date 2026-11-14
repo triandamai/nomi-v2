@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { DeployOverview, DomainAnswer, ProjectDetail, ProjectDomain, ProjectList } from '$lib/adapters/api';
+import type { ContainerUsage, DeployOverview, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMetrics } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 
 // A project's workspace on the server: the project (its files and chat), where it's live (the
@@ -94,4 +94,19 @@ export async function changeDomain(event: ApiEvent, id: string, name: string): P
 		}
 	}
 	return { ok: false, status: response.status, message: text.trim().slice(0, 300) };
+}
+
+export type Monitoring = { metrics: ProjectMetrics | null; usage: ContainerUsage[] | null; logs: string[] | null; note: string | null };
+
+/** The running app's numbers, what it uses and its last lines; each null where it couldn't be had. */
+export async function loadMonitor(event: ApiEvent, id: string, range: MetricsRange): Promise<Monitoring> {
+	const at = `/api/projects/${encodeURIComponent(id)}/deploy`;
+	const [metrics, usage, logs] = await Promise.all([call(event, `${at}/metrics?range=${range}`), call(event, `${at}/usage`), call(event, `${at}/logs?tail=40`)]);
+	const logBody = logs.ok ? ((await logs.json()) as { lines: string[]; note?: string }) : null;
+	return {
+		metrics: metrics.ok ? ((await metrics.json()) as ProjectMetrics) : null,
+		usage: usage.ok ? ((await usage.json()) as { containers: ContainerUsage[] }).containers : null,
+		logs: logBody?.lines ?? null,
+		note: logBody?.note ?? null,
+	};
 }

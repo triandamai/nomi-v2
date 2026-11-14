@@ -23,8 +23,8 @@ export default defineConfig({
 		rolldownOptions: {
 			checks: { pluginTimings: false },
 			// The static copy goes to share hosts that cap a site at about 500 files, so its design-system
-			// code ships as one shared chunk instead of hundreds of small ones.
-			output: galleryStatic ? { advancedChunks: { groups: [{ name: 'design-system', test: /src[\\/]lib[\\/](ds|gallery|docs)[\\/]/ }] } } : undefined,
+			// code, its messages and its packages each ship as one shared chunk instead of many small ones.
+			output: galleryStatic ? { advancedChunks: { groups: [{ name: 'design-system', test: /src[\\/]lib[\\/](ds|gallery|docs)[\\/]/ }, { name: 'messages', test: /src[\\/]lib[\\/]paraglide[\\/]/ }, { name: 'vendor', test: /node_modules[\\/]/ }] } } : undefined,
 		},
 	},
 	plugins: [

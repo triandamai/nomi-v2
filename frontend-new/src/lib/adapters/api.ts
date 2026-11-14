@@ -419,3 +419,15 @@ export type DeployOverview = {
 export type ProjectDomain = { hostname: string | null; subdomain: string | null; url: string | null; can_edit: boolean; base_domain: string | null; pending_hostname: string | null };
 /** What the hosting says about a name (`/domain/check`, or a refused change). */
 export type DomainAnswer = { available: boolean; reason?: string; message?: string; suggestions?: string[] };
+
+/** Shipyard's measures of a published app (`/deploy/metrics?range=`), passed through by the backend. */
+export type MetricsRange = '1h' | '24h' | '7d';
+export type MetricsCounters = { visitors: number | null; requests: number | null; errors_5xx: number | null; errors_4xx: number | null; p50_ms: number | null; p95_ms: number | null };
+export type MetricsBucket = MetricsCounters & { at: string };
+export type ProjectMetrics = { range: MetricsRange; step: string; buckets: MetricsBucket[]; totals: MetricsCounters; previous_totals: MetricsCounters };
+/** One container of the running app (`/deploy/usage`): its stats now, null when not measured. */
+export type ContainerUsage = {
+	service: string;
+	container_id: string;
+	stats: { cpu_percent: number; memory_usage_bytes: number; memory_limit_bytes: number; memory_percent: number; net_rx_bytes: number; net_tx_bytes: number } | null;
+};

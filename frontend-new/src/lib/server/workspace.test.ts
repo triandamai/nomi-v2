@@ -60,4 +60,12 @@ describe('a project’s workspace on the server', () => {
 		const first = eventWith(() => new Response('publish the app first: it gets an address on its first publish', { status: 409 }));
 		expect(await workspace.changeDomain(first.event, 'p1', 'kopi')).toMatchObject({ ok: false, status: 409, message: 'publish the app first: it gets an address on its first publish' });
 	});
+
+	it('gathers the running app’s numbers, what it uses and its last lines, each on its own', async () => {
+		const { backend, event } = eventWith((call) =>
+			call.url.includes('/metrics') ? json({ range: '1h', buckets: [] }) : call.url.includes('/usage') ? new Response('', { status: 502 }) : json({ lines: ['GET /menu 200'], note: 'tail' }),
+		);
+		expect(await workspace.loadMonitor(event, 'p1', '1h')).toEqual({ metrics: { range: '1h', buckets: [] }, usage: null, logs: ['GET /menu 200'], note: 'tail' });
+		expect(backend.calls.map((call) => call.url.replace('http://api.test', '')).sort()).toEqual(['/api/projects/p1/deploy/logs?tail=40', '/api/projects/p1/deploy/metrics?range=1h', '/api/projects/p1/deploy/usage']);
+	});
 });

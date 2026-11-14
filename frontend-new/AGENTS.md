@@ -534,8 +534,13 @@ steps; what isn't there yet is left out, not drawn dead:
   checked as it's typed, with the hosting's reason and free names when it's taken). A domain of
   the person's own (the DNS table, Check now, Make primary, Remove) has no backend yet
   (BACKEND_TODO.md). Before the first publish it says there's no address yet.
-- The other tools (Monitor, Database, Settings) and Share come with their sheets; Export
-  downloads the project as a zip. The pen's Share wears a download icon
+- Monitor (step 10) shows what Shipyard measures of the live app over 1h, today or 7 days,
+  refreshed every 30 seconds while open: requests, errors with their share, p95, and visitors in
+  the place of the pen's uptime (not measured); requests per bucket; memory, CPU and bandwidth;
+  the app's last lines. What wasn't measured says so, never 0. The pen's database size and its
+  parsed log columns (method, path, status) aren't given: the log is the app's own lines.
+- The other tools (Database, Settings) and Share come with their sheets; Export downloads the
+  project as a zip. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet
   published needs the runtime (below), as a static site's files already do.
