@@ -304,3 +304,12 @@ Found while building Settings › Workspace (2026-11-13).
 - **Until then:** cards are live, building or draft; Needs attention stays empty.
 
 Found while building Projects (2026-11-14).
+
+### A project's own domain (DNS)
+- **Needed by:** *Flow / Build — Workspace tools* (U16wU) steps 8–9, Screen / Domain (J2hPJ) and Domain connected (Dd60u): a domain the person owns (warungkopibusiti.id) beside the app's address, the records to set at their registrar (A, CNAME, TXT, each found or waiting), "last checked · every 5 min", Check now, HTTPS issued, Make primary and Remove domain.
+- **Why:** a business's app lives at Nomi's address only; people can't put it on their own domain.
+- **What exists today:** `GET|PUT /api/projects/:id/domain` and `/domain/check`: the app's name under Nomi's apps domain only.
+- **Proposed contract:** `POST /api/projects/:id/domains` `{ hostname }` → `{ hostname, records: [{ type, name, value, status: "found" | "waiting" }], checked_at, https: "pending" | "issued" }`; `POST /api/projects/:id/domains/:hostname/check`; `PUT /api/projects/:id/domains/:hostname/primary`; `DELETE /api/projects/:id/domains/:hostname`.
+- **Until then:** Domain shows the app's address (and where it moves on the next publish) and renames it.
+
+Found while building the workspace's Domain (2026-11-14).

@@ -5,6 +5,7 @@ vi.mock('$env/dynamic/private', () => ({ env: { API_URL: 'http://api.test' } }))
 
 const { load, actions } = await import('./+page.server');
 const deploy = await import('./deploy/+server');
+const domainCheck = await import('./domain/check/+server');
 const preview = await import('./preview/[...path]/+server');
 const app = await import('./app/+page.server');
 const bySession = await import('../session/[sessionId]/+page.server');
@@ -49,5 +50,24 @@ describe('a project’s workspace', () => {
 	it('gives the deploy overview to look at again', async () => {
 		const response = await deploy.GET(at(() => json({ available: false, publishes: [] }), { id: 'p1' }).event as never);
 		expect(await response.json()).toEqual({ available: false, publishes: [] });
+	});
+
+	it('changes the address, and passes on why not with free names', async () => {
+		const form = (body: Record<string, string>, answer: Parameters<typeof fakeBackend>[0]) => {
+			const { api, event } = at(answer, { id: 'p1' });
+			return { api, event: { ...event, request: new Request('http://localhost/projects/p1', { method: 'POST', body: new URLSearchParams(body) }) } };
+		};
+		const done = form({ name: ' Kopi ' }, () => json({ url: 'https://kopi.trian.space' }));
+		expect(await actions.domain(done.event as never)).toEqual({ url: 'https://kopi.trian.space' });
+		expect(done.api.calls[0].body).toEqual({ subdomain: 'kopi' });
+		expect(await actions.domain(form({ name: 'kopi' }, () => json({ available: false, message: 'taken', suggestions: ['kopi-1'] }, 409)).event as never)).toMatchObject({ status: 409, data: { message: 'taken', suggestions: ['kopi-1'] } });
+		expect(await actions.domain(form({ name: '' }, () => json({})).event as never)).toMatchObject({ status: 400 });
+	});
+
+	it('checks a name for the field', async () => {
+		const { api, event } = at(() => json({ available: true }), { id: 'p1' });
+		const response = await domainCheck.GET({ ...event, url: new URL('http://localhost/projects/p1/domain/check?name=kopi') } as never);
+		expect(await response.json()).toEqual({ available: true });
+		expect(api.calls[0].url).toBe('http://api.test/api/projects/p1/domain/check?subdomain=kopi');
 	});
 });

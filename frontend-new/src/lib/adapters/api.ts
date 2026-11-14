@@ -414,3 +414,8 @@ export type DeployOverview = {
 	backend_setup: { message?: string } | null;
 	unpublished_changes: number | null;
 };
+
+/** `GET /api/projects/:id/domain`: the app's own address, null until its first publish. */
+export type ProjectDomain = { hostname: string | null; subdomain: string | null; url: string | null; can_edit: boolean; base_domain: string | null; pending_hostname: string | null };
+/** What the hosting says about a name (`/domain/check`, or a refused change). */
+export type DomainAnswer = { available: boolean; reason?: string; message?: string; suggestions?: string[] };

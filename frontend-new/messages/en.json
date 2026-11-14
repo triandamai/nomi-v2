@@ -2390,5 +2390,21 @@
 	"deploy_confirm_body": "They go live at {address} as deploy #{number}. Customers see them on their next visit.",
 	"deploy_confirm_first": "Your app goes live as deploy #{number}, at its own address.",
 	"deploy_confirm_note": "replaces deploy #{number} · roll back from Deployments any time",
-	"deploy_publish_as": "Publish deploy #{number}"
+	"deploy_publish_as": "Publish deploy #{number}",
+	"domain_name_needed": "Give the address a name.",
+	"workspace_domain": "Domain",
+	"domain_check_failed": "That name couldn’t be checked. Try again in a moment.",
+	"domain_taken": "That name isn’t free.",
+	"domain_changed": "The address changed",
+	"domain_none_title": "No address yet",
+	"domain_none_body": "The app gets its own address on its first publish; you can change its name from here then.",
+	"domain_addresses": "Addresses",
+	"domain_next_publish": "on the next publish",
+	"domain_field": "Address",
+	"domain_checking": "Checking…",
+	"domain_available": "Available",
+	"domain_free_instead": "Free instead",
+	"domain_save": "Use this address",
+	"domain_change": "Change address",
+	"domain_rename_note": "The old address stops working once the new one is live. Links you’ve shared will need the new one."
 }
